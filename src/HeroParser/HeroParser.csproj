@@ -81,6 +81,11 @@
     <DefineConstants Condition="$([MSBuild]::IsTargetFrameworkCompatible('net6.0', $(TargetFramework)))">$(DefineConstants);NET6_0_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
+  <!-- Source generator integration -->
+  <ItemGroup>
+    <ProjectReference Include="..\HeroParser.SourceGenerator\HeroParser.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
   <!-- Assembly-level attributes -->
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">

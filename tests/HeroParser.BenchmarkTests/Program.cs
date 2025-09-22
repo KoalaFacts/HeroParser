@@ -1,24 +1,18 @@
 using BenchmarkDotNet.Running;
-using BenchmarkDotNet.Configs;
-using BenchmarkDotNet.Jobs;
-using BenchmarkDotNet.Environments;
 
 namespace HeroParser.BenchmarkTests;
 
 /// <summary>
-/// Entry point for HeroParser benchmarking suite.
-/// Compares performance against Sep, Sylvan.Data.Csv, and CsvHelper.
+/// Entry point for HeroParser competitor benchmarking.
+/// Constitution: Benchmark-Driven Development - comparison against Sep, Sylvan, CsvHelper.
+/// Usage: dotnet run -- --filter *CompetitorBenchmarks*
 /// </summary>
 public class Program
 {
     public static void Main(string[] args)
     {
-        var config = DefaultConfig.Instance
-            .AddJob(Job.Default.WithRuntime(CoreRuntime.Core80))
-            .AddJob(Job.Default.WithRuntime(CoreRuntime.Core90))
-            .WithOption(ConfigOptions.DisableOptimizationsValidator, true);
-
-        // Run all benchmark classes
-        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, config);
+        // Constitution: Performance-First Architecture
+        // Use BenchmarkDotNet's built-in CLI instead of custom interactive menu
+        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
     }
 }

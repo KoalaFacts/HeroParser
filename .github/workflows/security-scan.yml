@@ -1,0 +1,263 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # Run weekly security scans
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  codeql-analysis:
+    name: CodeQL Security Analysis
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'csharp' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          6.0.x
+          8.0.x
+          10.0.x
+
+    # Initialize CodeQL tools for scanning
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: ${{ matrix.language }}
+        # Override default queries with security-focused ones
+        queries: security-extended,security-and-quality
+
+    # Build the project for analysis
+    - name: Build for CodeQL
+      run: |
+        dotnet restore
+        # Build only key targets to reduce scan time
+        dotnet build --configuration Release --framework net8.0 --no-restore
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: "/language:${{matrix.language}}"
+
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          6.0.x
+          8.0.x
+          10.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    # Scan for known vulnerabilities in NuGet packages
+    - name: Run security audit
+      run: dotnet list package --vulnerable --include-transitive
+
+    # Check for outdated packages that might have security issues
+    - name: Check for outdated packages
+      run: dotnet list package --outdated
+
+  secrets-scan:
+    name: Secrets and Credentials Scan
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # Fetch full history for better secret detection
+        fetch-depth: 0
+
+    # Use TruffleHog for secret detection
+    - name: TruffleHog OSS
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+
+  security-policy-check:
+    name: Security Policy Compliance
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Check for security policy files
+    - name: Check Security Policy
+      run: |
+        echo "Checking for security policy files..."
+
+        # Check for SECURITY.md
+        if [ ! -f "SECURITY.md" ] && [ ! -f ".github/SECURITY.md" ]; then
+          echo "Warning: No SECURITY.md file found"
+          echo "::warning::Consider adding a security policy file"
+        fi
+
+        # Check for proper .gitignore patterns
+        if [ -f ".gitignore" ]; then
+          echo "✓ .gitignore file exists"
+
+          # Check for common security-sensitive patterns
+          if ! grep -q "*.key" .gitignore; then
+            echo "::warning::Consider adding *.key to .gitignore"
+          fi
+
+          if ! grep -q "*.pem" .gitignore; then
+            echo "::warning::Consider adding *.pem to .gitignore"
+          fi
+
+          if ! grep -q ".env" .gitignore; then
+            echo "::warning::Consider adding .env to .gitignore"
+          fi
+        fi
+
+    # Validate that no secrets are in configuration files
+    - name: Configuration Security Check
+      run: |
+        echo "Checking configuration files for potential secrets..."
+
+        # Check for hardcoded connection strings, passwords, etc.
+        if find . -name "*.json" -o -name "*.xml" -o -name "*.config" | \
+           xargs grep -i "password\|secret\|key\|token" | \
+           grep -v "Password.*:" | grep -v "//.*password"; then
+          echo "::error::Potential hardcoded secrets found in configuration files"
+          exit 1
+        fi
+
+        echo "✓ No obvious secrets found in configuration files"
+
+  supply-chain-security:
+    name: Supply Chain Security
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          6.0.x
+          8.0.x
+          10.0.x
+
+    # Validate package lock files
+    - name: Validate package integrity
+      run: |
+        echo "Validating NuGet package integrity..."
+        dotnet restore --locked-mode 2>/dev/null || echo "No packages.lock.json found - consider enabling package lock files"
+
+    # Check for suspicious package patterns
+    - name: Package security analysis
+      run: |
+        echo "Analyzing package dependencies for security concerns..."
+
+        # List all packages for review
+        dotnet list package --include-transitive > package-list.txt
+
+        # Check for packages with known security concerns (expand this list as needed)
+        if grep -i "newtonsoft.json.*[1-9]\." package-list.txt | grep -v "13\." >/dev/null; then
+          echo "::warning::Potentially vulnerable Newtonsoft.Json version detected"
+        fi
+
+        echo "✓ Package analysis complete"
+
+  build-security:
+    name: Build Security Validation
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          6.0.x
+          8.0.x
+          10.0.x
+
+    # Ensure builds are reproducible and secure
+    - name: Secure build validation
+      run: |
+        echo "Validating build security settings..."
+
+        # Check for deterministic builds
+        if grep -r "Deterministic.*true" src/ >/dev/null; then
+          echo "✓ Deterministic builds enabled"
+        else
+          echo "::warning::Consider enabling deterministic builds for better security"
+        fi
+
+        # Validate that TreatWarningsAsErrors is enabled
+        if grep -r "TreatWarningsAsErrors.*true" src/ >/dev/null; then
+          echo "✓ Warnings treated as errors"
+        else
+          echo "::error::TreatWarningsAsErrors should be enabled for security"
+          exit 1
+        fi
+
+        # Build with maximum security settings
+        dotnet build --configuration Release -p:TreatWarningsAsErrors=true
+
+  security-summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs: [codeql-analysis, dependency-scan, secrets-scan, security-policy-check, supply-chain-security, build-security]
+    if: always()
+
+    steps:
+    - name: Security scan summary
+      run: |
+        echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| CodeQL Analysis | ${{ needs.codeql-analysis.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Dependency Scan | ${{ needs.dependency-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Secrets Scan | ${{ needs.secrets-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Security Policy | ${{ needs.security-policy-check.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Supply Chain | ${{ needs.supply-chain-security.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Build Security | ${{ needs.build-security.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [[ "${{ needs.codeql-analysis.result }}" == "failure" || \
+              "${{ needs.dependency-scan.result }}" == "failure" || \
+              "${{ needs.secrets-scan.result }}" == "failure" || \
+              "${{ needs.build-security.result }}" == "failure" ]]; then
+          echo "❌ Security scan failed - review the findings above" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        else
+          echo "✅ All security scans passed" >> $GITHUB_STEP_SUMMARY
+        fi

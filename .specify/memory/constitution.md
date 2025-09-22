@@ -1,20 +1,20 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 2.1.1 → 2.2.0
-Rationale: MINOR - Added critical Continuous Build & Test Verification principle as new Principle I
+Version change: 2.2.0 → 2.3.0
+Rationale: MINOR - Added critical Codebase-First Development principle as new Principle II
 Modified principles:
-- All existing principles renumbered (I→II, II→III, III→IV, IV→V, V→VI, VI→VII)
+- All existing principles renumbered (II→III, III→IV, IV→V, V→VI, VI→VII, VII→VIII)
 Added sections:
-- I. Continuous Build & Test Verification (CRITICAL) - mandates build & test verification on each minor phase
+- II. Codebase-First Development (CRITICAL) - mandates codebase analysis before creating new files/classes
 Removed sections: None
 Templates requiring updates:
-- .specify/templates/plan-template.md ⚠ pending (add verification checkpoints)
-- .specify/templates/spec-template.md ⚠ pending (add verification requirements)
-- .specify/templates/tasks-template.md ⚠ pending (add verification as task requirement)
+- .specify/templates/plan-template.md ⚠ pending (add codebase analysis requirement)
+- .specify/templates/spec-template.md ⚠ pending (add existing code review requirement)
+- .specify/templates/tasks-template.md ⚠ pending (add rationale documentation requirement)
 Follow-up TODOs:
 - TODO(RATIFICATION_DATE): Set initial ratification date when adopted
-- Update all templates to include verification checkpoints
+- Update all templates to include codebase analysis checkpoints
 -->
 
 # HeroParser Constitution
@@ -40,7 +40,34 @@ dotnet test --verbosity normal   # ALL existing tests must pass
 
 **Rationale**: The accumulation of 453+ compilation errors demonstrated the critical need for continuous verification. This principle prevents technical debt accumulation and ensures each increment maintains system integrity.
 
-### II. Performance-First Architecture
+### II. Codebase-First Development (CRITICAL)
+
+**MUST ALWAYS analyze existing codebase before creating new files, classes, or implementations.**
+
+Every file/class creation MUST be justified through codebase analysis:
+- **Codebase Analysis**: MUST search and understand existing similar implementations before creating new ones
+- **Reuse Priority**: MUST extend or modify existing code rather than creating new files when possible
+- **Strong Rationale**: New files MUST have documented justification explaining why existing code cannot be used
+- **Pattern Consistency**: New implementations MUST follow existing architectural patterns and conventions
+- **Minimal Footprint**: Prefer fewer, cohesive files over many small, scattered files
+
+**Mandatory Analysis Sequence:**
+```bash
+# Before creating any new file/class, MUST complete:
+find . -name "*.cs" | grep -i [relevant_keyword]  # Search existing code
+grep -r "interface\|class\|struct" src/           # Understand existing types
+# Document rationale: "Why not extend [ExistingClass]? Why new file needed?"
+```
+
+**Forbidden Patterns:**
+- Creating new classes without searching for existing similar functionality
+- Duplicating logic that exists elsewhere in codebase
+- Creating files for single-method utilities that could be extension methods
+- Ignoring existing architectural patterns and naming conventions
+
+**Rationale**: Rapid file creation without codebase analysis leads to code duplication, architectural inconsistency, and maintenance burden. This principle enforces thoughtful design and maintains clean architecture.
+
+### III. Performance-First Architecture
 
 Performance is the PRIMARY design constraint. Every architectural decision MUST
 prioritize speed over convenience. Code MUST use unsafe contexts, SIMD
@@ -50,7 +77,7 @@ interface calls. Method inlining MUST be explicitly controlled via AggressiveInl
 Cyclomatic complexity limits are WAIVED for performance-critical sections with
 documented benchmarks showing >10% improvement.
 
-### III. Benchmark-Driven Development
+### IV. Benchmark-Driven Development
 
 Every feature MUST begin with BenchmarkDotNet performance baselines comparing
 against Sep (current leader at 21 GB/s), Sylvan.Data.Csv, CsvHelper, and
@@ -60,7 +87,7 @@ MUST NOT be merged. Microbenchmarks MUST cover: small files (1KB), medium files
 workstation and server GC. Memory diagnostics MUST track allocations, GC
 collections, and working set. Performance regressions >2% require immediate reversion.
 
-### IV. RFC 4180 Strict Compliance
+### V. RFC 4180 Strict Compliance
 
 CSV parsing MUST fully comply with RFC 4180 while maintaining performance
 leadership. Deviations are permitted ONLY for documented real-world compatibility
@@ -69,7 +96,7 @@ MUST support COBOL copybook definitions, IBM mainframe formats, and NACHA
 specifications. All format variations MUST be documented with example files
 and compliance test suites.
 
-### V. API Excellence & Consistency
+### VI. API Excellence & Consistency
 
 Public APIs MUST be intuitive for both simple and advanced use cases. Provide
 both synchronous and asynchronous APIs with identical semantics. Support
@@ -77,7 +104,7 @@ Span<T>, Memory<T>, and PipeReader/Writer for zero-copy scenarios. MUST offer
 fluent configuration builders, attribute-based mapping, and manual field
 accessors. Breaking changes require major version bumps with migration tooling.
 
-### VI. Zero-Allocation Mandate
+### VII. Zero-Allocation Mandate
 
 Parsing and writing MUST achieve zero heap allocations for common scenarios.
 Stack allocation, ArrayPool<T>, and custom memory pools are REQUIRED. String
@@ -86,7 +113,7 @@ mapping MUST support source generators for allocation-free deserialization.
 The 99th percentile parsing operation MUST show 0 Gen0/Gen1/Gen2 collections
 in benchmarks.
 
-### VII. World-Class Performance Targets
+### VIII. World-Class Performance Targets
 
 Performance targets are NON-NEGOTIABLE minimums to exceed current leader (Sep):
 - Parse throughput: >25 GB/s single-threaded (vs Sep's 21 GB/s), >50 GB/s multi-threaded
@@ -176,4 +203,4 @@ Performance-critical decisions follow this hierarchy:
 3. Maintainer vote (2/3 majority)
 4. Project lead veto (performance regressions only)
 
-**Version**: 2.2.0 | **Ratified**: TODO(RATIFICATION_DATE) | **Last Amended**: 2025-01-25
+**Version**: 2.3.0 | **Ratified**: TODO(RATIFICATION_DATE) | **Last Amended**: 2025-01-25

@@ -1,0 +1,307 @@
+# HeroParser .gitignore - Optimized for Claude Code and AI Development
+# Balances excluding build artifacts while preserving AI context
+
+###############################
+# .NET Core / .NET Framework #
+###############################
+
+# Build outputs
+bin/
+obj/
+out/
+
+# MSBuild Binary and Structured Log
+*.binlog
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!packages/build/
+!packages/docs/
+
+# Project-specific
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Roslyn cache directories
+*.ide/
+
+###############################
+# Visual Studio / VS Code    #
+###############################
+
+# Visual Studio cache/options
+.vs/
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+.vscode/extensions.json
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code workspace files
+*.code-workspace
+
+# Keep important VS Code config for AI tools
+!.vscode/README.md
+!.vscode/claude-context.md
+
+###############################
+# Testing & Coverage         #
+###############################
+
+# Test results
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# BenchmarkDotNet artifacts
+**/BenchmarkDotNet.Artifacts/
+
+# Keep benchmark reports for AI analysis
+!benchmarks/reports/
+!**/benchmark-summary.md
+!**/performance-report.md
+
+###############################
+# Temporary & Cache Files    #
+###############################
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Cache directories
+.cache/
+.temp/
+.tmp/
+
+# Logs
+*.log
+logs/
+
+# Keep important logs for AI debugging
+!logs/performance.log
+!logs/benchmark-results.log
+
+###############################
+# OS Generated Files         #
+###############################
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Linux
+*~
+.directory
+.Trash-*
+
+###############################
+# AI Development Exclusions  #
+###############################
+
+# Large binary test files (keep small samples)
+**/test-data/large/
+**/test-data/**/*.csv
+!**/test-data/samples/
+!**/test-data/**/*-sample.csv
+!**/test-data/**/*-example.csv
+
+# Generated documentation (keep source)
+docs/generated/
+docs/api/
+!docs/source/
+!docs/**/*.md
+
+# Temporary AI analysis files
+.ai-temp/
+.claude-temp/
+*.ai-analysis
+*.claude-analysis
+
+###############################
+# Performance & Profiling    #
+###############################
+
+# Profiling results
+*.vsp
+*.psess
+*.vspx
+*.sap
+*.diagsession
+
+# Memory dumps
+*.dmp
+
+# Keep performance baseline files for AI
+!benchmarks/baselines/
+!**/performance-baseline.json
+!**/memory-baseline.json
+
+###############################
+# Security & Secrets         #
+###############################
+
+# Secrets and keys
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.json
+appsettings.Production.json
+launchSettings.json
+
+# Environment files
+.env
+.env.local
+.env.production
+
+###############################
+# AI Tool Inclusions         #
+###############################
+
+# Keep these files for AI context
+!README.md
+!CHANGELOG.md
+!LICENSE
+!*.sln
+!**/*.csproj
+!**/*.props
+!**/*.targets
+!global.json
+!nuget.config
+!Directory.Build.props
+!Directory.Build.targets
+
+# Keep specification and planning files
+!specs/
+!docs/
+!.specify/
+
+# Keep configuration samples
+!**/appsettings.Development.json
+!**/config-sample.json
+!**/*-template.*
+!**/*-example.*
+
+# Keep CI/CD configuration
+!.github/
+!azure-pipelines.yml
+!.gitlab-ci.yml
+
+# Keep Docker files
+!Dockerfile
+!docker-compose.yml
+!.dockerignore
+
+###############################
+# Development Tools           #
+###############################
+
+# JetBrains
+.idea/
+*.sln.iml
+
+# NCrunch
+_NCrunch_*
+.*crunch*.local.xml
+nCrunchTemp_*
+
+# dotCover
+*.dotCover
+
+# ReSharper
+_ReSharper*/
+*.ReSharper
+
+###############################
+# Package Managers           #
+###############################
+
+# npm (if any Node.js tooling)
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Yarn
+yarn-error.log
+
+###############################
+# Custom HeroParser Exclusions #
+###############################
+
+# Large test datasets (keep samples)
+test-data/performance/
+test-data/stress/
+!test-data/unit/
+!test-data/compliance/
+
+# Generated SIMD assembly
+src/**/generated-simd/
+src/**/*.asm
+
+# Benchmark artifacts (keep summaries)
+BenchmarkDotNet.Artifacts/
+!**/BenchmarkDotNet.Artifacts/results/
+!**/*-report.html
+!**/*-report.csv
+
+# Performance analysis files
+*.perfview
+*.etl
+*.etw
+
+# Keep performance configuration
+!**/benchmark-config.json
+!**/performance-config.json
+
+###############################
+# AI Development Notes        #
+###############################
+
+# This .gitignore is optimized for AI development tools like Claude Code by:
+#
+# 1. EXCLUDING heavy files that don't provide AI value:
+#    - Build artifacts (bin/, obj/)
+#    - Large test datasets
+#    - Generated binaries
+#    - IDE-specific cache files
+#
+# 2. INCLUDING files that provide AI context:
+#    - All source code (.cs, .csproj)
+#    - Documentation and specifications
+#    - Configuration samples
+#    - Small test data samples
+#    - Performance baseline files
+#    - CI/CD configuration
+#
+# 3. BALANCING repository size vs AI effectiveness:
+#    - Keep essential context files under 100KB each
+#    - Exclude >1MB files unless critical for AI understanding
+#    - Preserve project structure visibility
+#    - Maintain build reproducibility
+#
+# This approach ensures Claude Code and other AI tools have sufficient
+# context to understand the project while keeping the repository clean
+# and focused on source code rather than generated artifacts.

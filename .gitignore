@@ -247,25 +247,22 @@ package-lock.json
 # Yarn
 yarn-error.log
 
-###############################
-# Custom HeroParser Exclusions #
-###############################
-
-# Large test datasets (keep samples)
-test-data/performance/
-test-data/stress/
-!test-data/unit/
-!test-data/compliance/
-
-# Generated SIMD assembly
-src/**/generated-simd/
-src/**/*.asm
-
 # Benchmark artifacts (keep summaries)
 BenchmarkDotNet.Artifacts/
 !**/BenchmarkDotNet.Artifacts/results/
 !**/*-report.html
 !**/*-report.csv
+
+# Test output files that might be accidentally generated during development
+**/test-output.csv
+**/debug-output.csv
+**/sample-output.csv
+**/test-results.csv
+**/validation-data.csv
+**/compliance-test-data.csv
+tests/**/output/
+tests/**/generated/
+tests/**/temp/
 
 # Performance analysis files
 *.perfview
@@ -277,31 +274,6 @@ BenchmarkDotNet.Artifacts/
 !**/performance-config.json
 
 ###############################
-# AI Development Notes        #
-###############################
-
-# This .gitignore is optimized for AI development tools like Claude Code by:
-#
-# 1. EXCLUDING heavy files that don't provide AI value:
-#    - Build artifacts (bin/, obj/)
-#    - Large test datasets
-#    - Generated binaries
-#    - IDE-specific cache files
-#
-# 2. INCLUDING files that provide AI context:
-#    - All source code (.cs, .csproj)
-#    - Documentation and specifications
-#    - Configuration samples
-#    - Small test data samples
-#    - Performance baseline files
-#    - CI/CD configuration
-#
-# 3. BALANCING repository size vs AI effectiveness:
-#    - Keep essential context files under 100KB each
-#    - Exclude >1MB files unless critical for AI understanding
-#    - Preserve project structure visibility
-#    - Maintain build reproducibility
-#
-# This approach ensures Claude Code and other AI tools have sufficient
-# context to understand the project while keeping the repository clean
-# and focused on source code rather than generated artifacts.
+*.local.json
+NUL
+nul

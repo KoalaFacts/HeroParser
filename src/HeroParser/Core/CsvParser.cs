@@ -1,10 +1,10 @@
+using HeroParser.Configuration;
+using HeroParser.Exceptions;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using HeroParser.Configuration;
-using HeroParser.Exceptions;
 
 namespace HeroParser.Core;
 

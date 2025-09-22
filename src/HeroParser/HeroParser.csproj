@@ -10,7 +10,7 @@
     <PackageId>HeroParser</PackageId>
     <Title>HeroParser - World's Fastest C# CSV/Fixed-Length Parser</Title>
     <Authors>HeroParser Team</Authors>
-    <Description>High-performance CSV and fixed-length file parser targeting >25 GB/s throughput with SIMD optimization, zero allocations, and RFC 4180 compliance.</Description>
+    <Description>High-performance CSV and fixed-length file parser targeting &gt;25 GB/s throughput with SIMD optimization, zero allocations, and RFC 4180 compliance.</Description>
     <PackageTags>csv;parser;performance;simd;zero-allocation;rfc4180;fixed-length;cobol</PackageTags>
     <RepositoryUrl>https://github.com/BeingCiteable/HeroParser</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -27,12 +27,12 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
-    <PackageReference Include="System.Memory" Version="4.5.5" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
   </ItemGroup>
 
 </Project>

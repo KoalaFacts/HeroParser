@@ -17,7 +17,7 @@ public class CsvReadingComplianceTests
         var csv = "aaa,bbb,ccc\nzzz,yyy,xxx";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -34,7 +34,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\"bbb\",\"ccc\"\n\"zzz\",\"yyy\",\"xxx\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -50,7 +50,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",bbb,\"ccc\"\nzzz,\"yyy\",xxx";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -66,7 +66,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\"b,bb\",\"ccc\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Empty(result); // Header only, no data rows
@@ -79,7 +79,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\"b,bb\",\"ccc\"\n\"zzz\",\"y,yy\",\"xxx\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -95,7 +95,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\"b\nbb\",\"ccc\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Empty(result); // Header only, no data rows
@@ -108,7 +108,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\"b\nbb\",\"ccc\"\n\"zzz\",\"y\nyy\",\"xxx\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -124,7 +124,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\"b\"\"bb\",\"ccc\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Empty(result); // Header only, no data rows
@@ -137,7 +137,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\"b\"\"bb\",\"ccc\"\n\"zzz\",\"y\"\"yy\",\"xxx\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -153,7 +153,7 @@ public class CsvReadingComplianceTests
         var csv = "aaa,,ccc\n,yyy,";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -169,7 +169,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\"\",\"ccc\"\n\"\",\"yyy\",\"\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -185,7 +185,7 @@ public class CsvReadingComplianceTests
         var csv = "header1,header2,header3\n,,";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -202,7 +202,7 @@ public class CsvReadingComplianceTests
         var csv = "aaa,bbb,ccc\r\nzzz,yyy,xxx";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -218,7 +218,7 @@ public class CsvReadingComplianceTests
         var csv = "aaa,bbb,ccc\nzzz,yyy,xxx";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -234,7 +234,7 @@ public class CsvReadingComplianceTests
         var csv = "aaa,bbb,ccc\nzzz,yyy,xxx\n";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -250,7 +250,7 @@ public class CsvReadingComplianceTests
         var csv = "aaa,bbb,ccc\nzzz,yyy,xxx";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -264,10 +264,10 @@ public class CsvReadingComplianceTests
     {
         // Arrange
         var csv = "\"aaa,bbb,ccc";
-        var config = new CsvConfiguration { StrictMode = true };
+        var config = new CsvReadConfiguration { StrictMode = true };
 
         // Act & Assert
-        Assert.Throws<CsvParseException>(() => CsvParser.Parse(csv, config));
+        Assert.Throws<CsvParseException>(() => Csv.Parse(csv, config));
     }
 
     [Fact]
@@ -275,10 +275,10 @@ public class CsvReadingComplianceTests
     {
         // Arrange
         var csv = "aaa,b\"bb,ccc";
-        var config = new CsvConfiguration { StrictMode = true };
+        var config = new CsvReadConfiguration { StrictMode = true };
 
         // Act & Assert
-        Assert.Throws<CsvParseException>(() => CsvParser.Parse(csv, config));
+        Assert.Throws<CsvParseException>(() => Csv.Parse(csv, config));
     }
 
     [Fact]
@@ -288,7 +288,7 @@ public class CsvReadingComplianceTests
         var csv = "aaa , bbb , ccc \n zzz , yyy , xxx ";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -304,7 +304,7 @@ public class CsvReadingComplianceTests
         var csv = "\"aaa\",\" bbb \",\"ccc\"\n\"zzz\",\" yyy \",\"xxx\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);

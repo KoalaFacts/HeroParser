@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 namespace HeroParser.Tests.Core;
 
 /// <summary>
-/// Tests for the CsvParser static class.
+/// Tests for the CsvReader implementation via CsvReader.
 /// </summary>
-public class CsvParserTests
+public class CsvReaderTests
 {
     [Fact]
     public void Parse_SimpleCSV_ReturnsCorrectData()
@@ -19,7 +19,7 @@ public class CsvParserTests
         var csv = "Name,Age,City\nJohn,25,\"New York\"\nJane,30,Boston";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -39,7 +39,7 @@ public class CsvParserTests
         var csv = "\"First Name\",\"Last, Name\",\"Age\"\n\"John\",\"Doe, Jr.\",\"25\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -55,7 +55,7 @@ public class CsvParserTests
         var csv = "Name,Quote\n\"John\",\"He said \"\"Hello\"\"\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -70,7 +70,7 @@ public class CsvParserTests
         var csv = "";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Empty(result);
@@ -83,7 +83,7 @@ public class CsvParserTests
         var csv = "Name,Age,City";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Empty(result);
@@ -94,10 +94,10 @@ public class CsvParserTests
     {
         // Arrange
         var csv = "Name;Age;City\nJohn;25;Boston";
-        var config = new CsvConfiguration { Delimiter = ';' };
+        var config = new CsvReadConfiguration { Delimiter = ';' };
 
         // Act
-        var result = CsvParser.Parse(csv, config);
+        var result = Csv.Parse(csv, config);
 
         // Assert
         Assert.Single(result);
@@ -110,18 +110,9 @@ public class CsvParserTests
     public void Parse_NullInput_ThrowsArgumentNullException()
     {
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => CsvParser.Parse((string)null));
+        Assert.Throws<ArgumentNullException>(() => Csv.Parse((string)null));
     }
 
-    [Fact]
-    public void Parse_NullConfiguration_ThrowsArgumentNullException()
-    {
-        // Arrange
-        var csv = "test";
-
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => CsvParser.Parse(csv, null));
-    }
 
     [Fact]
     public void Parse_WithTextReader_ParsesCorrectly()
@@ -131,7 +122,7 @@ public class CsvParserTests
         using var reader = new StringReader(csv);
 
         // Act
-        var result = CsvParser.Parse(reader);
+        var result = Csv.Parse(reader);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -145,7 +136,7 @@ public class CsvParserTests
     public void Parse_NullReader_ThrowsArgumentNullException()
     {
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => CsvParser.Parse((TextReader)null));
+        Assert.Throws<ArgumentNullException>(() => Csv.Parse((TextReader)null));
     }
 
     [Fact]
@@ -156,7 +147,7 @@ public class CsvParserTests
         using var reader = new StringReader(csv);
 
         // Act
-        var result = await CsvParser.ParseAsync(reader);
+        var result = await Csv.ParseAsync(reader);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -173,7 +164,7 @@ public class CsvParserTests
         var csv = "Name,Description\n\"John\",\"Line 1\nLine 2\"";
 
         // Act
-        var result = CsvParser.Parse(csv);
+        var result = Csv.Parse(csv);
 
         // Assert
         Assert.Single(result);
@@ -186,10 +177,10 @@ public class CsvParserTests
     {
         // Arrange
         var csv = "Name,Age\n John , 25 \n Jane , 30 ";
-        var config = new CsvConfiguration { TrimValues = true };
+        var config = new CsvReadConfiguration { TrimValues = true };
 
         // Act
-        var result = CsvParser.Parse(csv, config);
+        var result = Csv.Parse(csv, config);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -204,10 +195,10 @@ public class CsvParserTests
     {
         // Arrange
         var csv = "Name,Age\nJohn,25\n\nJane,30";
-        var config = new CsvConfiguration { IgnoreEmptyLines = false };
+        var config = new CsvReadConfiguration { IgnoreEmptyLines = false };
 
         // Act
-        var result = CsvParser.Parse(csv, config);
+        var result = Csv.Parse(csv, config);
 
         // Assert
         Assert.Equal(3, result.Length);

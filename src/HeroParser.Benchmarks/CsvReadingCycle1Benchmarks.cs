@@ -4,6 +4,7 @@ using HeroParser.Core;
 using CsvHelper;
 using CsvHelper.Configuration;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using Sylvan.Data.Csv;
 
@@ -56,7 +57,7 @@ public class CsvReadingCycle1Benchmarks
     [Benchmark]
     public string[][] HeroParser_Small()
     {
-        return HeroParser.Core.CsvParser.Parse(_smallCsv);
+        return HeroParser.Csv.Parse(_smallCsv);
     }
 
     // Sep benchmark temporarily disabled due to namespace issues
@@ -87,7 +88,7 @@ public class CsvReadingCycle1Benchmarks
     public List<string[]> CsvHelper_Small()
     {
         using var reader = new StringReader(_smallCsv);
-        using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+        using var csv = new CsvHelper.CsvReader(reader, CultureInfo.InvariantCulture);
         var results = new List<string[]>();
 
         while (csv.Read())
@@ -107,7 +108,7 @@ public class CsvReadingCycle1Benchmarks
     [Benchmark]
     public string[][] HeroParser_Medium()
     {
-        return HeroParser.Core.CsvParser.Parse(_mediumCsv);
+        return HeroParser.Csv.Parse(_mediumCsv);
     }
 
     // Sep benchmark temporarily disabled due to namespace issues
@@ -138,7 +139,7 @@ public class CsvReadingCycle1Benchmarks
     public List<string[]> CsvHelper_Medium()
     {
         using var reader = new StringReader(_mediumCsv);
-        using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+        using var csv = new CsvHelper.CsvReader(reader, CultureInfo.InvariantCulture);
         var results = new List<string[]>();
 
         while (csv.Read())
@@ -158,7 +159,7 @@ public class CsvReadingCycle1Benchmarks
     [Benchmark]
     public string[][] HeroParser_Large()
     {
-        return HeroParser.Core.CsvParser.Parse(_largeCsv);
+        return HeroParser.Csv.Parse(_largeCsv);
     }
 
     // Sep benchmark temporarily disabled due to namespace issues
@@ -189,7 +190,7 @@ public class CsvReadingCycle1Benchmarks
     public List<string[]> CsvHelper_Large()
     {
         using var reader = new StringReader(_largeCsv);
-        using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
+        using var csv = new CsvHelper.CsvReader(reader, CultureInfo.InvariantCulture);
         var results = new List<string[]>();
 
         while (csv.Read())

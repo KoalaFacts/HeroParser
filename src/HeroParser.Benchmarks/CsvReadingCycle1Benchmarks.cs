@@ -57,7 +57,7 @@ public class CsvReadingCycle1Benchmarks
     [Benchmark]
     public string[][] HeroParser_Small()
     {
-        return HeroParser.Csv.Parse(_smallCsv);
+        return HeroParser.Csv.ParseString(_smallCsv);
     }
 
     // Sep benchmark temporarily disabled due to namespace issues
@@ -108,7 +108,7 @@ public class CsvReadingCycle1Benchmarks
     [Benchmark]
     public string[][] HeroParser_Medium()
     {
-        return HeroParser.Csv.Parse(_mediumCsv);
+        return HeroParser.Csv.ParseString(_mediumCsv);
     }
 
     // Sep benchmark temporarily disabled due to namespace issues
@@ -159,7 +159,7 @@ public class CsvReadingCycle1Benchmarks
     [Benchmark]
     public string[][] HeroParser_Large()
     {
-        return HeroParser.Csv.Parse(_largeCsv);
+        return HeroParser.Csv.ParseString(_largeCsv);
     }
 
     // Sep benchmark temporarily disabled due to namespace issues

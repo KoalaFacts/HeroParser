@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using HeroParser.Core;
 
 namespace HeroParser.Configuration;

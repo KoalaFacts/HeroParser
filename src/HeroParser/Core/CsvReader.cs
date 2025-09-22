@@ -1,13 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using HeroParser.Configuration;
 using HeroParser.Exceptions;
+using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace HeroParser.Core;
 
@@ -55,9 +49,6 @@ public sealed class CsvReader : ICsvReader
         _rowNumber = 0;
         _inQuotes = false;
     }
-
-
-
 
     /// <inheritdoc/>
     public void Dispose()

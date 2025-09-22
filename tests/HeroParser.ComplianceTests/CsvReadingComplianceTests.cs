@@ -1,7 +1,5 @@
 using HeroParser.Configuration;
-using HeroParser.Core;
 using HeroParser.Exceptions;
-using System;
 
 namespace HeroParser.ComplianceTests;
 

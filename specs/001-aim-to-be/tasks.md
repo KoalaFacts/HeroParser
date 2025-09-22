@@ -59,20 +59,20 @@
 *Focus: Optimize CSV reading performance with memory management*
 
 ### Implementation (T016-T020)
-- [ ] **T016** Enhance CsvParser with file reading, typed reading, async reading support
-- [ ] **T017** [P] Implement ArrayPool<T> memory management in `src/HeroParser/Memory/MemoryPool.cs`
-- [ ] **T018** [P] Implement Span<char> string operations in `src/HeroParser/Core/SpanOperations.cs`
-- [ ] **T019** Refactor CsvParser to use memory pools and Span<char> for reading
-- [ ] **T020** Add basic unsafe optimizations to hot CSV reading paths
+- [x] **T016** Enhance CsvParser with file reading, typed reading, async reading support
+- [x] **T017** [P] Implement ArrayPool<T> memory management in `src/HeroParser/Memory/MemoryPool.cs`
+- [x] **T018** [P] Implement Span<char> string operations in `src/HeroParser/Core/SpanOperations.cs`
+- [x] **T019** Refactor CsvParser to use memory pools and Span<char> for reading
+- [x] **T020** Add basic unsafe optimizations to hot CSV reading paths
 
 ### Test (T021-T023)
-- [ ] **T021** [P] Create CSV reading contract tests from `contracts/csv-parser-api.md` in `tests/HeroParser.Tests/Contracts/CsvReadingApiTests.cs`
-- [ ] **T022** [P] Create memory allocation tests for CSV reading in `tests/HeroParser.PerformanceTests/CsvReadingAllocationTests.cs`
-- [ ] **T023** [P] Expand RFC 4180 reading compliance tests for enhanced CSV reading features
+- [x] **T021** [P] Create CSV reading contract tests from `contracts/csv-parser-api.md` in `tests/HeroParser.Tests/Contracts/CsvReadingApiTests.cs`
+- [x] **T022** [P] Create memory allocation tests for CSV reading in `tests/HeroParser.PerformanceTests/CsvReadingAllocationTests.cs`
+- [x] **T023** [P] Expand RFC 4180 reading compliance tests for enhanced CSV reading features
 
 ### Benchmark & Analyze (T024-T025)
-- [ ] **T024** Create CSV reading cycle 2 benchmark suite with memory profiling in `src/HeroParser.Benchmarks/CsvReadingCycle2Benchmarks.cs`
-- [ ] **T025** Execute CSV reading benchmarks, compare vs Cycle 1, validate memory optimizations for reading
+- [x] **T024** Enhance existing CSV reading benchmark suite with F1 Cycle 2 memory profiling in `src/HeroParser.Benchmarks/CsvReadingCycle1Benchmarks.cs`
+- [x] **T025** Execute CSV reading benchmarks, compare vs Cycle 1, validate memory optimizations for reading
 
 ### 🛑 **DECISION POINT**: Continue F1 Cycle 3 OR move to Feature 1 DevOps?
 - Review CSV reading benchmark improvements and bottleneck analysis

@@ -2,6 +2,9 @@ using HeroParser.Configuration;
 using HeroParser.Exceptions;
 using System.Runtime.CompilerServices;
 using System.Text;
+#if NET5_0_OR_GREATER
+using System.Runtime.InteropServices;
+#endif
 
 namespace HeroParser.Core;
 
@@ -18,6 +21,7 @@ public sealed class CsvReader : ICsvReader
     private bool _disposed;
     private long _rowNumber;
     private bool _inQuotes;
+
 
     /// <inheritdoc/>
     public CsvReadConfiguration Configuration { get; }
@@ -48,6 +52,7 @@ public sealed class CsvReader : ICsvReader
         _currentField = new List<char>(256);
         _rowNumber = 0;
         _inQuotes = false;
+
     }
 
     /// <inheritdoc/>
@@ -55,6 +60,7 @@ public sealed class CsvReader : ICsvReader
     {
         if (_disposed)
             return;
+
 
         if (_ownsReader)
         {
@@ -67,11 +73,35 @@ public sealed class CsvReader : ICsvReader
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void AddCurrentField()
     {
-        var fieldValue = new string(_currentField.ToArray());
+        // F1 Cycle 2: Use memory pool for field processing
+        string fieldValue;
 
-        if (Configuration.TrimValues)
+        if (_currentField.Count > 0)
         {
-            fieldValue = fieldValue.Trim();
+#if NET5_0_OR_GREATER
+            // Use CollectionsMarshal for zero-copy span access on .NET 5+
+            var fieldSpan = CollectionsMarshal.AsSpan(_currentField);
+            if (Configuration.TrimValues)
+            {
+                var (start, length) = SpanOperations.TrimWhitespace(fieldSpan);
+                fieldValue = length > 0 ? new string(fieldSpan.Slice(start, length)) : string.Empty;
+            }
+            else
+            {
+                fieldValue = new string(fieldSpan);
+            }
+#else
+            // Fallback for older frameworks
+            fieldValue = new string(_currentField.ToArray());
+            if (Configuration.TrimValues)
+            {
+                fieldValue = fieldValue.Trim();
+            }
+#endif
+        }
+        else
+        {
+            fieldValue = string.Empty;
         }
 
         _currentRecord.Add(fieldValue);

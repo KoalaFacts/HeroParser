@@ -1,11 +1,7 @@
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
-using HeroParser;
 using HeroParser.Configuration;
-using System;
 using System.Buffers;
-using System.Linq;
 using System.Text;
-using Xunit;
 
 namespace HeroParser.Tests.Core;
 

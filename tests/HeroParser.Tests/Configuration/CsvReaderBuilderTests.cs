@@ -1,7 +1,4 @@
 using HeroParser.Configuration;
-using HeroParser.Core;
-using System;
-using System.Linq;
 
 namespace HeroParser.Tests.Configuration;
 

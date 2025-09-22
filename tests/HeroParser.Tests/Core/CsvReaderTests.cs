@@ -1,9 +1,4 @@
 using HeroParser.Configuration;
-using HeroParser.Core;
-using HeroParser.Exceptions;
-using System;
-using System.IO;
-using System.Threading.Tasks;
 
 namespace HeroParser.Tests.Core;
 

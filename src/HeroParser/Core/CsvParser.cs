@@ -234,7 +234,9 @@ public static class CsvParser
 
         AddField(currentField, fields, config);
 
-        if (fields.Count > 0 || !config.IgnoreEmptyLines)
+        // Only add the final row if it has content or if we're not ignoring empty lines
+        bool hasContent = fields.Count > 1 || (fields.Count == 1 && !string.IsNullOrEmpty(fields[0]));
+        if (hasContent || !config.IgnoreEmptyLines)
         {
             if (!skipHeader)
             {

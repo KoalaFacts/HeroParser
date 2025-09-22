@@ -33,20 +33,20 @@
 *Focus: Get basic CSV reading working with minimal functionality*
 
 ### Implementation (T006-T010)
-- [ ] **T006** [P] Create CSV-specific exception classes in `src/HeroParser/Exceptions/CsvParseException.cs` and `CsvMappingException.cs`
-- [ ] **T007** Create basic CsvConfiguration in `src/HeroParser/Configuration/CsvConfiguration.cs` (delimiter, quote, escape for reading)
-- [ ] **T008** Create minimal CsvParser static class in `src/HeroParser/Core/CsvParser.cs` (basic Parse(string) method for reading only)
-- [ ] **T009** Create CsvParserBuilder basic fluent API in `src/HeroParser/Configuration/CsvParserBuilder.cs` (reading configuration only)
-- [ ] **T010** Create ICsvParser interface in `src/HeroParser/Core/ICsvParser.cs` (reading methods only)
+- [x] **T006** [P] Create CSV-specific exception classes in `src/HeroParser/Exceptions/CsvParseException.cs` and `CsvMappingException.cs`
+- [x] **T007** Create basic CsvConfiguration in `src/HeroParser/Configuration/CsvConfiguration.cs` (delimiter, quote, escape for reading)
+- [x] **T008** Create minimal CsvParser static class in `src/HeroParser/Core/CsvParser.cs` (basic Parse(string) method for reading only)
+- [x] **T009** Create CsvParserBuilder basic fluent API in `src/HeroParser/Configuration/CsvParserBuilder.cs` (reading configuration only)
+- [x] **T010** Create ICsvParser interface in `src/HeroParser/Core/ICsvParser.cs` (reading methods only)
 
 ### Test (T011-T013)
-- [ ] **T011** [P] Create basic CSV reading tests in `tests/HeroParser.Tests/Core/CsvParserTests.cs`
-- [ ] **T012** [P] Create CsvParserBuilder tests in `tests/HeroParser.Tests/Configuration/CsvParserBuilderTests.cs`
-- [ ] **T013** [P] Create basic RFC 4180 reading compliance tests in `tests/HeroParser.ComplianceTests/CsvReadingComplianceTests.cs`
+- [x] **T011** [P] Create basic CSV reading tests in `tests/HeroParser.Tests/Core/CsvParserTests.cs`
+- [x] **T012** [P] Create CsvParserBuilder tests in `tests/HeroParser.Tests/Configuration/CsvParserBuilderTests.cs`
+- [x] **T013** [P] Create basic RFC 4180 reading compliance tests in `tests/HeroParser.ComplianceTests/CsvReadingComplianceTests.cs`
 
 ### Benchmark & Analyze (T014-T015)
-- [ ] **T014** Create CSV reading baseline benchmark vs Sep, Sylvan.Data.Csv, CsvHelper in `src/HeroParser.Benchmarks/CsvReadingCycle1Benchmarks.cs`
-- [ ] **T015** Execute CSV reading benchmarks, document baseline performance, identify reading bottlenecks
+- [x] **T014** Create CSV reading baseline benchmark vs Sep, Sylvan.Data.Csv, CsvHelper in `src/HeroParser.Benchmarks/CsvReadingCycle1Benchmarks.cs`
+- [x] **T015** Execute CSV reading benchmarks, document baseline performance, identify reading bottlenecks
 
 ### 🛑 **DECISION POINT**: Continue F1 Cycle 2 OR move to Feature 1 DevOps?
 - Review CSV reading benchmark results and determine next focus

@@ -1,32 +1,46 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.0.0 → 2.1.1
-Rationale: PATCH - Added experimental development protocol for innovation management
+Version change: 2.1.1 → 2.2.0
+Rationale: MINOR - Added critical Continuous Build & Test Verification principle as new Principle I
 Modified principles:
-- Code Quality Standards → Performance-First Architecture
-- Testing Discipline → Benchmark-Driven Development
-- RFC Compliance → RFC 4180 Strict Compliance
-- User Experience Consistency → API Excellence & Consistency
-- Zero-Allocation Awareness → Zero-Allocation Mandate
-- Performance Requirements → World-Class Performance Targets
+- All existing principles renumbered (I→II, II→III, III→IV, IV→V, V→VI, VI→VII)
 Added sections:
-- Technical Decision Framework
-- Implementation Prioritization
+- I. Continuous Build & Test Verification (CRITICAL) - mandates build & test verification on each minor phase
 Removed sections: None
 Templates requiring updates:
-- .specify/templates/plan-template.md ✅ updated
-- .specify/templates/spec-template.md ✅ updated
-- .specify/templates/tasks-template.md ✅ updated
+- .specify/templates/plan-template.md ⚠ pending (add verification checkpoints)
+- .specify/templates/spec-template.md ⚠ pending (add verification requirements)
+- .specify/templates/tasks-template.md ⚠ pending (add verification as task requirement)
 Follow-up TODOs:
 - TODO(RATIFICATION_DATE): Set initial ratification date when adopted
+- Update all templates to include verification checkpoints
 -->
 
 # HeroParser Constitution
 
 ## Core Principles
 
-### I. Performance-First Architecture
+### I. Continuous Build & Test Verification (CRITICAL)
+
+**MUST ALWAYS verify (build & test) on each minor phase before moving to the next phase.**
+
+Every code change MUST pass full verification before proceeding:
+- **Build Verification**: MUST compile successfully across ALL target frameworks (netstandard2.0, netstandard2.1, net6.0, net7.0, net8.0, net9.0, net10.0)
+- **Test Verification**: ALL existing tests MUST continue to pass after any change
+- **Phase Gate Enforcement**: No progression to next implementation phase without clean build + passing tests
+- **Zero Tolerance**: Any compilation error or test regression immediately blocks all progress
+
+**Mandatory Verification Sequence:**
+```bash
+dotnet clean
+dotnet build --verbosity normal  # MUST show 0 errors, 0 warnings
+dotnet test --verbosity normal   # ALL existing tests must pass
+```
+
+**Rationale**: The accumulation of 453+ compilation errors demonstrated the critical need for continuous verification. This principle prevents technical debt accumulation and ensures each increment maintains system integrity.
+
+### II. Performance-First Architecture
 
 Performance is the PRIMARY design constraint. Every architectural decision MUST
 prioritize speed over convenience. Code MUST use unsafe contexts, SIMD
@@ -36,7 +50,7 @@ interface calls. Method inlining MUST be explicitly controlled via AggressiveInl
 Cyclomatic complexity limits are WAIVED for performance-critical sections with
 documented benchmarks showing >10% improvement.
 
-### II. Benchmark-Driven Development
+### III. Benchmark-Driven Development
 
 Every feature MUST begin with BenchmarkDotNet performance baselines comparing
 against Sep (current leader at 21 GB/s), Sylvan.Data.Csv, CsvHelper, and
@@ -46,7 +60,7 @@ MUST NOT be merged. Microbenchmarks MUST cover: small files (1KB), medium files
 workstation and server GC. Memory diagnostics MUST track allocations, GC
 collections, and working set. Performance regressions >2% require immediate reversion.
 
-### III. RFC 4180 Strict Compliance
+### IV. RFC 4180 Strict Compliance
 
 CSV parsing MUST fully comply with RFC 4180 while maintaining performance
 leadership. Deviations are permitted ONLY for documented real-world compatibility
@@ -55,7 +69,7 @@ MUST support COBOL copybook definitions, IBM mainframe formats, and NACHA
 specifications. All format variations MUST be documented with example files
 and compliance test suites.
 
-### IV. API Excellence & Consistency
+### V. API Excellence & Consistency
 
 Public APIs MUST be intuitive for both simple and advanced use cases. Provide
 both synchronous and asynchronous APIs with identical semantics. Support
@@ -63,7 +77,7 @@ Span<T>, Memory<T>, and PipeReader/Writer for zero-copy scenarios. MUST offer
 fluent configuration builders, attribute-based mapping, and manual field
 accessors. Breaking changes require major version bumps with migration tooling.
 
-### V. Zero-Allocation Mandate
+### VI. Zero-Allocation Mandate
 
 Parsing and writing MUST achieve zero heap allocations for common scenarios.
 Stack allocation, ArrayPool<T>, and custom memory pools are REQUIRED. String
@@ -72,7 +86,7 @@ mapping MUST support source generators for allocation-free deserialization.
 The 99th percentile parsing operation MUST show 0 Gen0/Gen1/Gen2 collections
 in benchmarks.
 
-### VI. World-Class Performance Targets
+### VII. World-Class Performance Targets
 
 Performance targets are NON-NEGOTIABLE minimums to exceed current leader (Sep):
 - Parse throughput: >25 GB/s single-threaded (vs Sep's 21 GB/s), >50 GB/s multi-threaded
@@ -162,4 +176,4 @@ Performance-critical decisions follow this hierarchy:
 3. Maintainer vote (2/3 majority)
 4. Project lead veto (performance regressions only)
 
-**Version**: 2.1.1 | **Ratified**: TODO(RATIFICATION_DATE) | **Last Amended**: 2025-09-22
+**Version**: 2.2.0 | **Ratified**: TODO(RATIFICATION_DATE) | **Last Amended**: 2025-01-25

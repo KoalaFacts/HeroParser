@@ -47,7 +47,41 @@
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+**Performance-First Architecture**:
+- [ ] Performance prioritized over convenience
+- [ ] SIMD/unsafe contexts identified for hot paths
+- [ ] Virtual dispatch and boxing avoided
+- [ ] Method inlining strategy defined
+
+**Benchmark-Driven Development**:
+- [ ] BenchmarkDotNet baselines established
+- [ ] Comparison against Sep (21 GB/s), Sylvan.Data.Csv, CsvHelper planned
+- [ ] Multi-threading with workstation/server GC configured
+- [ ] Performance regression threshold set (2%)
+
+**RFC 4180 Strict Compliance**:
+- [ ] RFC 4180 compliance verified
+- [ ] Fixed-length format support planned
+- [ ] Format variations documented
+- [ ] Compliance test suite defined
+
+**API Excellence & Consistency**:
+- [ ] Sync/async APIs designed
+- [ ] Span<T>/Memory<T> support planned
+- [ ] Fluent configuration approach defined
+- [ ] Breaking change strategy documented
+
+**Zero-Allocation Mandate**:
+- [ ] ArrayPool<T> usage planned
+- [ ] Span<char> for string operations
+- [ ] Source generators considered
+- [ ] GC collection targets set (0 for 99th percentile)
+
+**World-Class Performance Targets**:
+- [ ] Parse throughput target: >25 GB/s single-threaded (exceed Sep's 21 GB/s)
+- [ ] Write throughput target: >20 GB/s single-threaded
+- [ ] Multi-threaded: >50 GB/s parse, >40 GB/s write
+- [ ] Must outperform Sep, Sylvan.Data.Csv, CsvHelper by >20%
 
 ## Project Structure
 
@@ -209,4 +243,4 @@ ios/ or android/
 - [ ] Complexity deviations documented
 
 ---
-*Based on Constitution v2.1.1 - See `/memory/constitution.md`*
+*Based on Constitution v2.1.0 - See `.specify/memory/constitution.md`*

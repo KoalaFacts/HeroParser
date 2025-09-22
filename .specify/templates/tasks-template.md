@@ -47,55 +47,64 @@
 - [ ] T002 Initialize [language] project with [framework] dependencies
 - [ ] T003 [P] Configure linting and formatting tools
 
-## Phase 3.2: Tests First (TDD) ⚠️ MUST COMPLETE BEFORE 3.3
-**CRITICAL: These tests MUST be written and MUST FAIL before ANY implementation**
-- [ ] T004 [P] Contract test POST /api/users in tests/contract/test_users_post.py
-- [ ] T005 [P] Contract test GET /api/users/{id} in tests/contract/test_users_get.py
-- [ ] T006 [P] Integration test user registration in tests/integration/test_registration.py
-- [ ] T007 [P] Integration test auth flow in tests/integration/test_auth.py
+## Phase 3.2: Benchmarks & Tests First ⚠️ MUST COMPLETE BEFORE 3.3
+**CRITICAL: Benchmarks MUST show >20% performance advantage over competitors**
+**Constitution Requirements: Zero allocations for 99th percentile, RFC 4180 compliance**
+- [ ] T004 [P] BenchmarkDotNet baseline vs Sep (21 GB/s), Sylvan.Data.Csv, CsvHelper
+- [ ] T005 [P] Memory allocation profiling setup
+- [ ] T006 [P] RFC 4180 compliance test suite
+- [ ] T007 [P] Fixed-length format test suite (COBOL, NACHA)
+- [ ] T008 [P] Performance tests: 1KB, 1MB, 1GB, 100GB files
+- [ ] T009 [P] Zero-allocation verification tests
 
-## Phase 3.3: Core Implementation (ONLY after tests are failing)
-- [ ] T008 [P] User model in src/models/user.py
-- [ ] T009 [P] UserService CRUD in src/services/user_service.py
-- [ ] T010 [P] CLI --create-user in src/cli/user_commands.py
-- [ ] T011 POST /api/users endpoint
-- [ ] T012 GET /api/users/{id} endpoint
-- [ ] T013 Input validation
-- [ ] T014 Error handling and logging
+## Phase 3.3: Core Implementation (ONLY after benchmarks established)
+**Constitution Requirements: SIMD intrinsics, unsafe contexts, zero allocations**
+- [ ] T010 [P] Core parser with unsafe/SIMD optimizations
+- [ ] T011 [P] ArrayPool<T> and memory pool implementation
+- [ ] T012 [P] Span<char> based string operations
+- [ ] T013 CSV reader with zero-allocation parsing
+- [ ] T014 CSV writer with buffer pooling
+- [ ] T015 Fixed-length parser implementation
+- [ ] T016 Source generator for allocation-free mapping
 
-## Phase 3.4: Integration
-- [ ] T015 Connect UserService to DB
-- [ ] T016 Auth middleware
-- [ ] T017 Request/response logging
-- [ ] T018 CORS and security headers
+## Phase 3.4: API & Integration
+- [ ] T017 Synchronous and asynchronous API facades
+- [ ] T018 Fluent configuration builder
+- [ ] T019 Attribute-based mapping support
+- [ ] T020 PipeReader/Writer integration
 
-## Phase 3.5: Polish
-- [ ] T019 [P] Unit tests for validation in tests/unit/test_validation.py
-- [ ] T020 Performance tests (<200ms)
-- [ ] T021 [P] Update docs/api.md
-- [ ] T022 Remove duplication
-- [ ] T023 Run manual-testing.md
+## Phase 3.5: Performance Validation & Polish
+**Constitution Requirements: Must outperform competitors by >20%**
+- [ ] T021 [P] Comprehensive benchmark suite execution
+- [ ] T022 Performance regression detection setup
+- [ ] T023 Memory allocation validation (zero for 99th percentile)
+- [ ] T024 [P] Platform-specific SIMD optimization validation
+- [ ] T025 [P] Update docs with RFC compliance matrix
+- [ ] T026 Competitive benchmark comparison report
 
 ## Dependencies
-- Tests (T004-T007) before implementation (T008-T014)
-- T008 blocks T009, T015
-- T016 blocks T018
-- Implementation before polish (T019-T023)
+- Benchmarks (T004-T009) before implementation (T010-T016)
+- T010 blocks T013, T014, T015
+- T016 blocks T019
+- Core implementation before API layer (T017-T020)
+- Implementation before validation (T021-T026)
 
 ## Parallel Example
 ```
-# Launch T004-T007 together:
-Task: "Contract test POST /api/users in tests/contract/test_users_post.py"
-Task: "Contract test GET /api/users/{id} in tests/contract/test_users_get.py"
-Task: "Integration test registration in tests/integration/test_registration.py"
-Task: "Integration test auth in tests/integration/test_auth.py"
+# Launch T004-T009 together:
+Task: "BenchmarkDotNet baseline vs Sep (21 GB/s), Sylvan.Data.Csv, CsvHelper"
+Task: "Memory allocation profiling setup"
+Task: "RFC 4180 compliance test suite"
+Task: "Fixed-length format test suite (COBOL, NACHA)"
+Task: "Performance tests: 1KB, 1MB, 1GB, 100GB files"
+Task: "Zero-allocation verification tests"
 ```
 
 ## Notes
 - [P] tasks = different files, no dependencies
-- Verify tests fail before implementing
-- Commit after each task
-- Avoid: vague tasks, same file conflicts
+- Establish benchmarks before implementing
+- Performance regression >2% blocks merge
+- Commit with benchmark results
 
 ## Task Generation Rules
 *Applied during main() execution*

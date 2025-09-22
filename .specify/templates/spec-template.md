@@ -69,10 +69,27 @@ When creating this spec from a user prompt:
 
 ### Functional Requirements
 - **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]  
+- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
+
+### Performance Requirements *(per constitution)*
+- **PR-001**: Parse throughput MUST exceed 25 GB/s single-threaded (vs Sep's 21 GB/s)
+- **PR-002**: Multi-threaded throughput MUST exceed 50 GB/s parse, 40 GB/s write
+- **PR-003**: Memory overhead MUST remain under 1KB per 1MB parsed
+- **PR-004**: Parsing MUST achieve zero heap allocations for 99th percentile operations
+- **PR-005**: Must outperform Sep, Sylvan.Data.Csv, CsvHelper by >20% in benchmarks
+- **PR-006**: Startup time MUST be <1ms for first parse operation
+- **PR-007**: Must handle 100GB+ files without performance degradation
+- **PR-008**: Multi-threaded advantage: >50x faster than CsvHelper (vs Sep's 35x)
+
+### Compliance Requirements *(mandatory for CSV/fixed-length)*
+- **CR-001**: Implementation MUST comply with RFC 4180 for CSV parsing
+- **CR-002**: Fixed-length MUST support COBOL copybook definitions
+- **CR-003**: MUST support IBM mainframe and NACHA specifications
+- **CR-004**: Excel CSV quirks MUST be handled via opt-in flags
+- **CR-005**: All format deviations MUST be explicitly documented
 
 *Example of marking unclear requirements:*
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]

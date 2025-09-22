@@ -146,34 +146,6 @@ public static class Csv
         return result.ToArray();
     }
 
-    // Reader creation methods for advanced scenarios
-
-    /// <summary>
-    /// Creates a CSV reader for streaming/iterative processing.
-    /// Use this when you need to process large files without loading all data into memory.
-    /// </summary>
-    /// <param name="configuration">The configuration for the CSV reader.</param>
-    /// <returns>A new CSV reader instance that must be disposed after use.</returns>
-    /// <exception cref="ArgumentException">Thrown when configuration is invalid or has no data source.</exception>
-    /// <example>
-    /// <code>
-    /// var config = CsvReadConfiguration.FromFile(@"C:\large-file.csv");
-    /// using var reader = Csv.CreateReader(config);
-    ///
-    /// while (!reader.EndOfCsv)
-    /// {
-    ///     var record = reader.ReadRecord();
-    ///     if (record != null)
-    ///         ProcessRecord(record);
-    /// }
-    /// </code>
-    /// </example>
-    public static ICsvReader CreateReader(CsvReadConfiguration configuration)
-    {
-        configuration.Validate();
-        return new CsvReader(configuration);
-    }
-
     /// <summary>
     /// Creates a fluent builder for configuring CSV reading options.
     /// </summary>

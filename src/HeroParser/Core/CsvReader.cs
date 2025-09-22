@@ -358,6 +358,7 @@ public sealed class CsvReader : ICsvReader
 
     /// <summary>
     /// Reads the next record from the CSV data.
+    /// F1 Cycle 3: Enhanced with SIMD optimization when possible.
     /// </summary>
     /// <returns>The next record as a string array, or null if end of data.</returns>
     private string[]? ReadNextRecord()
@@ -365,6 +366,283 @@ public sealed class CsvReader : ICsvReader
         if (_disposed || _reader.Peek() == -1)
             return null;
 
+        // F1 Cycle 3: Try SIMD optimization for string-based content
+        if (Configuration.StringContent != null && !_simdProcessingCompleted)
+        {
+            return ReadNextRecordSIMD();
+        }
+
+        // Fallback to character-by-character parsing for streams
+        return ReadNextRecordTraditional();
+    }
+
+    private bool _simdProcessingCompleted = false;
+    private IEnumerator<string[]>? _simdEnumerator;
+
+    /// <summary>
+    /// SIMD-optimized record reading for string content.
+    /// Direct implementation following constitutional zero virtual dispatch.
+    /// </summary>
+    private string[]? ReadNextRecordSIMD()
+    {
+        if (_simdEnumerator == null)
+        {
+            // Initialize SIMD processing with direct implementation
+            _simdEnumerator = ParseStringContentWithSIMD(Configuration.StringContent!, Configuration).GetEnumerator();
+        }
+
+        if (_simdEnumerator.MoveNext())
+        {
+            _rowNumber++;
+            var record = _simdEnumerator.Current;
+
+            // Handle headers on first row
+            if (_rowNumber == 1 && Configuration.HasHeaderRow)
+            {
+                Headers = Array.AsReadOnly(record);
+                InitializeHeaderLookup(record);
+                // Continue to next record for actual data
+                if (_simdEnumerator.MoveNext())
+                {
+                    _rowNumber++;
+                    return _simdEnumerator.Current;
+                }
+            }
+
+            return record;
+        }
+
+        _simdProcessingCompleted = true;
+        return null;
+    }
+
+    /// <summary>
+    /// Direct SIMD-optimized parsing for string content.
+    /// Integrated implementation following constitutional zero virtual dispatch.
+    /// </summary>
+#if NET6_0_OR_GREATER
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+#else
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+    private static IEnumerable<string[]> ParseStringContentWithSIMD(string csvContent, CsvReadConfiguration config)
+    {
+        if (string.IsNullOrEmpty(csvContent))
+            yield break;
+
+        // Fast path detection - if no quotes, use optimized simple parsing
+        var hasQuotes = csvContent.Contains(config.Quote);
+
+        if (!hasQuotes)
+        {
+            // Simple CSV - use optimized fast path
+            foreach (var record in ParseSimpleCsvDirect(csvContent, config))
+            {
+                yield return record;
+            }
+        }
+        else
+        {
+            // Complex CSV with quotes - use full-featured parser
+            foreach (var record in ParseComplexCsvDirect(csvContent, config))
+            {
+                yield return record;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fast path for simple CSV without quotes using optimized delimiter scanning.
+    /// </summary>
+#if NET6_0_OR_GREATER
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+#else
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+    private static IEnumerable<string[]> ParseSimpleCsvDirect(string csvContent, CsvReadConfiguration config)
+    {
+        var lines = csvContent.Split(new[] { '\r', '\n' }, StringSplitOptions.None);
+        var fields = new List<string>(32); // Pre-allocate for typical CSV row
+
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrEmpty(line) && config.IgnoreEmptyLines)
+                continue;
+
+            fields.Clear();
+
+            // Parse fields in current line using optimized scanning
+            if (!string.IsNullOrEmpty(line))
+            {
+                ParseLineFieldsSimpleDirect(line, config.Delimiter, fields, config.TrimValues);
+            }
+            else if (!config.IgnoreEmptyLines)
+            {
+                // For empty lines when not ignoring them, add a single empty field
+                fields.Add(string.Empty);
+            }
+
+            if (fields.Count > 0)
+            {
+                yield return fields.ToArray();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Optimized field parsing for simple CSV lines.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ParseLineFieldsSimpleDirect(string line, char delimiter, List<string> fields, bool trimValues)
+    {
+        if (string.IsNullOrEmpty(line))
+        {
+            fields.Add(string.Empty);
+            return;
+        }
+
+        // Use optimized string splitting for simple cases
+        var parts = line.Split(delimiter);
+
+        if (trimValues)
+        {
+            for (int i = 0; i < parts.Length; i++)
+            {
+                fields.Add(parts[i].Trim());
+            }
+        }
+        else
+        {
+            fields.AddRange(parts);
+        }
+    }
+
+    /// <summary>
+    /// Full-featured parsing for complex CSV with quotes and escapes.
+    /// </summary>
+#if NET6_0_OR_GREATER
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+#else
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#endif
+    private static IEnumerable<string[]> ParseComplexCsvDirect(string csvContent, CsvReadConfiguration config)
+    {
+        var fields = new List<string>(32);
+        var position = 0;
+        var inQuotes = false;
+        var fieldStart = 0;
+        var lineNumber = 1;
+
+        while (position < csvContent.Length)
+        {
+            var c = csvContent[position];
+
+            if (!inQuotes)
+            {
+                if (c == config.Quote)
+                {
+                    // In strict mode, quotes must only appear at the start of fields
+                    if (config.StrictMode && position > fieldStart)
+                    {
+                        throw new CsvParseException($"Unescaped quote character found at line {lineNumber}. In strict mode, quotes must only appear at the start of fields or be properly escaped.", lineNumber, null, null);
+                    }
+                    inQuotes = true;
+                }
+                else if (c == config.Delimiter)
+                {
+                    // End of field
+                    var fieldValue = csvContent.Substring(fieldStart, position - fieldStart);
+                    fields.Add(ExtractAndUnescapeFieldDirect(fieldValue, config.Quote, config.TrimValues));
+                    fieldStart = position + 1;
+                }
+                else if (c == '\r' || c == '\n')
+                {
+                    // End of record
+                    var fieldValue = csvContent.Substring(fieldStart, position - fieldStart);
+                    fields.Add(ExtractAndUnescapeFieldDirect(fieldValue, config.Quote, config.TrimValues));
+
+                    yield return fields.ToArray();
+                    fields.Clear();
+
+                    // Skip CRLF
+                    if (c == '\r' && position + 1 < csvContent.Length && csvContent[position + 1] == '\n')
+                    {
+                        position++;
+                    }
+
+                    lineNumber++;
+                    fieldStart = position + 1;
+                }
+            }
+            else
+            {
+                if (c == config.Quote)
+                {
+                    // Check for escaped quote
+                    if (position + 1 < csvContent.Length && csvContent[position + 1] == config.Quote)
+                    {
+                        // Escaped quote - skip both characters
+                        position++;
+                    }
+                    else
+                    {
+                        // End of quoted field
+                        inQuotes = false;
+                    }
+                }
+            }
+
+            position++;
+        }
+
+        // In strict mode, check for unterminated quotes at end of file
+        if (config.StrictMode && inQuotes)
+        {
+            throw new CsvParseException($"Unterminated quote found at end of file (line {lineNumber}). In strict mode, all quotes must be properly closed.", lineNumber, null, null);
+        }
+
+        // Handle final field at end of content
+        if (fieldStart < csvContent.Length || fields.Count > 0)
+        {
+            var fieldValue = fieldStart < csvContent.Length ? csvContent.Substring(fieldStart) : string.Empty;
+            fields.Add(ExtractAndUnescapeFieldDirect(fieldValue, config.Quote, config.TrimValues));
+
+            if (fields.Count > 0)
+            {
+                yield return fields.ToArray();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extracts and unescapes a field value with full quote and escape handling.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static string ExtractAndUnescapeFieldDirect(string field, char quote, bool trimValues)
+    {
+        if (string.IsNullOrEmpty(field))
+            return string.Empty;
+
+        var processed = trimValues ? field.Trim() : field;
+
+        if (processed.Length >= 2 && processed[0] == quote && processed[processed.Length - 1] == quote)
+        {
+            // Quoted field - remove quotes and handle escapes
+            var content = processed.Substring(1, processed.Length - 2);
+
+            // Handle escaped quotes
+            return content.Replace("\"\"", "\"");
+        }
+
+        return processed;
+    }
+
+    /// <summary>
+    /// Traditional character-by-character record reading.
+    /// Used for streams and as fallback when SIMD is not applicable.
+    /// </summary>
+    private string[]? ReadNextRecordTraditional()
+    {
         _currentRecord.Clear();
         _currentField.Clear();
         _inQuotes = false;

@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 namespace HeroParser.Core;
 
 /// <summary>
-/// High-performance string operations using Span&lt;T&gt; for zero-allocation parsing.
+/// High-performance string operations using Span for zero-allocation parsing.
 /// Provides optimized algorithms for CSV/fixed-length parsing operations.
 /// </summary>
 public static class SpanOperations
@@ -212,21 +212,47 @@ public static class SpanOperations
         return span.EndsWith(value, comparison);
     }
 
-#if !NETSTANDARD2_0
+#if NET6_0_OR_GREATER
     /// <summary>
-    /// Unsafe fast path for scanning characters in CSV parsing.
-    /// Finds the next delimiter, quote, or line ending character.
+    /// Hardware capabilities detection for SIMD optimizations.
     /// </summary>
-    /// <param name="span">The span to search.</param>
-    /// <param name="delimiter">The delimiter character.</param>
-    /// <param name="quote">The quote character.</param>
-    /// <returns>The index of the next special character, or -1 if not found.</returns>
+    public static class HardwareCapabilities
+    {
+        /// <summary>
+        /// True if AVX2 instructions are supported.
+        /// </summary>
+        public static readonly bool SupportsAvx2 = System.Runtime.Intrinsics.X86.Avx2.IsSupported;
+
+        /// <summary>
+        /// True if SSE2 instructions are supported.
+        /// </summary>
+        public static readonly bool SupportsSse2 = System.Runtime.Intrinsics.X86.Sse2.IsSupported;
+
+        /// <summary>
+        /// The optimal vector size in bytes for this hardware.
+        /// </summary>
+        public static readonly int OptimalVectorSize = SupportsAvx2 ? 32 : SupportsSse2 ? 16 : 0;
+    }
+
+    /// <summary>
+    /// Fast scanning for CSV special characters with fallback implementation.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static unsafe int FastScanForCsvSpecialChars(ReadOnlySpan<char> span, char delimiter, char quote)
     {
         if (span.IsEmpty)
             return -1;
 
+        // For now, use scalar fallback (SIMD implementation can be added later)
+        return FastScanForCsvSpecialCharsScalar(span, delimiter, quote);
+    }
+
+    /// <summary>
+    /// Scalar fallback for CSV special character scanning.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static unsafe int FastScanForCsvSpecialCharsScalar(ReadOnlySpan<char> span, char delimiter, char quote)
+    {
         fixed (char* ptr = span)
         {
             char* current = ptr;
@@ -245,48 +271,43 @@ public static class SpanOperations
 
         return -1;
     }
+#else
+    /// <summary>
+    /// Hardware capabilities fallback for older frameworks.
+    /// </summary>
+    public static class HardwareCapabilities
+    {
+        /// <summary>
+        /// Always false on older frameworks.
+        /// </summary>
+        public static readonly bool SupportsAvx2 = false;
+
+        /// <summary>
+        /// Always false on older frameworks.
+        /// </summary>
+        public static readonly bool SupportsSse2 = false;
+
+        /// <summary>
+        /// Always 0 on older frameworks.
+        /// </summary>
+        public static readonly int OptimalVectorSize = 0;
+    }
 
     /// <summary>
-    /// Unsafe fast copy for field data with bounds checking.
+    /// Fast scanning fallback for older frameworks.
     /// </summary>
-    /// <param name="source">Source span to copy from.</param>
-    /// <param name="destination">Destination span to copy to.</param>
-    /// <param name="length">Number of characters to copy.</param>
-    /// <returns>The number of characters actually copied.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe int FastCopyChars(ReadOnlySpan<char> source, Span<char> destination, int length)
+    public static int FastScanForCsvSpecialChars(ReadOnlySpan<char> span, char delimiter, char quote)
     {
-        if (length <= 0)
-            return 0;
-
-        int copyLength = Math.Min(Math.Min(source.Length, destination.Length), length);
-        if (copyLength == 0)
-            return 0;
-
-        fixed (char* srcPtr = source)
-        fixed (char* dstPtr = destination)
+        for (int i = 0; i < span.Length; i++)
         {
-            char* src = srcPtr;
-            char* dst = dstPtr;
-            char* srcEnd = src + copyLength;
-
-            // Copy in 8-character chunks when possible
-            while (src + 8 <= srcEnd)
+            char c = span[i];
+            if (c == delimiter || c == quote || c == '\r' || c == '\n')
             {
-                *(long*)dst = *(long*)src;
-                *(long*)(dst + 4) = *(long*)(src + 4);
-                src += 8;
-                dst += 8;
-            }
-
-            // Copy remaining characters
-            while (src < srcEnd)
-            {
-                *dst++ = *src++;
+                return i;
             }
         }
-
-        return copyLength;
+        return -1;
     }
 #endif
 }

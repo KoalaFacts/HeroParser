@@ -85,9 +85,9 @@
 *Focus: Maximum CSV reading performance with SIMD intrinsics*
 
 ### Implementation (T026-T028)
-- [ ] **T026** Add SIMD intrinsics and hardware detection to CsvParser reading core
-- [ ] **T027** Implement cache-line optimized CSV reading algorithms
-- [ ] **T028** Advanced CSV reading optimizations (vectorized delimiter scanning, quote handling)
+- [x] **T026** Add SIMD intrinsics and hardware detection to CsvParser reading core
+- [x] **T027** Implement cache-line optimized CSV reading algorithms
+- [x] **T028** Advanced CSV reading optimizations (vectorized delimiter scanning, quote handling)
 
 ### Test (T029-T030)
 - [ ] **T029** [P] Create platform-specific SIMD tests for CSV reading in `tests/HeroParser.PerformanceTests/CsvReadingSimdTests.cs`

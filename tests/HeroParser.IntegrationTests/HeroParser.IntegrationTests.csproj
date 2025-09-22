@@ -6,8 +6,9 @@
     <Nullable>enable</Nullable>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
+	<NoWarn>CS1591</NoWarn>
 
-    <!-- To enable Microsoft.Testing.Platform, uncomment the following line. -->
+	<!-- To enable Microsoft.Testing.Platform, uncomment the following line. -->
     <!-- <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner> -->
     <!-- Note: to use Microsoft.Testing.Platform correctly with dotnet test: -->
     <!-- 1. You must add dotnet.config specifying the test runner to be Microsoft.Testing.Platform -->

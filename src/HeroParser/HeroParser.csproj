@@ -41,6 +41,7 @@
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
 		</PackageReference>
+		<PackageReference Include="System.IO.Pipelines" Version="8.0.0" />
 	</ItemGroup>
 
 </Project>

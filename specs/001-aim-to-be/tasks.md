@@ -108,17 +108,17 @@
 *Focus: Advanced CSV reading features like source generators, streaming*
 
 ### Implementation (T033-T035)
-- [ ] **T033** [P] Implement source generator for allocation-free CSV reading mapping in `src/HeroParser/SourceGenerators/CsvReadingMappingGenerator.cs`
-- [ ] **T034** [P] Implement PipeReader integration for CSV reading in `src/HeroParser/Streaming/CsvPipeReader.cs`
-- [ ] **T035** Add advanced async patterns and streaming optimizations for CSV reading
+- [x] **T033** [P] Implement source generator for allocation-free CSV reading mapping in `src/HeroParser/SourceGenerators/CsvMappingGenerator.cs`
+- [x] **T034** [P] Implement PipeReader integration for CSV reading in `src/HeroParser/Streaming/CsvPipeReader.cs`
+- [x] **T035** Add advanced async patterns and streaming optimizations for CSV reading
 
 ### Test (T036-T037)
-- [ ] **T036** [P] Create CSV reading source generator tests in `tests/HeroParser.Tests/SourceGenerators/CsvReadingMappingGeneratorTests.cs`
-- [ ] **T037** [P] Create CSV reading streaming integration tests in `tests/HeroParser.IntegrationTests/CsvReadingStreamingTests.cs`
+- [x] **T036** [P] Create CSV reading source generator tests in `tests/HeroParser.Tests/SourceGenerators/CsvMappingGeneratorTests.cs`
+- [x] **T037** [P] Create CSV reading streaming integration tests in `tests/HeroParser.IntegrationTests/CsvStreamingTests.cs`
 
 ### Benchmark & Analyze (T038-T039)
-- [ ] **T038** Create final CSV reading feature benchmark in `src/HeroParser.Benchmarks/CsvReadingFinalBenchmarks.cs`
-- [ ] **T039** Execute comprehensive CSV reading performance validation across all features
+- [x] **T038** Create final CSV reading feature benchmark in `src/HeroParser.Benchmarks/CsvFinalBenchmarks.cs`
+- [x] **T039** Execute comprehensive CSV reading performance validation across all features
 
 ### 🛑 **DECISION POINT**: Continue CSV Reading OR move to Feature 1 DevOps?
 - Review CSV reading feature completeness and performance

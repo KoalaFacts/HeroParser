@@ -13,7 +13,7 @@ namespace HeroParser.Configuration;
 public sealed class CsvReaderBuilder(CsvReadConfiguration configuration)
 {
     private string? _csvContent;
-    private System.IO.TextReader? _reader;
+    private TextReader? _reader;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CsvReaderBuilder"/> class with default configuration.
@@ -31,21 +31,21 @@ public sealed class CsvReaderBuilder(CsvReadConfiguration configuration)
     /// <summary>
     /// Creates a new builder instance for the specified CSV content.
     /// </summary>
-    /// <param name="csv">The CSV content to parse.</param>
+    /// <param name="content">The CSV content to parse.</param>
     /// <returns>A new <see cref="CsvReaderBuilder"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown when csv is null.</exception>
-    public static CsvReaderBuilder ForContent(string csv)
+    public static CsvReaderBuilder ForContent(string content)
     {
 #if NET6_0_OR_GREATER
-        ArgumentNullException.ThrowIfNull(csv);
+        ArgumentNullException.ThrowIfNull(content);
 #else
-        if (csv == null)
-            throw new ArgumentNullException(nameof(csv));
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
 #endif
 
         return new CsvReaderBuilder
         {
-            _csvContent = csv
+            _csvContent = content
         };
     }
 
@@ -55,7 +55,7 @@ public sealed class CsvReaderBuilder(CsvReadConfiguration configuration)
     /// <param name="reader">The TextReader to read CSV content from.</param>
     /// <returns>A new <see cref="CsvReaderBuilder"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown when reader is null.</exception>
-    public static CsvReaderBuilder ForReader(System.IO.TextReader reader)
+    public static CsvReaderBuilder ForReader(TextReader reader)
     {
 #if NET6_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(reader);
@@ -64,8 +64,10 @@ public sealed class CsvReaderBuilder(CsvReadConfiguration configuration)
             throw new ArgumentNullException(nameof(reader));
 #endif
 
-        var builder = new CsvReaderBuilder();
-        builder._reader = reader;
+        var builder = new CsvReaderBuilder
+        {
+            _reader = reader
+        };
         return builder;
     }
 
@@ -235,7 +237,7 @@ public sealed class CsvReaderBuilder(CsvReadConfiguration configuration)
     /// <param name="reader">The TextReader to read CSV content from.</param>
     /// <returns>The current <see cref="CsvReaderBuilder"/> instance for method chaining.</returns>
     /// <exception cref="ArgumentNullException">Thrown when reader is null.</exception>
-    public CsvReaderBuilder WithReader(System.IO.TextReader reader)
+    public CsvReaderBuilder WithReader(TextReader reader)
     {
 #if NET6_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(reader);

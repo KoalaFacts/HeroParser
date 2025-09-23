@@ -8,19 +8,10 @@ namespace HeroParser.Tests.Configuration;
 public class CsvReaderBuilderTests
 {
     [Fact]
-    public void Create_ReturnsNewBuilder()
-    {
-        // Act
-        var builder = CsvReaderBuilder.Create();
-
-        // Assert
-        Assert.NotNull(builder);
-    }
-
-    [Fact]
     public void WithDelimiter_SetsDelimiter()
     {
-        // Arrange & Act
+        // Arrange
+        // Act
         using var parser = CsvReaderBuilder.ForContent("test").WithDelimiter(';').Build();
 
         // Assert
@@ -31,8 +22,6 @@ public class CsvReaderBuilderTests
     public void WithQuote_SetsQuote()
     {
         // Arrange
-        var builder = CsvReaderBuilder.Create();
-
         // Act
         using var parser = CsvReaderBuilder.ForContent("test").WithQuote('\'').Build();
 
@@ -205,7 +194,7 @@ public class CsvReaderBuilderTests
     {
         // Arrange
         var csv = "Name;Age\nJohn;25";
-        using var reader = new System.IO.StringReader(csv);
+        using var reader = new StringReader(csv);
 
         // Act
         using var parser = CsvReaderBuilder.ForReader(reader).WithDelimiter(';').Build();

@@ -306,4 +306,42 @@ public readonly ref struct HeroCsvCols
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MoveNext() => ++_current < _end;
     }
+
+    /// <summary>
+    /// Creates a HeroCsvRow from pre-parsed column data (for streaming scenarios).
+    /// </summary>
+    /// <param name="columnData">The column data as strings.</param>
+    /// <returns>A new HeroCsvRow instance.</returns>
+    public static HeroCsvRow Create(string[] columnData)
+    {
+        if (columnData == null || columnData.Length == 0)
+            return default;
+
+        // Concatenate all strings into a single buffer for efficiency
+        var totalLength = 0;
+        foreach (var str in columnData)
+            totalLength += str?.Length ?? 0;
+
+        var buffer = new char[totalLength];
+        var columnStarts = new int[columnData.Length];
+        var columnLengths = new int[columnData.Length];
+
+        var currentPos = 0;
+        for (int i = 0; i < columnData.Length; i++)
+        {
+            var str = columnData[i] ?? string.Empty;
+            columnStarts[i] = currentPos;
+            columnLengths[i] = str.Length;
+
+            str.AsSpan().CopyTo(buffer.AsSpan(currentPos));
+            currentPos += str.Length;
+        }
+
+        return new HeroCsvRow(
+            reader: null!, // No reader for this factory method
+            rowSpan: buffer,
+            columnStarts: columnStarts,
+            columnLengths: columnLengths,
+            trimValues: false);
+    }
 }

@@ -65,7 +65,18 @@ public class CompetitiveBenchmarks
     [BenchmarkCategory("Small"), Benchmark(Baseline = true)]
     public List<string[]> Small_HeroParser()
     {
-        return HeroParser.Csv.ParseContent(_smallCsv).ToList();
+        var records = new List<string[]>();
+        using var reader = HeroParser.Csv.OpenContent(_smallCsv);
+        while (reader.Read())
+        {
+            var row = new string[reader.CurrentRow.ColumnCount];
+            for (int i = 0; i < reader.CurrentRow.ColumnCount; i++)
+            {
+                row[i] = reader.CurrentRow[i].ToString();
+            }
+            records.Add(row);
+        }
+        return records;
     }
 
     [BenchmarkCategory("Small"), Benchmark]
@@ -129,10 +140,21 @@ public class CompetitiveBenchmarks
     // MEDIUM CSV - Typical workload
     // ===============================
 
-    [BenchmarkCategory("Medium"), Benchmark(Baseline = true)]
+    [BenchmarkCategory("Medium"), Benchmark]
     public List<string[]> Medium_HeroParser()
     {
-        return HeroParser.Csv.ParseContent(_mediumCsv).ToList();
+        var records = new List<string[]>();
+        using var reader = HeroParser.Csv.OpenContent(_mediumCsv);
+        while (reader.Read())
+        {
+            var row = new string[reader.CurrentRow.ColumnCount];
+            for (int i = 0; i < reader.CurrentRow.ColumnCount; i++)
+            {
+                row[i] = reader.CurrentRow[i].ToString();
+            }
+            records.Add(row);
+        }
+        return records;
     }
 
     [BenchmarkCategory("Medium"), Benchmark]
@@ -196,10 +218,21 @@ public class CompetitiveBenchmarks
     // LARGE CSV - Throughput test
     // ===============================
 
-    [BenchmarkCategory("Large"), Benchmark(Baseline = true)]
+    [BenchmarkCategory("Large"), Benchmark]
     public List<string[]> Large_HeroParser()
     {
-        return HeroParser.Csv.ParseContent(_largeCsv).ToList();
+        var records = new List<string[]>();
+        using var reader = HeroParser.Csv.OpenContent(_largeCsv);
+        while (reader.Read())
+        {
+            var row = new string[reader.CurrentRow.ColumnCount];
+            for (int i = 0; i < reader.CurrentRow.ColumnCount; i++)
+            {
+                row[i] = reader.CurrentRow[i].ToString();
+            }
+            records.Add(row);
+        }
+        return records;
     }
 
     [BenchmarkCategory("Large"), Benchmark]

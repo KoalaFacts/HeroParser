@@ -19,7 +19,7 @@ public class CsvAsyncEnumerableTests
         string[]? firstRecord = null;
 
         // Act
-        await foreach (var record in Csv.StreamContent(SimpleCsv))
+        await foreach (var record in Csv.StreamContent(SimpleCsv, cancellationToken: TestContext.Current.CancellationToken))
         {
             recordCount++;
             if (firstRecord == null)
@@ -41,12 +41,12 @@ public class CsvAsyncEnumerableTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            await File.WriteAllTextAsync(tempFile, SimpleCsv);
+            await File.WriteAllTextAsync(tempFile, SimpleCsv, TestContext.Current.CancellationToken);
             var records = new List<string[]>();
 
             // Act
             using var reader = Csv.OpenFile(tempFile);
-            var allRecords = await reader.ReadAllAsync();
+            var allRecords = await reader.ReadAllAsync(TestContext.Current.CancellationToken);
             foreach (var record in allRecords)
             {
                 records.Add(record);
@@ -73,7 +73,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.StreamContent(bytes))
+        await foreach (var record in Csv.StreamContent(bytes, cancellationToken: TestContext.Current.CancellationToken))
         {
             records.Add(record);
         }
@@ -95,7 +95,7 @@ public class CsvAsyncEnumerableTests
 
         // Act
         using var reader = Csv.OpenStream(stream);
-        var records = await reader.ReadAllAsync();
+        var records = await reader.ReadAllAsync(TestContext.Current.CancellationToken);
         foreach (var record in records)
         {
             recordCount++;
@@ -114,7 +114,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.StreamContent(bytes))
+        await foreach (var record in Csv.StreamContent(bytes, cancellationToken: TestContext.Current.CancellationToken))
         {
             records.Add(record);
         }
@@ -135,7 +135,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.StreamContent(memory))
+        await foreach (var record in Csv.StreamContent(memory, cancellationToken: TestContext.Current.CancellationToken))
         {
             records.Add(record);
         }
@@ -154,7 +154,7 @@ public class CsvAsyncEnumerableTests
         var recordCount = 0;
 
         // Act
-        await foreach (var record in Csv.StreamContent(SimpleCsv))
+        await foreach (var record in Csv.StreamContent(SimpleCsv, cancellationToken: TestContext.Current.CancellationToken))
         {
             recordCount++;
             if (recordCount == 2)
@@ -206,7 +206,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.StreamContent(csv, config))
+        await foreach (var record in Csv.StreamContent(csv, config, TestContext.Current.CancellationToken))
         {
             records.Add(record);
         }
@@ -225,7 +225,7 @@ public class CsvAsyncEnumerableTests
         var recordCount = 0;
 
         // Act
-        await foreach (var record in Csv.StreamContent(""))
+        await foreach (var record in Csv.StreamContent("", cancellationToken: TestContext.Current.CancellationToken))
         {
             recordCount++;
         }
@@ -242,7 +242,7 @@ public class CsvAsyncEnumerableTests
         var recordCount = 0;
 
         // Act
-        await foreach (var record in Csv.StreamContent(csv))
+        await foreach (var record in Csv.StreamContent(csv, cancellationToken: TestContext.Current.CancellationToken))
         {
             recordCount++;
         }
@@ -259,7 +259,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.StreamContent(bytes, encoding: Encoding.UTF32))
+        await foreach (var record in Csv.StreamContent(bytes, encoding: Encoding.UTF32, cancellationToken: TestContext.Current.CancellationToken))
         {
             records.Add(record);
         }
@@ -276,7 +276,7 @@ public class CsvAsyncEnumerableTests
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
-            await foreach (var record in Csv.StreamContent((string)null!))
+            await foreach (var record in Csv.StreamContent((string)null!, cancellationToken: TestContext.Current.CancellationToken))
             {
                 // Should throw before entering the loop
             }

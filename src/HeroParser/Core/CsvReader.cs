@@ -138,7 +138,7 @@ public sealed class CsvReader : ICsvReader
             }
 #else
             // Fallback for older frameworks
-            fieldValue = new string(_currentField.ToArray());
+            fieldValue = new string([.. _currentField]);
             if (Configuration.TrimValues)
             {
                 fieldValue = fieldValue.Trim();
@@ -768,7 +768,7 @@ public sealed class CsvReader : ICsvReader
                         continue;
                     }
 
-                    return _currentRecord.Count > 0 ? _currentRecord.ToArray() : null;
+                    return _currentRecord.Count > 0 ? [.. _currentRecord] : null;
                 }
                 else
                 {
@@ -788,7 +788,7 @@ public sealed class CsvReader : ICsvReader
 
             AddCurrentField();
             _rowNumber++;
-            return _currentRecord.ToArray();
+            return [.. _currentRecord];
         }
 
         return null;

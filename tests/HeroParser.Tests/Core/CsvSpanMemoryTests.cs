@@ -54,7 +54,7 @@ public class CsvSpanMemoryTests
 
         // Act
         // Convert span to string since current API doesn't support FromSpan
-        var result = await Csv.FromContent(span.ToString());
+        var result = await Csv.FromContent(span.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -70,7 +70,7 @@ public class CsvSpanMemoryTests
 
         // Act
         // Convert memory to string since current API doesn't support FromMemory<char>
-        var result = await Csv.FromContent(memory.ToString());
+        var result = await Csv.FromContent(memory.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -118,7 +118,7 @@ public class CsvSpanMemoryTests
         ReadOnlySpan<byte> span = bytes.AsSpan();
 
         // Act
-        var result = await Csv.FromContent(span.ToArray());
+        var result = await Csv.FromContent(span.ToArray(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -134,7 +134,7 @@ public class CsvSpanMemoryTests
         ReadOnlyMemory<byte> memory = bytes.AsMemory();
 
         // Act
-        var result = await Csv.FromContent(memory);
+        var result = await Csv.FromContent(memory, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);

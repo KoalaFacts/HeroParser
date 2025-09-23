@@ -150,7 +150,7 @@ public class CsvApiTests
     public async Task FromContent_String_ParsesCorrectly()
     {
         // Act
-        var result = await Csv.FromContent(SimpleCsv);
+        var result = await Csv.FromContent(SimpleCsv, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -179,7 +179,7 @@ public class CsvApiTests
         var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
 
         // Act
-        var result = await Csv.FromContent(bytes);
+        var result = await Csv.FromContent(bytes, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -196,7 +196,7 @@ public class CsvApiTests
         ReadOnlyMemory<byte> memory = bytes.AsMemory();
 
         // Act
-        var result = await Csv.FromContent(memory);
+        var result = await Csv.FromContent(memory, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -238,10 +238,10 @@ public class CsvApiTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            await File.WriteAllTextAsync(tempFile, SimpleCsv);
+            await File.WriteAllTextAsync(tempFile, SimpleCsv, TestContext.Current.CancellationToken);
 
             // Act
-            var result = await Csv.FromFile(tempFile);
+            var result = await Csv.FromFile(tempFile, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
             Assert.Equal(2, result.Length);
@@ -266,7 +266,7 @@ public class CsvApiTests
         using var stream = new MemoryStream(bytes);
 
         // Act
-        var result = await Csv.FromStream(stream);
+        var result = await Csv.FromStream(stream, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -283,7 +283,7 @@ public class CsvApiTests
         using var stream = new MemoryStream(bytes);
 
         // Act
-        var result = await Csv.FromStream(stream, encoding: Encoding.UTF32);
+        var result = await Csv.FromStream(stream, encoding: Encoding.UTF32, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -363,7 +363,7 @@ public class CsvApiTests
     [Fact]
     public async Task FromContent_NullContent_ThrowsArgumentNullException()
     {
-        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromContent((string)null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromContent((string)null!, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -375,13 +375,13 @@ public class CsvApiTests
     [Fact]
     public async Task FromFile_NullPath_ThrowsArgumentNullException()
     {
-        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromFile(null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromFile(null!, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task FromStream_NullStream_ThrowsArgumentNullException()
     {
-        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromStream(null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromStream(null!, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -451,7 +451,7 @@ public class CsvApiTests
         }
 
         // Act
-        var result = await Csv.FromContent(sb.ToString());
+        var result = await Csv.FromContent(sb.ToString(), cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(1000, result.Length);

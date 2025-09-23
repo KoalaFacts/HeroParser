@@ -249,7 +249,7 @@ public class CsvReaderTests
         using var reader = Csv.OpenContent(SimpleCsv);
 
         // Act
-        var allRows = (await reader.ReadAllAsync()).ToArray();
+        var allRows = (await reader.ReadAllAsync(TestContext.Current.CancellationToken)).ToArray();
 
         // Assert
         Assert.Equal(2, allRows.Length);
@@ -287,9 +287,9 @@ public class CsvReaderTests
         using var reader = Csv.OpenContent(SimpleCsv);
 
         // Act
-        var firstRecord = await reader.ReadRecordAsync();
-        var secondRecord = await reader.ReadRecordAsync();
-        var thirdRecord = await reader.ReadRecordAsync();
+        var firstRecord = await reader.ReadRecordAsync(TestContext.Current.CancellationToken);
+        var secondRecord = await reader.ReadRecordAsync(TestContext.Current.CancellationToken);
+        var thirdRecord = await reader.ReadRecordAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.NotNull(firstRecord);

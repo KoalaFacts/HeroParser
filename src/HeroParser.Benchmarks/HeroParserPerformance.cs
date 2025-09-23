@@ -126,32 +126,32 @@ public class HeroParserPerformance
     [Benchmark]
     public string[][] WithTrimming_Enabled()
     {
-        return Csv.Configure()
+        return [.. Csv.Configure()
             .WithContent(_simpleCsv)
             .TrimValues(true)
             .Build()
-            .ReadAll().ToArray();
+            .ReadAll()];
     }
 
     [Benchmark]
     public string[][] WithStrictMode_Enabled()
     {
-        return Csv.Configure()
+        return [.. Csv.Configure()
             .WithContent(_simpleCsv)
             .StrictMode(true)
             .Build()
-            .ReadAll().ToArray();
+            .ReadAll()];
     }
 
     [Benchmark]
     public string[][] WithCustomDelimiter()
     {
         var csvWithTabs = _simpleCsv.Replace(',', '\t');
-        return Csv.Configure()
+        return [.. Csv.Configure()
             .WithContent(csvWithTabs)
             .WithDelimiter('\t')
             .Build()
-            .ReadAll().ToArray();
+            .ReadAll()];
     }
 
     // ===============================
@@ -159,22 +159,24 @@ public class HeroParserPerformance
     // ===============================
 
     [Benchmark]
-    public async Task StreamingEnumeration()
+    public async Task<int> StreamingEnumeration()
     {
         // Tests lazy enumeration (no ToArray/ToList)
         var rows = await Csv.FromContent(_simpleCsv);
+        int totalFields = 0;
         foreach (var row in rows)
         {
-            // Just enumerate, don't store
-            _ = row.Length;
+            // Count fields to prevent optimization
+            totalFields += row.Length;
         }
+        return totalFields;
     }
 
     [Benchmark]
     public async Task<List<string[]>> ToList_Allocation()
     {
         var rows = await Csv.FromContent(_simpleCsv);
-        return rows.ToList();
+        return [.. rows];
     }
 
     [Benchmark]

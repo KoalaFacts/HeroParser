@@ -40,7 +40,7 @@ public static partial class Csv
         };
 
         using var reader = new CsvReader(config);
-        return reader.ReadAll().ToArray();
+        return [.. reader.ReadAll()];
     }
 
     /// <summary>
@@ -66,7 +66,7 @@ public static partial class Csv
         };
 
         using var reader = new CsvReader(config);
-        return reader.ReadAll().ToArray();
+        return [.. reader.ReadAll()];
     }
 
     /// <summary>
@@ -89,7 +89,7 @@ public static partial class Csv
         };
 
         using var reader = new CsvReader(config);
-        return reader.ReadAll().ToArray();
+        return [.. reader.ReadAll()];
     }
 
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
@@ -112,7 +112,7 @@ public static partial class Csv
         };
 
         using var reader = new CsvReader(config);
-        return reader.ReadAll().ToArray();
+        return [.. reader.ReadAll()];
     }
 
     /// <summary>
@@ -138,7 +138,7 @@ public static partial class Csv
         };
 
         using var reader = new CsvReader(config);
-        return reader.ReadAll().ToArray();
+        return [.. reader.ReadAll()];
     }
 #endif
 
@@ -163,7 +163,7 @@ public static partial class Csv
         };
 
         using var reader = new CsvReader(config);
-        return reader.ReadAll().ToArray();
+        return [.. reader.ReadAll()];
     }
 
     /// <summary>
@@ -189,7 +189,7 @@ public static partial class Csv
         };
 
         using var reader = new CsvReader(config);
-        return reader.ReadAll().ToArray();
+        return [.. reader.ReadAll()];
     }
 
     /// <summary>
@@ -488,50 +488,6 @@ public static partial class Csv
     }
 
     /// <summary>
-    /// Processes CSV content asynchronously with zero-allocation row processing.
-    /// Optimized for high-throughput scenarios with backpressure handling.
-    /// </summary>
-    /// <param name="content">The CSV content to process.</param>
-    /// <param name="processor">Action to process each row with zero allocations.</param>
-    /// <param name="configuration">Optional CSV configuration.</param>
-    /// <param name="cancellationToken">Token to cancel the operation.</param>
-    public static async Task ProcessContentAsync(string content, HeroRowProcessor processor, CsvReadConfiguration? configuration = null, CancellationToken cancellationToken = default)
-    {
-        if (content == null) throw new ArgumentNullException(nameof(content));
-        if (processor == null) throw new ArgumentNullException(nameof(processor));
-
-        var config = (configuration ?? CsvReadConfiguration.Default) with { StringContent = content };
-        using var reader = new CsvReader(config);
-
-        await foreach (var _ in StreamContentInternal(reader, cancellationToken))
-        {
-            processor(reader.CurrentRow);
-        }
-    }
-
-    /// <summary>
-    /// Processes CSV content from a stream asynchronously with optimized memory usage.
-    /// Uses adaptive buffer sizing based on throughput characteristics.
-    /// </summary>
-    /// <param name="stream">The stream containing CSV data.</param>
-    /// <param name="processor">Action to process each row with zero allocations.</param>
-    /// <param name="configuration">Optional CSV configuration.</param>
-    /// <param name="cancellationToken">Token to cancel the operation.</param>
-    public static async Task ProcessStreamAsync(Stream stream, HeroRowProcessor processor, CsvReadConfiguration? configuration = null, CancellationToken cancellationToken = default)
-    {
-        if (stream == null) throw new ArgumentNullException(nameof(stream));
-        if (processor == null) throw new ArgumentNullException(nameof(processor));
-
-        var config = (configuration ?? CsvReadConfiguration.Default) with { Stream = stream };
-        using var reader = new CsvReader(config);
-
-        await foreach (var _ in StreamContentInternal(reader, cancellationToken))
-        {
-            processor(reader.CurrentRow);
-        }
-    }
-
-    /// <summary>
     /// Creates a high-performance async enumerable with configurable batching for large datasets.
     /// Provides automatic backpressure handling and memory pool management.
     /// </summary>
@@ -577,53 +533,6 @@ public static partial class Csv
         if (batch.Count > 0)
         {
             yield return batch.AsReadOnly();
-        }
-    }
-
-    /// <summary>
-    /// Provides concurrent processing of CSV data with configurable parallelism.
-    /// Uses work-stealing approach for optimal CPU utilization.
-    /// </summary>
-    /// <param name="filePath">The CSV file path.</param>
-    /// <param name="processor">Action to process each row concurrently.</param>
-    /// <param name="maxConcurrency">Maximum number of concurrent processors (default: CPU count).</param>
-    /// <param name="configuration">Optional CSV configuration.</param>
-    /// <param name="cancellationToken">Token to cancel the operation.</param>
-    public static async Task ProcessFileConcurrentAsync(string filePath, Func<string[], Task> processor, int maxConcurrency = 0, CsvReadConfiguration? configuration = null, CancellationToken cancellationToken = default)
-    {
-        if (filePath == null) throw new ArgumentNullException(nameof(filePath));
-        if (processor == null) throw new ArgumentNullException(nameof(processor));
-
-        if (maxConcurrency <= 0)
-            maxConcurrency = Environment.ProcessorCount;
-
-        using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
-        var tasks = new List<Task>();
-
-        await foreach (var record in StreamFile(filePath, configuration, cancellationToken))
-        {
-            await semaphore.WaitAsync(cancellationToken);
-
-            var task = ProcessRecordConcurrent(record, processor, semaphore, cancellationToken);
-            tasks.Add(task);
-
-            // Clean up completed tasks to prevent memory buildup
-            tasks.RemoveAll(t => t.IsCompleted);
-        }
-
-        // Wait for all remaining tasks to complete
-        await Task.WhenAll(tasks);
-    }
-
-    private static async Task ProcessRecordConcurrent(string[] record, Func<string[], Task> processor, SemaphoreSlim semaphore, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await processor(record);
-        }
-        finally
-        {
-            semaphore.Release();
         }
     }
 

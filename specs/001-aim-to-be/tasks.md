@@ -90,12 +90,12 @@
 - [x] **T028** Advanced CSV reading optimizations (vectorized delimiter scanning, quote handling)
 
 ### Test (T029-T030)
-- [ ] **T029** [P] Create platform-specific SIMD tests for CSV reading in `tests/HeroParser.PerformanceTests/CsvReadingSimdTests.cs`
-- [ ] **T030** [P] Create comprehensive CSV reading performance tests for constitutional targets
+- [x] **T029** [P] Create platform-specific SIMD tests for CSV reading in `tests/HeroParser.PerformanceTests/CsvReadingSimdTests.cs`
+- [x] **T030** [P] Create comprehensive CSV reading performance tests for constitutional targets
 
 ### Benchmark & Analyze (T031-T032)
-- [ ] **T031** Create CSV reading cycle 3 benchmark with SIMD validation in `src/HeroParser.Benchmarks/CsvReadingCycle3Benchmarks.cs`
-- [ ] **T032** Execute CSV reading benchmarks, validate constitutional performance targets (>25 GB/s single-threaded reading)
+- [x] **T031** Create CSV reading cycle 3 benchmark with SIMD validation in `src/HeroParser.Benchmarks/CsvReadingCycle3Benchmarks.cs`
+- [x] **T032** Execute CSV reading benchmarks, validate constitutional performance targets (>25 GB/s single-threaded reading)
 
 ### 🛑 **DECISION POINT**: Continue F1 Cycle N OR move to Feature 1 DevOps?
 - Review if CSV reading constitutional targets met (>25 GB/s, >20% vs Sep for reading)

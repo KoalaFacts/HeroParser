@@ -37,11 +37,23 @@ public class Program
                 BenchmarkRunner.Run<HeroParserPerformance>();
                 break;
 
+            case "cycle3":
+            case "simd":
+                Console.WriteLine("====================================");
+                Console.WriteLine("   F1 CYCLE 3 SIMD VALIDATION");
+                Console.WriteLine("====================================");
+                Console.WriteLine("Testing SIMD optimizations and constitutional targets");
+                Console.WriteLine();
+                BenchmarkRunner.Run<CsvReadingCycle3Benchmarks>();
+                break;
+
             case "all":
                 Console.WriteLine("Running all benchmarks...\n");
                 BenchmarkRunner.Run<CompetitiveBenchmarks>();
                 Console.WriteLine("\n" + new string('=', 50) + "\n");
                 BenchmarkRunner.Run<HeroParserPerformance>();
+                Console.WriteLine("\n" + new string('=', 50) + "\n");
+                BenchmarkRunner.Run<CsvReadingCycle3Benchmarks>();
                 break;
 
             default:
@@ -61,6 +73,7 @@ public class Program
         Console.WriteLine("Available benchmarks:");
         Console.WriteLine("  compete     - Compare HeroParser vs competitors (Sep, Sylvan, CsvHelper)");
         Console.WriteLine("  performance - Analyze HeroParser's internal performance characteristics");
+        Console.WriteLine("  cycle3      - F1 Cycle 3 SIMD validation and constitutional targets");
         Console.WriteLine("  all         - Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Examples:");

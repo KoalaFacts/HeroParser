@@ -1,7 +1,6 @@
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Running;
-using System.Text;
 using HeroParser.Configuration;
+using System.Text;
 
 namespace HeroParser.Benchmarks;
 
@@ -96,28 +95,28 @@ public class HeroParserPerformance
     public string[][] SimpleCsv_FastPath()
     {
         // Should trigger SIMD fast path (no quotes)
-        return Csv.ParseString(_simpleCsv);
+        return Csv.ParseContent(_simpleCsv);
     }
 
     [Benchmark]
     public string[][] QuotedCsv_ComplexPath()
     {
         // Should trigger complex parsing path
-        return Csv.ParseString(_quotedCsv);
+        return Csv.ParseContent(_quotedCsv);
     }
 
     [Benchmark]
     public string[][] EscapedCsv_StressTest()
     {
         // Tests escaped quote handling
-        return Csv.ParseString(_escapedCsv);
+        return Csv.ParseContent(_escapedCsv);
     }
 
     [Benchmark]
     public string[][] MultilineCsv_EdgeCase()
     {
         // Tests multiline field handling
-        return Csv.ParseString(_multilineCsv);
+        return Csv.ParseContent(_multilineCsv);
     }
 
     // ===============================
@@ -127,23 +126,32 @@ public class HeroParserPerformance
     [Benchmark]
     public string[][] WithTrimming_Enabled()
     {
-        var config = CsvReadConfiguration.Default with { TrimValues = true };
-        return Csv.ParseString(_simpleCsv, config);
+        return Csv.Configure()
+            .WithContent(_simpleCsv)
+            .TrimValues(true)
+            .Build()
+            .ReadAll().ToArray();
     }
 
     [Benchmark]
     public string[][] WithStrictMode_Enabled()
     {
-        var config = CsvReadConfiguration.Default with { StrictMode = true };
-        return Csv.ParseString(_simpleCsv, config);
+        return Csv.Configure()
+            .WithContent(_simpleCsv)
+            .StrictMode(true)
+            .Build()
+            .ReadAll().ToArray();
     }
 
     [Benchmark]
     public string[][] WithCustomDelimiter()
     {
         var csvWithTabs = _simpleCsv.Replace(',', '\t');
-        var config = CsvReadConfiguration.Default with { Delimiter = '\t' };
-        return Csv.ParseString(csvWithTabs, config);
+        return Csv.Configure()
+            .WithContent(csvWithTabs)
+            .WithDelimiter('\t')
+            .Build()
+            .ReadAll().ToArray();
     }
 
     // ===============================
@@ -151,10 +159,11 @@ public class HeroParserPerformance
     // ===============================
 
     [Benchmark]
-    public void StreamingEnumeration()
+    public async Task StreamingEnumeration()
     {
         // Tests lazy enumeration (no ToArray/ToList)
-        foreach (var row in Csv.FromString(_simpleCsv))
+        var rows = await Csv.FromContent(_simpleCsv);
+        foreach (var row in rows)
         {
             // Just enumerate, don't store
             _ = row.Length;
@@ -162,14 +171,15 @@ public class HeroParserPerformance
     }
 
     [Benchmark]
-    public List<string[]> ToList_Allocation()
+    public async Task<List<string[]>> ToList_Allocation()
     {
-        return Csv.FromString(_simpleCsv).ToList();
+        var rows = await Csv.FromContent(_simpleCsv);
+        return rows.ToList();
     }
 
     [Benchmark]
-    public string[][] ToArray_Allocation()
+    public async Task<string[][]> ToArray_Allocation()
     {
-        return Csv.FromString(_simpleCsv).ToArray();
+        return await Csv.FromContent(_simpleCsv);
     }
 }

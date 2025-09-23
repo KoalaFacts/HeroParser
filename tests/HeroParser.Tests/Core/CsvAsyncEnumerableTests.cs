@@ -16,10 +16,10 @@ public class CsvAsyncEnumerableTests
     {
         // Arrange
         var recordCount = 0;
-        var firstRecord = (string[])null;
+        string[]? firstRecord = null;
 
         // Act
-        await foreach (var record in Csv.FromStringAsync(SimpleCsv))
+        await foreach (var record in Csv.StreamContent(SimpleCsv))
         {
             recordCount++;
             if (firstRecord == null)
@@ -35,7 +35,7 @@ public class CsvAsyncEnumerableTests
     }
 
     [Fact]
-    public async Task FromFileAsync_WithIAsyncEnumerable_StreamsCorrectly()
+    public async Task FromFileAsync_WithFileReader_StreamsCorrectly()
     {
         // Arrange
         var tempFile = Path.GetTempFileName();
@@ -45,7 +45,9 @@ public class CsvAsyncEnumerableTests
             var records = new List<string[]>();
 
             // Act
-            await foreach (var record in Csv.FromFileAsync(tempFile))
+            using var reader = Csv.OpenFile(tempFile);
+            var allRecords = await reader.ReadAllAsync();
+            foreach (var record in allRecords)
             {
                 records.Add(record);
             }
@@ -64,14 +66,14 @@ public class CsvAsyncEnumerableTests
     }
 
     [Fact]
-    public async Task FromReaderAsync_WithIAsyncEnumerable_StreamsCorrectly()
+    public async Task FromReaderAsync_WithTextReader_StreamsCorrectly()
     {
         // Arrange
-        using var reader = new StringReader(SimpleCsv);
+        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.FromReaderAsync(reader))
+        await foreach (var record in Csv.StreamContent(bytes))
         {
             records.Add(record);
         }
@@ -84,7 +86,7 @@ public class CsvAsyncEnumerableTests
     }
 
     [Fact]
-    public async Task FromStreamAsync_WithIAsyncEnumerable_StreamsCorrectly()
+    public async Task FromStreamAsync_WithMemoryStream_StreamsCorrectly()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
@@ -92,7 +94,9 @@ public class CsvAsyncEnumerableTests
         var recordCount = 0;
 
         // Act
-        await foreach (var record in Csv.FromStreamAsync(stream))
+        using var reader = Csv.OpenStream(stream);
+        var records = await reader.ReadAllAsync();
+        foreach (var record in records)
         {
             recordCount++;
             Assert.Equal(3, record.Length); // Each record should have 3 fields
@@ -110,7 +114,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.FromBytesAsync(bytes))
+        await foreach (var record in Csv.StreamContent(bytes))
         {
             records.Add(record);
         }
@@ -131,7 +135,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.FromBytesAsync(memory))
+        await foreach (var record in Csv.StreamContent(memory))
         {
             records.Add(record);
         }
@@ -150,7 +154,7 @@ public class CsvAsyncEnumerableTests
         var recordCount = 0;
 
         // Act
-        await foreach (var record in Csv.FromStringAsync(SimpleCsv))
+        await foreach (var record in Csv.StreamContent(SimpleCsv))
         {
             recordCount++;
             if (recordCount == 2)
@@ -175,7 +179,7 @@ public class CsvAsyncEnumerableTests
         // Act
         try
         {
-            await foreach (var record in Csv.FromStringAsync(largeCsv, cancellationToken: cts.Token))
+            await foreach (var record in Csv.StreamContent(largeCsv, configuration: null, cancellationToken: cts.Token))
             {
                 processedCount++;
                 if (processedCount == 10)
@@ -202,7 +206,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.FromStringAsync(csv, config))
+        await foreach (var record in Csv.StreamContent(csv, config))
         {
             records.Add(record);
         }
@@ -221,7 +225,7 @@ public class CsvAsyncEnumerableTests
         var recordCount = 0;
 
         // Act
-        await foreach (var record in Csv.FromStringAsync(""))
+        await foreach (var record in Csv.StreamContent(""))
         {
             recordCount++;
         }
@@ -238,7 +242,7 @@ public class CsvAsyncEnumerableTests
         var recordCount = 0;
 
         // Act
-        await foreach (var record in Csv.FromStringAsync(csv))
+        await foreach (var record in Csv.StreamContent(csv))
         {
             recordCount++;
         }
@@ -255,7 +259,7 @@ public class CsvAsyncEnumerableTests
         var records = new List<string[]>();
 
         // Act
-        await foreach (var record in Csv.FromBytesAsync(bytes, Encoding.UTF32))
+        await foreach (var record in Csv.StreamContent(bytes, encoding: Encoding.UTF32))
         {
             records.Add(record);
         }
@@ -272,7 +276,7 @@ public class CsvAsyncEnumerableTests
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
-            await foreach (var record in Csv.FromStringAsync(null))
+            await foreach (var record in Csv.StreamContent((string)null!))
             {
                 // Should throw before entering the loop
             }
@@ -280,15 +284,12 @@ public class CsvAsyncEnumerableTests
     }
 
     [Fact]
-    public async Task FromFileAsync_NullInput_ThrowsImmediately()
+    public void FromFileAsync_NullInput_ThrowsImmediately()
     {
         // Act & Assert
-        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+        Assert.Throws<ArgumentNullException>(() =>
         {
-            await foreach (var record in Csv.FromFileAsync(null))
-            {
-                // Should throw before entering the loop
-            }
+            var reader = Csv.OpenFile(null!);
         });
     }
 }

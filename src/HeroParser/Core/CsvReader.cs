@@ -9,10 +9,25 @@ using System.Runtime.InteropServices;
 namespace HeroParser.Core;
 
 /// <summary>
-/// High-performance CSV reader implementation.
+/// Delegate for processing CSV rows as ref structs with zero allocations.
+/// </summary>
+/// <param name="row">The CSV row to process.</param>
+public delegate void HeroRowProcessor(in HeroCsvRow row);
+
+/// <summary>
+/// High-performance CSV reader with traditional and zero-allocation APIs.
+///
+/// This class can be used across threads with proper synchronization.
+/// The reader maintains internal state and should not be accessed concurrently.
+/// For multi-threaded scenarios, create separate reader instances per thread.
 /// </summary>
 public sealed class CsvReader : ICsvReader
 {
+    // Security constants for error handling
+    private const string SecureParseErrorMessage = "CSV parsing error occurred. Enable debug mode for detailed information.";
+    private const string SecureQuoteErrorMessage = "Invalid quote character encountered during parsing.";
+    private const string SecureFormatErrorMessage = "CSV format validation failed.";
+
     private readonly TextReader _reader;
     private readonly bool _ownsReader;
     private readonly List<string> _currentRecord;
@@ -21,6 +36,21 @@ public sealed class CsvReader : ICsvReader
     private bool _disposed;
     private long _rowNumber;
     private bool _inQuotes;
+
+    // Zero-allocation support - consolidated from HeroCsvReader
+    private char[] _buffer;
+    private int[] _columnStarts;
+    private int[] _columnLengths;
+    private int _bufferLength;
+    private int _columnCount;
+    private bool _hasCurrentRow;
+
+
+    // Security constants for zero-allocation parsing
+    private const int MaxBufferSize = 50 * 1024 * 1024; // 50MB maximum buffer size
+    private const int MaxColumnCount = 10000; // Maximum columns per row to prevent memory exhaustion
+    private const int InitialColumnCapacity = 64; // Initial column array capacity
+    private const int MaxRowLength = 10 * 1024 * 1024; // 10MB maximum row length
 
 
     /// <inheritdoc/>
@@ -31,6 +61,9 @@ public sealed class CsvReader : ICsvReader
 
     /// <inheritdoc/>
     public bool EndOfCsv { get; private set; }
+
+    /// <inheritdoc/>
+    public HeroCsvRow CurrentRow => GetCurrentRow();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CsvReader"/> class.
@@ -48,23 +81,36 @@ public sealed class CsvReader : ICsvReader
 
         if (_reader == null)
             throw new ArgumentException("Invalid data source configuration.", nameof(configuration));
+
+        // Traditional parsing initialization (always needed for compatibility)
         _currentRecord = [];
         _currentField = new List<char>(256);
         _rowNumber = 0;
         _inQuotes = false;
 
+        // Zero-allocation parsing initialization (for ref struct methods)
+        var initialBufferSize = Math.Min(configuration.BufferSize, MaxBufferSize);
+        _buffer = System.Buffers.ArrayPool<char>.Shared.Rent(initialBufferSize);
+        _columnStarts = new int[InitialColumnCapacity];
+        _columnLengths = new int[InitialColumnCapacity];
     }
 
     /// <inheritdoc/>
     public void Dispose()
     {
+
         if (_disposed)
             return;
-
 
         if (_ownsReader)
         {
             _reader?.Dispose();
+        }
+
+        // Return buffer to ArrayPool
+        if (_buffer.Length > 0)
+        {
+            System.Buffers.ArrayPool<char>.Shared.Return(_buffer);
         }
 
         _disposed = true;
@@ -129,12 +175,24 @@ public sealed class CsvReader : ICsvReader
 
         if (config.Stream != null)
         {
-            return (new StreamReader(config.Stream, config.Encoding ?? Encoding.UTF8, detectEncodingFromByteOrderMarks: true), true);
+            // Security: Only detect encoding from BOM if no explicit encoding was provided
+            // When user specifies encoding explicitly, respect their choice to prevent encoding attacks
+            var explicitEncoding = config.Encoding;
+            var shouldDetectEncoding = explicitEncoding == null;
+            var encoding = explicitEncoding ?? Encoding.UTF8;
+
+            return (new StreamReader(config.Stream, encoding, detectEncodingFromByteOrderMarks: shouldDetectEncoding), true);
         }
 
         if (config.FilePath != null)
         {
-            return (new StreamReader(File.OpenRead(config.FilePath), config.Encoding ?? Encoding.UTF8, detectEncodingFromByteOrderMarks: true), true);
+            // Security: Only detect encoding from BOM if no explicit encoding was provided
+            // When user specifies encoding explicitly, respect their choice to prevent encoding attacks
+            var explicitEncoding = config.Encoding;
+            var shouldDetectEncoding = explicitEncoding == null;
+            var encoding = explicitEncoding ?? Encoding.UTF8;
+
+            return (new StreamReader(File.OpenRead(config.FilePath), encoding, detectEncodingFromByteOrderMarks: shouldDetectEncoding), true);
         }
 
         if (config.ByteContent.HasValue)
@@ -337,7 +395,7 @@ public sealed class CsvReader : ICsvReader
                 return record[index];
         }
 
-        throw new ArgumentException($"Column '{columnName}' not found.", nameof(columnName));
+        throw new ArgumentException("Column not found.", nameof(columnName));
     }
 
     /// <inheritdoc/>
@@ -544,7 +602,7 @@ public sealed class CsvReader : ICsvReader
                     // In strict mode, quotes must only appear at the start of fields
                     if (config.StrictMode && position > fieldStart)
                     {
-                        throw new CsvParseException($"Unescaped quote character found at line {lineNumber}. In strict mode, quotes must only appear at the start of fields or be properly escaped.", lineNumber, null, null);
+                        throw new CsvParseException(SecureQuoteErrorMessage, lineNumber, null, null);
                     }
                     inQuotes = true;
                 }
@@ -598,7 +656,7 @@ public sealed class CsvReader : ICsvReader
         // In strict mode, check for unterminated quotes at end of file
         if (config.StrictMode && inQuotes)
         {
-            throw new CsvParseException($"Unterminated quote found at end of file (line {lineNumber}). In strict mode, all quotes must be properly closed.", lineNumber, null, null);
+            throw new CsvParseException(SecureQuoteErrorMessage, lineNumber, null, null);
         }
 
         // Handle final field at end of content
@@ -679,7 +737,7 @@ public sealed class CsvReader : ICsvReader
                     // In strict mode, quotes must only appear at the start of fields
                     if (Configuration.StrictMode && _currentField.Count > 0)
                     {
-                        throw new CsvParseException($"Unescaped quote character found at line {_rowNumber + 1}. In strict mode, quotes must only appear at the start of fields or be properly escaped.", _rowNumber + 1, null, null);
+                        throw new CsvParseException(SecureQuoteErrorMessage, _rowNumber + 1, null, null);
                     }
                     _inQuotes = true;
                 }
@@ -698,7 +756,7 @@ public sealed class CsvReader : ICsvReader
                     // In strict mode, check for unterminated quotes
                     if (Configuration.StrictMode && _inQuotes)
                     {
-                        throw new CsvParseException($"Unterminated quote found at line {_rowNumber + 1}. In strict mode, all quotes must be properly closed.", _rowNumber + 1, null, null);
+                        throw new CsvParseException(SecureQuoteErrorMessage, _rowNumber + 1, null, null);
                     }
 
                     AddCurrentField();
@@ -725,7 +783,7 @@ public sealed class CsvReader : ICsvReader
             // In strict mode, check for unterminated quotes at end of file
             if (Configuration.StrictMode && _inQuotes)
             {
-                throw new CsvParseException($"Unterminated quote found at end of file (line {_rowNumber + 1}). In strict mode, all quotes must be properly closed.", _rowNumber + 1, null, null);
+                throw new CsvParseException(SecureQuoteErrorMessage, _rowNumber + 1, null, null);
             }
 
             AddCurrentField();
@@ -750,6 +808,239 @@ public sealed class CsvReader : ICsvReader
         for (int i = 0; i < headers.Length; i++)
         {
             _headerLookup[headers[i]] = i;
+        }
+    }
+
+    // ========== Ref Struct API Methods (zero-allocation) ==========
+
+    /// <summary>
+    /// Advances to the next row and makes it available via CurrentRow.
+    /// </summary>
+    /// <returns>True if a row was read; false if end of CSV has been reached.</returns>
+    public bool Read()
+    {
+
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(CsvReader));
+
+        if (EndOfCsv)
+            return false;
+
+        // Initialize headers if needed
+        if (Configuration.HasHeaderRow && Headers == null)
+        {
+            InitializeHeadersRef();
+            // If after reading header there's no more content, return false
+            if (EndOfCsv)
+                return false;
+        }
+
+        // Read and parse the next row
+        if (!TryReadNextRowRef())
+        {
+            EndOfCsv = true;
+            _hasCurrentRow = false;
+            return false;
+        }
+
+        _rowNumber++;
+        _hasCurrentRow = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Gets the column index for a given header name.
+    /// </summary>
+    /// <param name="columnName">The column name.</param>
+    /// <returns>The column index.</returns>
+    /// <exception cref="ArgumentException">Thrown when column name is not found.</exception>
+    internal int GetColumnIndex(string columnName)
+    {
+        if (_headerLookup?.TryGetValue(columnName, out var index) == true)
+        {
+            return index;
+        }
+
+        throw new ArgumentException("Column not found in headers.", nameof(columnName));
+    }
+
+    /// <summary>
+    /// Tries to get the column index for a given header name.
+    /// </summary>
+    /// <param name="columnName">The column name.</param>
+    /// <param name="index">The column index if found.</param>
+    /// <returns>True if the column was found, false otherwise.</returns>
+    internal bool TryGetColumnIndex(string columnName, out int index)
+    {
+        if (_headerLookup?.TryGetValue(columnName, out index) == true)
+        {
+            return true;
+        }
+
+        index = -1;
+        return false;
+    }
+
+    private void InitializeHeadersRef()
+    {
+        if (TryReadNextRowRef())
+        {
+            _rowNumber++;
+            _hasCurrentRow = true;
+
+            var headerRow = CurrentRow;
+            var headers = new string[headerRow.ColumnCount];
+            var headerLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < headerRow.ColumnCount; i++)
+            {
+                var header = headerRow[i].ToString();
+                headers[i] = header;
+                headerLookup[header] = i;
+            }
+
+            Headers = headers;
+            _headerLookup = headerLookup;
+        }
+        else
+        {
+            EndOfCsv = true;
+        }
+    }
+
+    /// <summary>
+    /// Gets the current row as a zero-allocation HeroCsvRow.
+    /// </summary>
+    /// <returns>The current row, or an empty row if no valid row is available.</returns>
+    private HeroCsvRow GetCurrentRow()
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(CsvReader));
+
+        if (!_hasCurrentRow || _columnCount == 0)
+        {
+            return default; // Returns empty HeroCsvRow
+        }
+
+        var rowSpan = new ReadOnlySpan<char>(_buffer, 0, _bufferLength);
+        var columnStarts = new ReadOnlySpan<int>(_columnStarts, 0, _columnCount);
+        var columnLengths = new ReadOnlySpan<int>(_columnLengths, 0, _columnCount);
+
+        return new HeroCsvRow(this, rowSpan, columnStarts, columnLengths, Configuration.TrimValues);
+    }
+
+
+    private bool TryReadNextRowRef()
+    {
+        _bufferLength = 0;
+        _columnCount = 0;
+
+        var line = _reader.ReadLine();
+        if (line == null)
+        {
+            return false;
+        }
+
+        // Skip empty lines if configured
+        if (string.IsNullOrEmpty(line) && Configuration.IgnoreEmptyLines)
+        {
+            return TryReadNextRowRef();
+        }
+
+        // Ensure buffer capacity
+        EnsureBufferCapacityRef(line.Length);
+
+        // Copy line to buffer
+        line.AsSpan().CopyTo(_buffer.AsSpan());
+        _bufferLength = line.Length;
+
+        // Parse the line into columns
+        ParseLineIntoColumnsRef();
+
+        return true;
+    }
+
+    private void ParseLineIntoColumnsRef()
+    {
+        var span = new ReadOnlySpan<char>(_buffer, 0, _bufferLength);
+        var delimiter = Configuration.Delimiter;
+        var quote = Configuration.Quote;
+
+        _columnCount = 0;
+        var start = 0;
+        var inQuotes = false;
+
+        for (int i = 0; i < span.Length; i++)
+        {
+            var ch = span[i];
+
+            if (ch == quote)
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (ch == delimiter && !inQuotes)
+            {
+                // End of column
+                AddColumnRef(start, i - start);
+                start = i + 1;
+            }
+        }
+
+        // Add final column
+        AddColumnRef(start, span.Length - start);
+    }
+
+    private void AddColumnRef(int start, int length)
+    {
+        // Security check: Prevent DoS through excessive column counts
+        if (_columnCount >= MaxColumnCount)
+        {
+            throw new InvalidOperationException($"Row contains too many columns ({_columnCount}). Maximum allowed: {MaxColumnCount}. This may indicate a malformed CSV or potential DoS attack.");
+        }
+
+        // Ensure column arrays capacity with controlled growth
+        if (_columnCount >= _columnStarts.Length)
+        {
+            var newCapacity = Math.Min(_columnStarts.Length * 2, MaxColumnCount);
+            if (newCapacity <= _columnCount)
+            {
+                throw new InvalidOperationException($"Cannot expand column arrays beyond maximum limit of {MaxColumnCount} columns.");
+            }
+
+            Array.Resize(ref _columnStarts, newCapacity);
+            Array.Resize(ref _columnLengths, newCapacity);
+        }
+
+        _columnStarts[_columnCount] = start;
+        _columnLengths[_columnCount] = length;
+        _columnCount++;
+    }
+
+    private void EnsureBufferCapacityRef(int requiredLength)
+    {
+        // Security check: Prevent DoS through excessive buffer sizes
+        if (requiredLength > MaxRowLength)
+        {
+            throw new InvalidOperationException($"Row length ({requiredLength:N0} characters) exceeds maximum allowed size of {MaxRowLength:N0} characters. This may indicate a malformed CSV or potential DoS attack.");
+        }
+
+        if (_buffer.Length < requiredLength)
+        {
+            // Calculate new buffer size with controlled growth and safety limits
+            var newSize = Math.Min(requiredLength * 2, MaxBufferSize);
+            if (newSize < requiredLength)
+            {
+                // If doubling would exceed max, use the minimum required size
+                newSize = Math.Min(requiredLength, MaxBufferSize);
+            }
+
+            if (newSize < requiredLength)
+            {
+                throw new InvalidOperationException($"Required buffer size ({requiredLength:N0}) exceeds maximum allowed buffer size of {MaxBufferSize:N0} characters.");
+            }
+
+            System.Buffers.ArrayPool<char>.Shared.Return(_buffer);
+            _buffer = System.Buffers.ArrayPool<char>.Shared.Rent(newSize);
         }
     }
 }

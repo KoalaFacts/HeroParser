@@ -5,18 +5,341 @@ using System.Text;
 namespace HeroParser;
 
 /// <summary>
-/// Main entry point for CSV parsing operations providing a clean, intuitive API.
+/// Main entry point for CSV parsing operations with intuitive, task-focused methods.
+/// Designed from the consumer's perspective for common CSV scenarios.
 /// </summary>
 public static partial class Csv
 {
     /// <summary>
+    /// Parses CSV content and returns all rows as string arrays.
+    /// Perfect for small to medium content when you need all data at once.
+    /// </summary>
+    /// <param name="content">The CSV content to parse.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    /// <example>
+    /// <code>
+    /// var rows = Csv.ParseContent("Name,Age\nJohn,25\nJane,30");
+    /// foreach (var row in rows)
+    /// {
+    ///     Console.WriteLine($"{row[0]} is {row[1]} years old");
+    /// }
+    /// </code>
+    /// </example>
+    public static string[][] ParseContent(string content, bool hasHeaders = true, char delimiter = ',')
+    {
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
+
+        var config = CsvReadConfiguration.Default with
+        {
+            StringContent = content,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter
+        };
+
+        using var reader = new CsvReader(config);
+        return reader.ReadAll().ToArray();
+    }
+
+    /// <summary>
+    /// Parses CSV content from bytes and returns all rows as string arrays.
+    /// Perfect for when you have CSV data as bytes.
+    /// </summary>
+    /// <param name="content">The CSV content as bytes.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="encoding">Text encoding to use (default: UTF-8).</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static string[][] ParseContent(byte[] content, bool hasHeaders = true, char delimiter = ',', Encoding? encoding = null)
+    {
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
+
+        var config = CsvReadConfiguration.Default with
+        {
+            ByteContent = content,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter,
+            Encoding = encoding ?? Encoding.UTF8
+        };
+
+        using var reader = new CsvReader(config);
+        return reader.ReadAll().ToArray();
+    }
+
+    /// <summary>
+    /// Parses CSV content from ReadOnlyMemory of bytes and returns all rows as string arrays.
+    /// Perfect for zero-allocation scenarios with pooled memory.
+    /// </summary>
+    /// <param name="content">The CSV content as ReadOnlyMemory of bytes.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="encoding">Text encoding to use (default: UTF-8).</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static string[][] ParseContent(ReadOnlyMemory<byte> content, bool hasHeaders = true, char delimiter = ',', Encoding? encoding = null)
+    {
+        var config = CsvReadConfiguration.Default with
+        {
+            ByteContent = content,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter,
+            Encoding = encoding ?? Encoding.UTF8
+        };
+
+        using var reader = new CsvReader(config);
+        return reader.ReadAll().ToArray();
+    }
+
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+    /// <summary>
+    /// Parses CSV content from ReadOnlySpan of characters and returns all rows as string arrays.
+    /// Perfect for zero-allocation scenarios with stack-allocated memory.
+    /// </summary>
+    /// <param name="content">The CSV content as ReadOnlySpan of characters.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static string[][] ParseContent(ReadOnlySpan<char> content, bool hasHeaders = true, char delimiter = ',')
+    {
+        var stringContent = content.ToString();
+        var config = CsvReadConfiguration.Default with
+        {
+            StringContent = stringContent,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter
+        };
+
+        using var reader = new CsvReader(config);
+        return reader.ReadAll().ToArray();
+    }
+
+    /// <summary>
+    /// Parses CSV content from ReadOnlySpan of bytes and returns all rows as string arrays.
+    /// Perfect for zero-allocation scenarios with stack-allocated byte memory.
+    /// </summary>
+    /// <param name="content">The CSV content as ReadOnlySpan of bytes.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="encoding">Text encoding to use (default: UTF-8).</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static string[][] ParseContent(ReadOnlySpan<byte> content, bool hasHeaders = true, char delimiter = ',', Encoding? encoding = null)
+    {
+        var enc = encoding ?? Encoding.UTF8;
+        var config = CsvReadConfiguration.Default with
+        {
+            ByteContent = content.ToArray(), // TODO: Optimize to avoid ToArray() allocation
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter,
+            Encoding = enc
+        };
+
+        using var reader = new CsvReader(config);
+        return reader.ReadAll().ToArray();
+    }
+#endif
+
+    /// <summary>
+    /// Parses CSV file and returns all rows as string arrays.
+    /// Perfect for small to medium files when you need all data at once.
+    /// </summary>
+    /// <param name="filePath">Path to the CSV file.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static string[][] ParseFile(string filePath, bool hasHeaders = true, char delimiter = ',')
+    {
+        if (filePath == null)
+            throw new ArgumentNullException(nameof(filePath));
+
+        var config = CsvReadConfiguration.Default with
+        {
+            FilePath = filePath,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter
+        };
+
+        using var reader = new CsvReader(config);
+        return reader.ReadAll().ToArray();
+    }
+
+    /// <summary>
+    /// Parses CSV from stream and returns all rows as string arrays.
+    /// Perfect for network streams or when you have a stream source.
+    /// </summary>
+    /// <param name="stream">The stream containing CSV data.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="encoding">Text encoding to use (default: UTF-8).</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static string[][] ParseStream(Stream stream, bool hasHeaders = true, char delimiter = ',', Encoding? encoding = null)
+    {
+        if (stream == null)
+            throw new ArgumentNullException(nameof(stream));
+
+        var config = CsvReadConfiguration.Default with
+        {
+            Stream = stream,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter,
+            Encoding = encoding ?? Encoding.UTF8
+        };
+
+        using var reader = new CsvReader(config);
+        return reader.ReadAll().ToArray();
+    }
+
+    /// <summary>
+    /// Asynchronously parses CSV content and returns all rows as string arrays.
+    /// Perfect for large content when you need all data at once without blocking.
+    /// </summary>
+    /// <param name="content">The CSV content to parse.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static async Task<string[][]> FromContent(string content, bool hasHeaders = true, char delimiter = ',', CancellationToken cancellationToken = default)
+    {
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
+
+        var config = CsvReadConfiguration.Default with
+        {
+            StringContent = content,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter
+        };
+
+        return await Task.Run(() =>
+        {
+            using var reader = new CsvReader(config);
+            return reader.ReadAll().ToArray();
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Asynchronously parses CSV content from bytes and returns all rows as string arrays.
+    /// Perfect for large byte content when you need all data at once without blocking.
+    /// </summary>
+    /// <param name="content">The CSV content as bytes.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="encoding">Text encoding to use (default: UTF-8).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static async Task<string[][]> FromContent(byte[] content, bool hasHeaders = true, char delimiter = ',', Encoding? encoding = null, CancellationToken cancellationToken = default)
+    {
+        var config = CsvReadConfiguration.Default with
+        {
+            ByteContent = content,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter,
+            Encoding = encoding ?? Encoding.UTF8
+        };
+
+        return await Task.Run(() =>
+        {
+            using var reader = new CsvReader(config);
+            return reader.ReadAll().ToArray();
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Asynchronously parses CSV content from ReadOnlyMemory of bytes and returns all rows as string arrays.
+    /// Perfect for zero-allocation scenarios with pooled memory.
+    /// </summary>
+    /// <param name="content">The CSV content as ReadOnlyMemory of bytes.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="encoding">Text encoding to use (default: UTF-8).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static async Task<string[][]> FromContent(ReadOnlyMemory<byte> content, bool hasHeaders = true, char delimiter = ',', Encoding? encoding = null, CancellationToken cancellationToken = default)
+    {
+        var config = CsvReadConfiguration.Default with
+        {
+            ByteContent = content,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter,
+            Encoding = encoding ?? Encoding.UTF8
+        };
+
+        return await Task.Run(() =>
+        {
+            using var reader = new CsvReader(config);
+            return reader.ReadAll().ToArray();
+        }, cancellationToken);
+    }
+
+
+    /// <summary>
+    /// Asynchronously parses CSV file and returns all rows as string arrays.
+    /// Perfect for large files when you need all data at once without blocking.
+    /// </summary>
+    /// <param name="filePath">Path to the CSV file.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static async Task<string[][]> FromFile(string filePath, bool hasHeaders = true, char delimiter = ',', CancellationToken cancellationToken = default)
+    {
+        if (filePath == null)
+            throw new ArgumentNullException(nameof(filePath));
+
+        var config = CsvReadConfiguration.Default with
+        {
+            FilePath = filePath,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter
+        };
+
+        return await Task.Run(() =>
+        {
+            using var reader = new CsvReader(config);
+            return reader.ReadAll().ToArray();
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Asynchronously parses CSV from stream and returns all rows as string arrays.
+    /// Perfect for network streams when you need all data at once without blocking.
+    /// </summary>
+    /// <param name="stream">The stream containing CSV data.</param>
+    /// <param name="hasHeaders">Whether the first row contains headers (default: true).</param>
+    /// <param name="delimiter">The field delimiter (default: comma).</param>
+    /// <param name="encoding">Text encoding to use (default: UTF-8).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Array of rows, where each row is an array of field values.</returns>
+    public static async Task<string[][]> FromStream(Stream stream, bool hasHeaders = true, char delimiter = ',', Encoding? encoding = null, CancellationToken cancellationToken = default)
+    {
+        if (stream == null)
+            throw new ArgumentNullException(nameof(stream));
+
+        var config = CsvReadConfiguration.Default with
+        {
+            Stream = stream,
+            HasHeaderRow = hasHeaders,
+            Delimiter = delimiter,
+            Encoding = encoding ?? Encoding.UTF8
+        };
+
+        return await Task.Run(() =>
+        {
+            using var reader = new CsvReader(config);
+            return reader.ReadAll().ToArray();
+        }, cancellationToken);
+    }
+
+    /// <summary>
     /// Creates a fluent builder for configuring CSV reading options.
+    /// Use this when you need advanced control over parsing behavior.
     /// </summary>
     /// <returns>A new CSV reader builder instance.</returns>
     /// <example>
     /// <code>
     /// using var reader = Csv.Configure()
-    ///     .ForContent(csvString)
+    ///     .FromContent(csvString)
     ///     .WithDelimiter(';')
     ///     .WithHeaders(false)
     ///     .TrimValues()
@@ -29,29 +352,13 @@ public static partial class Csv
     }
 
     /// <summary>
-    /// Creates a new CSV reader from a string for advanced streaming scenarios.
-    /// Returns a CsvReader instance that must be disposed after use.
-    /// This method is for power users who need direct access to the reader for custom processing.
+    /// Opens a CSV reader from content for advanced scenarios where you need full control.
+    /// Returns a CsvReader that must be disposed after use.
     /// </summary>
     /// <param name="content">The CSV content.</param>
     /// <param name="configuration">Optional configuration.</param>
-    /// <returns>A new CSV reader that must be disposed.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when content is null.</exception>
-    /// <example>
-    /// <code>
-    /// using var reader = Csv.CreateReader(csvContent);
-    /// while (!reader.EndOfCsv)
-    /// {
-    ///     var record = reader.ReadRecord();
-    ///     if (record != null)
-    ///     {
-    ///         // Custom processing with full control over iteration
-    ///         ProcessRecord(record);
-    ///     }
-    /// }
-    /// </code>
-    /// </example>
-    public static CsvReader CreateReader(string content, CsvReadConfiguration? configuration = null)
+    /// <returns>A CSV reader for advanced control.</returns>
+    public static CsvReader OpenContent(string content, CsvReadConfiguration? configuration = null)
     {
         if (content == null)
             throw new ArgumentNullException(nameof(content));
@@ -61,77 +368,76 @@ public static partial class Csv
     }
 
     /// <summary>
-    /// Creates a new CSV reader from a TextReader for advanced streaming scenarios.
-    /// Returns a CsvReader instance that must be disposed after use.
-    /// </summary>
-    /// <param name="reader">The text reader.</param>
-    /// <param name="configuration">Optional configuration.</param>
-    /// <returns>A new CSV reader that must be disposed.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when reader is null.</exception>
-    public static CsvReader CreateReader(TextReader reader, CsvReadConfiguration? configuration = null)
-    {
-        if (reader == null)
-            throw new ArgumentNullException(nameof(reader));
-
-        var config = (configuration ?? CsvReadConfiguration.Default) with { Reader = reader };
-        return new CsvReader(config);
-    }
-
-    /// <summary>
-    /// Creates a new CSV reader from a stream for advanced streaming scenarios.
-    /// Returns a CsvReader instance that must be disposed after use.
-    /// </summary>
-    /// <param name="stream">The stream to read from.</param>
-    /// <param name="encoding">The encoding to use (defaults to UTF8).</param>
-    /// <param name="configuration">Optional configuration.</param>
-    /// <returns>A new CSV reader that must be disposed.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when stream is null.</exception>
-    public static CsvReader CreateReader(Stream stream, Encoding? encoding = null, CsvReadConfiguration? configuration = null)
-    {
-        if (stream == null)
-            throw new ArgumentNullException(nameof(stream));
-
-        var config = (configuration ?? CsvReadConfiguration.Default) with
-        {
-            Stream = stream,
-            Encoding = encoding ?? Encoding.UTF8
-        };
-        return new CsvReader(config);
-    }
-
-    /// <summary>
-    /// Creates a new CSV reader from a file path for advanced streaming scenarios.
-    /// Returns a CsvReader instance that must be disposed after use.
+    /// Opens a CSV reader from file for advanced scenarios where you need full control.
+    /// Returns a CsvReader that must be disposed after use.
     /// </summary>
     /// <param name="filePath">The file path.</param>
-    /// <param name="encoding">The encoding to use (defaults to UTF8).</param>
     /// <param name="configuration">Optional configuration.</param>
-    /// <returns>A new CSV reader that must be disposed.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when filePath is null.</exception>
-    /// <exception cref="FileNotFoundException">Thrown when the file does not exist.</exception>
-    public static CsvReader CreateReaderFromFile(string filePath, Encoding? encoding = null, CsvReadConfiguration? configuration = null)
+    /// <returns>A CSV reader for advanced control.</returns>
+    public static CsvReader OpenFile(string filePath, CsvReadConfiguration? configuration = null)
     {
         if (filePath == null)
             throw new ArgumentNullException(nameof(filePath));
 
-        var config = (configuration ?? CsvReadConfiguration.Default) with
-        {
-            FilePath = filePath,
-            Encoding = encoding ?? Encoding.UTF8
-        };
+        var config = (configuration ?? CsvReadConfiguration.Default) with { FilePath = filePath };
         return new CsvReader(config);
     }
 
     /// <summary>
-    /// Creates a new CSV reader from a byte array for advanced streaming scenarios.
-    /// Returns a CsvReader instance that must be disposed after use.
+    /// Opens a CSV reader from stream for advanced scenarios where you need full control.
+    /// Returns a CsvReader that must be disposed after use.
     /// </summary>
-    /// <param name="bytes">The CSV content as a byte array.</param>
-    /// <param name="encoding">The text encoding to use. If null, UTF-8 is used.</param>
+    /// <param name="stream">The stream to read from.</param>
     /// <param name="configuration">Optional configuration.</param>
-    /// <returns>A new CSV reader that must be disposed.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when bytes is null.</exception>
-    public static CsvReader CreateReader(byte[] bytes, Encoding? encoding = null, CsvReadConfiguration? configuration = null)
+    /// <returns>A CSV reader for advanced control.</returns>
+    public static CsvReader OpenStream(Stream stream, CsvReadConfiguration? configuration = null)
+    {
+        if (stream == null)
+            throw new ArgumentNullException(nameof(stream));
+
+        var config = (configuration ?? CsvReadConfiguration.Default) with { Stream = stream };
+        return new CsvReader(config);
+    }
+
+#if NET6_0_OR_GREATER
+    /// <summary>
+    /// Asynchronously streams CSV content using IAsyncEnumerable.
+    /// Perfect for processing large files row by row without loading everything into memory.
+    /// </summary>
+    /// <param name="content">The CSV content as string.</param>
+    /// <param name="configuration">Optional configuration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Async enumerable sequence of rows.</returns>
+    public static async IAsyncEnumerable<string[]> StreamContent(string content, CsvReadConfiguration? configuration = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
+
+        var config = (configuration ?? CsvReadConfiguration.Default) with
+        {
+            StringContent = content
+        };
+        using var reader = new CsvReader(config);
+
+        while (!reader.EndOfCsv)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var record = await reader.ReadRecordAsync(cancellationToken).ConfigureAwait(false);
+            if (record != null)
+                yield return record;
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously streams CSV content from bytes using IAsyncEnumerable.
+    /// Perfect for processing large byte data row by row without loading everything into memory.
+    /// </summary>
+    /// <param name="bytes">The CSV content as bytes.</param>
+    /// <param name="encoding">Text encoding.</param>
+    /// <param name="configuration">Optional configuration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Async enumerable sequence of rows.</returns>
+    public static async IAsyncEnumerable<string[]> StreamContent(byte[] bytes, Encoding? encoding = null, CsvReadConfiguration? configuration = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (bytes == null)
             throw new ArgumentNullException(nameof(bytes));
@@ -141,56 +447,43 @@ public static partial class Csv
             ByteContent = bytes,
             Encoding = encoding ?? Encoding.UTF8
         };
-        return new CsvReader(config);
-    }
+        using var reader = new CsvReader(config);
 
-#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
-    /// <summary>
-    /// Creates a new CSV reader from a ReadOnlySpan of chars for advanced streaming scenarios.
-    /// Returns a CsvReader instance that must be disposed after use.
-    /// </summary>
-    /// <param name="span">The CSV content as a span.</param>
-    /// <param name="configuration">Optional configuration.</param>
-    /// <returns>A new CSV reader that must be disposed.</returns>
-    public static CsvReader CreateReader(ReadOnlySpan<char> span, CsvReadConfiguration? configuration = null)
-    {
-        // Convert span to string for now (will optimize in future cycles with span-based reader)
-        var content = span.ToString();
-        var config = (configuration ?? CsvReadConfiguration.Default) with { StringContent = content };
-        return new CsvReader(config);
+        while (!reader.EndOfCsv)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var record = await reader.ReadRecordAsync(cancellationToken).ConfigureAwait(false);
+            if (record != null)
+                yield return record;
+        }
     }
 
     /// <summary>
-    /// Creates a new CSV reader from a ReadOnlyMemory of chars for advanced streaming scenarios.
-    /// Returns a CsvReader instance that must be disposed after use.
-    /// </summary>
-    /// <param name="memory">The CSV content as memory.</param>
-    /// <param name="configuration">Optional configuration.</param>
-    /// <returns>A new CSV reader that must be disposed.</returns>
-    public static CsvReader CreateReader(ReadOnlyMemory<char> memory, CsvReadConfiguration? configuration = null)
-    {
-        // Convert memory to string for now (will optimize in future cycles with memory-based reader)
-        var content = memory.ToString();
-        var config = (configuration ?? CsvReadConfiguration.Default) with { StringContent = content };
-        return new CsvReader(config);
-    }
-
-    /// <summary>
-    /// Creates a new CSV reader from a ReadOnlyMemory of bytes for advanced streaming scenarios.
-    /// Returns a CsvReader instance that must be disposed after use.
+    /// Asynchronously streams CSV content from ReadOnlyMemory of bytes using IAsyncEnumerable.
+    /// Perfect for processing large memory-efficient byte data row by row.
     /// </summary>
     /// <param name="bytes">The CSV content as ReadOnlyMemory of bytes.</param>
-    /// <param name="encoding">The text encoding to use. If null, UTF-8 is used.</param>
+    /// <param name="encoding">Text encoding.</param>
     /// <param name="configuration">Optional configuration.</param>
-    /// <returns>A new CSV reader that must be disposed.</returns>
-    public static CsvReader CreateReader(ReadOnlyMemory<byte> bytes, Encoding? encoding = null, CsvReadConfiguration? configuration = null)
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Async enumerable sequence of rows.</returns>
+    public static async IAsyncEnumerable<string[]> StreamContent(ReadOnlyMemory<byte> bytes, Encoding? encoding = null, CsvReadConfiguration? configuration = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var config = (configuration ?? CsvReadConfiguration.Default) with
         {
             ByteContent = bytes,
             Encoding = encoding ?? Encoding.UTF8
         };
-        return new CsvReader(config);
+        using var reader = new CsvReader(config);
+
+        while (!reader.EndOfCsv)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var record = await reader.ReadRecordAsync(cancellationToken).ConfigureAwait(false);
+            if (record != null)
+                yield return record;
+        }
     }
+
 #endif
 }

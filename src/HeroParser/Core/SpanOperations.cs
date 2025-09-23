@@ -235,37 +235,41 @@ public static class SpanOperations
     }
 
     /// <summary>
-    /// Fast scanning for CSV special characters with fallback implementation.
+    /// Fast scanning for CSV special characters with safe span operations.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe int FastScanForCsvSpecialChars(ReadOnlySpan<char> span, char delimiter, char quote)
+    public static int FastScanForCsvSpecialChars(ReadOnlySpan<char> span, char delimiter, char quote)
     {
         if (span.IsEmpty)
             return -1;
 
-        // For now, use scalar fallback (SIMD implementation can be added later)
+        // Use safe span operations instead of unsafe pointers
         return FastScanForCsvSpecialCharsScalar(span, delimiter, quote);
     }
 
     /// <summary>
-    /// Scalar fallback for CSV special character scanning.
+    /// Safe scalar implementation for CSV special character scanning.
+    /// Uses bounds-checked span operations to prevent buffer overruns.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static unsafe int FastScanForCsvSpecialCharsScalar(ReadOnlySpan<char> span, char delimiter, char quote)
+    private static int FastScanForCsvSpecialCharsScalar(ReadOnlySpan<char> span, char delimiter, char quote)
     {
-        fixed (char* ptr = span)
-        {
-            char* current = ptr;
-            char* end = ptr + span.Length;
+        // Input validation with safety checks
+        if (span.IsEmpty)
+            return -1;
 
-            while (current < end)
+        // Additional safety: Check for extremely large spans that could cause issues
+        if (span.Length > int.MaxValue / 2)
+            throw new ArgumentException("Span length exceeds safe processing limits.", nameof(span));
+
+        // Safe span iteration with bounds checking
+        // The JIT compiler optimizes this loop and eliminates bounds checks when safe
+        for (int i = 0; i < span.Length; i++)
+        {
+            char c = span[i];
+            if (c == delimiter || c == quote || c == '\r' || c == '\n')
             {
-                char c = *current;
-                if (c == delimiter || c == quote || c == '\r' || c == '\n')
-                {
-                    return (int)(current - ptr);
-                }
-                current++;
+                return i;
             }
         }
 

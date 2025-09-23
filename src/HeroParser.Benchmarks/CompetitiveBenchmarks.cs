@@ -1,9 +1,7 @@
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Running;
-using BenchmarkDotNet.Columns;
-using System.Text;
 using nietras.SeparatedValues;
 using System.Globalization;
+using System.Text;
 
 namespace HeroParser.Benchmarks;
 
@@ -67,7 +65,7 @@ public class CompetitiveBenchmarks
     [BenchmarkCategory("Small"), Benchmark(Baseline = true)]
     public List<string[]> Small_HeroParser()
     {
-        return HeroParser.Csv.ParseString(_smallCsv).ToList();
+        return HeroParser.Csv.ParseContent(_smallCsv).ToList();
     }
 
     [BenchmarkCategory("Small"), Benchmark]
@@ -117,10 +115,10 @@ public class CompetitiveBenchmarks
         csv.ReadHeader();
         while (csv.Read())
         {
-            var row = new string[csv.HeaderRecord.Length];
-            for (int i = 0; i < csv.HeaderRecord.Length; i++)
+            var row = new string[csv.HeaderRecord?.Length ?? 0];
+            for (int i = 0; i < (csv.HeaderRecord?.Length ?? 0); i++)
             {
-                row[i] = csv.GetField(i);
+                row[i] = csv.GetField(i) ?? string.Empty;
             }
             records.Add(row);
         }
@@ -134,7 +132,7 @@ public class CompetitiveBenchmarks
     [BenchmarkCategory("Medium"), Benchmark(Baseline = true)]
     public List<string[]> Medium_HeroParser()
     {
-        return HeroParser.Csv.ParseString(_mediumCsv).ToList();
+        return HeroParser.Csv.ParseContent(_mediumCsv).ToList();
     }
 
     [BenchmarkCategory("Medium"), Benchmark]
@@ -184,10 +182,10 @@ public class CompetitiveBenchmarks
         csv.ReadHeader();
         while (csv.Read())
         {
-            var row = new string[csv.HeaderRecord.Length];
-            for (int i = 0; i < csv.HeaderRecord.Length; i++)
+            var row = new string[csv.HeaderRecord?.Length ?? 0];
+            for (int i = 0; i < (csv.HeaderRecord?.Length ?? 0); i++)
             {
-                row[i] = csv.GetField(i);
+                row[i] = csv.GetField(i) ?? string.Empty;
             }
             records.Add(row);
         }
@@ -201,7 +199,7 @@ public class CompetitiveBenchmarks
     [BenchmarkCategory("Large"), Benchmark(Baseline = true)]
     public List<string[]> Large_HeroParser()
     {
-        return HeroParser.Csv.ParseString(_largeCsv).ToList();
+        return HeroParser.Csv.ParseContent(_largeCsv).ToList();
     }
 
     [BenchmarkCategory("Large"), Benchmark]
@@ -251,10 +249,10 @@ public class CompetitiveBenchmarks
         csv.ReadHeader();
         while (csv.Read())
         {
-            var row = new string[csv.HeaderRecord.Length];
-            for (int i = 0; i < csv.HeaderRecord.Length; i++)
+            var row = new string[csv.HeaderRecord?.Length ?? 0];
+            for (int i = 0; i < (csv.HeaderRecord?.Length ?? 0); i++)
             {
-                row[i] = csv.GetField(i);
+                row[i] = csv.GetField(i) ?? string.Empty;
             }
             records.Add(row);
         }

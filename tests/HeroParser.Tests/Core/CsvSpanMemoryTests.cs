@@ -19,7 +19,7 @@ public class CsvSpanMemoryTests
         ReadOnlySpan<char> span = SimpleCsv.AsSpan();
 
         // Act
-        var result = Csv.ParseSpan(span);
+        var result = Csv.ParseContent(span);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -38,7 +38,7 @@ public class CsvSpanMemoryTests
         ReadOnlyMemory<char> memory = SimpleCsv.AsMemory();
 
         // Act
-        var result = Csv.ParseMemory(memory);
+        var result = Csv.ParseContent(memory.ToString());
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -47,13 +47,14 @@ public class CsvSpanMemoryTests
     }
 
     [Fact]
-    public void FromSpan_StreamsDataCorrectly()
+    public async Task FromSpan_StreamsDataCorrectly()
     {
         // Arrange
         ReadOnlySpan<char> span = SimpleCsv.AsSpan();
 
         // Act
-        var result = Csv.FromSpan(span).ToArray();
+        // Convert span to string since current API doesn't support FromSpan
+        var result = await Csv.FromContent(span.ToString());
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -62,13 +63,14 @@ public class CsvSpanMemoryTests
     }
 
     [Fact]
-    public void FromMemory_StreamsDataCorrectly()
+    public async Task FromMemory_StreamsDataCorrectly()
     {
         // Arrange
         ReadOnlyMemory<char> memory = SimpleCsv.AsMemory();
 
         // Act
-        var result = Csv.FromMemory(memory).ToArray();
+        // Convert memory to string since current API doesn't support FromMemory<char>
+        var result = await Csv.FromContent(memory.ToString());
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -84,7 +86,7 @@ public class CsvSpanMemoryTests
         ReadOnlySpan<byte> span = bytes.AsSpan();
 
         // Act
-        var result = Csv.ParseBytes(span);
+        var result = Csv.ParseContent(span);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -100,7 +102,7 @@ public class CsvSpanMemoryTests
         ReadOnlyMemory<byte> memory = bytes.AsMemory();
 
         // Act
-        var result = Csv.ParseBytes(memory);
+        var result = Csv.ParseContent(memory);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -109,14 +111,14 @@ public class CsvSpanMemoryTests
     }
 
     [Fact]
-    public void FromBytes_WithReadOnlySpan_StreamsCorrectly()
+    public async Task FromBytes_WithReadOnlySpan_StreamsCorrectly()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
         ReadOnlySpan<byte> span = bytes.AsSpan();
 
         // Act
-        var result = Csv.FromBytes(span).ToArray();
+        var result = await Csv.FromContent(span.ToArray());
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -125,14 +127,14 @@ public class CsvSpanMemoryTests
     }
 
     [Fact]
-    public void FromBytes_WithReadOnlyMemory_StreamsCorrectly()
+    public async Task FromBytes_WithReadOnlyMemory_StreamsCorrectly()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
         ReadOnlyMemory<byte> memory = bytes.AsMemory();
 
         // Act
-        var result = Csv.FromBytes(memory).ToArray();
+        var result = await Csv.FromContent(memory);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -149,7 +151,7 @@ public class CsvSpanMemoryTests
         var config = new CsvReadConfiguration { Delimiter = ';' };
 
         // Act
-        var result = Csv.ParseSpan(span, config);
+        var result = Csv.ParseContent(span.ToString(), delimiter: config.Delimiter);
 
         // Assert
         Assert.Single(result);
@@ -166,7 +168,7 @@ public class CsvSpanMemoryTests
         ReadOnlySpan<byte> span = bytes.AsSpan();
 
         // Act
-        var result = Csv.ParseBytes(span, Encoding.UTF32);
+        var result = Csv.ParseContent(span.ToArray(), encoding: Encoding.UTF32);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -180,7 +182,7 @@ public class CsvSpanMemoryTests
         ReadOnlySpan<char> span = ReadOnlySpan<char>.Empty;
 
         // Act
-        var result = Csv.ParseSpan(span);
+        var result = Csv.ParseContent(span);
 
         // Assert
         Assert.Empty(result);
@@ -193,7 +195,7 @@ public class CsvSpanMemoryTests
         ReadOnlyMemory<char> memory = ReadOnlyMemory<char>.Empty;
 
         // Act
-        var result = Csv.ParseMemory(memory);
+        var result = Csv.ParseContent(memory.ToString());
 
         // Assert
         Assert.Empty(result);
@@ -206,7 +208,7 @@ public class CsvSpanMemoryTests
         ReadOnlySpan<byte> span = ReadOnlySpan<byte>.Empty;
 
         // Act
-        var result = Csv.ParseBytes(span);
+        var result = Csv.ParseContent(span);
 
         // Assert
         Assert.Empty(result);
@@ -219,11 +221,12 @@ public class CsvSpanMemoryTests
         ReadOnlySpan<char> span = SimpleCsv.AsSpan();
 
         // Act
-        using var reader = Csv.CreateReader(span);
+        using var reader = Csv.OpenContent(span.ToString());
 
         // Assert
         Assert.NotNull(reader);
         var record = reader.ReadRecord();
+        Assert.NotNull(record);
         Assert.Equal("John", record[0]);
     }
 
@@ -234,11 +237,12 @@ public class CsvSpanMemoryTests
         ReadOnlyMemory<char> memory = SimpleCsv.AsMemory();
 
         // Act
-        using var reader = Csv.CreateReader(memory);
+        using var reader = Csv.OpenContent(memory.ToString());
 
         // Assert
         Assert.NotNull(reader);
         var record = reader.ReadRecord();
+        Assert.NotNull(record);
         Assert.Equal("John", record[0]);
     }
 
@@ -250,11 +254,13 @@ public class CsvSpanMemoryTests
         ReadOnlyMemory<byte> memory = bytes.AsMemory();
 
         // Act
-        using var reader = Csv.CreateReader(memory);
+        using var stream = new MemoryStream(memory.ToArray());
+        using var reader = Csv.OpenStream(stream);
 
         // Assert
         Assert.NotNull(reader);
         var record = reader.ReadRecord();
+        Assert.NotNull(record);
         Assert.Equal("John", record[0]);
     }
 
@@ -268,7 +274,7 @@ public class CsvSpanMemoryTests
         var dataSpan = buffer.Slice(0, csvData.Length);
 
         // Act
-        var result = Csv.ParseSpan(dataSpan);
+        var result = Csv.ParseContent(dataSpan);
 
         // Assert
         Assert.Single(result);
@@ -291,7 +297,7 @@ public class CsvSpanMemoryTests
             var span = buffer.AsSpan(0, bytes.Length);
 
             // Act
-            var result = Csv.ParseBytes(span);
+            var result = Csv.ParseContent(span);
 
             // Assert
             Assert.Single(result);

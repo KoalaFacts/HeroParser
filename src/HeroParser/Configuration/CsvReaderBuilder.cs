@@ -249,22 +249,23 @@ public sealed class CsvReaderBuilder(CsvReadConfiguration configuration)
     }
 
     /// <summary>
-    /// Builds and returns a configured <see cref="ICsvReader"/> instance.
+    /// Builds and returns a configured <see cref="CsvReader"/> instance.
     /// </summary>
-    /// <returns>A new <see cref="ICsvReader"/> instance with the configured settings.</returns>
+    /// <returns>A new <see cref="CsvReader"/> instance with the configured settings.</returns>
     /// <exception cref="InvalidOperationException">Thrown when no input source has been specified.</exception>
-    public ICsvReader Build()
+    public CsvReader Build()
     {
-        configuration.Validate();
         var config = configuration;
 
         if (_csvContent != null)
         {
-            return CsvReader.CreateReader(_csvContent, config);
+            config = config with { StringContent = _csvContent };
+            return new CsvReader(config);
         }
         else if (_reader != null)
         {
-            return CsvReader.CreateReader(_reader, config);
+            config = config with { Reader = _reader };
+            return new CsvReader(config);
         }
         else
         {

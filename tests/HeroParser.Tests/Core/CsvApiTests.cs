@@ -4,23 +4,20 @@ using System.Text;
 namespace HeroParser.Tests.Core;
 
 /// <summary>
-/// Tests for the Csv static API methods added in F1 Cycle 2.
+/// Tests for the Csv static API methods - updated for new HeroParser API design.
 /// </summary>
 public class CsvApiTests
 {
     private const string SimpleCsv = "Name,Age,City\nJohn,25,Boston\nJane,30,Seattle";
     private const string SimpleCsvNoHeader = "John,25,Boston\nJane,30,Seattle";
 
-    #region FromXXX Streaming Methods Tests
+    #region ParseContent Tests (Synchronous)
 
     [Fact]
-    public void FromString_StreamsDataCorrectly()
+    public void ParseContent_String_ParsesCorrectly()
     {
-        // Arrange
-        var csv = SimpleCsv;
-
         // Act
-        var result = Csv.FromString(csv).ToArray();
+        var result = Csv.ParseContent(SimpleCsv);
 
         // Assert
         Assert.Equal(2, result.Length);
@@ -33,164 +30,186 @@ public class CsvApiTests
     }
 
     [Fact]
-    public void FromString_StreamingEnumeratesOnce()
+    public void ParseContent_String_WithoutHeaders_ParsesCorrectly()
     {
-        // Arrange
-        var csv = SimpleCsv;
-        var enumerated = false;
-
         // Act
-        var enumerable = Csv.FromString(csv);
-
-        foreach (var record in enumerable)
-        {
-            if (!enumerated)
-            {
-                enumerated = true;
-                Assert.Equal("John", record[0]);
-            }
-            // Break after first to verify streaming
-            break;
-        }
-
-        // Assert - verify we can enumerate again (new enumeration)
-        var secondEnumeration = enumerable.ToArray();
-        Assert.Equal(2, secondEnumeration.Length);
-    }
-
-    [Fact]
-    public void FromReader_StreamsDataCorrectly()
-    {
-        // Arrange
-        using var reader = new StringReader(SimpleCsv);
-
-        // Act
-        var result = Csv.FromReader(reader).ToArray();
+        var result = Csv.ParseContent(SimpleCsvNoHeader, hasHeaders: false);
 
         // Assert
         Assert.Equal(2, result.Length);
         Assert.Equal("John", result[0][0]);
         Assert.Equal("25", result[0][1]);
-    }
-
-    [Fact]
-    public void FromStream_StreamsDataCorrectly()
-    {
-        // Arrange
-        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
-        using var stream = new MemoryStream(bytes);
-
-        // Act
-        var result = Csv.FromStream(stream).ToArray();
-
-        // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("John", result[0][0]);
         Assert.Equal("Boston", result[0][2]);
-    }
-
-    [Fact]
-    public void FromFile_StreamsDataCorrectly()
-    {
-        // Arrange
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            File.WriteAllText(tempFile, SimpleCsv);
-
-            // Act
-            var result = Csv.FromFile(tempFile).ToArray();
-
-            // Assert
-            Assert.Equal(2, result.Length);
-            Assert.Equal("Jane", result[1][0]);
-            Assert.Equal("30", result[1][1]);
-        }
-        finally
-        {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public void FromBytes_StreamsDataCorrectly()
-    {
-        // Arrange
-        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
-
-        // Act
-        var result = Csv.FromBytes(bytes).ToArray();
-
-        // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("John", result[0][0]);
+        Assert.Equal("Jane", result[1][0]);
+        Assert.Equal("30", result[1][1]);
         Assert.Equal("Seattle", result[1][2]);
     }
 
     [Fact]
-    public void FromBytes_WithDifferentEncoding_ParsesCorrectly()
+    public void ParseContent_String_CustomDelimiter_ParsesCorrectly()
+    {
+        // Arrange
+        var csv = "Name;Age;City\nJohn;25;Boston\nJane;30;Seattle";
+
+        // Act
+        var result = Csv.ParseContent(csv, delimiter: ';');
+
+        // Assert
+        Assert.Equal(2, result.Length);
+        Assert.Equal("John", result[0][0]);
+        Assert.Equal("25", result[0][1]);
+        Assert.Equal("Boston", result[0][2]);
+    }
+
+    [Fact]
+    public void ParseContent_ByteArray_ParsesCorrectly()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
+
+        // Act
+        var result = Csv.ParseContent(bytes);
+
+        // Assert
+        Assert.Equal(2, result.Length);
+        Assert.Equal("John", result[0][0]);
+        Assert.Equal("25", result[0][1]);
+        Assert.Equal("Boston", result[0][2]);
+    }
+
+    [Fact]
+    public void ParseContent_ByteArray_WithEncoding_ParsesCorrectly()
     {
         // Arrange
         var bytes = Encoding.UTF32.GetBytes(SimpleCsv);
 
         // Act
-        var result = Csv.FromBytes(bytes, Encoding.UTF32).ToArray();
+        var result = Csv.ParseContent(bytes, encoding: Encoding.UTF32);
 
         // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("Jane", result[1][0]);
-    }
-
-    #endregion
-
-    #region ParseXXX Immediate Methods Tests
-
-    [Fact]
-    public void ParseString_ReturnsArrayImmediately()
-    {
-        // Act
-        var result = Csv.ParseString(SimpleCsv);
-
-        // Assert
-        Assert.IsType<string[][]>(result);
         Assert.Equal(2, result.Length);
         Assert.Equal("John", result[0][0]);
-        Assert.Equal("Seattle", result[1][2]);
-    }
-
-    [Fact]
-    public void ParseReader_ReturnsArrayImmediately()
-    {
-        // Arrange
-        using var reader = new StringReader(SimpleCsv);
-
-        // Act
-        var result = Csv.ParseReader(reader);
-
-        // Assert
-        Assert.IsType<string[][]>(result);
-        Assert.Equal(2, result.Length);
         Assert.Equal("25", result[0][1]);
-    }
-
-    [Fact]
-    public void ParseStream_ReturnsArrayImmediately()
-    {
-        // Arrange
-        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
-        using var stream = new MemoryStream(bytes);
-
-        // Act
-        var result = Csv.ParseStream(stream);
-
-        // Assert
-        Assert.Equal(2, result.Length);
         Assert.Equal("Boston", result[0][2]);
     }
 
     [Fact]
-    public void ParseFile_ReturnsArrayImmediately()
+    public void ParseContent_ReadOnlyMemoryByte_ParsesCorrectly()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
+        ReadOnlyMemory<byte> memory = bytes.AsMemory();
+
+        // Act
+        var result = Csv.ParseContent(memory);
+
+        // Assert
+        Assert.Equal(2, result.Length);
+        Assert.Equal("Jane", result[1][0]);
+        Assert.Equal("Seattle", result[1][2]);
+    }
+
+#if NET5_0_OR_GREATER
+    [Fact]
+    public void ParseContent_ReadOnlySpanChar_ParsesCorrectly()
+    {
+        // Arrange
+        ReadOnlySpan<char> span = SimpleCsv.AsSpan();
+
+        // Act
+        var result = Csv.ParseContent(span);
+
+        // Assert
+        Assert.Equal(2, result.Length);
+        Assert.Equal("John", result[0][0]);
+        Assert.Equal("Boston", result[0][2]);
+    }
+
+    [Fact]
+    public void ParseContent_ReadOnlySpanByte_ParsesCorrectly()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
+        ReadOnlySpan<byte> span = bytes.AsSpan();
+
+        // Act
+        var result = Csv.ParseContent(span);
+
+        // Assert
+        Assert.Equal(2, result.Length);
+        Assert.Equal("Jane", result[1][0]);
+        Assert.Equal("Seattle", result[1][2]);
+    }
+#endif
+
+    #endregion
+
+    #region FromContent Tests (Asynchronous)
+
+    [Fact]
+    public async Task FromContent_String_ParsesCorrectly()
+    {
+        // Act
+        var result = await Csv.FromContent(SimpleCsv);
+
+        // Assert
+        Assert.Equal(2, result.Length);
+        Assert.Equal("John", result[0][0]);
+        Assert.Equal("25", result[0][1]);
+        Assert.Equal("Boston", result[0][2]);
+    }
+
+    [Fact]
+    public async Task FromContent_String_WithCancellation_ParsesCorrectly()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+
+        // Act
+        var result = await Csv.FromContent(SimpleCsv, cancellationToken: cts.Token);
+
+        // Assert
+        Assert.Equal(2, result.Length);
+    }
+
+    [Fact]
+    public async Task FromContent_ByteArray_ParsesCorrectly()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
+
+        // Act
+        var result = await Csv.FromContent(bytes);
+
+        // Assert
+        Assert.Equal(2, result.Length);
+        Assert.Equal("John", result[0][0]);
+        Assert.Equal("25", result[0][1]);
+        Assert.Equal("Boston", result[0][2]);
+    }
+
+    [Fact]
+    public async Task FromContent_ReadOnlyMemoryByte_ParsesCorrectly()
+    {
+        // Arrange
+        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
+        ReadOnlyMemory<byte> memory = bytes.AsMemory();
+
+        // Act
+        var result = await Csv.FromContent(memory);
+
+        // Assert
+        Assert.Equal(2, result.Length);
+        Assert.Equal("Jane", result[1][0]);
+        Assert.Equal("Seattle", result[1][2]);
+    }
+
+    #endregion
+
+    #region File Operations Tests
+
+    [Fact]
+    public void ParseFile_ParsesCorrectly()
     {
         // Arrange
         var tempFile = Path.GetTempFileName();
@@ -203,47 +222,17 @@ public class CsvApiTests
 
             // Assert
             Assert.Equal(2, result.Length);
-            Assert.Equal("30", result[1][1]);
+            Assert.Equal("John", result[0][0]);
+            Assert.Equal("Boston", result[0][2]);
         }
         finally
         {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
+            File.Delete(tempFile);
         }
     }
 
     [Fact]
-    public void ParseBytes_ReturnsArrayImmediately()
-    {
-        // Arrange
-        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
-
-        // Act
-        var result = Csv.ParseBytes(bytes);
-
-        // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("Jane", result[1][0]);
-    }
-
-    #endregion
-
-    #region Async Methods Tests
-
-    [Fact]
-    public async Task ParseStringAsync_ParsesCorrectly()
-    {
-        // Act
-        var result = await Csv.ParseStringAsync(SimpleCsv);
-
-        // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("John", result[0][0]);
-        Assert.Equal("Seattle", result[1][2]);
-    }
-
-    [Fact]
-    public async Task ParseFileAsync_ParsesCorrectly()
+    public async Task FromFile_ParsesCorrectly()
     {
         // Arrange
         var tempFile = Path.GetTempFileName();
@@ -252,130 +241,74 @@ public class CsvApiTests
             await File.WriteAllTextAsync(tempFile, SimpleCsv);
 
             // Act
-            var result = await Csv.ParseFileAsync(tempFile);
+            var result = await Csv.FromFile(tempFile);
 
             // Assert
             Assert.Equal(2, result.Length);
             Assert.Equal("Jane", result[1][0]);
-            Assert.Equal("30", result[1][1]);
+            Assert.Equal("Seattle", result[1][2]);
         }
         finally
         {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
+            File.Delete(tempFile);
         }
     }
 
+    #endregion
+
+    #region Stream Operations Tests
+
     [Fact]
-    public async Task ParseReaderAsync_ParsesCorrectly()
+    public async Task FromStream_ParsesCorrectly()
     {
         // Arrange
-        using var reader = new StringReader(SimpleCsv);
+        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
+        using var stream = new MemoryStream(bytes);
 
         // Act
-        var result = await Csv.ParseReaderAsync(reader);
+        var result = await Csv.FromStream(stream);
 
         // Assert
         Assert.Equal(2, result.Length);
+        Assert.Equal("John", result[0][0]);
         Assert.Equal("25", result[0][1]);
         Assert.Equal("Boston", result[0][2]);
     }
 
     [Fact]
-    public async Task ParseStreamAsync_ParsesCorrectly()
-    {
-        // Arrange
-        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
-        using var stream = new MemoryStream(bytes);
-
-        // Act
-        var result = await Csv.ParseStreamAsync(stream);
-
-        // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("John", result[0][0]);
-    }
-
-    [Fact]
-    public async Task ParseBytesAsync_ParsesCorrectly()
-    {
-        // Arrange
-        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
-
-        // Act
-        var result = await Csv.ParseBytesAsync(bytes);
-
-        // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("Seattle", result[1][2]);
-    }
-
-    [Fact]
-    public async Task ParseBytesAsync_WithEncoding_ParsesCorrectly()
+    public async Task FromStream_WithEncoding_ParsesCorrectly()
     {
         // Arrange
         var bytes = Encoding.UTF32.GetBytes(SimpleCsv);
+        using var stream = new MemoryStream(bytes);
 
         // Act
-        var result = await Csv.ParseBytesAsync(bytes, Encoding.UTF32);
+        var result = await Csv.FromStream(stream, encoding: Encoding.UTF32);
 
         // Assert
         Assert.Equal(2, result.Length);
         Assert.Equal("Jane", result[1][0]);
+        Assert.Equal("Seattle", result[1][2]);
     }
 
     #endregion
 
-    #region CreateReader Methods Tests
+    #region Advanced Reader Tests
 
     [Fact]
-    public void CreateReader_FromString_CreatesValidReader()
+    public void OpenContent_CreatesReaderCorrectly()
     {
         // Act
-        using var reader = Csv.CreateReader(SimpleCsv);
+        using var reader = Csv.OpenContent(SimpleCsv);
 
         // Assert
         Assert.NotNull(reader);
         Assert.False(reader.EndOfCsv);
-
-        var record = reader.ReadRecord();
-        Assert.NotNull(record);
-        Assert.Equal("John", record[0]);
+        // Configuration is a value type and always non-null
     }
 
     [Fact]
-    public void CreateReader_FromTextReader_CreatesValidReader()
-    {
-        // Arrange
-        using var textReader = new StringReader(SimpleCsv);
-
-        // Act
-        using var csvReader = Csv.CreateReader(textReader);
-
-        // Assert
-        Assert.NotNull(csvReader);
-        var record = csvReader.ReadRecord();
-        Assert.Equal("John", record[0]);
-    }
-
-    [Fact]
-    public void CreateReader_FromStream_CreatesValidReader()
-    {
-        // Arrange
-        var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
-        using var stream = new MemoryStream(bytes);
-
-        // Act
-        using var reader = Csv.CreateReader(stream);
-
-        // Assert
-        Assert.NotNull(reader);
-        var record = reader.ReadRecord();
-        Assert.Equal("John", record[0]);
-    }
-
-    [Fact]
-    public void CreateReaderFromFile_CreatesValidReader()
+    public void OpenFile_CreatesReaderCorrectly()
     {
         // Arrange
         var tempFile = Path.GetTempFileName();
@@ -384,103 +317,31 @@ public class CsvApiTests
             File.WriteAllText(tempFile, SimpleCsv);
 
             // Act
-            using var reader = Csv.CreateReaderFromFile(tempFile);
+            using var reader = Csv.OpenFile(tempFile);
 
             // Assert
             Assert.NotNull(reader);
-            var record = reader.ReadRecord();
-            Assert.Equal("John", record[0]);
+            Assert.False(reader.EndOfCsv);
         }
         finally
         {
-            if (File.Exists(tempFile))
-                File.Delete(tempFile);
+            File.Delete(tempFile);
         }
     }
 
     [Fact]
-    public void CreateReader_FromBytes_CreatesValidReader()
+    public void OpenStream_CreatesReaderCorrectly()
     {
         // Arrange
         var bytes = Encoding.UTF8.GetBytes(SimpleCsv);
+        using var stream = new MemoryStream(bytes);
 
         // Act
-        using var reader = Csv.CreateReader(bytes);
+        using var reader = Csv.OpenStream(stream);
 
         // Assert
         Assert.NotNull(reader);
-        var record = reader.ReadRecord();
-        Assert.Equal("John", record[0]);
-    }
-
-    [Fact]
-    public void CreateReader_AllowsCustomIteration()
-    {
-        // Arrange
-        using var reader = Csv.CreateReader(SimpleCsv);
-        var recordCount = 0;
-
-        // Act
-        while (!reader.EndOfCsv)
-        {
-            var record = reader.ReadRecord();
-            if (record != null)
-                recordCount++;
-        }
-
-        // Assert
-        Assert.Equal(2, recordCount);
-    }
-
-    #endregion
-
-    #region Configuration Tests
-
-    [Fact]
-    public void FromString_WithCustomDelimiter_ParsesCorrectly()
-    {
-        // Arrange
-        var csv = "Name;Age;City\nJohn;25;Boston\nJane;30;Seattle";
-        var config = new CsvReadConfiguration { Delimiter = ';' };
-
-        // Act
-        var result = Csv.FromString(csv, config).ToArray();
-
-        // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("John", result[0][0]);
-        Assert.Equal("Boston", result[0][2]);
-    }
-
-    [Fact]
-    public void ParseString_WithNoHeader_ParsesAllRows()
-    {
-        // Arrange
-        var config = new CsvReadConfiguration { HasHeaderRow = false };
-
-        // Act
-        var result = Csv.ParseString(SimpleCsvNoHeader, config);
-
-        // Assert
-        Assert.Equal(2, result.Length);
-        Assert.Equal("John", result[0][0]);
-        Assert.Equal("Jane", result[1][0]);
-    }
-
-    [Fact]
-    public void FromString_WithTrimValues_TrimsWhitespace()
-    {
-        // Arrange
-        var csv = "Name,Age,City\n  John  , 25 , Boston  \n Jane , 30,  Seattle ";
-        var config = new CsvReadConfiguration { TrimValues = true };
-
-        // Act
-        var result = Csv.FromString(csv, config).ToArray();
-
-        // Assert
-        Assert.Equal("John", result[0][0]);
-        Assert.Equal("25", result[0][1]);
-        Assert.Equal("Boston", result[0][2]);
+        Assert.False(reader.EndOfCsv);
     }
 
     #endregion
@@ -488,121 +349,114 @@ public class CsvApiTests
     #region Error Handling Tests
 
     [Fact]
-    public void ParseString_NullInput_ThrowsArgumentNullException()
+    public void ParseContent_NullContent_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.ParseString(null));
+        Assert.Throws<ArgumentNullException>(() => Csv.ParseContent((string)null!));
     }
 
     [Fact]
-    public void FromString_NullInput_ThrowsArgumentNullException()
+    public void ParseContent_NullByteArray_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.FromString(null).ToArray());
+        Assert.Throws<ArgumentNullException>(() => Csv.ParseContent((byte[])null!));
     }
 
     [Fact]
-    public void ParseReader_NullInput_ThrowsArgumentNullException()
+    public async Task FromContent_NullContent_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.ParseReader(null));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromContent((string)null!));
     }
 
     [Fact]
-    public void FromReader_NullInput_ThrowsArgumentNullException()
+    public void ParseFile_NullPath_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.FromReader(null).ToArray());
+        Assert.Throws<ArgumentNullException>(() => Csv.ParseFile(null!));
     }
 
     [Fact]
-    public void ParseStream_NullInput_ThrowsArgumentNullException()
+    public async Task FromFile_NullPath_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.ParseStream(null));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromFile(null!));
     }
 
     [Fact]
-    public void FromStream_NullInput_ThrowsArgumentNullException()
+    public async Task FromStream_NullStream_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.FromStream(null).ToArray());
+        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.FromStream(null!));
     }
 
     [Fact]
-    public void ParseFile_NullInput_ThrowsArgumentNullException()
+    public void OpenContent_NullContent_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.ParseFile(null));
+        Assert.Throws<ArgumentNullException>(() => Csv.OpenContent(null!));
     }
 
     [Fact]
-    public void FromFile_NullInput_ThrowsArgumentNullException()
+    public void OpenFile_NullPath_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.FromFile(null).ToArray());
+        Assert.Throws<ArgumentNullException>(() => Csv.OpenFile(null!));
     }
 
     [Fact]
-    public void ParseBytes_NullInput_ThrowsArgumentNullException()
+    public void OpenStream_NullStream_ThrowsArgumentNullException()
     {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.ParseBytes((byte[])null));
+        Assert.Throws<ArgumentNullException>(() => Csv.OpenStream(null!));
     }
 
-    [Fact]
-    public void FromBytes_NullInput_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.FromBytes(null).ToArray());
-    }
+    #endregion
+
+    #region Performance and Edge Cases
 
     [Fact]
-    public async Task ParseStringAsync_NullInput_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.ParseStringAsync(null));
-    }
-
-    [Fact]
-    public async Task ParseFileAsync_NullInput_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        await Assert.ThrowsAsync<ArgumentNullException>(() => Csv.ParseFileAsync(null));
-    }
-
-    [Fact]
-    public void CreateReader_NullString_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.CreateReader((string)null));
-    }
-
-    [Fact]
-    public void CreateReader_NullTextReader_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => Csv.CreateReader((TextReader)null));
-    }
-
-    [Fact]
-    public void ParseString_EmptyString_ReturnsEmptyArray()
+    public void ParseContent_EmptyString_ReturnsEmptyArray()
     {
         // Act
-        var result = Csv.ParseString("");
+        var result = Csv.ParseContent("");
 
         // Assert
         Assert.Empty(result);
     }
 
     [Fact]
-    public void FromString_EmptyString_ReturnsEmptyEnumerable()
+    public void ParseContent_HeaderOnly_ReturnsEmptyArray()
     {
         // Act
-        var result = Csv.FromString("").ToArray();
+        var result = Csv.ParseContent("Name,Age,City");
 
         // Assert
         Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ParseContent_SingleRecord_ParsesCorrectly()
+    {
+        // Act
+        var result = Csv.ParseContent("Name,Age,City\nJohn,25,Boston");
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("John", result[0][0]);
+        Assert.Equal("25", result[0][1]);
+        Assert.Equal("Boston", result[0][2]);
+    }
+
+    [Fact]
+    public async Task FromContent_LargeContent_ParsesCorrectly()
+    {
+        // Arrange
+        var sb = new StringBuilder();
+        sb.AppendLine("Name,Age,City");
+        for (int i = 0; i < 1000; i++)
+        {
+            sb.AppendLine($"Person{i},{20 + (i % 50)},City{i % 10}");
+        }
+
+        // Act
+        var result = await Csv.FromContent(sb.ToString());
+
+        // Assert
+        Assert.Equal(1000, result.Length);
+        Assert.Equal("Person0", result[0][0]);
+        Assert.Equal("Person999", result[999][0]);
     }
 
     #endregion

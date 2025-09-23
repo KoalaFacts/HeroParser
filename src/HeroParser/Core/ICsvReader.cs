@@ -27,6 +27,19 @@ public interface ICsvReader : IDisposable
     bool EndOfCsv { get; }
 
     /// <summary>
+    /// Gets the current row as a zero-allocation HeroCsvRow.
+    /// Provides high-performance access to the current row's columns without string allocations.
+    /// Check IsEmpty property to determine if a valid row is available.
+    /// </summary>
+    HeroCsvRow CurrentRow { get; }
+
+    /// <summary>
+    /// Advances to the next row and makes it available via CurrentRow.
+    /// </summary>
+    /// <returns>True if a row was read; false if end of CSV has been reached.</returns>
+    bool Read();
+
+    /// <summary>
     /// Reads all remaining CSV records as an enumerable sequence.
     /// </summary>
     /// <returns>An enumerable sequence of string arrays representing CSV rows.</returns>

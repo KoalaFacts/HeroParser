@@ -2,69 +2,33 @@ using BenchmarkDotNet.Running;
 
 namespace HeroParser.Benchmarks;
 
-/// <summary>
-/// Benchmark suite for HeroParser CSV parsing library.
-/// </summary>
-public class Program
+class Program
 {
-    public static void Main(string[] args)
+    static void Main(string[] args)
     {
-        if (args.Length == 0)
+        Console.WriteLine("==============================================");
+        Console.WriteLine("  HeroParser Benchmarks - Beat Sep Challenge");
+        Console.WriteLine("  Target: 30+ GB/s on AVX-512 Hardware");
+        Console.WriteLine("==============================================");
+        Console.WriteLine();
+
+        // Display hardware capabilities
+        Console.WriteLine("Hardware Detection:");
+        Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
+        Console.WriteLine();
+
+        if (args.Length > 0 && args[0] == "--quick")
         {
-            PrintUsage();
-            return;
+            // Quick test run
+            Console.WriteLine("Running quick performance test...");
+            QuickTest.Run();
         }
-
-        switch (args[0].ToLower())
+        else
         {
-            case "compete":
-            case "competitive":
-                Console.WriteLine("====================================");
-                Console.WriteLine("   COMPETITIVE BENCHMARK");
-                Console.WriteLine("====================================");
-                Console.WriteLine("Comparing HeroParser against Sep, Sylvan, and CsvHelper");
-                Console.WriteLine();
-                BenchmarkRunner.Run<CompetitiveBenchmarks>();
-                break;
-
-            case "perf":
-            case "performance":
-                Console.WriteLine("====================================");
-                Console.WriteLine("   HEROPARSER PERFORMANCE ANALYSIS");
-                Console.WriteLine("====================================");
-                Console.WriteLine("Testing internal optimizations and edge cases");
-                Console.WriteLine();
-                BenchmarkRunner.Run<HeroParserPerformance>();
-                break;
-
-            case "all":
-                Console.WriteLine("Running all benchmarks...\n");
-                BenchmarkRunner.Run<CompetitiveBenchmarks>();
-                Console.WriteLine("\n" + new string('=', 50) + "\n");
-                BenchmarkRunner.Run<HeroParserPerformance>();
-                break;
-
-            default:
-                Console.WriteLine($"Unknown benchmark: {args[0]}");
-                PrintUsage();
-                break;
+            // Full benchmark suite
+            var summary = BenchmarkRunner.Run<VsSepBenchmark>();
+            Console.WriteLine();
+            Console.WriteLine("Benchmark completed!");
         }
-    }
-
-    private static void PrintUsage()
-    {
-        Console.WriteLine("HeroParser Benchmark Suite");
-        Console.WriteLine("==========================");
-        Console.WriteLine();
-        Console.WriteLine("Usage: dotnet run -c Release -- [benchmark]");
-        Console.WriteLine();
-        Console.WriteLine("Available benchmarks:");
-        Console.WriteLine("  compete     - Compare HeroParser vs competitors (Sep, Sylvan, CsvHelper)");
-        Console.WriteLine("  performance - Analyze HeroParser's internal performance characteristics");
-        Console.WriteLine("  all         - Run all benchmarks");
-        Console.WriteLine();
-        Console.WriteLine("Examples:");
-        Console.WriteLine("  dotnet run -c Release -- compete");
-        Console.WriteLine("  dotnet run -c Release -- performance");
     }
 }

@@ -6,16 +6,17 @@ namespace HeroParser;
 /// <summary>
 /// Parallel CSV reader for multi-core throughput (10+ GB/s target).
 /// Splits CSV into chunks and processes them concurrently.
+/// Note: Uses string instead of span because parallel processing requires lambda capture.
 /// </summary>
-public ref struct ParallelCsvReader
+public struct ParallelCsvReader
 {
-    private readonly ReadOnlySpan<char> _csv;
+    private readonly string _csv;
     private readonly char _delimiter;
     private readonly int _threadCount;
     private readonly int _chunkSize;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal ParallelCsvReader(ReadOnlySpan<char> csv, char delimiter, int threadCount, int chunkSize)
+    internal ParallelCsvReader(string csv, char delimiter, int threadCount, int chunkSize)
     {
         _csv = csv;
         _delimiter = delimiter;
@@ -29,23 +30,28 @@ public ref struct ParallelCsvReader
     /// </summary>
     public string[][] ParseAll()
     {
-        // Split CSV into chunks at line boundaries
-        var chunks = SplitIntoChunks(_csv, _chunkSize);
+        // Split CSV into chunks at line boundaries (store positions, not spans)
+        var chunkRanges = SplitIntoChunks(_chunkSize);
+
+        // Copy to local variables for lambda capture
+        var csv = _csv;
+        var delimiter = _delimiter;
 
         // Parse each chunk in parallel
         var results = new ConcurrentBag<(int Index, List<string[]> Rows)>();
 
-        Parallel.ForEach(chunks, new ParallelOptions { MaxDegreeOfParallelism = _threadCount }, chunk =>
+        Parallel.ForEach(chunkRanges, new ParallelOptions { MaxDegreeOfParallelism = _threadCount }, chunkRange =>
         {
             var rows = new List<string[]>();
-            var reader = new CsvReader(chunk.Data, _delimiter);
+            var chunkSpan = csv.AsSpan(chunkRange.Start, chunkRange.Length);
+            var reader = new CsvReader(chunkSpan, delimiter);
 
             while (reader.MoveNext())
             {
                 rows.Add(reader.Current.ToStringArray());
             }
 
-            results.Add((chunk.Index, rows));
+            results.Add((chunkRange.Index, rows));
         });
 
         // Combine results in order
@@ -54,37 +60,50 @@ public ref struct ParallelCsvReader
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static List<(int Index, ReadOnlySpan<char> Data)> SplitIntoChunks(ReadOnlySpan<char> csv, int chunkSize)
+    private List<ChunkRange> SplitIntoChunks(int chunkSize)
     {
-        var chunks = new List<(int Index, ReadOnlySpan<char> Data)>();
+        var chunks = new List<ChunkRange>();
         int position = 0;
         int index = 0;
+        int csvLength = _csv.Length;
 
-        while (position < csv.Length)
+        while (position < csvLength)
         {
-            int endPosition = Math.Min(position + chunkSize, csv.Length);
+            int endPosition = Math.Min(position + chunkSize, csvLength);
 
             // Find next line boundary (don't split mid-line)
-            if (endPosition < csv.Length)
+            if (endPosition < csvLength)
             {
-                while (endPosition < csv.Length && csv[endPosition] != '\n' && csv[endPosition] != '\r')
+                while (endPosition < csvLength && _csv[endPosition] != '\n' && _csv[endPosition] != '\r')
                 {
                     endPosition++;
                 }
 
                 // Include the newline
-                if (endPosition < csv.Length && csv[endPosition] == '\r')
+                if (endPosition < csvLength && _csv[endPosition] == '\r')
                     endPosition++;
-                if (endPosition < csv.Length && csv[endPosition] == '\n')
+                if (endPosition < csvLength && _csv[endPosition] == '\n')
                     endPosition++;
             }
 
-            var chunk = csv.Slice(position, endPosition - position);
-            chunks.Add((index++, chunk));
-
+            chunks.Add(new ChunkRange(index++, position, endPosition - position));
             position = endPosition;
         }
 
         return chunks;
+    }
+
+    private readonly struct ChunkRange
+    {
+        public readonly int Index;
+        public readonly int Start;
+        public readonly int Length;
+
+        public ChunkRange(int index, int start, int length)
+        {
+            Index = index;
+            Start = start;
+            Length = length;
+        }
     }
 }

@@ -60,7 +60,7 @@ public readonly ref struct CsvCol
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParse<T>(out T result) where T : ISpanParsable<T>
     {
-        return T.TryParse(_span, CultureInfo.InvariantCulture, out result);
+        return T.TryParse(_span, CultureInfo.InvariantCulture, out result!);
     }
 
     // Optimized type-specific parsing methods (faster than generic Parse<T>)

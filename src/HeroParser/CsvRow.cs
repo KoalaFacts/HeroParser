@@ -63,7 +63,6 @@ public readonly ref struct CsvRow
     /// <summary>
     /// Get a range of columns as an enumerable.
     /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public CsvCols this[Range range]
     {
         get

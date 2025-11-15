@@ -1,6 +1,8 @@
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace HeroParser;
 

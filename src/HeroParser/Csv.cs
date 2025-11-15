@@ -13,7 +13,7 @@ public static class Csv
     /// This is the primary high-performance API.
     /// </summary>
     /// <param name="csv">The CSV content to parse</param>
-    /// <param name="delimiter">Field delimiter (default: comma). Must be ASCII (< 128) for SIMD performance.</param>
+    /// <param name="delimiter">Field delimiter (default: comma). Must be ASCII (&lt; 128) for SIMD performance.</param>
     /// <returns>A zero-allocation CSV reader</returns>
     /// <exception cref="ArgumentException">Thrown if delimiter is not ASCII</exception>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -48,6 +48,7 @@ public static class Csv
     /// <summary>
     /// Parse CSV using multiple threads for maximum throughput.
     /// Achieves 10+ GB/s on multi-core CPUs by processing chunks in parallel.
+    /// Note: Accepts string (not span) because parallel processing requires lambda capture.
     /// </summary>
     /// <param name="csv">The CSV content to parse</param>
     /// <param name="delimiter">Field delimiter (default: comma)</param>
@@ -55,7 +56,7 @@ public static class Csv
     /// <param name="chunkSize">Chunk size in bytes (default: 16KB for L1 cache fit)</param>
     /// <returns>A parallel CSV reader</returns>
     public static ParallelCsvReader ParseParallel(
-        ReadOnlySpan<char> csv,
+        string csv,
         char delimiter = ',',
         int threadCount = -1,
         int chunkSize = 16384)

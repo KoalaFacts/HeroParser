@@ -217,8 +217,8 @@ If tests fail:
 ### ⏳ Not Yet Covered (Future)
 - Quote handling (not implemented yet)
 - Escape sequences (not implemented yet)
-- Memory-mapped files (CsvFileReader - needs .NET 10)
-- Parallel parsing (ParallelCsvReader - needs .NET 10)
+- Memory-mapped files (CsvFileReader - needs testing)
+- Parallel parsing (ParallelCsvReader - needs testing)
 - Performance regression tests
 
 ## Test Maintenance

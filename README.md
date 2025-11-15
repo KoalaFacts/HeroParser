@@ -14,7 +14,7 @@
 
 ### Complete Rewrite - No Backwards Compatibility
 
-- **Target Framework**: .NET 10.0 only (cutting-edge JIT codegen)
+- **Target Framework**: .NET 8.0 only (cutting-edge JIT codegen)
 - **Unsafe Code**: Enabled for maximum performance
 - **Minimal API**: 5 methods total - pure speed, zero bloat
 - **Zero Dependencies**: No external packages for core library
@@ -170,7 +170,7 @@ tests/
 ## 🏗️ Building
 
 **Requirements:**
-- .NET 10.0 SDK (preview)
+- .NET 8.0 SDK (preview)
 - C# preview language features
 - AVX-512 capable CPU (for maximum performance)
 
@@ -259,7 +259,7 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 - Trade-off: 10-15% faster via branch elimination
 
 ### No Legacy Framework Support
-- .NET 10.0 only
+- .NET 8.0 only
 - Best AVX-512 codegen
 - Trade-off: Latest JIT optimizations
 
@@ -273,7 +273,7 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 | **SIMD Paths** | AVX-512, AVX2, NEON | ✅ Same + optimized |
 | **Unsafe Code** | ❌ Safe only | ✅ **Unsafe allowed** |
 | **API Complexity** | Moderate | **Minimal (5 methods)** |
-| **Framework Support** | .NET 6-9 | .NET 10 only |
+| **Framework Support** | .NET 6-9 | .NET 8 only |
 | **External Dependencies** | csFastFloat | ✅ **Zero** |
 | **Compile-Time Specialization** | ❌ | ✅ **ParseComma/Tab** |
 

@@ -9,7 +9,7 @@
 ### 1. Complete Ground-Up Rewrite
 - ✅ Archived old implementation to `/archive`
 - ✅ Clean slate - zero backward compatibility
-- ✅ Target .NET 10.0 only for best JIT codegen
+- ✅ Target .NET 8.0 only for best JIT codegen
 - ✅ Unsafe code enabled for maximum performance
 
 ### 2. Minimal High-Performance API
@@ -127,7 +127,7 @@ REWRITE_SUMMARY.md
 ## 🚀 Next Steps
 
 ### Immediate (Week 1)
-1. **Build on .NET 10.0 machine**
+1. **Build on .NET 8.0 machine**
    ```bash
    dotnet build src/HeroParser/HeroParser.csproj
    ```
@@ -151,8 +151,8 @@ REWRITE_SUMMARY.md
 
 #### Potential Issues & Fixes
 
-**Issue 1: .NET 10 JIT not optimal yet**
-- **Fix**: Try .NET 9 or wait for .NET 10 RC/RTM
+**Issue 1: .NET 8 JIT not optimal yet**
+- **Fix**: Try .NET 9 or wait for .NET 8 RC/RTM
 - **Alternative**: Use NativeAOT with profile-guided optimization
 
 **Issue 2: Memory bandwidth bottleneck**
@@ -201,7 +201,7 @@ REWRITE_SUMMARY.md
 ## 🎯 Success Metrics
 
 ### Must Have
-- ✅ Compiles without errors on .NET 10
+- ✅ Compiles without errors on .NET 8
 - ✅ All tests pass (correctness)
 - ✅ SIMD parsers match scalar results exactly
 - ⏳ **>25 GB/s on AVX-512** (beat Sep's 21 GB/s)
@@ -250,7 +250,7 @@ Undefined behavior on malformed CSV = 10-15% faster.
 - User must validate separately if needed
 - Trade-off: Eliminate branches in hot path
 
-### 3. .NET 10 Only
+### 3. .NET 8 Only
 - No multi-framework targeting
 - Requires latest .NET preview
 - Trade-off: Best JIT codegen available
@@ -291,9 +291,9 @@ The implementation is:
 - ✅ Tested (correctness suite)
 - ✅ Benchmarked (vs Sep)
 - ✅ Documented (README + comments)
-- ⏳ Ready to build and test on .NET 10
+- ⏳ Ready to build and test on .NET 8
 
-**Next**: Build on a machine with .NET 10 SDK and run benchmarks!
+**Next**: Build on a machine with .NET 8 SDK and run benchmarks!
 
 If we hit 30+ GB/s on first try: 🎉 **Mission Accomplished!**
 

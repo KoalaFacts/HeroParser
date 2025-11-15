@@ -1,4 +1,6 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
 
@@ -108,19 +110,18 @@ internal sealed class NeonParser : ISimdParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong ExtractMask(Vector128<byte> comparison)
+    private static unsafe ulong ExtractMask(Vector128<byte> comparison)
     {
         // NEON doesn't have direct MoveMask equivalent
         // Use bit manipulation to extract mask from comparison result
         // Each byte is 0xFF if equal, 0x00 if not equal
 
-        // Simplified approach: read as uint64 pairs and check high bits
         ulong mask = 0;
-        var span = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.As<Vector128<byte>, byte>(ref comparison), 16);
+        byte* ptr = (byte*)&comparison;
 
         for (int i = 0; i < 16; i++)
         {
-            if (span[i] != 0)
+            if (ptr[i] != 0)
                 mask |= 1UL << i;
         }
 

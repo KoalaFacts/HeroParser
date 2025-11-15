@@ -13,12 +13,24 @@ public static class Csv
     /// This is the primary high-performance API.
     /// </summary>
     /// <param name="csv">The CSV content to parse</param>
-    /// <param name="delimiter">Field delimiter (default: comma)</param>
+    /// <param name="delimiter">Field delimiter (default: comma). Must be ASCII (< 128) for SIMD performance.</param>
     /// <returns>A zero-allocation CSV reader</returns>
+    /// <exception cref="ArgumentException">Thrown if delimiter is not ASCII</exception>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static CsvReader Parse(ReadOnlySpan<char> csv, char delimiter = ',')
     {
+        ValidateDelimiter(delimiter);
         return new CsvReader(csv, delimiter);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ValidateDelimiter(char delimiter)
+    {
+        if (delimiter > 127)
+            throw new ArgumentException(
+                "SIMD parsers only support ASCII delimiters (0-127). " +
+                $"Provided delimiter '{delimiter}' (U+{(int)delimiter:X4}) is not ASCII.",
+                nameof(delimiter));
     }
 
     /// <summary>

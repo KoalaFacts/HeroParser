@@ -46,84 +46,79 @@ public ref struct CsvReader
     /// Advance to the next row in the CSV.
     /// </summary>
     /// <returns>True if a row was read, false if end of CSV reached</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MoveNext()
     {
-        if (_position >= _csv.Length)
+        // Dispose previous row's pooled arrays
+        if (_hasCurrentRow)
         {
+            _currentRow.Dispose();
             _hasCurrentRow = false;
-            return false;
         }
 
-        // Get remaining CSV from current position
-        var remaining = _csv.Slice(_position);
-
-        // Find end of line
-        var lineEnd = FindLineEnd(remaining, out int lineEndLength);
-
-        ReadOnlySpan<char> line;
-        if (lineEnd == -1)
+        // Loop to skip empty lines (avoid recursion/stack overflow)
+        while (true)
         {
-            // Last line without newline
-            line = remaining;
-            _position = _csv.Length;
-        }
-        else
-        {
-            line = remaining.Slice(0, lineEnd);
-            _position += lineEnd + lineEndLength;
-        }
+            if (_position >= _csv.Length)
+                return false;
 
-        // Skip empty lines
-        if (line.IsEmpty)
-        {
-            return MoveNext(); // Recurse to next non-empty line
-        }
+            // Get remaining CSV from current position
+            var remaining = _csv.Slice(_position);
 
-        // Parse the line into columns using SIMD-optimized parser
-        _currentRow = ParseRow(line);
-        _hasCurrentRow = true;
-        return true;
+            // Find end of line
+            var lineEnd = FindLineEnd(remaining, out int lineEndLength);
+
+            ReadOnlySpan<char> line;
+            if (lineEnd == -1)
+            {
+                // Last line without newline
+                line = remaining;
+                _position = _csv.Length;
+            }
+            else
+            {
+                line = remaining.Slice(0, lineEnd);
+                _position += lineEnd + lineEndLength;
+            }
+
+            // Skip empty lines (continue loop)
+            if (line.IsEmpty)
+                continue;
+
+            // Parse the line into columns using SIMD-optimized parser
+            _currentRow = ParseRow(line);
+            _hasCurrentRow = true;
+            return true;
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private CsvRow ParseRow(ReadOnlySpan<char> line)
     {
-        // Rent arrays from pool for column positions
-        const int MaxColumnsStackAlloc = 16;
+        // Always use ArrayPool for memory safety
+        // ArrayPool achieves zero-allocation after warmup (reuses arrays)
+        // NOTE: stackalloc is unsafe here because spans escape method scope
         const int MaxColumnsPooled = 10000;
 
-        // Fast path: estimate column count (most CSVs have consistent column counts)
+        // Estimate column count for efficient allocation
         int estimatedColumns = EstimateColumnCount(line);
+        int bufferSize = Math.Max(Math.Min(estimatedColumns * 2, MaxColumnsPooled), 16);
 
-        if (estimatedColumns <= MaxColumnsStackAlloc)
-        {
-            // Stack allocation for small rows
-            Span<int> starts = stackalloc int[estimatedColumns * 2]; // Over-allocate
-            Span<int> lengths = stackalloc int[estimatedColumns * 2];
+        // Rent arrays from pool
+        var startsArray = ArrayPool<int>.Shared.Rent(bufferSize);
+        var lengthsArray = ArrayPool<int>.Shared.Rent(bufferSize);
 
-            int actualCount = _parser.ParseColumns(line, _delimiter, starts, lengths);
-            return new CsvRow(line, starts.Slice(0, actualCount), lengths.Slice(0, actualCount));
-        }
-        else
-        {
-            // Pool allocation for large rows
-            var startsArray = ArrayPool<int>.Shared.Rent(Math.Min(estimatedColumns * 2, MaxColumnsPooled));
-            var lengthsArray = ArrayPool<int>.Shared.Rent(Math.Min(estimatedColumns * 2, MaxColumnsPooled));
+        var starts = startsArray.AsSpan();
+        var lengths = lengthsArray.AsSpan();
 
-            var starts = startsArray.AsSpan();
-            var lengths = lengthsArray.AsSpan();
+        int actualCount = _parser.ParseColumns(line, _delimiter, starts, lengths);
 
-            int actualCount = _parser.ParseColumns(line, _delimiter, starts, lengths);
-
-            // CsvRow will return these to pool when done
-            return new CsvRow(line, starts.Slice(0, actualCount), lengths.Slice(0, actualCount),
-                startsArray, lengthsArray);
-        }
+        // CsvRow owns these arrays and will return them to pool on Dispose()
+        return new CsvRow(line, starts.Slice(0, actualCount), lengths.Slice(0, actualCount),
+            startsArray, lengthsArray);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int EstimateColumnCount(ReadOnlySpan<char> line)
+    private int EstimateColumnCount(ReadOnlySpan<char> line)
     {
         // Quick estimation: count delimiters in first 256 chars
         var sample = line.Length > 256 ? line.Slice(0, 256) : line;
@@ -131,7 +126,7 @@ public ref struct CsvReader
 
         for (int i = 0; i < sample.Length; i++)
         {
-            if (sample[i] == ',') delimiterCount++; // Assume comma for estimation
+            if (sample[i] == _delimiter) delimiterCount++;
         }
 
         return delimiterCount + 1; // columns = delimiters + 1

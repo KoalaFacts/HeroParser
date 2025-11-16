@@ -137,7 +137,8 @@ public ref struct CsvRow
     private int EstimateColumnCount()
     {
         // Quick estimation: count delimiters in first 256 chars
-        var sample = _line.Length > 256 ? _line.Slice(0, 256) : _line;
+        var sampleSize = Math.Min(256, _line.Length);
+        var sample = _line.Slice(0, sampleSize);
         int delimiterCount = 0;
 
         for (int i = 0; i < sample.Length; i++)
@@ -146,7 +147,17 @@ public ref struct CsvRow
                 delimiterCount++;
         }
 
-        return delimiterCount + 1; // columns = delimiters + 1
+        int estimatedInSample = delimiterCount + 1; // columns = delimiters + 1
+
+        // Scale up estimate based on full line length
+        if (_line.Length > sampleSize)
+        {
+            // Extrapolate: (delimiters in sample / sample size) * total length
+            int scaledEstimate = (int)((long)estimatedInSample * _line.Length / sampleSize);
+            return Math.Min(scaledEstimate, _maxColumns);
+        }
+
+        return estimatedInSample;
     }
 
     /// <summary>

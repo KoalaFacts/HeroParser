@@ -264,14 +264,6 @@ secrets.json
 specs/
 CLAUDE.md
 
-# Temporary documentation files (session-specific)
-*-SUMMARY.md
-*-RESULTS.md
-*-REVIEW.md
-*-STATUS.md
-GETTING-STARTED.md
-RUNNING-*.md
-
 # Windows null device files
 nul
 NUL

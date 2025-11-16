@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <!-- Configuration for integration test execution -->
+  <RunConfiguration>
+    <!-- Allow parallel execution but limit to reasonable count -->
+    <MaxCpuCount>0</MaxCpuCount>
+    <!-- Extended timeout for integration tests -->
+    <TestSessionTimeout>600000</TestSessionTimeout>
+  </RunConfiguration>
+
+  <!-- Framework-specific settings for xUnit -->
+  <xUnit>
+    <!-- Enable parallel execution for integration tests -->
+    <ParallelizeAssembly>true</ParallelizeAssembly>
+    <ParallelizeTestCollections>true</ParallelizeTestCollections>
+    <!-- Use default thread count but not unlimited -->
+    <MaxParallelThreads>default</MaxParallelThreads>
+  </xUnit>
+
+  <!-- Framework-specific settings for MSTest (if needed) -->
+  <MSTest>
+    <Parallelize>
+      <Workers>0</Workers>
+      <Scope>MethodLevel</Scope>
+    </Parallelize>
+  </MSTest>
+
+  <!-- Framework-specific settings for NUnit (if needed) -->
+  <NUnit>
+    <NumberOfTestWorkers>-1</NumberOfTestWorkers>
+  </NUnit>
+</RunSettings>

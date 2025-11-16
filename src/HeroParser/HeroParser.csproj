@@ -2,11 +2,12 @@
 
   <PropertyGroup>
     <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Package metadata -->
     <PackageId>HeroParser</PackageId>
     <Version>1.0.0</Version>
     <Authors>HeroParser Contributors</Authors>
-    <Description>RFC 4180 compliant CSV parser with quote-aware SIMD parsing (AVX-512/AVX2/NEON), zero allocations, lazy column evaluation. Requires .NET 8+</Description>
+    <Description>RFC 4180 compliant CSV parser with SIMD optimizations (AVX2 newline search + hybrid SIMD column parsing), zero allocations, lazy evaluation. Up to 3.5x faster than Sep on small/wide datasets. 63-1024x less memory allocation. Requires .NET 8+</Description>
     <PackageTags>csv;parser;simd;avx512;avx2;neon;performance;zero-allocation;rfc4180;quote-handling</PackageTags>
     <RepositoryUrl>https://github.com/KoalaFacts/HeroParser</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

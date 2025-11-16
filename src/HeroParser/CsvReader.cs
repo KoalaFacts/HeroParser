@@ -1,6 +1,9 @@
 using HeroParser.Simd;
 using System.Buffers;
+using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 
 namespace HeroParser;
 
@@ -108,7 +111,70 @@ public ref struct CsvReader
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int FindLineEnd(ReadOnlySpan<char> span, out int lineEndLength)
     {
-        // Fast scan for newline characters
+        // SIMD-accelerated newline search for better performance
+        if (Avx2.IsSupported && span.Length >= Vector256<ushort>.Count)
+        {
+            return FindLineEndSimd(span, out lineEndLength);
+        }
+
+        // Fallback to scalar search for short spans or unsupported hardware
+        return FindLineEndScalar(span, out lineEndLength);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static unsafe int FindLineEndSimd(ReadOnlySpan<char> span, out int lineEndLength)
+    {
+        var lf = Vector256.Create((ushort)'\n');
+        var cr = Vector256.Create((ushort)'\r');
+        int i = 0;
+        int vectorSize = Vector256<ushort>.Count;
+
+        fixed (char* ptr = span)
+        {
+            // Process 16 chars at a time with AVX2
+            while (i + vectorSize <= span.Length)
+            {
+                var vecData = Avx.LoadVector256((ushort*)(ptr + i));
+                var lfMask = Avx2.CompareEqual(vecData, lf);
+                var crMask = Avx2.CompareEqual(vecData, cr);
+                var anyNewline = Avx2.Or(lfMask, crMask);
+
+                if (!Avx2.TestZ(anyNewline, anyNewline))
+                {
+                    // Found a newline in this vector
+                    uint mask = (uint)Avx2.MoveMask(anyNewline.AsByte());
+                    int offset = BitOperations.TrailingZeroCount(mask) / 2;
+                    int pos = i + offset;
+
+                    if (span[pos] == '\n')
+                    {
+                        lineEndLength = 1;
+                        return pos;
+                    }
+                    if (span[pos] == '\r')
+                    {
+                        if (pos + 1 < span.Length && span[pos + 1] == '\n')
+                        {
+                            lineEndLength = 2;
+                            return pos;
+                        }
+                        lineEndLength = 1;
+                        return pos;
+                    }
+                }
+
+                i += vectorSize;
+            }
+        }
+
+        // Handle remaining chars with scalar
+        var remaining = FindLineEndScalar(span.Slice(i), out lineEndLength);
+        return remaining == -1 ? -1 : remaining + i;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int FindLineEndScalar(ReadOnlySpan<char> span, out int lineEndLength)
+    {
         for (int i = 0; i < span.Length; i++)
         {
             if (span[i] == '\n')

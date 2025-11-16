@@ -28,6 +28,13 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--quotes")
+        {
+            // Run quoted vs unquoted benchmarks
+            BenchmarkRunner.Run<QuotedVsUnquotedBenchmarks>();
+            return;
+        }
+
         // Default: show menu
         Console.WriteLine("=== HeroParser Benchmarks ===");
         Console.WriteLine();
@@ -35,6 +42,7 @@ public class Program
         Console.WriteLine("  --quick       Quick throughput test (no BenchmarkDotNet)");
         Console.WriteLine("  --throughput  Run throughput benchmarks");
         Console.WriteLine("  --vs-sep      Run HeroParser vs Sep comparison");
+        Console.WriteLine("  --quotes      Run quoted vs unquoted comparison (VERIFY SIMD)");
         Console.WriteLine("  --all         Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");
@@ -51,6 +59,7 @@ public class Program
         {
             BenchmarkRunner.Run<ThroughputBenchmarks>();
             BenchmarkRunner.Run<VsSepBenchmarks>();
+            BenchmarkRunner.Run<QuotedVsUnquotedBenchmarks>();
         }
         else
         {

@@ -45,11 +45,10 @@ public readonly ref struct CsvCol
         get => _span.IsEmpty;
     }
 
-#if NET6_0_OR_GREATER
     /// <summary>
     /// Parse column as a specific type using ISpanParsable&lt;T&gt;.
     /// Supported types: int, long, double, decimal, DateTime, Guid, etc.
-    /// Available on .NET 6+ only.
+    /// Zero allocations - parses directly from span.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Parse<T>() where T : ISpanParsable<T>
@@ -58,107 +57,78 @@ public readonly ref struct CsvCol
     }
 
     /// <summary>
-    /// Try parse column as a specific type.
-    /// Available on .NET 6+ only.
+    /// Try parse column as a specific type using ISpanParsable&lt;T&gt;.
+    /// Zero allocations - parses directly from span.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParse<T>(out T? result) where T : ISpanParsable<T>
     {
         return T.TryParse(_span, CultureInfo.InvariantCulture, out result);
     }
-#endif
 
     // Type-specific parsing methods (work on all frameworks)
 
     /// <summary>
-    /// Try parse as int.
+    /// Try parse as int. Zero allocations.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseInt32(out int result)
     {
-#if NETSTANDARD2_0
-        return int.TryParse(_span.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
-#else
         return int.TryParse(_span, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
-#endif
     }
 
     /// <summary>
-    /// Try parse as long.
+    /// Try parse as long. Zero allocations.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseInt64(out long result)
     {
-#if NETSTANDARD2_0
-        return long.TryParse(_span.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
-#else
         return long.TryParse(_span, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
-#endif
     }
 
     /// <summary>
-    /// Try parse as double.
+    /// Try parse as double. Zero allocations.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseDouble(out double result)
     {
-#if NETSTANDARD2_0
-        return double.TryParse(_span.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out result);
-#else
         return double.TryParse(_span, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
-#endif
     }
 
     /// <summary>
-    /// Try parse as decimal.
+    /// Try parse as decimal. Zero allocations.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseDecimal(out decimal result)
     {
-#if NETSTANDARD2_0
-        return decimal.TryParse(_span.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out result);
-#else
         return decimal.TryParse(_span, NumberStyles.Number, CultureInfo.InvariantCulture, out result);
-#endif
     }
 
     /// <summary>
-    /// Try parse as bool.
+    /// Try parse as bool. Zero allocations.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseBoolean(out bool result)
     {
-#if NETSTANDARD2_0
-        return bool.TryParse(_span.ToString(), out result);
-#else
         return bool.TryParse(_span, out result);
-#endif
     }
 
     /// <summary>
-    /// Try parse as DateTime.
+    /// Try parse as DateTime. Zero allocations.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseDateTime(out DateTime result)
     {
-#if NETSTANDARD2_0
-        return DateTime.TryParse(_span.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
-#else
         return DateTime.TryParse(_span, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
-#endif
     }
 
     /// <summary>
-    /// Try parse as Guid.
+    /// Try parse as Guid. Zero allocations.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseGuid(out Guid result)
     {
-#if NETSTANDARD2_0
-        return Guid.TryParse(_span.ToString(), out result);
-#else
         return Guid.TryParse(_span, out result);
-#endif
     }
 
     /// <summary>

@@ -30,7 +30,6 @@ public static class Csv
         return new CsvReader(csv.AsSpan(), options);
     }
 
-#if NETSTANDARD2_1_OR_GREATER || NET6_0_OR_GREATER
     /// <summary>
     /// Parse CSV data asynchronously (for large files/streams).
     /// Yields rows one at a time without loading entire CSV into memory.
@@ -99,16 +98,11 @@ public static class Csv
                 // Yield periodically to avoid blocking
                 if (rowCount % 1000 == 0)
                 {
-#if NET6_0_OR_GREATER
                     await Task.Yield();
-#else
-                    await System.Threading.Tasks.Task.Yield();
-#endif
                 }
             }
 
             position = chunkEnd;
         }
     }
-#endif
 }

@@ -15,8 +15,8 @@ internal static class SimdParserFactory
 
     private static ISimdParser SelectParser()
     {
-#if NET6_0_OR_GREATER
         // Priority order: AVX-512 > AVX2 > NEON > Scalar
+        // .NET 8+ always has SIMD support
 
         if (System.Runtime.Intrinsics.X86.Avx512F.IsSupported &&
             System.Runtime.Intrinsics.X86.Avx512BW.IsSupported)
@@ -36,8 +36,8 @@ internal static class SimdParserFactory
             // ARM NEON: processes 64 chars per iteration (12+ GB/s)
             return NeonParser.Instance;
         }
-#endif
-        // Fallback: scalar implementation (works on all frameworks, 2-5 GB/s)
+
+        // Fallback: scalar implementation (2-5 GB/s)
         return ScalarParser.Instance;
     }
 
@@ -46,7 +46,6 @@ internal static class SimdParserFactory
     /// </summary>
     public static string GetHardwareInfo()
     {
-#if NET6_0_OR_GREATER
         var caps = new System.Collections.Generic.List<string>();
 
         if (System.Runtime.Intrinsics.X86.Avx512F.IsSupported)
@@ -65,8 +64,5 @@ internal static class SimdParserFactory
         return caps.Count > 0
             ? $"SIMD: {string.Join(", ", caps)} | Using: {parser}"
             : $"No SIMD support | Using: {parser}";
-#else
-        return $"Using: {_parser.GetType().Name} (netstandard - no SIMD)";
-#endif
     }
 }

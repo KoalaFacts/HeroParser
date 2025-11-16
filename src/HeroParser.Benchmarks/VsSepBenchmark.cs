@@ -173,16 +173,4 @@ public class VsSepBenchmark
         }
         return count;
     }
-
-    // =================================
-    // PARALLEL (100 MB) - Multi-Core Test
-    // =================================
-
-    [BenchmarkCategory("Parallel"), Benchmark]
-    public int Parallel_HeroParser()
-    {
-        var reader = Csv.ParseParallel(_hugeCsv.AsSpan(), threadCount: 8);
-        var rows = reader.ParseAll();
-        return rows.Sum(r => r.Length);
-    }
 }

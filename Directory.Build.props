@@ -1,11 +1,11 @@
 <Project>
 
   <PropertyGroup>
+    <SupportedTargetFrameworks>net8.0;net9.0;net10.0</SupportedTargetFrameworks>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <AnalysisLevel>latest</AnalysisLevel>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
@@ -25,7 +25,7 @@
   </PropertyGroup>
 
   <!-- Test project settings -->
-  <PropertyGroup Condition="$(MSBuildProjectName.Contains('Test'))">
+  <PropertyGroup Condition="$(MSBuildProjectName.Contains('Tests'))">
     <IsPackable>false</IsPackable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>

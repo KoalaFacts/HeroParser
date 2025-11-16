@@ -1,40 +1,41 @@
-# HeroParser v2.0 - World's Fastest .NET CSV Parser
+# HeroParser v3.0 - Zero-Allocation RFC 4180 Compliant CSV Parser
 
-**Target: 30+ GB/s** | Beat Sep's 21 GB/s with AVX-512 SIMD
+**High-Performance SIMD Parsing** | RFC 4180 Compliant | Zero Allocations
 
-## 🚀 Performance Goals
+## 🚀 Key Features
 
-| Hardware | Sep Performance | HeroParser Target | Strategy |
-|----------|-----------------|-------------------|----------|
-| **AMD 9950X (AVX-512)** | 21 GB/s | **30+ GB/s** | AVX-512-to-256 technique |
-| **Apple M1 (ARM NEON)** | 9.5 GB/s | **11+ GB/s** | Optimized NEON implementation |
-| **Multi-threaded (8 cores)** | 8 GB/s | **12+ GB/s** | Parallel chunk processing |
+- **RFC 4180 Compliant**: Full quote handling with escaped quotes (`""`)
+- **Quote-Aware SIMD**: Maintains SIMD performance even with quoted fields
+- **Zero Allocations**: Stack-only parsing with ArrayPool for column metadata
+- **Lazy Evaluation**: Columns parsed only when accessed
+- **Multi-Framework**: .NET 8, 9, and 10 support
+- **Safe Memory**: No unsafe code - uses MemoryMarshal + Unsafe APIs
 
 ## 🎯 Design Philosophy
 
-### Complete Rewrite - No Backwards Compatibility
+### Zero-Allocation, RFC-Compliant Design
 
-- **Target Framework**: .NET 8.0 only (cutting-edge JIT codegen)
-- **Unsafe Code**: Enabled for maximum performance
-- **Minimal API**: 5 methods total - pure speed, zero bloat
+- **Target Frameworks**: .NET 8, 9, 10 (modern JIT optimizations)
+- **Memory Safety**: No unsafe code - safe MemoryMarshal + Unsafe APIs
+- **Minimal API**: Simple, focused API surface
 - **Zero Dependencies**: No external packages for core library
-- **SIMD First**: AVX-512 primary path, AVX2/NEON fallbacks
+- **RFC 4180**: Full compliance with quote handling
+- **SIMD First**: Quote-aware SIMD for AVX-512, AVX2, NEON
 
 ### API Surface
 
 ```csharp
-// Primary API - generic delimiter
-var reader = Csv.Parse(csvData.AsSpan());
+// Primary API - parse from string with options
+var reader = Csv.Parse(csvData);
 
-// File parsing - memory-mapped I/O
-var reader = Csv.ParseFile("data.csv");
-
-// Multi-threaded - 10+ GB/s
-var reader = Csv.ParseParallel(csvData.AsSpan());
-
-// Specialized - 5% faster via constant folding
-var reader = Csv.ParseComma(csvData.AsSpan());
-var reader = Csv.ParseTab(tsvData.AsSpan());
+// Custom options (delimiter, quote character, max columns)
+var options = new CsvParserOptions
+{
+    Delimiter = ',',  // Default
+    Quote = '"',      // Default - RFC 4180 compliant
+    MaxColumns = 256  // Default
+};
+var reader = Csv.Parse(csvData, options);
 ```
 
 ## 📊 Usage Examples
@@ -42,7 +43,7 @@ var reader = Csv.ParseTab(tsvData.AsSpan());
 ### Basic Iteration (Zero Allocations)
 
 ```csharp
-foreach (var row in Csv.Parse(csv.AsSpan()))
+foreach (var row in Csv.Parse(csv))
 {
     // Access columns by index - no allocations
     var id = row[0].Parse<int>();
@@ -51,10 +52,30 @@ foreach (var row in Csv.Parse(csv.AsSpan()))
 }
 ```
 
+### Quote Handling (RFC 4180)
+
+```csharp
+var csv = "field1,\"field2\",\"field,3\"\n" +
+          "aaa,\"b,bb\",ccc\n" +
+          "zzz,\"y\"\"yy\",xxx";  // Escaped quote
+
+foreach (var row in Csv.Parse(csv))
+{
+    // Access raw value (includes quotes)
+    var raw = row[1].ToString(); // "b,bb"
+
+    // Remove surrounding quotes and unescape
+    var unquoted = row[1].UnquoteToString(); // b,bb
+
+    // Zero-allocation unquote (returns span)
+    var span = row[1].Unquote(); // ReadOnlySpan<char>
+}
+```
+
 ### Type Parsing
 
 ```csharp
-foreach (var row in Csv.Parse(csv.AsSpan()))
+foreach (var row in Csv.Parse(csv))
 {
     // Generic parsing (ISpanParsable<T>)
     var value = row[0].Parse<int>();
@@ -66,113 +87,133 @@ foreach (var row in Csv.Parse(csv.AsSpan()))
 }
 ```
 
-### Materialization (When Needed)
+### Lazy Evaluation
 
 ```csharp
-var rows = new List<string[]>();
-foreach (var row in Csv.Parse(csv.AsSpan()))
+// Columns are NOT parsed until first access
+foreach (var row in Csv.Parse(csv))
 {
-    rows.Add(row.ToStringArray()); // Allocates
+    // Skip rows without parsing columns
+    if (ShouldSkip(row))
+        continue;
+
+    // Only parse columns when accessed
+    var value = row[0].Parse<int>();  // First access triggers parsing
 }
-```
-
-### Parallel Processing
-
-```csharp
-var reader = Csv.ParseParallel(csv.AsSpan(), threadCount: 8, chunkSize: 16384);
-var allRows = reader.ParseAll(); // Parse on multiple threads
 ```
 
 ## 🔧 Architecture
 
-### SIMD Parsers
+### Quote-Aware SIMD Parsers
 
-1. **Avx512Parser** (Primary)
+All SIMD parsers implement quote-aware parsing using bitmask techniques (inspired by Sep library):
+
+1. **Avx512Parser** (Primary for Intel/AMD)
    - Processes 64 characters per iteration
-   - Uses AVX-512-to-256 technique (avoids mask register overhead)
-   - Bitmask-based delimiter detection
-   - Target: 30+ GB/s
+   - Separate bitmasks for delimiters and quotes
+   - Quote parity tracking: `(quoteCount & 1)` determines if inside quotes
+   - Escaped quotes ("") automatically work: increment by 2, parity unchanged
 
-2. **Avx2Parser** (Fallback)
+2. **Avx2Parser** (Fallback for older CPUs)
    - Processes 32 characters per iteration
+   - Same bitmask technique as AVX-512
    - Pack + permute for UTF-16 to byte conversion
-   - Target: 20+ GB/s
 
 3. **NeonParser** (ARM)
    - Processes 64 characters per iteration (8× 128-bit vectors)
-   - Optimized for Apple Silicon
-   - Target: 11+ GB/s
+   - Quote-aware SIMD for Apple Silicon
+   - Optimized for M1/M2/M3 processors
 
 4. **ScalarParser** (Baseline)
-   - Character-by-character fallback
+   - Character-by-character with RFC 4180 state machine
    - Correctness reference implementation
 
 ### Key Techniques
 
-#### 1. Bitmask-Based Parsing
+#### 1. Quote-Aware Bitmask Parsing
 ```csharp
-// Load 64 chars, convert to bytes, compare against delimiter
-// Extract bitmask where each bit = delimiter position
-// Process delimiters via bit manipulation (TrailingZeroCount)
+// Load 64 chars, convert to bytes
+// Create separate bitmasks for delimiters AND quotes
+var delimiterMask = ExtractBitmask(compareDelimiter);
+var quoteMask = ExtractBitmask(compareQuote);
+
+// Process special characters sequentially
+while (specialMask != 0)
+{
+    int bitPos = BitOperations.TrailingZeroCount(specialMask);
+
+    if (IsQuote(bitPos))
+        quoteCount++;  // Toggle quote state
+    else if (IsDelimiter(bitPos) && (quoteCount & 1) == 0)
+        RecordColumn();  // Only if outside quotes
+}
 ```
 
-#### 2. AVX-512-to-256 Conversion
+#### 2. Quote Parity Tracking
 ```csharp
-// Load 512-bit vector (32 UTF-16 chars)
-// Convert to 256-bit bytes (saturation)
-// Avoids expensive mask register operations
+// Even quote count = outside quotes
+// Odd quote count = inside quotes
+bool insideQuotes = (quoteCount & 1) != 0;
+
+// Escaped quotes ("") automatically work:
+// - First quote: quoteCount++   (odd = inside)
+// - Second quote: quoteCount++  (even = outside)
+// - Parity unchanged!
 ```
 
 #### 3. Zero-Allocation Design
 ```csharp
 // ref struct: stack-only allocation
 // ReadOnlySpan<char>: no string allocations
-// ArrayPool: reused buffers for large rows
+// ArrayPool: reused buffers for column metadata
+// Lazy parsing: only parse when accessing columns
 ```
 
-#### 4. Compile-Time Specialization
+#### 4. Safe Memory Access
 ```csharp
-// ParseComma() - delimiter = const ','
-// JIT optimizes constant comparisons better
+// No unsafe keyword - uses safe APIs
+ref readonly char start = ref MemoryMarshal.GetReference(line);
+ref readonly char pos = ref Unsafe.Add(ref Unsafe.AsRef(in start), i);
+var vec = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref ...));
 ```
 
 ## 📦 Project Structure
 
 ```
-src/
-├── HeroParser/
-│   ├── Csv.cs                    # Public API
-│   ├── CsvReader.cs              # Main reader (ref struct)
-│   ├── CsvRow.cs                 # Row accessor (ref struct)
-│   ├── CsvCol.cs                 # Column value (ref struct)
-│   ├── CsvFileReader.cs          # Memory-mapped file support
-│   ├── ParallelCsvReader.cs      # Multi-threaded parsing
-│   ├── CsvReaderComma.cs         # Specialized comma parser
-│   ├── CsvReaderTab.cs           # Specialized tab parser
-│   └── Simd/
-│       ├── ISimdParser.cs        # Parser interface
-│       ├── ScalarParser.cs       # Baseline (no SIMD)
-│       ├── Avx512Parser.cs       # Primary (30+ GB/s)
-│       ├── Avx2Parser.cs         # Fallback (20+ GB/s)
-│       ├── NeonParser.cs         # ARM (11+ GB/s)
-│       └── SimdParserFactory.cs  # Hardware detection
-│
-├── HeroParser.Benchmarks/
-│   ├── VsSepBenchmark.cs         # Head-to-head vs Sep
-│   └── QuickTest.cs              # Fast iteration testing
-│
-tests/
-└── HeroParser.Tests/
-    ├── BasicCorrectnessTests.cs  # Functionality tests
-    └── SimdCorrectnessTests.cs   # SIMD vs Scalar validation
+src/HeroParser/
+├── Csv.cs                            # Public API
+├── CsvReader.cs                      # Main reader (ref struct)
+├── CsvRow.cs                         # Row accessor (ref struct, lazy parsing)
+├── CsvCol.cs                         # Column value (ref struct, Unquote methods)
+├── CsvParserOptions.cs               # Configuration (delimiter, quote, max columns)
+├── CsvException.cs                   # Error handling
+└── Simd/
+    ├── ISimdParser.cs                # Parser interface (quote-aware)
+    ├── ScalarParser.cs               # Baseline with RFC 4180 state machine
+    ├── Avx512Parser.cs               # Quote-aware SIMD for AVX-512
+    ├── Avx2Parser.cs                 # Quote-aware SIMD for AVX2
+    ├── NeonParser.cs                 # Quote-aware SIMD for ARM
+    └── SimdParserFactory.cs          # Hardware detection
+
+benchmarks/HeroParser.Benchmarks/
+├── Program.cs                        # Benchmark launcher
+├── QuickTest.cs                      # Fast throughput test
+├── ThroughputBenchmarks.cs           # Single-threaded performance
+├── VsSepBenchmarks.cs                # Head-to-head vs Sep
+└── QuotedVsUnquotedBenchmarks.cs     # Verify quote-aware SIMD performance
+
+tests/HeroParser.Tests/
+├── BasicParsingTests.cs              # Core functionality tests
+├── QuoteHandlingTests.cs             # Quote edge cases
+└── Rfc4180Tests.cs                   # RFC 4180 compliance tests
 ```
 
 ## 🏗️ Building
 
 **Requirements:**
-- .NET 8.0 SDK (preview)
-- C# preview language features
-- AVX-512 capable CPU (for maximum performance)
+- .NET 8, 9, or 10 SDK
+- C# 12+ language features
+- Recommended: AVX-512 or AVX2 capable CPU for maximum performance
 
 ```bash
 # Build library
@@ -181,61 +222,71 @@ dotnet build src/HeroParser/HeroParser.csproj
 # Run tests
 dotnet test tests/HeroParser.Tests/HeroParser.Tests.csproj
 
-# Quick performance test
-dotnet run --project src/HeroParser.Benchmarks -- --quick
+# Quick throughput test (no BenchmarkDotNet overhead)
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --quick
 
-# Full benchmark suite
-dotnet run --project src/HeroParser.Benchmarks -c Release
+# Compare with Sep library
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --vs-sep
+
+# Verify quote-aware SIMD performance
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --quotes
+
+# Run all benchmarks
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
 ```
 
 ## 📈 Benchmarking
 
-### Quick Test (No BenchmarkDotNet Overhead)
+### Quick Throughput Test
+
+Fast iteration test without BenchmarkDotNet overhead:
 
 ```bash
-dotnet run --project src/HeroParser.Benchmarks -- --quick
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --quick
 ```
 
 Output:
 ```
-Test CSV: 10.00 MB (10,485,760 chars)
-Average:  32.45 GB/s
-Median:   32.50 GB/s
-Best:     33.12 GB/s
-Worst:    31.87 GB/s
+=== HeroParser Quick Throughput Test ===
+Hardware: SIMD: AVX-512F, AVX-512BW, AVX2 | Using: Avx512Parser
 
-🎉 SUCCESS! Beat Sep's 21 GB/s benchmark!
+Test data: 100,000 rows × 10 columns
+Throughput: XX.XX GB/s
+
+Expected: 20+ GB/s (AVX2), 30+ GB/s (AVX-512), 10+ GB/s (NEON)
 ```
 
-### Full BenchmarkDotNet Suite
+### Quote Performance Verification
+
+Verifies that quote-aware SIMD maintains performance:
 
 ```bash
-dotnet run --project src/HeroParser.Benchmarks -c Release
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --quotes
 ```
 
-Tests:
-- Small (1 KB): Startup overhead
-- Medium (1 MB): Typical workload
-- Large (10 MB): Throughput test
-- Huge (100 MB): Maximum throughput
-- Parallel: Multi-core scaling
+This benchmark compares:
+- **Unquoted CSV** (baseline) - pure SIMD fast path
+- **Quoted CSV** (delimiters in quotes) - tests quote-aware SIMD
+- **Mixed CSV** (50% quoted) - realistic scenario
 
-## 🎯 Performance Expectations
+Expected results if quote-aware SIMD works correctly:
+- Unquoted should be fastest (baseline)
+- Quoted should be only slightly slower (<20% overhead)
+- Mixed should be between the two
 
-### Single-Threaded Throughput
+If quoted is much slower (>50% overhead), quote-aware SIMD has issues.
 
-| CSV Size | Sep | HeroParser | Speedup |
-|----------|-----|------------|---------|
-| 1 KB     | ~20 GB/s | **~25 GB/s** | 1.25x |
-| 1 MB     | ~21 GB/s | **~30 GB/s** | 1.43x |
-| 10 MB    | ~21 GB/s | **~32 GB/s** | 1.52x |
-| 100 MB   | ~21 GB/s | **~33 GB/s** | 1.57x |
+## 🎯 Performance Goals
 
-### Multi-Threaded (8 cores)
+HeroParser aims to achieve competitive performance with Sep while maintaining:
+- **RFC 4180 compliance** (quote handling)
+- **Zero allocations** in hot path
+- **Quote-aware SIMD** (no performance cliff on quoted data)
 
-| CSV Size | Sep | HeroParser | Speedup |
-|----------|-----|------------|---------|
-| 100 MB   | ~8 GB/s | **~12 GB/s** | 1.5x |
+Performance targets (to be verified with benchmarks):
+- **AVX-512**: Competitive with Sep's 21 GB/s on unquoted data
+- **Quote overhead**: <20% slowdown on quoted data (vs pure unquoted)
+- **Mixed workloads**: Between unquoted and quoted performance
 
 ## 🔬 Hardware Detection
 
@@ -246,52 +297,54 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 // Output: "SIMD: AVX-512F, AVX-512BW, AVX2 | Using: Avx512Parser"
 ```
 
-## ⚠️ Limitations (By Design)
+## ⚠️ Design Decisions
 
-### No Quote Handling (Default)
-- Simple CSV only (no embedded commas, newlines)
-- For RFC 4180 quoted fields, implement `ParseQuoted()` separately
-- Trade-off: Max speed for common case
+### RFC 4180 Quote Handling by Default
+- All parsers support quoted fields with escaped quotes (`""`)
+- Quote character configurable via `CsvParserOptions.Quote`
+- Quote-aware SIMD maintains performance (minimal overhead)
 
-### No Error Handling in Hot Path
-- Undefined behavior on malformed CSV
-- User validates once upfront if needed
-- Trade-off: 10-15% faster via branch elimination
+### Lazy Column Parsing
+- Columns not parsed until first access
+- Allows efficient row filtering without parsing overhead
+- ArrayPool buffers only rented when needed
 
-### No Legacy Framework Support
-- .NET 8.0 only
-- Best AVX-512 codegen
-- Trade-off: Latest JIT optimizations
+### Framework Targeting
+- .NET 8, 9, 10 only (no .NET Framework, no .NET 6/7)
+- Leverages modern JIT optimizations and SIMD intrinsics
+- Best AVX-512 and ARM NEON codegen
 
 ## 📊 Comparison: HeroParser vs Sep
 
-| Feature | Sep | HeroParser v2.0 |
+| Feature | Sep | HeroParser v3.0 |
 |---------|-----|-----------------|
-| **Max Throughput (AVX-512)** | 21 GB/s | **30+ GB/s** |
-| **Max Throughput (ARM NEON)** | 9.5 GB/s | **11+ GB/s** |
-| **Multi-Threading** | ✅ 8 GB/s | ✅ **12+ GB/s** |
-| **SIMD Paths** | AVX-512, AVX2, NEON | ✅ Same + optimized |
-| **Unsafe Code** | ❌ Safe only | ✅ **Unsafe allowed** |
-| **API Complexity** | Moderate | **Minimal (5 methods)** |
-| **Framework Support** | .NET 6-9 | .NET 8 only |
+| **RFC 4180 Compliance** | ✅ Full quote support | ✅ Full quote support |
+| **Quote-Aware SIMD** | ✅ Bitmask technique | ✅ Bitmask technique (Sep-inspired) |
+| **Zero Allocations** | ✅ ref structs | ✅ ref structs + ArrayPool |
+| **Lazy Column Parsing** | ❌ | ✅ Parse on first access |
+| **SIMD Paths** | AVX-512, AVX2, NEON | ✅ Same |
+| **Memory Safety** | ✅ Safe only | ✅ Safe (MemoryMarshal + Unsafe) |
+| **Framework Support** | .NET 6+ | .NET 8, 9, 10 |
 | **External Dependencies** | csFastFloat | ✅ **Zero** |
-| **Compile-Time Specialization** | ❌ | ✅ **ParseComma/Tab** |
 
-## 🎉 Success Criteria
+## 🎉 Project Goals
 
-### Must Achieve
-- ✅ **30+ GB/s** on AVX-512 hardware
-- ✅ **11+ GB/s** on ARM M1
-- ✅ **12+ GB/s** multi-threaded (8 cores)
-- ✅ **Zero external dependencies**
-- ✅ **Zero allocations** in hot path
+### Core Principles
+- ✅ **RFC 4180 Compliance**: Full quote handling with escaped quotes
+- ✅ **Zero Allocations**: ref structs, ArrayPool, lazy parsing
+- ✅ **Quote-Aware SIMD**: No performance cliff on quoted data
+- ✅ **Zero Dependencies**: No external packages
+- ✅ **Memory Safety**: No unsafe keyword (MemoryMarshal + Unsafe only)
 
-### Should Achieve
-- ✅ **<5% variance** SIMD vs Scalar results
-- ✅ **100% test coverage** for correctness
+### Performance Targets (To Be Verified)
+- **Competitive with Sep**: Similar performance on unquoted data
+- **Quote Overhead**: <20% slowdown on quoted data
+- **Mixed Workloads**: Graceful performance between unquoted and quoted
 
-### Could Achieve
-- ✅ **35+ GB/s** peak on latest hardware
+### Testing
+- ✅ **RFC 4180 Compliance**: Comprehensive quote handling tests
+- ✅ **SIMD Correctness**: All parsers produce same results
+- ✅ **Performance Verification**: Benchmarks for quote-aware SIMD
 
 ## 📝 License
 
@@ -299,9 +352,14 @@ MIT
 
 ## 🙏 Credits
 
-Inspired by:
-- **Sep** by nietras - Excellent baseline and research
-- **Sylvan** - Alternative high-performance approach
-- **SimdUnicode** - SIMD validation techniques
+Inspired by and built upon research from:
+- **Sep** by nietras - Bitmask quote-aware SIMD technique
+- **Sylvan** - Alternative high-performance CSV parsing approach
+- **SimdUnicode** - SIMD validation and processing techniques
 
-Built to **beat Sep** and become the **fastest CSV parser in .NET**! 🚀
+HeroParser implements Sep's bitmask technique for quote-aware SIMD parsing while adding:
+- Lazy column evaluation for zero allocations in filtering scenarios
+- .NET 8-10 targeting for latest JIT optimizations
+- Zero external dependencies
+
+Built to be a **competitive, RFC 4180 compliant, zero-allocation CSV parser for .NET**! 🚀

@@ -7,7 +7,7 @@ namespace HeroParser;
 
 /// <summary>
 /// Zero-allocation CSV reader using ref struct for stack-only semantics.
-/// Iterates rows one at a time with lazy parsing - no heap allocations.
+/// Columns are parsed lazily only when accessed - no unnecessary work.
 /// </summary>
 public ref struct CsvReader
 {
@@ -94,68 +94,16 @@ public ref struct CsvReader
             if (line.IsEmpty)
                 continue;
 
-            // Parse the line into columns
-            _currentRow = ParseRow(line);
+            // Create lazy row (columns parsed only when accessed)
+            _currentRow = new CsvRow(
+                line,
+                _options.Delimiter,
+                _options.MaxColumns,
+                _parser);
             _hasCurrentRow = true;
             _rowCount++;
             return true;
         }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private CsvRow ParseRow(ReadOnlySpan<char> line)
-    {
-        // Estimate column count for efficient allocation
-        int estimatedColumns = EstimateColumnCount(line);
-        int bufferSize = Math.Max(Math.Min(estimatedColumns * 2, _options.MaxColumns), 16);
-
-        // Rent arrays from pool
-        var startsArray = ArrayPool<int>.Shared.Rent(bufferSize);
-        var lengthsArray = ArrayPool<int>.Shared.Rent(bufferSize);
-
-        try
-        {
-            var starts = startsArray.AsSpan();
-            var lengths = lengthsArray.AsSpan();
-
-            int actualCount = _parser.ParseColumns(
-                line,
-                _options.Delimiter,
-                starts,
-                lengths,
-                _options.MaxColumns);
-
-            // CsvRow owns these arrays and will return them to pool on Dispose()
-            return new CsvRow(
-                line,
-                starts.Slice(0, actualCount),
-                lengths.Slice(0, actualCount),
-                startsArray,
-                lengthsArray);
-        }
-        catch
-        {
-            // Exception-safe: return arrays on error
-            ArrayPool<int>.Shared.Return(startsArray, clearArray: true);
-            ArrayPool<int>.Shared.Return(lengthsArray, clearArray: true);
-            throw;
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int EstimateColumnCount(ReadOnlySpan<char> line)
-    {
-        // Quick estimation: count delimiters in first 256 chars
-        var sample = line.Length > 256 ? line.Slice(0, 256) : line;
-        int delimiterCount = 0;
-
-        for (int i = 0; i < sample.Length; i++)
-        {
-            if (sample[i] == _options.Delimiter)
-                delimiterCount++;
-        }
-
-        return delimiterCount + 1; // columns = delimiters + 1
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

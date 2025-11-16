@@ -1,4 +1,5 @@
 using HeroParser.Simd;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 
 namespace HeroParser;
@@ -14,10 +15,13 @@ public ref struct CsvReader
     private int _position;
     private int _rowCount;
     private CsvRow _currentRow;
-    private bool _hasCurrentRow;
 
     // Parser strategy selected at construction based on hardware
     private readonly ISimdParser _parser;
+
+    // Shared buffers for all rows - rent once, use many times
+    private readonly int[] _columnStartsBuffer;
+    private readonly int[] _columnLengthsBuffer;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal CsvReader(ReadOnlySpan<char> csv, CsvParserOptions options)
@@ -27,10 +31,13 @@ public ref struct CsvReader
         _position = 0;
         _rowCount = 0;
         _currentRow = default;
-        _hasCurrentRow = false;
 
         // Select optimal parser based on hardware capabilities
         _parser = SimdParserFactory.GetParser();
+
+        // Rent shared buffers ONCE for all rows - critical for zero-allocation performance
+        _columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
+        _columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
     }
 
     /// <summary>
@@ -48,13 +55,6 @@ public ref struct CsvReader
     /// <returns>True if a row was read, false if end of CSV reached</returns>
     public bool MoveNext()
     {
-        // Dispose previous row's pooled arrays
-        if (_hasCurrentRow)
-        {
-            _currentRow.Dispose();
-            _hasCurrentRow = false;
-        }
-
         // Check row limit
         if (_rowCount >= _options.MaxRows)
         {
@@ -70,7 +70,7 @@ public ref struct CsvReader
                 return false;
 
             // Get remaining CSV from current position
-            var remaining = _csv.Slice(_position);
+            var remaining = _csv[_position..];
 
             // Find end of line
             var lineEnd = FindLineEnd(remaining, out int lineEndLength);
@@ -84,7 +84,7 @@ public ref struct CsvReader
             }
             else
             {
-                line = remaining.Slice(0, lineEnd);
+                line = remaining[..lineEnd];
                 _position += lineEnd + lineEndLength;
             }
 
@@ -92,14 +92,14 @@ public ref struct CsvReader
             if (line.IsEmpty)
                 continue;
 
-            // Create lazy row (columns parsed only when accessed)
+            // Create lazy row with shared buffers (zero allocation per row)
             _currentRow = new CsvRow(
                 line,
                 _options.Delimiter,
                 _options.Quote,
-                _options.MaxColumns,
+                _columnStartsBuffer.AsSpan(0, _options.MaxColumns),
+                _columnLengthsBuffer.AsSpan(0, _options.MaxColumns),
                 _parser);
-            _hasCurrentRow = true;
             _rowCount++;
             return true;
         }
@@ -139,14 +139,15 @@ public ref struct CsvReader
     public readonly CsvReader GetEnumerator() => this;
 
     /// <summary>
-    /// Dispose of current row and clean up resources.
+    /// Return shared buffers to pool - critical to avoid memory leaks.
     /// </summary>
-    public void Dispose()
+    public readonly void Dispose()
     {
-        if (_hasCurrentRow)
-        {
-            _currentRow.Dispose();
-            _hasCurrentRow = false;
-        }
+        // Return shared buffers to pool
+        if (_columnStartsBuffer != null)
+            ArrayPool<int>.Shared.Return(_columnStartsBuffer, clearArray: false);
+
+        if (_columnLengthsBuffer != null)
+            ArrayPool<int>.Shared.Return(_columnLengthsBuffer, clearArray: false);
     }
 }

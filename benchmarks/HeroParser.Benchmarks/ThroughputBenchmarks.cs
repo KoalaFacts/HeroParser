@@ -55,7 +55,7 @@ public class ThroughputBenchmarks
         int total = 0;
         foreach (var row in reader)
         {
-            total += row.Count;
+            total += row.ColumnCount;
         }
         return total;
     }
@@ -67,7 +67,7 @@ public class ThroughputBenchmarks
         int total = 0;
         foreach (var row in reader)
         {
-            total += row.Count;
+            total += row.ColumnCount;
         }
         return total;
     }
@@ -79,7 +79,7 @@ public class ThroughputBenchmarks
         int total = 0;
         foreach (var row in reader)
         {
-            total += row.Count;
+            total += row.ColumnCount;
         }
         return total;
     }
@@ -91,7 +91,7 @@ public class ThroughputBenchmarks
         int total = 0;
         foreach (var row in reader)
         {
-            total += row.Count;
+            total += row.ColumnCount;
         }
         return total;
     }

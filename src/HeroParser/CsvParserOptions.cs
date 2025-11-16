@@ -4,7 +4,7 @@ namespace HeroParser;
 /// Options for configuring CSV parser behavior.
 /// RFC 4180 compliant by default.
 /// </summary>
-public sealed class CsvParserOptions
+public sealed record CsvParserOptions
 {
     /// <summary>
     /// Field delimiter character. Default: comma (',').
@@ -27,13 +27,13 @@ public sealed class CsvParserOptions
     public int MaxColumns { get; init; } = 10_000;
 
     /// <summary>
-    /// Maximum rows to parse. Default: 100,000.
+    /// Maximum rows to parse. Default: 10,000,000.
     /// Throws CsvException if exceeded.
     /// </summary>
-    public int MaxRows { get; init; } = 100_000;
+    public int MaxRows { get; init; } = 10_000_000;
 
     /// <summary>
-    /// Default options: comma delimiter, double quote, 10,000 columns, 100,000 rows.
+    /// Default options: comma delimiter, double quote, 10,000 columns, 10,000,000 rows.
     /// RFC 4180 compliant.
     /// </summary>
     public static CsvParserOptions Default { get; } = new();

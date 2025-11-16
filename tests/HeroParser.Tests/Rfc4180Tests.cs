@@ -16,7 +16,7 @@ public class Rfc4180Tests
         Assert.True(reader.MoveNext());
         var row = reader.Current;
 
-        Assert.Equal(3, row.Count);
+        Assert.Equal(3, row.ColumnCount);
         Assert.Equal("a", row[0].ToString());
         Assert.Equal("\"b,c\"", row[1].ToString());
         Assert.Equal("d", row[2].ToString());
@@ -34,7 +34,7 @@ public class Rfc4180Tests
         Assert.True(reader.MoveNext());
         var row = reader.Current;
 
-        Assert.Equal(3, row.Count);
+        Assert.Equal(3, row.ColumnCount);
         Assert.Equal("a", row[0].ToString());
         Assert.Equal("\"b\"\"c\"", row[1].ToString());
         Assert.Equal("d", row[2].ToString());
@@ -52,7 +52,7 @@ public class Rfc4180Tests
         Assert.True(reader.MoveNext());
         var row = reader.Current;
 
-        Assert.Equal(3, row.Count);
+        Assert.Equal(3, row.ColumnCount);
         Assert.Equal("a", row[0].ToString());
         Assert.Equal("\"\"", row[1].ToString());
         Assert.Equal("c", row[2].ToString());
@@ -70,7 +70,7 @@ public class Rfc4180Tests
         Assert.True(reader.MoveNext());
         var row = reader.Current;
 
-        Assert.Equal(1, row.Count);
+        Assert.Equal(1, row.ColumnCount);
         Assert.Equal("\"\"\"\"", row[0].ToString());
 
         // Test unquoting - should unescape to single quote
@@ -86,7 +86,7 @@ public class Rfc4180Tests
         Assert.True(reader.MoveNext());
         var row = reader.Current;
 
-        Assert.Equal(4, row.Count);
+        Assert.Equal(4, row.ColumnCount);
         Assert.Equal("unquoted", row[0].ToString());
         Assert.Equal("\"quoted value\"", row[1].ToString());
         Assert.Equal("123", row[2].ToString());
@@ -108,7 +108,7 @@ public class Rfc4180Tests
         Assert.True(reader.MoveNext());
         var row = reader.Current;
 
-        Assert.Equal(3, row.Count);
+        Assert.Equal(3, row.ColumnCount);
 
         // Test unescaping
         Assert.Equal("a\"b\"c", row[0].UnquoteToString());
@@ -129,7 +129,7 @@ public class Rfc4180Tests
         // Row 1
         Assert.True(reader.MoveNext());
         var row1 = reader.Current;
-        Assert.Equal(3, row1.Count);
+        Assert.Equal(3, row1.ColumnCount);
         Assert.Equal("field1", row1[0].ToString());
         Assert.Equal("field2", row1[1].UnquoteToString());
         Assert.Equal("field3", row1[2].ToString());
@@ -137,7 +137,7 @@ public class Rfc4180Tests
         // Row 2
         Assert.True(reader.MoveNext());
         var row2 = reader.Current;
-        Assert.Equal(3, row2.Count);
+        Assert.Equal(3, row2.ColumnCount);
         Assert.Equal("aaa", row2[0].ToString());
         Assert.Equal("b,bb", row2[1].UnquoteToString());
         Assert.Equal("ccc", row2[2].ToString());
@@ -145,7 +145,7 @@ public class Rfc4180Tests
         // Row 3
         Assert.True(reader.MoveNext());
         var row3 = reader.Current;
-        Assert.Equal(3, row3.Count);
+        Assert.Equal(3, row3.ColumnCount);
         Assert.Equal("zzz", row3[0].ToString());
         Assert.Equal("y\"yy", row3[1].UnquoteToString());
         Assert.Equal("xxx", row3[2].ToString());
@@ -166,7 +166,7 @@ public class Rfc4180Tests
         Assert.True(reader.MoveNext());
         var row = reader.Current;
 
-        Assert.Equal(3, row.Count);
+        Assert.Equal(3, row.ColumnCount);
         Assert.Equal("a", row[0].ToString());
         Assert.Equal("'b,c'", row[1].ToString());
         Assert.Equal("d", row[2].ToString());

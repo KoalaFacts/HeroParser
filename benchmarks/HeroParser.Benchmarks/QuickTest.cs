@@ -82,7 +82,7 @@ public static class QuickTest
         int total = 0;
         foreach (var row in reader)
         {
-            total += row.Count;
+            total += row.ColumnCount;
         }
         return total;
     }

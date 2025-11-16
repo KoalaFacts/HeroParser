@@ -7,12 +7,12 @@ namespace HeroParser;
 /// Represents a single CSV column value with zero-allocation parsing.
 /// Wraps ReadOnlySpan&lt;char&gt; for direct span access and type conversions.
 /// </summary>
-public readonly ref struct CsvCol
+public readonly ref struct CsvColumn
 {
     private readonly ReadOnlySpan<char> _span;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal CsvCol(ReadOnlySpan<char> span)
+    internal CsvColumn(ReadOnlySpan<char> span)
     {
         _span = span;
     }
@@ -162,7 +162,7 @@ public readonly ref struct CsvCol
     /// Implicit conversion to ReadOnlySpan&lt;char&gt;.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static implicit operator ReadOnlySpan<char>(CsvCol col) => col._span;
+    public static implicit operator ReadOnlySpan<char>(CsvColumn col) => col._span;
 
     /// <summary>
     /// Remove RFC 4180 quotes and unescape doubled quotes.

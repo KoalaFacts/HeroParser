@@ -23,7 +23,7 @@ public class SimdTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(100, row.Count);
+        Assert.Equal(100, row.ColumnCount);
 
         for (int i = 0; i < 100; i++)
         {
@@ -58,7 +58,7 @@ public class SimdTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(parts.Count, row.Count);
+        Assert.Equal(parts.Count, row.ColumnCount);
 
         for (int i = 0; i < parts.Count; i++)
         {
@@ -75,7 +75,7 @@ public class SimdTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(200, row.Count);
+        Assert.Equal(200, row.ColumnCount);
 
         for (int i = 0; i < 200; i++)
         {
@@ -92,7 +92,7 @@ public class SimdTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(101, row.Count);
+        Assert.Equal(101, row.ColumnCount);
 
         for (int i = 0; i < 101; i++)
         {
@@ -112,7 +112,7 @@ public class SimdTests
         Assert.True(reader.MoveNext());
         var row = reader.Current;
 
-        for (int i = 0; i < row.Count; i++)
+        for (int i = 0; i < row.ColumnCount; i++)
         {
             if (i % 2 == 0)
             {
@@ -138,7 +138,7 @@ public class SimdTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(2, row.Count);
+        Assert.Equal(2, row.ColumnCount);
         Assert.Equal(longValue, row[0].ToString());
         Assert.Equal("short", row[1].ToString());
     }
@@ -153,7 +153,7 @@ public class SimdTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(2, row.Count);
+        Assert.Equal(2, row.ColumnCount);
         Assert.Equal("hello\tworld", row[0].ToString());
         Assert.Equal("foo", row[1].ToString());
     }
@@ -167,7 +167,7 @@ public class SimdTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(4, row.Count);
+        Assert.Equal(4, row.ColumnCount);
         Assert.Equal("Hello", row[0].ToString());
         Assert.Equal("世界", row[1].ToString());
         Assert.Equal("🌍", row[2].ToString());
@@ -193,7 +193,7 @@ public class SimdTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(parts.Count, row.Count);
+        Assert.Equal(parts.Count, row.ColumnCount);
     }
 
     [Fact]
@@ -219,7 +219,7 @@ public class SimdTests
 
             // Verify by splitting manually (scalar approach)
             var expected = csv.Split(',');
-            Assert.Equal(expected.Length, row.Count);
+            Assert.Equal(expected.Length, row.ColumnCount);
 
             for (int i = 0; i < expected.Length; i++)
             {
@@ -241,7 +241,7 @@ public class SimdTests
 
         foreach (var row in reader)
         {
-            Assert.Equal(20, row.Count);
+            Assert.Equal(20, row.ColumnCount);
             rowCount++;
         }
 

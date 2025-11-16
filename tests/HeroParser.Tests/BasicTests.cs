@@ -12,14 +12,14 @@ public class BasicTests
 
         Assert.True(reader.MoveNext());
         var row1 = reader.Current;
-        Assert.Equal(3, row1.Count);
+        Assert.Equal(3, row1.ColumnCount);
         Assert.Equal("a", row1[0].ToString());
         Assert.Equal("b", row1[1].ToString());
         Assert.Equal("c", row1[2].ToString());
 
         Assert.True(reader.MoveNext());
         var row2 = reader.Current;
-        Assert.Equal(3, row2.Count);
+        Assert.Equal(3, row2.ColumnCount);
         Assert.Equal("1", row2[0].ToString());
         Assert.Equal("2", row2[1].ToString());
         Assert.Equal("3", row2[2].ToString());
@@ -36,7 +36,7 @@ public class BasicTests
         foreach (var row in Csv.Parse(csv))
         {
             rowCount++;
-            Assert.Equal(2, row.Count);
+            Assert.Equal(2, row.ColumnCount);
         }
 
         Assert.Equal(3, rowCount);
@@ -57,7 +57,7 @@ public class BasicTests
         var reader = Csv.Parse(csv);
 
         Assert.True(reader.MoveNext());
-        Assert.Equal(1, reader.Current.Count);
+        Assert.Equal(1, reader.Current.ColumnCount);
         Assert.Equal("a", reader.Current[0].ToString());
 
         Assert.True(reader.MoveNext());
@@ -103,7 +103,7 @@ public class BasicTests
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
-        Assert.Equal(3, row.Count);
+        Assert.Equal(3, row.ColumnCount);
         Assert.Equal("a", row[0].ToString());
         Assert.Equal("b", row[1].ToString());
         Assert.Equal("c", row[2].ToString());
@@ -117,7 +117,7 @@ public class BasicTests
         var reader = Csv.Parse(csv, options);
 
         Assert.True(reader.MoveNext());
-        Assert.Equal(3, reader.Current.Count);
+        Assert.Equal(3, reader.Current.ColumnCount);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public class BasicTests
         foreach (var row in reader)
         {
             count++;
-            Assert.Equal(2, row.Count);
+            Assert.Equal(2, row.ColumnCount);
         }
         Assert.Equal(3, count);
     }
@@ -219,7 +219,7 @@ public class BasicTests
             var reader = Csv.Parse(csv, options);
             reader.MoveNext();
             // Access columns to trigger parsing
-            var count = reader.Current.Count;
+            var count = reader.Current.ColumnCount;
         }
         catch (CsvException e)
         {

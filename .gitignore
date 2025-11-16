@@ -107,6 +107,7 @@ ipch/
 *.vsp
 *.vspx
 *.sap
+PublishProfiles/
 
 # Visual Studio Trace Files
 *.e2e

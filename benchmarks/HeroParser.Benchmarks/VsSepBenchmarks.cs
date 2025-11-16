@@ -45,7 +45,7 @@ public class VsSepBenchmarks
     [Benchmark(Baseline = true, Description = "Sep")]
     public int Sep_Parse()
     {
-        using var reader = nietras.SeparatedValues.Sep.Reader().FromText(_csv);
+        using var reader = Sep.Reader().FromText(_csv);
         int total = 0;
         foreach (var row in reader)
         {

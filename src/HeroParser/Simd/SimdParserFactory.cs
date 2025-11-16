@@ -21,23 +21,23 @@ public static class SimdParserFactory
         if (System.Runtime.Intrinsics.X86.Avx512F.IsSupported &&
             System.Runtime.Intrinsics.X86.Avx512BW.IsSupported)
         {
-            // Best: AVX-512 processes 64 chars per iteration (30+ GB/s)
+            // Best: AVX-512 processes 64 chars per iteration
             return Avx512Parser.Instance;
         }
 
         if (System.Runtime.Intrinsics.X86.Avx2.IsSupported)
         {
-            // Good: AVX2 processes 32 chars per iteration (20+ GB/s)
+            // Good: AVX2 processes 32 chars per iteration
             return Avx2Parser.Instance;
         }
 
         if (System.Runtime.Intrinsics.Arm.AdvSimd.IsSupported)
         {
-            // ARM NEON: processes 64 chars per iteration (12+ GB/s)
+            // ARM NEON: processes 64 chars per iteration
             return NeonParser.Instance;
         }
 
-        // Fallback: scalar implementation (2-5 GB/s)
+        // Fallback: scalar implementation
         return ScalarParser.Instance;
     }
 
@@ -46,7 +46,7 @@ public static class SimdParserFactory
     /// </summary>
     public static string GetHardwareInfo()
     {
-        var caps = new System.Collections.Generic.List<string>();
+        var caps = new List<string>();
 
         if (System.Runtime.Intrinsics.X86.Avx512F.IsSupported)
             caps.Add("AVX-512F");

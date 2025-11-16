@@ -25,12 +25,19 @@ internal sealed class NeonParser : ISimdParser
     public int ParseColumns(
         ReadOnlySpan<char> line,
         char delimiter,
+        char quote,
         Span<int> columnStarts,
         Span<int> columnLengths,
         int maxColumns)
     {
         if (line.IsEmpty)
             return 0;
+
+        // Fast path: if line contains quotes, delegate to scalar parser for RFC 4180 compliance
+        if (line.Contains(quote))
+        {
+            return ScalarParser.Instance.ParseColumns(line, delimiter, quote, columnStarts, columnLengths, maxColumns);
+        }
 
         int columnCount = 0;
         int currentStart = 0;

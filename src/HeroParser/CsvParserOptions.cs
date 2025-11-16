@@ -2,6 +2,7 @@ namespace HeroParser;
 
 /// <summary>
 /// Options for configuring CSV parser behavior.
+/// RFC 4180 compliant by default.
 /// </summary>
 public sealed class CsvParserOptions
 {
@@ -10,6 +11,14 @@ public sealed class CsvParserOptions
     /// Must be ASCII (0-127) for SIMD performance.
     /// </summary>
     public char Delimiter { get; init; } = ',';
+
+    /// <summary>
+    /// Quote character for RFC 4180 compliance. Default: double quote ('"').
+    /// Fields containing delimiters, newlines, or quotes are enclosed in quotes.
+    /// Quotes within fields are escaped by doubling ("" becomes ").
+    /// Must be ASCII (0-127) for SIMD performance.
+    /// </summary>
+    public char Quote { get; init; } = '"';
 
     /// <summary>
     /// Maximum columns per row. Default: 10,000.
@@ -24,7 +33,8 @@ public sealed class CsvParserOptions
     public int MaxRows { get; init; } = 100_000;
 
     /// <summary>
-    /// Default options: comma delimiter, 10,000 columns, 100,000 rows.
+    /// Default options: comma delimiter, double quote, 10,000 columns, 100,000 rows.
+    /// RFC 4180 compliant.
     /// </summary>
     public static CsvParserOptions Default { get; } = new();
 
@@ -38,6 +48,20 @@ public sealed class CsvParserOptions
             throw new CsvException(
                 CsvErrorCode.InvalidDelimiter,
                 $"Delimiter '{Delimiter}' (U+{(int)Delimiter:X4}) must be ASCII (0-127)");
+        }
+
+        if (Quote > 127)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"Quote '{Quote}' (U+{(int)Quote:X4}) must be ASCII (0-127)");
+        }
+
+        if (Delimiter == Quote)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"Delimiter and Quote cannot be the same character ('{Delimiter}')");
         }
 
         if (MaxColumns <= 0)

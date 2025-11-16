@@ -14,6 +14,7 @@ public ref struct CsvRow
 {
     private readonly ReadOnlySpan<char> _line;
     private readonly char _delimiter;
+    private readonly char _quote;
     private readonly int _maxColumns;
     private readonly ISimdParser _parser;
 
@@ -29,11 +30,13 @@ public ref struct CsvRow
     internal CsvRow(
         ReadOnlySpan<char> line,
         char delimiter,
+        char quote,
         int maxColumns,
         ISimdParser parser)
     {
         _line = line;
         _delimiter = delimiter;
+        _quote = quote;
         _maxColumns = maxColumns;
         _parser = parser;
         _columnStarts = default;
@@ -107,6 +110,7 @@ public ref struct CsvRow
             _columnCount = _parser.ParseColumns(
                 _line,
                 _delimiter,
+                _quote,
                 _startsArray,
                 _lengthsArray,
                 _maxColumns);

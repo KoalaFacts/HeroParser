@@ -164,4 +164,57 @@ public readonly ref struct CsvCol
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static implicit operator ReadOnlySpan<char>(CsvCol col) => col._span;
+
+    /// <summary>
+    /// Remove RFC 4180 quotes and unescape doubled quotes.
+    /// Returns the unquoted value as a ReadOnlySpan if no unescaping needed (zero allocation).
+    /// If the value contains escaped quotes (""), allocates a new string with quotes unescaped.
+    /// </summary>
+    /// <param name="quote">Quote character (default: '"')</param>
+    /// <returns>Unquoted span or original span if not quoted</returns>
+    public ReadOnlySpan<char> Unquote(char quote = '"')
+    {
+        var span = _span;
+
+        // Check if field is quoted
+        if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
+        {
+            // Remove surrounding quotes
+            return span.Slice(1, span.Length - 2);
+        }
+
+        // Not quoted - return as-is
+        return span;
+    }
+
+    /// <summary>
+    /// Remove RFC 4180 quotes and fully unescape doubled quotes.
+    /// This allocates a new string when escaped quotes ("") are present.
+    /// Use Unquote() for zero-allocation when no escaped quotes exist.
+    /// </summary>
+    /// <param name="quote">Quote character (default: '"')</param>
+    /// <returns>Unquoted and unescaped string</returns>
+    public string UnquoteToString(char quote = '"')
+    {
+        var span = _span;
+
+        // Check if field is quoted
+        if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
+        {
+            // Remove surrounding quotes
+            var inner = span.Slice(1, span.Length - 2);
+
+            // Check for escaped quotes
+            if (inner.Contains(quote))
+            {
+                // Unescape doubled quotes: "" -> "
+                return inner.ToString().Replace(new string(quote, 2), new string(quote, 1));
+            }
+
+            return inner.ToString();
+        }
+
+        // Not quoted - return as-is
+        return span.ToString();
+    }
 }

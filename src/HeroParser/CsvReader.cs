@@ -98,6 +98,7 @@ public ref struct CsvReader
             _currentRow = new CsvRow(
                 line,
                 _options.Delimiter,
+                _options.Quote,
                 _options.MaxColumns,
                 _parser);
             _hasCurrentRow = true;

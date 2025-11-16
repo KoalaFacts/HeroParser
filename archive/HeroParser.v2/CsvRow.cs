@@ -1,4 +1,3 @@
-using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
 
@@ -14,7 +13,7 @@ public readonly ref struct CsvRow
     private readonly ReadOnlySpan<int> _columnStarts;
     private readonly ReadOnlySpan<int> _columnLengths;
 
-    // Pooled arrays (must be returned on Dispose)
+    // Optional pooled arrays (null if stack-allocated)
     private readonly int[]? _startsArray;
     private readonly int[]? _lengthsArray;
 
@@ -52,15 +51,24 @@ public readonly ref struct CsvRow
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
-#if DEBUG
-            // Bounds check in debug mode only
-            if ((uint)index >= (uint)_columnStarts.Length)
-                throw new IndexOutOfRangeException($"Column index {index} out of range (0-{Count - 1})");
-#endif
+            // Bounds check removed for maximum performance
+            // User must ensure valid index
             var start = _columnStarts[index];
             var length = _columnLengths[index];
             var span = _line.Slice(start, length);
             return new CsvCol(span);
+        }
+    }
+
+    /// <summary>
+    /// Get a range of columns as an enumerable.
+    /// </summary>
+    public CsvCols this[Range range]
+    {
+        get
+        {
+            var (offset, length) = range.GetOffsetAndLength(Count);
+            return new CsvCols(this, offset, length);
         }
     }
 
@@ -80,15 +88,57 @@ public readonly ref struct CsvRow
 
     /// <summary>
     /// Return pooled arrays to ArrayPool if used.
-    /// Must be called to avoid memory leaks.
+    /// Automatically called when ref struct goes out of scope in .NET 9+.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Dispose()
     {
         if (_startsArray != null)
-            ArrayPool<int>.Shared.Return(_startsArray, clearArray: true);
+            ArrayPool<int>.Shared.Return(_startsArray);
 
         if (_lengthsArray != null)
-            ArrayPool<int>.Shared.Return(_lengthsArray, clearArray: true);
+            ArrayPool<int>.Shared.Return(_lengthsArray);
     }
+}
+
+/// <summary>
+/// Enumerator for column ranges (e.g., row[2..5]).
+/// </summary>
+public ref struct CsvCols
+{
+    private readonly CsvRow _row;
+    private readonly int _start;
+    private readonly int _length;
+    private int _current;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal CsvCols(CsvRow row, int start, int length)
+    {
+        _row = row;
+        _start = start;
+        _length = length;
+        _current = -1;
+    }
+
+    public readonly int Count
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _length;
+    }
+
+    public readonly CsvCol Current
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _row[_start + _current];
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool MoveNext()
+    {
+        _current++;
+        return _current < _length;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly CsvCols GetEnumerator() => this;
 }

@@ -1,4 +1,3 @@
-using System;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 
@@ -45,11 +44,9 @@ public readonly ref struct CsvCol
         get => _span.IsEmpty;
     }
 
-#if NET6_0_OR_GREATER
     /// <summary>
     /// Parse column as a specific type using ISpanParsable&lt;T&gt;.
     /// Supported types: int, long, double, decimal, DateTime, Guid, etc.
-    /// Available on .NET 6+ only.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Parse<T>() where T : ISpanParsable<T>
@@ -59,106 +56,55 @@ public readonly ref struct CsvCol
 
     /// <summary>
     /// Try parse column as a specific type.
-    /// Available on .NET 6+ only.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryParse<T>(out T? result) where T : ISpanParsable<T>
+    public bool TryParse<T>(out T result) where T : ISpanParsable<T>
     {
-        return T.TryParse(_span, CultureInfo.InvariantCulture, out result);
+        return T.TryParse(_span, CultureInfo.InvariantCulture, out result!);
     }
-#endif
 
-    // Type-specific parsing methods (work on all frameworks)
+    // Optimized type-specific parsing methods (faster than generic Parse<T>)
 
-    /// <summary>
-    /// Try parse as int.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseInt32(out int result)
     {
-#if NETSTANDARD2_0
-        return int.TryParse(_span.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
-#else
         return int.TryParse(_span, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
-#endif
     }
 
-    /// <summary>
-    /// Try parse as long.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseInt64(out long result)
     {
-#if NETSTANDARD2_0
-        return long.TryParse(_span.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
-#else
         return long.TryParse(_span, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
-#endif
     }
 
-    /// <summary>
-    /// Try parse as double.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseDouble(out double result)
     {
-#if NETSTANDARD2_0
-        return double.TryParse(_span.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out result);
-#else
         return double.TryParse(_span, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
-#endif
     }
 
-    /// <summary>
-    /// Try parse as decimal.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseDecimal(out decimal result)
     {
-#if NETSTANDARD2_0
-        return decimal.TryParse(_span.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out result);
-#else
         return decimal.TryParse(_span, NumberStyles.Number, CultureInfo.InvariantCulture, out result);
-#endif
     }
 
-    /// <summary>
-    /// Try parse as bool.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseBoolean(out bool result)
     {
-#if NETSTANDARD2_0
-        return bool.TryParse(_span.ToString(), out result);
-#else
         return bool.TryParse(_span, out result);
-#endif
     }
 
-    /// <summary>
-    /// Try parse as DateTime.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseDateTime(out DateTime result)
     {
-#if NETSTANDARD2_0
-        return DateTime.TryParse(_span.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
-#else
         return DateTime.TryParse(_span, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
-#endif
     }
 
-    /// <summary>
-    /// Try parse as Guid.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseGuid(out Guid result)
     {
-#if NETSTANDARD2_0
-        return Guid.TryParse(_span.ToString(), out result);
-#else
         return Guid.TryParse(_span, out result);
-#endif
     }
 
     /// <summary>
@@ -183,9 +129,8 @@ public readonly ref struct CsvCol
     /// Check equality with a string.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool Equals(string? other)
+    public bool Equals(string other)
     {
-        if (other == null) return false;
         return _span.SequenceEqual(other.AsSpan());
     }
 

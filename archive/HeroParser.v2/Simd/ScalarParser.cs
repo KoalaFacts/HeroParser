@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.CompilerServices;
 
 namespace HeroParser.Simd;
@@ -6,21 +5,17 @@ namespace HeroParser.Simd;
 /// <summary>
 /// Baseline scalar CSV parser - no SIMD optimizations.
 /// Used as fallback on unsupported hardware and as correctness baseline.
-/// Works on all target frameworks.
 /// </summary>
 internal sealed class ScalarParser : ISimdParser
 {
     public static readonly ScalarParser Instance = new();
-
-    private ScalarParser() { }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int ParseColumns(
         ReadOnlySpan<char> line,
         char delimiter,
         Span<int> columnStarts,
-        Span<int> columnLengths,
-        int maxColumns)
+        Span<int> columnLengths)
     {
         if (line.IsEmpty)
         {
@@ -35,34 +30,25 @@ internal sealed class ScalarParser : ISimdParser
         {
             if (line[i] == delimiter)
             {
-                // Check limit before adding column
-                if (columnCount >= maxColumns)
-                {
-                    throw new CsvException(
-                        CsvErrorCode.TooManyColumns,
-                        $"Row has more than {maxColumns} columns");
-                }
-
                 // Found delimiter - record column
-                columnStarts[columnCount] = currentStart;
-                columnLengths[columnCount] = i - currentStart;
-                columnCount++;
+                if (columnCount < columnStarts.Length)
+                {
+                    columnStarts[columnCount] = currentStart;
+                    columnLengths[columnCount] = i - currentStart;
+                    columnCount++;
+                }
 
                 currentStart = i + 1; // Next column starts after delimiter
             }
         }
 
         // Last column (after last delimiter or entire line if no delimiters)
-        if (columnCount >= maxColumns)
+        if (columnCount < columnStarts.Length)
         {
-            throw new CsvException(
-                CsvErrorCode.TooManyColumns,
-                $"Row has more than {maxColumns} columns");
+            columnStarts[columnCount] = currentStart;
+            columnLengths[columnCount] = line.Length - currentStart;
+            columnCount++;
         }
-
-        columnStarts[columnCount] = currentStart;
-        columnLengths[columnCount] = line.Length - currentStart;
-        columnCount++;
 
         return columnCount;
     }

@@ -1,26 +1,21 @@
-using System;
-
 namespace HeroParser.Simd;
 
 /// <summary>
-/// Interface for SIMD-optimized CSV parsers.
-/// Implementations provide hardware-specific optimizations.
+/// Interface for CSV column parsers with different SIMD implementations.
 /// </summary>
 internal interface ISimdParser
 {
     /// <summary>
-    /// Parse columns from a CSV line.
+    /// Parse a CSV line into columns by finding delimiter positions.
     /// </summary>
     /// <param name="line">The CSV line to parse</param>
     /// <param name="delimiter">Field delimiter character</param>
     /// <param name="columnStarts">Output: starting positions of each column</param>
     /// <param name="columnLengths">Output: lengths of each column</param>
-    /// <param name="maxColumns">Maximum allowed columns</param>
-    /// <returns>Number of columns parsed</returns>
+    /// <returns>Number of columns found</returns>
     int ParseColumns(
         ReadOnlySpan<char> line,
         char delimiter,
         Span<int> columnStarts,
-        Span<int> columnLengths,
-        int maxColumns);
+        Span<int> columnLengths);
 }

@@ -1,6 +1,6 @@
-using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using HeroParser.Simd;
 
 namespace HeroParser;
@@ -12,9 +12,8 @@ namespace HeroParser;
 public ref struct CsvReader
 {
     private readonly ReadOnlySpan<char> _csv;
-    private readonly CsvParserOptions _options;
+    private readonly char _delimiter;
     private int _position;
-    private int _rowCount;
     private CsvRow _currentRow;
     private bool _hasCurrentRow;
 
@@ -22,12 +21,11 @@ public ref struct CsvReader
     private readonly ISimdParser _parser;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal CsvReader(ReadOnlySpan<char> csv, CsvParserOptions options)
+    internal CsvReader(ReadOnlySpan<char> csv, char delimiter)
     {
         _csv = csv;
-        _options = options;
+        _delimiter = delimiter;
         _position = 0;
-        _rowCount = 0;
         _currentRow = default;
         _hasCurrentRow = false;
 
@@ -57,15 +55,7 @@ public ref struct CsvReader
             _hasCurrentRow = false;
         }
 
-        // Check row limit
-        if (_rowCount >= _options.MaxRows)
-        {
-            throw new CsvException(
-                CsvErrorCode.TooManyRows,
-                $"CSV exceeds maximum row limit of {_options.MaxRows}");
-        }
-
-        // Loop to skip empty lines
+        // Loop to skip empty lines (avoid recursion/stack overflow)
         while (true)
         {
             if (_position >= _csv.Length)
@@ -94,10 +84,9 @@ public ref struct CsvReader
             if (line.IsEmpty)
                 continue;
 
-            // Parse the line into columns
+            // Parse the line into columns using SIMD-optimized parser
             _currentRow = ParseRow(line);
             _hasCurrentRow = true;
-            _rowCount++;
             return true;
         }
     }
@@ -105,41 +94,27 @@ public ref struct CsvReader
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private CsvRow ParseRow(ReadOnlySpan<char> line)
     {
+        // Always use ArrayPool for memory safety
+        // ArrayPool achieves zero-allocation after warmup (reuses arrays)
+        // NOTE: stackalloc is unsafe here because spans escape method scope
+        const int MaxColumnsPooled = 10000;
+
         // Estimate column count for efficient allocation
         int estimatedColumns = EstimateColumnCount(line);
-        int bufferSize = Math.Max(Math.Min(estimatedColumns * 2, _options.MaxColumns), 16);
+        int bufferSize = Math.Max(Math.Min(estimatedColumns * 2, MaxColumnsPooled), 16);
 
         // Rent arrays from pool
         var startsArray = ArrayPool<int>.Shared.Rent(bufferSize);
         var lengthsArray = ArrayPool<int>.Shared.Rent(bufferSize);
 
-        try
-        {
-            var starts = startsArray.AsSpan();
-            var lengths = lengthsArray.AsSpan();
+        var starts = startsArray.AsSpan();
+        var lengths = lengthsArray.AsSpan();
 
-            int actualCount = _parser.ParseColumns(
-                line,
-                _options.Delimiter,
-                starts,
-                lengths,
-                _options.MaxColumns);
+        int actualCount = _parser.ParseColumns(line, _delimiter, starts, lengths);
 
-            // CsvRow owns these arrays and will return them to pool on Dispose()
-            return new CsvRow(
-                line,
-                starts.Slice(0, actualCount),
-                lengths.Slice(0, actualCount),
-                startsArray,
-                lengthsArray);
-        }
-        catch
-        {
-            // Exception-safe: return arrays on error
-            ArrayPool<int>.Shared.Return(startsArray, clearArray: true);
-            ArrayPool<int>.Shared.Return(lengthsArray, clearArray: true);
-            throw;
-        }
+        // CsvRow owns these arrays and will return them to pool on Dispose()
+        return new CsvRow(line, starts.Slice(0, actualCount), lengths.Slice(0, actualCount),
+            startsArray, lengthsArray);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -151,8 +126,7 @@ public ref struct CsvReader
 
         for (int i = 0; i < sample.Length; i++)
         {
-            if (sample[i] == _options.Delimiter)
-                delimiterCount++;
+            if (sample[i] == _delimiter) delimiterCount++;
         }
 
         return delimiterCount + 1; // columns = delimiters + 1
@@ -190,16 +164,4 @@ public ref struct CsvReader
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly CsvReader GetEnumerator() => this;
-
-    /// <summary>
-    /// Dispose of current row and clean up resources.
-    /// </summary>
-    public void Dispose()
-    {
-        if (_hasCurrentRow)
-        {
-            _currentRow.Dispose();
-            _hasCurrentRow = false;
-        }
-    }
 }

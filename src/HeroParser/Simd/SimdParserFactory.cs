@@ -1,6 +1,3 @@
-using System.Runtime.Intrinsics.X86;
-using System.Runtime.Intrinsics.Arm;
-
 namespace HeroParser.Simd;
 
 /// <summary>
@@ -18,34 +15,29 @@ internal static class SimdParserFactory
 
     private static ISimdParser SelectParser()
     {
-        // Priority order: AVX-512 > AVX2 > NEON > SSE2 > Scalar
+#if NET6_0_OR_GREATER
+        // Priority order: AVX-512 > AVX2 > NEON > Scalar
 
-        if (Avx512F.IsSupported && Avx512BW.IsSupported)
+        if (System.Runtime.Intrinsics.X86.Avx512F.IsSupported &&
+            System.Runtime.Intrinsics.X86.Avx512BW.IsSupported)
         {
             // Best: AVX-512 processes 64 chars per iteration
-            return Avx512Parser.Instance;
+            // return Avx512Parser.Instance; // TODO: Implement in Phase 2
         }
 
-        if (Avx2.IsSupported)
+        if (System.Runtime.Intrinsics.X86.Avx2.IsSupported)
         {
             // Good: AVX2 processes 32 chars per iteration
-            return Avx2Parser.Instance;
+            // return Avx2Parser.Instance; // TODO: Implement in Phase 2
         }
 
-        if (AdvSimd.IsSupported)
+        if (System.Runtime.Intrinsics.Arm.AdvSimd.IsSupported)
         {
-            // ARM NEON: processes 64 chars per iteration (8x16-byte vectors)
-            return NeonParser.Instance;
+            // ARM NEON: processes 64 chars per iteration
+            // return NeonParser.Instance; // TODO: Implement in Phase 2
         }
-
-        if (Sse2.IsSupported)
-        {
-            // Fallback: SSE2 processes 16 chars per iteration
-            // Not implemented yet - use scalar
-            return ScalarParser.Instance;
-        }
-
-        // Last resort: scalar implementation
+#endif
+        // Fallback: scalar implementation (works on all frameworks)
         return ScalarParser.Instance;
     }
 
@@ -54,18 +46,27 @@ internal static class SimdParserFactory
     /// </summary>
     public static string GetHardwareInfo()
     {
-        var caps = new List<string>();
+#if NET6_0_OR_GREATER
+        var caps = new System.Collections.Generic.List<string>();
 
-        if (Avx512F.IsSupported) caps.Add("AVX-512F");
-        if (Avx512BW.IsSupported) caps.Add("AVX-512BW");
-        if (Avx2.IsSupported) caps.Add("AVX2");
-        if (AdvSimd.IsSupported) caps.Add("ARM-NEON");
-        if (Sse2.IsSupported) caps.Add("SSE2");
+        if (System.Runtime.Intrinsics.X86.Avx512F.IsSupported)
+            caps.Add("AVX-512F");
+        if (System.Runtime.Intrinsics.X86.Avx512BW.IsSupported)
+            caps.Add("AVX-512BW");
+        if (System.Runtime.Intrinsics.X86.Avx2.IsSupported)
+            caps.Add("AVX2");
+        if (System.Runtime.Intrinsics.Arm.AdvSimd.IsSupported)
+            caps.Add("ARM-NEON");
+        if (System.Runtime.Intrinsics.X86.Sse2.IsSupported)
+            caps.Add("SSE2");
 
         var parser = _parser.GetType().Name;
 
         return caps.Count > 0
             ? $"SIMD: {string.Join(", ", caps)} | Using: {parser}"
             : $"No SIMD support | Using: {parser}";
+#else
+        return $"Using: {_parser.GetType().Name} (netstandard - no SIMD)";
+#endif
     }
 }

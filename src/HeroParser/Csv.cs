@@ -1,89 +1,114 @@
+using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace HeroParser;
 
 /// <summary>
-/// Ultra-fast CSV parser targeting 30+ GB/s throughput using AVX-512 SIMD.
-/// Zero external dependencies, zero allocations in hot path, unsafe optimizations enabled.
+/// Ultra-fast CSV parser targeting 30+ GB/s throughput using SIMD optimization.
+/// Zero allocations in hot path, no unsafe code.
 /// </summary>
 public static class Csv
 {
     /// <summary>
-    /// Parse CSV from a span of characters.
-    /// This is the primary high-performance API.
+    /// Parse CSV data synchronously.
     /// </summary>
     /// <param name="csv">The CSV content to parse</param>
-    /// <param name="delimiter">Field delimiter (default: comma). Must be ASCII (&lt; 128) for SIMD performance.</param>
+    /// <param name="options">Parser options (null for defaults: comma delimiter, 10k columns, 100k rows)</param>
     /// <returns>A zero-allocation CSV reader</returns>
-    /// <exception cref="ArgumentException">Thrown if delimiter is not ASCII</exception>
+    /// <exception cref="CsvException">Thrown when parsing fails or limits are exceeded</exception>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static CsvReader Parse(ReadOnlySpan<char> csv, char delimiter = ',')
+    public static CsvReader Parse(string csv, CsvParserOptions? options = null)
     {
-        ValidateDelimiter(delimiter);
-        return new CsvReader(csv, delimiter);
+        if (csv == null)
+            throw new ArgumentNullException(nameof(csv));
+
+        options ??= CsvParserOptions.Default;
+        options.Validate();
+
+        return new CsvReader(csv.AsSpan(), options);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ValidateDelimiter(char delimiter)
-    {
-        if (delimiter > 127)
-            throw new ArgumentException(
-                "SIMD parsers only support ASCII delimiters (0-127). " +
-                $"Provided delimiter '{delimiter}' (U+{(int)delimiter:X4}) is not ASCII.",
-                nameof(delimiter));
-    }
-
+#if NETSTANDARD2_1_OR_GREATER || NET6_0_OR_GREATER
     /// <summary>
-    /// Parse CSV from a file using memory-mapped I/O for maximum performance.
-    /// Suitable for files of any size - no memory allocation for file contents.
-    /// </summary>
-    /// <param name="path">Path to the CSV file</param>
-    /// <param name="delimiter">Field delimiter (default: comma)</param>
-    /// <returns>A zero-allocation CSV reader</returns>
-    public static CsvFileReader ParseFile(string path, char delimiter = ',')
-    {
-        return new CsvFileReader(path, delimiter);
-    }
-
-    /// <summary>
-    /// Parse CSV using multiple threads for maximum throughput.
-    /// Achieves 10+ GB/s on multi-core CPUs by processing chunks in parallel.
-    /// Note: Accepts string (not span) because parallel processing requires lambda capture.
+    /// Parse CSV data asynchronously (for large files/streams).
+    /// Yields rows one at a time without loading entire CSV into memory.
     /// </summary>
     /// <param name="csv">The CSV content to parse</param>
-    /// <param name="delimiter">Field delimiter (default: comma)</param>
-    /// <param name="threadCount">Number of threads (default: processor count)</param>
-    /// <param name="chunkSize">Chunk size in bytes (default: 16KB for L1 cache fit)</param>
-    /// <returns>A parallel CSV reader</returns>
-    public static ParallelCsvReader ParseParallel(
+    /// <param name="options">Parser options (null for defaults)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Async enumerable of CSV rows</returns>
+    /// <exception cref="CsvException">Thrown when parsing fails or limits are exceeded</exception>
+    public static async IAsyncEnumerable<CsvRow> ParseAsync(
         string csv,
-        char delimiter = ',',
-        int threadCount = -1,
-        int chunkSize = 16384)
+        CsvParserOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (threadCount <= 0)
-            threadCount = Environment.ProcessorCount;
+        if (csv == null)
+            throw new ArgumentNullException(nameof(csv));
 
-        return new ParallelCsvReader(csv, delimiter, threadCount, chunkSize);
-    }
+        options ??= CsvParserOptions.Default;
+        options.Validate();
 
-    /// <summary>
-    /// Specialized comma-delimited CSV parser with compile-time optimization.
-    /// Fastest path for standard CSV files. ~5% faster than generic Parse().
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static CsvReader ParseComma(ReadOnlySpan<char> csv)
-    {
-        return CsvReaderComma.Parse(csv);
-    }
+        // Process in chunks to avoid blocking
+        const int ChunkSize = 64 * 1024; // 64KB chunks
+        int position = 0;
+        int rowCount = 0;
 
-    /// <summary>
-    /// Specialized tab-delimited CSV parser with compile-time optimization.
-    /// Fastest path for TSV files. ~5% faster than generic Parse().
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static CsvReader ParseTab(ReadOnlySpan<char> csv)
-    {
-        return CsvReaderTab.Parse(csv);
+        while (position < csv.Length)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Find chunk boundary (don't split rows)
+            int chunkEnd = Math.Min(position + ChunkSize, csv.Length);
+            if (chunkEnd < csv.Length)
+            {
+                // Scan forward to next newline
+                while (chunkEnd < csv.Length &&
+                       csv[chunkEnd] != '\n' &&
+                       csv[chunkEnd] != '\r')
+                {
+                    chunkEnd++;
+                }
+
+                // Include the newline
+                if (chunkEnd < csv.Length)
+                {
+                    if (csv[chunkEnd] == '\r' && chunkEnd + 1 < csv.Length && csv[chunkEnd + 1] == '\n')
+                        chunkEnd += 2; // CRLF
+                    else
+                        chunkEnd++; // LF or CR
+                }
+            }
+
+            var chunk = csv.AsSpan(position, chunkEnd - position);
+            var reader = new CsvReader(chunk, options);
+
+            foreach (var row in reader)
+            {
+                if (++rowCount > options.MaxRows)
+                {
+                    throw new CsvException(
+                        CsvErrorCode.TooManyRows,
+                        $"CSV exceeds maximum row limit of {options.MaxRows}");
+                }
+
+                yield return row;
+
+                // Yield periodically to avoid blocking
+                if (rowCount % 1000 == 0)
+                {
+#if NET6_0_OR_GREATER
+                    await Task.Yield();
+#else
+                    await System.Threading.Tasks.Task.Yield();
+#endif
+                }
+            }
+
+            position = chunkEnd;
+        }
     }
+#endif
 }

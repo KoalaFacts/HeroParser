@@ -1,12 +1,10 @@
-using System;
-
 namespace HeroParser.Simd;
 
 /// <summary>
 /// Interface for SIMD-optimized CSV parsers.
 /// Implementations provide hardware-specific optimizations with RFC 4180 quote handling.
 /// </summary>
-internal interface ISimdParser
+public interface ISimdParser
 {
     /// <summary>
     /// Parse columns from a CSV line with RFC 4180 quote handling.

@@ -1,7 +1,5 @@
-using System;
-using System.Buffers;
-using System.Runtime.CompilerServices;
 using HeroParser.Simd;
+using System.Runtime.CompilerServices;
 
 namespace HeroParser;
 

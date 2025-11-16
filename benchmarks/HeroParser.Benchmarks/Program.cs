@@ -1,5 +1,4 @@
 using BenchmarkDotNet.Running;
-using HeroParser.Benchmarks;
 
 namespace HeroParser.Benchmarks;
 

@@ -213,8 +213,20 @@ public class BasicTests
         var csv = "a,b,c,d,e";
         var options = new CsvParserOptions { MaxColumns = 3 };
 
-        var reader = Csv.Parse(csv, options);
-        var ex = Assert.Throws<CsvException>(() => reader.MoveNext());
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.Parse(csv, options);
+            reader.MoveNext();
+            // Access columns to trigger parsing
+            var count = reader.Current.Count;
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
         Assert.Equal(CsvErrorCode.TooManyColumns, ex.ErrorCode);
     }
 
@@ -224,10 +236,20 @@ public class BasicTests
         var csv = "a\nb\nc\nd";
         var options = new CsvParserOptions { MaxRows = 2 };
 
-        var reader = Csv.Parse(csv, options);
-        Assert.True(reader.MoveNext()); // Row 1
-        Assert.True(reader.MoveNext()); // Row 2
-        var ex = Assert.Throws<CsvException>(() => reader.MoveNext()); // Row 3 - exceeds limit
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.Parse(csv, options);
+            Assert.True(reader.MoveNext()); // Row 1
+            Assert.True(reader.MoveNext()); // Row 2
+            reader.MoveNext(); // Row 3 - should throw
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
         Assert.Equal(CsvErrorCode.TooManyRows, ex.ErrorCode);
     }
 

@@ -3,7 +3,7 @@ namespace HeroParser.Simd;
 /// <summary>
 /// Factory for selecting the optimal SIMD parser based on hardware capabilities.
 /// </summary>
-internal static class SimdParserFactory
+public static class SimdParserFactory
 {
     // Cached parser instance selected at startup
     private static readonly ISimdParser _parser = SelectParser();

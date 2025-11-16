@@ -10,6 +10,7 @@ namespace HeroParser;
 /// <summary>
 /// Zero-allocation CSV reader using ref struct for stack-only semantics.
 /// Columns are parsed lazily only when accessed - no unnecessary work.
+/// Uses Sep-inspired SIMD newline search (P2.5): processes 32 chars at once via vector packing.
 /// </summary>
 public ref struct CsvReader
 {
@@ -54,6 +55,7 @@ public ref struct CsvReader
 
     /// <summary>
     /// Advance to the next row in the CSV.
+    /// Uses SIMD-accelerated newline search (P2) for optimal performance.
     /// </summary>
     /// <returns>True if a row was read, false if end of CSV reached</returns>
     public bool MoveNext()
@@ -66,6 +68,16 @@ public ref struct CsvReader
                 $"CSV exceeds maximum row limit of {_options.MaxRows}");
         }
 
+        // Use SIMD-accelerated per-row parsing (P2)
+        return MoveNextSingleRow();
+    }
+
+    /// <summary>
+    /// P2 per-row parsing: Process one row at a time with SIMD newline search.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool MoveNextSingleRow()
+    {
         // Loop to skip empty lines
         while (true)
         {
@@ -124,26 +136,40 @@ public ref struct CsvReader
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static unsafe int FindLineEndSimd(ReadOnlySpan<char> span, out int lineEndLength)
     {
-        var lf = Vector256.Create((ushort)'\n');
-        var cr = Vector256.Create((ushort)'\r');
+        // Sep's optimization: Pack 2 char vectors into 1 byte vector (process 32 chars at once!)
+        var lf = Vector256.Create((byte)'\n');
+        var cr = Vector256.Create((byte)'\r');
         int i = 0;
-        int vectorSize = Vector256<ushort>.Count;
+        const int charsPerIteration = 32;  // Process 32 chars (2 vectors packed into bytes)
 
         fixed (char* ptr = span)
         {
-            // Process 16 chars at a time with AVX2
-            while (i + vectorSize <= span.Length)
+            // Process 32 chars at a time with AVX2 packing
+            while (i + charsPerIteration <= span.Length)
             {
-                var vecData = Avx.LoadVector256((ushort*)(ptr + i));
-                var lfMask = Avx2.CompareEqual(vecData, lf);
-                var crMask = Avx2.CompareEqual(vecData, cr);
+                byte* bytePtr = (byte*)(ptr + i);
+
+                // Load 2 char vectors (16 chars each = 32 bytes each)
+                var v0 = Avx.LoadVector256((short*)bytePtr);           // First 16 chars
+                var v1 = Avx.LoadVector256((short*)(bytePtr + 32));    // Next 16 chars
+
+                // Pack 2 short vectors into 1 byte vector (32 chars -> 32 bytes)
+                var packed = Avx2.PackUnsignedSaturate(v0, v1);
+
+                // Pack interleaves the vectors, permute them back to correct order
+                var bytes = Avx2.Permute4x64(packed.AsInt64(), 0b_11_01_10_00).AsByte();
+
+                // Find newlines in the packed byte vector
+                var lfMask = Avx2.CompareEqual(bytes, lf);
+                var crMask = Avx2.CompareEqual(bytes, cr);
                 var anyNewline = Avx2.Or(lfMask, crMask);
 
+                // Early exit if no newlines found (Sep's optimization)
                 if (!Avx2.TestZ(anyNewline, anyNewline))
                 {
                     // Found a newline in this vector
-                    uint mask = (uint)Avx2.MoveMask(anyNewline.AsByte());
-                    int offset = BitOperations.TrailingZeroCount(mask) / 2;
+                    uint mask = (uint)Avx2.MoveMask(anyNewline);
+                    int offset = BitOperations.TrailingZeroCount(mask);
                     int pos = i + offset;
 
                     if (span[pos] == '\n')
@@ -163,7 +189,7 @@ public ref struct CsvReader
                     }
                 }
 
-                i += vectorSize;
+                i += charsPerIteration;
             }
         }
 

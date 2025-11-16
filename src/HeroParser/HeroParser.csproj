@@ -11,8 +11,8 @@
     <PackageId>HeroParser</PackageId>
     <Version>3.0.0</Version>
     <Authors>HeroParser Contributors</Authors>
-    <Description>World's fastest .NET CSV parser - 30+ GB/s with SIMD, zero allocations, no unsafe code. Requires .NET 8+</Description>
-    <PackageTags>csv;parser;simd;avx512;avx2;neon;performance;zero-allocation</PackageTags>
+    <Description>RFC 4180 compliant CSV parser with quote-aware SIMD parsing (AVX-512/AVX2/NEON), zero allocations, lazy column evaluation. Requires .NET 8+</Description>
+    <PackageTags>csv;parser;simd;avx512;avx2;neon;performance;zero-allocation;rfc4180;quote-handling</PackageTags>
     <RepositoryUrl>https://github.com/KoalaFacts/HeroParser</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

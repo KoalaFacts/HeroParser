@@ -8,9 +8,10 @@ using System.Runtime.Intrinsics.X86;
 namespace HeroParser.Simd;
 
 /// <summary>
-/// High-performance AVX2 CSV parser for CPUs without AVX-512.
+/// High-performance AVX2 CSV parser with RFC 4180 quote handling.
 /// Processes 32 characters per iteration using 256-bit SIMD registers.
 /// Fallback for older Intel/AMD CPUs (2013+).
+/// Uses bitmask technique inspired by Sep library for quote-aware parsing.
 /// Uses safe MemoryMarshal APIs - NO unsafe code.
 /// </summary>
 internal sealed class Avx2Parser : ISimdParser
@@ -33,15 +34,10 @@ internal sealed class Avx2Parser : ISimdParser
         if (line.IsEmpty)
             return 0;
 
-        // Fast path: if line contains quotes, delegate to scalar parser for RFC 4180 compliance
-        if (line.Contains(quote))
-        {
-            return ScalarParser.Instance.ParseColumns(line, delimiter, quote, columnStarts, columnLengths, maxColumns);
-        }
-
         int columnCount = 0;
         int currentStart = 0;
         int position = 0;
+        int quoteCount = 0; // Track quote parity: odd = inside quotes, even = outside quotes
 
         // Get reference to start of span for safe SIMD access
         ref readonly char lineStart = ref MemoryMarshal.GetReference(line);
@@ -63,48 +59,72 @@ internal sealed class Avx2Parser : ISimdParser
             // Permute to correct order (PackUnsignedSaturate doesn't preserve order)
             var permuted = Avx2.Permute4x64(packed.AsInt64(), 0b11_01_10_00).AsByte();
 
-            // Create comparison vector for delimiter
+            // Create comparison vectors for delimiter and quote
             var delimiterVec = Vector256.Create((byte)delimiter);
+            var quoteVec = Vector256.Create((byte)quote);
 
-            // Compare against delimiter
-            var cmp = Avx2.CompareEqual(permuted, delimiterVec);
+            // Compare against delimiter and quote
+            var delimCmp = Avx2.CompareEqual(permuted, delimiterVec);
+            var quoteCmp = Avx2.CompareEqual(permuted, quoteVec);
 
-            // Extract bitmask (32 bits for 32 bytes)
-            uint mask = (uint)Avx2.MoveMask(cmp);
+            // Combine delimiter and quote masks
+            var specialCmp = Avx2.Or(delimCmp, quoteCmp);
 
-            // Process each set bit (delimiter position)
-            while (mask != 0)
+            // Extract bitmasks (32 bits for 32 bytes)
+            uint delimiterMask = (uint)Avx2.MoveMask(delimCmp);
+            uint quoteMask = (uint)Avx2.MoveMask(quoteCmp);
+            uint specialMask = (uint)Avx2.MoveMask(specialCmp);
+
+            // Process each special character position (delimiters and quotes)
+            while (specialMask != 0)
             {
-                // Check limit before adding column
-                if (columnCount >= maxColumns)
+                // Find position of next special character
+                int bitPos = BitOperations.TrailingZeroCount(specialMask);
+                int charPos = position + bitPos;
+                uint bitMask = 1U << bitPos;
+
+                // Check if this position is a quote
+                if ((quoteMask & bitMask) != 0)
                 {
-                    throw new CsvException(
-                        CsvErrorCode.TooManyColumns,
-                        $"Row has more than {maxColumns} columns");
+                    // Quote character - toggle quote state
+                    quoteCount++;
+                }
+                // Check if this position is a delimiter AND we're outside quotes
+                else if ((delimiterMask & bitMask) != 0 && (quoteCount & 1) == 0)
+                {
+                    // Delimiter outside quotes - record column
+                    if (columnCount >= maxColumns)
+                    {
+                        throw new CsvException(
+                            CsvErrorCode.TooManyColumns,
+                            $"Row has more than {maxColumns} columns");
+                    }
+
+                    columnStarts[columnCount] = currentStart;
+                    columnLengths[columnCount] = charPos - currentStart;
+                    columnCount++;
+
+                    currentStart = charPos + 1;
                 }
 
-                // Find position of next delimiter
-                int bitPos = BitOperations.TrailingZeroCount(mask);
-                int delimiterPos = position + bitPos;
-
-                // Record column
-                columnStarts[columnCount] = currentStart;
-                columnLengths[columnCount] = delimiterPos - currentStart;
-                columnCount++;
-
-                currentStart = delimiterPos + 1;
-
                 // Clear the processed bit
-                mask &= mask - 1;
+                specialMask &= specialMask - 1;
             }
 
             position += CharsPerIteration;
         }
 
-        // Handle remaining characters (< 32) with scalar fallback
+        // Handle remaining characters (< 32) with scalar processing
+        bool inQuotes = (quoteCount & 1) != 0;
         for (int i = position; i < line.Length; i++)
         {
-            if (line[i] == delimiter)
+            char c = line[i];
+
+            if (c == quote)
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (!inQuotes && c == delimiter)
             {
                 if (columnCount >= maxColumns)
                 {

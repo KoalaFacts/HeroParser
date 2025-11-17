@@ -4,9 +4,9 @@ using System.Runtime.CompilerServices;
 namespace HeroParser;
 
 /// <summary>
-/// Represents a single CSV row with lazy, zero-allocation column access.
+/// Represents a single CSV row with lazy or eager zero-allocation column access.
 /// Ref struct ensures stack-only allocation - no GC pressure.
-/// Columns are only parsed when first accessed (lazy evaluation).
+/// Columns are parsed lazily (on first access) or eagerly (in MoveNext) based on options.
 /// Uses shared buffers from CsvReader - no per-row allocation.
 /// </summary>
 public ref struct CsvRow
@@ -20,12 +20,13 @@ public ref struct CsvRow
     private readonly Span<int> _columnStartsBuffer;
     private readonly Span<int> _columnLengthsBuffer;
 
-    // Lazy-initialized column metadata
+    // Column metadata (populated lazily or eagerly)
     private ReadOnlySpan<int> _columnStarts;
     private ReadOnlySpan<int> _columnLengths;
     private int _columnCount;
     private bool _isParsed;
 
+    // Lazy parsing constructor
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal CsvRow(
         ReadOnlySpan<char> line,
@@ -45,6 +46,29 @@ public ref struct CsvRow
         _columnLengths = default;
         _columnCount = 0;
         _isParsed = false;
+    }
+
+    // Eager parsing constructor - columns already parsed
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal CsvRow(
+        ReadOnlySpan<char> line,
+        char delimiter,
+        char quote,
+        Span<int> columnStartsBuffer,
+        Span<int> columnLengthsBuffer,
+        ISimdParser parser,
+        int columnCount)
+    {
+        _line = line;
+        _delimiter = delimiter;
+        _quote = quote;
+        _columnStartsBuffer = columnStartsBuffer;
+        _columnLengthsBuffer = columnLengthsBuffer;
+        _parser = parser;
+        _columnStarts = columnStartsBuffer[..columnCount];
+        _columnLengths = columnLengthsBuffer[..columnCount];
+        _columnCount = columnCount;
+        _isParsed = true;
     }
 
     /// <summary>
@@ -86,7 +110,7 @@ public ref struct CsvRow
     }
 
     /// <summary>
-    /// Parse columns lazily - only called when first column is accessed.
+    /// Parse columns lazily - only called when first column is accessed (if not already parsed).
     /// Uses shared buffers from reader - ZERO allocation per row.
     /// Hybrid strategy: scalar for short rows (less than 100 chars), SIMD for longer rows.
     /// </summary>

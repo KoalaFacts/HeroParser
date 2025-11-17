@@ -15,10 +15,10 @@ public class VsSepBenchmarks
 {
     private string _csv = null!;
 
-    [Params(10, 1_000, 10_000, 100_000)]
+    [Params(10, 100, 1_000, 10_000, 100_000)]
     public int Rows { get; set; }
 
-    [Params(10, 50, 250)]
+    [Params(10, 25, 50, 100)]
     public int Columns { get; set; }
 
     [GlobalSetup]
@@ -62,7 +62,8 @@ public class VsSepBenchmarks
         using var reader = Csv.Parse(_csv, new()
         {
             MaxColumns = 1_000,
-            MaxRows = 1_000_000
+            MaxRows = 1_000_000,
+            BatchSize = 32         // Batch row boundary scanning
         });
 
         int total = 0;

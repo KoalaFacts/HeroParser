@@ -33,7 +33,22 @@ public sealed record CsvParserOptions
     public int MaxRows { get; init; } = 10_000_000;
 
     /// <summary>
-    /// Default options: comma delimiter, double quote, 10,000 columns, 10,000,000 rows.
+    /// Enable eager column parsing. Default: false (lazy parsing).
+    /// When true, columns are parsed immediately in MoveNext() instead of on first access.
+    /// Recommended when accessing most/all columns to reduce overhead.
+    /// </summary>
+    public bool EagerParsing { get; init; } = false;
+
+    /// <summary>
+    /// Batch size for row boundary caching. Default: 32.
+    /// Scans this many row boundaries at once to amortize SIMD overhead.
+    /// Set to 0 to disable batching (process one row at a time).
+    /// Higher values reduce per-row overhead but use slightly more memory.
+    /// </summary>
+    public int BatchSize { get; init; } = 32;
+
+    /// <summary>
+    /// Default options: comma delimiter, double quote, 10,000 columns, 10,000,000 rows, lazy parsing, batch size 32.
     /// RFC 4180 compliant.
     /// </summary>
     public static CsvParserOptions Default { get; } = new();

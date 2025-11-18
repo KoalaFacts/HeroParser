@@ -16,7 +16,7 @@ internal sealed class Avx512Parser : ISimdParser
 {
     public static readonly Avx512Parser Instance = new();
 
-    private const int CharsPerIteration = 64; // Process 64 chars at once
+    private const int CHARS_PER_ITERATION = 64; // Process 64 chars at once
 
     private Avx512Parser() { }
 
@@ -41,7 +41,7 @@ internal sealed class Avx512Parser : ISimdParser
         ref readonly char lineStart = ref MemoryMarshal.GetReference(line);
 
         // Process 64-char chunks with AVX-512
-        while (position + CharsPerIteration <= line.Length)
+        while (position + CHARS_PER_ITERATION <= line.Length)
         {
             // Safe load using MemoryMarshal + Unsafe - no unsafe keyword!
             ref readonly char pos0 = ref Unsafe.Add(ref Unsafe.AsRef(in lineStart), position);
@@ -119,7 +119,7 @@ internal sealed class Avx512Parser : ISimdParser
                 specialMask &= specialMask - 1;
             }
 
-            position += CharsPerIteration;
+            position += CHARS_PER_ITERATION;
         }
 
         // Handle remaining characters (< 64) with scalar processing

@@ -40,15 +40,24 @@ public sealed record CsvParserOptions
     public bool EagerParsing { get; init; } = false;
 
     /// <summary>
-    /// Batch size for row boundary caching. Default: 32.
+    /// Batch size for row boundary caching. Default: -1 (auto-adaptive).
     /// Scans this many row boundaries at once to amortize SIMD overhead.
     /// Set to 0 to disable batching (process one row at a time).
+    /// Set to -1 for automatic adaptive batch sizing based on CSV length (recommended).
     /// Higher values reduce per-row overhead but use slightly more memory.
     /// </summary>
-    public int BatchSize { get; init; } = 32;
+    public int BatchSize { get; init; } = -1;
 
     /// <summary>
-    /// Default options: comma delimiter, double quote, 10,000 columns, 10,000,000 rows, lazy parsing, batch size 32.
+    /// Enable adaptive parsing mode. Default: true.
+    /// When true, automatically switches between eager/lazy parsing based on row characteristics.
+    /// Short narrow rows (&lt;500 chars, ~20 columns) use eager parsing for lower overhead.
+    /// Long or wide rows use lazy parsing to avoid wasted work.
+    /// </summary>
+    public bool AdaptiveParsing { get; init; } = true;
+
+    /// <summary>
+    /// Default options: comma delimiter, double quote, 10,000 columns, 10,000,000 rows, adaptive parsing enabled, auto batch sizing.
     /// RFC 4180 compliant.
     /// </summary>
     public static CsvParserOptions Default { get; } = new();

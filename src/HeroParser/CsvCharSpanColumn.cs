@@ -26,7 +26,7 @@ public readonly ref struct CsvCharSpanColumn
     public bool IsEmpty => _chars.IsEmpty;
 
     /// <summary>Return the column as a string.</summary>
-    public override string ToString() => new string(_chars);
+    public override string ToString() => new(_chars);
 
     /// <summary>Parse via <see cref="ISpanParsable{T}"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -33,7 +33,7 @@ public ref struct CsvCharSpanReader
 
     /// <summary>Return the enumerator.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public CsvCharSpanReader GetEnumerator() => this;
+    public readonly CsvCharSpanReader GetEnumerator() => this;
 
     /// <summary>Advance to the next row.</summary>
     public bool MoveNext()
@@ -82,7 +82,7 @@ public ref struct CsvCharSpanReader
     }
 
     /// <summary>Return pooled buffers.</summary>
-    public void Dispose()
+    public readonly void Dispose()
     {
         ArrayPool<int>.Shared.Return(_columnStartsBuffer, clearArray: false);
         ArrayPool<int>.Shared.Return(_columnLengthsBuffer, clearArray: false);

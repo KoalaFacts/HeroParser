@@ -5,14 +5,14 @@ namespace HeroParser;
 /// <summary>
 /// Represents a UTF-16 row parsed by the streaming reader.
 /// </summary>
-public readonly ref struct CsvRow
+public readonly ref struct CsvCharSpanRow
 {
     private readonly ReadOnlySpan<char> _line;
     private readonly ReadOnlySpan<int> _columnStarts;
     private readonly ReadOnlySpan<int> _columnLengths;
     private readonly int _columnCount;
 
-    internal CsvRow(
+    internal CsvCharSpanRow(
         ReadOnlySpan<char> line,
         Span<int> columnStartsBuffer,
         Span<int> columnLengthsBuffer,
@@ -28,14 +28,14 @@ public readonly ref struct CsvRow
     public int ColumnCount => _columnCount;
 
     /// <summary>Access a column by index.</summary>
-    public CsvColumn this[int index]
+    public CsvCharSpanColumn this[int index]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
             var start = _columnStarts[index];
             var length = _columnLengths[index];
-            return new CsvColumn(_line.Slice(start, length));
+            return new CsvCharSpanColumn(_line.Slice(start, length));
         }
     }
 

@@ -7,7 +7,7 @@ namespace HeroParser;
 /// <summary>
 /// Streaming UTF-16 reader. Each row is parsed exactly once via Utf16StreamingParser.
 /// </summary>
-public ref struct CsvReader
+public ref struct CsvCharSpanReader
 {
     private readonly ReadOnlySpan<char> _chars;
     private readonly CsvParserOptions _options;
@@ -15,9 +15,9 @@ public ref struct CsvReader
     private readonly int[] _columnLengthsBuffer;
     private int _position;
     private int _rowCount;
-    private CsvRow _current;
+    private CsvCharSpanRow _current;
 
-    internal CsvReader(ReadOnlySpan<char> chars, CsvParserOptions options)
+    internal CsvCharSpanReader(ReadOnlySpan<char> chars, CsvParserOptions options)
     {
         _chars = chars;
         _options = options;
@@ -29,11 +29,11 @@ public ref struct CsvReader
     }
 
     /// <summary>Current row.</summary>
-    public CsvRow Current => _current;
+    public CsvCharSpanRow Current => _current;
 
     /// <summary>Return the enumerator.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public CsvReader GetEnumerator() => this;
+    public CsvCharSpanReader GetEnumerator() => this;
 
     /// <summary>Advance to the next row.</summary>
     public bool MoveNext()
@@ -69,7 +69,7 @@ public ref struct CsvReader
                 continue;
             }
 
-            _current = new CsvRow(
+            _current = new CsvCharSpanRow(
                 rowChars,
                 _columnStartsBuffer,
                 _columnLengthsBuffer,

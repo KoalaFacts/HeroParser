@@ -6,12 +6,12 @@ namespace HeroParser;
 /// <summary>
 /// Represents a UTF-16 column.
 /// </summary>
-public readonly ref struct CsvColumn
+public readonly ref struct CsvCharSpanColumn
 {
     private readonly ReadOnlySpan<char> _chars;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal CsvColumn(ReadOnlySpan<char> chars)
+    internal CsvCharSpanColumn(ReadOnlySpan<char> chars)
     {
         _chars = chars;
     }

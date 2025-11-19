@@ -25,7 +25,7 @@
 
 5. **Row metadata + newline handling**  
    In Sep every row stores `(startIndex, quoteCount)` plus flags for CR/LF. `ParseSeparatorLineEndingChar` (lines 226‑239) shows how CRLF is handled without rescanning the text.  
-   → Move CR/LF handling into the streaming parser and stop special-casing CRLF in `CsvReader`.
+   → Move CR/LF handling into the streaming parser and stop special-casing CRLF in `CsvCharSpanReader`.
 
 ## Migration Plan
 
@@ -73,10 +73,10 @@
 ### 3. Integration Checklist
 - [ ] Add `Csv.ParseUtf8` and a pooled UTF‑8 buffer adapter.
 - [ ] Update `ISimdParser` to expose `ParseRow` (signature above); keep `ParseColumns` for compatibility until streaming fully replaces it.
-- [ ] Replace `CsvReader` hot path with the streaming parser, delete `_rowBoundaries`, and simplify lazy mode.
+- [ ] Replace `CsvCharSpanReader` hot path with the streaming parser, delete `_rowBoundaries`, and simplify lazy mode.
 - [ ] Rerun `VsSepBenchmarks` (UTF‑8 mode) and compare ratios.
 
 ### 4. Research questions to resolve before coding
 - Do we normalize all input to UTF‑8 or keep dual UTF‑16/UTF‑8 paths? (Pros/cons: transcode cost vs. simplicity.)
 - Carry handling: Sep keeps the quote carry in a `SepParseMask` struct; where should we store it (parser vs. reader)?
-- How do we map Sep’s `SepColInfo` metadata to our `CsvRow` buffers? Define exact data we need (start, length, quoteParity).
+- How do we map Sep’s `SepColInfo` metadata to our `CsvCharSpanRow` buffers? Define exact data we need (start, length, quoteParity).

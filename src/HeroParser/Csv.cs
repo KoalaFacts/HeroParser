@@ -9,9 +9,9 @@ namespace HeroParser;
 public static class Csv
 {
     /// <summary>
-    /// Reads the specified CSV string and returns a <see cref="CsvReader"/> for reading its records.
+    /// Reads the specified CSV string and returns a <see cref="CsvCharSpanReader"/> for reading its records.
     /// </summary>
-    public static CsvReader ReadFromText(string data, CsvParserOptions? options = null)
+    public static CsvCharSpanReader ReadFromText(string data, CsvParserOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(data);
         return ReadFromCharSpan(data.AsSpan(), options);
@@ -20,11 +20,11 @@ public static class Csv
     /// <summary>
     /// Reads CSV data from a UTF-16 span.
     /// </summary>
-    public static CsvReader ReadFromCharSpan(ReadOnlySpan<char> data, CsvParserOptions? options = null)
+    public static CsvCharSpanReader ReadFromCharSpan(ReadOnlySpan<char> data, CsvParserOptions? options = null)
     {
         options ??= CsvParserOptions.Default;
         options.Validate();
-        return new CsvReader(data, options);
+        return new CsvCharSpanReader(data, options);
     }
 
     /// <summary>

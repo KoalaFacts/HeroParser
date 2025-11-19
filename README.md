@@ -26,7 +26,7 @@
 
 ```csharp
 // Primary API - parse from string with options
-var reader = Csv.Parse(csvData);
+var reader = Csv.ReadFromText(csvData);
 
 // Custom options (delimiter, quote character, max columns)
 var options = new CsvParserOptions
@@ -35,7 +35,7 @@ var options = new CsvParserOptions
     Quote = '"',      // Default - RFC 4180 compliant
     MaxColumns = 256  // Default
 };
-var reader = Csv.Parse(csvData, options);
+var reader = Csv.ReadFromText(csvData, options);
 ```
 
 ## 📊 Usage Examples
@@ -43,7 +43,7 @@ var reader = Csv.Parse(csvData, options);
 ### Basic Iteration (Zero Allocations)
 
 ```csharp
-foreach (var row in Csv.Parse(csv))
+foreach (var row in Csv.ReadFromText(csv))
 {
     // Access columns by index - no allocations
     var id = row[0].Parse<int>();
@@ -59,7 +59,7 @@ var csv = "field1,\"field2\",\"field,3\"\n" +
           "aaa,\"b,bb\",ccc\n" +
           "zzz,\"y\"\"yy\",xxx";  // Escaped quote
 
-foreach (var row in Csv.Parse(csv))
+foreach (var row in Csv.ReadFromText(csv))
 {
     // Access raw value (includes quotes)
     var raw = row[1].ToString(); // "b,bb"
@@ -75,7 +75,7 @@ foreach (var row in Csv.Parse(csv))
 ### Type Parsing
 
 ```csharp
-foreach (var row in Csv.Parse(csv))
+foreach (var row in Csv.ReadFromText(csv))
 {
     // Generic parsing (ISpanParsable<T>)
     var value = row[0].Parse<int>();
@@ -91,7 +91,7 @@ foreach (var row in Csv.Parse(csv))
 
 ```csharp
 // Columns are NOT parsed until first access
-foreach (var row in Csv.Parse(csv))
+foreach (var row in Csv.ReadFromText(csv))
 {
     // Skip rows without parsing columns
     if (ShouldSkip(row))
@@ -182,9 +182,9 @@ var vec = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref ...));
 ```
 src/HeroParser/
 ├── Csv.cs                            # Public API
-├── CsvReader.cs                      # Main reader (ref struct)
-├── CsvRow.cs                         # Row accessor (ref struct, lazy parsing)
-├── CsvCol.cs                         # Column value (ref struct, Unquote methods)
+├── CsvCharSpanReader.cs             # UTF-16 reader (ref struct)
+├── CsvCharSpanRow.cs                # UTF-16 row accessor (ref struct, lazy parsing)
+├── CsvCharSpanColumn.cs             # UTF-16 column value helpers
 ├── CsvParserOptions.cs               # Configuration (delimiter, quote, max columns)
 ├── CsvException.cs                   # Error handling
 └── Simd/

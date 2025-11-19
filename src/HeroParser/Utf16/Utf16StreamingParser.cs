@@ -2,16 +2,11 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
 
 namespace HeroParser.Utf16;
 
-/// <summary>
-/// Streaming UTF-16 parser that mirrors the UTF-8 pipeline but operates on 16-bit chars.
-/// </summary>
 internal static class Utf16StreamingParser
 {
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Utf16RowParseResult ParseRow(
         ReadOnlySpan<char> data,
         char delimiter,
@@ -25,7 +20,7 @@ internal static class Utf16StreamingParser
 
         ref readonly char dataRef = ref MemoryMarshal.GetReference(data);
         ref char mutableRef = ref Unsafe.AsRef(in dataRef);
-        ref short shortRef = ref Unsafe.As<char, short>(ref mutableRef);
+        ref ushort ushortRef = ref Unsafe.As<char, ushort>(ref mutableRef);
 
         int position = 0;
         bool inQuotes = false;
@@ -36,28 +31,27 @@ internal static class Utf16StreamingParser
         int charsConsumed = 0;
         bool rowEnded = false;
 
-        if (Avx2.IsSupported)
+        if (Vector256.IsHardwareAccelerated)
         {
-            var delimiterVec = Vector256.Create((short)delimiter);
-            var quoteVec = Vector256.Create((short)quote);
-            var lfVec = Vector256.Create((short)'\n');
-            var crVec = Vector256.Create((short)'\r');
+            var delimiterVec = Vector256.Create((ushort)delimiter);
+            var quoteVec = Vector256.Create((ushort)quote);
+            var lfVec = Vector256.Create((ushort)'\n');
+            var crVec = Vector256.Create((ushort)'\r');
 
-            while (position + Vector256<short>.Count <= data.Length)
+            while (position + Vector256<ushort>.Count <= data.Length)
             {
-                var chunk = Vector256.LoadUnsafe(ref shortRef, (uint)position);
-                var specials = Avx2.Or(
-                    Avx2.Or(Avx2.CompareEqual(chunk, delimiterVec), Avx2.CompareEqual(chunk, quoteVec)),
-                    Avx2.Or(Avx2.CompareEqual(chunk, lfVec), Avx2.CompareEqual(chunk, crVec)));
+                var chunk = Vector256.LoadUnsafe(ref Unsafe.Add(ref ushortRef, position));
+                var specials = Vector256.BitwiseOr(
+                    Vector256.BitwiseOr(Vector256.Equals(chunk, delimiterVec), Vector256.Equals(chunk, quoteVec)),
+                    Vector256.BitwiseOr(Vector256.Equals(chunk, lfVec), Vector256.Equals(chunk, crVec)));
 
-                uint mask = (uint)Avx2.MoveMask(specials.AsByte());
-                mask = (mask | (mask >> 1)) & 0x55555555u;
+                uint mask = specials.ExtractMostSignificantBits();
 
                 while (mask != 0)
                 {
                     int bit = BitOperations.TrailingZeroCount(mask);
                     mask &= mask - 1;
-                    int absolute = position + (bit >> 1);
+                    int absolute = position + bit;
                     char c = Unsafe.Add(ref mutableRef, absolute);
 
                     if (c == quote)
@@ -99,7 +93,7 @@ internal static class Utf16StreamingParser
                     }
                 }
 
-                position += Vector256<short>.Count;
+                position += Vector256<ushort>.Count;
             }
         }
 

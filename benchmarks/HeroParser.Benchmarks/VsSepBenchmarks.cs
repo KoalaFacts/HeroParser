@@ -10,13 +10,13 @@ namespace HeroParser.Benchmarks;
 /// Sep is currently one of the fastest CSV parsers for .NET.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
+[SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
 public class VsSepBenchmarks
 {
     private string _csv = null!;
     private byte[] _utf8 = null!;
 
-    [Params(10, 100, 1_000, 10_000, 100_000)]
+    [Params(100, 1_000, 10_000, 100_000)]
     public int Rows { get; set; }
 
     [Params(10, 25, 50, 100)]
@@ -115,7 +115,6 @@ public class VsSepBenchmarks
         Console.WriteLine("=== Comparison Analysis ===");
         Console.WriteLine($"CSV size: {_csv.Length:N0} chars ({_csv.Length * 2:N0} bytes)");
         Console.WriteLine($"Rows: {Rows:N0}, Columns: {Columns}");
-        Console.WriteLine($"Quoted fields: {(WithQuotes ? "50%" : "0%")}");
         Console.WriteLine($"HeroParser using: {Hardware.GetHardwareInfo()}");
         Console.WriteLine();
     }

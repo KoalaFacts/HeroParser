@@ -1,4 +1,3 @@
-using HeroParser.Utf8;
 using System.Buffers;
 using System.Runtime.CompilerServices;
 
@@ -51,7 +50,7 @@ public ref struct CsvByteSpanReader
                 return false;
 
             var remaining = _utf8[_position..];
-            var result = Utf8StreamingParser.ParseRow(
+            var result = StreamingParser.ParseRow(
                 remaining,
                 (byte)_options.Delimiter,
                 (byte)_options.Quote,

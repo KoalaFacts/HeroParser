@@ -9,7 +9,7 @@ namespace HeroParser.Benchmarks;
 /// Compares SIMD-enabled vs scalar-only parsing performance.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RunStrategy.Throughput, iterationCount: 15, warmupCount: 3)]
+[SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
 public class SimdComparisonBenchmarks
 {
     private string _csv = null!;

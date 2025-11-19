@@ -9,7 +9,7 @@ namespace HeroParser.Benchmarks;
 /// Compares unquoted vs quoted CSV to measure the overhead of quote processing.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RunStrategy.Throughput, iterationCount: 15, warmupCount: 3)]
+[SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
 public class QuotedVsUnquotedBenchmarks
 {
     private string _unquotedCsv = null!;

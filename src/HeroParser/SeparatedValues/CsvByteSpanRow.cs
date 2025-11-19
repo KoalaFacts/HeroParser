@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues;
 
 /// <summary>
 /// Represents a UTF-8 row returned by <see cref="CsvByteSpanReader"/>.

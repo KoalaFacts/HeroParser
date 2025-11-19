@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues;
 
 /// <summary>
 /// Streaming UTF-16 reader. Each row is parsed exactly once via Utf16StreamingParser.

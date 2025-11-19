@@ -1,3 +1,5 @@
+using HeroParser.SeparatedValues;
+
 namespace HeroParser;
 
 /// <summary>

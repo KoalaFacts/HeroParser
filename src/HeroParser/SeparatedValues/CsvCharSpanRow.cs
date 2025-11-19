@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues;
 
 /// <summary>
 /// Represents a UTF-16 row parsed by the streaming reader.

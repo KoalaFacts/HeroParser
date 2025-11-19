@@ -1,4 +1,4 @@
-namespace HeroParser;
+namespace HeroParser.SeparatedValues;
 
 /// <summary>
 /// Error codes for CSV parsing failures.

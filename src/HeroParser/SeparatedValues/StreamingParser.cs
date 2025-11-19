@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues;
 
 /// <summary>
 /// Unified streaming parser for both UTF-16 (char) and UTF-8 (byte) data.

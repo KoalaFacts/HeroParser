@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues;
 
 /// <summary>
 /// Streaming UTF-8 reader. Parses rows directly from byte spans.
@@ -28,7 +28,7 @@ public ref struct CsvByteSpanReader
     }
 
     /// <summary>Current row (UTF-8).</summary>
-    public CsvByteSpanRow Current => _current;
+    public readonly CsvByteSpanRow Current => _current;
 
     /// <summary>Return the enumerator.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

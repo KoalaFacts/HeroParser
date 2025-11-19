@@ -1,4 +1,4 @@
-namespace HeroParser;
+namespace HeroParser.SeparatedValues;
 
 /// <summary>
 /// Options for configuring CSV parser behavior.

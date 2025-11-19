@@ -8,7 +8,7 @@ public class BasicTests
     public void SimpleCsv_ParsesCorrectly()
     {
         var csv = "a,b,c\n1,2,3";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row1 = reader.Current;
@@ -33,7 +33,7 @@ public class BasicTests
         var csv = "a,b\n1,2\n3,4";
         int rowCount = 0;
 
-        foreach (var row in Csv.Parse(csv))
+        foreach (var row in Csv.ReadFromText(csv))
         {
             rowCount++;
             Assert.Equal(2, row.ColumnCount);
@@ -46,7 +46,7 @@ public class BasicTests
     public void EmptyCsv_ReturnsNoRows()
     {
         var csv = "";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
         Assert.False(reader.MoveNext());
     }
 
@@ -54,7 +54,7 @@ public class BasicTests
     public void SingleColumn_ParsesCorrectly()
     {
         var csv = "a\nb\nc";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         Assert.Equal(1, reader.Current.ColumnCount);
@@ -73,7 +73,7 @@ public class BasicTests
     public void EmptyFields_ParsedAsEmpty()
     {
         var csv = "a,,c\n,b,\n,,";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row1 = reader.Current;
@@ -99,7 +99,7 @@ public class BasicTests
     {
         var csv = "a\tb\tc\n1\t2\t3";
         var options = new CsvParserOptions { Delimiter = '\t' };
-        var reader = Csv.Parse(csv, options);
+        var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -114,7 +114,7 @@ public class BasicTests
     {
         var csv = "a|b|c";
         var options = new CsvParserOptions { Delimiter = '|' };
-        var reader = Csv.Parse(csv, options);
+        var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
         Assert.Equal(3, reader.Current.ColumnCount);
@@ -124,7 +124,7 @@ public class BasicTests
     public void LineEndings_CRLF()
     {
         var csv = "a,b\r\n1,2\r\n3,4";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         int count = 0;
         foreach (var row in reader)
@@ -139,7 +139,7 @@ public class BasicTests
     public void LineEndings_LF()
     {
         var csv = "a,b\n1,2\n3,4";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         int count = 0;
         foreach (var row in reader)
@@ -153,7 +153,7 @@ public class BasicTests
     public void LineEndings_CR()
     {
         var csv = "a,b\r1,2\r3,4";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         int count = 0;
         foreach (var row in reader)
@@ -167,7 +167,7 @@ public class BasicTests
     public void EmptyLines_AreSkipped()
     {
         var csv = "a,b\n\n1,2\n\n\n3,4\n\n";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         int count = 0;
         foreach (var row in reader)
@@ -181,7 +181,7 @@ public class BasicTests
     public void TypeParsing_Int()
     {
         var csv = "123,456";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
         reader.MoveNext();
         var row = reader.Current;
 
@@ -196,7 +196,7 @@ public class BasicTests
     public void TypeParsing_Double()
     {
         var csv = "3.14,2.71";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
         reader.MoveNext();
         var row = reader.Current;
 
@@ -216,7 +216,7 @@ public class BasicTests
         CsvException? ex = null;
         try
         {
-            var reader = Csv.Parse(csv, options);
+            var reader = Csv.ReadFromText(csv, options);
             reader.MoveNext();
             // Access columns to trigger parsing
             var count = reader.Current.ColumnCount;
@@ -239,7 +239,7 @@ public class BasicTests
         CsvException? ex = null;
         try
         {
-            var reader = Csv.Parse(csv, options);
+            var reader = Csv.ReadFromText(csv, options);
             Assert.True(reader.MoveNext()); // Row 1
             Assert.True(reader.MoveNext()); // Row 2
             reader.MoveNext(); // Row 3 - should throw
@@ -257,21 +257,21 @@ public class BasicTests
     public void InvalidDelimiter_ThrowsException()
     {
         var options = new CsvParserOptions { Delimiter = '€' }; // Non-ASCII
-        var ex = Assert.Throws<CsvException>(() => Csv.Parse("test", options));
+        var ex = Assert.Throws<CsvException>(() => Csv.ReadFromText("test", options));
         Assert.Equal(CsvErrorCode.InvalidDelimiter, ex.ErrorCode);
     }
 
     [Fact]
     public void NullCsv_ThrowsArgumentNullException()
     {
-        Assert.Throws<ArgumentNullException>(() => Csv.Parse(null!));
+        Assert.Throws<ArgumentNullException>(() => Csv.ReadFromText(null!));
     }
 
     [Fact]
     public void ToStringArray_Works()
     {
         var csv = "a,b,c";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
         reader.MoveNext();
 
         var array = reader.Current.ToStringArray();

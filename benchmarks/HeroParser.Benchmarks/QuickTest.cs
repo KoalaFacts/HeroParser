@@ -78,7 +78,7 @@ public static class QuickTest
 
     private static int ParseCsv(string csv)
     {
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
         int total = 0;
         foreach (var row in reader)
         {

@@ -14,17 +14,19 @@ namespace HeroParser.Benchmarks;
 public class VsSepBenchmarks
 {
     private string _csv = null!;
+    private byte[] _utf8 = null!;
 
-    [Params(10, 100, 1_000, 10_000, 100_000)]
+    [Params(100_000)]
     public int Rows { get; set; }
 
-    [Params(10, 25, 50, 100)]
+    [Params(25)]
     public int Columns { get; set; }
 
     [GlobalSetup]
     public void Setup()
     {
         _csv = GenerateCsv(Rows, Columns);
+        _utf8 = Encoding.UTF8.GetBytes(_csv);
     }
 
     private static string GenerateCsv(int rows, int columns)
@@ -56,14 +58,31 @@ public class VsSepBenchmarks
         return total;
     }
 
-    [Benchmark(Description = "HeroParser")]
-    public int HeroParser_Parse()
+    [Benchmark(Description = "HeroParser (string)")]
+    public int HeroParser_ParseString()
     {
-        using var reader = Csv.Parse(_csv, new()
+        using var reader = Csv.ReadFromText(_csv, new()
         {
             MaxColumns = 1_000,
-            MaxRows = 1_000_000,
-            BatchSize = 32         // Batch row boundary scanning
+            MaxRows = 1_000_000
+        });
+
+        int total = 0;
+        foreach (var row in reader)
+        {
+            total += row.ColumnCount;
+        }
+
+        return total;
+    }
+
+    [Benchmark(Description = "HeroParser (UTF-8)")]
+    public int HeroParser_ParseUtf8()
+    {
+        using var reader = Csv.ReadFromByteSpan(_utf8, new()
+        {
+            MaxColumns = 1_000,
+            MaxRows = 1_000_000
         });
 
         int total = 0;

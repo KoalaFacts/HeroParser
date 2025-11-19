@@ -51,7 +51,7 @@ public class ThroughputBenchmarks
     [Benchmark(Description = "Small (1k rows x 10 cols)")]
     public int Small()
     {
-        var reader = Csv.Parse(_smallCsv);
+        var reader = Csv.ReadFromText(_smallCsv);
         int total = 0;
         foreach (var row in reader)
         {
@@ -63,7 +63,7 @@ public class ThroughputBenchmarks
     [Benchmark(Description = "Medium (10k rows x 20 cols)")]
     public int Medium()
     {
-        var reader = Csv.Parse(_mediumCsv);
+        var reader = Csv.ReadFromText(_mediumCsv);
         int total = 0;
         foreach (var row in reader)
         {
@@ -75,7 +75,7 @@ public class ThroughputBenchmarks
     [Benchmark(Description = "Large (100k rows x 10 cols)")]
     public int Large()
     {
-        var reader = Csv.Parse(_largeCsv);
+        var reader = Csv.ReadFromText(_largeCsv);
         int total = 0;
         foreach (var row in reader)
         {
@@ -87,7 +87,7 @@ public class ThroughputBenchmarks
     [Benchmark(Description = "Wide (1k rows x 100 cols)")]
     public int Wide()
     {
-        var reader = Csv.Parse(_wideCsv);
+        var reader = Csv.ReadFromText(_wideCsv);
         int total = 0;
         foreach (var row in reader)
         {

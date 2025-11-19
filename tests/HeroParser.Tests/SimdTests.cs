@@ -19,7 +19,7 @@ public class SimdTests
     {
         // Test with a row larger than SIMD chunk size (64 chars)
         var csv = string.Join(",", Enumerable.Range(0, 100).Select(i => i.ToString()));
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -54,7 +54,7 @@ public class SimdTests
         }
 
         var csv = string.Join(",", parts);
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -71,7 +71,7 @@ public class SimdTests
     {
         // Test data spanning multiple SIMD chunks
         var csv = string.Join(",", Enumerable.Range(0, 200).Select(i => $"val{i}"));
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -88,7 +88,7 @@ public class SimdTests
     {
         // Empty fields at various positions within SIMD chunks
         var csv = new string(',', 100); // 100 commas = 101 empty fields
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -107,7 +107,7 @@ public class SimdTests
         var parts = Enumerable.Range(0, 50)
             .SelectMany(i => new[] { ((char)('a' + (i % 26))).ToString(), "" });
         var csv = string.Join(",", parts);
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -134,7 +134,7 @@ public class SimdTests
         // Single field longer than SIMD chunk
         var longValue = new string('x', 1000);
         var csv = $"{longValue},short";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -149,7 +149,7 @@ public class SimdTests
         // Special characters that might confuse SIMD processing
         // Note: \n is a line terminator, so this will be treated as first row
         var csv = "hello\tworld,foo";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -163,7 +163,7 @@ public class SimdTests
     {
         // Unicode characters in fields
         var csv = "Hello,世界,🌍,Привет";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -189,7 +189,7 @@ public class SimdTests
         }
 
         var csv = string.Join(",", parts);
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -213,7 +213,7 @@ public class SimdTests
 
         foreach (var csv in testCases)
         {
-            var reader = Csv.Parse(csv);
+            var reader = Csv.ReadFromText(csv);
             Assert.True(reader.MoveNext());
             var row = reader.Current;
 
@@ -236,7 +236,7 @@ public class SimdTests
             .Select(i => string.Join(",", Enumerable.Range(0, 20).Select(j => $"{i}_{j}")));
         var csv = string.Join("\n", rows);
 
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
         int rowCount = 0;
 
         foreach (var row in reader)

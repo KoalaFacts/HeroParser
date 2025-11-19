@@ -11,7 +11,7 @@ public class Rfc4180Tests
     public void QuotedField_WithDelimiter()
     {
         var csv = "a,\"b,c\",d";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -29,7 +29,7 @@ public class Rfc4180Tests
     public void QuotedField_WithEscapedQuotes()
     {
         var csv = "a,\"b\"\"c\",d";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -47,7 +47,7 @@ public class Rfc4180Tests
     public void QuotedField_Empty()
     {
         var csv = "a,\"\",c";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -65,7 +65,7 @@ public class Rfc4180Tests
     public void QuotedField_OnlyQuotes()
     {
         var csv = "\"\"\"\"";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -81,7 +81,7 @@ public class Rfc4180Tests
     public void MixedQuotedAndUnquoted()
     {
         var csv = "unquoted,\"quoted value\",123,\"another, quoted\"";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -103,7 +103,7 @@ public class Rfc4180Tests
     public void ComplexEscaping()
     {
         var csv = "\"a\"\"b\"\"c\",\"x,y,z\",\"\"\"quoted\"\"\"";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -124,7 +124,7 @@ public class Rfc4180Tests
                   "aaa,\"b,bb\",ccc\n" +
                   "zzz,\"y\"\"yy\",xxx";
 
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         // Row 1
         Assert.True(reader.MoveNext());
@@ -161,7 +161,7 @@ public class Rfc4180Tests
         };
 
         var csv = "a,'b,c',d";
-        var reader = Csv.Parse(csv, options);
+        var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;
@@ -179,7 +179,7 @@ public class Rfc4180Tests
     public void UnquoteMethod_PreservesOriginalWhenNotQuoted()
     {
         var csv = "abc,def,ghi";
-        var reader = Csv.Parse(csv);
+        var reader = Csv.ReadFromText(csv);
 
         Assert.True(reader.MoveNext());
         var row = reader.Current;

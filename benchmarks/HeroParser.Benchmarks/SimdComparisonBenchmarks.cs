@@ -51,7 +51,7 @@ public class SimdComparisonBenchmarks
     [Benchmark(Baseline = true, Description = "SIMD Enabled")]
     public int WithSimd()
     {
-        var reader = Csv.ReadFromText(_csv, _simdOptions);
+        using var reader = Csv.ReadFromText(_csv, _simdOptions);
         int total = 0;
         foreach (var row in reader)
         {
@@ -63,7 +63,7 @@ public class SimdComparisonBenchmarks
     [Benchmark(Description = "Scalar Only")]
     public int WithoutSimd()
     {
-        var reader = Csv.ReadFromText(_csv, _scalarOptions);
+        using var reader = Csv.ReadFromText(_csv, _scalarOptions);
         int total = 0;
         foreach (var row in reader)
         {

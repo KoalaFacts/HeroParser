@@ -36,7 +36,7 @@ public class QuotedVsUnquotedBenchmarks
     [Benchmark(Baseline = true, Description = "Unquoted CSV")]
     public int Parse_Unquoted()
     {
-        var reader = Csv.ReadFromText(_unquotedCsv);
+        using var reader = Csv.ReadFromText(_unquotedCsv);
         int total = 0;
         foreach (var row in reader)
         {
@@ -51,7 +51,7 @@ public class QuotedVsUnquotedBenchmarks
     [Benchmark(Description = "Quoted CSV (delimiters in quotes)")]
     public int Parse_Quoted()
     {
-        var reader = Csv.ReadFromText(_quotedCsv);
+        using var reader = Csv.ReadFromText(_quotedCsv);
         int total = 0;
         foreach (var row in reader)
         {
@@ -66,7 +66,7 @@ public class QuotedVsUnquotedBenchmarks
     [Benchmark(Description = "Mixed CSV (50% quoted)")]
     public int Parse_Mixed()
     {
-        var reader = Csv.ReadFromText(_mixedCsv);
+        using var reader = Csv.ReadFromText(_mixedCsv);
         int total = 0;
         foreach (var row in reader)
         {

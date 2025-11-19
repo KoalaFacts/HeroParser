@@ -6,37 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <!-- Performance-focused settings for all projects -->
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <Optimize>true</Optimize>
-    <DebugType>pdbonly</DebugType>
-    <DebugSymbols>true</DebugSymbols>
-    <PublishReadyToRun>true</PublishReadyToRun>
-    <PublishTrimmed>false</PublishTrimmed>
-  </PropertyGroup>
-
-  <!-- Performance-critical main library settings -->
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'HeroParser'">
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-  </PropertyGroup>
-
-  <!-- Test project settings -->
-  <PropertyGroup Condition="$(MSBuildProjectName.Contains('Tests'))">
+  <!-- Test and Benchmark project settings -->
+  <PropertyGroup Condition="$(MSBuildProjectName.Contains('Tests')) Or $(MSBuildProjectName.Contains('Benchmarks'))">
     <IsPackable>false</IsPackable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- CS1591: Missing XML comment for publicly visible type or member -->
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
-  </PropertyGroup>
-
-  <!-- Benchmark project settings -->
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'HeroParser.Benchmarks'">
-    <IsPackable>false</IsPackable>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <OutputType>Exe</OutputType>
     <!-- CS1591: Missing XML comment for publicly visible type or member -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>

@@ -190,4 +190,38 @@ public class Rfc4180Tests
         Assert.Equal("def", row[1].Unquote().ToString());
         Assert.Equal("ghi", row[2].Unquote().ToString());
     }
+
+    [Fact]
+    public void EmptyFields_AreSupported()
+    {
+        // RFC 4180: Empty fields should be allowed
+        var csv = "a,,c\n,b,\n,,";
+        var rows = new List<string[]>();
+
+        foreach (var row in Csv.ReadFromText(csv))
+        {
+            rows.Add(row.ToStringArray());
+        }
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(new[] { "a", "", "c" }, rows[0]);
+        Assert.Equal(new[] { "", "b", "" }, rows[1]);
+        Assert.Equal(new[] { "", "", "" }, rows[2]);
+    }
+
+    [Fact]
+    public void Spaces_ArePartOfField()
+    {
+        // RFC 4180: Spaces are considered part of a field and should not be ignored
+        var csv = " a , b ,c ";
+        var reader = Csv.ReadFromText(csv);
+
+        Assert.True(reader.MoveNext());
+        var row = reader.Current;
+
+        Assert.Equal(3, row.ColumnCount);
+        Assert.Equal(" a ", row[0].ToString());
+        Assert.Equal(" b ", row[1].ToString());
+        Assert.Equal("c ", row[2].ToString());
+    }
 }

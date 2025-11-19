@@ -1,15 +1,14 @@
-# HeroParser v3.0 - Zero-Allocation RFC 4180 Compliant CSV Parser
+# HeroParser v3.0 - Zero-Allocation CSV Parser with RFC 4180 Quote Handling
 
-**High-Performance SIMD Parsing** | RFC 4180 Compliant | Zero Allocations
+**High-Performance SIMD Parsing** | RFC 4180 Quote Handling | Zero Allocations
 
 ## 🚀 Key Features
 
-- **RFC 4180 Compliant**: Full quote handling with escaped quotes (`""`)
+- **RFC 4180 Quote Handling**: Supports quoted fields with escaped quotes (`""`), commas in quotes, per spec
 - **Quote-Aware SIMD**: Maintains SIMD performance even with quoted fields
 - **Zero Allocations**: Stack-only parsing with ArrayPool for column metadata
 - **Lazy Evaluation**: Columns parsed only when accessed
 - **Multi-Framework**: .NET 8, 9, and 10 support
-- **Safe APIs**: No `unsafe` keyword - uses safe `Unsafe` class and `MemoryMarshal` APIs
 
 ## 🎯 Design Philosophy
 
@@ -19,7 +18,7 @@
 - **Memory Safety**: No `unsafe` keyword - uses safe `Unsafe` class and `MemoryMarshal` APIs for performance
 - **Minimal API**: Simple, focused API surface
 - **Zero Dependencies**: No external packages for core library
-- **RFC 4180**: Full compliance with quote handling
+- **RFC 4180**: Quote handling, escaped quotes, delimiters in quotes (no newlines-in-quotes or header detection)
 - **SIMD First**: Quote-aware SIMD for AVX-512, AVX2, NEON
 
 ### API Surface
@@ -104,29 +103,14 @@ foreach (var row in Csv.ReadFromText(csv))
 
 ## 🔧 Architecture
 
-### Quote-Aware SIMD Parsers
+### Quote-Aware SIMD Parsing
 
-All SIMD parsers implement quote-aware parsing using bitmask techniques (inspired by Sep library):
+HeroParser uses bitmask-based quote-aware SIMD parsing (inspired by Sep library):
 
-1. **Avx512Parser** (Primary for Intel/AMD)
-   - Processes 64 characters per iteration
-   - Separate bitmasks for delimiters and quotes
-   - Quote parity tracking: `(quoteCount & 1)` determines if inside quotes
-   - Escaped quotes ("") automatically work: increment by 2, parity unchanged
-
-2. **Avx2Parser** (Fallback for older CPUs)
-   - Processes 32 characters per iteration
-   - Same bitmask technique as AVX-512
-   - Pack + permute for UTF-16 to byte conversion
-
-3. **NeonParser** (ARM)
-   - Processes 64 characters per iteration (8× 128-bit vectors)
-   - Quote-aware SIMD for Apple Silicon
-   - Optimized for M1/M2/M3 processors
-
-4. **ScalarParser** (Baseline)
-   - Character-by-character with RFC 4180 state machine
-   - Correctness reference implementation
+- **Hardware Detection**: Automatically selects best SIMD path (AVX-512, AVX2, NEON, or scalar fallback)
+- **Separate Bitmasks**: Tracks delimiters and quotes simultaneously
+- **Quote Parity Tracking**: `(quoteCount & 1)` determines if inside quotes
+- **Escaped Quotes**: `""` automatically works - increment by 2, parity unchanged
 
 ### Key Techniques
 
@@ -181,32 +165,9 @@ var vec = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref ...));
 ## 📦 Project Structure
 
 ```
-src/HeroParser/
-├── Csv.cs                            # Public API
-├── CsvCharSpanReader.cs             # UTF-16 reader (ref struct)
-├── CsvCharSpanRow.cs                # UTF-16 row accessor (ref struct, lazy parsing)
-├── CsvCharSpanColumn.cs             # UTF-16 column value helpers
-├── CsvParserOptions.cs               # Configuration (delimiter, quote, max columns)
-├── CsvException.cs                   # Error handling
-└── Simd/
-    ├── ISimdParser.cs                # Parser interface (quote-aware)
-    ├── ScalarParser.cs               # Baseline with RFC 4180 state machine
-    ├── Avx512Parser.cs               # Quote-aware SIMD for AVX-512
-    ├── Avx2Parser.cs                 # Quote-aware SIMD for AVX2
-    ├── NeonParser.cs                 # Quote-aware SIMD for ARM
-    └── SimdParserFactory.cs          # Hardware detection
-
-benchmarks/HeroParser.Benchmarks/
-├── Program.cs                        # Benchmark launcher
-├── QuickTest.cs                      # Fast throughput test
-├── ThroughputBenchmarks.cs           # Single-threaded performance
-├── VsSepBenchmarks.cs                # Head-to-head vs Sep
-└── QuotedVsUnquotedBenchmarks.cs     # Verify quote-aware SIMD performance
-
-tests/HeroParser.Tests/
-├── BasicParsingTests.cs              # Core functionality tests
-├── QuoteHandlingTests.cs             # Quote edge cases
-└── Rfc4180Tests.cs                   # RFC 4180 compliance tests
+src/HeroParser/          # Core CSV parser library
+benchmarks/              # Performance benchmarks
+tests/                   # Unit and compliance tests
 ```
 
 ## 🏗️ Building
@@ -294,11 +255,36 @@ Performance targets (to be verified with benchmarks):
 Check SIMD capabilities:
 
 ```csharp
-Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
-// Output: "SIMD: AVX-512F, AVX-512BW, AVX2 | Using: Avx512Parser"
+Console.WriteLine(Hardware.GetHardwareInfo());
+// Output: "SIMD: AVX-512F, AVX-512BW, AVX2"
 ```
 
 ## ⚠️ Design Decisions
+
+### RFC 4180 Compliance
+
+HeroParser implements **core RFC 4180 features**:
+
+✅ **Supported:**
+- Quoted fields with double-quote character (`"`)
+- Escaped quotes using double-double-quotes (`""`)
+- Delimiters (commas) within quoted fields
+- Both LF (`\n`) and CRLF (`\r\n`) line endings
+- Empty fields
+- Spaces preserved in fields
+- Custom delimiters and quote characters
+- Optional trailing newline on last record
+
+❌ **Not Supported:**
+- **Newlines within quoted fields** - Fields spanning multiple lines are not supported (rows are line-delimited)
+- **Automatic header row detection** - All rows treated as data; users must manually skip header if present
+
+**Why these limitations?**
+- Single-pass streaming parser optimized for speed processes rows line-by-line
+- Newlines-in-quotes would require buffering and multi-pass parsing, sacrificing performance
+- Header detection is application-specific; better left to user code
+
+For most CSV use cases (logs, exports, data interchange), this provides excellent RFC 4180 compatibility with maximum performance.
 
 ### RFC 4180 Quote Handling by Default
 - All parsers support quoted fields with escaped quotes (`""`)
@@ -319,7 +305,7 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 
 | Feature | Sep | HeroParser v3.0 |
 |---------|-----|-----------------|
-| **RFC 4180 Compliance** | ✅ Full quote support | ✅ Full quote support |
+| **RFC 4180 Compliance** | ✅ Full (incl. newlines in quotes) | ⚠️ Partial (no newlines in quotes) |
 | **Quote-Aware SIMD** | ✅ Bitmask technique | ✅ Bitmask technique (Sep-inspired) |
 | **Zero Allocations** | ✅ ref structs | ✅ ref structs + ArrayPool |
 | **Lazy Column Parsing** | ❌ | ✅ Parse on first access |
@@ -331,7 +317,7 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 ## 🎉 Project Goals
 
 ### Core Principles
-- ✅ **RFC 4180 Compliance**: Full quote handling with escaped quotes
+- ✅ **RFC 4180 Quote Handling**: Quoted fields, escaped quotes, delimiters in quotes (no newlines-in-quotes)
 - ✅ **Zero Allocations**: ref structs, ArrayPool, lazy parsing
 - ✅ **Quote-Aware SIMD**: No performance cliff on quoted data
 - ✅ **Zero Dependencies**: No external packages
@@ -343,7 +329,7 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 - **Mixed Workloads**: Graceful performance between unquoted and quoted
 
 ### Testing
-- ✅ **RFC 4180 Compliance**: Comprehensive quote handling tests
+- ✅ **RFC 4180 Compliance**: Comprehensive quote handling tests (see `Rfc4180Tests.cs`)
 - ✅ **SIMD Correctness**: All parsers produce same results
 - ✅ **Performance Verification**: Benchmarks for quote-aware SIMD
 

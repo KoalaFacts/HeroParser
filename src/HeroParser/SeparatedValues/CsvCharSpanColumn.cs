@@ -4,76 +4,78 @@ using System.Runtime.CompilerServices;
 namespace HeroParser.SeparatedValues;
 
 /// <summary>
-/// Represents a UTF-16 column.
+/// Represents a UTF-16 CSV column backed by the original character span.
 /// </summary>
+/// <remarks>Operations avoid allocations unless explicitly noted (e.g., <see cref="ToString"/>).</remarks>
 public readonly ref struct CsvCharSpanColumn
 {
-    private readonly ReadOnlySpan<char> _chars;
+    private readonly ReadOnlySpan<char> chars;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal CsvCharSpanColumn(ReadOnlySpan<char> chars)
     {
-        _chars = chars;
+        this.chars = chars;
     }
 
-    /// <summary>Raw UTF-16 span.</summary>
-    public ReadOnlySpan<char> CharSpan => _chars;
+    /// <summary>Gets the raw UTF-16 span that composes the column.</summary>
+    public ReadOnlySpan<char> CharSpan => chars;
 
-    /// <summary>Length in characters.</summary>
-    public int Length => _chars.Length;
+    /// <summary>Gets the column length in characters.</summary>
+    public int Length => chars.Length;
 
-    /// <summary>Whether the column is empty.</summary>
-    public bool IsEmpty => _chars.IsEmpty;
+    /// <summary>Gets a value indicating whether the column is empty.</summary>
+    public bool IsEmpty => chars.IsEmpty;
 
-    /// <summary>Return the column as a string.</summary>
-    public override string ToString() => new(_chars);
+    /// <summary>Creates a <see cref="string"/> representation of the column.</summary>
+    public override string ToString() => new(chars);
 
-    /// <summary>Parse via <see cref="ISpanParsable{T}"/>.</summary>
+    /// <summary>Parses the column using <see cref="ISpanParsable{T}"/> and invariant culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Parse<T>() where T : ISpanParsable<T>
-        => T.Parse(_chars, CultureInfo.InvariantCulture);
+        => T.Parse(chars, CultureInfo.InvariantCulture);
 
-    /// <summary>Try parse via <see cref="ISpanParsable{T}"/>.</summary>
+    /// <summary>Attempts to parse the column using <see cref="ISpanParsable{T}"/> and invariant culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParse<T>(out T? result) where T : ISpanParsable<T>
-        => T.TryParse(_chars, CultureInfo.InvariantCulture, out result);
+        => T.TryParse(chars, CultureInfo.InvariantCulture, out result);
 
-    /// <summary>Try parse as <see cref="int"/>.</summary>
+    /// <summary>Attempts to parse the column as an <see cref="int"/> using invariant culture.</summary>
     public bool TryParseInt32(out int result)
-        => int.TryParse(_chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+        => int.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
 
-    /// <summary>Try parse as <see cref="long"/>.</summary>
+    /// <summary>Attempts to parse the column as a <see cref="long"/> using invariant culture.</summary>
     public bool TryParseInt64(out long result)
-        => long.TryParse(_chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+        => long.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
 
-    /// <summary>Try parse as <see cref="double"/>.</summary>
+    /// <summary>Attempts to parse the column as a <see cref="double"/> using invariant culture.</summary>
     public bool TryParseDouble(out double result)
-        => double.TryParse(_chars, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out result);
+        => double.TryParse(chars, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out result);
 
-    /// <summary>Try parse as <see cref="decimal"/>.</summary>
+    /// <summary>Attempts to parse the column as a <see cref="decimal"/> using invariant culture.</summary>
     public bool TryParseDecimal(out decimal result)
-        => decimal.TryParse(_chars, NumberStyles.Number, CultureInfo.InvariantCulture, out result);
+        => decimal.TryParse(chars, NumberStyles.Number, CultureInfo.InvariantCulture, out result);
 
-    /// <summary>Try parse as <see cref="bool"/>.</summary>
+    /// <summary>Attempts to parse the column as a <see cref="bool"/>.</summary>
     public bool TryParseBoolean(out bool result)
-        => bool.TryParse(_chars, out result);
+        => bool.TryParse(chars, out result);
 
-    /// <summary>Try parse as <see cref="DateTime"/>.</summary>
+    /// <summary>Attempts to parse the column as a <see cref="DateTime"/> using invariant culture.</summary>
     public bool TryParseDateTime(out DateTime result)
-        => DateTime.TryParse(_chars, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+        => DateTime.TryParse(chars, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
-    /// <summary>Try parse as <see cref="Guid"/>.</summary>
+    /// <summary>Attempts to parse the column as a <see cref="Guid"/>.</summary>
     public bool TryParseGuid(out Guid result)
-        => Guid.TryParse(_chars, out result);
+        => Guid.TryParse(chars, out result);
 
-    /// <summary>Compare with a string.</summary>
+    /// <summary>Compares the column with a string using ordinal semantics.</summary>
     public bool Equals(string? other)
-        => other is not null && other.AsSpan().SequenceEqual(_chars);
+        => other is not null && other.AsSpan().SequenceEqual(chars);
 
-    /// <summary>Return the inner span without surrounding quotes.</summary>
+    /// <summary>Returns the underlying span with surrounding quotes removed, if present.</summary>
+    /// <param name="quote">Quote character (defaults to double quote).</param>
     public ReadOnlySpan<char> Unquote(char quote = '"')
     {
-        var span = _chars;
+        var span = chars;
         if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
         {
             return span[1..^1];
@@ -81,10 +83,11 @@ public readonly ref struct CsvCharSpanColumn
         return span;
     }
 
-    /// <summary>Unquote and return as string.</summary>
+    /// <summary>Unquotes the column (if needed) and returns it as a <see cref="string"/>, collapsing doubled quotes.</summary>
+    /// <param name="quote">Quote character (defaults to double quote).</param>
     public string UnquoteToString(char quote = '"')
     {
-        var span = _chars;
+        var span = chars;
         if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
         {
             var inner = span[1..^1];

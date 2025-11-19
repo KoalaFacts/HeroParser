@@ -12,7 +12,7 @@ namespace HeroParser.Benchmarks;
 [SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
 public class ThroughputBenchmarks
 {
-    private string _csv = null!;
+    private string csv = null!;
 
     [Params(1_000, 10_000, 100_000)]
     public int Rows { get; set; }
@@ -23,9 +23,9 @@ public class ThroughputBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _csv = GenerateCsv(Rows, Columns);
+        csv = GenerateCsv(Rows, Columns);
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
-        Console.WriteLine($"CSV Size: {_csv.Length:N0} chars ({_csv.Length * 2:N0} bytes)");
+        Console.WriteLine($"CSV Size: {csv.Length:N0} chars ({csv.Length * 2:N0} bytes)");
     }
 
     private static string GenerateCsv(int rows, int columns)
@@ -46,7 +46,7 @@ public class ThroughputBenchmarks
     [Benchmark]
     public int ParseCsv()
     {
-        using var reader = Csv.ReadFromText(_csv);
+        using var reader = Csv.ReadFromText(csv);
         int total = 0;
         foreach (var row in reader)
         {

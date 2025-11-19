@@ -1,13 +1,18 @@
 namespace HeroParser;
 
 /// <summary>
-/// Factory for selecting the optimal SIMD parser based on hardware capabilities.
+/// Provides helper utilities for inspecting hardware capabilities relevant to HeroParser.
 /// </summary>
 public static class Hardware
 {
     /// <summary>
-    /// Get hardware capabilities summary for diagnostics.
+    /// Returns a short, human-readable summary of SIMD instruction sets available on the current process.
     /// </summary>
+    /// <remarks>
+    /// This is primarily intended for diagnostics and benchmark output so that parsing results can be tied
+    /// to the processor features that were enabled.
+    /// </remarks>
+    /// <returns>A descriptive string such as <c>"SIMD: AVX2, SSE2"</c> or <c>"No SIMD support"</c>.</returns>
     public static string GetHardwareInfo()
     {
         var caps = new List<string>();

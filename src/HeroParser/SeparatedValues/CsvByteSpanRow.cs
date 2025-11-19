@@ -3,14 +3,14 @@ using System.Text;
 namespace HeroParser.SeparatedValues;
 
 /// <summary>
-/// Represents a UTF-8 row returned by <see cref="CsvByteSpanReader"/>.
+/// Represents a single CSV row backed by the original UTF-8 bytes.
 /// </summary>
 public readonly ref struct CsvByteSpanRow
 {
-    private readonly ReadOnlySpan<byte> _line;
-    private readonly ReadOnlySpan<int> _columnStarts;
-    private readonly ReadOnlySpan<int> _columnLengths;
-    private readonly int _columnCount;
+    private readonly ReadOnlySpan<byte> line;
+    private readonly int columnCount;
+    private readonly ReadOnlySpan<int> columnStarts;
+    private readonly ReadOnlySpan<int> columnLengths;
 
     internal CsvByteSpanRow(
         ReadOnlySpan<byte> line,
@@ -18,34 +18,37 @@ public readonly ref struct CsvByteSpanRow
         Span<int> columnLengthsBuffer,
         int columnCount)
     {
-        _line = line;
-        _columnStarts = columnStartsBuffer[..columnCount];
-        _columnLengths = columnLengthsBuffer[..columnCount];
-        _columnCount = columnCount;
+        this.line = line;
+        this.columnCount = columnCount;
+        columnStarts = columnStartsBuffer[..columnCount];
+        columnLengths = columnLengthsBuffer[..columnCount];
     }
 
-    /// <summary>Number of columns.</summary>
-    public int ColumnCount => _columnCount;
+    /// <summary>Gets the number of parsed columns in the row.</summary>
+    public int ColumnCount => columnCount;
 
-    /// <summary>Access a column by index.</summary>
+    /// <summary>Gets a column by zero-based index.</summary>
+    /// <param name="index">Zero-based column index.</param>
+    /// <returns>A <see cref="CsvByteSpanColumn"/> pointing at the requested column.</returns>
+    /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="index"/> falls outside <see cref="ColumnCount"/>.</exception>
     public CsvByteSpanColumn this[int index]
     {
         get
         {
-            var start = _columnStarts[index];
-            var length = _columnLengths[index];
-            return new CsvByteSpanColumn(_line.Slice(start, length));
+            var start = columnStarts[index];
+            var length = columnLengths[index];
+            return new CsvByteSpanColumn(line.Slice(start, length));
         }
     }
 
-    /// <summary>Materialize the row as strings (allocates).</summary>
+    /// <summary>Materializes the row into a UTF-8 decoded string array by copying the column data.</summary>
     public string[] ToStringArray()
     {
-        var result = new string[_columnCount];
-        for (int i = 0; i < _columnCount; i++)
+        var result = new string[columnCount];
+        for (int i = 0; i < columnCount; i++)
         {
             result[i] = Encoding.UTF8.GetString(
-                _line.Slice(_columnStarts[i], _columnLengths[i]));
+                line.Slice(columnStarts[i], columnLengths[i]));
         }
         return result;
     }

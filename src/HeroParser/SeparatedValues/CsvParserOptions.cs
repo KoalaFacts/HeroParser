@@ -1,52 +1,53 @@
 namespace HeroParser.SeparatedValues;
 
 /// <summary>
-/// Options for configuring CSV parser behavior.
-/// RFC 4180 compliant by default.
+/// Configures how HeroParser interprets CSV data.
 /// </summary>
+/// <remarks>
+/// The defaults follow RFC 4180. Use <see cref="Validate"/> to catch invalid configurations before parsing.
+/// </remarks>
 public sealed record CsvParserOptions
 {
     /// <summary>
-    /// Field delimiter character. Default: comma (',').
-    /// Must be ASCII (0-127) for SIMD performance.
+    /// Gets or sets the field delimiter character (comma by default).
     /// </summary>
+    /// <remarks>Delimiters must be ASCII (0-127) for SIMD acceleration.</remarks>
     public char Delimiter { get; init; } = ',';
 
     /// <summary>
-    /// Quote character for RFC 4180 compliance. Default: double quote ('"').
-    /// Fields containing delimiters, newlines, or quotes are enclosed in quotes.
-    /// Quotes within fields are escaped by doubling ("" becomes ").
-    /// Must be ASCII (0-127) for SIMD performance.
+    /// Gets or sets the quote character used to escape delimiters inside a field (double quote by default).
     /// </summary>
+    /// <remarks>The value must be ASCII and cannot match <see cref="Delimiter"/>.</remarks>
     public char Quote { get; init; } = '"';
 
     /// <summary>
-    /// Maximum columns per row. Default: 10,000.
-    /// Throws CsvException if exceeded.
+    /// Gets or sets the maximum number of columns a row may contain (defaults to 100).
     /// </summary>
-    public int MaxColumns { get; init; } = 10_000;
+    /// <remarks>Exceeding this value raises <see cref="CsvException"/> with <see cref="CsvErrorCode.TooManyColumns"/>.</remarks>
+    public int MaxColumns { get; init; } = 100;
 
     /// <summary>
-    /// Maximum rows to parse. Default: 10,000,000.
-    /// Throws CsvException if exceeded.
+    /// Gets or sets the maximum number of rows to parse before aborting (defaults to 100,000).
     /// </summary>
-    public int MaxRows { get; init; } = 10_000_000;
+    /// <remarks>Helps guard against malformed files with unbounded growth.</remarks>
+    public int MaxRows { get; init; } = 100_000;
 
     /// <summary>
-    /// Enable SIMD acceleration (AVX2 for UTF-8, Vector256 for UTF-16). Default: true.
-    /// Disable for testing or compatibility with systems without SIMD support.
+    /// Gets or sets a value indicating whether SIMD acceleration is used when available (enabled by default).
     /// </summary>
+    /// <remarks>Disable only for diagnostics or when targeting CPUs that lack the required instructions.</remarks>
     public bool UseSimdIfAvailable { get; init; } = true;
 
     /// <summary>
-    /// Default options: comma delimiter, double quote, 10,000 columns, 10,000,000 rows, adaptive parsing enabled, auto batch sizing.
-    /// RFC 4180 compliant.
+    /// Gets a singleton representing the default configuration.
     /// </summary>
+    /// <remarks>Equivalent to <c>new CsvParserOptions()</c>.</remarks>
     public static CsvParserOptions Default { get; } = new();
 
     /// <summary>
-    /// Validates the options and throws CsvException if invalid.
+    /// Validates the option set and throws when an invalid value is detected.
     /// </summary>
+    /// <exception cref="CsvException">Thrown when any property falls outside the supported range.</exception>
     internal void Validate()
     {
         if (Delimiter > 127)

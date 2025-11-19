@@ -15,8 +15,8 @@ namespace HeroParser.Benchmarks;
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
 public class VsSepBenchmarks
 {
-    private string _csv = null!;
-    private byte[] _utf8 = null!;
+    private string csv = null!;
+    private byte[] utf8 = null!;
 
     [Params(100, 1_000, 10_000, 100_000)]
     public int Rows { get; set; }
@@ -30,8 +30,8 @@ public class VsSepBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _csv = GenerateCsv(Rows, Columns, WithQuotes);
-        _utf8 = Encoding.UTF8.GetBytes(_csv);
+        csv = GenerateCsv(Rows, Columns, WithQuotes);
+        utf8 = Encoding.UTF8.GetBytes(csv);
     }
 
     private static string GenerateCsv(int rows, int columns, bool withQuotes)
@@ -63,7 +63,7 @@ public class VsSepBenchmarks
     [Benchmark(Baseline = true, Description = "Sep")]
     public int Sep_Parse()
     {
-        using var reader = Sep.Reader().FromText(_csv);
+        using var reader = Sep.Reader().FromText(csv);
 
         int total = 0;
         foreach (var row in reader)
@@ -77,7 +77,7 @@ public class VsSepBenchmarks
     [Benchmark(Description = "HeroParser (string)")]
     public int HeroParser_ParseString()
     {
-        using var reader = Csv.ReadFromText(_csv, new()
+        using var reader = Csv.ReadFromText(csv, new()
         {
             MaxColumns = 1_000,
             MaxRows = 1_000_000
@@ -95,7 +95,7 @@ public class VsSepBenchmarks
     [Benchmark(Description = "HeroParser (UTF-8)")]
     public int HeroParser_ParseUtf8()
     {
-        using var reader = Csv.ReadFromByteSpan(_utf8, new()
+        using var reader = Csv.ReadFromByteSpan(utf8, new()
         {
             MaxColumns = 1_000,
             MaxRows = 1_000_000
@@ -115,7 +115,7 @@ public class VsSepBenchmarks
     {
         Console.WriteLine();
         Console.WriteLine("=== Comparison Analysis ===");
-        Console.WriteLine($"CSV size: {_csv.Length:N0} chars ({_csv.Length * 2:N0} bytes)");
+        Console.WriteLine($"CSV size: {csv.Length:N0} chars ({csv.Length * 2:N0} bytes)");
         Console.WriteLine($"Rows: {Rows:N0}, Columns: {Columns}");
         Console.WriteLine($"HeroParser using: {Hardware.GetHardwareInfo()}");
         Console.WriteLine();

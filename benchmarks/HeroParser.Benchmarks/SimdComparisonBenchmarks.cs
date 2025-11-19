@@ -12,9 +12,9 @@ namespace HeroParser.Benchmarks;
 [SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
 public class SimdComparisonBenchmarks
 {
-    private string _csv = null!;
-    private CsvParserOptions _simdOptions = null!;
-    private CsvParserOptions _scalarOptions = null!;
+    private string csv = null!;
+    private CsvParserOptions simdOptions = null!;
+    private CsvParserOptions scalarOptions = null!;
 
     [Params(1_000, 10_000, 100_000)]
     public int Rows { get; set; }
@@ -25,12 +25,12 @@ public class SimdComparisonBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _csv = GenerateCsv(Rows, Columns);
-        _simdOptions = new CsvParserOptions { UseSimdIfAvailable = true };
-        _scalarOptions = new CsvParserOptions { UseSimdIfAvailable = false };
+        csv = GenerateCsv(Rows, Columns);
+        simdOptions = new CsvParserOptions { UseSimdIfAvailable = true };
+        scalarOptions = new CsvParserOptions { UseSimdIfAvailable = false };
 
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
-        Console.WriteLine($"CSV Size: {_csv.Length:N0} chars ({_csv.Length * 2:N0} bytes)");
+        Console.WriteLine($"CSV Size: {csv.Length:N0} chars ({csv.Length * 2:N0} bytes)");
     }
 
     private static string GenerateCsv(int rows, int columns)
@@ -51,7 +51,7 @@ public class SimdComparisonBenchmarks
     [Benchmark(Baseline = true, Description = "SIMD Enabled")]
     public int WithSimd()
     {
-        using var reader = Csv.ReadFromText(_csv, _simdOptions);
+        using var reader = Csv.ReadFromText(csv, simdOptions);
         int total = 0;
         foreach (var row in reader)
         {
@@ -63,7 +63,7 @@ public class SimdComparisonBenchmarks
     [Benchmark(Description = "Scalar Only")]
     public int WithoutSimd()
     {
-        using var reader = Csv.ReadFromText(_csv, _scalarOptions);
+        using var reader = Csv.ReadFromText(csv, scalarOptions);
         int total = 0;
         foreach (var row in reader)
         {

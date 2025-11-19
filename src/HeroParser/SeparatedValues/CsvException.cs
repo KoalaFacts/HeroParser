@@ -1,28 +1,30 @@
 namespace HeroParser.SeparatedValues;
 
 /// <summary>
-/// Exception thrown when CSV parsing fails.
+/// Represents errors that occur while parsing CSV data.
 /// </summary>
 public class CsvException : Exception
 {
     /// <summary>
-    /// Error code indicating the type of failure.
+    /// Gets the error code describing the failure.
     /// </summary>
     public CsvErrorCode ErrorCode { get; }
 
     /// <summary>
-    /// Row number where error occurred (1-based), or null if not applicable.
+    /// Gets the 1-based row number where the error occurred, or <see langword="null"/> when unknown.
     /// </summary>
     public int? Row { get; }
 
     /// <summary>
-    /// Column number where error occurred (1-based), or null if not applicable.
+    /// Gets the 1-based column where the error occurred, or <see langword="null"/> when unknown.
     /// </summary>
     public int? Column { get; }
 
     /// <summary>
-    /// Creates a new CsvException with the specified error code and message.
+    /// Initializes a new instance of the <see cref="CsvException"/> class.
     /// </summary>
+    /// <param name="errorCode">The error classification.</param>
+    /// <param name="message">A human-readable description of the failure.</param>
     public CsvException(CsvErrorCode errorCode, string message)
         : base(message)
     {
@@ -30,8 +32,11 @@ public class CsvException : Exception
     }
 
     /// <summary>
-    /// Creates a new CsvException with the specified error code, message, and row number.
+    /// Initializes a new instance of the <see cref="CsvException"/> class for a specific row.
     /// </summary>
+    /// <param name="errorCode">The error classification.</param>
+    /// <param name="message">A human-readable description of the failure.</param>
+    /// <param name="row">The 1-based row number associated with the error.</param>
     public CsvException(CsvErrorCode errorCode, string message, int row)
         : base($"Row {row}: {message}")
     {
@@ -40,8 +45,12 @@ public class CsvException : Exception
     }
 
     /// <summary>
-    /// Creates a new CsvException with the specified error code, message, row, and column.
+    /// Initializes a new instance of the <see cref="CsvException"/> class for a specific row and column.
     /// </summary>
+    /// <param name="errorCode">The error classification.</param>
+    /// <param name="message">A human-readable description of the failure.</param>
+    /// <param name="row">The 1-based row number associated with the error.</param>
+    /// <param name="column">The 1-based column associated with the error.</param>
     public CsvException(CsvErrorCode errorCode, string message, int row, int column)
         : base($"Row {row}, Column {column}: {message}")
     {

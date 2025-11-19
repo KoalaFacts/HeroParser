@@ -4,57 +4,63 @@ using System.Runtime.CompilerServices;
 namespace HeroParser.SeparatedValues;
 
 /// <summary>
-/// Streaming UTF-8 reader. Parses rows directly from byte spans.
+/// Enumerates CSV rows directly from a UTF-8 span without allocating intermediate strings.
 /// </summary>
+/// <remarks>Rows are parsed lazily as <see cref="MoveNext"/> advances; call <see cref="Dispose"/> to return pooled buffers.</remarks>
 public ref struct CsvByteSpanReader
 {
-    private readonly ReadOnlySpan<byte> _utf8;
-    private readonly CsvParserOptions _options;
-    private readonly int[] _columnStartsBuffer;
-    private readonly int[] _columnLengthsBuffer;
-    private int _position;
-    private int _rowCount;
-    private CsvByteSpanRow _current;
+    private readonly ReadOnlySpan<byte> utf8;
+    private readonly CsvParserOptions options;
+    private readonly int[] columnStartsBuffer;
+    private readonly int[] columnLengthsBuffer;
+    private int position;
+    private int rowCount;
+    private CsvByteSpanRow current;
 
     internal CsvByteSpanReader(ReadOnlySpan<byte> utf8, CsvParserOptions options)
     {
-        _utf8 = utf8;
-        _options = options;
-        _position = 0;
-        _rowCount = 0;
-        _current = default;
-        _columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
-        _columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
+        this.utf8 = utf8;
+        this.options = options;
+        position = 0;
+        rowCount = 0;
+        current = default;
+        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
+        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
     }
 
-    /// <summary>Current row (UTF-8).</summary>
-    public readonly CsvByteSpanRow Current => _current;
+    /// <summary>Gets the current UTF-8 backed row.</summary>
+    /// <remarks>The value is only valid after <see cref="MoveNext"/> returns <see langword="true"/>.</remarks>
+    public readonly CsvByteSpanRow Current => current;
 
-    /// <summary>Return the enumerator.</summary>
+    /// <summary>Returns this instance so it can be consumed by <c>foreach</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly CsvByteSpanReader GetEnumerator() => this;
 
-    /// <summary>Advance to the next row.</summary>
+    /// <summary>
+    /// Advances to the next row in the input span.
+    /// </summary>
+    /// <returns><see langword="true"/> when another row was parsed; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="CsvException">Thrown when the input violates <see cref="CsvParserOptions"/>.</exception>
     public bool MoveNext()
     {
         while (true)
         {
-            if (_rowCount >= _options.MaxRows)
+            if (rowCount >= options.MaxRows)
             {
                 throw new CsvException(
                     CsvErrorCode.TooManyRows,
-                    $"CSV exceeds maximum row limit of {_options.MaxRows}");
+                    $"CSV exceeds maximum row limit of {options.MaxRows}");
             }
 
-            if (_position >= _utf8.Length)
+            if (position >= utf8.Length)
                 return false;
 
-            var remaining = _utf8[_position..];
+            var remaining = utf8[position..];
             var result = StreamingParser.ParseRow(
                 remaining,
-                _options,
-                _columnStartsBuffer.AsSpan(0, _options.MaxColumns),
-                _columnLengthsBuffer.AsSpan(0, _options.MaxColumns));
+                options,
+                columnStartsBuffer.AsSpan(0, options.MaxColumns),
+                columnLengthsBuffer.AsSpan(0, options.MaxColumns));
 
             if (result.CharsConsumed == 0)
                 return false;
@@ -62,26 +68,29 @@ public ref struct CsvByteSpanReader
             var rowBytes = remaining[..result.RowLength];
             if (rowBytes.IsEmpty)
             {
-                _position += result.CharsConsumed;
+                position += result.CharsConsumed;
                 continue;
             }
 
-            _current = new CsvByteSpanRow(
+            current = new CsvByteSpanRow(
                 rowBytes,
-                _columnStartsBuffer,
-                _columnLengthsBuffer,
+                columnStartsBuffer,
+                columnLengthsBuffer,
                 result.ColumnCount);
 
-            _position += result.CharsConsumed;
-            _rowCount++;
+            position += result.CharsConsumed;
+            rowCount++;
             return true;
         }
     }
 
-    /// <summary>Return pooled buffers.</summary>
+    /// <summary>
+    /// Returns pooled buffers used by the reader.
+    /// </summary>
+    /// <remarks>Always call this method (or use a <c>using</c> statement) when the reader is no longer needed.</remarks>
     public readonly void Dispose()
     {
-        ArrayPool<int>.Shared.Return(_columnStartsBuffer, clearArray: false);
-        ArrayPool<int>.Shared.Return(_columnLengthsBuffer, clearArray: false);
+        ArrayPool<int>.Shared.Return(columnStartsBuffer, clearArray: false);
+        ArrayPool<int>.Shared.Return(columnLengthsBuffer, clearArray: false);
     }
 }

@@ -12,9 +12,9 @@ namespace HeroParser.Benchmarks;
 [SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
 public class QuotedVsUnquotedBenchmarks
 {
-    private string _unquotedCsv = null!;
-    private string _quotedCsv = null!;
-    private string _mixedCsv = null!;
+    private string unquotedCsv = null!;
+    private string quotedCsv = null!;
+    private string mixedCsv = null!;
 
     [Params(1_000, 10_000, 100_000)]
     public int Rows { get; set; }
@@ -25,9 +25,9 @@ public class QuotedVsUnquotedBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _unquotedCsv = GenerateUnquotedCsv(Rows, Columns);
-        _quotedCsv = GenerateQuotedCsv(Rows, Columns);
-        _mixedCsv = GenerateMixedCsv(Rows, Columns);
+        unquotedCsv = GenerateUnquotedCsv(Rows, Columns);
+        quotedCsv = GenerateQuotedCsv(Rows, Columns);
+        mixedCsv = GenerateMixedCsv(Rows, Columns);
     }
 
     /// <summary>
@@ -36,7 +36,7 @@ public class QuotedVsUnquotedBenchmarks
     [Benchmark(Baseline = true, Description = "Unquoted CSV")]
     public int Parse_Unquoted()
     {
-        using var reader = Csv.ReadFromText(_unquotedCsv);
+        using var reader = Csv.ReadFromText(unquotedCsv);
         int total = 0;
         foreach (var row in reader)
         {
@@ -51,7 +51,7 @@ public class QuotedVsUnquotedBenchmarks
     [Benchmark(Description = "Quoted CSV (delimiters in quotes)")]
     public int Parse_Quoted()
     {
-        using var reader = Csv.ReadFromText(_quotedCsv);
+        using var reader = Csv.ReadFromText(quotedCsv);
         int total = 0;
         foreach (var row in reader)
         {
@@ -66,7 +66,7 @@ public class QuotedVsUnquotedBenchmarks
     [Benchmark(Description = "Mixed CSV (50% quoted)")]
     public int Parse_Mixed()
     {
-        using var reader = Csv.ReadFromText(_mixedCsv);
+        using var reader = Csv.ReadFromText(mixedCsv);
         int total = 0;
         foreach (var row in reader)
         {
@@ -152,9 +152,9 @@ public class QuotedVsUnquotedBenchmarks
         Console.WriteLine($"Test size: {Rows:N0} rows × {Columns} columns");
         Console.WriteLine($"Hardware: {HeroParser.Hardware.GetHardwareInfo()}");
         Console.WriteLine($"Test size: {Rows:N0} rows × {Columns} columns");
-        Console.WriteLine($"Unquoted CSV: {_unquotedCsv.Length:N0} chars ({_unquotedCsv.Length * 2:N0} bytes)");
-        Console.WriteLine($"Quoted CSV:   {_quotedCsv.Length:N0} chars ({_quotedCsv.Length * 2:N0} bytes)");
-        Console.WriteLine($"Mixed CSV:    {_mixedCsv.Length:N0} chars ({_mixedCsv.Length * 2:N0} bytes)");
+        Console.WriteLine($"Unquoted CSV: {unquotedCsv.Length:N0} chars ({unquotedCsv.Length * 2:N0} bytes)");
+        Console.WriteLine($"Quoted CSV:   {quotedCsv.Length:N0} chars ({quotedCsv.Length * 2:N0} bytes)");
+        Console.WriteLine($"Mixed CSV:    {mixedCsv.Length:N0} chars ({mixedCsv.Length * 2:N0} bytes)");
         Console.WriteLine();
         Console.WriteLine("Expected results if quote-aware SIMD works:");
         Console.WriteLine("  - Unquoted should be fastest (baseline)");

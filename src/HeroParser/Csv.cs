@@ -4,7 +4,7 @@ namespace HeroParser;
 
 /// <summary>
 /// Ultra-fast CSV parser targeting 30+ GB/s throughput using SIMD optimization.
-/// Zero allocations in hot path, no unsafe code.
+/// Zero allocations in hot path. No unsafe keyword - uses safe Unsafe class and MemoryMarshal APIs.
 /// </summary>
 public static class Csv
 {

@@ -9,14 +9,14 @@
 - **Zero Allocations**: Stack-only parsing with ArrayPool for column metadata
 - **Lazy Evaluation**: Columns parsed only when accessed
 - **Multi-Framework**: .NET 8, 9, and 10 support
-- **Safe Memory**: No unsafe code - uses MemoryMarshal + Unsafe APIs
+- **Safe APIs**: No `unsafe` keyword - uses safe `Unsafe` class and `MemoryMarshal` APIs
 
 ## 🎯 Design Philosophy
 
 ### Zero-Allocation, RFC-Compliant Design
 
 - **Target Frameworks**: .NET 8, 9, 10 (modern JIT optimizations)
-- **Memory Safety**: No unsafe code - safe MemoryMarshal + Unsafe APIs
+- **Memory Safety**: No `unsafe` keyword - uses safe `Unsafe` class and `MemoryMarshal` APIs for performance
 - **Minimal API**: Simple, focused API surface
 - **Zero Dependencies**: No external packages for core library
 - **RFC 4180**: Full compliance with quote handling
@@ -47,7 +47,7 @@ foreach (var row in Csv.ReadFromText(csv))
 {
     // Access columns by index - no allocations
     var id = row[0].Parse<int>();
-    var name = row[1].Span; // ReadOnlySpan<char>
+    var name = row[1].CharSpan; // ReadOnlySpan<char>
     var price = row[2].Parse<decimal>();
 }
 ```
@@ -171,7 +171,8 @@ bool insideQuotes = (quoteCount & 1) != 0;
 
 #### 4. Safe Memory Access
 ```csharp
-// No unsafe keyword - uses safe APIs
+// No unsafe keyword - uses System.Runtime.CompilerServices.Unsafe and MemoryMarshal
+// These are safe APIs that provide performance without pointer syntax
 ref readonly char start = ref MemoryMarshal.GetReference(line);
 ref readonly char pos = ref Unsafe.Add(ref Unsafe.AsRef(in start), i);
 var vec = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref ...));
@@ -323,7 +324,7 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 | **Zero Allocations** | ✅ ref structs | ✅ ref structs + ArrayPool |
 | **Lazy Column Parsing** | ❌ | ✅ Parse on first access |
 | **SIMD Paths** | AVX-512, AVX2, NEON | ✅ Same |
-| **Memory Safety** | ✅ Safe only | ✅ Safe (MemoryMarshal + Unsafe) |
+| **Memory Safety** | ✅ No `unsafe` keyword | ✅ No `unsafe` keyword (uses `Unsafe` class APIs) |
 | **Framework Support** | .NET 6+ | .NET 8, 9, 10 |
 | **External Dependencies** | csFastFloat | ✅ **Zero** |
 
@@ -334,7 +335,7 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 - ✅ **Zero Allocations**: ref structs, ArrayPool, lazy parsing
 - ✅ **Quote-Aware SIMD**: No performance cliff on quoted data
 - ✅ **Zero Dependencies**: No external packages
-- ✅ **Memory Safety**: No unsafe keyword (MemoryMarshal + Unsafe only)
+- ✅ **Memory Safety**: No `unsafe` keyword (uses safe `Unsafe` class and `MemoryMarshal` APIs)
 
 ### Performance Targets (To Be Verified)
 - **Competitive with Sep**: Similar performance on unquoted data
@@ -350,16 +351,36 @@ Console.WriteLine(HeroParser.Simd.SimdParserFactory.GetHardwareInfo());
 
 MIT
 
-## 🙏 Credits
+## 🙏 Acknowledgments & Credits
 
-Inspired by and built upon research from:
-- **Sep** by nietras - Bitmask quote-aware SIMD technique
-- **Sylvan** - Alternative high-performance CSV parsing approach
-- **SimdUnicode** - SIMD validation and processing techniques
+HeroParser was deeply inspired by the excellent work in the .NET CSV parsing ecosystem:
 
-HeroParser implements Sep's bitmask technique for quote-aware SIMD parsing while adding:
-- Lazy column evaluation for zero allocations in filtering scenarios
-- .NET 8-10 targeting for latest JIT optimizations
-- Zero external dependencies
+### Primary Inspiration: Sep by nietras
+
+**[Sep](https://github.com/nietras/Sep)** by nietras is currently one of the fastest CSV parsers for .NET and served as the primary inspiration for HeroParser's architecture. The core techniques learned from Sep include:
+
+- **Bitmask-based Quote-Aware SIMD**: The fundamental approach of using bitmasks to track delimiters and quotes simultaneously, allowing SIMD performance even with quoted fields
+- **Quote Parity Tracking**: Using quote count parity (`quoteCount & 1`) to determine when inside/outside quotes, which elegantly handles escaped quotes (`""`) without special cases
+- **UTF-8 First Design**: Processing bytes directly rather than UTF-16 characters for better SIMD efficiency
+- **Streaming Architecture**: Single-pass parsing that identifies all column boundaries in one SIMD loop
+
+HeroParser adapts these techniques while focusing on:
+- Lazy column evaluation to minimize allocations in filtering scenarios
+- .NET 8-10 targeting for the latest JIT optimizations and SIMD intrinsics
+- Zero external dependencies for the core library
+- Extensive quote handling test coverage for RFC 4180 compliance
+
+The `VsSepBenchmarks.cs` benchmarks provide head-to-head performance comparisons to ensure HeroParser remains competitive while offering these additional features.
+
+### Additional Inspiration
+
+- **Sylvan.Data.Csv** - Alternative high-performance CSV parsing approach and API design patterns
+- **SimdUnicode** - SIMD validation and text processing techniques
+
+### Special Thanks
+
+Deep gratitude to nietras for creating Sep and making it open source. The research documented in `docs/sep-research.md` was instrumental in understanding modern SIMD-based CSV parsing. Without Sep's pioneering work, HeroParser would not exist.
+
+---
 
 Built to be a **competitive, RFC 4180 compliant, zero-allocation CSV parser for .NET**! 🚀

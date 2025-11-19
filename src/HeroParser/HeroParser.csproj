@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Package metadata -->
     <PackageId>HeroParser</PackageId>
     <Version>1.0.0</Version>

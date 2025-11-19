@@ -9,6 +9,9 @@ namespace HeroParser.SeparatedValues;
 /// <summary>
 /// Unified streaming parser for both UTF-16 (char) and UTF-8 (byte) data.
 /// Uses generic specialization for zero-overhead abstraction.
+///
+/// SIMD parsing techniques inspired by Sep (https://github.com/nietras/Sep) by nietras,
+/// which pioneered bitmask-based quote-aware SIMD parsing for CSV.
 /// </summary>
 internal static class StreamingParser
 {

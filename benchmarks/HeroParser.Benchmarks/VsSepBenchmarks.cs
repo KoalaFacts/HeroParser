@@ -7,7 +7,9 @@ namespace HeroParser.Benchmarks;
 
 /// <summary>
 /// Head-to-head comparison: HeroParser vs Sep library.
-/// Sep is currently one of the fastest CSV parsers for .NET.
+/// Sep by nietras (https://github.com/nietras/Sep) is currently one of the fastest CSV parsers for .NET
+/// and served as the primary inspiration for HeroParser's SIMD architecture.
+/// These benchmarks ensure HeroParser remains competitive with Sep's performance.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]

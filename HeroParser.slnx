@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks\HeroParser.Benchmarks\HeroParser.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests\HeroParser.Tests\HeroParser.Tests.csproj" />
+  </Folder>
+  <Project Path="src\HeroParser\HeroParser.csproj" />
+</Solution>

@@ -16,10 +16,10 @@ public class QuotedVsUnquotedBenchmarks
     private string _quotedCsv = null!;
     private string _mixedCsv = null!;
 
-    [Params(10_000, 100_000)]
+    [Params(1_000, 10_000, 100_000)]
     public int Rows { get; set; }
 
-    [Params(10, 50)]
+    [Params(10, 25)]
     public int Columns { get; set; }
 
     [GlobalSetup]

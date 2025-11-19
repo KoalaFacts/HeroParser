@@ -16,20 +16,23 @@ public class VsSepBenchmarks
     private string _csv = null!;
     private byte[] _utf8 = null!;
 
-    [Params(100_000)]
+    [Params(10, 100, 1_000, 10_000, 100_000)]
     public int Rows { get; set; }
 
-    [Params(25)]
+    [Params(10, 25, 50, 100)]
     public int Columns { get; set; }
+
+    [Params(false, true)]
+    public bool WithQuotes { get; set; }
 
     [GlobalSetup]
     public void Setup()
     {
-        _csv = GenerateCsv(Rows, Columns);
+        _csv = GenerateCsv(Rows, Columns, WithQuotes);
         _utf8 = Encoding.UTF8.GetBytes(_csv);
     }
 
-    private static string GenerateCsv(int rows, int columns)
+    private static string GenerateCsv(int rows, int columns, bool withQuotes)
     {
         var sb = new StringBuilder();
         for (int r = 0; r < rows; r++)
@@ -37,7 +40,18 @@ public class VsSepBenchmarks
             for (int c = 0; c < columns; c++)
             {
                 if (c > 0) sb.Append(',');
-                sb.Append($"value_{r}_{c}");
+
+                string value = $"value_{r}_{c}";
+
+                // Quote 50% of fields when withQuotes is true
+                if (withQuotes && (r * columns + c) % 2 == 0)
+                {
+                    sb.Append('"').Append(value).Append('"');
+                }
+                else
+                {
+                    sb.Append(value);
+                }
             }
             sb.AppendLine();
         }
@@ -101,6 +115,7 @@ public class VsSepBenchmarks
         Console.WriteLine("=== Comparison Analysis ===");
         Console.WriteLine($"CSV size: {_csv.Length:N0} chars ({_csv.Length * 2:N0} bytes)");
         Console.WriteLine($"Rows: {Rows:N0}, Columns: {Columns}");
+        Console.WriteLine($"Quoted fields: {(WithQuotes ? "50%" : "0%")}");
         Console.WriteLine($"HeroParser using: {Hardware.GetHardwareInfo()}");
         Console.WriteLine();
     }

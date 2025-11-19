@@ -101,7 +101,7 @@ public class VsSepBenchmarks
         Console.WriteLine("=== Comparison Analysis ===");
         Console.WriteLine($"CSV size: {_csv.Length:N0} chars ({_csv.Length * 2:N0} bytes)");
         Console.WriteLine($"Rows: {Rows:N0}, Columns: {Columns}");
-        Console.WriteLine($"HeroParser using: {HeroParser.Simd.SimdParserFactory.GetHardwareInfo()}");
+        Console.WriteLine($"HeroParser using: {Hardware.GetHardwareInfo()}");
         Console.WriteLine();
     }
 }

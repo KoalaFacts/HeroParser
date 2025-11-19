@@ -148,7 +148,9 @@ public class QuotedVsUnquotedBenchmarks
     {
         Console.WriteLine();
         Console.WriteLine("=== Quote Performance Analysis ===");
-        Console.WriteLine($"Hardware: {HeroParser.Simd.SimdParserFactory.GetHardwareInfo()}");
+        Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
+        Console.WriteLine($"Test size: {Rows:N0} rows × {Columns} columns");
+        Console.WriteLine($"Hardware: {HeroParser.Hardware.GetHardwareInfo()}");
         Console.WriteLine($"Test size: {Rows:N0} rows × {Columns} columns");
         Console.WriteLine($"Unquoted CSV: {_unquotedCsv.Length:N0} chars ({_unquotedCsv.Length * 2:N0} bytes)");
         Console.WriteLine($"Quoted CSV:   {_quotedCsv.Length:N0} chars ({_quotedCsv.Length * 2:N0} bytes)");

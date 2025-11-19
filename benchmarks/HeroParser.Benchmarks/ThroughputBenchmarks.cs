@@ -107,6 +107,7 @@ public class ThroughputBenchmarks
         Console.WriteLine($"Large CSV size: {_largeCsv.Length:N0} chars ({_largeCsv.Length * 2:N0} bytes)");
         Console.WriteLine($"Wide CSV size: {_wideCsv.Length:N0} chars ({_wideCsv.Length * 2:N0} bytes)");
         Console.WriteLine();
-        Console.WriteLine($"Hardware: {HeroParser.Simd.SimdParserFactory.GetHardwareInfo()}");
+
+        Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
     }
 }

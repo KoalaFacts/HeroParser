@@ -7,7 +7,7 @@ public class SimdTests
     [Fact]
     public void HardwareInfo_ReturnsValidString()
     {
-        var info = HeroParser.Simd.SimdParserFactory.GetHardwareInfo();
+        var info = Hardware.GetHardwareInfo();
         Assert.NotNull(info);
         Assert.NotEmpty(info);
         // Should contain either "Using:" or "SIMD:"

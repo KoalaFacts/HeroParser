@@ -12,7 +12,8 @@ public static class QuickTest
     public static void Run()
     {
         Console.WriteLine("=== HeroParser Quick Throughput Test ===");
-        Console.WriteLine($"Hardware: {HeroParser.Simd.SimdParserFactory.GetHardwareInfo()}");
+
+        Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
         Console.WriteLine();
 
         // Generate test data

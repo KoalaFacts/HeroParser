@@ -45,7 +45,8 @@ public class Program
         Console.WriteLine("  --all         Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");
-        Console.WriteLine($"  {HeroParser.Simd.SimdParserFactory.GetHardwareInfo()}");
+
+        Console.WriteLine($"  {Hardware.GetHardwareInfo()}");
         Console.WriteLine();
 
         if (args.Length == 0)

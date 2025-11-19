@@ -6,13 +6,6 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        if (args.Length > 0 && args[0] == "--quick")
-        {
-            // Quick test mode (no BenchmarkDotNet)
-            QuickTest.Run();
-            return;
-        }
-
         if (args.Length > 0 && args[0] == "--throughput")
         {
             // Run only throughput benchmarks
@@ -34,14 +27,21 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--simd")
+        {
+            // Run SIMD comparison benchmarks
+            BenchmarkRunner.Run<SimdComparisonBenchmarks>();
+            return;
+        }
+
         // Default: show menu
         Console.WriteLine("=== HeroParser Benchmarks ===");
         Console.WriteLine();
         Console.WriteLine("Options:");
-        Console.WriteLine("  --quick       Quick throughput test (no BenchmarkDotNet)");
         Console.WriteLine("  --throughput  Run throughput benchmarks");
         Console.WriteLine("  --vs-sep      Run HeroParser vs Sep comparison");
         Console.WriteLine("  --quotes      Run quoted vs unquoted comparison (VERIFY SIMD)");
+        Console.WriteLine("  --simd        Run SIMD vs Scalar comparison");
         Console.WriteLine("  --all         Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");
@@ -51,9 +51,8 @@ public class Program
 
         if (args.Length == 0)
         {
-            Console.WriteLine("No arguments provided. Running quick test...");
+            Console.WriteLine("No arguments provided. Nothing to run...");
             Console.WriteLine();
-            QuickTest.Run();
         }
         else if (args[0] == "--all")
         {

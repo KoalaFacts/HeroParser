@@ -14,11 +14,9 @@ internal static class StreamingParser
 {
     public static RowParseResult ParseRow<T>(
         ReadOnlySpan<T> data,
-        T delimiter,
-        T quote,
+        CsvParserOptions options,
         Span<int> columnStarts,
-        Span<int> columnLengths,
-        int maxColumns)
+        Span<int> columnLengths)
         where T : unmanaged, IEquatable<T>
     {
         if (data.IsEmpty)
@@ -36,61 +34,78 @@ internal static class StreamingParser
         int charsConsumed = 0;
         bool rowEnded = false;
 
+        T delimiter = CastFromChar<T>(options.Delimiter);
+        T quote = CastFromChar<T>(options.Quote);
         T lf = CastFromChar<T>('\n');
         T cr = CastFromChar<T>('\r');
 
-        // SIMD fast path
-        if (TrySimdParse(ref mutableRef, data.Length, delimiter, quote, lf, cr,
-            ref position, ref inQuotes, ref skipNextQuote,
-            ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded,
-            columnStarts, columnLengths, maxColumns))
+        // SIMD fast path (if enabled)
+        if (options.UseSimdIfAvailable)
         {
-            if (rowEnded)
-                goto FinalizeParsing;
+            TrySimdParse(
+                ref mutableRef,
+                data.Length,
+                delimiter,
+                quote,
+                lf,
+                cr,
+                ref position,
+                ref inQuotes,
+                ref skipNextQuote,
+                ref columnCount,
+                ref currentStart,
+                ref rowLength,
+                ref charsConsumed,
+                ref rowEnded,
+                columnStarts,
+                columnLengths,
+                options.MaxColumns);
         }
 
-        for (int i = position; i < data.Length && !rowEnded; i++)
+        if (!rowEnded)
         {
-            T c = Unsafe.Add(ref mutableRef, i);
-
-            if (c.Equals(quote))
+            for (int i = position; i < data.Length; i++)
             {
-                if (skipNextQuote)
+                T c = Unsafe.Add(ref mutableRef, i);
+
+                if (c.Equals(quote))
                 {
-                    skipNextQuote = false;
+                    if (skipNextQuote)
+                    {
+                        skipNextQuote = false;
+                        continue;
+                    }
+
+                    if (inQuotes && i + 1 < data.Length && Unsafe.Add(ref mutableRef, i + 1).Equals(quote))
+                    {
+                        skipNextQuote = true;
+                        continue;
+                    }
+
+                    inQuotes = !inQuotes;
                     continue;
                 }
 
-                if (inQuotes && i + 1 < data.Length && Unsafe.Add(ref mutableRef, i + 1).Equals(quote))
-                {
-                    skipNextQuote = true;
+                if (inQuotes)
                     continue;
+
+                if (c.Equals(delimiter))
+                {
+                    AppendColumn(i, ref columnCount, ref currentStart,
+                        columnStarts, columnLengths, options.MaxColumns);
                 }
-
-                inQuotes = !inQuotes;
-                continue;
-            }
-
-            if (inQuotes)
-                continue;
-
-            if (c.Equals(delimiter))
-            {
-                AppendColumn(i, ref columnCount, ref currentStart,
-                    columnStarts, columnLengths, maxColumns);
-            }
-            else if (c.Equals(lf) || c.Equals(cr))
-            {
-                rowLength = i;
-                charsConsumed = i + 1;
-                if (c.Equals(cr) && i + 1 < data.Length && Unsafe.Add(ref mutableRef, i + 1).Equals(lf))
-                    charsConsumed++;
-                rowEnded = true;
-                break;
+                else if (c.Equals(lf) || c.Equals(cr))
+                {
+                    rowLength = i;
+                    charsConsumed = i + 1;
+                    if (c.Equals(cr) && i + 1 < data.Length && Unsafe.Add(ref mutableRef, i + 1).Equals(lf))
+                        charsConsumed++;
+                    rowEnded = true;
+                    break;
+                }
             }
         }
 
-    FinalizeParsing:
         if (!rowEnded)
         {
             rowLength = data.Length;
@@ -98,7 +113,7 @@ internal static class StreamingParser
         }
 
         AppendFinalColumn(rowLength, ref columnCount, ref currentStart,
-            columnStarts, columnLengths, maxColumns);
+            columnStarts, columnLengths, options.MaxColumns);
 
         return new RowParseResult(columnCount, rowLength, charsConsumed);
     }

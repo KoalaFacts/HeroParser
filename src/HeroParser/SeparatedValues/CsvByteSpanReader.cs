@@ -52,11 +52,9 @@ public ref struct CsvByteSpanReader
             var remaining = _utf8[_position..];
             var result = StreamingParser.ParseRow(
                 remaining,
-                (byte)_options.Delimiter,
-                (byte)_options.Quote,
+                _options,
                 _columnStartsBuffer.AsSpan(0, _options.MaxColumns),
-                _columnLengthsBuffer.AsSpan(0, _options.MaxColumns),
-                _options.MaxColumns);
+                _columnLengthsBuffer.AsSpan(0, _options.MaxColumns));
 
             if (result.CharsConsumed == 0)
                 return false;

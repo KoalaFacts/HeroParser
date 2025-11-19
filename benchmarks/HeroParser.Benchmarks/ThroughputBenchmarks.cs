@@ -27,7 +27,7 @@ public class ThroughputBenchmarks
         _mediumCsv = GenerateCsv(10_000, 20);
 
         // Large: 100,000 rows x 10 columns
-        _largeCsv = GenerateCsv(100_000, 10);
+        _largeCsv = GenerateCsv(100_000, 25);
 
         // Wide: 1,000 rows x 100 columns
         _wideCsv = GenerateCsv(1_000, 100);
@@ -107,7 +107,6 @@ public class ThroughputBenchmarks
         Console.WriteLine($"Large CSV size: {_largeCsv.Length:N0} chars ({_largeCsv.Length * 2:N0} bytes)");
         Console.WriteLine($"Wide CSV size: {_wideCsv.Length:N0} chars ({_wideCsv.Length * 2:N0} bytes)");
         Console.WriteLine();
-
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
     }
 }

@@ -33,6 +33,12 @@ public sealed record CsvParserOptions
     public int MaxRows { get; init; } = 10_000_000;
 
     /// <summary>
+    /// Enable SIMD acceleration (AVX2 for UTF-8, Vector256 for UTF-16). Default: true.
+    /// Disable for testing or compatibility with systems without SIMD support.
+    /// </summary>
+    public bool UseSimdIfAvailable { get; init; } = true;
+
+    /// <summary>
     /// Default options: comma delimiter, double quote, 10,000 columns, 10,000,000 rows, adaptive parsing enabled, auto batch sizing.
     /// RFC 4180 compliant.
     /// </summary>

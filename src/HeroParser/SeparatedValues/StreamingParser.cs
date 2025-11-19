@@ -213,6 +213,11 @@ internal static class StreamingParser
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
                 mask &= mask - 1;
+
+                // Check for integer overflow
+                if (position > int.MaxValue - bit)
+                    throw new CsvException(CsvErrorCode.ParseError, "CSV data is too large to process");
+
                 int absolute = position + bit;
                 byte c = Unsafe.Add(ref mutableRef, absolute);
 
@@ -304,6 +309,11 @@ internal static class StreamingParser
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
                 mask &= mask - 1;
+
+                // Check for integer overflow
+                if (position > int.MaxValue - bit)
+                    throw new CsvException(CsvErrorCode.ParseError, "CSV data is too large to process");
+
                 int absolute = position + bit;
                 char c = Unsafe.Add(ref mutableRef, absolute);
 

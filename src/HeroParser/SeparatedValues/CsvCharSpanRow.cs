@@ -36,6 +36,12 @@ public readonly ref struct CsvCharSpanRow
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
+            if ((uint)index >= (uint)columnCount)
+            {
+                throw new IndexOutOfRangeException(
+                    $"Column index {index} is out of range. Column count is {columnCount}.");
+            }
+
             var start = columnStarts[index];
             var length = columnLengths[index];
             return new CsvCharSpanColumn(line.Slice(start, length));

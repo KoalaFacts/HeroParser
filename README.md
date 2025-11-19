@@ -101,6 +101,46 @@ foreach (var row in Csv.ReadFromText(csv))
 }
 ```
 
+### ⚠️ Important: Resource Management
+
+**HeroParser readers use `ArrayPool` buffers and MUST be disposed to prevent memory leaks.**
+
+```csharp
+// ✅ RECOMMENDED: Use 'using' statement
+using (var reader = Csv.ReadFromText(csv))
+{
+    foreach (var row in reader)
+    {
+        var value = row[0].ToString();
+    }
+} // ArrayPool buffers automatically returned
+
+// ✅ ALSO WORKS: foreach automatically disposes
+foreach (var row in Csv.ReadFromText(csv))
+{
+    var value = row[0].ToString();
+} // Disposed after foreach completes
+
+// ❌ AVOID: Manual iteration without disposal
+var reader = Csv.ReadFromText(csv);
+while (reader.MoveNext())
+{
+    // ...
+}
+// MEMORY LEAK! ArrayPool buffers not returned
+
+// ✅ FIX: Manually dispose if not using foreach
+var reader = Csv.ReadFromText(csv);
+try
+{
+    while (reader.MoveNext()) { /* ... */ }
+}
+finally
+{
+    reader.Dispose(); // Always dispose!
+}
+```
+
 ## 🔧 Architecture
 
 ### Quote-Aware SIMD Parsing

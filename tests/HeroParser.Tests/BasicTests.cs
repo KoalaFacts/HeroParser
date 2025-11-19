@@ -278,4 +278,39 @@ public class BasicTests
         var array = reader.Current.ToStringArray();
         Assert.Equal(new[] { "a", "b", "c" }, array);
     }
+
+    [Fact]
+    public void OutOfBoundsAccess_ThrowsIndexOutOfRangeException()
+    {
+        var csv = "a,b,c";
+        var reader = Csv.ReadFromText(csv);
+        reader.MoveNext();
+
+        // Negative index should throw
+        IndexOutOfRangeException? ex1 = null;
+        try
+        {
+            var _ = reader.Current[-1];
+        }
+        catch (IndexOutOfRangeException e)
+        {
+            ex1 = e;
+        }
+        Assert.NotNull(ex1);
+        Assert.Contains("out of range", ex1.Message);
+
+        // Index beyond column count should throw
+        IndexOutOfRangeException? ex2 = null;
+        try
+        {
+            var _ = reader.Current[3];
+        }
+        catch (IndexOutOfRangeException e)
+        {
+            ex2 = e;
+        }
+        Assert.NotNull(ex2);
+        Assert.Contains("out of range", ex2.Message);
+        Assert.Contains("Column count is 3", ex2.Message);
+    }
 }

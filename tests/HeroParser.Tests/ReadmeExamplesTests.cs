@@ -9,7 +9,7 @@ namespace HeroParser.Tests;
 public class ReadmeExamplesTests
 {
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Documentation)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void BasicIteration_Example()
     {
         // Example from README: Basic Iteration (Zero Allocations)
@@ -29,7 +29,7 @@ public class ReadmeExamplesTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Documentation)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void QuoteHandling_Example()
     {
         // Example from README: Quote Handling (RFC 4180)
@@ -54,7 +54,7 @@ public class ReadmeExamplesTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Documentation)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void TypeParsing_Example()
     {
         // Example from README: Type Parsing
@@ -85,7 +85,7 @@ public class ReadmeExamplesTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Documentation)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void LazyEvaluation_Example()
     {
         // Example from README: Lazy Evaluation
@@ -111,7 +111,7 @@ public class ReadmeExamplesTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Documentation)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void CustomOptions_Example()
     {
         // Example from README: Custom options

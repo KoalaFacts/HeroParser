@@ -9,21 +9,15 @@ public static class TestCategories
     /// <summary>Trait key for test categories.</summary>
     public const string Category = "Category";
 
-    /// <summary>Fast unit tests with no external dependencies (should complete in milliseconds).</summary>
+    /// <summary>
+    /// Fast unit tests with no external dependencies (should complete in milliseconds).
+    /// Tests isolated functionality of individual components.
+    /// </summary>
     public const string Unit = "Unit";
 
-    /// <summary>Tests verifying RFC 4180 compliance for CSV parsing.</summary>
-    public const string Rfc4180 = "RFC4180";
-
-    /// <summary>Tests verifying README documentation examples compile and work correctly.</summary>
-    public const string Documentation = "Documentation";
-
-    /// <summary>Security-focused tests (bounds checking, overflow protection, etc.).</summary>
-    public const string Security = "Security";
-
-    /// <summary>Performance-sensitive tests that verify efficiency characteristics.</summary>
-    public const string Performance = "Performance";
-
-    /// <summary>Tests for error handling and validation logic.</summary>
-    public const string ErrorHandling = "ErrorHandling";
+    /// <summary>
+    /// Integration tests involving multiple components working together,
+    /// complex scenarios, or end-to-end workflows.
+    /// </summary>
+    public const string Integration = "Integration";
 }

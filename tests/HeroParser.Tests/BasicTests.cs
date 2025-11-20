@@ -222,7 +222,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.ErrorHandling)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void TooManyColumns_ThrowsException()
     {
         var csv = "a,b,c,d,e";
@@ -246,7 +246,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.ErrorHandling)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void TooManyRows_ThrowsException()
     {
         var csv = "a\nb\nc\nd";
@@ -270,7 +270,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.ErrorHandling)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void InvalidDelimiter_ThrowsException()
     {
         var options = new CsvParserOptions { Delimiter = '€' }; // Non-ASCII
@@ -279,7 +279,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.ErrorHandling)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void NullCsv_ThrowsArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>(() => Csv.ReadFromText(null!));
@@ -298,7 +298,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Security)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void OutOfBoundsAccess_ThrowsIndexOutOfRangeException()
     {
         var csv = "a,b,c";

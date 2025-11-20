@@ -382,37 +382,30 @@ For most CSV use cases (logs, exports, data interchange), this provides excellen
 Tests are organized using xUnit traits for selective execution:
 
 ```bash
-# Run only fast unit tests
+# Run only fast unit tests (isolated component tests)
 dotnet test --filter "Category=Unit"
 
-# Run RFC 4180 compliance tests
-dotnet test --filter "Category=RFC4180"
-
-# Run documentation example tests
-dotnet test --filter "Category=Documentation"
-
-# Run security tests (bounds checking, overflow protection)
-dotnet test --filter "Category=Security"
-
-# Run error handling tests
-dotnet test --filter "Category=ErrorHandling"
-
-# Run all tests except unit tests
-dotnet test --filter "Category!=Unit"
+# Run integration tests (multi-component, RFC 4180, end-to-end scenarios)
+dotnet test --filter "Category=Integration"
 
 # Run all tests (default)
 dotnet test
 ```
 
-**Available Categories:**
-- `Unit` - Fast unit tests with no external dependencies
-- `RFC4180` - RFC 4180 compliance verification tests
-- `Documentation` - Tests verifying README examples work
-- `Security` - Security-focused tests (bounds checking, overflow protection)
-- `ErrorHandling` - Error validation and edge case tests
-- `Performance` - Performance-sensitive tests
+**Test Categories:**
+- **`Unit`** (14 tests) - Fast, isolated tests of individual components
+  - Basic parsing, delimiters, line endings, type parsing
+  - Simple functionality with no dependencies
+  - Runs in ~265ms
 
-The CI pipeline runs Unit tests first for fast feedback, then runs remaining categories.
+- **`Integration`** (21 tests) - Multi-component and end-to-end tests
+  - RFC 4180 compliance (quoted fields, escaped quotes)
+  - README documentation examples
+  - Security tests (bounds checking, overflow protection)
+  - Error handling and edge cases
+  - Runs in ~84ms
+
+The CI pipeline runs Unit tests first for fast feedback, then Integration tests for comprehensive coverage.
 
 ## 📝 License
 

@@ -9,7 +9,7 @@ namespace HeroParser.Tests;
 public class Rfc4180Tests
 {
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void QuotedField_WithDelimiter()
     {
         var csv = "a,\"b,c\",d";
@@ -28,7 +28,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void QuotedField_WithEscapedQuotes()
     {
         var csv = "a,\"b\"\"c\",d";
@@ -47,7 +47,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void QuotedField_Empty()
     {
         var csv = "a,\"\",c";
@@ -66,7 +66,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void QuotedField_OnlyQuotes()
     {
         var csv = "\"\"\"\"";
@@ -83,7 +83,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void MixedQuotedAndUnquoted()
     {
         var csv = "unquoted,\"quoted value\",123,\"another, quoted\"";
@@ -106,7 +106,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void ComplexEscaping()
     {
         var csv = "\"a\"\"b\"\"c\",\"x,y,z\",\"\"\"quoted\"\"\"";
@@ -124,7 +124,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void Rfc4180Example()
     {
         // Example from RFC 4180
@@ -160,7 +160,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void CustomQuoteCharacter()
     {
         var options = new CsvParserOptions
@@ -185,7 +185,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void UnquoteMethod_PreservesOriginalWhenNotQuoted()
     {
         var csv = "abc,def,ghi";
@@ -201,7 +201,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void EmptyFields_AreSupported()
     {
         // RFC 4180: Empty fields should be allowed
@@ -220,7 +220,7 @@ public class Rfc4180Tests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Rfc4180)]
+    [Trait(TestCategories.Category, TestCategories.Integration)]
     public void Spaces_ArePartOfField()
     {
         // RFC 4180: Spaces are considered part of a field and should not be ignored

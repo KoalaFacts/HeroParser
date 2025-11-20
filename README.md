@@ -377,6 +377,43 @@ For most CSV use cases (logs, exports, data interchange), this provides excellen
 - ✅ **SIMD Correctness**: All parsers produce same results
 - ✅ **Performance Verification**: Benchmarks for quote-aware SIMD
 
+#### Running Tests by Category
+
+Tests are organized using xUnit traits for selective execution:
+
+```bash
+# Run only fast unit tests
+dotnet test --filter "Category=Unit"
+
+# Run RFC 4180 compliance tests
+dotnet test --filter "Category=RFC4180"
+
+# Run documentation example tests
+dotnet test --filter "Category=Documentation"
+
+# Run security tests (bounds checking, overflow protection)
+dotnet test --filter "Category=Security"
+
+# Run error handling tests
+dotnet test --filter "Category=ErrorHandling"
+
+# Run all tests except unit tests
+dotnet test --filter "Category!=Unit"
+
+# Run all tests (default)
+dotnet test
+```
+
+**Available Categories:**
+- `Unit` - Fast unit tests with no external dependencies
+- `RFC4180` - RFC 4180 compliance verification tests
+- `Documentation` - Tests verifying README examples work
+- `Security` - Security-focused tests (bounds checking, overflow protection)
+- `ErrorHandling` - Error validation and edge case tests
+- `Performance` - Performance-sensitive tests
+
+The CI pipeline runs Unit tests first for fast feedback, then runs remaining categories.
+
 ## 📝 License
 
 MIT

@@ -57,8 +57,8 @@ jobs:
     - name: Build
       run: dotnet build --configuration Release --no-restore --framework ${{ matrix.framework }}
 
-    - name: Run tests
-      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults
+    - name: Run Unit Tests
+      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-unit.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults --filter "Category=Unit"
 
     - name: Publish test results
       uses: EnricoMi/publish-unit-test-result-action@v2

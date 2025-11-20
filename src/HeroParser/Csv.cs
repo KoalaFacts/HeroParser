@@ -1,5 +1,7 @@
 using HeroParser.SeparatedValues;
+using System.Collections.Generic;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -224,5 +226,99 @@ public static class Csv
         options.Validate();
 
         return new CsvAsyncStreamReader(stream, options, encoding, leaveOpen, initialBufferSize: bufferSize);
+    }
+
+    /// <summary>
+    /// Parses CSV data into strongly typed records using the in-memory text reader.
+    /// </summary>
+    public static CsvRecordReader<T> ParseRecords<T>(
+        string data,
+        CsvRecordOptions? recordOptions = null,
+        CsvParserOptions? parserOptions = null)
+        where T : class, new()
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        parserOptions ??= CsvParserOptions.Default;
+        recordOptions ??= CsvRecordOptions.Default;
+
+        var reader = ReadFromCharSpan(data.AsSpan(), parserOptions);
+        var binder = ResolveBinder<T>(recordOptions);
+        return new CsvRecordReader<T>(reader, binder);
+    }
+
+    /// <summary>
+    /// Parses CSV data from a stream into strongly typed records without buffering the entire payload.
+    /// </summary>
+    public static CsvStreamingRecordReader<T> ParseRecords<T>(
+        Stream stream,
+        CsvRecordOptions? recordOptions = null,
+        CsvParserOptions? parserOptions = null,
+        Encoding? encoding = null,
+        bool leaveOpen = true,
+        int bufferSize = 16 * 1024)
+        where T : class, new()
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        var reader = ReadFromStream(stream, parserOptions, encoding, leaveOpen, bufferSize);
+        var binder = ResolveBinder<T>(recordOptions);
+        return new CsvStreamingRecordReader<T>(reader, binder);
+    }
+
+    /// <summary>
+    /// Asynchronously parses CSV data from a stream into strongly typed records without buffering the entire payload.
+    /// </summary>
+    public static IAsyncEnumerable<T> ParseRecordsAsync<T>(
+        Stream stream,
+        CsvRecordOptions? recordOptions = null,
+        CsvParserOptions? parserOptions = null,
+        Encoding? encoding = null,
+        bool leaveOpen = true,
+        int bufferSize = 16 * 1024,
+        CancellationToken cancellationToken = default)
+        where T : class, new()
+    {
+        return ParseRecordsAsyncInternal<T>(stream, parserOptions, recordOptions, encoding, leaveOpen, bufferSize, cancellationToken);
+    }
+
+    private static async IAsyncEnumerable<T> ParseRecordsAsyncInternal<T>(
+        Stream stream,
+        CsvParserOptions? parserOptions,
+        CsvRecordOptions? recordOptions,
+        Encoding? encoding,
+        bool leaveOpen,
+        int bufferSize,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+        where T : class, new()
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        encoding ??= Encoding.UTF8;
+
+        await using var reader = CreateAsyncStreamReader(stream, parserOptions, encoding, leaveOpen, bufferSize);
+        var binder = ResolveBinder<T>(recordOptions);
+
+        int rowNumber = 0;
+        while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rowNumber++;
+            var row = reader.Current;
+
+            if (binder.NeedsHeaderResolution)
+            {
+                binder.BindHeader(row, rowNumber);
+                continue;
+            }
+
+            yield return binder.Bind(row, rowNumber);
+        }
+    }
+
+    private static CsvRecordBinder<T> ResolveBinder<T>(CsvRecordOptions? recordOptions) where T : class, new()
+    {
+        if (CsvRecordBinderFactory.TryGetBinder(recordOptions, out CsvRecordBinder<T>? generated) && generated is not null)
+        {
+            return generated;
+        }
+
+        return CsvRecordBinder<T>.Create(recordOptions);
     }
 }

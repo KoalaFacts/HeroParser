@@ -32,11 +32,13 @@ public readonly ref struct CsvByteSpanColumn
     public override string ToString() => Encoding.UTF8.GetString(utf8);
 
     /// <summary>Parses the column using <see cref="ISpanParsable{T}"/> and invariant culture.</summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Parse<T>() where T : ISpanParsable<T>
         => T.Parse(Decode(), CultureInfo.InvariantCulture);
 
     /// <summary>Attempts to parse the column using <see cref="ISpanParsable{T}"/> and invariant culture.</summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParse<T>(out T? result) where T : ISpanParsable<T>
         => T.TryParse(Decode(), CultureInfo.InvariantCulture, out result);
@@ -100,6 +102,7 @@ public readonly ref struct CsvByteSpanColumn
     /// <summary>
     /// Attempts to parse the column as a <see cref="DateTime"/> using an exact format string, culture, and styles.
     /// </summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateTime(out DateTime result, string format, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
         => DateTime.TryParseExact(Decode(), format, provider, styles, out result);
 
@@ -110,18 +113,21 @@ public readonly ref struct CsvByteSpanColumn
         => DateTime.TryParseExact(Decode(), format, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>Attempts to parse the column as a <see cref="DateTimeOffset"/> using invariant culture.</summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateTimeOffset(out DateTimeOffset result)
         => DateTimeOffset.TryParse(Decode(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>
     /// Attempts to parse the column as a <see cref="DateTimeOffset"/> using the provided culture and styles.
     /// </summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateTimeOffset(out DateTimeOffset result, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
         => DateTimeOffset.TryParse(Decode(), provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the column as a <see cref="DateTimeOffset"/> using an exact format, culture, and styles.
     /// </summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateTimeOffset(out DateTimeOffset result, string format, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
         => DateTimeOffset.TryParseExact(Decode(), format, provider, styles, out result);
 
@@ -132,16 +138,19 @@ public readonly ref struct CsvByteSpanColumn
         => TryParseDateTimeOffset(out result, format, CultureInfo.InvariantCulture, DateTimeStyles.None);
 
     /// <summary>Attempts to parse the column as a <see cref="DateOnly"/> using invariant culture.</summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateOnly(out DateOnly result)
         => DateOnly.TryParse(Decode(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>Attempts to parse the column as a <see cref="DateOnly"/> using the provided culture and styles.</summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateOnly(out DateOnly result, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
         => DateOnly.TryParse(Decode(), provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the column as a <see cref="DateOnly"/> using an exact format, culture, and styles.
     /// </summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateOnly(out DateOnly result, string format, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
         => DateOnly.TryParseExact(Decode(), format, provider, styles, out result);
 
@@ -152,16 +161,19 @@ public readonly ref struct CsvByteSpanColumn
         => TryParseDateOnly(out result, format, CultureInfo.InvariantCulture, DateTimeStyles.None);
 
     /// <summary>Attempts to parse the column as a <see cref="TimeOnly"/> using invariant culture.</summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseTimeOnly(out TimeOnly result)
         => TimeOnly.TryParse(Decode(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>Attempts to parse the column as a <see cref="TimeOnly"/> using the provided culture and styles.</summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseTimeOnly(out TimeOnly result, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
         => TimeOnly.TryParse(Decode(), provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the column as a <see cref="TimeOnly"/> using an exact format, culture, and styles.
     /// </summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseTimeOnly(out TimeOnly result, string format, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
         => TimeOnly.TryParseExact(Decode(), format, provider, styles, out result);
 
@@ -172,6 +184,8 @@ public readonly ref struct CsvByteSpanColumn
         => TryParseTimeOnly(out result, format, CultureInfo.InvariantCulture, DateTimeStyles.None);
 
     /// <summary>Attempts to parse the column as a <see cref="TimeZoneInfo"/> from its identifier.</summary>
+    /// <summary>Attempts to parse the column as a <see cref="TimeZoneInfo"/> from its identifier.</summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16 before lookup.</remarks>
     public bool TryParseTimeZoneInfo(out TimeZoneInfo result)
     {
         if (utf8.IsEmpty)
@@ -209,6 +223,7 @@ public readonly ref struct CsvByteSpanColumn
     /// Attempts to parse the column as an enum of type <typeparamref name="TEnum"/> using case-insensitive matching.
     /// Falls back to UTF-16 decode since Enum.TryParse operates on strings.
     /// </summary>
+    /// <remarks>Allocates to decode the UTF-8 span to UTF-16 before parsing.</remarks>
     public bool TryParseEnum<TEnum>(out TEnum result) where TEnum : struct, Enum
         => Enum.TryParse(Decode(), ignoreCase: true, out result);
 

@@ -9,6 +9,7 @@
     <Description>High-performance CSV parser with RFC 4180 quote handling, SIMD optimizations, zero allocations, and lazy evaluation. Configurable compliance vs speed: optional newlines-inside-quotes, and quote parsing can be disabled when not needed. No unsafe keyword - uses safe Unsafe class APIs. Requires .NET 8+</Description>
     <PackageTags>csv;parser;simd;avx512;avx2;neon;performance;zero-allocation;rfc4180;quote-handling;newline-in-quotes</PackageTags>
     <RepositoryUrl>https://github.com/KoalaFacts/HeroParser</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

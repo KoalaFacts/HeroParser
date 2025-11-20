@@ -1,0 +1,212 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  create-release:
+    name: Create Release v${{ inputs.version }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "Error: Invalid version format: $VERSION"
+            echo "Expected format: X.Y.Z or X.Y.Z-prerelease"
+            exit 1
+          fi
+          echo "Version validated: $VERSION"
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build Release
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      - name: Pack NuGet packages
+        run: |
+          dotnet pack src/HeroParser/HeroParser.csproj \
+            --configuration Release \
+            --no-build \
+            --output ./packages \
+            -p:PackageVersion=${{ inputs.version }} \
+            -p:Version=${{ inputs.version }} \
+            -p:IncludeSymbols=true \
+            -p:SymbolPackageFormat=snupkg
+
+      - name: Verify packages were created
+        run: |
+          if [ ! -f "packages/HeroParser.${{ inputs.version }}.nupkg" ]; then
+            echo "Error: Main package not found"
+            exit 1
+          fi
+          if [ ! -f "packages/HeroParser.${{ inputs.version }}.snupkg" ]; then
+            echo "Error: Symbol package not found"
+            exit 1
+          fi
+          echo "Packages verified:"
+          ls -lh packages/HeroParser.${{ inputs.version }}.*
+
+      - name: Install Microsoft SBOM tool
+        run: dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+      - name: Generate SBOMs
+        run: |
+          mkdir -p release-sboms
+
+          # Generate SBOMs for each framework and SPDX version
+          for framework in net8.0 net9.0 net10.0; do
+            for spdx_version in 2.2 3.0; do
+              echo "Generating SBOM for $framework, SPDX $spdx_version..."
+
+              mkdir -p sbom-output-$framework-$spdx_version
+
+              sbom-tool generate \
+                -b src/HeroParser/bin/Release/$framework \
+                -bc src/HeroParser \
+                -pn HeroParser \
+                -pv ${{ inputs.version }} \
+                -ps HeroParser-Contributors \
+                -nsb https://github.com/KoalaFacts/HeroParser \
+                -mi SPDX:$spdx_version \
+                -m sbom-output-$framework-$spdx_version \
+                -V Verbose
+
+              # Find and copy SBOM file
+              SBOM_FILE=$(find sbom-output-$framework-$spdx_version -type f -name "*.spdx.json" | head -n 1)
+              if [ -n "$SBOM_FILE" ]; then
+                cp "$SBOM_FILE" release-sboms/HeroParser.${{ inputs.version }}.$framework.spdx-$spdx_version.json
+                echo "Created: HeroParser.${{ inputs.version }}.$framework.spdx-$spdx_version.json"
+              else
+                echo "Warning: No SBOM file found for $framework SPDX $spdx_version (continuing anyway)"
+              fi
+            done
+          done
+
+          echo "SBOMs generated:"
+          ls -lh release-sboms/ || echo "No SBOMs created"
+
+      - name: Create release description footer
+        id: release-notes
+        run: |
+          # Create footer with installation and package info (GitHub will auto-generate the main content)
+          cat > release-footer.md << 'EOF'
+
+          ---
+
+          ### 📦 Installation
+          ```bash
+          dotnet add package HeroParser --version ${{ inputs.version }}
+          ```
+
+          ### 📋 Package Details
+          - **NuGet**: [HeroParser v${{ inputs.version }}](https://www.nuget.org/packages/HeroParser/${{ inputs.version }})
+          - **Frameworks**: net8.0, net9.0, net10.0
+          - **Dependencies**: Zero external dependencies
+          - **License**: MIT
+
+          ### 🔒 Security
+          - Zero-allocation design
+          - Bounds checking on column access
+          - Integer overflow protection in SIMD processing
+          - No unsafe code
+
+          ### 📊 SBOMs (Software Bill of Materials)
+          Per-framework SBOMs included in this release:
+          - SPDX 2.2 format (net8.0, net9.0, net10.0)
+          - SPDX 3.0 format (net8.0, net9.0, net10.0)
+
+          ### 📚 Documentation
+          - [README](https://github.com/KoalaFacts/HeroParser/blob/main/README.md)
+          - [Workflows Guide](.github/workflows/README.md)
+          - [License](https://github.com/KoalaFacts/HeroParser/blob/main/LICENSE)
+
+          ### 🚀 Performance
+          - High-performance SIMD optimizations (AVX-512, AVX2, NEON)
+          - RFC 4180 quote handling with minimal overhead
+          - Lazy column evaluation for efficient filtering
+          EOF
+          echo "Release footer created with installation and package details"
+
+      - name: Create GitHub Release
+        run: |
+          echo "Creating release v${{ inputs.version }}..."
+
+          # Prepare assets list
+          ASSETS="packages/HeroParser.${{ inputs.version }}.nupkg packages/HeroParser.${{ inputs.version }}.snupkg"
+
+          # Add SBOMs if they exist
+          if [ -d "release-sboms" ] && [ "$(ls -A release-sboms)" ]; then
+            ASSETS="$ASSETS release-sboms/*.json"
+          fi
+
+          gh release create v${{ inputs.version }} \
+            --title "Release v${{ inputs.version }}" \
+            --generate-notes \
+            --notes-file release-footer.md \
+            $ASSETS
+
+          echo "Release created with auto-generated notes and published!"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release was created
+        run: |
+          echo "Verifying release v${{ inputs.version }}..."
+          gh release view v${{ inputs.version }} --json assets --jq '.assets[].name'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "## ✅ Release Created Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Release URL**: https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Artifacts Published" >> $GITHUB_STEP_SUMMARY
+          echo "**NuGet Packages:**" >> $GITHUB_STEP_SUMMARY
+          echo "- HeroParser.${{ inputs.version }}.nupkg" >> $GITHUB_STEP_SUMMARY
+          echo "- HeroParser.${{ inputs.version }}.snupkg (symbols)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -d "release-sboms" ] && [ "$(ls -A release-sboms)" ]; then
+            SBOM_COUNT=$(ls -1 release-sboms/*.json 2>/dev/null | wc -l)
+            echo "**SBOMs (Software Bill of Materials):**" >> $GITHUB_STEP_SUMMARY
+            echo "- $SBOM_COUNT SBOMs total (3 frameworks × 2 SPDX formats)" >> $GITHUB_STEP_SUMMARY
+            echo "- Per-framework dependency tracking" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "### 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "The **publish-nuget** workflow will automatically trigger to publish packages to NuGet.org" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Monitor progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-nuget.yml" >> $GITHUB_STEP_SUMMARY

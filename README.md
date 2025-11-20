@@ -1,5 +1,9 @@
 # HeroParser v3.0 - Zero-Allocation CSV Parser with RFC 4180 Quote Handling
 
+[![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **High-Performance SIMD Parsing** | RFC 4180 Quote Handling | Zero Allocations
 
 ## 🚀 Key Features

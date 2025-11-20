@@ -1,0 +1,109 @@
+name: Performance Benchmarks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+      - '.github/workflows/benchmarks.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+  workflow_dispatch:  # Allow manual trigger
+
+# Cancel in-progress runs for the same workflow and ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write  # For committing baseline
+  pull-requests: write  # For posting comments
+  deployments: write  # For GitHub Pages
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  benchmark:
+    name: Run Performance Benchmarks
+    runs-on: ubuntu-latest  # Consistent environment for comparisons
+    strategy:
+      fail-fast: false
+      matrix:
+        dotnet-version: ['8.0.x', '9.0.x', '10.0.x']
+        include:
+          - dotnet-version: '8.0.x'
+            framework: 'net8.0'
+          - dotnet-version: '9.0.x'
+            framework: 'net9.0'
+          - dotnet-version: '10.0.x'
+            framework: 'net10.0'
+    timeout-minutes: 60
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Setup .NET ${{ matrix.dotnet-version }}
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ matrix.dotnet-version }}
+
+    - name: Restore dependencies
+      run: dotnet restore -p:TargetFramework=${{ matrix.framework }}
+
+    - name: Build benchmarks
+      run: |
+        dotnet build benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj \
+          --configuration Release \
+          --framework ${{ matrix.framework }} \
+          --no-restore
+
+    - name: Run benchmarks
+      run: |
+        cd benchmarks/HeroParser.Benchmarks
+        dotnet run -c Release \
+          --framework ${{ matrix.framework }} \
+          --no-build \
+          -- --throughput
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v5
+      if: always()
+      with:
+        name: benchmark-results-${{ matrix.framework }}
+        path: |
+          benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts/**/*
+        retention-days: 30
+
+    - name: Comment benchmark results on PR
+      if: github.event_name == 'pull_request' && matrix.dotnet-version == '10.0.x'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+
+          // Try to find the summary markdown file
+          const artifactsDir = 'benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts/results';
+          if (fs.existsSync(artifactsDir)) {
+            const files = fs.readdirSync(artifactsDir);
+            const summaryFile = files.find(f => f.includes('github') && f.endsWith('.md'));
+
+            if (summaryFile) {
+              const summaryPath = path.join(artifactsDir, summaryFile);
+              const summary = fs.readFileSync(summaryPath, 'utf8');
+
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## Benchmark Results (.NET ${{ matrix.dotnet-version }})\n\n${summary}`
+              });
+            }
+          }

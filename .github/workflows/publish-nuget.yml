@@ -1,0 +1,180 @@
+name: Publish to NuGet
+
+on:
+  # Trigger when create-release workflow completes successfully
+  workflow_run:
+    workflows: ["Create Release"]
+    types: [completed]
+    branches: [main]
+  # Keep manual trigger for emergency republishing
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g., 1.0.0)'
+        required: false
+        type: string
+
+# Prevent concurrent publishes
+concurrency:
+  group: publish-nuget
+  cancel-in-progress: false
+
+permissions:
+  id-token: write  # Required for OIDC authentication with NuGet.org
+  contents: read
+  attestations: write  # For package provenance
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Only run if create-release workflow succeeded (or if manually triggered)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    environment:
+      name: production
+      url: https://www.nuget.org/packages/HeroParser
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Determine version from release
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            # Get the latest release tag when triggered by create-release workflow
+            TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+            VERSION="${TAG#v}"  # Remove 'v' prefix if present
+            echo "Detected latest release: $TAG"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG="v$VERSION"
+          else
+            echo "Error: No version specified and not triggered by workflow_run"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION (tag: $TAG)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "Error: Invalid version format: $VERSION"
+            echo "Expected format: X.Y.Z or X.Y.Z-prerelease"
+            exit 1
+          fi
+          echo "Version format validated: $VERSION"
+
+      - name: Download packages from GitHub Release
+        run: |
+          TAG="${{ steps.version.outputs.TAG }}"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+
+          echo "Downloading packages from release $TAG..."
+
+          # Verify release exists
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Error: Release $TAG not found"
+            echo "Please create the release first using the create-release workflow"
+            exit 1
+          fi
+
+          # Create packages directory
+          mkdir -p ./packages
+
+          # Download NuGet packages from the release
+          gh release download "$TAG" \
+            --pattern "HeroParser.${VERSION}.nupkg" \
+            --dir ./packages
+
+          gh release download "$TAG" \
+            --pattern "HeroParser.${VERSION}.snupkg" \
+            --dir ./packages
+
+          echo "Downloaded packages:"
+          ls -lh ./packages/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate package contents
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+
+          # Verify both packages exist
+          if [ ! -f "./packages/HeroParser.${VERSION}.nupkg" ]; then
+            echo "Error: Main package not found: HeroParser.${VERSION}.nupkg"
+            exit 1
+          fi
+
+          if [ ! -f "./packages/HeroParser.${VERSION}.snupkg" ]; then
+            echo "Error: Symbol package not found: HeroParser.${VERSION}.snupkg"
+            exit 1
+          fi
+
+          echo "Package contents:"
+          for pkg in ./packages/*.nupkg; do
+            if [ -f "$pkg" ]; then
+              echo "=== $pkg ==="
+              unzip -l "$pkg" | head -50 || true
+            fi
+          done
+
+      - name: Generate package provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: './packages/*.nupkg'
+
+      - name: NuGet login (OIDC → temporary API key)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ secrets.NUGET_USERNAME }}
+          # Uses GitHub Actions OIDC token to get a temporary (1-hour) NuGet API key
+          # No long-lived API keys needed!
+
+      - name: Publish to NuGet.org using Trusted Publishing
+        run: |
+          for pkg in ./packages/*.nupkg; do
+            if [[ "$pkg" != *".symbols."* ]]; then
+              echo "Publishing $pkg..."
+              dotnet nuget push "$pkg" \
+                --source https://api.nuget.org/v3/index.json \
+                --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} \
+                --skip-duplicate
+            fi
+          done
+
+      - name: Upload package artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: nuget-packages-v${{ steps.version.outputs.VERSION }}
+          path: |
+            ./packages/*.nupkg
+            ./packages/*.snupkg
+          retention-days: 90
+
+      - name: Create release summary
+        if: success()
+        run: |
+          echo "## ✅ NuGet Package Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package**: https://www.nuget.org/packages/HeroParser/${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Published**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Installation" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "dotnet add package HeroParser --version ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "- Package will be available on NuGet.org within 5-10 minutes" >> $GITHUB_STEP_SUMMARY
+          echo "- Verify at: https://www.nuget.org/packages/HeroParser" >> $GITHUB_STEP_SUMMARY

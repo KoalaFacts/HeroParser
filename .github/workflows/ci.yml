@@ -131,6 +131,11 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
 
+    - name: Audit dependencies (deprecated/vulnerable)
+      run: |
+        dotnet list package --deprecated
+        dotnet list package --vulnerable --include-transitive
+
     - name: Build (with warnings as errors)
       run: dotnet build --configuration Release --no-restore /p:TreatWarningsAsErrors=true
 

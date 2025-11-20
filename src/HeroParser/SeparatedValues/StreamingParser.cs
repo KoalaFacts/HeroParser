@@ -36,6 +36,7 @@ internal static class StreamingParser
         int rowLength = 0;
         int charsConsumed = 0;
         bool rowEnded = false;
+        bool enableQuotes = options.EnableQuotedFields;
 
         T delimiter = CastFromChar<T>(options.Delimiter);
         T quote = CastFromChar<T>(options.Quote);
@@ -62,7 +63,9 @@ internal static class StreamingParser
                 ref rowEnded,
                 columnStarts,
                 columnLengths,
-                options.MaxColumns);
+                options.MaxColumns,
+                options.AllowNewlinesInsideQuotes,
+                enableQuotes);
         }
 
         if (!rowEnded)
@@ -71,7 +74,7 @@ internal static class StreamingParser
             {
                 T c = Unsafe.Add(ref mutableRef, i);
 
-                if (c.Equals(quote))
+                if (enableQuotes && c.Equals(quote))
                 {
                     if (skipNextQuote)
                     {
@@ -89,7 +92,15 @@ internal static class StreamingParser
                     continue;
                 }
 
-                if (inQuotes)
+                if (enableQuotes && inQuotes && !options.AllowNewlinesInsideQuotes &&
+                    (c.Equals(lf) || c.Equals(cr)))
+                {
+                    throw new CsvException(
+                        CsvErrorCode.ParseError,
+                        "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                }
+
+                if (enableQuotes && inQuotes)
                     continue;
 
                 if (c.Equals(delimiter))
@@ -113,6 +124,13 @@ internal static class StreamingParser
         {
             rowLength = data.Length;
             charsConsumed = rowLength;
+        }
+
+        if (enableQuotes && inQuotes)
+        {
+            throw new CsvException(
+                CsvErrorCode.ParseError,
+                "Unterminated quoted field detected while parsing CSV data.");
         }
 
         AppendFinalColumn(rowLength, ref columnCount, ref currentStart,
@@ -139,7 +157,9 @@ internal static class StreamingParser
         ref bool rowEnded,
         Span<int> columnStarts,
         Span<int> columnLengths,
-        int maxColumns)
+        int maxColumns,
+        bool allowNewlinesInsideQuotes,
+        bool enableQuotedFields)
         where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
@@ -153,7 +173,7 @@ internal static class StreamingParser
                 Unsafe.As<T, byte>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded,
-                columnStarts, columnLengths, maxColumns);
+                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields);
         }
         else if (typeof(T) == typeof(char))
         {
@@ -166,7 +186,7 @@ internal static class StreamingParser
                 Unsafe.As<T, char>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded,
-                columnStarts, columnLengths, maxColumns);
+                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields);
         }
 
         return false;
@@ -190,7 +210,9 @@ internal static class StreamingParser
         ref bool rowEnded,
         Span<int> columnStarts,
         Span<int> columnLengths,
-        int maxColumns)
+        int maxColumns,
+        bool allowNewlinesInsideQuotes,
+        bool enableQuotedFields)
     {
         if (!Avx2.IsSupported)
             return false;
@@ -203,9 +225,13 @@ internal static class StreamingParser
         while (position + Vector256<byte>.Count <= dataLength)
         {
             var chunk = Vector256.LoadUnsafe(ref Unsafe.Add(ref mutableRef, position));
-            var specials = Avx2.Or(
-                Avx2.Or(Avx2.CompareEqual(chunk, delimiterVec), Avx2.CompareEqual(chunk, quoteVec)),
-                Avx2.Or(Avx2.CompareEqual(chunk, lfVec), Avx2.CompareEqual(chunk, crVec)));
+            var specials = enableQuotedFields
+                ? Avx2.Or(
+                    Avx2.Or(Avx2.CompareEqual(chunk, delimiterVec), Avx2.CompareEqual(chunk, quoteVec)),
+                    Avx2.Or(Avx2.CompareEqual(chunk, lfVec), Avx2.CompareEqual(chunk, crVec)))
+                : Avx2.Or(
+                    Avx2.CompareEqual(chunk, delimiterVec),
+                    Avx2.Or(Avx2.CompareEqual(chunk, lfVec), Avx2.CompareEqual(chunk, crVec)));
 
             uint mask = (uint)Avx2.MoveMask(specials);
 
@@ -221,7 +247,7 @@ internal static class StreamingParser
                 int absolute = position + bit;
                 byte c = Unsafe.Add(ref mutableRef, absolute);
 
-                if (c == quote)
+                if (enableQuotedFields && c == quote)
                 {
                     if (skipNextQuote)
                     {
@@ -239,7 +265,14 @@ internal static class StreamingParser
                     continue;
                 }
 
-                if (inQuotes)
+                if (enableQuotedFields && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
+                {
+                    throw new CsvException(
+                        CsvErrorCode.ParseError,
+                        "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                }
+
+                if (enableQuotedFields && inQuotes)
                     continue;
 
                 if (c == delimiter)
@@ -284,7 +317,9 @@ internal static class StreamingParser
         ref bool rowEnded,
         Span<int> columnStarts,
         Span<int> columnLengths,
-        int maxColumns)
+        int maxColumns,
+        bool allowNewlinesInsideQuotes,
+        bool enableQuotedFields)
     {
         if (!Vector256.IsHardwareAccelerated)
             return false;
@@ -299,9 +334,13 @@ internal static class StreamingParser
         while (position + Vector256<ushort>.Count <= dataLength)
         {
             var chunk = Vector256.LoadUnsafe(ref Unsafe.Add(ref ushortRef, position));
-            var specials = Vector256.BitwiseOr(
-                Vector256.BitwiseOr(Vector256.Equals(chunk, delimiterVec), Vector256.Equals(chunk, quoteVec)),
-                Vector256.BitwiseOr(Vector256.Equals(chunk, lfVec), Vector256.Equals(chunk, crVec)));
+            var specials = enableQuotedFields
+                ? Vector256.BitwiseOr(
+                    Vector256.BitwiseOr(Vector256.Equals(chunk, delimiterVec), Vector256.Equals(chunk, quoteVec)),
+                    Vector256.BitwiseOr(Vector256.Equals(chunk, lfVec), Vector256.Equals(chunk, crVec)))
+                : Vector256.BitwiseOr(
+                    Vector256.Equals(chunk, delimiterVec),
+                    Vector256.BitwiseOr(Vector256.Equals(chunk, lfVec), Vector256.Equals(chunk, crVec)));
 
             uint mask = specials.ExtractMostSignificantBits();
 
@@ -317,7 +356,7 @@ internal static class StreamingParser
                 int absolute = position + bit;
                 char c = Unsafe.Add(ref mutableRef, absolute);
 
-                if (c == quote)
+                if (enableQuotedFields && c == quote)
                 {
                     if (skipNextQuote)
                     {
@@ -335,7 +374,14 @@ internal static class StreamingParser
                     continue;
                 }
 
-                if (inQuotes)
+                if (enableQuotedFields && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
+                {
+                    throw new CsvException(
+                        CsvErrorCode.ParseError,
+                        "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                }
+
+                if (enableQuotedFields && inQuotes)
                     continue;
 
                 if (c == delimiter)

@@ -16,6 +16,8 @@ concurrency:
 
 permissions:
   contents: read
+  checks: write          # required by publish-unit-test-result-action to create/update check runs
+  pull-requests: write   # needed for PR comments/status on test results
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true

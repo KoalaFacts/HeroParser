@@ -12,6 +12,7 @@
 - **Quote-Aware SIMD**: Maintains SIMD performance even with quoted fields
 - **Zero Allocations**: Stack-only parsing with ArrayPool for column metadata
 - **Lazy Evaluation**: Columns parsed only when accessed
+- **Configurable RFC vs Speed**: Toggle quote parsing and opt-in newlines-in-quotes; defaults favor speed
 - **Multi-Framework**: .NET 8, 9, and 10 support
 
 ## 🎯 Design Philosophy
@@ -22,7 +23,7 @@
 - **Memory Safety**: No `unsafe` keyword - uses safe `Unsafe` class and `MemoryMarshal` APIs for performance
 - **Minimal API**: Simple, focused API surface
 - **Zero Dependencies**: No external packages for core library
-- **RFC 4180**: Quote handling, escaped quotes, delimiters in quotes (no newlines-in-quotes or header detection)
+- **RFC 4180**: Quote handling, escaped quotes, delimiters in quotes; optional newlines-in-quotes (default off), no header detection
 - **SIMD First**: Quote-aware SIMD for AVX-512, AVX2, NEON
 
 ### API Surface
@@ -36,7 +37,9 @@ var options = new CsvParserOptions
 {
     Delimiter = ',',  // Default
     Quote = '"',      // Default - RFC 4180 compliant
-    MaxColumns = 256  // Default
+    MaxColumns = 100, // Default
+    AllowNewlinesInsideQuotes = false, // Enable for full RFC newlines-in-quotes support (slower)
+    EnableQuotedFields = true         // Disable for maximum speed when your data has no quotes
 };
 var reader = Csv.ReadFromText(csvData, options);
 ```
@@ -172,11 +175,11 @@ HeroParser implements **core RFC 4180 features**:
 - Escaped quotes using double-double-quotes (`""`)
 - Delimiters (commas) within quoted fields
 - Both LF (`\n`) and CRLF (`\r\n`) line endings
+- Newlines inside quoted fields when `AllowNewlinesInsideQuotes = true` (default is `false` for performance)
 - Empty fields and spaces preserved
 - Custom delimiters and quote characters
 
 ❌ **Not Supported:**
-- **Newlines within quoted fields** - Rows are line-delimited for streaming performance
 - **Automatic header detection** - Users skip header rows manually
 
 This provides excellent RFC 4180 compatibility for most CSV use cases (logs, exports, data interchange).

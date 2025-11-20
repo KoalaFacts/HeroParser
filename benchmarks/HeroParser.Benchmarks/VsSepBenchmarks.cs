@@ -1,5 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
+using HeroParser.SeparatedValues;
 using nietras.SeparatedValues;
 using System.Text;
 
@@ -77,10 +78,20 @@ public class VsSepBenchmarks
     [Benchmark(Description = "HeroParser (string)")]
     public int HeroParser_ParseString()
     {
-        using var reader = Csv.ReadFromText(csv, new()
+        var options = new CsvParserOptions
         {
             MaxColumns = 1_000,
-            MaxRows = 1_000_000
+            MaxRows = 1_000_000,
+            EnableQuotedFields = WithQuotes,              // skip quote machinery when data has no quotes
+            AllowNewlinesInsideQuotes = WithQuotes        // only meaningful when quotes are present
+        };
+
+        using var reader = Csv.ReadFromText(csv, new()
+        {
+            MaxColumns = options.MaxColumns,
+            MaxRows = options.MaxRows,
+            EnableQuotedFields = options.EnableQuotedFields,
+            AllowNewlinesInsideQuotes = options.AllowNewlinesInsideQuotes
         });
 
         int total = 0;
@@ -95,10 +106,20 @@ public class VsSepBenchmarks
     [Benchmark(Description = "HeroParser (UTF-8)")]
     public int HeroParser_ParseUtf8()
     {
-        using var reader = Csv.ReadFromByteSpan(utf8, new()
+        var options = new CsvParserOptions
         {
             MaxColumns = 1_000,
-            MaxRows = 1_000_000
+            MaxRows = 1_000_000,
+            EnableQuotedFields = WithQuotes,
+            AllowNewlinesInsideQuotes = WithQuotes
+        };
+
+        using var reader = Csv.ReadFromByteSpan(utf8, new()
+        {
+            MaxColumns = options.MaxColumns,
+            MaxRows = options.MaxRows,
+            EnableQuotedFields = options.EnableQuotedFields,
+            AllowNewlinesInsideQuotes = options.AllowNewlinesInsideQuotes
         });
 
         int total = 0;

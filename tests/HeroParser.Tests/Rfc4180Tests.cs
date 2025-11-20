@@ -235,4 +235,74 @@ public class Rfc4180Tests
         Assert.Equal(" b ", row[1].ToString());
         Assert.Equal("c ", row[2].ToString());
     }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void NewlinesInQuotes_DefaultThrows()
+    {
+        var csv = "a,\"b\nc\",d";
+        using var reader = Csv.ReadFromText(csv);
+
+        CsvException? ex = null;
+        try
+        {
+            reader.MoveNext();
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void NewlinesInQuotes_AllowedWhenOptedIn()
+    {
+        var options = new CsvParserOptions { AllowNewlinesInsideQuotes = true };
+        var csv = "a,\"b\nc\",d\n1,2,3";
+
+        var reader = Csv.ReadFromText(csv, options);
+
+        Assert.True(reader.MoveNext());
+        var row1 = reader.Current;
+        Assert.Equal(3, row1.ColumnCount);
+        Assert.Equal("\"b\nc\"", row1[1].ToString());
+        Assert.Equal("b\nc", row1[1].UnquoteToString());
+
+        Assert.True(reader.MoveNext());
+        var row2 = reader.Current;
+        Assert.Equal(new[] { "1", "2", "3" }, row2.ToStringArray());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void DisableQuotes_TreatsQuoteCharacterAsData()
+    {
+        var options = new CsvParserOptions { EnableQuotedFields = false };
+        var csv = "a,\"b,c\",d";
+
+        var reader = Csv.ReadFromText(csv, options);
+        Assert.True(reader.MoveNext());
+
+        var row = reader.Current;
+        Assert.Equal(4, row.ColumnCount);
+        Assert.Equal(new[] { "a", "\"b", "c\"", "d" }, row.ToStringArray());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DisablingQuotes_CannotEnableNewlinesInQuotes()
+    {
+        var options = new CsvParserOptions
+        {
+            EnableQuotedFields = false,
+            AllowNewlinesInsideQuotes = true
+        };
+
+        var ex = Assert.Throws<CsvException>(() => Csv.ReadFromText("a", options));
+        Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
+    }
 }

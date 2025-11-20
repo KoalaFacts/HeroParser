@@ -39,6 +39,20 @@ public sealed record CsvParserOptions
     public bool UseSimdIfAvailable { get; init; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether newline characters inside quoted fields are allowed.
+    /// </summary>
+    /// <remarks>
+    /// Enable to fully support RFC 4180 newlines-in-quotes at a small performance cost. Disabled by default for speed.
+    /// </remarks>
+    public bool AllowNewlinesInsideQuotes { get; init; } = false;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the parser treats the quote character specially.
+    /// </summary>
+    /// <remarks>Disable to maximize speed when you know the data never contains quoted fields.</remarks>
+    public bool EnableQuotedFields { get; init; } = true;
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>Equivalent to <c>new CsvParserOptions()</c>.</remarks>
@@ -83,6 +97,13 @@ public sealed record CsvParserOptions
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
                 $"MaxRows must be positive, got {MaxRows}");
+        }
+
+        if (!EnableQuotedFields && AllowNewlinesInsideQuotes)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                "AllowNewlinesInsideQuotes requires EnableQuotedFields to be true.");
         }
     }
 }

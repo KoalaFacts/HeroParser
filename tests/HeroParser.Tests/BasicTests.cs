@@ -222,6 +222,52 @@ public class BasicTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void TypeParsing_SmallerIntegers()
+    {
+        var csv = "127,32767,65535,255,-128,-32768";
+        var reader = Csv.ReadFromText(csv);
+        reader.MoveNext();
+        var row = reader.Current;
+
+        Assert.True(row[0].TryParseSByte(out var sb));
+        Assert.Equal(sbyte.MaxValue, sb);
+
+        Assert.True(row[1].TryParseInt16(out var i16));
+        Assert.Equal(short.MaxValue, i16);
+
+        Assert.True(row[2].TryParseUInt16(out var u16));
+        Assert.Equal(ushort.MaxValue, u16);
+
+        Assert.True(row[3].TryParseByte(out var b));
+        Assert.Equal(byte.MaxValue, b);
+
+        Assert.True(row[4].TryParseSByte(out var sbNeg));
+        Assert.Equal(sbyte.MinValue, sbNeg);
+
+        Assert.True(row[5].TryParseInt16(out var i16Neg));
+        Assert.Equal(short.MinValue, i16Neg);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void TypeParsing_UInt32_UInt64_Float()
+    {
+        var csv = "4294967295,18446744073709551615,3.5";
+        var reader = Csv.ReadFromText(csv);
+        reader.MoveNext();
+
+        Assert.True(reader.Current[0].TryParseUInt32(out uint u32));
+        Assert.Equal(uint.MaxValue, u32);
+
+        Assert.True(reader.Current[1].TryParseUInt64(out ulong u64));
+        Assert.Equal(ulong.MaxValue, u64);
+
+        Assert.True(reader.Current[2].TryParseSingle(out float f));
+        Assert.Equal(3.5f, f);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void TypeParsing_Enum()
     {
         var csv = "Sunday,monday";

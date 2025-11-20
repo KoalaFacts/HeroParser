@@ -43,13 +43,33 @@ public readonly ref struct CsvCharSpanColumn
     public bool TryParseInt32(out int result)
         => int.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
 
+    /// <summary>Attempts to parse the column as a <see cref="short"/> using invariant culture.</summary>
+    public bool TryParseInt16(out short result)
+        => short.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+
+    /// <summary>Attempts to parse the column as a <see cref="uint"/> using invariant culture.</summary>
+    public bool TryParseUInt32(out uint result)
+        => uint.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+
+    /// <summary>Attempts to parse the column as a <see cref="ushort"/> using invariant culture.</summary>
+    public bool TryParseUInt16(out ushort result)
+        => ushort.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+
     /// <summary>Attempts to parse the column as a <see cref="long"/> using invariant culture.</summary>
     public bool TryParseInt64(out long result)
         => long.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
 
+    /// <summary>Attempts to parse the column as a <see cref="ulong"/> using invariant culture.</summary>
+    public bool TryParseUInt64(out ulong result)
+        => ulong.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+
     /// <summary>Attempts to parse the column as a <see cref="double"/> using invariant culture.</summary>
     public bool TryParseDouble(out double result)
         => double.TryParse(chars, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out result);
+
+    /// <summary>Attempts to parse the column as a <see cref="float"/> using invariant culture.</summary>
+    public bool TryParseSingle(out float result)
+        => float.TryParse(chars, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out result);
 
     /// <summary>Attempts to parse the column as a <see cref="decimal"/> using invariant culture.</summary>
     public bool TryParseDecimal(out decimal result)
@@ -171,6 +191,10 @@ public readonly ref struct CsvCharSpanColumn
     /// <summary>Attempts to parse the column as a <see cref="byte"/> using invariant culture.</summary>
     public bool TryParseByte(out byte result)
         => byte.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+
+    /// <summary>Attempts to parse the column as an <see cref="sbyte"/> using invariant culture.</summary>
+    public bool TryParseSByte(out sbyte result)
+        => sbyte.TryParse(chars, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
 
     /// <summary>
     /// Attempts to parse the column as an enum of type <typeparamref name="TEnum"/> using case-insensitive matching.

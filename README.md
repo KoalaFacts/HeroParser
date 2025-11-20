@@ -25,6 +25,7 @@
 - **Zero Dependencies**: No external packages for core library
 - **RFC 4180**: Quote handling, escaped quotes, delimiters in quotes; optional newlines-in-quotes (default off), no header detection
 - **SIMD First**: Quote-aware SIMD for AVX-512, AVX2, NEON
+- **Allocation Notes**: Char-span parsing remains allocation-free; UTF-8 parsing stays zero-allocation for invariant primitives. Culture/format-based parsing on UTF-8 columns decodes to UTF-16 and allocates by design.
 
 ### API Surface
 

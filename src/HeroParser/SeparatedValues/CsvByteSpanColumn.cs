@@ -45,12 +45,32 @@ public readonly ref struct CsvByteSpanColumn
     public bool TryParseInt32(out int result)
         => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
 
+    /// <summary>Attempts to parse the column as a <see cref="short"/> using invariant culture.</summary>
+    public bool TryParseInt16(out short result)
+        => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
+
+    /// <summary>Attempts to parse the column as an <see cref="uint"/> using invariant culture.</summary>
+    public bool TryParseUInt32(out uint result)
+        => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
+
+    /// <summary>Attempts to parse the column as a <see cref="ushort"/> using invariant culture.</summary>
+    public bool TryParseUInt16(out ushort result)
+        => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
+
     /// <summary>Attempts to parse the column as a <see cref="long"/> using invariant culture.</summary>
     public bool TryParseInt64(out long result)
         => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
 
+    /// <summary>Attempts to parse the column as a <see cref="ulong"/> using invariant culture.</summary>
+    public bool TryParseUInt64(out ulong result)
+        => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
+
     /// <summary>Attempts to parse the column as a <see cref="double"/> using invariant culture.</summary>
     public bool TryParseDouble(out double result)
+        => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
+
+    /// <summary>Attempts to parse the column as a <see cref="float"/> using invariant culture.</summary>
+    public bool TryParseSingle(out float result)
         => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
 
     /// <summary>Attempts to parse the column as a <see cref="decimal"/> using invariant culture.</summary>
@@ -179,6 +199,10 @@ public readonly ref struct CsvByteSpanColumn
 
     /// <summary>Attempts to parse the column as a <see cref="byte"/> using invariant culture.</summary>
     public bool TryParseByte(out byte result)
+        => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
+
+    /// <summary>Attempts to parse the column as an <see cref="sbyte"/> using invariant culture.</summary>
+    public bool TryParseSByte(out sbyte result)
         => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
 
     /// <summary>

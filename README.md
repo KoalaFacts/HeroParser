@@ -1,4 +1,4 @@
-# HeroParser v3.0 - Zero-Allocation CSV Parser with RFC 4180 Quote Handling
+# HeroParser - A .Net high performant, Zero-Allocation CSV Parser with RFC 4180 Quote Handling
 
 [![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
@@ -282,30 +282,7 @@ Expected results if quote-aware SIMD works correctly:
 
 If quoted is much slower (>50% overhead), quote-aware SIMD has issues.
 
-## 🎯 Performance Goals
-
-HeroParser aims to achieve competitive performance with Sep while maintaining:
-- **RFC 4180 compliance** (quote handling)
-- **Zero allocations** in hot path
-- **Quote-aware SIMD** (no performance cliff on quoted data)
-
-Performance targets (to be verified with benchmarks):
-- **AVX-512**: Competitive with Sep's 21 GB/s on unquoted data
-- **Quote overhead**: <20% slowdown on quoted data (vs pure unquoted)
-- **Mixed workloads**: Between unquoted and quoted performance
-
-## 🔬 Hardware Detection
-
-Check SIMD capabilities:
-
-```csharp
-Console.WriteLine(Hardware.GetHardwareInfo());
-// Output: "SIMD: AVX-512F, AVX-512BW, AVX2"
-```
-
-## ⚠️ Design Decisions
-
-### RFC 4180 Compliance
+## ⚠️ RFC 4180 Compliance
 
 HeroParser implements **core RFC 4180 features**:
 
@@ -314,98 +291,14 @@ HeroParser implements **core RFC 4180 features**:
 - Escaped quotes using double-double-quotes (`""`)
 - Delimiters (commas) within quoted fields
 - Both LF (`\n`) and CRLF (`\r\n`) line endings
-- Empty fields
-- Spaces preserved in fields
+- Empty fields and spaces preserved
 - Custom delimiters and quote characters
-- Optional trailing newline on last record
 
 ❌ **Not Supported:**
-- **Newlines within quoted fields** - Fields spanning multiple lines are not supported (rows are line-delimited)
-- **Automatic header row detection** - All rows treated as data; users must manually skip header if present
+- **Newlines within quoted fields** - Rows are line-delimited for streaming performance
+- **Automatic header detection** - Users skip header rows manually
 
-**Why these limitations?**
-- Single-pass streaming parser optimized for speed processes rows line-by-line
-- Newlines-in-quotes would require buffering and multi-pass parsing, sacrificing performance
-- Header detection is application-specific; better left to user code
-
-For most CSV use cases (logs, exports, data interchange), this provides excellent RFC 4180 compatibility with maximum performance.
-
-### RFC 4180 Quote Handling by Default
-- All parsers support quoted fields with escaped quotes (`""`)
-- Quote character configurable via `CsvParserOptions.Quote`
-- Quote-aware SIMD maintains performance (minimal overhead)
-
-### Lazy Column Parsing
-- Columns not parsed until first access
-- Allows efficient row filtering without parsing overhead
-- ArrayPool buffers only rented when needed
-
-### Framework Targeting
-- .NET 8, 9, 10 only (no .NET Framework, no .NET 6/7)
-- Leverages modern JIT optimizations and SIMD intrinsics
-- Best AVX-512 and ARM NEON codegen
-
-## 📊 Comparison: HeroParser vs Sep
-
-| Feature | Sep | HeroParser v3.0 |
-|---------|-----|-----------------|
-| **RFC 4180 Compliance** | ✅ Full (incl. newlines in quotes) | ⚠️ Partial (no newlines in quotes) |
-| **Quote-Aware SIMD** | ✅ Bitmask technique | ✅ Bitmask technique (Sep-inspired) |
-| **Zero Allocations** | ✅ ref structs | ✅ ref structs + ArrayPool |
-| **Lazy Column Parsing** | ❌ | ✅ Parse on first access |
-| **SIMD Paths** | AVX-512, AVX2, NEON | ✅ Same |
-| **Memory Safety** | ✅ No `unsafe` keyword | ✅ No `unsafe` keyword (uses `Unsafe` class APIs) |
-| **Framework Support** | .NET 6+ | .NET 8, 9, 10 |
-| **External Dependencies** | csFastFloat | ✅ **Zero** |
-
-## 🎉 Project Goals
-
-### Core Principles
-- ✅ **RFC 4180 Quote Handling**: Quoted fields, escaped quotes, delimiters in quotes (no newlines-in-quotes)
-- ✅ **Zero Allocations**: ref structs, ArrayPool, lazy parsing
-- ✅ **Quote-Aware SIMD**: No performance cliff on quoted data
-- ✅ **Zero Dependencies**: No external packages
-- ✅ **Memory Safety**: No `unsafe` keyword (uses safe `Unsafe` class and `MemoryMarshal` APIs)
-
-### Performance Targets (To Be Verified)
-- **Competitive with Sep**: Similar performance on unquoted data
-- **Quote Overhead**: <20% slowdown on quoted data
-- **Mixed Workloads**: Graceful performance between unquoted and quoted
-
-### Testing
-- ✅ **RFC 4180 Compliance**: Comprehensive quote handling tests (see `Rfc4180Tests.cs`)
-- ✅ **SIMD Correctness**: All parsers produce same results
-- ✅ **Performance Verification**: Benchmarks for quote-aware SIMD
-
-#### Running Tests by Category
-
-Tests are organized using xUnit traits for selective execution:
-
-```bash
-# Run only fast unit tests (isolated component tests)
-dotnet test --filter "Category=Unit"
-
-# Run integration tests (multi-component, RFC 4180, end-to-end scenarios)
-dotnet test --filter "Category=Integration"
-
-# Run all tests (default)
-dotnet test
-```
-
-**Test Categories:**
-- **`Unit`** (14 tests) - Fast, isolated tests of individual components
-  - Basic parsing, delimiters, line endings, type parsing
-  - Simple functionality with no dependencies
-  - Runs in ~265ms
-
-- **`Integration`** (21 tests) - Multi-component and end-to-end tests
-  - RFC 4180 compliance (quoted fields, escaped quotes)
-  - README documentation examples
-  - Security tests (bounds checking, overflow protection)
-  - Error handling and edge cases
-  - Runs in ~84ms
-
-The CI pipeline runs Unit tests first for fast feedback, then Integration tests for comprehensive coverage.
+This provides excellent RFC 4180 compatibility for most CSV use cases (logs, exports, data interchange).
 
 ## 📝 License
 

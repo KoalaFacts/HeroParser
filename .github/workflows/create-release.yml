@@ -80,10 +80,10 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
-        cache: true
-        cache-dependency-path: |
-          **/*.csproj
-          **/global.json
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            **/global.json
 
       - name: Restore dependencies
         run: dotnet restore

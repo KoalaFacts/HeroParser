@@ -74,16 +74,17 @@ jobs:
           fi
 
       - name: Setup .NET SDKs
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
-          cache: true
-          cache-dependency-path: |
-            **/*.csproj
-            **/global.json
+        uses: ./.github/actions/setup-dotnet-sdks
+
+      - name: Extract framework list from Directory.Build.props
+        id: frameworks
+        run: |
+          FRAMEWORKS=$(grep -oP '<SupportedTargetFrameworks>\K[^<]+' Directory.Build.props || echo "net8.0;net9.0;net10.0")
+          echo "list=$FRAMEWORKS" >> $GITHUB_OUTPUT
+          # Convert to space-separated for bash loop
+          FRAMEWORKS_SPACE=$(echo "$FRAMEWORKS" | tr ';' ' ')
+          echo "space_separated=$FRAMEWORKS_SPACE" >> $GITHUB_OUTPUT
+          echo "Extracted frameworks: $FRAMEWORKS"
 
       - name: Restore dependencies
         run: dotnet restore
@@ -131,7 +132,7 @@ jobs:
           mkdir -p release-sboms
 
           # Generate SBOMs for each framework and SPDX version
-          for framework in net8.0 net9.0 net10.0; do
+          for framework in ${{ steps.frameworks.outputs.space_separated }}; do
             for spdx_version in 2.2 3.0; do
               echo "Generating SBOM for $framework, SPDX $spdx_version..."
 
@@ -177,7 +178,7 @@ jobs:
 
           ### Package Details
           - **NuGet**: [HeroParser v${{ inputs.version }}](https://www.nuget.org/packages/HeroParser/${{ inputs.version }})
-          - **Frameworks**: net8.0, net9.0, net10.0
+          - **Frameworks**: ${{ steps.frameworks.outputs.list }}
           - **Dependencies**: Zero external dependencies
           - **License**: MIT
 
@@ -189,8 +190,8 @@ jobs:
 
           ### SBOMs (Software Bill of Materials)
           Per-framework SBOMs included in this release:
-          - SPDX 2.2 format (net8.0, net9.0, net10.0)
-          - SPDX 3.0 format (net8.0, net9.0, net10.0)
+          - SPDX 2.2 format (${{ steps.frameworks.outputs.list }})
+          - SPDX 3.0 format (${{ steps.frameworks.outputs.list }})
 
           ### Documentation
           - [README](https://github.com/KoalaFacts/HeroParser/blob/main/README.md)

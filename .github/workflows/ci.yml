@@ -4,14 +4,10 @@ on:
   push:
     branches: [ '*' ]
     tags: [ 'v*' ]  # Run on version tags for artifact generation
-    paths-ignore:
-      - 'docs/**'
-      - 'README.md'
-      - 'CHANGELOG.md'
-      - '.github/workflows/README.md'
   pull_request:
     branches: [ main, develop ]
   merge_group:
+  workflow_dispatch:
 
 # Cancel in-progress runs for the same workflow and ref
 concurrency:
@@ -41,11 +37,8 @@ jobs:
         uses: ./.github/actions/setup-dotnet-sdks
 
   build-and-test:
-    needs: setup
-    permissions:
-      contents: read
-      checks: write
     name: Build and Test
+    needs: setup
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -62,8 +55,8 @@ jobs:
     - name: Setup all .NET SDKs
       uses: ./.github/actions/setup-dotnet-sdks
 
-    - name: Restore dependencies
-      run: dotnet restore /p:TargetFramework=${{ matrix.framework }}
+    - name: Restore dependencies (all frameworks, locked mode)
+      run: dotnet restore
 
     - name: Build
       run: dotnet build --configuration Release --no-restore --framework ${{ matrix.framework }}

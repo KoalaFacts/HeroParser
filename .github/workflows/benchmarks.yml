@@ -61,7 +61,7 @@ jobs:
       uses: ./.github/actions/setup-dotnet-sdks
 
     - name: Restore dependencies
-      run: dotnet restore /p:TargetFramework=${{ matrix.framework }}
+      run: dotnet restore
 
     - name: Build benchmarks
       run: |

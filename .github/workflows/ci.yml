@@ -14,10 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write  # Allow committing generated lock files
-  checks: write
-  pull-requests: write
-  security-events: write  # For dependency review
+  contents: read
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -25,6 +22,9 @@ env:
 
 jobs:
   build-and-test:
+    permissions:
+      contents: read
+      checks: write
     name: Build and Test
     runs-on: ${{ matrix.os }}
     strategy:
@@ -52,7 +52,7 @@ jobs:
         dotnet-version: ${{ matrix.dotnet-version }}
 
     - name: Restore dependencies
-      run: dotnet restore -p:TargetFramework=${{ matrix.framework }}
+      run: dotnet restore /p:TargetFramework=${{ matrix.framework }}
 
     - name: Build
       run: dotnet build --configuration Release --no-restore --framework ${{ matrix.framework }}
@@ -118,6 +118,9 @@ jobs:
     name: Dependency Review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
     - name: Checkout code

@@ -20,9 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write  # For committing baseline
-  pull-requests: write  # For posting comments
-  deployments: write  # For GitHub Pages
+  contents: read
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -30,6 +28,9 @@ env:
 
 jobs:
   benchmark:
+    permissions:
+      contents: read
+      pull-requests: write
     name: Run Performance Benchmarks
     runs-on: ubuntu-latest  # Consistent environment for comparisons
     strategy:
@@ -55,7 +56,7 @@ jobs:
         dotnet-version: ${{ matrix.dotnet-version }}
 
     - name: Restore dependencies
-      run: dotnet restore -p:TargetFramework=${{ matrix.framework }}
+      run: dotnet restore /p:TargetFramework=${{ matrix.framework }}
 
     - name: Build benchmarks
       run: |
@@ -82,7 +83,7 @@ jobs:
         retention-days: 30
 
     - name: Comment benchmark results on PR
-      if: github.event_name == 'pull_request' && matrix.dotnet-version == '10.0.x'
+      if: github.event_name == 'pull_request' && matrix.dotnet-version == '10.0.x' && github.event.pull_request.head.repo.fork == false
       uses: actions/github-script@v8
       with:
         script: |

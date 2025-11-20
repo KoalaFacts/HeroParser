@@ -22,7 +22,6 @@ concurrency:
 permissions:
   id-token: write  # Required for OIDC authentication with NuGet.org
   contents: read
-  attestations: write  # For package provenance
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -126,12 +125,7 @@ jobs:
             fi
           done
 
-      - name: Generate package provenance
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: './packages/*.nupkg'
-
-      - name: NuGet login (OIDC → temporary API key)
+      - name: NuGet login (OIDC temporary API key)
         uses: NuGet/login@v1
         id: nuget-login
         with:
@@ -164,7 +158,7 @@ jobs:
       - name: Create release summary
         if: success()
         run: |
-          echo "## ✅ NuGet Package Published" >> $GITHUB_STEP_SUMMARY
+          echo "## NuGet Package Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Package**: https://www.nuget.org/packages/HeroParser/${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY

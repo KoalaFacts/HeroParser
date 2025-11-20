@@ -6,7 +6,7 @@ namespace HeroParser.Tests;
 public class BasicTests
 {
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void SimpleCsv_ParsesCorrectly()
     {
         var csv = "a,b,c\n1,2,3";
@@ -30,7 +30,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ForeachLoop_Works()
     {
         var csv = "a,b\n1,2\n3,4";
@@ -46,7 +46,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void EmptyCsv_ReturnsNoRows()
     {
         var csv = "";
@@ -55,7 +55,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void SingleColumn_ParsesCorrectly()
     {
         var csv = "a\nb\nc";
@@ -75,7 +75,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void EmptyFields_ParsedAsEmpty()
     {
         var csv = "a,,c\n,b,\n,,";
@@ -101,7 +101,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CustomDelimiter_Tab()
     {
         var csv = "a\tb\tc\n1\t2\t3";
@@ -117,7 +117,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CustomDelimiter_Pipe()
     {
         var csv = "a|b|c";
@@ -129,7 +129,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void LineEndings_CRLF()
     {
         var csv = "a,b\r\n1,2\r\n3,4";
@@ -145,7 +145,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void LineEndings_LF()
     {
         var csv = "a,b\n1,2\n3,4";
@@ -160,7 +160,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void LineEndings_CR()
     {
         var csv = "a,b\r1,2\r3,4";
@@ -175,7 +175,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void EmptyLines_AreSkipped()
     {
         var csv = "a,b\n\n1,2\n\n\n3,4\n\n";
@@ -190,7 +190,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void TypeParsing_Int()
     {
         var csv = "123,456";
@@ -206,7 +206,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void TypeParsing_Double()
     {
         var csv = "3.14,2.71";
@@ -222,7 +222,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Integration)]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void TooManyColumns_ThrowsException()
     {
         var csv = "a,b,c,d,e";
@@ -246,7 +246,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Integration)]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void TooManyRows_ThrowsException()
     {
         var csv = "a\nb\nc\nd";
@@ -270,7 +270,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Integration)]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void InvalidDelimiter_ThrowsException()
     {
         var options = new CsvParserOptions { Delimiter = '€' }; // Non-ASCII
@@ -279,14 +279,14 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Integration)]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void NullCsv_ThrowsArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>(() => Csv.ReadFromText(null!));
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Unit)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ToStringArray_Works()
     {
         var csv = "a,b,c";
@@ -298,7 +298,7 @@ public class BasicTests
     }
 
     [Fact]
-    [Trait(TestCategories.Category, TestCategories.Integration)]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void OutOfBoundsAccess_ThrowsIndexOutOfRangeException()
     {
         var csv = "a,b,c";

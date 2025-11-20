@@ -4,6 +4,11 @@ on:
   push:
     branches: [ '*' ]
     tags: [ 'v*' ]  # Run on version tags for artifact generation
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '.github/workflows/README.md'
   pull_request:
     branches: [ main, develop ]
   merge_group:
@@ -50,6 +55,10 @@ jobs:
       uses: actions/setup-dotnet@v5
       with:
         dotnet-version: ${{ matrix.dotnet-version }}
+        cache: true
+        cache-dependency-path: |
+          **/*.csproj
+          **/global.json
 
     - name: Restore dependencies
       run: dotnet restore /p:TargetFramework=${{ matrix.framework }}
@@ -57,11 +66,21 @@ jobs:
     - name: Build
       run: dotnet build --configuration Release --no-restore --framework ${{ matrix.framework }}
 
-    - name: Run Unit Tests
-      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-unit.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults --filter "Category=Unit"
+    - name: Run Unit Tests (with coverage)
+      if: matrix.os == 'ubuntu-latest' && matrix.dotnet-version == '10.0.x'
+      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-unit.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults/unit --filter "Category=Unit"
 
-    - name: Run Integration Tests
-      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-integration.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults --filter "Category=Integration"
+    - name: Run Unit Tests (no coverage)
+      if: !(matrix.os == 'ubuntu-latest' && matrix.dotnet-version == '10.0.x')
+      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-unit.trx" --results-directory ./TestResults/unit --filter "Category=Unit"
+
+    - name: Run Integration Tests (with coverage)
+      if: matrix.os == 'ubuntu-latest' && matrix.dotnet-version == '10.0.x'
+      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-integration.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults/integration --filter "Category=Integration"
+
+    - name: Run Integration Tests (no coverage)
+      if: !(matrix.os == 'ubuntu-latest' && matrix.dotnet-version == '10.0.x')
+      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-integration.trx" --results-directory ./TestResults/integration --filter "Category=Integration"
 
     - name: Publish test results
       uses: EnricoMi/publish-unit-test-result-action@v2
@@ -104,6 +123,10 @@ jobs:
           8.0.x
           9.0.x
           10.0.x
+        cache: true
+        cache-dependency-path: |
+          **/*.csproj
+          **/global.json
 
     - name: Restore dependencies
       run: dotnet restore

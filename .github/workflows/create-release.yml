@@ -36,13 +36,54 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Show current and requested versions
+        id: version-context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          REQUESTED="${{ inputs.version }}"
+
+          LATEST_TAG=$(gh release list --limit 1 --json tagName,isPrerelease,isDraft --jq '[.[] | select(.isPrerelease==false and .isDraft==false)][0].tagName' || echo "")
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+            LATEST_TAG="none"
+            LATEST_VERSION="none"
+          else
+            LATEST_VERSION="${LATEST_TAG#v}"
+          fi
+
+          SUGGESTED_NEXT="n/a"
+          if [[ "$LATEST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            IFS='.' read -r major minor patch <<< "$LATEST_VERSION"
+            SUGGESTED_NEXT="$major.$minor.$((patch+1))"
+          fi
+
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "requested_version=$REQUESTED" >> $GITHUB_OUTPUT
+          echo "suggested_next_patch=$SUGGESTED_NEXT" >> $GITHUB_OUTPUT
+
+          echo "## Release Version Context" >> $GITHUB_STEP_SUMMARY
+          echo "- Latest release: $LATEST_TAG" >> $GITHUB_STEP_SUMMARY
+          echo "- Requested release: v$REQUESTED" >> $GITHUB_STEP_SUMMARY
+          if [ "$SUGGESTED_NEXT" != "n/a" ]; then
+            echo "- Suggested next patch: v$SUGGESTED_NEXT" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Suggested next patch: n/a (no prior release found)" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
             8.0.x
-            9.0.x
-            10.0.x
+          9.0.x
+          10.0.x
+        cache: true
+        cache-dependency-path: |
+          **/*.csproj
+          **/global.json
 
       - name: Restore dependencies
         run: dotnet restore

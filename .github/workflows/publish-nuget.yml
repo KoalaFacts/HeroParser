@@ -125,6 +125,36 @@ jobs:
             fi
           done
 
+      - name: Verify package integrity
+        run: |
+          set -euo pipefail
+
+          echo "SHA256 checksums for downloaded packages:"
+          sha256sum ./packages/*.nupkg
+
+          verify_package() {
+            local pkg="$1"
+            set +e
+            dotnet nuget verify --all "$pkg" > /tmp/verify.log 2>&1
+            local status=$?
+            set -e
+
+            if [ $status -eq 0 ]; then
+              echo "Signature verification passed for $pkg"
+            elif grep -q "NU3003" /tmp/verify.log; then
+              echo "Package $pkg is not signed; continuing without signature verification."
+            else
+              echo "Signature verification failed for $pkg"
+              cat /tmp/verify.log
+              exit $status
+            fi
+          }
+
+          for pkg in ./packages/*.nupkg; do
+            echo "Verifying $pkg..."
+            verify_package "$pkg"
+          done
+
       - name: NuGet login (OIDC temporary API key)
         uses: NuGet/login@v1
         id: nuget-login

@@ -54,6 +54,10 @@ jobs:
       uses: actions/setup-dotnet@v5
       with:
         dotnet-version: ${{ matrix.dotnet-version }}
+        cache: true
+        cache-dependency-path: |
+          **/*.csproj
+          **/global.json
 
     - name: Restore dependencies
       run: dotnet restore /p:TargetFramework=${{ matrix.framework }}

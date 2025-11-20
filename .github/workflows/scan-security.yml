@@ -15,7 +15,6 @@ permissions:
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  NUGET_LOCKED_MODE: true
 
 jobs:
   dependency-audit:

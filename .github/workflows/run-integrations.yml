@@ -1,0 +1,140 @@
+name: Nightly Integrations
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 02:00 UTC
+  workflow_dispatch:  # Allow manual trigger
+
+# Cancel in-progress runs for the same workflow and ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  setup:
+    name: Extract Build Configuration
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.extract.outputs.versions }}
+      frameworks: ${{ steps.extract.outputs.frameworks }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Extract configuration
+        id: extract
+        uses: ./.github/actions/extract-build-config
+
+  comprehensive-tests:
+    name: Comprehensive Integration Tests
+    needs: setup
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        framework: ${{ fromJSON(needs.setup.outputs.frameworks) }}
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    - name: Setup all .NET SDKs
+      uses: ./.github/actions/setup-dotnet-sdks
+      with:
+        dotnet-version: ${{ needs.setup.outputs.versions }}
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore --framework ${{ matrix.framework }}
+
+    - name: Run All Tests (with coverage)
+      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v5
+      with:
+        name: nightly-test-results-${{ matrix.os }}-${{ matrix.framework }}
+        path: TestResults/**/*.trx
+        retention-days: 7
+
+    - name: Upload coverage
+      if: always()
+      uses: actions/upload-artifact@v5
+      with:
+        name: nightly-coverage-${{ matrix.os }}-${{ matrix.framework }}
+        path: TestResults/**/coverage.cobertura.xml
+        retention-days: 7
+
+  report:
+    name: Generate Test Report
+    needs: [comprehensive-tests]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Download all test results
+      uses: actions/download-artifact@v5
+      with:
+        pattern: nightly-test-results-*
+        path: ./all-results
+
+    - name: Create summary report
+      run: |
+        echo "# Nightly Integration Test Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Run Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        echo "## Test Results by Platform" >> $GITHUB_STEP_SUMMARY
+        for result_dir in ./all-results/nightly-test-results-*; do
+          if [ -d "$result_dir" ]; then
+            platform=$(basename "$result_dir" | sed 's/nightly-test-results-//')
+            echo "### $platform" >> $GITHUB_STEP_SUMMARY
+
+            if ls "$result_dir"/*.trx >/dev/null 2>&1; then
+              # Count pass/fail from TRX files (basic parsing)
+              total=$(grep -oh '<UnitTestResult' "$result_dir"/*.trx 2>/dev/null | wc -l || echo "0")
+              passed=$(grep -oh 'outcome="Passed"' "$result_dir"/*.trx 2>/dev/null | wc -l || echo "0")
+              failed=$(grep -oh 'outcome="Failed"' "$result_dir"/*.trx 2>/dev/null | wc -l || echo "0")
+
+              echo "- Total: $total" >> $GITHUB_STEP_SUMMARY
+              echo "- Passed: $passed" >> $GITHUB_STEP_SUMMARY
+              echo "- Failed: $failed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- No test results found" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+        done
+
+    - name: Check for failures
+      id: check-failures
+      run: |
+        if [ -d ./all-results ]; then
+          FAILED_COUNT=$(grep -roh 'outcome="Failed"' ./all-results/ 2>/dev/null | wc -l || echo "0")
+          echo "failed_count=$FAILED_COUNT" >> $GITHUB_OUTPUT
+
+          if [ "$FAILED_COUNT" -gt 0 ]; then
+            echo "❌ Found $FAILED_COUNT failed tests" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          echo "⚠️ No test results found" >> $GITHUB_STEP_SUMMARY
+        fi

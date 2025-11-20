@@ -13,6 +13,13 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--streaming")
+        {
+            // Run streaming vs text benchmarks
+            BenchmarkRunner.Run<StreamingThroughputBenchmarks>();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--vs-sep")
         {
             // Run only comparison benchmarks
@@ -39,6 +46,7 @@ public class Program
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --throughput  Run throughput benchmarks");
+        Console.WriteLine("  --streaming   Run streaming throughput benchmarks (text vs stream vs async)");
         Console.WriteLine("  --vs-sep      Run HeroParser vs Sep comparison");
         Console.WriteLine("  --quotes      Run quoted vs unquoted comparison (VERIFY SIMD)");
         Console.WriteLine("  --simd        Run SIMD vs Scalar comparison");
@@ -57,6 +65,7 @@ public class Program
         else if (args[0] == "--all")
         {
             BenchmarkRunner.Run<ThroughputBenchmarks>();
+            BenchmarkRunner.Run<StreamingThroughputBenchmarks>();
             BenchmarkRunner.Run<VsSepBenchmarks>();
             BenchmarkRunner.Run<QuotedVsUnquotedBenchmarks>();
         }

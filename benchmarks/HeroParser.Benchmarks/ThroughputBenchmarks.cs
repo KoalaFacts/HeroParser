@@ -1,5 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
+using HeroParser.SeparatedValues;
 using System.Text;
 
 namespace HeroParser.Benchmarks;
@@ -13,6 +14,7 @@ namespace HeroParser.Benchmarks;
 public class ThroughputBenchmarks
 {
     private string csv = null!;
+    private CsvParserOptions options = null!;
 
     [Params(1_000, 10_000, 100_000)]
     public int Rows { get; set; }
@@ -24,6 +26,11 @@ public class ThroughputBenchmarks
     public void Setup()
     {
         csv = GenerateCsv(Rows, Columns);
+        options = new CsvParserOptions
+        {
+            MaxColumns = Columns + 4, // small headroom beyond generated data
+            MaxRows = Rows + 100      // allow end-of-file without tripping the limit
+        };
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
         Console.WriteLine($"CSV Size: {csv.Length:N0} chars ({csv.Length * 2:N0} bytes)");
     }
@@ -46,7 +53,7 @@ public class ThroughputBenchmarks
     [Benchmark]
     public int ParseCsv()
     {
-        using var reader = Csv.ReadFromText(csv);
+        using var reader = Csv.ReadFromText(csv, options);
         int total = 0;
         foreach (var row in reader)
         {

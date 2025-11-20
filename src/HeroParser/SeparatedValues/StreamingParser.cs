@@ -427,7 +427,7 @@ internal static class StreamingParser
         Span<int> lengths,
         int maxColumns)
     {
-        if (columnCount >= maxColumns)
+        if (columnCount + 1 > maxColumns)
             ThrowTooManyColumns(maxColumns);
 
         starts[columnCount] = currentStart;
@@ -445,7 +445,7 @@ internal static class StreamingParser
         Span<int> lengths,
         int maxColumns)
     {
-        if (columnCount >= maxColumns)
+        if (columnCount + 1 > maxColumns)
             ThrowTooManyColumns(maxColumns);
 
         starts[columnCount] = currentStart;

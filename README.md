@@ -59,6 +59,65 @@ foreach (var row in Csv.ReadFromText(csv))
 }
 ```
 
+### Files and Streams
+
+```csharp
+using var fileReader = Csv.ReadFromFile("data.csv"); // streams file without loading it fully
+
+using var stream = File.OpenRead("data.csv");
+using var streamReader = Csv.ReadFromStream(stream); // leaveOpen defaults to true
+```
+
+Both overloads stream with pooled buffers and do not load the entire file/stream; dispose the reader (and the stream if you own it) to release resources.
+
+#### Async I/O
+
+```csharp
+var source = await Csv.ReadFromFileAsync("data.csv");
+using var reader = source.CreateReader();
+```
+
+Async overloads also buffer the full payload (required because readers are ref structs); use when you need non-blocking file/stream reads.
+
+#### Streaming large files (low memory)
+
+```csharp
+using var reader = Csv.ReadFromStream(File.OpenRead("data.csv"));
+while (reader.MoveNext())
+{
+    var row = reader.Current;
+    var id = row[0].Parse<int>();
+}
+```
+
+Streaming keeps a pooled buffer and does not load the entire file into memory; rows remain valid until the next `MoveNext` call.
+
+#### Async streaming (without buffering entire file)
+
+```csharp
+await using var reader = Csv.CreateAsyncStreamReader(File.OpenRead("data.csv"));
+while (await reader.MoveNextAsync())
+{
+    var row = reader.Current;
+    var id = row[0].Parse<int>();
+}
+```
+
+Async streaming uses pooled buffers and async I/O; each row stays valid until the next `MoveNextAsync` invocation.
+
+## Benchmarks
+
+```bash
+# Throughput (string-based)
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --throughput
+
+# Streaming vs text (file + stream + async)
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --streaming
+
+# Run all configured benchmarks
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
+```
+
 ### Quote Handling (RFC 4180)
 
 ```csharp

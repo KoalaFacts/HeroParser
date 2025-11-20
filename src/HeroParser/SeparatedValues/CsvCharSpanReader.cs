@@ -45,13 +45,6 @@ public ref struct CsvCharSpanReader
     {
         while (true)
         {
-            if (rowCount >= options.MaxRows)
-            {
-                throw new CsvException(
-                    CsvErrorCode.TooManyRows,
-                    $"CSV exceeds maximum row limit of {options.MaxRows}");
-            }
-
             if (position >= chars.Length)
                 return false;
 
@@ -80,6 +73,12 @@ public ref struct CsvCharSpanReader
 
             position += result.CharsConsumed;
             rowCount++;
+            if (rowCount > options.MaxRows)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"CSV exceeds maximum row limit of {options.MaxRows}");
+            }
             return true;
         }
     }

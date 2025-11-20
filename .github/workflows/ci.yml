@@ -27,14 +27,14 @@ jobs:
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
-      frameworks: ${{ steps.config.outputs.frameworks }}
+      frameworks: ${{ steps.extract.outputs.frameworks }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
       - name: Extract configuration
-        id: config
-        uses: ./.github/actions/setup-dotnet-sdks
+        id: extract
+        uses: ./.github/actions/extract-build-config
 
   build-and-test:
     name: Build and Test
@@ -52,8 +52,14 @@ jobs:
       with:
         fetch-depth: 0  # Full history for Source Link
 
+    - name: Extract configuration
+      id: extract
+      uses: ./.github/actions/extract-build-config
+
     - name: Setup all .NET SDKs
       uses: ./.github/actions/setup-dotnet-sdks
+      with:
+        dotnet-version: ${{ steps.extract.outputs.versions }}
 
     - name: Restore dependencies (all frameworks, locked mode)
       run: dotnet restore
@@ -111,8 +117,14 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Extract configuration
+      id: extract
+      uses: ./.github/actions/extract-build-config
+
     - name: Setup .NET SDKs
       uses: ./.github/actions/setup-dotnet-sdks
+      with:
+        dotnet-version: ${{ steps.extract.outputs.versions }}
 
     - name: Restore dependencies
       run: dotnet restore

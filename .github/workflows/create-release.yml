@@ -72,19 +72,29 @@ jobs:
           else
             echo "- Suggested next patch: n/a (no prior release found)" >> $GITHUB_STEP_SUMMARY
           fi
+          
+      - name: Extract configuration
+        id: extract
+        uses: ./.github/actions/extract-build-config
+
+      - name: Convert frameworks to shell format
+        id: frameworks
+        run: |
+          # Convert JSON array to semicolon-separated: ["net8.0","net9.0","net10.0"] -> "net8.0;net9.0;net10.0"
+          FRAMEWORKS_LIST=$(echo '${{ steps.extract.outputs.frameworks }}' | sed 's/\["//' | sed 's/"\]//' | sed 's/","/ /g' | tr ' ' ';')
+          echo "list=$FRAMEWORKS_LIST" >> $GITHUB_OUTPUT
+
+          # Convert to space-separated for bash loops
+          FRAMEWORKS_SPACE=$(echo "$FRAMEWORKS_LIST" | tr ';' ' ')
+          echo "space_separated=$FRAMEWORKS_SPACE" >> $GITHUB_OUTPUT
+
+          echo "Frameworks (list): $FRAMEWORKS_LIST"
+          echo "Frameworks (space-separated): $FRAMEWORKS_SPACE"
 
       - name: Setup .NET SDKs
         uses: ./.github/actions/setup-dotnet-sdks
-
-      - name: Extract framework list from Directory.Build.props
-        id: frameworks
-        run: |
-          FRAMEWORKS=$(grep -oP '<SupportedTargetFrameworks>\K[^<]+' Directory.Build.props || echo "net8.0;net9.0;net10.0")
-          echo "list=$FRAMEWORKS" >> $GITHUB_OUTPUT
-          # Convert to space-separated for bash loop
-          FRAMEWORKS_SPACE=$(echo "$FRAMEWORKS" | tr ';' ' ')
-          echo "space_separated=$FRAMEWORKS_SPACE" >> $GITHUB_OUTPUT
-          echo "Extracted frameworks: $FRAMEWORKS"
+        with:
+          dotnet-version: ${{ steps.extract.outputs.versions }}
 
       - name: Restore dependencies
         run: dotnet restore

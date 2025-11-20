@@ -1,57 +1,19 @@
 name: 'Setup .NET SDKs'
-description: 'Sets up all .NET SDKs defined in Directory.Build.props'
+description: 'Sets up .NET SDKs with caching support'
 inputs:
+  dotnet-version:
+    description: 'SDK version(s) to install (newline-separated)'
+    required: true
   cache:
     description: 'Enable caching of NuGet packages'
     required: false
     default: 'true'
-outputs:
-  versions:
-    description: 'The extracted SDK versions (newline-separated)'
-    value: ${{ steps.extract.outputs.versions }}
-  frameworks:
-    description: 'The extracted target frameworks (JSON array)'
-    value: ${{ steps.extract.outputs.frameworks }}
-  frameworks-matrix:
-    description: 'The extracted target frameworks (space-separated for matrix)'
-    value: ${{ steps.extract.outputs.frameworks-matrix }}
 runs:
   using: 'composite'
   steps:
-    - name: Extract supported SDK versions and frameworks from Directory.Build.props
-      id: extract
-      shell: bash
-      run: |
-        # Extract SupportedSdkVersions from Directory.Build.props (portable approach)
-        SDK_VERSIONS=$(sed -n 's/.*<SupportedSdkVersions>\([^<]*\)<\/SupportedSdkVersions>.*/\1/p' Directory.Build.props | tr ';' '\n')
-        echo "versions<<EOF" >> $GITHUB_OUTPUT
-        echo "$SDK_VERSIONS" >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
-        echo "Extracted SDK versions:"
-        echo "$SDK_VERSIONS"
-
-        # Extract SupportedTargetFrameworks from Directory.Build.props (portable approach)
-        FRAMEWORKS=$(sed -n 's/.*<SupportedTargetFrameworks>\([^<]*\)<\/SupportedTargetFrameworks>.*/\1/p' Directory.Build.props)
-        # Convert to JSON array format: ["net8.0", "net9.0", "net10.0"]
-        # Using bash to convert without jq
-        FRAMEWORKS_JSON="["
-        FIRST=true
-        IFS=';' read -ra FMKS <<< "$FRAMEWORKS"
-        for fmk in "${FMKS[@]}"; do
-          if [ "$FIRST" = true ]; then
-            FRAMEWORKS_JSON="${FRAMEWORKS_JSON}\"${fmk}\""
-            FIRST=false
-          else
-            FRAMEWORKS_JSON="${FRAMEWORKS_JSON},\"${fmk}\""
-          fi
-        done
-        FRAMEWORKS_JSON="${FRAMEWORKS_JSON}]"
-        echo "frameworks=$FRAMEWORKS_JSON" >> $GITHUB_OUTPUT
-        echo "Extracted target frameworks: $FRAMEWORKS_JSON"
-
     - name: Setup .NET SDKs
       uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: ${{ steps.extract.outputs.versions }}
+        dotnet-version: ${{ inputs.dotnet-version }}
         cache: ${{ inputs.cache }}
         cache-dependency-path: '**/packages.lock.json'

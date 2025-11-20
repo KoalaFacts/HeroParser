@@ -31,14 +31,14 @@ jobs:
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
-      frameworks: ${{ steps.config.outputs.frameworks }}
+      frameworks: ${{ steps.extract.outputs.frameworks }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
       - name: Extract configuration
-        id: config
-        uses: ./.github/actions/setup-dotnet-sdks
+        id: extract
+        uses: ./.github/actions/extract-build-config
 
   benchmark:
     needs: setup
@@ -57,8 +57,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
 
+    - name: Extract configuration
+      id: extract
+      uses: ./.github/actions/extract-build-config
+
     - name: Setup all .NET SDKs
       uses: ./.github/actions/setup-dotnet-sdks
+      with:
+        dotnet-version: ${{ steps.extract.outputs.versions }}
 
     - name: Restore dependencies
       run: dotnet restore

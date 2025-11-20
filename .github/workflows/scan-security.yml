@@ -25,19 +25,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Setup .NET SDKs
-        id: setup-dotnet
-        uses: ./.github/actions/setup-dotnet-sdks
+      - name: Extract configuration
+        id: extract
+        uses: ./.github/actions/extract-build-config
 
-      - name: Get latest SDK version
-        id: latest-sdk
-        run: |
-          # Extract the last framework from Directory.Build.props and convert to SDK version
-          FRAMEWORKS=$(grep -oP '<SupportedTargetFrameworks>\K[^<]+' Directory.Build.props || echo "net8.0;net9.0;net10.0")
-          LATEST_FRAMEWORK=$(echo "$FRAMEWORKS" | awk -F';' '{print $NF}')
-          LATEST_SDK=$(echo "$LATEST_FRAMEWORK" | sed 's/net//').x
-          echo "version=$LATEST_SDK" >> $GITHUB_OUTPUT
-          echo "Using latest SDK: $LATEST_SDK"
+      - name: Setup .NET SDKs
+        uses: ./.github/actions/setup-dotnet-sdks
+        with:
+          dotnet-version: ${{ steps.extract.outputs.versions }}
 
       - name: Restore dependencies
         run: dotnet restore

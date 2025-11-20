@@ -1,4 +1,6 @@
 using HeroParser.SeparatedValues;
+using System.Globalization;
+using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -207,6 +209,34 @@ public class BasicTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void TypeParsing_Byte()
+    {
+        var csv = "255";
+        var reader = Csv.ReadFromText(csv);
+        reader.MoveNext();
+        var row = reader.Current;
+
+        Assert.True(row[0].TryParseByte(out byte b));
+        Assert.Equal((byte)255, b);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void TypeParsing_Enum()
+    {
+        var csv = "Sunday,monday";
+        var reader = Csv.ReadFromText(csv);
+        reader.MoveNext();
+
+        Assert.True(reader.Current[0].TryParseEnum<DayOfWeek>(out var d1));
+        Assert.Equal(DayOfWeek.Sunday, d1);
+
+        Assert.True(reader.Current[1].TryParseEnum<DayOfWeek>(out var d2));
+        Assert.Equal(DayOfWeek.Monday, d2);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void TypeParsing_Double()
     {
         var csv = "3.14,2.71";
@@ -219,6 +249,84 @@ public class BasicTests
 
         Assert.True(row[1].TryParseDouble(out double val2));
         Assert.Equal(2.71, val2, precision: 2);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void TypeParsing_DateOnly_TimeOnly_TimeZone_CultureAware()
+    {
+        var csv = "31.12.2024 13:45;31.12.2024;13:45;UTC;31.12.2024 13:45 +01:00";
+        var options = new CsvParserOptions { Delimiter = ';' };
+        var culture = CultureInfo.GetCultureInfo("de-DE");
+
+        var reader = Csv.ReadFromText(csv, options);
+        Assert.True(reader.MoveNext());
+        var row = reader.Current;
+
+        Assert.True(row[0].TryParseDateTime(out var dt, culture));
+        Assert.Equal(2024, dt.Year);
+        Assert.Equal(12, dt.Month);
+        Assert.True(row[0].TryParseDateTime(out var dtExact, "dd.MM.yyyy HH:mm"));
+        Assert.Equal(dt, dtExact);
+        Assert.True(row[0].TryParseDateTime(out var dtExactShorthand, "dd.MM.yyyy HH:mm"));
+        Assert.Equal(dt, dtExactShorthand);
+
+        Assert.True(row[1].TryParseDateOnly(out var dateOnly, culture));
+        Assert.Equal(new DateOnly(2024, 12, 31), dateOnly);
+        Assert.True(row[1].TryParseDateOnly(out var dateOnlyExact, "dd.MM.yyyy"));
+        Assert.Equal(dateOnly, dateOnlyExact);
+
+        Assert.True(row[2].TryParseTimeOnly(out var timeOnly, culture));
+        Assert.Equal(new TimeOnly(13, 45), timeOnly);
+        Assert.True(row[2].TryParseTimeOnly(out var timeOnlyExact, "HH:mm"));
+        Assert.Equal(timeOnly, timeOnlyExact);
+
+        Assert.True(row[3].TryParseTimeZoneInfo(out var tz));
+        Assert.Equal("UTC", tz.Id);
+
+        Assert.True(row[4].TryParseDateTimeOffset(out var dto, culture));
+        Assert.Equal(2024, dto.Year);
+        Assert.Equal(12, dto.Month);
+        Assert.True(row[4].TryParseDateTimeOffset(out var dtoExact, "dd.MM.yyyy HH:mm zzz"));
+        Assert.Equal(dto, dtoExact);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void TypeParsing_DateOnly_TimeOnly_TimeZone_CultureAware_Utf8()
+    {
+        var csv = "31.12.2024 13:45;31.12.2024;13:45;UTC;31.12.2024 13:45 +01:00";
+        var options = new CsvParserOptions { Delimiter = ';' };
+        var culture = CultureInfo.GetCultureInfo("de-DE");
+
+        using var reader = Csv.ReadFromByteSpan(Encoding.UTF8.GetBytes(csv), options);
+        Assert.True(reader.MoveNext());
+        var row = reader.Current;
+
+        Assert.True(row[0].TryParseDateTime(out var dt, culture));
+        Assert.Equal(2024, dt.Year);
+        Assert.Equal(12, dt.Month);
+        Assert.True(row[0].TryParseDateTime(out var dtExactShorthand, "dd.MM.yyyy HH:mm", culture));
+        Assert.Equal(dt, dtExactShorthand);
+
+        Assert.True(row[1].TryParseDateOnly(out var dateOnly, culture));
+        Assert.Equal(new DateOnly(2024, 12, 31), dateOnly);
+        Assert.True(row[1].TryParseDateOnly(out var dateOnlyExact, "dd.MM.yyyy", culture));
+        Assert.Equal(dateOnly, dateOnlyExact);
+
+        Assert.True(row[2].TryParseTimeOnly(out var timeOnly, culture));
+        Assert.Equal(new TimeOnly(13, 45), timeOnly);
+        Assert.True(row[2].TryParseTimeOnly(out var timeOnlyExact, "HH:mm", culture));
+        Assert.Equal(timeOnly, timeOnlyExact);
+
+        Assert.True(row[3].TryParseTimeZoneInfo(out var tz));
+        Assert.Equal("UTC", tz.Id);
+
+        Assert.True(row[4].TryParseDateTimeOffset(out var dto, culture));
+        Assert.Equal(2024, dto.Year);
+        Assert.Equal(12, dto.Month);
+        Assert.True(row[4].TryParseDateTimeOffset(out var dtoExact, "dd.MM.yyyy HH:mm zzz", culture));
+        Assert.Equal(dto, dtoExact);
     }
 
     [Fact]

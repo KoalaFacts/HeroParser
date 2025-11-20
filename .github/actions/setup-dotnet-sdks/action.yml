@@ -12,7 +12,9 @@ outputs:
   frameworks:
     description: 'The extracted target frameworks (JSON array)'
     value: ${{ steps.extract.outputs.frameworks }}
-
+  frameworks-matrix:
+    description: 'The extracted target frameworks (space-separated for matrix)'
+    value: ${{ steps.extract.outputs.frameworks-matrix }}
 runs:
   using: 'composite'
   steps:

@@ -145,75 +145,6 @@ finally
 }
 ```
 
-## 🔧 Architecture
-
-### Quote-Aware SIMD Parsing
-
-HeroParser uses bitmask-based quote-aware SIMD parsing (inspired by Sep library):
-
-- **Hardware Detection**: Automatically selects best SIMD path (AVX-512, AVX2, NEON, or scalar fallback)
-- **Separate Bitmasks**: Tracks delimiters and quotes simultaneously
-- **Quote Parity Tracking**: `(quoteCount & 1)` determines if inside quotes
-- **Escaped Quotes**: `""` automatically works - increment by 2, parity unchanged
-
-### Key Techniques
-
-#### 1. Quote-Aware Bitmask Parsing
-```csharp
-// Load 64 chars, convert to bytes
-// Create separate bitmasks for delimiters AND quotes
-var delimiterMask = ExtractBitmask(compareDelimiter);
-var quoteMask = ExtractBitmask(compareQuote);
-
-// Process special characters sequentially
-while (specialMask != 0)
-{
-    int bitPos = BitOperations.TrailingZeroCount(specialMask);
-
-    if (IsQuote(bitPos))
-        quoteCount++;  // Toggle quote state
-    else if (IsDelimiter(bitPos) && (quoteCount & 1) == 0)
-        RecordColumn();  // Only if outside quotes
-}
-```
-
-#### 2. Quote Parity Tracking
-```csharp
-// Even quote count = outside quotes
-// Odd quote count = inside quotes
-bool insideQuotes = (quoteCount & 1) != 0;
-
-// Escaped quotes ("") automatically work:
-// - First quote: quoteCount++   (odd = inside)
-// - Second quote: quoteCount++  (even = outside)
-// - Parity unchanged!
-```
-
-#### 3. Zero-Allocation Design
-```csharp
-// ref struct: stack-only allocation
-// ReadOnlySpan<char>: no string allocations
-// ArrayPool: reused buffers for column metadata
-// Lazy parsing: only parse when accessing columns
-```
-
-#### 4. Safe Memory Access
-```csharp
-// No unsafe keyword - uses System.Runtime.CompilerServices.Unsafe and MemoryMarshal
-// These are safe APIs that provide performance without pointer syntax
-ref readonly char start = ref MemoryMarshal.GetReference(line);
-ref readonly char pos = ref Unsafe.Add(ref Unsafe.AsRef(in start), i);
-var vec = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref ...));
-```
-
-## 📦 Project Structure
-
-```
-src/HeroParser/          # Core CSV parser library
-benchmarks/              # Performance benchmarks
-tests/                   # Unit and compliance tests
-```
-
 ## 🏗️ Building
 
 **Requirements:**
@@ -228,59 +159,9 @@ dotnet build src/HeroParser/HeroParser.csproj
 # Run tests
 dotnet test tests/HeroParser.Tests/HeroParser.Tests.csproj
 
-# Quick throughput test (no BenchmarkDotNet overhead)
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --quick
-
-# Compare with Sep library
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --vs-sep
-
-# Verify quote-aware SIMD performance
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --quotes
-
 # Run all benchmarks
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
 ```
-
-## 📈 Benchmarking
-
-### Quick Throughput Test
-
-Fast iteration test without BenchmarkDotNet overhead:
-
-```bash
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --quick
-```
-
-Output:
-```
-=== HeroParser Quick Throughput Test ===
-Hardware: SIMD: AVX-512F, AVX-512BW, AVX2 | Using: Avx512Parser
-
-Test data: 100,000 rows × 10 columns
-Throughput: XX.XX GB/s
-
-Expected: 20+ GB/s (AVX2), 30+ GB/s (AVX-512), 10+ GB/s (NEON)
-```
-
-### Quote Performance Verification
-
-Verifies that quote-aware SIMD maintains performance:
-
-```bash
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --quotes
-```
-
-This benchmark compares:
-- **Unquoted CSV** (baseline) - pure SIMD fast path
-- **Quoted CSV** (delimiters in quotes) - tests quote-aware SIMD
-- **Mixed CSV** (50% quoted) - realistic scenario
-
-Expected results if quote-aware SIMD works correctly:
-- Unquoted should be fastest (baseline)
-- Quoted should be only slightly slower (<20% overhead)
-- Mixed should be between the two
-
-If quoted is much slower (>50% overhead), quote-aware SIMD has issues.
 
 ## ⚠️ RFC 4180 Compliance
 

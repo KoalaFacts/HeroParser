@@ -36,15 +36,17 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("#nullable enable");
         builder.AppendLine("using System;");
         builder.AppendLine("using System.Collections.Generic;");
+        builder.AppendLine("using System.Runtime.CompilerServices;");
         builder.AppendLine("using HeroParser;");
         builder.AppendLine("using HeroParser.SeparatedValues;");
         builder.AppendLine();
         builder.AppendLine("namespace HeroParser;");
         builder.AppendLine();
-        builder.AppendLine("internal static partial class CsvRecordBinderFactory");
+        builder.AppendLine("file static class CsvRecordBinderGeneratedRegistration");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine("static partial void RegisterGeneratedBinders(Dictionary<Type, Func<CsvRecordOptions?, object>> factories)");
+        builder.AppendLine("[ModuleInitializer]");
+        builder.AppendLine("internal static void Register()");
         builder.AppendLine("{");
         builder.Indent();
 
@@ -57,7 +59,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             if (descriptor is null)
                 continue;
 
-            builder.AppendLine($"factories[typeof({descriptor.FullyQualifiedName})] = options => CsvRecordBinder<{descriptor.FullyQualifiedName}>.CreateFromTemplates(options, new CsvRecordBinder<{descriptor.FullyQualifiedName}>.BindingTemplate[]");
+            builder.AppendLine($"CsvRecordBinderFactory.RegisterGeneratedBinder(typeof({descriptor.FullyQualifiedName}), options => CsvRecordBinder<{descriptor.FullyQualifiedName}>.CreateFromTemplates(options, new CsvRecordBinder<{descriptor.FullyQualifiedName}>.BindingTemplate[]");
             builder.AppendLine("{");
             builder.Indent();
 
@@ -75,7 +77,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             }
 
             builder.Unindent();
-            builder.AppendLine("});");
+            builder.AppendLine("}));");
         }
 
         builder.Unindent();

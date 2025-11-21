@@ -1,5 +1,10 @@
 using System;
 using System.Collections.Generic;
+#if NET9_0_OR_GREATER
+using Lock = System.Threading.Lock;
+#else
+using Lock = System.Object;
+#endif
 
 namespace HeroParser;
 
@@ -8,19 +13,19 @@ namespace HeroParser;
 /// </summary>
 internal static partial class CsvRecordBinderFactory
 {
-    private static readonly Dictionary<Type, Func<CsvRecordOptions?, object>> GeneratedFactories;
-    private static readonly object SyncRoot = new();
+    private static readonly Dictionary<Type, Func<CsvRecordOptions?, object>> generatedFactories;
+    private static readonly Lock syncRoot = new();
 
     static CsvRecordBinderFactory()
     {
-        GeneratedFactories = new Dictionary<Type, Func<CsvRecordOptions?, object>>();
-        RegisterGeneratedBinders(GeneratedFactories);
+        generatedFactories = [];
+        RegisterGeneratedBinders(generatedFactories);
     }
 
     public static bool TryGetBinder<T>(CsvRecordOptions? options, out CsvRecordBinder<T>? binder)
         where T : class, new()
     {
-        if (GeneratedFactories.TryGetValue(typeof(T), out var factory))
+        if (generatedFactories.TryGetValue(typeof(T), out var factory))
         {
             binder = (CsvRecordBinder<T>)factory(options);
             return true;
@@ -40,9 +45,9 @@ internal static partial class CsvRecordBinderFactory
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(factory);
 
-        lock (SyncRoot)
+        lock (syncRoot)
         {
-            GeneratedFactories[type] = factory;
+            generatedFactories[type] = factory;
         }
     }
 

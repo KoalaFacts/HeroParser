@@ -19,6 +19,6 @@ public sealed class CsvTextSource
     /// <summary>
     /// Creates a span-backed reader over the buffered text.
     /// </summary>
-    /// <remarks>Use streaming APIs (<see cref="Csv.ReadFromStream(System.IO.Stream, HeroParser.SeparatedValues.CsvParserOptions?, System.Text.Encoding?, bool, int)"/>) for large inputs to avoid buffering entire files.</remarks>
+    /// <remarks>Use streaming APIs (<see cref="Csv.ReadFromStream(Stream, HeroParser.SeparatedValues.CsvParserOptions?, System.Text.Encoding?, bool, int)"/>) for large inputs to avoid buffering entire files.</remarks>
     public CsvCharSpanReader CreateReader() => Csv.ReadFromText(text, options);
 }

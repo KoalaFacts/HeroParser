@@ -9,19 +9,18 @@ public ref struct CsvStreamingRecordReader<T> where T : class, new()
 {
     private CsvStreamReader reader;
     private readonly CsvRecordBinder<T> binder;
-    private T current;
     private int rowNumber;
 
     internal CsvStreamingRecordReader(CsvStreamReader reader, CsvRecordBinder<T> binder)
     {
         this.reader = reader;
         this.binder = binder;
-        current = default!;
+        Current = default!;
         rowNumber = 0;
     }
 
     /// <summary>Gets the current mapped record.</summary>
-    public T Current => current;
+    public T Current { get; private set; }
 
     /// <summary>Returns this instance for <c>foreach</c> support.</summary>
     public readonly CsvStreamingRecordReader<T> GetEnumerator() => this;
@@ -42,11 +41,11 @@ public ref struct CsvStreamingRecordReader<T> where T : class, new()
                 continue;
             }
 
-            current = binder.Bind(row, rowNumber);
+            Current = binder.Bind(row, rowNumber);
             return true;
         }
 
-        current = default!;
+        Current = default!;
         return false;
     }
 

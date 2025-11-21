@@ -21,7 +21,6 @@ public ref struct CsvStreamReader
     private int length;
     private int rowCount;
     private bool endOfStream;
-    private CsvCharSpanRow current;
 
     internal CsvStreamReader(Stream stream, CsvParserOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
@@ -35,15 +34,15 @@ public ref struct CsvStreamReader
         length = 0;
         rowCount = 0;
         endOfStream = false;
-        current = default;
+        Current = default;
         disposed = false;
     }
 
     /// <summary>Gets the current UTF-16 backed row.</summary>
-    public CsvCharSpanRow Current => current;
+    public CsvCharSpanRow Current { get; private set; }
 
     /// <summary>Returns this instance so it can be consumed by <c>foreach</c>.</summary>
-    public CsvStreamReader GetEnumerator() => this;
+    public readonly CsvStreamReader GetEnumerator() => this;
 
     /// <summary>
     /// Advances to the next row, reading from the underlying stream as needed.
@@ -69,7 +68,7 @@ public ref struct CsvStreamReader
                 if (rowChars.IsEmpty)
                     continue;
 
-                current = new CsvCharSpanRow(
+                Current = new CsvCharSpanRow(
                     rowChars,
                     columnStartsBuffer,
                     columnLengthsBuffer,

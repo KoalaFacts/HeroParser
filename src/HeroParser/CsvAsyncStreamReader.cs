@@ -16,7 +16,6 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private readonly CsvParserOptions options;
     private readonly int[] columnStartsBuffer;
     private readonly int[] columnLengthsBuffer;
-    private readonly bool leaveOpen;
     private char[] buffer;
     private int offset;
     private int length;
@@ -37,7 +36,6 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     internal CsvAsyncStreamReader(Stream stream, CsvParserOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
         this.options = options;
-        this.leaveOpen = leaveOpen;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
         columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);

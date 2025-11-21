@@ -11,12 +11,12 @@ namespace HeroParser;
 
 internal sealed class CsvRecordBinder<T> where T : class, new()
 {
-    private readonly List<MemberBinding> bindings;
+    private readonly IReadOnlyList<MemberBinding> bindings;
     private readonly CsvRecordOptions recordOptions;
     private bool resolved;
     private readonly StringComparison headerComparison;
 
-    private CsvRecordBinder(CsvRecordOptions recordOptions, List<BindingTemplate> templates)
+    private CsvRecordBinder(CsvRecordOptions recordOptions, IReadOnlyList<BindingTemplate> templates)
     {
         this.recordOptions = recordOptions;
         headerComparison = recordOptions.CaseSensitiveHeaders ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
@@ -36,7 +36,7 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
         IReadOnlyList<BindingTemplate> templates)
     {
         var resolvedOptions = options ?? CsvRecordOptions.Default;
-        return new CsvRecordBinder<T>(resolvedOptions, new List<BindingTemplate>(templates));
+        return new CsvRecordBinder<T>(resolvedOptions, templates);
     }
 
     public bool NeedsHeaderResolution => recordOptions.HasHeaderRow && !resolved;
@@ -187,7 +187,7 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
     }
 
     private static IReadOnlyList<BindingTemplate> CreateTemplatesFromReflection()
-        => BindingCache.GetOrAdd(typeof(T), _ => BuildTemplates());
+        => bindingCache.GetOrAdd(typeof(T), _ => BuildTemplates());
 
     private static List<BindingTemplate> BuildTemplates()
     {
@@ -261,7 +261,7 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
         ColumnConverter Converter,
         Action<T, object?> Setter);
 
-    private static readonly ConcurrentDictionary<Type, List<BindingTemplate>> BindingCache = new();
+    private static readonly ConcurrentDictionary<Type, List<BindingTemplate>> bindingCache = new();
 
     internal delegate bool ColumnConverter(CsvCharSpanColumn column, out object? value);
 
@@ -343,7 +343,7 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
                     var method = typeof(ConverterFactory)
                         .GetMethod(nameof(BuildSpanParsableConverter), BindingFlags.NonPublic | BindingFlags.Static)!
                         .MakeGenericMethod(targetType);
-                    return (ColumnConverter)method.Invoke(null, new object[] { isNullable })!;
+                    return (ColumnConverter)method.Invoke(null, [isNullable])!;
                 }
             }
             catch
@@ -355,7 +355,7 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
         }
 
         private static ColumnConverter BuildStringConverter(bool isNullable)
-            => (CsvCharSpanColumn column, out object? value) =>
+            => (column, out value) =>
             {
                 if (isNullable && column.IsEmpty)
                 {
@@ -427,7 +427,7 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
                 .GetMethod(nameof(EnumConverter), BindingFlags.NonPublic | BindingFlags.Static)!
                 .MakeGenericMethod(enumType);
 
-            return (ColumnConverter)method.Invoke(null, new object[] { isNullable })!;
+            return (ColumnConverter)method.Invoke(null, [isNullable])!;
         }
 
         private static ColumnConverter EnumConverter<TEnum>(bool isNullable) where TEnum : struct, Enum
@@ -435,7 +435,7 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
 
         private static ColumnConverter BuildSpanParsableConverter<TTarget>(bool isNullable)
             where TTarget : notnull, ISpanParsable<TTarget>
-            => (CsvCharSpanColumn column, out object? value) =>
+            => (column, out value) =>
             {
                 if (isNullable && column.IsEmpty)
                 {
@@ -457,7 +457,7 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
             bool isNullable,
             TryParseDelegate<TValue> tryParse)
         {
-            return (CsvCharSpanColumn column, out object? value) =>
+            return (column, out value) =>
             {
                 if (isNullable && column.IsEmpty)
                 {
@@ -480,14 +480,14 @@ internal sealed class CsvRecordBinder<T> where T : class, new()
         {
             if (isNullable)
             {
-                return (CsvCharSpanColumn _, out object? value) =>
+                return (_, out value) =>
                 {
                     value = null;
                     return true;
                 };
             }
 
-            return (CsvCharSpanColumn _, out object? value) =>
+            return (_, out value) =>
             {
                 value = null;
                 return false;

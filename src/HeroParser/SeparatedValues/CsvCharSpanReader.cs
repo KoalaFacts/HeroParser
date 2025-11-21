@@ -15,7 +15,6 @@ public ref struct CsvCharSpanReader
     private readonly int[] columnLengthsBuffer;
     private int position;
     private int rowCount;
-    private CsvCharSpanRow current;
 
     internal CsvCharSpanReader(ReadOnlySpan<char> chars, CsvParserOptions options)
     {
@@ -23,14 +22,14 @@ public ref struct CsvCharSpanReader
         this.options = options;
         position = 0;
         rowCount = 0;
-        current = default;
+        Current = default;
         columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
         columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
     }
 
     /// <summary>Gets the current UTF-16 backed row.</summary>
     /// <remarks>The value is only valid after <see cref="MoveNext"/> returns <see langword="true"/>.</remarks>
-    public CsvCharSpanRow Current => current;
+    public CsvCharSpanRow Current { get; private set; }
 
     /// <summary>Returns this instance so it can be consumed by <c>foreach</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -65,7 +64,7 @@ public ref struct CsvCharSpanReader
                 continue;
             }
 
-            current = new CsvCharSpanRow(
+            Current = new CsvCharSpanRow(
                 rowChars,
                 columnStartsBuffer,
                 columnLengthsBuffer,

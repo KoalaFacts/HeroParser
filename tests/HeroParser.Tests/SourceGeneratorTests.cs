@@ -1,4 +1,4 @@
-using HeroParser.Generated;
+using HeroParser.Tests.Generated;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -130,6 +130,6 @@ public class SourceGeneratorTests
     private sealed class UnsupportedProperty
     {
         public string Name { get; set; } = string.Empty;
-        public int[] Scores { get; set; } = Array.Empty<int>();
+        public int[] Scores { get; set; } = [];
     }
 }

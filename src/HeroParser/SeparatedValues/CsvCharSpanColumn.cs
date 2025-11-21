@@ -200,7 +200,7 @@ public readonly ref struct CsvCharSpanColumn
     /// Attempts to parse the column as an enum of type <typeparamref name="TEnum"/> using case-insensitive matching.
     /// </summary>
     public bool TryParseEnum<TEnum>(out TEnum result) where TEnum : struct, Enum
-        => Enum.TryParse<TEnum>(chars, ignoreCase: true, out result);
+        => Enum.TryParse(chars, ignoreCase: true, out result);
 
     /// <summary>Compares the column with a string using ordinal semantics.</summary>
     public bool Equals(string? other)

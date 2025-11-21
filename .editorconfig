@@ -81,13 +81,55 @@ dotnet_naming_style.upper_case.capitalization = all_upper
 
 # Code quality
 dotnet_code_quality_unused_parameters = all:warning
+dotnet_analyzer_diagnostic.category-Style.severity = warning
+# CA1707: underscores in identifiers
+dotnet_diagnostic.CA1707.severity = none
+# CA1822: mark members static when possible
+dotnet_diagnostic.CA1822.severity = none
+# IDE0008: 'var' usage vs explicit type
+dotnet_diagnostic.IDE0008.severity = none
+# IDE0160: block-scoped namespace preference
+dotnet_diagnostic.IDE0160.severity = none
+# IDE0161: file-scoped namespace preference
+dotnet_diagnostic.IDE0161.severity = suggestion
+# IDE0022: expression-bodied method preference
+dotnet_diagnostic.IDE0022.severity = none
+# IDE0024: expression-bodied operator preference
+dotnet_diagnostic.IDE0024.severity = none
+# IDE0046: 'if' statement simplification
+dotnet_diagnostic.IDE0046.severity = none
+# IDE0047: remove unnecessary parentheses
+dotnet_diagnostic.IDE0047.severity = suggestion
+# IDE0048: add parentheses for clarity
+dotnet_diagnostic.IDE0048.severity = none
+# IDE0005: unnecessary using directive
+dotnet_diagnostic.IDE0005.severity = suggestion
+# IDE0072: populate switch expressions
+dotnet_diagnostic.IDE0072.severity = suggestion
+# IDE0078: use pattern matching
+dotnet_diagnostic.IDE0078.severity = suggestion
+# IDE0290: use primary constructors
+dotnet_diagnostic.IDE0290.severity = suggestion
+# IDE0300-0305: collection initialization simplifications
+dotnet_diagnostic.IDE0300.severity = warning
+dotnet_diagnostic.IDE0301.severity = warning
+dotnet_diagnostic.IDE0302.severity = warning
+dotnet_diagnostic.IDE0305.severity = warning
+# IDE0058: unused expression value
+dotnet_diagnostic.IDE0058.severity = none
+# CS8600-CS8604: nullable reference diagnostics
+dotnet_diagnostic.CS8600.severity = warning
+dotnet_diagnostic.CS8601.severity = warning
+dotnet_diagnostic.CS8602.severity = warning
+dotnet_diagnostic.CS8603.severity = warning
+dotnet_diagnostic.CS8604.severity = warning
+# IDE0011: Add braces to 'if' statement
+dotnet_diagnostic.IDE0011.severity = none
+# IDE0061: Use block body for local function
+dotnet_diagnostic.IDE0061.severity = none
 
-# Nullable reference types
-dotnet_diagnostic.CS8600.severity = error
-dotnet_diagnostic.CS8601.severity = error
-dotnet_diagnostic.CS8602.severity = error
-dotnet_diagnostic.CS8603.severity = error
-dotnet_diagnostic.CS8604.severity = error
+# C# style rules
+csharp_style_namespace_declarations = file_scoped:warning
 
 # XML documentation
 [*.cs]

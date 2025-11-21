@@ -1,4 +1,4 @@
-namespace HeroParser.Generated;
+namespace HeroParser.Tests.Generated;
 
 [CsvGenerateBinder]
 internal sealed class GeneratedAttributed

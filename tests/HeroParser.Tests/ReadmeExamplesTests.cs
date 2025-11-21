@@ -45,9 +45,6 @@ public class ReadmeExamplesTests
             // Remove surrounding quotes and unescape
             var unquoted = row[1].UnquoteToString();
 
-            // Zero-allocation unquote (returns span)
-            var span = row[1].Unquote();
-
             Assert.NotNull(raw);
             Assert.NotNull(unquoted);
         }
@@ -92,9 +89,10 @@ public class ReadmeExamplesTests
         var csv = "skip,data\n1,2\n3,4\n5,6";
         int processedCount = 0;
 
-        bool ShouldSkip(CsvCharSpanRow row) => row[0].ToString() == "skip";
+        static bool ShouldSkip(CsvCharSpanRow row) => row[0].ToString() == "skip";
 
         // Columns are NOT parsed until first access
+
         foreach (var row in Csv.ReadFromText(csv))
         {
             // Skip rows without parsing columns

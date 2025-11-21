@@ -10,13 +10,13 @@ namespace HeroParser.Generators;
 [Generator(LanguageNames.CSharp)]
 public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 {
-    private const string GenerateAttribute = "HeroParser.CsvGenerateBinderAttribute";
+    private const string GENERATE_ATTRIBUTE = "HeroParser.CsvGenerateBinderAttribute";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var candidates = context.SyntaxProvider
             .ForAttributeWithMetadataName(
-                GenerateAttribute,
+                GENERATE_ATTRIBUTE,
                 static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
                 static (ctx, _) => ctx.TargetSymbol as INamedTypeSymbol)
             .Where(x => x is not null)!;
@@ -212,7 +212,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     {
         private readonly System.Text.StringBuilder builder = new();
         private int indent;
-        private const string IndentString = "    ";
+        private const string INDENT_STRING = "    ";
 
         public void Indent() => indent++;
         public void Unindent() => indent = Math.Max(0, indent - 1);
@@ -220,7 +220,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         public void AppendLine(string line = "")
         {
             for (int i = 0; i < indent; i++)
-                builder.Append(IndentString);
+                builder.Append(INDENT_STRING);
             builder.AppendLine(line);
         }
 

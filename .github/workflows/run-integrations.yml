@@ -59,7 +59,7 @@ jobs:
       run: dotnet restore
 
     - name: Build
-      run: dotnet build --configuration Release --no-restore --framework ${{ matrix.framework }}
+      run: dotnet build tests/HeroParser.Tests/HeroParser.Tests.csproj --configuration Release --no-restore --framework ${{ matrix.framework }}
 
     - name: Run All Tests (with coverage)
       run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults

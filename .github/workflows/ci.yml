@@ -57,16 +57,16 @@ jobs:
       id: extract
       uses: ./.github/actions/extract-build-config
 
-    - name: Setup all .NET SDKs
+    - name: Setup .NET SDKs
       uses: ./.github/actions/setup-dotnet-sdks
       with:
         dotnet-version: ${{ steps.extract.outputs.versions }}
 
-    - name: Restore dependencies (all frameworks, locked mode)
+    - name: Restore dependencies
       run: dotnet restore
 
     - name: Build
-      run: dotnet build --configuration Release --no-restore --framework ${{ matrix.framework }}
+      run: dotnet build tests/HeroParser.Tests/HeroParser.Tests.csproj --configuration Release --no-restore --framework ${{ matrix.framework }}
 
     - name: Run Unit Tests (with coverage)
       if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'

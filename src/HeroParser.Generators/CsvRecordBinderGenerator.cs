@@ -9,16 +9,28 @@ namespace HeroParser.Generators;
 [Generator(LanguageNames.CSharp)]
 public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 {
-    private const string GENERATE_ATTRIBUTE = "HeroParser.CsvGenerateBinderAttribute";
+    private const string GENERATED_NAMESPACE = "HeroParser.SeparatedValues.Records.Binding";
+    private const string BINDER_TYPE = "global::HeroParser.CsvRecordBinder";
+    private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.CsvRecordBinderFactory";
+    private const string COLUMN_TYPE = "global::HeroParser.SeparatedValues.CsvCharSpanColumn";
+    private static readonly string[] generateAttributeNames = ["HeroParser.SeparatedValues.Records.Binding.CsvGenerateBinderAttribute", "HeroParser.CsvGenerateBinderAttribute"];
+
+    private static readonly string[] columnAttributeNames = ["HeroParser.SeparatedValues.Records.Binding.CsvColumnAttribute", "HeroParser.CsvColumnAttribute"];
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var candidates = context.SyntaxProvider
-            .ForAttributeWithMetadataName(
-                GENERATE_ATTRIBUTE,
+            .CreateSyntaxProvider(
                 static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
-                static (ctx, _) => ctx.TargetSymbol as INamedTypeSymbol)
-            .Where(x => x is not null)!;
+                static (ctx, _) =>
+                {
+                    if (ctx.SemanticModel.GetDeclaredSymbol(ctx.Node) is not INamedTypeSymbol symbol)
+                        return null;
+
+                    return HasGenerateAttribute(symbol) ? symbol : null;
+                })
+            .Where(x => x is not null)
+            .Select((symbol, _) => symbol!)!;
 
         var collected = candidates.Collect();
 
@@ -36,10 +48,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("using System;");
         builder.AppendLine("using System.Collections.Generic;");
         builder.AppendLine("using System.Runtime.CompilerServices;");
-        builder.AppendLine("using HeroParser;");
-        builder.AppendLine("using HeroParser.SeparatedValues;");
         builder.AppendLine();
-        builder.AppendLine("namespace HeroParser;");
+        builder.AppendLine($"namespace {GENERATED_NAMESPACE};");
         builder.AppendLine();
         builder.AppendLine("file static class CsvRecordBinderGeneratedRegistration");
         builder.AppendLine("{");
@@ -58,13 +68,13 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             if (descriptor is null)
                 continue;
 
-            builder.AppendLine($"CsvRecordBinderFactory.RegisterGeneratedBinder(typeof({descriptor.FullyQualifiedName}), options => CsvRecordBinder<{descriptor.FullyQualifiedName}>.CreateFromTemplates(options, new CsvRecordBinder<{descriptor.FullyQualifiedName}>.BindingTemplate[]");
+            builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterGeneratedBinder(typeof({descriptor.FullyQualifiedName}), options => {BINDER_TYPE}<{descriptor.FullyQualifiedName}>.CreateFromTemplates(options, new {BINDER_TYPE}<{descriptor.FullyQualifiedName}>.BindingTemplate[]");
             builder.AppendLine("{");
             builder.Indent();
 
             foreach (var member in descriptor.Members)
             {
-                builder.AppendLine($"new CsvRecordBinder<{descriptor.FullyQualifiedName}>.BindingTemplate(");
+                builder.AppendLine($"new {BINDER_TYPE}<{descriptor.FullyQualifiedName}>.BindingTemplate(");
                 builder.Indent();
                 builder.AppendLine($"\"{member.MemberName}\",");
                 builder.AppendLine($"typeof({member.TypeName}),");
@@ -96,7 +106,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             if (property.IsStatic || property.SetMethod is null || property.SetMethod.DeclaredAccessibility != Accessibility.Public)
                 continue;
 
-            var mapAttribute = property.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "HeroParser.CsvColumnAttribute");
+            var mapAttribute = GetFirstMatchingAttribute(property, columnAttributeNames);
             var headerName = property.Name;
             int? attributeIndex = null;
             if (mapAttribute is not null)
@@ -162,7 +172,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         if (body is null)
             return null;
 
-        var factory = $"(CsvCharSpanColumn column, out object? value) => {{ {body} }}";
+        var factory = $"({COLUMN_TYPE} column, out object? value) => {{ {body} }}";
         return new ConverterDescriptor(factory);
     }
 
@@ -194,6 +204,27 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
     private static string CreateSetter(string typeName, INamedTypeSymbol type, string propertyName)
         => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target, object? val) => target.{propertyName} = ({typeName})val!";
+
+    private static bool HasGenerateAttribute(INamedTypeSymbol symbol)
+        => symbol.GetAttributes().Any(attr => IsNamed(attr, generateAttributeNames));
+
+    private static AttributeData? GetFirstMatchingAttribute(ISymbol symbol, IReadOnlyList<string> names)
+        => symbol.GetAttributes().FirstOrDefault(attr => IsNamed(attr, names));
+
+    private static bool IsNamed(AttributeData attribute, IReadOnlyList<string> names)
+    {
+        var name = attribute.AttributeClass?.ToDisplayString();
+        if (name is null)
+            return false;
+
+        foreach (var candidate in names)
+        {
+            if (string.Equals(name, candidate, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
 
     private sealed record TypeDescriptor(string FullyQualifiedName, IReadOnlyList<MemberDescriptor> Members);
 

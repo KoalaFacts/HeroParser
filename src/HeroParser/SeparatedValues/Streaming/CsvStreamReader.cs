@@ -1,9 +1,7 @@
-using HeroParser.SeparatedValues;
 using System.Buffers;
-using System.IO;
 using System.Text;
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues.Streaming;
 
 /// <summary>
 /// Streams CSV rows from a <see cref="Stream"/> without loading the entire payload into memory.

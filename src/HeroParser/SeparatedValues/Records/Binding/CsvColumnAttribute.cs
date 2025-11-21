@@ -1,6 +1,4 @@
-using System;
-
-namespace HeroParser;
+namespace HeroParser.SeparatedValues.Records.Binding;
 
 /// <summary>
 /// Declares how a CSV column maps to a property or field on a record type.

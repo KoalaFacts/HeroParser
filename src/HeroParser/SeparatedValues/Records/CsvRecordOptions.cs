@@ -1,6 +1,4 @@
-using System;
-
-namespace HeroParser;
+namespace HeroParser.SeparatedValues.Records;
 
 /// <summary>
 /// Configures how CSV rows are mapped to strongly typed records.
@@ -20,7 +18,7 @@ public sealed record CsvRecordOptions
 
     /// <summary>
     /// Gets or sets a value indicating whether missing columns are tolerated.
-    /// When <see langword="false"/>, missing mappings throw <see cref="SeparatedValues.CsvException"/>.
+    /// When <see langword="false"/>, missing mappings throw <see cref="CsvException"/>.
     /// </summary>
     public bool AllowMissingColumns { get; init; } = false;
 

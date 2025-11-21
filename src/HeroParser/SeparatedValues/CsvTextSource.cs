@@ -1,6 +1,4 @@
-using HeroParser.SeparatedValues;
-
-namespace HeroParser;
+namespace HeroParser.SeparatedValues;
 
 /// <summary>
 /// Represents CSV text loaded from an I/O source. Use <see cref="CreateReader"/> to enumerate rows.

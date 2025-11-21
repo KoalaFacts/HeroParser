@@ -1,11 +1,7 @@
-using HeroParser.SeparatedValues;
 using System.Buffers;
-using System.IO;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues.Streaming;
 
 /// <summary>
 /// Async CSV reader that streams from a file or stream without loading the entire payload into memory.

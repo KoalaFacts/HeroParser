@@ -1,7 +1,6 @@
 using HeroParser.SeparatedValues;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using System.Reflection;
 
 namespace HeroParser;

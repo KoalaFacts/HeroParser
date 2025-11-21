@@ -1,12 +1,16 @@
-using System;
-using System.Collections.Generic;
 #if NET9_0_OR_GREATER
+using HeroParser;
+using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using Lock = System.Threading.Lock;
 #else
+using HeroParser;
+using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using Lock = System.Object;
 #endif
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues.Records.Binding;
 
 /// <summary>
 /// Resolves binders from generated code when available, falling back to runtime reflection.

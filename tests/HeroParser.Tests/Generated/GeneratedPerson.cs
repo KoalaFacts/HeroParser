@@ -1,3 +1,5 @@
+using HeroParser.SeparatedValues.Records.Binding;
+
 namespace HeroParser.Tests.Generated;
 
 [CsvGenerateBinder]

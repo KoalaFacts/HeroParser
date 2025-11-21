@@ -1,3 +1,5 @@
+using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using HeroParser.Tests.Generated;
 using Xunit;
 

@@ -1,10 +1,10 @@
 using HeroParser.SeparatedValues;
-using System.Collections.Generic;
-using System.IO;
+using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
+using HeroParser.SeparatedValues.Records.Readers;
+using HeroParser.SeparatedValues.Streaming;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace HeroParser;
 

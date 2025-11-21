@@ -1,8 +1,7 @@
-using System.Collections.Generic;
-using System.IO;
 using HeroParser.SeparatedValues;
+using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using System.Text;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace HeroParser.Tests;

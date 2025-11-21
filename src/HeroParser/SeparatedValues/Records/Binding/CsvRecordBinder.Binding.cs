@@ -1,7 +1,5 @@
 using HeroParser.SeparatedValues;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 
 namespace HeroParser;
 

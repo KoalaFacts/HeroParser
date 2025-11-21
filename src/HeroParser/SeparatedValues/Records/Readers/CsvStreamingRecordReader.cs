@@ -1,6 +1,6 @@
-using HeroParser.SeparatedValues;
+using HeroParser.SeparatedValues.Streaming;
 
-namespace HeroParser;
+namespace HeroParser.SeparatedValues.Records.Readers;
 
 /// <summary>
 /// Streams CSV rows from <see cref="CsvStreamReader"/> into strongly typed records.

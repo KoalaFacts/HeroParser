@@ -1,6 +1,5 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
-using HeroParser.SeparatedValues;
 using System.Text;
 
 namespace HeroParser.Benchmarks;

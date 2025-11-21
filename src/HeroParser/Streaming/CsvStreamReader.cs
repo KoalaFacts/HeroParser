@@ -54,7 +54,7 @@ public ref struct CsvStreamReader
         while (true)
         {
             var span = buffer.AsSpan(offset, length - offset);
-            var result = StreamingParser.ParseRow(
+            var result = CsvStreamingParser.ParseRow(
                 span,
                 options,
                 columnStartsBuffer.AsSpan(0, options.MaxColumns),

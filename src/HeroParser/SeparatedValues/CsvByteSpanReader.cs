@@ -48,7 +48,7 @@ public ref struct CsvByteSpanReader
                 return false;
 
             var remaining = utf8[position..];
-            var result = StreamingParser.ParseRow(
+            var result = CsvStreamingParser.ParseRow(
                 remaining,
                 options,
                 columnStartsBuffer.AsSpan(0, options.MaxColumns),

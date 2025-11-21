@@ -13,9 +13,9 @@ namespace HeroParser.SeparatedValues;
 /// SIMD parsing techniques inspired by Sep (https://github.com/nietras/Sep) by nietras,
 /// which pioneered bitmask-based quote-aware SIMD parsing for CSV.
 /// </summary>
-internal static class StreamingParser
+internal static class CsvStreamingParser
 {
-    public static RowParseResult ParseRow<T>(
+    public static CsvRowParseResult ParseRow<T>(
         ReadOnlySpan<T> data,
         CsvParserOptions options,
         Span<int> columnStarts,
@@ -23,7 +23,7 @@ internal static class StreamingParser
         where T : unmanaged, IEquatable<T>
     {
         if (data.IsEmpty)
-            return new RowParseResult(0, 0, 0);
+            return new CsvRowParseResult(0, 0, 0);
 
         ref readonly T dataRef = ref MemoryMarshal.GetReference(data);
         ref T mutableRef = ref Unsafe.AsRef(in dataRef);
@@ -136,7 +136,7 @@ internal static class StreamingParser
         AppendFinalColumn(rowLength, ref columnCount, ref currentStart,
             columnStarts, columnLengths, options.MaxColumns);
 
-        return new RowParseResult(columnCount, rowLength, charsConsumed);
+        return new CsvRowParseResult(columnCount, rowLength, charsConsumed);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

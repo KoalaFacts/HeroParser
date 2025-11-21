@@ -110,6 +110,8 @@ dotnet_diagnostic.IDE0072.severity = suggestion
 dotnet_diagnostic.IDE0078.severity = suggestion
 # IDE0290: use primary constructors
 dotnet_diagnostic.IDE0290.severity = suggestion
+# IDE0130: namespace should match folder
+dotnet_diagnostic.IDE0130.severity = suggestion
 # IDE0300-0305: collection initialization simplifications
 dotnet_diagnostic.IDE0300.severity = warning
 dotnet_diagnostic.IDE0301.severity = warning

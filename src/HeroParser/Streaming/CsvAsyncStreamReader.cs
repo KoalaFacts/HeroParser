@@ -68,7 +68,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 continue;
             }
 
-            var result = StreamingParser.ParseRow(
+            var result = CsvStreamingParser.ParseRow(
                 span,
                 options,
                 columnStartsBuffer.AsSpan(0, options.MaxColumns),

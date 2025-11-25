@@ -171,15 +171,42 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
         var list = new List<MemberBinding>(templates.Count);
         foreach (var template in templates)
         {
+            // Wrap converter with null value checking if NullValues is configured
+            var converter = template.Converter;
+            if (recordOptions.NullValues is { Count: > 0 })
+            {
+                converter = WrapWithNullValueCheck(template.Converter, recordOptions.NullValues);
+            }
+
             list.Add(new MemberBinding(
                 template.MemberName,
                 template.TargetType,
                 template.HeaderName,
                 template.AttributeIndex,
-                template.Converter,
+                converter,
                 template.Setter));
         }
         return list;
+    }
+
+    private static ColumnConverter WrapWithNullValueCheck(ColumnConverter original, IReadOnlyList<string> nullValues)
+    {
+        return (column, out value) =>
+        {
+            // Check if the column value matches any of the null values
+            var columnStr = column.ToString();
+            foreach (var nullValue in nullValues)
+            {
+                if (string.Equals(columnStr, nullValue, StringComparison.Ordinal))
+                {
+                    value = null;
+                    return true;
+                }
+            }
+
+            // If not a null value, proceed with normal conversion
+            return original(column, out value);
+        };
     }
 
     private static IReadOnlyList<BindingTemplate> CreateTemplatesFromReflection()

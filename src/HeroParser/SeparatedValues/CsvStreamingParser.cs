@@ -28,6 +28,52 @@ internal static class CsvStreamingParser
         ref readonly T dataRef = ref MemoryMarshal.GetReference(data);
         ref T mutableRef = ref Unsafe.AsRef(in dataRef);
 
+        T delimiter = CastFromChar<T>(options.Delimiter);
+        T quote = CastFromChar<T>(options.Quote);
+        T lf = CastFromChar<T>('\n');
+        T cr = CastFromChar<T>('\r');
+        T space = CastFromChar<T>(' ');
+        T tab = CastFromChar<T>('\t');
+
+        // Check for comment line
+        if (options.CommentCharacter.HasValue)
+        {
+            T comment = CastFromChar<T>(options.CommentCharacter.Value);
+            int checkPos = 0;
+
+            // Skip leading whitespace to find comment character
+            while (checkPos < data.Length)
+            {
+                T c = Unsafe.Add(ref mutableRef, checkPos);
+                if (c.Equals(comment))
+                {
+                    // This is a comment line, skip to end of line
+                    int skipPos = checkPos;
+                    while (skipPos < data.Length && !Unsafe.Add(ref mutableRef, skipPos).Equals(lf) && !Unsafe.Add(ref mutableRef, skipPos).Equals(cr))
+                    {
+                        skipPos++;
+                    }
+
+                    int consumed = skipPos;
+                    if (skipPos < data.Length)
+                    {
+                        T lineEnd = Unsafe.Add(ref mutableRef, skipPos);
+                        consumed++;
+                        if (lineEnd.Equals(cr) && skipPos + 1 < data.Length && Unsafe.Add(ref mutableRef, skipPos + 1).Equals(lf))
+                            consumed++;
+                    }
+
+                    return new CsvRowParseResult(0, 0, consumed);
+                }
+                else if (!c.Equals(space) && !c.Equals(tab))
+                {
+                    // Non-whitespace character found before comment, not a comment line
+                    break;
+                }
+                checkPos++;
+            }
+        }
+
         int position = 0;
         bool inQuotes = false;
         bool skipNextQuote = false;
@@ -37,11 +83,6 @@ internal static class CsvStreamingParser
         int charsConsumed = 0;
         bool rowEnded = false;
         bool enableQuotes = options.EnableQuotedFields;
-
-        T delimiter = CastFromChar<T>(options.Delimiter);
-        T quote = CastFromChar<T>(options.Quote);
-        T lf = CastFromChar<T>('\n');
-        T cr = CastFromChar<T>('\r');
 
         // SIMD fast path (if enabled)
         if (options.UseSimdIfAvailable)
@@ -135,6 +176,19 @@ internal static class CsvStreamingParser
 
         AppendFinalColumn(rowLength, ref columnCount, ref currentStart,
             columnStarts, columnLengths, options.MaxColumns);
+
+        // Apply trimming if enabled (only for unquoted fields)
+        if (options.TrimFields)
+        {
+            ApplyTrimming(
+                ref mutableRef,
+                columnStarts,
+                columnLengths,
+                columnCount,
+                quote,
+                space,
+                tab);
+        }
 
         return new CsvRowParseResult(columnCount, rowLength, charsConsumed);
     }
@@ -451,6 +505,59 @@ internal static class CsvStreamingParser
         starts[columnCount] = currentStart;
         lengths[columnCount] = rowLength - currentStart;
         columnCount++;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ApplyTrimming<T>(
+        ref T mutableRef,
+        Span<int> starts,
+        Span<int> lengths,
+        int columnCount,
+        T quote,
+        T space,
+        T tab)
+        where T : unmanaged, IEquatable<T>
+    {
+        for (int i = 0; i < columnCount; i++)
+        {
+            int start = starts[i];
+            int length = lengths[i];
+
+            if (length == 0)
+                continue;
+
+            // Check if field is quoted - if so, skip trimming
+            bool isQuoted = length >= 2 &&
+                           Unsafe.Add(ref mutableRef, start).Equals(quote) &&
+                           Unsafe.Add(ref mutableRef, start + length - 1).Equals(quote);
+
+            if (isQuoted)
+                continue;
+
+            int trimStart = start;
+            int trimEnd = start + length;
+
+            // Trim leading whitespace
+            while (trimStart < trimEnd)
+            {
+                T c = Unsafe.Add(ref mutableRef, trimStart);
+                if (!c.Equals(space) && !c.Equals(tab))
+                    break;
+                trimStart++;
+            }
+
+            // Trim trailing whitespace
+            while (trimEnd > trimStart)
+            {
+                T c = Unsafe.Add(ref mutableRef, trimEnd - 1);
+                if (!c.Equals(space) && !c.Equals(tab))
+                    break;
+                trimEnd--;
+            }
+
+            starts[i] = trimStart;
+            lengths[i] = trimEnd - trimStart;
+        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

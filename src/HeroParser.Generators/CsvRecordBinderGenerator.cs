@@ -64,7 +64,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             if (symbol is null || symbol.IsAbstract)
                 continue;
 
-            var descriptor = BuildDescriptor(symbol);
+            var descriptor = BuildDescriptor(context, symbol);
             if (descriptor is null)
                 continue;
 
@@ -97,7 +97,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         context.AddSource("CsvRecordBinderFactory.g.cs", builder.ToString());
     }
 
-    private static TypeDescriptor? BuildDescriptor(INamedTypeSymbol type)
+    private static TypeDescriptor? BuildDescriptor(SourceProductionContext context, INamedTypeSymbol type)
     {
         var members = new List<MemberDescriptor>();
 
@@ -122,7 +122,22 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
             var converter = CreateConverter(property);
             if (converter is null)
-                return null; // unsupported type -> skip generation for this type
+            {
+                // Report diagnostic for unsupported property type
+                var diagnostic = Diagnostic.Create(
+                    new DiagnosticDescriptor(
+                        "HERO001",
+                        "Unsupported property type",
+                        "Property '{0}' of type '{1}' is not supported by the CSV record binder generator. Supported types include primitives, DateTime, DateTimeOffset, DateOnly, TimeOnly, Guid, TimeZoneInfo, and enums.",
+                        "HeroParser.Generators",
+                        DiagnosticSeverity.Warning,
+                        isEnabledByDefault: true),
+                    property.Locations.FirstOrDefault() ?? Location.None,
+                    property.Name,
+                    property.Type.ToDisplayString());
+                context.ReportDiagnostic(diagnostic);
+                continue; // Skip this property but continue with others
+            }
 
             var typeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));
             var headerLiteral = headerName.Replace("\"", "\"\"");

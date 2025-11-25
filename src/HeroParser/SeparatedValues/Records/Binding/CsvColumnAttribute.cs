@@ -23,4 +23,14 @@ public sealed class CsvColumnAttribute : Attribute
     /// property or field name is used.
     /// </remarks>
     public string? Name { get; init; }
+
+    /// <summary>
+    /// Gets or sets the format string to use when parsing date/time or numeric values.
+    /// </summary>
+    /// <remarks>
+    /// For date/time types, this is passed to DateTime.ParseExact, DateTimeOffset.ParseExact, etc.
+    /// For numeric types, this is passed to the TryParse method's NumberStyles.
+    /// When omitted, default parsing rules apply.
+    /// </remarks>
+    public string? Format { get; init; }
 }

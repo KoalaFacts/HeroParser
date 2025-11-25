@@ -65,7 +65,8 @@ internal static class CsvStreamingParser
                 columnLengths,
                 options.MaxColumns,
                 options.AllowNewlinesInsideQuotes,
-                enableQuotes);
+                enableQuotes,
+                options.MaxFieldLength);
         }
 
         if (!rowEnded)
@@ -106,7 +107,7 @@ internal static class CsvStreamingParser
                 if (c.Equals(delimiter))
                 {
                     AppendColumn(i, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, options.MaxColumns);
+                        columnStarts, columnLengths, options.MaxColumns, options.MaxFieldLength);
                 }
                 else if (c.Equals(lf) || c.Equals(cr))
                 {
@@ -134,7 +135,7 @@ internal static class CsvStreamingParser
         }
 
         AppendFinalColumn(rowLength, ref columnCount, ref currentStart,
-            columnStarts, columnLengths, options.MaxColumns);
+            columnStarts, columnLengths, options.MaxColumns, options.MaxFieldLength);
 
         return new CsvRowParseResult(columnCount, rowLength, charsConsumed);
     }
@@ -159,7 +160,8 @@ internal static class CsvStreamingParser
         Span<int> columnLengths,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
-        bool enableQuotedFields)
+        bool enableQuotedFields,
+        int? maxFieldLength)
         where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
@@ -173,7 +175,7 @@ internal static class CsvStreamingParser
                 Unsafe.As<T, byte>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded,
-                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields);
+                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
         else if (typeof(T) == typeof(char))
         {
@@ -186,13 +188,14 @@ internal static class CsvStreamingParser
                 Unsafe.As<T, char>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded,
-                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields);
+                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
 
         return false;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#pragma warning disable IDE0060 // Remove unused parameter - maxFieldLength is checked in scalar fallback
     private static bool TrySimdParseUtf8(
         ref byte mutableRef,
         int dataLength,
@@ -212,7 +215,9 @@ internal static class CsvStreamingParser
         Span<int> columnLengths,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
-        bool enableQuotedFields)
+        bool enableQuotedFields,
+        int? maxFieldLength)
+#pragma warning restore IDE0060
     {
         if (!Avx2.IsSupported)
             return false;
@@ -278,7 +283,7 @@ internal static class CsvStreamingParser
                 if (c == delimiter)
                 {
                     AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, maxColumns);
+                        columnStarts, columnLengths, maxColumns, maxFieldLength);
                     continue;
                 }
 
@@ -300,6 +305,7 @@ internal static class CsvStreamingParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#pragma warning disable IDE0060 // Remove unused parameter - maxFieldLength is checked in scalar fallback
     private static bool TrySimdParseUtf16(
         ref char mutableRef,
         int dataLength,
@@ -319,7 +325,9 @@ internal static class CsvStreamingParser
         Span<int> columnLengths,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
-        bool enableQuotedFields)
+        bool enableQuotedFields,
+        int? maxFieldLength)
+#pragma warning restore IDE0060
     {
         if (!Vector256.IsHardwareAccelerated)
             return false;
@@ -387,7 +395,7 @@ internal static class CsvStreamingParser
                 if (c == delimiter)
                 {
                     AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, maxColumns);
+                        columnStarts, columnLengths, maxColumns, maxFieldLength);
                     continue;
                 }
 
@@ -425,13 +433,18 @@ internal static class CsvStreamingParser
         ref int currentStart,
         Span<int> starts,
         Span<int> lengths,
-        int maxColumns)
+        int maxColumns,
+        int? maxFieldLength)
     {
         if (columnCount + 1 > maxColumns)
             ThrowTooManyColumns(maxColumns);
 
+        int fieldLength = delimiterIndex - currentStart;
+        if (maxFieldLength.HasValue && fieldLength > maxFieldLength.Value)
+            ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+
         starts[columnCount] = currentStart;
-        lengths[columnCount] = delimiterIndex - currentStart;
+        lengths[columnCount] = fieldLength;
         columnCount++;
         currentStart = delimiterIndex + 1;
     }
@@ -443,13 +456,18 @@ internal static class CsvStreamingParser
         ref int currentStart,
         Span<int> starts,
         Span<int> lengths,
-        int maxColumns)
+        int maxColumns,
+        int? maxFieldLength)
     {
         if (columnCount + 1 > maxColumns)
             ThrowTooManyColumns(maxColumns);
 
+        int fieldLength = rowLength - currentStart;
+        if (maxFieldLength.HasValue && fieldLength > maxFieldLength.Value)
+            ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+
         starts[columnCount] = currentStart;
-        lengths[columnCount] = rowLength - currentStart;
+        lengths[columnCount] = fieldLength;
         columnCount++;
     }
 
@@ -459,5 +477,13 @@ internal static class CsvStreamingParser
         throw new CsvException(
             CsvErrorCode.TooManyColumns,
             $"Row has more than {maxColumns} columns");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ThrowFieldTooLong(int maxFieldLength, int actualLength)
+    {
+        throw new CsvException(
+            CsvErrorCode.ParseError,
+            $"Field length {actualLength} exceeds maximum allowed length of {maxFieldLength}");
     }
 }

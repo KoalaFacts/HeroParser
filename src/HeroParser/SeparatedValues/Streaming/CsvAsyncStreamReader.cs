@@ -21,13 +21,15 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private int currentRowStart;
     private int currentRowLength;
     private int currentColumnCount;
+    private int currentLineNumber;
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
     public CsvCharSpanRow Current => new(
         buffer.AsSpan(currentRowStart, currentRowLength),
         columnStartsBuffer,
         columnLengthsBuffer,
-        currentColumnCount);
+        currentColumnCount,
+        currentLineNumber);
 
     internal CsvAsyncStreamReader(Stream stream, CsvParserOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
@@ -44,6 +46,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         currentRowStart = 0;
         currentRowLength = 0;
         currentColumnCount = 0;
+        currentLineNumber = 0;
     }
 
     /// <summary>
@@ -79,11 +82,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 if (rowLength == 0)
                     continue;
 
+                rowCount++;
                 currentRowStart = rowStart;
                 currentRowLength = rowLength;
                 currentColumnCount = result.ColumnCount;
-
-                rowCount++;
+                currentLineNumber = rowCount;
                 if (rowCount > options.MaxRows)
                 {
                     throw new CsvException(

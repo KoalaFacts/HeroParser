@@ -64,14 +64,15 @@ public ref struct CsvCharSpanReader
                 continue;
             }
 
+            rowCount++;
             Current = new CsvCharSpanRow(
                 rowChars,
                 columnStartsBuffer,
                 columnLengthsBuffer,
-                result.ColumnCount);
+                result.ColumnCount,
+                rowCount);
 
             position += result.CharsConsumed;
-            rowCount++;
             if (rowCount > options.MaxRows)
             {
                 throw new CsvException(

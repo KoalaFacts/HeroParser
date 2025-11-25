@@ -11,21 +11,27 @@ public readonly ref struct CsvCharSpanRow
     private readonly int columnCount;
     private readonly ReadOnlySpan<int> columnStarts;
     private readonly ReadOnlySpan<int> columnLengths;
+    private readonly int lineNumber;
 
     internal CsvCharSpanRow(
         ReadOnlySpan<char> line,
         Span<int> columnStartsBuffer,
         Span<int> columnLengthsBuffer,
-        int columnCount)
+        int columnCount,
+        int lineNumber)
     {
         this.line = line;
         this.columnCount = columnCount;
+        this.lineNumber = lineNumber;
         columnStarts = columnStartsBuffer[..columnCount];
         columnLengths = columnLengthsBuffer[..columnCount];
     }
 
     /// <summary>Gets the number of parsed columns in the row.</summary>
     public int ColumnCount => columnCount;
+
+    /// <summary>Gets the 1-based line number of this row in the CSV data.</summary>
+    public int LineNumber => lineNumber;
 
     /// <summary>Gets a column by zero-based index.</summary>
     /// <param name="index">Zero-based column index.</param>
@@ -72,7 +78,7 @@ public readonly ref struct CsvCharSpanRow
         var newLine = line.ToArray();
         var newStarts = columnStarts.ToArray();
         var newLengths = columnLengths.ToArray();
-        return new CsvCharSpanRow(newLine, newStarts, newLengths, columnCount);
+        return new CsvCharSpanRow(newLine, newStarts, newLengths, columnCount, lineNumber);
     }
 
     /// <summary>

@@ -78,7 +78,7 @@ public class CriticalFeaturesTests
     public void CommentCharacter_SameAsDelimiter_ThrowsException()
     {
         var options = new CsvParserOptions { CommentCharacter = ',' };
-        var ex = Assert.Throws<CsvException>(() => options.Validate());
+        var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
 
@@ -87,7 +87,7 @@ public class CriticalFeaturesTests
     public void CommentCharacter_SameAsQuote_ThrowsException()
     {
         var options = new CsvParserOptions { CommentCharacter = '"' };
-        var ex = Assert.Throws<CsvException>(() => options.Validate());
+        var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
 
@@ -96,7 +96,7 @@ public class CriticalFeaturesTests
     public void CommentCharacter_NonAscii_ThrowsException()
     {
         var options = new CsvParserOptions { CommentCharacter = '€' };
-        var ex = Assert.Throws<CsvException>(() => options.Validate());
+        var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
 
@@ -176,7 +176,7 @@ public class CriticalFeaturesTests
     public void NullValues_RecognizesNullStrings()
     {
         var csv = "Name,Age\nAlice,25\nBob,NULL\nCharlie,N/A";
-        var recordOptions = new CsvRecordOptions { NullValues = new[] { "NULL", "N/A" } };
+        var recordOptions = new CsvRecordOptions { NullValues = ["NULL", "N/A"] };
         var reader = Csv.ParseRecords<PersonWithNullableAge>(csv, recordOptions);
 
         var records = new List<PersonWithNullableAge>();
@@ -201,7 +201,7 @@ public class CriticalFeaturesTests
     public void NullValues_CaseSensitive()
     {
         var csv = "Name,Age\nAlice,\nBob,NULL";
-        var recordOptions = new CsvRecordOptions { NullValues = new[] { "NULL" } };
+        var recordOptions = new CsvRecordOptions { NullValues = ["NULL"] };
         var reader = Csv.ParseRecords<PersonWithNullableAge>(csv, recordOptions);
 
         var records = new List<PersonWithNullableAge>();
@@ -223,7 +223,7 @@ public class CriticalFeaturesTests
     public void NullValues_EmptyStringAsNull()
     {
         var csv = "Name,Age\nAlice,25\nBob,\nCharlie,30";
-        var recordOptions = new CsvRecordOptions { NullValues = new[] { "" } };
+        var recordOptions = new CsvRecordOptions { NullValues = [""] };
         var reader = Csv.ParseRecords<PersonWithNullableAge>(csv, recordOptions);
 
         var records = new List<PersonWithNullableAge>();
@@ -368,7 +368,7 @@ public class CriticalFeaturesTests
         var rows = new[]
         {
             new[] { "a", "b", "c" },
-            new[] { "1", "2", "3" }
+            ["1", "2", "3"]
         };
 
         var result = Csv.WriteToString(rows);
@@ -405,7 +405,7 @@ public class CriticalFeaturesTests
     public void CsvWriter_WriterOptions_SameAsDelimiter_ThrowsException()
     {
         var options = new CsvWriterOptions { Delimiter = ',', Quote = ',' };
-        var ex = Assert.Throws<CsvException>(() => options.Validate());
+        var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
 

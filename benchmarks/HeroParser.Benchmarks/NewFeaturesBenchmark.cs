@@ -9,7 +9,7 @@ namespace HeroParser.Benchmarks;
 /// Benchmarks for P2 features: comment line skipping, TrimFields, and MaxFieldLength validation.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
+[SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
 public class NewFeaturesBenchmark
 {
     private string csvNormal = null!;

@@ -9,7 +9,7 @@ namespace HeroParser.Benchmarks;
 /// Compares throughput across API shapes: string, memory stream, file streaming (sync), and file streaming (async).
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RunStrategy.Throughput, iterationCount: 8, warmupCount: 3)]
+[SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
 public class StreamingThroughputBenchmarks
 {
     private string csv = null!;

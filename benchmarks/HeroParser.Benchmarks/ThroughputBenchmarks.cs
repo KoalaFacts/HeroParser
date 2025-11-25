@@ -10,7 +10,7 @@ namespace HeroParser.Benchmarks;
 /// Measures raw parsing speed in GB/s.
 /// </summary>
 [MemoryDiagnoser]
-[SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
+[SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
 public class ThroughputBenchmarks
 {
     private string csv = null!;

@@ -41,6 +41,13 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--features")
+        {
+            // Run new features overhead benchmarks
+            BenchmarkRunner.Run<NewFeaturesBenchmark>();
+            return;
+        }
+
         // Default: show menu
         Console.WriteLine("=== HeroParser Benchmarks ===");
         Console.WriteLine();
@@ -50,6 +57,7 @@ public class Program
         Console.WriteLine("  --vs-sep      Run HeroParser vs Sep comparison");
         Console.WriteLine("  --quotes      Run quoted vs unquoted comparison (VERIFY SIMD)");
         Console.WriteLine("  --simd        Run SIMD vs Scalar comparison");
+        Console.WriteLine("  --features    Run new features overhead benchmarks (Comment/Trim/MaxFieldLength)");
         Console.WriteLine("  --all         Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");

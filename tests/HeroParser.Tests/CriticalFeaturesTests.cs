@@ -365,11 +365,11 @@ public class CriticalFeaturesTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvWriter_WriteToString_Works()
     {
-        var rows = new[]
-        {
-            new[] { "a", "b", "c" },
+        string[][] rows =
+        [
+            ["a", "b", "c"],
             ["1", "2", "3"]
-        };
+        ];
 
         var result = Csv.WriteToString(rows);
         Assert.Equal("a,b,c\r\n1,2,3\r\n", result);

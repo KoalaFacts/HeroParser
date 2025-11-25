@@ -168,33 +168,6 @@ foreach (var row in Csv.ReadFromText(csv))
 }
 ```
 
-### Writing CSV Data
-
-HeroParser includes a high-performance CSV writer for creating RFC 4180 compliant output:
-
-```csharp
-// Write to string
-var rows = new[] {
-    new[] { "Name", "Age", "City" },
-    new[] { "Alice", "30", "New York" },
-    new[] { "Bob", "25", "San Francisco" }
-};
-var csv = Csv.WriteToString(rows);
-
-// Write to file
-using var writer = Csv.WriteToFile("output.csv");
-writer.WriteRow("Name", "Age", "City");
-writer.WriteRow("Alice", "30", "New York");
-writer.WriteRow("Bob", "25", "San Francisco");
-
-// Write to stream
-using var stream = new MemoryStream();
-using var writer = Csv.WriteToStream(stream);
-writer.WriteField("Name");
-writer.WriteField("Age");
-writer.EndRow();
-```
-
 ### Comment Lines
 
 Skip comment lines in CSV files:

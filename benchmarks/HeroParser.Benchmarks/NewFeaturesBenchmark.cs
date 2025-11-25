@@ -6,7 +6,7 @@ using System.Text;
 namespace HeroParser.Benchmarks;
 
 /// <summary>
-/// Benchmarks for P2 features: CsvWriter, comment line skipping, TrimFields, and MaxFieldLength validation.
+/// Benchmarks for P2 features: comment line skipping, TrimFields, and MaxFieldLength validation.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 10, warmupCount: 3)]
@@ -16,7 +16,6 @@ public class NewFeaturesBenchmark
     private string csvWithComments = null!;
     private string csvWithWhitespace = null!;
     private string csvWithLongFields = null!;
-    private List<List<string>> rowsToWrite = null!;
 
     [Params(1_000, 10_000)]
     public int Rows { get; set; }
@@ -38,18 +37,6 @@ public class NewFeaturesBenchmark
 
         // Generate CSV with long field values
         csvWithLongFields = GenerateCsvWithLongFields(Rows, Columns);
-
-        // Generate rows for write benchmarks
-        rowsToWrite = new List<List<string>>(Rows);
-        for (int r = 0; r < Rows; r++)
-        {
-            var row = new List<string>(Columns);
-            for (int c = 0; c < Columns; c++)
-            {
-                row.Add($"val{r}_{c}");
-            }
-            rowsToWrite.Add(row);
-        }
     }
 
     private static string GenerateCsv(int rows, int columns, bool includeComments, bool addWhitespace)
@@ -98,44 +85,6 @@ public class NewFeaturesBenchmark
             sb.AppendLine();
         }
         return sb.ToString();
-    }
-
-    // ============================================================
-    // CsvWriter Throughput Benchmarks
-    // ============================================================
-
-    /// <summary>
-    /// Baseline: Measures CsvWriter write performance (rows/sec)
-    /// </summary>
-    [Benchmark]
-    public string CsvWriter_WriteToString()
-    {
-        using var stringWriter = new StringWriter();
-        using var csvWriter = Csv.WriteToTextWriter(stringWriter, leaveOpen: false);
-
-        foreach (var row in rowsToWrite)
-        {
-            csvWriter.WriteRow(row);
-        }
-
-        return stringWriter.ToString();
-    }
-
-    /// <summary>
-    /// Measures CsvWriter write performance to a MemoryStream
-    /// </summary>
-    [Benchmark]
-    public int CsvWriter_WriteToStream()
-    {
-        using var stream = new MemoryStream();
-        using var csvWriter = Csv.WriteToStream(stream, leaveOpen: false);
-
-        foreach (var row in rowsToWrite)
-        {
-            csvWriter.WriteRow(row);
-        }
-
-        return (int)stream.Length;
     }
 
     // ============================================================

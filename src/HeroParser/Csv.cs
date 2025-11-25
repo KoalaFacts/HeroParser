@@ -80,6 +80,7 @@ public static class Csv
     /// Optional parser configuration. When <see langword="null"/>, <see cref="CsvParserOptions.Default"/> is used.
     /// </param>
     /// <param name="encoding">Optional text encoding; defaults to UTF-8 with BOM detection.</param>
+    /// <param name="bufferSize">Size of the internal buffer for reading; defaults to 16 KB.</param>
     /// <returns>A <see cref="CsvCharSpanReader"/> that reads the file contents.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="IOException">Propagates file system errors encountered while reading.</exception>

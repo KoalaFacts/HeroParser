@@ -135,6 +135,10 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         return span.IndexOfAny('\r', '\n') >= 0;
     }
 
+    /// <summary>
+    /// Asynchronously releases resources used by the reader.
+    /// </summary>
+    /// <returns>A <see cref="ValueTask"/> representing the asynchronous dispose operation.</returns>
     public ValueTask DisposeAsync()
     {
         if (disposed)

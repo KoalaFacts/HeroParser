@@ -3,9 +3,6 @@ using Xunit;
 
 namespace HeroParser.Tests;
 
-/// <summary>
-/// RFC 4180 compliance tests for CSV parsing with quotes and escape sequences.
-/// </summary>
 public class Rfc4180Tests
 {
     [Fact]

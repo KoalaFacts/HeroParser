@@ -8,40 +8,6 @@ namespace HeroParser.Tests;
 
 public class RecordMappingTests
 {
-    private sealed class Person
-    {
-        public string Name { get; set; } = string.Empty;
-        public int Age { get; set; }
-    }
-
-    private sealed class Positioned
-    {
-        [CsvColumn(Index = 1)]
-        public string Value { get; set; } = string.Empty;
-
-        [CsvColumn(Index = 0)]
-        public int Id { get; set; }
-    }
-
-    private sealed class NullableSample
-    {
-        public string? Name { get; set; }
-        public int? Age { get; set; }
-        public DateOnly? Birthday { get; set; }
-    }
-
-    private sealed class MissingColumnType
-    {
-        public string Name { get; set; } = string.Empty;
-        public int Age { get; set; }
-    }
-
-    private sealed class Player
-    {
-        public string Name { get; set; } = string.Empty;
-        public int Score { get; set; }
-    }
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void HeaderBasedMapping_BindsProperties()
@@ -138,5 +104,38 @@ public class RecordMappingTests
         Assert.Equal(9, results[0].Score);
         Assert.Equal("Bob", results[1].Name);
         Assert.Equal(7, results[1].Score);
+    }
+    private sealed class Person
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+    }
+
+    private sealed class Positioned
+    {
+        [CsvColumn(Index = 1)]
+        public string Value { get; set; } = string.Empty;
+
+        [CsvColumn(Index = 0)]
+        public int Id { get; set; }
+    }
+
+    private sealed class NullableSample
+    {
+        public string? Name { get; set; }
+        public int? Age { get; set; }
+        public DateOnly? Birthday { get; set; }
+    }
+
+    private sealed class MissingColumnType
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+    }
+
+    private sealed class Player
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Score { get; set; }
     }
 }

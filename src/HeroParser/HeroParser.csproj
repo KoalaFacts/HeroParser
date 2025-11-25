@@ -28,4 +28,11 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="$(OutputPath)\..\..\..\HeroParser.Generators\bin\$(Configuration)\netstandard2.0\HeroParser.Generators.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+  </ItemGroup>
+
 </Project>

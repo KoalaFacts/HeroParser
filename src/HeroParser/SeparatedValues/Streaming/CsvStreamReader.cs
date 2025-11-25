@@ -66,13 +66,13 @@ public ref struct CsvStreamReader
                 if (rowChars.IsEmpty)
                     continue;
 
+                rowCount++;
                 Current = new CsvCharSpanRow(
                     rowChars,
                     columnStartsBuffer,
                     columnLengthsBuffer,
-                    result.ColumnCount);
-
-                rowCount++;
+                    result.ColumnCount,
+                    rowCount);
                 if (rowCount > options.MaxRows)
                 {
                     throw new CsvException(

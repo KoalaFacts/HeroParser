@@ -321,4 +321,68 @@ public static class Csv
 
         return CsvRecordBinder<T>.Create(recordOptions);
     }
+
+    /// <summary>
+    /// Creates a CSV writer to a TextWriter.
+    /// </summary>
+    /// <param name="writer">The TextWriter to write CSV data to.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="leaveOpen">When true, the writer remains open after disposal.</param>
+    /// <returns>A <see cref="CsvWriter"/> instance.</returns>
+    public static CsvWriter WriteToTextWriter(TextWriter writer, CsvWriterOptions? options = null, bool leaveOpen = false)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        return new CsvWriter(writer, options, leaveOpen);
+    }
+
+    /// <summary>
+    /// Creates a CSV writer to a Stream.
+    /// </summary>
+    /// <param name="stream">The stream to write CSV data to.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="encoding">Text encoding; defaults to UTF-8.</param>
+    /// <param name="leaveOpen">When true, the stream remains open after disposal.</param>
+    /// <returns>A <see cref="CsvWriter"/> instance.</returns>
+    public static CsvWriter WriteToStream(Stream stream, CsvWriterOptions? options = null, Encoding? encoding = null, bool leaveOpen = false)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        return new CsvWriter(stream, options, encoding, leaveOpen);
+    }
+
+    /// <summary>
+    /// Creates a CSV writer to a file.
+    /// </summary>
+    /// <param name="path">The filesystem path to write CSV data to.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="encoding">Text encoding; defaults to UTF-8.</param>
+    /// <returns>A <see cref="CsvWriter"/> instance.</returns>
+    public static CsvWriter WriteToFile(string path, CsvWriterOptions? options = null, Encoding? encoding = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        encoding ??= Encoding.UTF8;
+
+        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        return new CsvWriter(stream, options, encoding, leaveOpen: false);
+    }
+
+    /// <summary>
+    /// Writes rows to a string and returns the CSV content.
+    /// </summary>
+    /// <param name="rows">The rows to write.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <returns>A string containing the CSV data.</returns>
+    public static string WriteToString(IEnumerable<IEnumerable<string?>> rows, CsvWriterOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        using var stringWriter = new StringWriter();
+        using var csvWriter = new CsvWriter(stringWriter, options, leaveOpen: false);
+
+        foreach (var row in rows)
+        {
+            csvWriter.WriteRow(row);
+        }
+
+        return stringWriter.ToString();
+    }
 }

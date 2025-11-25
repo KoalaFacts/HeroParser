@@ -22,6 +22,16 @@ public sealed record CsvRecordOptions
     /// </summary>
     public bool AllowMissingColumns { get; init; } = false;
 
+    /// <summary>
+    /// Gets or sets a list of string values that should be treated as null during parsing.
+    /// </summary>
+    /// <remarks>
+    /// When a field value matches one of these strings (case-sensitive), it will be treated as null.
+    /// Common examples include "NULL", "N/A", "NA", "null", empty string, etc.
+    /// By default, this is null, meaning no special null value handling is performed.
+    /// </remarks>
+    public IReadOnlyList<string>? NullValues { get; init; } = null;
+
     internal StringComparer HeaderComparer => CaseSensitiveHeaders ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
     /// <summary>

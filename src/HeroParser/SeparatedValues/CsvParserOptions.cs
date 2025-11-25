@@ -53,6 +53,24 @@ public sealed record CsvParserOptions
     public bool EnableQuotedFields { get; init; } = true;
 
     /// <summary>
+    /// Gets or sets the comment character used to skip lines (null by default, meaning no comment support).
+    /// </summary>
+    /// <remarks>
+    /// Lines that start with this character (after optional whitespace) will be skipped during parsing.
+    /// The value must be ASCII and cannot match <see cref="Delimiter"/> or <see cref="Quote"/>.
+    /// </remarks>
+    public char? CommentCharacter { get; init; } = null;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether whitespace should be trimmed from unquoted field values.
+    /// </summary>
+    /// <remarks>
+    /// When enabled, leading and trailing whitespace is removed from unquoted fields only.
+    /// Quoted fields are not affected. To trim content inside quotes, use the UnquoteToString method after parsing.
+    /// </remarks>
+    public bool TrimFields { get; init; } = false;
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>Equivalent to <c>new CsvParserOptions()</c>.</remarks>
@@ -105,5 +123,30 @@ public sealed record CsvParserOptions
                 CsvErrorCode.InvalidOptions,
                 "AllowNewlinesInsideQuotes requires EnableQuotedFields to be true.");
         }
+
+        if (CommentCharacter.HasValue)
+        {
+            if (CommentCharacter.Value > 127)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    $"CommentCharacter '{CommentCharacter.Value}' (U+{(int)CommentCharacter.Value:X4}) must be ASCII (0-127)");
+            }
+
+            if (CommentCharacter.Value == Delimiter)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    $"CommentCharacter and Delimiter cannot be the same character ('{CommentCharacter.Value}')");
+            }
+
+            if (CommentCharacter.Value == Quote)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    $"CommentCharacter and Quote cannot be the same character ('{CommentCharacter.Value}')");
+            }
+        }
+
     }
 }

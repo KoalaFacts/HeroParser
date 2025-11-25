@@ -5,6 +5,11 @@ namespace HeroParser.SeparatedValues;
 /// <summary>
 /// Represents a single CSV row backed by the original UTF-16 characters.
 /// </summary>
+/// <remarks>
+/// Thread-Safety: This is a ref struct that wraps stack-allocated or pooled memory and cannot be
+/// shared across threads. Each reader should be used on a single thread. Use <see cref="Clone"/>
+/// or <see cref="ToImmutable"/> to create owned copies if you need to store rows beyond the enumeration scope.
+/// </remarks>
 public readonly ref struct CsvCharSpanRow
 {
     private readonly ReadOnlySpan<char> line;

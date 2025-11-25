@@ -83,7 +83,10 @@ public sealed record CsvParserOptions
     /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
-    /// <remarks>Equivalent to <c>new CsvParserOptions()</c>.</remarks>
+    /// <remarks>
+    /// Equivalent to <c>new CsvParserOptions()</c>.
+    /// Thread-Safety: This is an immutable singleton and is safe to access from multiple threads.
+    /// </remarks>
     public static CsvParserOptions Default { get; } = new();
 
     /// <summary>

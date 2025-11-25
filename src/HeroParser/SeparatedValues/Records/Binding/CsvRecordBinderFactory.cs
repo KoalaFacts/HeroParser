@@ -15,6 +15,11 @@ namespace HeroParser.SeparatedValues.Records.Binding;
 /// <summary>
 /// Resolves binders from generated code when available, falling back to runtime reflection.
 /// </summary>
+/// <remarks>
+/// Thread-Safety: Registration of binders via <see cref="RegisterGeneratedBinder"/> is thread-safe.
+/// Individual binders returned by <see cref="TryGetBinder{T}"/> are not shared between threads
+/// and each factory invocation creates a new instance.
+/// </remarks>
 internal static partial class CsvRecordBinderFactory
 {
     private static readonly Dictionary<Type, Func<CsvRecordOptions?, object>> generatedFactories;

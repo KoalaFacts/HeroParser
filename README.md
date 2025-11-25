@@ -168,6 +168,168 @@ foreach (var row in Csv.ReadFromText(csv))
 }
 ```
 
+### Writing CSV Data
+
+HeroParser includes a high-performance CSV writer for creating RFC 4180 compliant output:
+
+```csharp
+// Write to string
+var rows = new[] {
+    new[] { "Name", "Age", "City" },
+    new[] { "Alice", "30", "New York" },
+    new[] { "Bob", "25", "San Francisco" }
+};
+var csv = Csv.WriteToString(rows);
+
+// Write to file
+using var writer = Csv.WriteToFile("output.csv");
+writer.WriteRow("Name", "Age", "City");
+writer.WriteRow("Alice", "30", "New York");
+writer.WriteRow("Bob", "25", "San Francisco");
+
+// Write to stream
+using var stream = new MemoryStream();
+using var writer = Csv.WriteToStream(stream);
+writer.WriteField("Name");
+writer.WriteField("Age");
+writer.EndRow();
+```
+
+### Comment Lines
+
+Skip comment lines in CSV files:
+
+```csharp
+var options = new CsvParserOptions
+{
+    CommentCharacter = '#'  // Lines starting with # are ignored
+};
+
+var csv = @"# This is a comment
+Name,Age
+Alice,30
+# Another comment
+Bob,25";
+
+foreach (var row in Csv.ReadFromText(csv, options))
+{
+    // Only data rows are processed
+}
+```
+
+### Trimming Whitespace
+
+Remove leading and trailing whitespace from unquoted fields:
+
+```csharp
+var options = new CsvParserOptions
+{
+    TrimFields = true  // Trim whitespace from unquoted fields
+};
+
+var csv = "  Name  ,  Age  \nAlice,  30  ";
+foreach (var row in Csv.ReadFromText(csv, options))
+{
+    var name = row[0].ToString();  // "Name" (trimmed)
+    var age = row[1].ToString();   // "30" (trimmed)
+}
+```
+
+### Null Value Handling
+
+Treat specific string values as null during record parsing:
+
+```csharp
+var recordOptions = new CsvRecordOptions
+{
+    NullValues = new[] { "NULL", "N/A", "NA", "" }
+};
+
+var csv = "Name,Value\nAlice,100\nBob,NULL\nCharlie,N/A";
+foreach (var record in Csv.ParseRecords<MyRecord>(csv, recordOptions))
+{
+    // record.Value will be null when the field contains "NULL" or "N/A"
+}
+```
+
+### Security: Field Length Limits
+
+Protect against DoS attacks with oversized fields:
+
+```csharp
+var options = new CsvParserOptions
+{
+    MaxFieldLength = 10_000  // Throw exception if any field exceeds 10KB
+};
+
+// This will throw CsvException if a field is too large
+var reader = Csv.ReadFromText(csv, options);
+```
+
+### Skip Metadata Rows
+
+Skip header rows or metadata before parsing:
+
+```csharp
+var recordOptions = new CsvRecordOptions
+{
+    SkipRows = 2,  // Skip first 2 rows (e.g., metadata)
+    HasHeaderRow = true  // The 3rd row is the header
+};
+
+var csv = @"File Version: 1.0
+Generated: 2024-01-01
+Name,Age
+Alice,30
+Bob,25";
+
+foreach (var record in Csv.ParseRecords<MyRecord>(csv, recordOptions))
+{
+    // First 2 rows are skipped, 3rd row used as header
+}
+```
+
+### Storing Rows Safely
+
+Rows are ref structs and cannot escape their scope. Use `Clone()` or `ToImmutable()` to store them:
+
+```csharp
+var storedRows = new List<CsvCharSpanRow>();
+
+foreach (var row in Csv.ReadFromText(csv))
+{
+    // ❌ WRONG: Cannot store ref struct directly
+    // storedRows.Add(row);
+
+    // ✅ CORRECT: Clone creates an owned copy
+    storedRows.Add(row.Clone());
+}
+
+// Rows can now be safely accessed after enumeration
+foreach (var row in storedRows)
+{
+    var value = row[0].ToString();
+}
+```
+
+### Line Number Tracking
+
+Track the line number of each row for error reporting:
+
+```csharp
+foreach (var row in Csv.ReadFromText(csv))
+{
+    try
+    {
+        var id = row[0].Parse<int>();
+    }
+    catch (FormatException)
+    {
+        Console.WriteLine($"Invalid data on line {row.LineNumber}");
+    }
+}
+```
+
 ### ⚠️ Important: Resource Management
 
 **HeroParser readers use `ArrayPool` buffers and MUST be disposed to prevent memory leaks.**

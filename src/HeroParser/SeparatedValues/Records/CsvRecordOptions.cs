@@ -57,5 +57,8 @@ public sealed record CsvRecordOptions
     /// <summary>
     /// Gets a reusable default instance.
     /// </summary>
+    /// <remarks>
+    /// Thread-Safety: This is an immutable singleton and is safe to access from multiple threads.
+    /// </remarks>
     public static CsvRecordOptions Default { get; } = new();
 }

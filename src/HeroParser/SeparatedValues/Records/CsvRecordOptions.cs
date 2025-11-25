@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace HeroParser.SeparatedValues.Records;
 
 /// <summary>
@@ -31,6 +33,24 @@ public sealed record CsvRecordOptions
     /// By default, this is null, meaning no special null value handling is performed.
     /// </remarks>
     public IReadOnlyList<string>? NullValues { get; init; } = null;
+
+    /// <summary>
+    /// Gets or sets the culture to use when parsing culture-sensitive values like dates and numbers.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="null"/> (the default), <see cref="CultureInfo.InvariantCulture"/> is used.
+    /// This affects parsing of numeric types, dates, and other culture-sensitive types.
+    /// </remarks>
+    public CultureInfo? Culture { get; init; } = null;
+
+    /// <summary>
+    /// Gets or sets the number of rows to skip from the start of the CSV data.
+    /// </summary>
+    /// <remarks>
+    /// Use this to skip metadata rows or other non-data content at the beginning of the file.
+    /// The header row (if <see cref="HasHeaderRow"/> is true) is expected after the skipped rows.
+    /// </remarks>
+    public int SkipRows { get; init; } = 0;
 
     internal StringComparer HeaderComparer => CaseSensitiveHeaders ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 

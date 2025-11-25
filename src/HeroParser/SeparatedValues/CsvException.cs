@@ -58,4 +58,16 @@ public class CsvException : Exception
         Row = row;
         Column = column;
     }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CsvException"/> class with an inner exception.
+    /// </summary>
+    /// <param name="errorCode">The error classification.</param>
+    /// <param name="message">A human-readable description of the failure.</param>
+    /// <param name="innerException">The exception that caused this error.</param>
+    public CsvException(CsvErrorCode errorCode, string message, Exception innerException)
+        : base(message, innerException)
+    {
+        ErrorCode = errorCode;
+    }
 }

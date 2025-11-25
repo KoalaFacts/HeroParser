@@ -71,6 +71,16 @@ public sealed record CsvParserOptions
     public bool TrimFields { get; init; } = false;
 
     /// <summary>
+    /// Gets or sets the maximum length allowed for a single field value.
+    /// </summary>
+    /// <remarks>
+    /// When set to a positive value, fields exceeding this length will cause a <see cref="CsvException"/>
+    /// to be thrown with <see cref="CsvErrorCode.ParseError"/>. Set to <see langword="null"/> (the default)
+    /// to disable this protection.
+    /// </remarks>
+    public int? MaxFieldLength { get; init; } = null;
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>Equivalent to <c>new CsvParserOptions()</c>.</remarks>
@@ -148,5 +158,11 @@ public sealed record CsvParserOptions
             }
         }
 
+        if (MaxFieldLength.HasValue && MaxFieldLength.Value <= 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxFieldLength must be positive when specified, got {MaxFieldLength.Value}");
+        }
     }
 }

@@ -62,6 +62,13 @@ public static class Csv
     {
         options ??= CsvParserOptions.Default;
         options.Validate();
+
+        // Strip UTF-8 BOM if present (0xEF 0xBB 0xBF)
+        if (data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
+        {
+            data = data[3..];
+        }
+
         return new CsvByteSpanReader(data, options);
     }
 
@@ -243,7 +250,7 @@ public static class Csv
 
         var reader = ReadFromCharSpan(data.AsSpan(), parserOptions);
         var binder = ResolveBinder<T>(recordOptions);
-        return new CsvRecordReader<T>(reader, binder);
+        return new CsvRecordReader<T>(reader, binder, recordOptions.SkipRows);
     }
 
     /// <summary>
@@ -259,9 +266,10 @@ public static class Csv
         where T : class, new()
     {
         ArgumentNullException.ThrowIfNull(stream);
+        recordOptions ??= CsvRecordOptions.Default;
         var reader = ReadFromStream(stream, parserOptions, encoding, leaveOpen, bufferSize);
         var binder = ResolveBinder<T>(recordOptions);
-        return new CsvStreamingRecordReader<T>(reader, binder);
+        return new CsvStreamingRecordReader<T>(reader, binder, recordOptions.SkipRows);
     }
 
     /// <summary>
@@ -292,15 +300,24 @@ public static class Csv
     {
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
+        recordOptions ??= CsvRecordOptions.Default;
 
         await using var reader = CreateAsyncStreamReader(stream, parserOptions, encoding, leaveOpen, bufferSize);
         var binder = ResolveBinder<T>(recordOptions);
 
         int rowNumber = 0;
+        int skippedCount = 0;
         while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
             rowNumber++;
             var row = reader.Current;
+
+            // Skip rows if requested
+            if (skippedCount < recordOptions.SkipRows)
+            {
+                skippedCount++;
+                continue;
+            }
 
             if (binder.NeedsHeaderResolution)
             {

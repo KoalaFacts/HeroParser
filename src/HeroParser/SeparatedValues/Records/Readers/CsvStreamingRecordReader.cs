@@ -9,14 +9,18 @@ public ref struct CsvStreamingRecordReader<T> where T : class, new()
 {
     private CsvStreamReader reader;
     private readonly CsvRecordBinder<T> binder;
+    private readonly int skipRows;
     private int rowNumber;
+    private int skippedCount;
 
-    internal CsvStreamingRecordReader(CsvStreamReader reader, CsvRecordBinder<T> binder)
+    internal CsvStreamingRecordReader(CsvStreamReader reader, CsvRecordBinder<T> binder, int skipRows = 0)
     {
         this.reader = reader;
         this.binder = binder;
+        this.skipRows = skipRows;
         Current = default!;
         rowNumber = 0;
+        skippedCount = 0;
     }
 
     /// <summary>Gets the current mapped record.</summary>
@@ -34,6 +38,13 @@ public ref struct CsvStreamingRecordReader<T> where T : class, new()
         {
             rowNumber++;
             var row = reader.Current;
+
+            // Skip rows if requested
+            if (skippedCount < skipRows)
+            {
+                skippedCount++;
+                continue;
+            }
 
             if (binder.NeedsHeaderResolution)
             {

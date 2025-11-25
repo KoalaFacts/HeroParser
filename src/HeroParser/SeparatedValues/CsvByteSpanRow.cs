@@ -58,4 +58,29 @@ public readonly ref struct CsvByteSpanRow
         }
         return result;
     }
+
+    /// <summary>
+    /// Creates an owned copy of the row data, solving the buffer ownership issue.
+    /// </summary>
+    /// <returns>A new <see cref="CsvByteSpanRow"/> with its own copy of the data.</returns>
+    /// <remarks>
+    /// This method allocates new memory and copies the row data, allowing the returned row
+    /// to be used after the original buffer has been modified or disposed.
+    /// </remarks>
+    public CsvByteSpanRow Clone()
+    {
+        var newLine = line.ToArray();
+        var newStarts = columnStarts.ToArray();
+        var newLengths = columnLengths.ToArray();
+        return new CsvByteSpanRow(newLine, newStarts, newLengths, columnCount);
+    }
+
+    /// <summary>
+    /// Creates an immutable copy of the row data, solving the buffer ownership issue.
+    /// </summary>
+    /// <returns>A new <see cref="CsvByteSpanRow"/> with its own copy of the data.</returns>
+    /// <remarks>
+    /// This is an alias for <see cref="Clone"/> that creates an owned copy of the row data.
+    /// </remarks>
+    public CsvByteSpanRow ToImmutable() => Clone();
 }

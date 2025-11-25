@@ -63,6 +63,26 @@ public static class Csv
         options ??= CsvParserOptions.Default;
         options.Validate();
 
+        // Detect UTF-16 BOMs and provide a helpful error message
+        if (data.Length >= 2)
+        {
+            // UTF-16 LE BOM: 0xFF 0xFE
+            if (data[0] == 0xFF && data[1] == 0xFE)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    "UTF-16 LE encoding detected. HeroParser only supports UTF-8. Please convert the file to UTF-8 first.");
+            }
+
+            // UTF-16 BE BOM: 0xFE 0xFF
+            if (data[0] == 0xFE && data[1] == 0xFF)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    "UTF-16 BE encoding detected. HeroParser only supports UTF-8. Please convert the file to UTF-8 first.");
+            }
+        }
+
         // Strip UTF-8 BOM if present (0xEF 0xBB 0xBF)
         if (data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
         {

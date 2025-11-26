@@ -250,4 +250,320 @@ public class CriticalFeaturesTests
     }
 
     #endregion
+
+    #region CsvException Field Value Context Tests (#3)
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvException_IncludesFieldValue()
+    {
+        var csv = "Name,Age\nAlice,not_a_number";
+
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.ParseRecords<PersonWithAge>(csv);
+            while (reader.MoveNext()) { }
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+        Assert.Equal("not_a_number", ex.FieldValue);
+        Assert.Contains("not_a_number", ex.Message);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvException_TruncatesLongFieldValue()
+    {
+        var longValue = new string('x', 150);
+        var csv = $"Name,Age\nAlice,{longValue}";
+
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.ParseRecords<PersonWithAge>(csv);
+            while (reader.MoveNext()) { }
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+        Assert.NotNull(ex!.FieldValue);
+        Assert.Equal(103, ex.FieldValue!.Length); // 100 chars + "..."
+        Assert.EndsWith("...", ex.FieldValue);
+    }
+
+    private class PersonWithAge
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+    }
+
+    #endregion
+
+    #region Error Handling Callbacks Tests (#4)
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void OnParseError_SkipRow_SkipsProblematicRows()
+    {
+        var csv = "Name,Age\nAlice,25\nBob,invalid\nCharlie,30";
+        var skippedRows = new List<int>();
+        var recordOptions = new CsvRecordOptions
+        {
+            OnParseError = ctx =>
+            {
+                skippedRows.Add(ctx.Row);
+                return ParseErrorAction.SkipRow;
+            }
+        };
+
+        var records = new List<PersonWithAge>();
+        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        while (reader.MoveNext())
+        {
+            records.Add(reader.Current);
+        }
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice", records[0].Name);
+        Assert.Equal(25, records[0].Age);
+        Assert.Equal("Charlie", records[1].Name);
+        Assert.Equal(30, records[1].Age);
+
+        Assert.Single(skippedRows);
+        Assert.Equal(3, skippedRows[0]); // Row 3 (Bob,invalid) was skipped
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void OnParseError_UseDefault_UsesDefaultValue()
+    {
+        var csv = "Name,Age\nAlice,invalid";
+        var recordOptions = new CsvRecordOptions
+        {
+            OnParseError = _ => ParseErrorAction.UseDefault
+        };
+
+        var records = new List<PersonWithAge>();
+        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        while (reader.MoveNext())
+        {
+            records.Add(reader.Current);
+        }
+
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name);
+        Assert.Equal(0, records[0].Age); // Default value for int
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void OnParseError_Throw_ThrowsException()
+    {
+        var csv = "Name,Age\nAlice,invalid";
+        var recordOptions = new CsvRecordOptions
+        {
+            OnParseError = _ => ParseErrorAction.Throw
+        };
+
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+            while (reader.MoveNext()) { }
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void OnParseError_ContextContainsCorrectInfo()
+    {
+        var csv = "Name,Age\nAlice,bad_value";
+        CsvParseErrorContext? capturedContext = null;
+        var recordOptions = new CsvRecordOptions
+        {
+            OnParseError = ctx =>
+            {
+                capturedContext = ctx;
+                return ParseErrorAction.SkipRow;
+            }
+        };
+
+        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        while (reader.MoveNext()) { }
+
+        Assert.NotNull(capturedContext);
+        Assert.Equal(2, capturedContext.Value.Row);
+        Assert.Equal(2, capturedContext.Value.Column);
+        Assert.Equal("Age", capturedContext.Value.MemberName);
+        Assert.Equal(typeof(int), capturedContext.Value.TargetType);
+        Assert.Equal("bad_value", capturedContext.Value.FieldValue);
+    }
+
+    #endregion
+
+    #region Unterminated Quote Position Tests (#6)
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void UnterminatedQuote_IncludesPosition()
+    {
+        var csv = "Name,Value\nAlice,\"unclosed quote";
+
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.ReadFromText(csv);
+            while (reader.MoveNext()) { }
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+        Assert.NotNull(ex.QuoteStartPosition);
+        Assert.Contains("quote started at position", ex.Message);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void UnterminatedQuote_PositionIsCorrect()
+    {
+        // "Hello is at position 5 (0-indexed, after "Name,")
+        var csv = "Name,\"Hello";
+
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.ReadFromText(csv);
+            while (reader.MoveNext()) { }
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+        Assert.NotNull(ex!.QuoteStartPosition);
+        Assert.Equal(5, ex.QuoteStartPosition!.Value); // 0-based position of the quote
+    }
+
+    #endregion
+
+    #region Duplicate Header Detection Tests (#9)
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DetectDuplicateHeaders_ThrowsOnDuplicate()
+    {
+        var csv = "Name,Age,Name\nAlice,25,Bob";
+        var recordOptions = new CsvRecordOptions { DetectDuplicateHeaders = true };
+
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+            while (reader.MoveNext()) { }
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+        Assert.Contains("Duplicate header", ex.Message);
+        Assert.Contains("Name", ex.Message);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DetectDuplicateHeaders_CaseInsensitive()
+    {
+        var csv = "Name,Age,NAME\nAlice,25,Bob";
+        var recordOptions = new CsvRecordOptions
+        {
+            DetectDuplicateHeaders = true,
+            CaseSensitiveHeaders = false
+        };
+
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+            while (reader.MoveNext()) { }
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+        Assert.Contains("Duplicate header", ex.Message);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DetectDuplicateHeaders_CaseSensitive_AllowsDifferentCase()
+    {
+        var csv = "Name,Age,NAME\nAlice,25,Bob";
+        var recordOptions = new CsvRecordOptions
+        {
+            DetectDuplicateHeaders = true,
+            CaseSensitiveHeaders = true,
+            AllowMissingColumns = true
+        };
+
+        // Should not throw since Name != NAME when case-sensitive
+        var records = new List<PersonWithAge>();
+        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        while (reader.MoveNext())
+        {
+            records.Add(reader.Current);
+        }
+
+        Assert.Single(records);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DetectDuplicateHeaders_Disabled_AllowsDuplicates()
+    {
+        var csv = "Name,Age,Name\nAlice,25,Bob";
+        var recordOptions = new CsvRecordOptions
+        {
+            DetectDuplicateHeaders = false, // Default
+            AllowMissingColumns = true
+        };
+
+        // Should not throw
+        var records = new List<PersonWithAge>();
+        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        while (reader.MoveNext())
+        {
+            records.Add(reader.Current);
+        }
+
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name); // First occurrence wins
+    }
+
+    #endregion
 }

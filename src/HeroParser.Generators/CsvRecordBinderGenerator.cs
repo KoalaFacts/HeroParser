@@ -12,7 +12,6 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private const string GENERATED_NAMESPACE = "HeroParser.SeparatedValues.Records.Binding";
     private const string BINDER_TYPE = "global::HeroParser.CsvRecordBinder";
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.CsvRecordBinderFactory";
-    private const string COLUMN_TYPE = "global::HeroParser.SeparatedValues.CsvCharSpanColumn";
     private static readonly string[] generateAttributeNames = ["HeroParser.SeparatedValues.Records.Binding.CsvGenerateBinderAttribute", "HeroParser.CsvGenerateBinderAttribute"];
 
     private static readonly string[] columnAttributeNames = ["HeroParser.SeparatedValues.Records.Binding.CsvColumnAttribute", "HeroParser.CsvColumnAttribute"];
@@ -80,7 +79,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine($"typeof({member.TypeName}),");
                 builder.AppendLine($"\"{member.HeaderName}\",");
                 builder.AppendLine(member.AttributeIndex is null ? "null," : $"{member.AttributeIndex},");
-                builder.AppendLine($"{member.ConverterFactory},");
+                builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
                 builder.AppendLine($"{member.SetterFactory}),");
                 builder.Unindent();
             }
@@ -113,6 +112,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var mapAttribute = GetFirstMatchingAttribute(property, columnAttributeNames);
             var headerName = property.Name;
             int? attributeIndex = null;
+            string? format = null;
             if (mapAttribute is not null)
             {
                 foreach (var arg in mapAttribute.NamedArguments)
@@ -121,11 +121,13 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                         headerName = s;
                     if (arg.Key == "Index" && arg.Value.Value is int i && i >= 0)
                         attributeIndex = i;
+                    if (arg.Key == "Format" && arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f))
+                        format = f;
                 }
             }
 
-            var converter = CreateConverter(property);
-            if (converter is null)
+            // Check if type is supported (for diagnostic reporting)
+            if (!IsSupportedType(property.Type))
             {
                 // Report diagnostic for unsupported property type
                 var diagnostic = Diagnostic.Create(
@@ -145,13 +147,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
             var typeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));
             var headerLiteral = headerName.Replace("\"", "\"\"");
+            var formatLiteral = format?.Replace("\"", "\\\"");
 
             members.Add(new MemberDescriptor(
                 property.Name,
                 headerLiteral,
                 attributeIndex,
                 typeName,
-                converter.Factory,
+                formatLiteral,
                 CreateSetter(typeName, type, property.Name)));
         }
 
@@ -162,63 +165,44 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         return new TypeDescriptor(fqName, members);
     }
 
-    private static ConverterDescriptor? CreateConverter(IPropertySymbol property)
+    private static bool IsSupportedType(ITypeSymbol type)
     {
-        var type = property.Type;
-        var isNullable = type.NullableAnnotation == NullableAnnotation.Annotated || type.IsReferenceType;
-        var underlying = type is INamedTypeSymbol named && named.IsGenericType && named.Name == "Nullable" ? named.TypeArguments[0] : type;
+        var underlying = type is INamedTypeSymbol named && named.IsGenericType && named.Name == "Nullable"
+            ? named.TypeArguments[0]
+            : type;
 
-        string? body = underlying.SpecialType switch
+        return underlying.SpecialType switch
         {
-            SpecialType.System_String => isNullable
-                ? "if (column.IsEmpty) { value = null; return true; } value = column.ToString(); return true;"
-                : "value = column.ToString(); return true;",
-            SpecialType.System_Int32 => BuildTryParse("column.TryParseInt32", isNullable),
-            SpecialType.System_Int64 => BuildTryParse("column.TryParseInt64", isNullable),
-            SpecialType.System_Int16 => BuildTryParse("column.TryParseInt16", isNullable),
-            SpecialType.System_Byte => BuildTryParse("column.TryParseByte", isNullable),
-            SpecialType.System_UInt32 => BuildTryParse("column.TryParseUInt32", isNullable),
-            SpecialType.System_UInt64 => BuildTryParse("column.TryParseUInt64", isNullable),
-            SpecialType.System_UInt16 => BuildTryParse("column.TryParseUInt16", isNullable),
-            SpecialType.System_SByte => BuildTryParse("column.TryParseSByte", isNullable),
-            SpecialType.System_Double => BuildTryParse("column.TryParseDouble", isNullable),
-            SpecialType.System_Single => BuildTryParse("column.TryParseSingle", isNullable),
-            SpecialType.System_Decimal => BuildTryParse("column.TryParseDecimal", isNullable),
-            SpecialType.System_Boolean => BuildTryParse("column.TryParseBoolean", isNullable),
-            _ => BuildComplexConverter(underlying, isNullable)
+            SpecialType.System_String => true,
+            SpecialType.System_Int32 => true,
+            SpecialType.System_Int64 => true,
+            SpecialType.System_Int16 => true,
+            SpecialType.System_Byte => true,
+            SpecialType.System_UInt32 => true,
+            SpecialType.System_UInt64 => true,
+            SpecialType.System_UInt16 => true,
+            SpecialType.System_SByte => true,
+            SpecialType.System_Double => true,
+            SpecialType.System_Single => true,
+            SpecialType.System_Decimal => true,
+            SpecialType.System_Boolean => true,
+            _ => IsSupportedComplexType(underlying)
         };
-
-        if (body is null)
-            return null;
-
-        var factory = $"({COLUMN_TYPE} column, out object? value) => {{ {body} }}";
-        return new ConverterDescriptor(factory);
     }
 
-    private static string? BuildComplexConverter(ITypeSymbol type, bool isNullable)
+    private static bool IsSupportedComplexType(ITypeSymbol type)
     {
-        var display = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         return type.ToDisplayString() switch
         {
-            "System.DateTime" => BuildTryParse("column.TryParseDateTime", isNullable),
-            "System.DateTimeOffset" => BuildTryParse("column.TryParseDateTimeOffset", isNullable),
-            "System.DateOnly" => BuildTryParse("column.TryParseDateOnly", isNullable),
-            "System.TimeOnly" => BuildTryParse("column.TryParseTimeOnly", isNullable),
-            "System.Guid" => BuildTryParse("column.TryParseGuid", isNullable),
-            "System.TimeZoneInfo" => BuildTryParse("column.TryParseTimeZoneInfo", isNullable),
-            _ when type.TypeKind == TypeKind.Enum => BuildTryParse($"column.TryParseEnum<{display}>", isNullable),
-            _ => null
+            "System.DateTime" => true,
+            "System.DateTimeOffset" => true,
+            "System.DateOnly" => true,
+            "System.TimeOnly" => true,
+            "System.Guid" => true,
+            "System.TimeZoneInfo" => true,
+            _ when type.TypeKind == TypeKind.Enum => true,
+            _ => false
         };
-    }
-
-    private static string BuildTryParse(string tryParseCall, bool isNullable)
-    {
-        if (isNullable)
-        {
-            return $"if (column.IsEmpty) {{ value = null; return true; }} if ({tryParseCall}(out var parsed)) {{ value = parsed; return true; }} value = null; return false;";
-        }
-
-        return $"if ({tryParseCall}(out var parsed)) {{ value = parsed; return true; }} value = null; return false;";
     }
 
     private static string CreateSetter(string typeName, INamedTypeSymbol type, string propertyName)
@@ -269,10 +253,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         string HeaderName,
         int? AttributeIndex,
         string TypeName,
-        string ConverterFactory,
+        string? Format,
         string SetterFactory);
-
-    private sealed record ConverterDescriptor(string Factory);
 
     private sealed class SourceBuilder
     {

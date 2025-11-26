@@ -346,7 +346,14 @@ public static class Csv
                 continue;
             }
 
-            yield return binder.Bind(row, rowNumber);
+            var result = binder.Bind(row, rowNumber);
+            if (result is null)
+            {
+                // Row was skipped due to error handling
+                continue;
+            }
+
+            yield return result;
         }
     }
 

@@ -138,4 +138,180 @@ public class RecordMappingTests
         public string Name { get; set; } = string.Empty;
         public int Score { get; set; }
     }
+
+    #region Custom Converter Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CustomConverter_ParsesCustomType()
+    {
+        var csv = "Name,Price\nWidget,12.50";
+
+        var options = new CsvRecordOptions()
+            .RegisterConverter<Money>((value, culture, format, out result) =>
+            {
+                if (decimal.TryParse(value, System.Globalization.NumberStyles.Number, culture, out var amount))
+                {
+                    result = new Money(amount);
+                    return true;
+                }
+                result = default;
+                return false;
+            });
+
+        var reader = Csv.ParseRecords<Product>(csv, options);
+        var results = new List<Product>();
+        foreach (var item in reader) results.Add(item);
+
+        Assert.Single(results);
+        Assert.Equal("Widget", results[0].Name);
+        Assert.Equal(12.50m, results[0].Price?.Amount);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CustomConverter_HandlesNullableCustomType()
+    {
+        var csv = "Name,Price\nWidget,\nGadget,25.00";
+
+        var options = new CsvRecordOptions()
+            .RegisterConverter<Money>((value, culture, format, out result) =>
+            {
+                if (value.IsEmpty)
+                {
+                    result = default;
+                    return false;
+                }
+                if (decimal.TryParse(value, System.Globalization.NumberStyles.Number, culture, out var amount))
+                {
+                    result = new Money(amount);
+                    return true;
+                }
+                result = default;
+                return false;
+            });
+
+        var reader = Csv.ParseRecords<Product>(csv, options);
+        var results = new List<Product>();
+        foreach (var item in reader) results.Add(item);
+
+        Assert.Equal(2, results.Count);
+        Assert.Null(results[0].Price);
+        Assert.Equal(25.00m, results[1].Price?.Amount);
+    }
+
+    private record Money(decimal Amount);
+
+    private sealed class Product
+    {
+        public string Name { get; set; } = string.Empty;
+        public Money? Price { get; set; }
+    }
+
+    #endregion
+
+    #region Format Attribute Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void FormatAttribute_ParsesDateWithCustomFormat()
+    {
+        var csv = "Id,Date\n1,01/15/2024\n2,12/31/2023";
+
+        var reader = Csv.ParseRecords<DateFormatted>(csv);
+        var results = new List<DateFormatted>();
+        foreach (var item in reader) results.Add(item);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(new DateOnly(2024, 1, 15), results[0].Date);
+        Assert.Equal(new DateOnly(2023, 12, 31), results[1].Date);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void FormatAttribute_ParsesDateTimeWithCustomFormat()
+    {
+        var csv = "Id,Timestamp\n1,2024-01-15 14:30:00";
+
+        var reader = Csv.ParseRecords<DateTimeFormatted>(csv);
+        var results = new List<DateTimeFormatted>();
+        foreach (var item in reader) results.Add(item);
+
+        Assert.Single(results);
+        Assert.Equal(new DateTime(2024, 1, 15, 14, 30, 0), results[0].Timestamp);
+    }
+
+    private sealed class DateFormatted
+    {
+        public int Id { get; set; }
+
+        [CsvColumn(Format = "MM/dd/yyyy")]
+        public DateOnly Date { get; set; }
+    }
+
+    private sealed class DateTimeFormatted
+    {
+        public int Id { get; set; }
+
+        [CsvColumn(Format = "yyyy-MM-dd HH:mm:ss")]
+        public DateTime Timestamp { get; set; }
+    }
+
+    #endregion
+
+    #region Culture Option Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CultureOption_ParsesNumbersWithCulture()
+    {
+        // German format uses period as thousands separator, comma as decimal separator
+        // "1.250" in German means 1250 (period is thousands separator)
+        // In InvariantCulture, "1.250" would mean 1.25 (period is decimal separator)
+        var csv = "Name,Price\nWidget,1.250";
+        var options = new CsvRecordOptions
+        {
+            Culture = System.Globalization.CultureInfo.GetCultureInfo("de-DE")
+        };
+
+        var reader = Csv.ParseRecords<PriceItem>(csv, options);
+        var results = new List<PriceItem>();
+        foreach (var item in reader) results.Add(item);
+
+        Assert.Single(results);
+        Assert.Equal(1250m, results[0].Price);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CultureOption_ParsesDateWithCulture()
+    {
+        // German format: day.month.year
+        var csv = "Id,Date\n1,15.01.2024";
+        var options = new CsvRecordOptions
+        {
+            Culture = System.Globalization.CultureInfo.GetCultureInfo("de-DE")
+        };
+
+        var reader = Csv.ParseRecords<DateItem>(csv, options);
+        var results = new List<DateItem>();
+        foreach (var item in reader) results.Add(item);
+
+        Assert.Single(results);
+        Assert.Equal(new DateOnly(2024, 1, 15), results[0].Date);
+    }
+
+    private sealed class PriceItem
+    {
+        public string Name { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+    }
+
+    private sealed class DateItem
+    {
+        public int Id { get; set; }
+        public DateOnly Date { get; set; }
+    }
+
+    #endregion
 }

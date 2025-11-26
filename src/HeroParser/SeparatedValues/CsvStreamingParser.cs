@@ -83,6 +83,7 @@ internal static class CsvStreamingParser
         int charsConsumed = 0;
         bool rowEnded = false;
         bool enableQuotes = options.EnableQuotedFields;
+        int quoteStartPosition = -1; // Track where the opening quote was found
 
         // SIMD fast path (if enabled)
         if (options.UseSimdIfAvailable)
@@ -102,6 +103,7 @@ internal static class CsvStreamingParser
                 ref rowLength,
                 ref charsConsumed,
                 ref rowEnded,
+                ref quoteStartPosition,
                 columnStarts,
                 columnLengths,
                 options.MaxColumns,
@@ -130,6 +132,10 @@ internal static class CsvStreamingParser
                         continue;
                     }
 
+                    if (!inQuotes)
+                    {
+                        quoteStartPosition = i; // Track where the quote opened
+                    }
                     inQuotes = !inQuotes;
                     continue;
                 }
@@ -170,6 +176,13 @@ internal static class CsvStreamingParser
 
         if (enableQuotes && inQuotes)
         {
+            if (quoteStartPosition >= 0)
+            {
+                throw CsvException.UnterminatedQuote(
+                    "Unterminated quoted field detected while parsing CSV data.",
+                    1, // Row number is not tracked in ParseRow, will be wrapped by caller
+                    quoteStartPosition);
+            }
             throw new CsvException(
                 CsvErrorCode.ParseError,
                 "Unterminated quoted field detected while parsing CSV data.");
@@ -210,6 +223,7 @@ internal static class CsvStreamingParser
         ref int rowLength,
         ref int charsConsumed,
         ref bool rowEnded,
+        ref int quoteStartPosition,
         Span<int> columnStarts,
         Span<int> columnLengths,
         int maxColumns,
@@ -228,7 +242,7 @@ internal static class CsvStreamingParser
                 Unsafe.As<T, byte>(ref lf),
                 Unsafe.As<T, byte>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
-                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded,
+                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded, ref quoteStartPosition,
                 columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
         else if (typeof(T) == typeof(char))
@@ -241,7 +255,7 @@ internal static class CsvStreamingParser
                 Unsafe.As<T, char>(ref lf),
                 Unsafe.As<T, char>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
-                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded,
+                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded, ref quoteStartPosition,
                 columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
 
@@ -265,6 +279,7 @@ internal static class CsvStreamingParser
         ref int rowLength,
         ref int charsConsumed,
         ref bool rowEnded,
+        ref int quoteStartPosition,
         Span<int> columnStarts,
         Span<int> columnLengths,
         int maxColumns,
@@ -320,6 +335,10 @@ internal static class CsvStreamingParser
                         continue;
                     }
 
+                    if (!inQuotes)
+                    {
+                        quoteStartPosition = absolute;
+                    }
                     inQuotes = !inQuotes;
                     continue;
                 }
@@ -375,6 +394,7 @@ internal static class CsvStreamingParser
         ref int rowLength,
         ref int charsConsumed,
         ref bool rowEnded,
+        ref int quoteStartPosition,
         Span<int> columnStarts,
         Span<int> columnLengths,
         int maxColumns,
@@ -432,6 +452,10 @@ internal static class CsvStreamingParser
                         continue;
                     }
 
+                    if (!inQuotes)
+                    {
+                        quoteStartPosition = absolute;
+                    }
                     inQuotes = !inQuotes;
                     continue;
                 }

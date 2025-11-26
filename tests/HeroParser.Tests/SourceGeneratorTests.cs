@@ -30,15 +30,16 @@ public class SourceGeneratorTests
             }
 
             var person = notNullBinder.Bind(current, row);
+            Assert.NotNull(person);
             if (row == 2)
             {
-                Assert.Equal("Jane", person.Name);
+                Assert.Equal("Jane", person!.Name);
                 Assert.Equal(42, person.Age);
             }
 
             if (row == 3)
             {
-                Assert.Equal("Bob", person.Name);
+                Assert.Equal("Bob", person!.Name);
                 Assert.Equal(25, person.Age);
             }
         }
@@ -60,14 +61,15 @@ public class SourceGeneratorTests
         {
             row++;
             var entity = b.Bind(reader.Current, row);
+            Assert.NotNull(entity);
             if (row == 1)
             {
-                Assert.Equal(1, entity.Id);
+                Assert.Equal(1, entity!.Id);
                 Assert.Equal("full_name", entity.Name);
             }
             else
             {
-                Assert.Equal(2, entity.Id);
+                Assert.Equal(2, entity!.Id);
                 Assert.Equal("other", entity.Name);
             }
         }

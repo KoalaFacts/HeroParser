@@ -42,6 +42,12 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
         if (!recordOptions.HasHeaderRow)
             return;
 
+        // Check for duplicate headers if enabled
+        if (recordOptions.DetectDuplicateHeaders)
+        {
+            DetectDuplicateHeaders(headerRow, rowNumber);
+        }
+
         foreach (var binding in bindings)
         {
             if (binding.AttributeIndex.HasValue)
@@ -69,7 +75,31 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
         resolved = true;
     }
 
-    public T Bind(CsvCharSpanRow row, int rowNumber)
+    private void DetectDuplicateHeaders(CsvCharSpanRow headerRow, int rowNumber)
+    {
+        var seen = new Dictionary<string, int>(recordOptions.HeaderComparer);
+
+        for (int i = 0; i < headerRow.ColumnCount; i++)
+        {
+            var headerName = headerRow[i].ToString();
+            if (seen.TryGetValue(headerName, out var firstIndex))
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Duplicate header '{headerName}' found at columns {firstIndex + 1} and {i + 1}.",
+                    rowNumber);
+            }
+            seen[headerName] = i;
+        }
+    }
+
+    /// <summary>
+    /// Binds a CSV row to a record instance.
+    /// </summary>
+    /// <param name="row">The CSV row to bind.</param>
+    /// <param name="rowNumber">The 1-based row number for error reporting.</param>
+    /// <returns>The bound record, or <see langword="null"/> if the row should be skipped due to error handling.</returns>
+    public T? Bind(CsvCharSpanRow row, int rowNumber)
     {
         EnsureResolved(rowNumber);
 
@@ -108,11 +138,39 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
             var column = row[columnIndex];
             if (!binding.TryAssign(instance, column))
             {
+                var fieldValue = column.ToString();
+
+                // Check if there's an error handler
+                if (recordOptions.OnParseError is not null)
+                {
+                    var context = new CsvParseErrorContext
+                    {
+                        Row = rowNumber,
+                        Column = columnIndex + 1,
+                        MemberName = binding.MemberName,
+                        TargetType = binding.TargetType,
+                        FieldValue = fieldValue
+                    };
+
+                    var action = recordOptions.OnParseError(context);
+                    switch (action)
+                    {
+                        case ParseErrorAction.SkipRow:
+                            return null;
+                        case ParseErrorAction.UseDefault:
+                            continue;
+                        case ParseErrorAction.Throw:
+                        default:
+                            break;
+                    }
+                }
+
                 throw new CsvException(
                     CsvErrorCode.ParseError,
                     $"Failed to convert column {columnIndex + 1} to {binding.TargetType.Name} for member '{binding.MemberName}'.",
                     rowNumber,
-                    columnIndex + 1);
+                    columnIndex + 1,
+                    fieldValue);
             }
         }
 
@@ -169,13 +227,22 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
     private List<MemberBinding> InstantiateBindings(IReadOnlyList<BindingTemplate> templates)
     {
         var list = new List<MemberBinding>(templates.Count);
+        var culture = recordOptions.EffectiveCulture;
+        var customConverters = recordOptions.CustomConverters;
+
         foreach (var template in templates)
         {
+            // Create converter with culture, format, and custom converters
+            var converter = ConverterFactory.CreateConverter(
+                template.TargetType,
+                culture,
+                template.Format,
+                customConverters);
+
             // Wrap converter with null value checking if NullValues is configured
-            var converter = template.Converter;
             if (recordOptions.NullValues is { Count: > 0 })
             {
-                converter = WrapWithNullValueCheck(template.Converter, recordOptions.NullValues);
+                converter = WrapWithNullValueCheck(converter, recordOptions.NullValues);
             }
 
             list.Add(new MemberBinding(
@@ -225,7 +292,7 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
             var attribute = property.GetCustomAttribute<CsvColumnAttribute>();
             var headerName = !string.IsNullOrWhiteSpace(attribute?.Name) ? attribute!.Name! : property.Name;
             int? attributeIndex = attribute is { Index: >= 0 } ? attribute.Index : null;
-            var converter = ConverterFactory.CreateConverter(property.PropertyType);
+            var format = attribute?.Format;
             var setter = SetterFactory.CreateSetter(property);
 
             bindings.Add(new BindingTemplate(
@@ -233,7 +300,7 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
                 property.PropertyType,
                 headerName,
                 attributeIndex,
-                converter,
+                format,
                 setter));
         }
 

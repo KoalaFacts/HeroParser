@@ -50,7 +50,14 @@ public ref struct CsvRecordReader<T> where T : class, new()
                 continue;
             }
 
-            Current = binder.Bind(row, rowNumber);
+            var result = binder.Bind(row, rowNumber);
+            if (result is null)
+            {
+                // Row was skipped due to error handling
+                continue;
+            }
+
+            Current = result;
             return true;
         }
 

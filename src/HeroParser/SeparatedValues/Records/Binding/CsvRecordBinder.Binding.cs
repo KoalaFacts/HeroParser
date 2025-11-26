@@ -46,7 +46,7 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
         Type TargetType,
         string HeaderName,
         int? AttributeIndex,
-        ColumnConverter Converter,
+        string? Format,
         Action<T, object?> Setter);
 
     private static readonly ConcurrentDictionary<Type, List<BindingTemplate>> bindingCache = new();

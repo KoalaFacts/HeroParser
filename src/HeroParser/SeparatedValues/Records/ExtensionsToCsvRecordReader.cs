@@ -4,7 +4,7 @@ namespace HeroParser.SeparatedValues.Records;
 /// Provides LINQ-style extension methods for CSV record readers.
 /// </summary>
 /// <remarks>
-/// Since CSV readers are ref structs, they cannot implement <see cref="System.Collections.Generic.IEnumerable{T}"/>.
+/// Since CSV readers are ref structs, they cannot implement <see cref="IEnumerable{T}"/>.
 /// These extension methods provide common operations that consume the reader and return materialized results.
 /// </remarks>
 #pragma warning disable IDE0130 // Namespace does not match folder structure - intentionally in Records namespace for discoverability

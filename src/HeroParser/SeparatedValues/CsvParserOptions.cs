@@ -24,13 +24,13 @@ public sealed record CsvParserOptions
     /// Gets or sets the maximum number of columns a row may contain (defaults to 100).
     /// </summary>
     /// <remarks>Exceeding this value raises <see cref="CsvException"/> with <see cref="CsvErrorCode.TooManyColumns"/>.</remarks>
-    public int MaxColumns { get; init; } = 100;
+    public int MaxColumnCount { get; init; } = 100;
 
     /// <summary>
     /// Gets or sets the maximum number of rows to parse before aborting (defaults to 100,000).
     /// </summary>
     /// <remarks>Helps guard against malformed files with unbounded growth.</remarks>
-    public int MaxRows { get; init; } = 100_000;
+    public int MaxRowCount { get; init; } = 100_000;
 
     /// <summary>
     /// Gets or sets a value indicating whether SIMD acceleration is used when available (enabled by default).
@@ -71,14 +71,14 @@ public sealed record CsvParserOptions
     public bool TrimFields { get; init; } = false;
 
     /// <summary>
-    /// Gets or sets the maximum length allowed for a single field value.
+    /// Gets or sets the maximum size allowed for a single field value in characters.
     /// </summary>
     /// <remarks>
-    /// When set to a positive value, fields exceeding this length will cause a <see cref="CsvException"/>
+    /// When set to a positive value, fields exceeding this size will cause a <see cref="CsvException"/>
     /// to be thrown with <see cref="CsvErrorCode.ParseError"/>. Set to <see langword="null"/> (the default)
     /// to disable this protection.
     /// </remarks>
-    public int? MaxFieldLength { get; init; } = null;
+    public int? MaxFieldSize { get; init; } = null;
 
     /// <summary>
     /// Gets or sets the escape character used for escaping special characters inside fields (null by default).
@@ -137,27 +137,27 @@ public sealed record CsvParserOptions
                 $"Delimiter and Quote cannot be the same character ('{Delimiter}')");
         }
 
-        if (MaxColumns <= 0)
+        if (MaxColumnCount <= 0)
         {
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
-                $"MaxColumns must be positive, got {MaxColumns}");
+                $"MaxColumnCount must be positive, got {MaxColumnCount}");
         }
 
         // Upper bound to prevent excessive memory allocation from ArrayPool
-        const int MaxColumnsLimit = 10_000;
-        if (MaxColumns > MaxColumnsLimit)
+        const int MaxColumnCountLimit = 10_000;
+        if (MaxColumnCount > MaxColumnCountLimit)
         {
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
-                $"MaxColumns cannot exceed {MaxColumnsLimit:N0}, got {MaxColumns:N0}");
+                $"MaxColumnCount cannot exceed {MaxColumnCountLimit:N0}, got {MaxColumnCount:N0}");
         }
 
-        if (MaxRows <= 0)
+        if (MaxRowCount <= 0)
         {
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
-                $"MaxRows must be positive, got {MaxRows}");
+                $"MaxRowCount must be positive, got {MaxRowCount}");
         }
 
         if (!EnableQuotedFields && AllowNewlinesInsideQuotes)
@@ -191,11 +191,11 @@ public sealed record CsvParserOptions
             }
         }
 
-        if (MaxFieldLength.HasValue && MaxFieldLength.Value <= 0)
+        if (MaxFieldSize.HasValue && MaxFieldSize.Value <= 0)
         {
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
-                $"MaxFieldLength must be positive when specified, got {MaxFieldLength.Value}");
+                $"MaxFieldSize must be positive when specified, got {MaxFieldSize.Value}");
         }
 
         if (EscapeCharacter.HasValue)

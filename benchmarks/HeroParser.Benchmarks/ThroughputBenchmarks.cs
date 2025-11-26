@@ -28,8 +28,8 @@ public class ThroughputBenchmarks
         csv = GenerateCsv(Rows, Columns);
         options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4, // small headroom beyond generated data
-            MaxRows = Rows + 100      // allow end-of-file without tripping the limit
+            MaxColumnCount = Columns + 4, // small headroom beyond generated data
+            MaxRowCount = Rows + 100      // allow end-of-file without tripping the limit
         };
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
         Console.WriteLine($"CSV Size: {csv.Length:N0} chars ({csv.Length * 2:N0} bytes)");

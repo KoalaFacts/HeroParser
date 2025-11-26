@@ -199,7 +199,12 @@ public readonly ref struct CsvByteSpanColumn
             result = TimeZoneInfo.FindSystemTimeZoneById(id);
             return true;
         }
-        catch
+        catch (TimeZoneNotFoundException)
+        {
+            result = default!;
+            return false;
+        }
+        catch (InvalidTimeZoneException)
         {
             result = default!;
             return false;

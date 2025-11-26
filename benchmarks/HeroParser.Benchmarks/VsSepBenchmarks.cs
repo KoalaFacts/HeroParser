@@ -80,16 +80,16 @@ public class VsSepBenchmarks
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = 1_000,
-            MaxRows = 1_000_000,
+            MaxColumnCount = 1_000,
+            MaxRowCount = 1_000_000,
             EnableQuotedFields = WithQuotes,              // skip quote machinery when data has no quotes
             AllowNewlinesInsideQuotes = WithQuotes        // only meaningful when quotes are present
         };
 
         using var reader = Csv.ReadFromText(csv, new()
         {
-            MaxColumns = options.MaxColumns,
-            MaxRows = options.MaxRows,
+            MaxColumnCount = options.MaxColumnCount,
+            MaxRowCount = options.MaxRowCount,
             EnableQuotedFields = options.EnableQuotedFields,
             AllowNewlinesInsideQuotes = options.AllowNewlinesInsideQuotes
         });
@@ -108,16 +108,16 @@ public class VsSepBenchmarks
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = 1_000,
-            MaxRows = 1_000_000,
+            MaxColumnCount = 1_000,
+            MaxRowCount = 1_000_000,
             EnableQuotedFields = WithQuotes,
             AllowNewlinesInsideQuotes = WithQuotes
         };
 
         using var reader = Csv.ReadFromByteSpan(utf8, new()
         {
-            MaxColumns = options.MaxColumns,
-            MaxRows = options.MaxRows,
+            MaxColumnCount = options.MaxColumnCount,
+            MaxRowCount = options.MaxRowCount,
             EnableQuotedFields = options.EnableQuotedFields,
             AllowNewlinesInsideQuotes = options.AllowNewlinesInsideQuotes
         });

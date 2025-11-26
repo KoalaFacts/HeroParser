@@ -119,7 +119,7 @@ public class ReadmeExamplesTests
         {
             Delimiter = ',',  // Default
             Quote = '"',      // Default - RFC 4180 compliant
-            MaxColumns = 256  // Default
+            MaxColumnCount = 256  // Default
         };
         var reader = Csv.ReadFromText(csvData, options);
 

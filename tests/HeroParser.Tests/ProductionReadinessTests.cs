@@ -56,12 +56,12 @@ public class ProductionReadinessTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void MaxFieldLengthThrowsWhenExceeded()
+    public void MaxFieldSizeThrowsWhenExceeded()
     {
         var csv = "short,veryverylongfieldthatexceedsthelimit\n1,2";
         var options = new CsvParserOptions
         {
-            MaxFieldLength = 10
+            MaxFieldSize = 10
         };
 
         CsvException? exception = null;
@@ -82,12 +82,12 @@ public class ProductionReadinessTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void MaxFieldLengthAllowsFieldsWithinLimit()
+    public void MaxFieldSizeAllowsFieldsWithinLimit()
     {
         var csv = "short,ok\n1,2";
         var options = new CsvParserOptions
         {
-            MaxFieldLength = 10
+            MaxFieldSize = 10
         };
 
         var reader = Csv.ReadFromText(csv, options);

@@ -34,8 +34,8 @@ public class StreamingThroughputBenchmarks
         // Tighten limits to focus measurement on parser throughput rather than unbounded configs.
         options = new CsvParserOptions
         {
-            MaxColumns = Columns + 2, // small headroom over generated dataset
-            MaxRows = Rows + 10       // small headroom over generated dataset
+            MaxColumnCount = Columns + 2, // small headroom over generated dataset
+            MaxRowCount = Rows + 10       // small headroom over generated dataset
         };
     }
 

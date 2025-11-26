@@ -177,7 +177,12 @@ public readonly ref struct CsvCharSpanColumn
             result = TimeZoneInfo.FindSystemTimeZoneById(new string(chars));
             return true;
         }
-        catch
+        catch (TimeZoneNotFoundException)
+        {
+            result = default!;
+            return false;
+        }
+        catch (InvalidTimeZoneException)
         {
             result = default!;
             return false;

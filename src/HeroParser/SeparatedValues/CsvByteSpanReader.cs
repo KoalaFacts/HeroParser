@@ -23,8 +23,8 @@ public ref struct CsvByteSpanReader
         position = 0;
         rowCount = 0;
         Current = default;
-        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
-        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
+        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
+        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
     }
 
     /// <summary>Gets the current UTF-8 backed row.</summary>
@@ -51,8 +51,8 @@ public ref struct CsvByteSpanReader
             var result = CsvStreamingParser.ParseRow(
                 remaining,
                 options,
-                columnStartsBuffer.AsSpan(0, options.MaxColumns),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumns));
+                columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
+                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount));
 
             if (result.CharsConsumed == 0)
                 return false;
@@ -73,11 +73,11 @@ public ref struct CsvByteSpanReader
                 rowCount);
 
             position += result.CharsConsumed;
-            if (rowCount > options.MaxRows)
+            if (rowCount > options.MaxRowCount)
             {
                 throw new CsvException(
                     CsvErrorCode.TooManyRows,
-                    $"CSV exceeds maximum row limit of {options.MaxRows}");
+                    $"CSV exceeds maximum row limit of {options.MaxRowCount}");
             }
             return true;
         }

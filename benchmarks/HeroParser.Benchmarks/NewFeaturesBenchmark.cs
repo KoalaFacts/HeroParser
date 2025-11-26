@@ -6,7 +6,7 @@ using System.Text;
 namespace HeroParser.Benchmarks;
 
 /// <summary>
-/// Benchmarks for P2 features: comment line skipping, TrimFields, and MaxFieldLength validation.
+/// Benchmarks for P2 features: comment line skipping, TrimFields, and MaxFieldSize validation.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
@@ -99,8 +99,8 @@ public class NewFeaturesBenchmark
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4,
-            MaxRows = Rows + 100,
+            MaxColumnCount = Columns + 4,
+            MaxRowCount = Rows + 100,
             CommentCharacter = null
         };
 
@@ -121,8 +121,8 @@ public class NewFeaturesBenchmark
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4,
-            MaxRows = Rows + 100,
+            MaxColumnCount = Columns + 4,
+            MaxRowCount = Rows + 100,
             CommentCharacter = '#'
         };
 
@@ -143,8 +143,8 @@ public class NewFeaturesBenchmark
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4,
-            MaxRows = Rows + 100,
+            MaxColumnCount = Columns + 4,
+            MaxRowCount = Rows + 100,
             CommentCharacter = '#'
         };
 
@@ -169,8 +169,8 @@ public class NewFeaturesBenchmark
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4,
-            MaxRows = Rows + 100,
+            MaxColumnCount = Columns + 4,
+            MaxRowCount = Rows + 100,
             TrimFields = false
         };
 
@@ -191,8 +191,8 @@ public class NewFeaturesBenchmark
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4,
-            MaxRows = Rows + 100,
+            MaxColumnCount = Columns + 4,
+            MaxRowCount = Rows + 100,
             TrimFields = true
         };
 
@@ -206,20 +206,20 @@ public class NewFeaturesBenchmark
     }
 
     // ============================================================
-    // MaxFieldLength Validation Overhead Benchmarks
+    // MaxFieldSize Validation Overhead Benchmarks
     // ============================================================
 
     /// <summary>
-    /// Baseline: Parse CSV without MaxFieldLength validation
+    /// Baseline: Parse CSV without MaxFieldSize validation
     /// </summary>
     [Benchmark]
-    public int Parse_WithoutMaxFieldLength()
+    public int Parse_WithoutMaxFieldSize()
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4,
-            MaxRows = Rows + 100,
-            MaxFieldLength = null
+            MaxColumnCount = Columns + 4,
+            MaxRowCount = Rows + 100,
+            MaxFieldSize = null
         };
 
         using var reader = Csv.ReadFromText(csvWithLongFields, options);
@@ -232,16 +232,16 @@ public class NewFeaturesBenchmark
     }
 
     /// <summary>
-    /// Compare: Parse CSV with MaxFieldLength validation (set to 500, won't trigger)
+    /// Compare: Parse CSV with MaxFieldSize validation (set to 500, won't trigger)
     /// </summary>
     [Benchmark]
-    public int Parse_WithMaxFieldLength()
+    public int Parse_WithMaxFieldSize()
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4,
-            MaxRows = Rows + 100,
-            MaxFieldLength = 500
+            MaxColumnCount = Columns + 4,
+            MaxRowCount = Rows + 100,
+            MaxFieldSize = 500
         };
 
         using var reader = Csv.ReadFromText(csvWithLongFields, options);
@@ -254,16 +254,16 @@ public class NewFeaturesBenchmark
     }
 
     /// <summary>
-    /// Compare: Parse CSV with strict MaxFieldLength validation (set to 100, won't trigger)
+    /// Compare: Parse CSV with strict MaxFieldSize validation (set to 100, won't trigger)
     /// </summary>
     [Benchmark]
-    public int Parse_WithStrictMaxFieldLength()
+    public int Parse_WithStrictMaxFieldSize()
     {
         var options = new CsvParserOptions
         {
-            MaxColumns = Columns + 4,
-            MaxRows = Rows + 100,
-            MaxFieldLength = 300
+            MaxColumnCount = Columns + 4,
+            MaxRowCount = Rows + 100,
+            MaxFieldSize = 300
         };
 
         using var reader = Csv.ReadFromText(csvWithLongFields, options);

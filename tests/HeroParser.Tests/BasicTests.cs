@@ -380,7 +380,7 @@ public class BasicTests
     public void TooManyColumns_ThrowsException()
     {
         var csv = "a,b,c,d,e";
-        var options = new CsvParserOptions { MaxColumns = 3 };
+        var options = new CsvParserOptions { MaxColumnCount = 3 };
 
         CsvException? ex = null;
         try
@@ -404,7 +404,7 @@ public class BasicTests
     public void TooManyRows_ThrowsException()
     {
         var csv = "a\nb\nc\nd";
-        var options = new CsvParserOptions { MaxRows = 2 };
+        var options = new CsvParserOptions { MaxRowCount = 2 };
 
         CsvException? ex = null;
         try

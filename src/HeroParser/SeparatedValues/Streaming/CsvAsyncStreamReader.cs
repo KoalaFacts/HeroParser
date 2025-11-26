@@ -46,8 +46,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         this.options = options;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
-        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
-        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
+        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
+        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
         offset = 0;
         length = 0;
         rowCount = 0;
@@ -80,8 +80,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             var result = CsvStreamingParser.ParseRow(
                 span,
                 options,
-                columnStartsBuffer.AsSpan(0, options.MaxColumns),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumns));
+                columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
+                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount));
 
             if (result.CharsConsumed > 0)
             {
@@ -97,11 +97,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 currentRowLength = rowLength;
                 currentColumnCount = result.ColumnCount;
                 currentLineNumber = rowCount;
-                if (rowCount > options.MaxRows)
+                if (rowCount > options.MaxRowCount)
                 {
                     throw new CsvException(
                         CsvErrorCode.TooManyRows,
-                        $"CSV exceeds maximum row limit of {options.MaxRows}");
+                        $"CSV exceeds maximum row limit of {options.MaxRowCount}");
                 }
                 return true;
             }

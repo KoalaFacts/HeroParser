@@ -108,10 +108,10 @@ internal static class CsvStreamingParser
                 ref quoteStartPosition,
                 columnStarts,
                 columnLengths,
-                options.MaxColumns,
+                options.MaxColumnCount,
                 options.AllowNewlinesInsideQuotes,
                 enableQuotes,
-                options.MaxFieldLength);
+                options.MaxFieldSize);
         }
 
         if (!rowEnded)
@@ -171,7 +171,7 @@ internal static class CsvStreamingParser
                 if (c.Equals(delimiter))
                 {
                     AppendColumn(i, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, options.MaxColumns, options.MaxFieldLength);
+                        columnStarts, columnLengths, options.MaxColumnCount, options.MaxFieldSize);
                 }
                 else if (c.Equals(lf) || c.Equals(cr))
                 {
@@ -206,7 +206,7 @@ internal static class CsvStreamingParser
         }
 
         AppendFinalColumn(rowLength, ref columnCount, ref currentStart,
-            columnStarts, columnLengths, options.MaxColumns, options.MaxFieldLength);
+            columnStarts, columnLengths, options.MaxColumnCount, options.MaxFieldSize);
 
         // Apply trimming if enabled (only for unquoted fields)
         if (options.TrimFields)

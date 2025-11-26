@@ -12,7 +12,6 @@ public ref struct CsvStreamReader
     private readonly CsvParserOptions options;
     private readonly int[] columnStartsBuffer;
     private readonly int[] columnLengthsBuffer;
-    private readonly bool leaveOpen;
     private bool disposed;
     private char[] buffer;
     private int offset;
@@ -26,11 +25,10 @@ public ref struct CsvStreamReader
     internal CsvStreamReader(Stream stream, CsvParserOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
         this.options = options;
-        this.leaveOpen = leaveOpen;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
-        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
-        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumns);
+        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
+        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
         offset = 0;
         length = 0;
         rowCount = 0;
@@ -66,8 +64,8 @@ public ref struct CsvStreamReader
             var result = CsvStreamingParser.ParseRow(
                 span,
                 options,
-                columnStartsBuffer.AsSpan(0, options.MaxColumns),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumns));
+                columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
+                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount));
 
             if (result.CharsConsumed > 0)
             {
@@ -84,23 +82,18 @@ public ref struct CsvStreamReader
                     columnLengthsBuffer,
                     result.ColumnCount,
                     rowCount);
-                if (rowCount > options.MaxRows)
+                if (rowCount > options.MaxRowCount)
                 {
                     throw new CsvException(
                         CsvErrorCode.TooManyRows,
-                        $"CSV exceeds maximum row limit of {options.MaxRows}");
+                        $"CSV exceeds maximum row limit of {options.MaxRowCount}");
                 }
                 return true;
             }
 
             if (endOfStream)
             {
-                if (!leaveOpen && !disposed)
-                {
-                    reader.Dispose();
-                    disposed = true;
-                }
-
+                Dispose();
                 return false;
             }
 

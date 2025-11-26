@@ -81,6 +81,17 @@ public sealed record CsvParserOptions
     public int? MaxFieldLength { get; init; } = null;
 
     /// <summary>
+    /// Gets or sets the escape character used for escaping special characters inside fields (null by default).
+    /// </summary>
+    /// <remarks>
+    /// When set, the escape character allows escaping delimiters, quotes, and newlines inside fields.
+    /// For example, with <c>EscapeCharacter = '\\'</c>, the sequence <c>\"</c> represents a literal quote.
+    /// This is common in Excel-style CSV exports. When null (the default), only RFC 4180 doubled quotes are supported.
+    /// The escape character must be ASCII and cannot match <see cref="Delimiter"/>, <see cref="Quote"/>, or <see cref="CommentCharacter"/>.
+    /// </remarks>
+    public char? EscapeCharacter { get; init; } = null;
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>
@@ -166,6 +177,37 @@ public sealed record CsvParserOptions
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
                 $"MaxFieldLength must be positive when specified, got {MaxFieldLength.Value}");
+        }
+
+        if (EscapeCharacter.HasValue)
+        {
+            if (EscapeCharacter.Value > 127)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    $"EscapeCharacter '{EscapeCharacter.Value}' (U+{(int)EscapeCharacter.Value:X4}) must be ASCII (0-127)");
+            }
+
+            if (EscapeCharacter.Value == Delimiter)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    $"EscapeCharacter and Delimiter cannot be the same character ('{EscapeCharacter.Value}')");
+            }
+
+            if (EscapeCharacter.Value == Quote)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    $"EscapeCharacter and Quote cannot be the same character ('{EscapeCharacter.Value}')");
+            }
+
+            if (CommentCharacter.HasValue && EscapeCharacter.Value == CommentCharacter.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.InvalidOptions,
+                    $"EscapeCharacter and CommentCharacter cannot be the same character ('{EscapeCharacter.Value}')");
+            }
         }
     }
 }

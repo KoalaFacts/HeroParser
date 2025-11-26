@@ -22,6 +22,9 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private int currentRowLength;
     private int currentColumnCount;
     private int currentLineNumber;
+#pragma warning disable IDE0032 // Use auto property - can't use auto property here as bytesRead is modified in FillBufferAsync
+    private long bytesRead;
+#pragma warning restore IDE0032
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
     public CsvCharSpanRow Current => new(
@@ -30,6 +33,13 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         columnLengthsBuffer,
         currentColumnCount,
         currentLineNumber);
+
+    /// <summary>Gets the approximate number of bytes read from the underlying stream.</summary>
+    /// <remarks>
+    /// This value is estimated based on characters read assuming UTF-8 encoding (1 byte per ASCII character).
+    /// For non-ASCII content or other encodings, this may not be precisely accurate.
+    /// </remarks>
+    public long BytesRead => bytesRead;
 
     internal CsvAsyncStreamReader(Stream stream, CsvParserOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
@@ -131,6 +141,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         }
 
         length += read;
+        bytesRead += read; // Approximate bytes read (1 char ≈ 1 byte for ASCII/UTF-8)
     }
 
     private static bool ContainsLineBreak(ReadOnlySpan<char> span)

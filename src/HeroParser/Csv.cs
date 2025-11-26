@@ -271,7 +271,8 @@ public static class Csv
 
         var reader = ReadFromCharSpan(data.AsSpan(), parserOptions);
         var binder = ResolveBinder<T>(recordOptions);
-        return new CsvRecordReader<T>(reader, binder, recordOptions.SkipRows);
+        return new CsvRecordReader<T>(reader, binder, recordOptions.SkipRows,
+            recordOptions.Progress, recordOptions.ProgressIntervalRows);
     }
 
     /// <summary>
@@ -290,7 +291,16 @@ public static class Csv
         recordOptions ??= CsvRecordOptions.Default;
         var reader = ReadFromStream(stream, parserOptions, encoding, leaveOpen, bufferSize);
         var binder = ResolveBinder<T>(recordOptions);
-        return new CsvStreamingRecordReader<T>(reader, binder, recordOptions.SkipRows);
+
+        // Get stream length if available for progress reporting
+        long totalBytes = -1;
+        if (stream.CanSeek)
+        {
+            try { totalBytes = stream.Length; } catch { /* Ignore if not available */ }
+        }
+
+        return new CsvStreamingRecordReader<T>(reader, binder, recordOptions.SkipRows,
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, totalBytes);
     }
 
     /// <summary>
@@ -326,8 +336,19 @@ public static class Csv
         await using var reader = CreateAsyncStreamReader(stream, parserOptions, encoding, leaveOpen, bufferSize);
         var binder = ResolveBinder<T>(recordOptions);
 
+        // Get stream length if available for progress reporting
+        long totalBytes = -1;
+        if (stream.CanSeek)
+        {
+            try { totalBytes = stream.Length; } catch { /* Ignore if not available */ }
+        }
+
+        var progress = recordOptions.Progress;
+        var progressInterval = recordOptions.ProgressIntervalRows > 0 ? recordOptions.ProgressIntervalRows : 1000;
+
         int rowNumber = 0;
         int skippedCount = 0;
+        int dataRowCount = 0;
         while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
             rowNumber++;
@@ -353,7 +374,31 @@ public static class Csv
                 continue;
             }
 
+            dataRowCount++;
+
+            // Report progress at intervals
+            if (progress is not null && dataRowCount % progressInterval == 0)
+            {
+                progress.Report(new CsvProgress
+                {
+                    RowsProcessed = dataRowCount,
+                    BytesProcessed = reader.BytesRead,
+                    TotalBytes = totalBytes
+                });
+            }
+
             yield return result;
+        }
+
+        // Report final progress
+        if (progress is not null && dataRowCount > 0)
+        {
+            progress.Report(new CsvProgress
+            {
+                RowsProcessed = dataRowCount,
+                BytesProcessed = reader.BytesRead,
+                TotalBytes = totalBytes
+            });
         }
     }
 

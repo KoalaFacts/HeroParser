@@ -235,4 +235,52 @@ public readonly ref struct CsvCharSpanColumn
 
         return span.ToString();
     }
+
+    /// <summary>
+    /// Unquotes and unescapes the column, handling both doubled quotes (RFC 4180) and escape sequences.
+    /// </summary>
+    /// <param name="quote">Quote character (defaults to double quote).</param>
+    /// <param name="escape">Optional escape character (e.g., backslash). When specified, escape sequences like \" are processed.</param>
+    public string UnquoteToString(char quote, char? escape)
+    {
+        if (escape is null)
+            return UnquoteToString(quote);
+
+        var span = chars;
+
+        // Handle quoted fields
+        if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
+        {
+            span = span[1..^1];
+        }
+
+        // Check if we need to unescape
+        bool needsUnescape = span.Contains(escape.Value);
+        if (!needsUnescape && !span.Contains(quote))
+            return span.ToString();
+
+        // Process escape sequences
+        var result = new System.Text.StringBuilder(span.Length);
+        for (int i = 0; i < span.Length; i++)
+        {
+            char c = span[i];
+            if (c == escape.Value && i + 1 < span.Length)
+            {
+                // Skip escape character, take the next character as-is
+                i++;
+                result.Append(span[i]);
+            }
+            else if (c == quote && i + 1 < span.Length && span[i + 1] == quote)
+            {
+                // RFC 4180 doubled quote
+                result.Append(quote);
+                i++;
+            }
+            else
+            {
+                result.Append(c);
+            }
+        }
+        return result.ToString();
+    }
 }

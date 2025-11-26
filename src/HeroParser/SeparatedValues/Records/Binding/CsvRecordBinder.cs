@@ -48,6 +48,38 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
             DetectDuplicateHeaders(headerRow, rowNumber);
         }
 
+        // Collect headers for validation
+        var headers = new List<string>(headerRow.ColumnCount);
+        for (int i = 0; i < headerRow.ColumnCount; i++)
+        {
+            headers.Add(headerRow[i].ToString());
+        }
+
+        // Validate required headers (upfront validation before processing)
+        if (recordOptions.RequiredHeaders is { Count: > 0 })
+        {
+            ValidateRequiredHeaders(headers, rowNumber);
+        }
+
+        // Custom header validation callback
+        if (recordOptions.ValidateHeaders is not null)
+        {
+            var context = new CsvHeaderValidationContext
+            {
+                Headers = headers,
+                HeaderComparer = recordOptions.HeaderComparer
+            };
+
+            var result = recordOptions.ValidateHeaders(context);
+            if (!result.IsValid)
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    result.ErrorMessage ?? "Header validation failed.",
+                    rowNumber);
+            }
+        }
+
         foreach (var binding in bindings)
         {
             if (binding.AttributeIndex.HasValue)
@@ -73,6 +105,28 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
         }
 
         resolved = true;
+    }
+
+    private void ValidateRequiredHeaders(List<string> headers, int rowNumber)
+    {
+        var headerSet = new HashSet<string>(headers, recordOptions.HeaderComparer);
+        var missingHeaders = new List<string>();
+
+        foreach (var requiredHeader in recordOptions.RequiredHeaders!)
+        {
+            if (!headerSet.Contains(requiredHeader))
+            {
+                missingHeaders.Add(requiredHeader);
+            }
+        }
+
+        if (missingHeaders.Count > 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.ParseError,
+                $"Required header(s) not found: {string.Join(", ", missingHeaders.Select(h => $"'{h}'"))}",
+                rowNumber);
+        }
     }
 
     private void DetectDuplicateHeaders(CsvCharSpanRow headerRow, int rowNumber)

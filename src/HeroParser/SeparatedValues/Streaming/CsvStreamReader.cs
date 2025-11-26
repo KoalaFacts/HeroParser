@@ -19,6 +19,9 @@ public ref struct CsvStreamReader
     private int length;
     private int rowCount;
     private bool endOfStream;
+#pragma warning disable IDE0032 // Use auto property - can't use auto property here as bytesRead is modified in FillBuffer
+    private long bytesRead;
+#pragma warning restore IDE0032
 
     internal CsvStreamReader(Stream stream, CsvParserOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
@@ -34,10 +37,18 @@ public ref struct CsvStreamReader
         endOfStream = false;
         Current = default;
         disposed = false;
+        bytesRead = 0;
     }
 
     /// <summary>Gets the current UTF-16 backed row.</summary>
     public CsvCharSpanRow Current { get; private set; }
+
+    /// <summary>Gets the approximate number of bytes read from the underlying stream.</summary>
+    /// <remarks>
+    /// This value is estimated based on characters read assuming UTF-8 encoding (1 byte per ASCII character).
+    /// For non-ASCII content or other encodings, this may not be precisely accurate.
+    /// </remarks>
+    public readonly long BytesRead => bytesRead;
 
     /// <summary>Returns this instance so it can be consumed by <c>foreach</c>.</summary>
     public readonly CsvStreamReader GetEnumerator() => this;
@@ -123,6 +134,7 @@ public ref struct CsvStreamReader
         }
 
         length += read;
+        bytesRead += read; // Approximate bytes read (1 char ≈ 1 byte for ASCII/UTF-8)
     }
 
     /// <summary>Returns pooled buffers and optionally disposes the underlying stream.</summary>

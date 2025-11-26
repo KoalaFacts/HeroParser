@@ -34,6 +34,8 @@ internal static class CsvStreamingParser
         T cr = CastFromChar<T>('\r');
         T space = CastFromChar<T>(' ');
         T tab = CastFromChar<T>('\t');
+        T escape = options.EscapeCharacter.HasValue ? CastFromChar<T>(options.EscapeCharacter.Value) : default;
+        bool hasEscapeChar = options.EscapeCharacter.HasValue;
 
         // Check for comment line
         if (options.CommentCharacter.HasValue)
@@ -85,8 +87,8 @@ internal static class CsvStreamingParser
         bool enableQuotes = options.EnableQuotedFields;
         int quoteStartPosition = -1; // Track where the opening quote was found
 
-        // SIMD fast path (if enabled)
-        if (options.UseSimdIfAvailable)
+        // SIMD fast path (if enabled and no escape character - escape handling requires sequential processing)
+        if (options.UseSimdIfAvailable && !hasEscapeChar)
         {
             TrySimdParse(
                 ref mutableRef,
@@ -114,9 +116,24 @@ internal static class CsvStreamingParser
 
         if (!rowEnded)
         {
+            bool skipNextChar = false;
             for (int i = position; i < data.Length; i++)
             {
                 T c = Unsafe.Add(ref mutableRef, i);
+
+                // Handle escape character - skip the next character
+                if (skipNextChar)
+                {
+                    skipNextChar = false;
+                    continue;
+                }
+
+                // Check for escape character (e.g., backslash)
+                if (hasEscapeChar && c.Equals(escape) && i + 1 < data.Length)
+                {
+                    skipNextChar = true;
+                    continue;
+                }
 
                 if (enableQuotes && c.Equals(quote))
                 {

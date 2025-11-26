@@ -8,17 +8,24 @@ public ref struct CsvRecordReader<T> where T : class, new()
     private CsvCharSpanReader reader;
     private readonly CsvRecordBinder<T> binder;
     private readonly int skipRows;
+    private readonly IProgress<CsvProgress>? progress;
+    private readonly int progressInterval;
     private int rowNumber;
     private int skippedCount;
+    private int dataRowCount;
 
-    internal CsvRecordReader(CsvCharSpanReader reader, CsvRecordBinder<T> binder, int skipRows = 0)
+    internal CsvRecordReader(CsvCharSpanReader reader, CsvRecordBinder<T> binder, int skipRows = 0,
+        IProgress<CsvProgress>? progress = null, int progressInterval = 1000)
     {
         this.reader = reader;
         this.binder = binder;
         this.skipRows = skipRows;
+        this.progress = progress;
+        this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
         Current = default!;
         rowNumber = 0;
         skippedCount = 0;
+        dataRowCount = 0;
     }
 
     /// <summary>Gets the current mapped record.</summary>
@@ -57,8 +64,32 @@ public ref struct CsvRecordReader<T> where T : class, new()
                 continue;
             }
 
+            dataRowCount++;
+
+            // Report progress at intervals
+            if (progress is not null && dataRowCount % progressInterval == 0)
+            {
+                progress.Report(new CsvProgress
+                {
+                    RowsProcessed = dataRowCount,
+                    BytesProcessed = 0, // Not available for span-based parsing
+                    TotalBytes = -1
+                });
+            }
+
             Current = result;
             return true;
+        }
+
+        // Report final progress
+        if (progress is not null && dataRowCount > 0)
+        {
+            progress.Report(new CsvProgress
+            {
+                RowsProcessed = dataRowCount,
+                BytesProcessed = 0,
+                TotalBytes = -1
+            });
         }
 
         Current = default!;

@@ -78,6 +78,81 @@ public enum ParseErrorAction
 public delegate ParseErrorAction CsvParseErrorHandler(CsvParseErrorContext context);
 
 /// <summary>
+/// Provides context about headers for validation callbacks.
+/// </summary>
+public readonly struct CsvHeaderValidationContext
+{
+    /// <summary>
+    /// Gets the collection of header names found in the CSV.
+    /// </summary>
+    public IReadOnlyList<string> Headers { get; init; }
+
+    /// <summary>
+    /// Gets the header comparer being used (case-sensitive or case-insensitive).
+    /// </summary>
+    public StringComparer HeaderComparer { get; init; }
+}
+
+/// <summary>
+/// Delegate for validating CSV headers before processing data.
+/// </summary>
+/// <param name="context">Context containing header information.</param>
+/// <returns>A validation result indicating success or failure with an error message.</returns>
+public delegate CsvHeaderValidationResult CsvHeaderValidator(CsvHeaderValidationContext context);
+
+/// <summary>
+/// Result of header validation.
+/// </summary>
+public readonly struct CsvHeaderValidationResult
+{
+    /// <summary>
+    /// Gets a value indicating whether the validation passed.
+    /// </summary>
+    public bool IsValid { get; init; }
+
+    /// <summary>
+    /// Gets the error message when validation fails.
+    /// </summary>
+    public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// Creates a successful validation result.
+    /// </summary>
+    public static CsvHeaderValidationResult Success => new() { IsValid = true };
+
+    /// <summary>
+    /// Creates a failed validation result with an error message.
+    /// </summary>
+    public static CsvHeaderValidationResult Failure(string errorMessage) => new() { IsValid = false, ErrorMessage = errorMessage };
+}
+
+/// <summary>
+/// Represents progress information during CSV parsing.
+/// </summary>
+public readonly struct CsvProgress
+{
+    /// <summary>
+    /// Gets the number of rows processed so far.
+    /// </summary>
+    public long RowsProcessed { get; init; }
+
+    /// <summary>
+    /// Gets the number of bytes processed so far (for stream-based parsing).
+    /// </summary>
+    public long BytesProcessed { get; init; }
+
+    /// <summary>
+    /// Gets the total number of bytes to process (if known, -1 otherwise).
+    /// </summary>
+    public long TotalBytes { get; init; }
+
+    /// <summary>
+    /// Gets the progress percentage (0.0 to 1.0) if total bytes is known, or -1 if unknown.
+    /// </summary>
+    public double ProgressPercentage => TotalBytes > 0 ? (double)BytesProcessed / TotalBytes : -1;
+}
+
+/// <summary>
 /// Configures how CSV rows are mapped to strongly typed records.
 /// </summary>
 public sealed record CsvRecordOptions
@@ -170,6 +245,77 @@ public sealed record CsvRecordOptions
     /// </code>
     /// </example>
     public CsvParseErrorHandler? OnParseError { get; init; } = null;
+
+    /// <summary>
+    /// Gets or sets the list of required header names that must be present in the CSV.
+    /// </summary>
+    /// <remarks>
+    /// When set, a <see cref="CsvException"/> is thrown during header processing if any
+    /// required header is missing. Header matching respects <see cref="CaseSensitiveHeaders"/>.
+    /// This validation occurs immediately when headers are processed, before any data rows.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var options = new CsvRecordOptions
+    /// {
+    ///     RequiredHeaders = ["Name", "Email", "Id"]
+    /// };
+    /// </code>
+    /// </example>
+    public IReadOnlyList<string>? RequiredHeaders { get; init; } = null;
+
+    /// <summary>
+    /// Gets or sets a callback for custom header validation.
+    /// </summary>
+    /// <remarks>
+    /// This callback is invoked after <see cref="RequiredHeaders"/> validation (if any)
+    /// and before any data rows are processed. Use it for complex validation logic such as
+    /// checking header order, ensuring certain combinations of headers exist, or rejecting
+    /// unexpected headers.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var options = new CsvRecordOptions
+    /// {
+    ///     ValidateHeaders = ctx =>
+    ///     {
+    ///         if (ctx.Headers.Count > 10)
+    ///             return CsvHeaderValidationResult.Failure("Too many columns");
+    ///         return CsvHeaderValidationResult.Success;
+    ///     }
+    /// };
+    /// </code>
+    /// </example>
+    public CsvHeaderValidator? ValidateHeaders { get; init; } = null;
+
+    /// <summary>
+    /// Gets or sets the progress reporter for receiving parsing progress updates.
+    /// </summary>
+    /// <remarks>
+    /// When set, progress updates are reported at intervals specified by <see cref="ProgressIntervalRows"/>.
+    /// Progress includes the number of rows processed and bytes processed (for stream-based parsing).
+    /// This is useful for providing feedback during long-running parsing operations.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var progress = new Progress&lt;CsvProgress&gt;(p =>
+    /// {
+    ///     Console.WriteLine($"Processed {p.RowsProcessed} rows ({p.ProgressPercentage:P0})");
+    /// });
+    /// var options = new CsvRecordOptions { Progress = progress };
+    /// </code>
+    /// </example>
+    public IProgress<CsvProgress>? Progress { get; init; } = null;
+
+    /// <summary>
+    /// Gets or sets the number of rows between progress updates (default is 1000).
+    /// </summary>
+    /// <remarks>
+    /// Progress is reported every <see cref="ProgressIntervalRows"/> rows to avoid
+    /// the overhead of frequent progress notifications. Set to 1 for per-row progress
+    /// (not recommended for large files due to performance impact).
+    /// </remarks>
+    public int ProgressIntervalRows { get; init; } = 1000;
 
     internal StringComparer HeaderComparer => CaseSensitiveHeaders ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 

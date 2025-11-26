@@ -127,6 +127,15 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         if (length == buffer.Length)
         {
+            // Check MaxRowSize to prevent unbounded buffer growth (DoS protection)
+            if (options.MaxRowSize.HasValue && buffer.Length >= options.MaxRowSize.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Row exceeds maximum size of {options.MaxRowSize.Value:N0} characters. " +
+                    "Increase MaxRowSize or ensure rows have proper line endings.");
+            }
+
             var newBuffer = ArrayPool<char>.Shared.Rent(buffer.Length * 2);
             buffer.AsSpan(0, length).CopyTo(newBuffer);
             ArrayPool<char>.Shared.Return(buffer, clearArray: false);
@@ -153,6 +162,9 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     /// Asynchronously releases resources used by the reader.
     /// </summary>
     /// <returns>A <see cref="ValueTask"/> representing the asynchronous dispose operation.</returns>
+    /// <remarks>
+    /// The underlying stream is only closed if <c>leaveOpen</c> was <see langword="false"/> when the reader was created.
+    /// </remarks>
     public ValueTask DisposeAsync()
     {
         if (disposed)
@@ -163,6 +175,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         ArrayPool<char>.Shared.Return(buffer, clearArray: false);
 
         disposed = true;
+        // StreamReader was created with leaveOpen flag, so it handles stream disposal correctly
         reader.Dispose();
         return ValueTask.CompletedTask;
     }

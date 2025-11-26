@@ -1,14 +1,6 @@
-#if NET9_0_OR_GREATER
-using HeroParser;
+using System.Collections.Concurrent;
 using HeroParser.SeparatedValues.Records;
 using HeroParser.SeparatedValues.Records.Binding;
-using Lock = System.Threading.Lock;
-#else
-using HeroParser;
-using HeroParser.SeparatedValues.Records;
-using HeroParser.SeparatedValues.Records.Binding;
-using Lock = System.Object;
-#endif
 
 namespace HeroParser.SeparatedValues.Records.Binding;
 
@@ -16,18 +8,16 @@ namespace HeroParser.SeparatedValues.Records.Binding;
 /// Resolves binders from generated code when available, falling back to runtime reflection.
 /// </summary>
 /// <remarks>
-/// Thread-Safety: Registration of binders via <see cref="RegisterGeneratedBinder"/> is thread-safe.
+/// Thread-Safety: All operations are thread-safe. Uses ConcurrentDictionary for lock-free reads.
 /// Individual binders returned by <see cref="TryGetBinder{T}"/> are not shared between threads
 /// and each factory invocation creates a new instance.
 /// </remarks>
 internal static partial class CsvRecordBinderFactory
 {
-    private static readonly Dictionary<Type, Func<CsvRecordOptions?, object>> generatedFactories;
-    private static readonly Lock syncRoot = new();
+    private static readonly ConcurrentDictionary<Type, Func<CsvRecordOptions?, object>> generatedFactories = new();
 
     static CsvRecordBinderFactory()
     {
-        generatedFactories = [];
         RegisterGeneratedBinders(generatedFactories);
     }
 
@@ -54,15 +44,12 @@ internal static partial class CsvRecordBinderFactory
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(factory);
 
-        lock (syncRoot)
-        {
-            generatedFactories[type] = factory;
-        }
+        generatedFactories[type] = factory;
     }
 
     /// <summary>
     /// Populated by the source generator; becomes a no-op when no generators run.
     /// </summary>
     /// <param name="factories">Cache to register binder factories into.</param>
-    static partial void RegisterGeneratedBinders(Dictionary<Type, Func<CsvRecordOptions?, object>> factories);
+    static partial void RegisterGeneratedBinders(ConcurrentDictionary<Type, Func<CsvRecordOptions?, object>> factories);
 }

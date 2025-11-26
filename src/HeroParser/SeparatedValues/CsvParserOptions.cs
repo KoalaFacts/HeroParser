@@ -92,6 +92,16 @@ public sealed record CsvParserOptions
     public char? EscapeCharacter { get; init; } = null;
 
     /// <summary>
+    /// Gets or sets the maximum row size in characters for streaming readers (defaults to 1MB worth of chars).
+    /// </summary>
+    /// <remarks>
+    /// This limit prevents unbounded buffer growth when parsing rows without line breaks (DoS protection).
+    /// Only applies to streaming readers (<see cref="Streaming.CsvStreamReader"/> and <see cref="Streaming.CsvAsyncStreamReader"/>).
+    /// Set to <see langword="null"/> to disable this protection (not recommended for untrusted input).
+    /// </remarks>
+    public int? MaxRowSize { get; init; } = 512 * 1024; // 512K chars = ~1MB
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>
@@ -132,6 +142,15 @@ public sealed record CsvParserOptions
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
                 $"MaxColumns must be positive, got {MaxColumns}");
+        }
+
+        // Upper bound to prevent excessive memory allocation from ArrayPool
+        const int MaxColumnsLimit = 10_000;
+        if (MaxColumns > MaxColumnsLimit)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxColumns cannot exceed {MaxColumnsLimit:N0}, got {MaxColumns:N0}");
         }
 
         if (MaxRows <= 0)
@@ -208,6 +227,13 @@ public sealed record CsvParserOptions
                     CsvErrorCode.InvalidOptions,
                     $"EscapeCharacter and CommentCharacter cannot be the same character ('{EscapeCharacter.Value}')");
             }
+        }
+
+        if (MaxRowSize.HasValue && MaxRowSize.Value <= 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxRowSize must be positive when specified, got {MaxRowSize.Value}");
         }
     }
 }

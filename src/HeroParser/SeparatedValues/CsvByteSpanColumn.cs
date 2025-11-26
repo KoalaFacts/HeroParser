@@ -184,7 +184,6 @@ public readonly ref struct CsvByteSpanColumn
         => TryParseTimeOnly(out result, format, CultureInfo.InvariantCulture, DateTimeStyles.None);
 
     /// <summary>Attempts to parse the column as a <see cref="TimeZoneInfo"/> from its identifier.</summary>
-    /// <summary>Attempts to parse the column as a <see cref="TimeZoneInfo"/> from its identifier.</summary>
     /// <remarks>Allocates to decode the UTF-8 span to UTF-16 before lookup.</remarks>
     public bool TryParseTimeZoneInfo(out TimeZoneInfo result)
     {

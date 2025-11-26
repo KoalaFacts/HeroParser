@@ -38,7 +38,7 @@ var options = new CsvParserOptions
 {
     Delimiter = ',',  // Default
     Quote = '"',      // Default - RFC 4180 compliant
-    MaxColumns = 100, // Default
+    MaxColumnCount = 100, // Default
     AllowNewlinesInsideQuotes = false, // Enable for full RFC newlines-in-quotes support (slower)
     EnableQuotedFields = true         // Disable for maximum speed when your data has no quotes
 };
@@ -232,7 +232,7 @@ Protect against DoS attacks with oversized fields:
 ```csharp
 var options = new CsvParserOptions
 {
-    MaxFieldLength = 10_000  // Throw exception if any field exceeds 10KB
+    MaxFieldSize = 10_000  // Throw exception if any field exceeds 10KB
 };
 
 // This will throw CsvException if a field is too large

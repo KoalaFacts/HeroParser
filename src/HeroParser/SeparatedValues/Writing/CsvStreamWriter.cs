@@ -35,10 +35,10 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     private readonly string? timeOnlyFormat;
 #endif
 
-    private readonly char[] buffer;
-    private readonly int bufferPosition;
-    private readonly bool isFirstFieldInRow;
-    private readonly bool disposed;
+    private char[] buffer;
+    private int bufferPosition;
+    private bool isFirstFieldInRow;
+    private bool disposed;
 
     private const int DEFAULT_BUFFER_SIZE = 16 * 1024; // 16KB
     private const int MAX_STACK_ALLOC_SIZE = 256;

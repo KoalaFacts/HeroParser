@@ -108,6 +108,64 @@ jobs:
         flags: unittests
         name: codecov-${{ matrix.os }}
 
+  aot-tests:
+    name: AOT Compatibility Tests
+    needs: setup
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        framework: ${{ fromJSON(needs.setup.outputs.frameworks) }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Extract configuration
+      id: extract
+      uses: ./.github/actions/extract-build-config
+
+    - name: Setup .NET SDKs
+      uses: ./.github/actions/setup-dotnet-sdks
+      with:
+        dotnet-version: ${{ steps.extract.outputs.versions }}
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build AOT Tests
+      run: dotnet build tests/HeroParser.AotTests --configuration Release --framework ${{ matrix.framework }}
+
+    - name: Run AOT Tests
+      run: dotnet run --project tests/HeroParser.AotTests --configuration Release --framework ${{ matrix.framework }} --no-build
+
+  generator-tests:
+    name: Source Generator Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Extract configuration
+      id: extract
+      uses: ./.github/actions/extract-build-config
+
+    - name: Setup .NET SDKs
+      uses: ./.github/actions/setup-dotnet-sdks
+      with:
+        dotnet-version: ${{ steps.extract.outputs.versions }}
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build Generator Tests
+      run: dotnet build tests/HeroParser.Generators.Tests --configuration Release
+
+    - name: Run Generator Tests
+      run: dotnet test tests/HeroParser.Generators.Tests --configuration Release --no-build --verbosity normal
+
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest

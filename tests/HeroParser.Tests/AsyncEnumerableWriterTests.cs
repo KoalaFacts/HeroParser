@@ -1,5 +1,3 @@
-#pragma warning disable xUnit1051 // Calls to methods which accept CancellationToken should use TestContext.Current.CancellationToken
-
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Records.Binding;
 using HeroParser.SeparatedValues.Writing;
@@ -33,7 +31,7 @@ public class AsyncEnumerableWriterTests
         );
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records);
+        var csv = await Csv.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var expected = "Name,Age,City\r\n" +
@@ -51,7 +49,7 @@ public class AsyncEnumerableWriterTests
         var records = CreateAsyncEnumerable<Person>();
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records);
+        var csv = await Csv.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal("Name,Age,City\r\n", csv);
@@ -70,7 +68,7 @@ public class AsyncEnumerableWriterTests
         var options = new CsvWriterOptions { WriteHeader = false };
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records, options);
+        var csv = await Csv.WriteToTextAsync(records, options, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var expected = "Alice,30,New York\r\n" +
@@ -110,7 +108,7 @@ public class AsyncEnumerableWriterTests
         var options = new CsvWriterOptions { Delimiter = ';' };
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records, options);
+        var csv = await Csv.WriteToTextAsync(records, options, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var expected = "Name;Age;City\r\n" +
@@ -137,10 +135,10 @@ public class AsyncEnumerableWriterTests
             );
 
             // Act
-            await Csv.WriteToFileAsync(tempFile, records);
+            await Csv.WriteToFileAsync(tempFile, records, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
-            var content = await File.ReadAllTextAsync(tempFile);
+            var content = await File.ReadAllTextAsync(tempFile, TestContext.Current.CancellationToken);
             var expected = "Name,Age,City\r\n" +
                           "Alice,30,New York\r\n" +
                           "Bob,25,London\r\n";
@@ -195,10 +193,10 @@ public class AsyncEnumerableWriterTests
             );
 
             // Act
-            await Csv.WriteToFileAsync(tempFile, records, encoding: Encoding.UTF8);
+            await Csv.WriteToFileAsync(tempFile, records, encoding: Encoding.UTF8, cancellationToken: TestContext.Current.CancellationToken);
 
             // Assert
-            var content = await File.ReadAllTextAsync(tempFile, Encoding.UTF8);
+            var content = await File.ReadAllTextAsync(tempFile, Encoding.UTF8, TestContext.Current.CancellationToken);
             Assert.Contains("Müller", content);
             Assert.Contains("François", content);
             Assert.Contains("München", content);
@@ -226,12 +224,12 @@ public class AsyncEnumerableWriterTests
         );
 
         // Act
-        await Csv.WriteToStreamAsync(stream, records, leaveOpen: true);
+        await Csv.WriteToStreamAsync(stream, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
         stream.Position = 0;
 
         // Assert
         using var reader = new StreamReader(stream);
-        var content = await reader.ReadToEndAsync();
+        var content = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
         var expected = "Name,Age,City\r\n" +
                       "Alice,30,New York\r\n" +
                       "Bob,25,London\r\n";
@@ -249,7 +247,7 @@ public class AsyncEnumerableWriterTests
         );
 
         // Act
-        await Csv.WriteToStreamAsync(stream, records, leaveOpen: false);
+        await Csv.WriteToStreamAsync(stream, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Throws<ObjectDisposedException>(() => stream.Position = 0);
@@ -266,7 +264,7 @@ public class AsyncEnumerableWriterTests
         );
 
         // Act
-        await Csv.WriteToStreamAsync(stream, records, leaveOpen: true);
+        await Csv.WriteToStreamAsync(stream, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         stream.Position = 0; // Should not throw
@@ -291,7 +289,7 @@ public class AsyncEnumerableWriterTests
         var csv = await Csv.Write<Person>()
             .WithDelimiter(';')
             .WithHeader()
-            .ToTextAsync(records);
+            .ToTextAsync(records, TestContext.Current.CancellationToken);
 
         // Assert
         var expected = "Name;Age;City\r\n" +
@@ -316,10 +314,10 @@ public class AsyncEnumerableWriterTests
             // Act
             await Csv.Write<Person>()
                 .WithDelimiter(';')
-                .ToFileAsync(tempFile, records);
+                .ToFileAsync(tempFile, records, TestContext.Current.CancellationToken);
 
             // Assert
-            var content = await File.ReadAllTextAsync(tempFile);
+            var content = await File.ReadAllTextAsync(tempFile, TestContext.Current.CancellationToken);
             Assert.Contains("Name;Age;City", content);
             Assert.Contains("Alice;30;New York", content);
         }
@@ -344,12 +342,12 @@ public class AsyncEnumerableWriterTests
         // Act
         await Csv.Write<Person>()
             .WithDelimiter('|')
-            .ToStreamAsync(stream, records, leaveOpen: true);
+            .ToStreamAsync(stream, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
         stream.Position = 0;
 
         // Assert
         using var reader = new StreamReader(stream);
-        var content = await reader.ReadToEndAsync();
+        var content = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
         Assert.Contains("Name|Age|City", content);
         Assert.Contains("Alice|30|New York", content);
     }
@@ -366,7 +364,7 @@ public class AsyncEnumerableWriterTests
         var records = SimulateDatabaseQueryAsync();
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records);
+        var csv = await Csv.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("Id,Name,Price", csv);
@@ -382,7 +380,7 @@ public class AsyncEnumerableWriterTests
         var records = SimulateLargeDatabaseQueryAsync(10000);
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records);
+        var csv = await Csv.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         var lineCount = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
@@ -399,11 +397,13 @@ public class AsyncEnumerableWriterTests
     {
         // Arrange
         var cts = new CancellationTokenSource();
-        var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5);
+        // Link our CTS with test context token for proper test framework cancellation support
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
+        var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);
 
         // Act & Assert
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            async () => await Csv.WriteToTextAsync(records, cancellationToken: cts.Token)
+            async () => await Csv.WriteToTextAsync(records, cancellationToken: linkedCts.Token)
         );
     }
 
@@ -420,7 +420,7 @@ public class AsyncEnumerableWriterTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAnyAsync<Exception>(
-            async () => await Csv.WriteToTextAsync(records)
+            async () => await Csv.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken)
         );
         Assert.Contains("Simulated error", ex.Message);
     }
@@ -440,7 +440,7 @@ public class AsyncEnumerableWriterTests
         );
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records);
+        var csv = await Csv.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("\"Alice \"\"The Great\"\"\"", csv);
@@ -457,7 +457,7 @@ public class AsyncEnumerableWriterTests
         );
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records);
+        var csv = await Csv.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("\"Smith, John\"", csv);
@@ -475,7 +475,7 @@ public class AsyncEnumerableWriterTests
         );
 
         // Act
-        var csv = await Csv.WriteToTextAsync(records);
+        var csv = await Csv.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Contains("\"Alice\nSmith\"", csv);

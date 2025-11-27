@@ -698,6 +698,17 @@ dotnet test tests/HeroParser.Tests/HeroParser.Tests.csproj
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
 ```
 
+### Development Setup
+
+To enable pre-commit format checks (recommended):
+
+```bash
+# Configure git to use the project's hooks
+git config core.hooksPath .githooks
+```
+
+This runs `dotnet format --verify-no-changes` before each commit. If formatting issues are found, the commit is blocked until you run `dotnet format` to fix them.
+
 ## 🔧 Source Generators (AOT Support)
 
 For AOT (Ahead-of-Time) compilation scenarios, HeroParser supports source-generated binders that avoid reflection:

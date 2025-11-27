@@ -341,7 +341,7 @@ public class WriterTests
             new TestPerson { Name = "Bob", Age = 25, City = "London" }
         };
 
-        var csv = Csv.WriteToText<TestPerson>(records);
+        var csv = Csv.WriteToText(records);
 
         Assert.Contains("Name", csv);
         Assert.Contains("Age", csv);
@@ -361,7 +361,7 @@ public class WriterTests
         };
 
         var options = new CsvWriterOptions { WriteHeader = false };
-        var csv = Csv.WriteToText<TestPerson>(records, options);
+        var csv = Csv.WriteToText(records, options);
 
         Assert.DoesNotContain("Name", csv);
         Assert.Contains("Alice", csv);
@@ -385,7 +385,7 @@ public class WriterTests
             new PersonWithColumn { Name = "Alice", Age = 30 }
         };
 
-        var csv = Csv.WriteToText<PersonWithColumn>(records);
+        var csv = Csv.WriteToText(records);
 
         Assert.Contains("Full Name", csv);
         Assert.Contains("Years Old", csv);
@@ -424,7 +424,7 @@ public class WriterTests
         };
 
         using var ms = new MemoryStream();
-        Csv.WriteToStream<TestPerson>(ms, records);
+        Csv.WriteToStream(ms, records);
 
         ms.Position = 0;
         using var reader = new StreamReader(ms);
@@ -445,7 +445,7 @@ public class WriterTests
         var tempPath = Path.GetTempFileName();
         try
         {
-            Csv.WriteToFile<TestPerson>(tempPath, records);
+            Csv.WriteToFile(tempPath, records);
 
             var csv = File.ReadAllText(tempPath);
             Assert.Contains("Alice", csv);
@@ -470,7 +470,7 @@ public class WriterTests
             new TestPerson { Name = "Bob", Age = 25, City = "London" }
         };
 
-        var csv = Csv.WriteToText<TestPerson>(original);
+        var csv = Csv.WriteToText(original);
         var parsed = Csv.DeserializeRecords<TestPerson>(csv).ToList();
 
         Assert.Equal(2, parsed.Count);
@@ -570,7 +570,7 @@ public class WriterTests
             }
         };
 
-        var csv = Csv.WriteToText<AllTypesRecord>(original);
+        var csv = Csv.WriteToText(original);
         var parsed = Csv.DeserializeRecords<AllTypesRecord>(csv).ToList();
 
         Assert.Equal(2, parsed.Count);
@@ -631,7 +631,7 @@ public class WriterTests
             new TestPerson { Name = "Emoji 😀🎉", Age = 40, City = "Test 🌍" }
         };
 
-        var csv = Csv.WriteToText<TestPerson>(original);
+        var csv = Csv.WriteToText(original);
         var parsed = Csv.DeserializeRecords<TestPerson>(csv).ToList();
 
         Assert.Equal(4, parsed.Count);
@@ -656,7 +656,7 @@ public class WriterTests
         };
 
         var options = new CsvWriterOptions { Delimiter = ';' };
-        var csv = Csv.WriteToText<TestPerson>(original, options);
+        var csv = Csv.WriteToText(original, options);
 
         var parserOptions = new CsvParserOptions { Delimiter = ';' };
         var parsed = Csv.DeserializeRecords<TestPerson>(csv, parserOptions: parserOptions).ToList();
@@ -677,7 +677,7 @@ public class WriterTests
         };
 
         var options = new CsvWriterOptions { Delimiter = '\t' };
-        var csv = Csv.WriteToText<TestPerson>(original, options);
+        var csv = Csv.WriteToText(original, options);
 
         var parserOptions = new CsvParserOptions { Delimiter = '\t' };
         var parsed = Csv.DeserializeRecords<TestPerson>(csv, parserOptions: parserOptions).ToList();
@@ -817,7 +817,7 @@ public class WriterTests
     {
         var records = Array.Empty<TestPerson>();
         var options = new CsvWriterOptions { WriteHeader = false };
-        var csv = Csv.WriteToText<TestPerson>(records, options);
+        var csv = Csv.WriteToText(records, options);
 
         Assert.Equal("", csv);
     }
@@ -827,7 +827,7 @@ public class WriterTests
     public void WriteRow_EmptyCollectionWithHeader_WritesOnlyHeader()
     {
         var records = Array.Empty<TestPerson>();
-        var csv = Csv.WriteToText<TestPerson>(records);
+        var csv = Csv.WriteToText(records);
 
         Assert.Contains("Name", csv);
         Assert.Contains("Age", csv);

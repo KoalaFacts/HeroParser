@@ -78,26 +78,26 @@ public class WriterBenchmarks
     [Benchmark]
     public string WriteRecords()
     {
-        return Csv.WriteToText<TestRecord>(records);
+        return Csv.WriteToText(records);
     }
 
     [Benchmark]
     public string WriteRecordsNoHeader()
     {
-        return Csv.WriteToText<TestRecord>(records, new CsvWriterOptions { WriteHeader = false });
+        return Csv.WriteToText(records, new CsvWriterOptions { WriteHeader = false });
     }
 
     [Benchmark]
     public string WriteAlwaysQuoted()
     {
-        return Csv.WriteToText<TestRecord>(records, new CsvWriterOptions { QuoteStyle = QuoteStyle.Always });
+        return Csv.WriteToText(records, new CsvWriterOptions { QuoteStyle = QuoteStyle.Always });
     }
 
     [Benchmark]
     public void WriteToStream()
     {
         using var ms = new MemoryStream();
-        Csv.WriteToStream<TestRecord>(ms, records);
+        Csv.WriteToStream(ms, records);
     }
 
     public class TestRecord
@@ -229,19 +229,19 @@ public class WriterDestinationBenchmarks
     [Benchmark(Baseline = true)]
     public string ToText()
     {
-        return Csv.WriteToText<WriterBenchmarks.TestRecord>(records);
+        return Csv.WriteToText(records);
     }
 
     [Benchmark]
     public void ToMemoryStream()
     {
         using var ms = new MemoryStream();
-        Csv.WriteToStream<WriterBenchmarks.TestRecord>(ms, records);
+        Csv.WriteToStream(ms, records);
     }
 
     [Benchmark]
     public void ToNullStream()
     {
-        Csv.WriteToStream<WriterBenchmarks.TestRecord>(Stream.Null, records);
+        Csv.WriteToStream(Stream.Null, records);
     }
 }

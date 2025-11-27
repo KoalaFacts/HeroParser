@@ -159,7 +159,7 @@ public class SourceGeneratorTests
             new GeneratedPerson { Name = "Bob", Age = 25 }
         };
 
-        var csv = Csv.WriteToText<GeneratedPerson>(records);
+        var csv = Csv.WriteToText(records);
 
         Assert.Contains("Name,Age", csv);
         Assert.Contains("Alice,30", csv);
@@ -175,7 +175,7 @@ public class SourceGeneratorTests
             new GeneratedAttributed { Id = 1, Name = "Test" }
         };
 
-        var csv = Csv.WriteToText<GeneratedAttributed>(records);
+        var csv = Csv.WriteToText(records);
 
         // Should use the attribute-defined header name "full_name"
         Assert.Contains("full_name", csv);
@@ -192,7 +192,7 @@ public class SourceGeneratorTests
 
         // But writing should still work via reflection
         var records = new[] { new ReflectionOnly { Name = "Jane", Age = 42 } };
-        var csv = Csv.WriteToText<ReflectionOnly>(records);
+        var csv = Csv.WriteToText(records);
 
         Assert.Contains("Name,Age", csv);
         Assert.Contains("Jane,42", csv);
@@ -210,7 +210,7 @@ public class SourceGeneratorTests
         };
 
         // Write to CSV using generated writer
-        var csv = Csv.WriteToText<GeneratedPerson>(original);
+        var csv = Csv.WriteToText(original);
 
         // Read back using generated binder
         var parsed = Csv.DeserializeRecords<GeneratedPerson>(csv).ToList();
@@ -238,8 +238,8 @@ public class SourceGeneratorTests
             new ReflectionOnly { Name = "Bob", Age = 25 }
         };
 
-        var generatedCsv = Csv.WriteToText<GeneratedPerson>(generatedRecords);
-        var reflectionCsv = Csv.WriteToText<ReflectionOnly>(reflectionRecords);
+        var generatedCsv = Csv.WriteToText(generatedRecords);
+        var reflectionCsv = Csv.WriteToText(reflectionRecords);
 
         // Both should have the same structure (same number of rows)
         var generatedLines = generatedCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries);

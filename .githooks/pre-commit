@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# Pre-commit hook for HeroParser
+# Runs dotnet format check to ensure code style compliance before commit
+#
+# Setup: Run this from the repo root to enable this hook:
+#   git config core.hooksPath .githooks
+
+echo "Running dotnet format check..."
+
+# Run format check
+dotnet format --verify-no-changes --verbosity minimal 2>&1
+FORMAT_EXIT_CODE=$?
+
+if [ $FORMAT_EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "ERROR: Code formatting check failed!"
+    echo ""
+    echo "Please run 'dotnet format' to fix formatting issues, then try again."
+    echo "You can also run 'dotnet format --verify-no-changes' to see what needs fixing."
+    echo ""
+    exit 1
+fi
+
+echo "Format check passed."
+exit 0

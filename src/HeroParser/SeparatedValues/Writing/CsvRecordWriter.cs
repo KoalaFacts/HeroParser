@@ -1,6 +1,7 @@
 using HeroParser.SeparatedValues.Records.Binding;
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Linq.Expressions;
 using System.Reflection;
 
 namespace HeroParser.SeparatedValues.Writing;
@@ -33,10 +34,28 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     private readonly PropertyAccessor[] accessors;
     private readonly CsvWriterOptions writerOptions;
 
+    // Reusable arrays to eliminate per-record allocations
+    private readonly object?[] valuesBuffer;
+    private readonly string?[] formatsBuffer;
+    private readonly string[] headerBuffer;
+
     public CsvRecordWriter(CsvWriterOptions? options = null)
     {
         writerOptions = options ?? CsvWriterOptions.Default;
         accessors = propertyCache.GetOrAdd(typeof(T), BuildAccessors);
+
+        // Pre-allocate buffers based on accessor count
+        int count = accessors.Length;
+        valuesBuffer = new object?[count];
+        formatsBuffer = new string?[count];
+        headerBuffer = new string[count];
+
+        // Pre-fill format buffer (formats don't change per-record)
+        for (int i = 0; i < count; i++)
+        {
+            formatsBuffer[i] = accessors[i].Format;
+            headerBuffer[i] = accessors[i].HeaderName;
+        }
     }
 
     /// <summary>
@@ -46,6 +65,19 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     {
         writerOptions = options;
         accessors = InstantiateAccessors(templates);
+
+        // Pre-allocate buffers based on accessor count
+        int count = accessors.Length;
+        valuesBuffer = new object?[count];
+        formatsBuffer = new string?[count];
+        headerBuffer = new string[count];
+
+        // Pre-fill format buffer (formats don't change per-record)
+        for (int i = 0; i < count; i++)
+        {
+            formatsBuffer[i] = accessors[i].Format;
+            headerBuffer[i] = accessors[i].HeaderName;
+        }
     }
 
     /// <summary>
@@ -97,12 +129,7 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// <inheritdoc/>
     public void WriteHeader(CsvStreamWriter writer)
     {
-        var headerNames = new string[accessors.Length];
-        for (int i = 0; i < accessors.Length; i++)
-        {
-            headerNames[i] = accessors[i].HeaderName;
-        }
-        writer.WriteRow(headerNames);
+        writer.WriteRow(headerBuffer);
     }
 
     /// <inheritdoc/>
@@ -188,15 +215,13 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             return;
         }
 
-        var values = new object?[accessors.Length];
-        var formats = new string?[accessors.Length];
+        // Use pre-allocated buffers instead of allocating per-record
         for (int i = 0; i < accessors.Length; i++)
         {
             var accessor = accessors[i];
-            formats[i] = accessor.Format;
             try
             {
-                values[i] = accessor.GetValue(record);
+                valuesBuffer[i] = accessor.GetValue(record);
             }
             catch (Exception ex)
             {
@@ -219,7 +244,7 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                         case SerializeErrorAction.SkipRow:
                             return; // Don't write this row at all
                         case SerializeErrorAction.WriteNull:
-                            values[i] = null; // Will be written as NullValue
+                            valuesBuffer[i] = null; // Will be written as NullValue
                             continue;
                         case SerializeErrorAction.Throw:
                         default:
@@ -233,17 +258,12 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                     ex);
             }
         }
-        writer.WriteRowWithFormats(values, formats);
+        writer.WriteRowWithFormats(valuesBuffer, formatsBuffer);
     }
 
     private void WriteHeaderRow(CsvStreamWriter writer)
     {
-        var headerNames = new string[accessors.Length];
-        for (int i = 0; i < accessors.Length; i++)
-        {
-            headerNames[i] = accessors[i].HeaderName;
-        }
-        writer.WriteRow(headerNames);
+        writer.WriteRow(headerBuffer);
     }
 
     private static PropertyAccessor[] BuildAccessors(Type type)
@@ -274,9 +294,24 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
 
     private static Func<object, object?> CreateGetter(PropertyInfo property)
     {
-        // Create a compiled delegate for better performance than PropertyInfo.GetValue
-        var getter = property.GetMethod!;
-        return instance => getter.Invoke(instance, null);
+        // Create a compiled expression tree for ~10x faster access than MethodInfo.Invoke
+        // Expression: (object instance) => (object?)((T)instance).Property
+        var instanceParam = Expression.Parameter(typeof(object), "instance");
+
+        // Cast instance from object to the declaring type
+        var castInstance = Expression.Convert(instanceParam, property.DeclaringType!);
+
+        // Access the property
+        var propertyAccess = Expression.Property(castInstance, property);
+
+        // Box the result if it's a value type, otherwise just cast to object
+        Expression body = property.PropertyType.IsValueType
+            ? Expression.Convert(propertyAccess, typeof(object))
+            : Expression.TypeAs(propertyAccess, typeof(object));
+
+        // Compile and return the delegate
+        var lambda = Expression.Lambda<Func<object, object?>>(body, instanceParam);
+        return lambda.Compile();
     }
 
     private sealed class PropertyAccessor
@@ -299,18 +334,17 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
 }
 
 /// <summary>
-/// Factory for creating and caching record writers.
+/// Factory for creating record writers.
 /// Resolves writers from generated code when available, falling back to runtime reflection.
 /// </summary>
 /// <remarks>
-/// Thread-Safety: All operations are thread-safe. Uses ConcurrentDictionary for lock-free reads.
-/// Individual writers returned by <see cref="GetWriter{T}"/> are not shared between threads
-/// and each factory invocation creates a new instance.
+/// Thread-Safety: All operations are thread-safe. Each call to <see cref="GetWriter{T}"/>
+/// creates a new writer instance with its own reusable buffers.
+/// Property accessor metadata is cached for performance.
 /// </remarks>
 internal static partial class CsvRecordWriterFactory
 {
     private static readonly ConcurrentDictionary<Type, Func<CsvWriterOptions?, object>> generatedFactories = new();
-    private static readonly ConcurrentDictionary<(Type, CsvWriterOptions), object> writerCache = new();
 
     static CsvRecordWriterFactory()
     {
@@ -318,26 +352,25 @@ internal static partial class CsvRecordWriterFactory
     }
 
     /// <summary>
-    /// Gets or creates a record writer for the specified type and options.
+    /// Creates a new record writer for the specified type and options.
     /// Prefers generated writers when available, falling back to reflection-based writers.
     /// </summary>
     public static CsvRecordWriter<T> GetWriter<T>(CsvWriterOptions? options = null)
     {
         options ??= CsvWriterOptions.Default;
-        var key = (typeof(T), options);
 
         // Try generated writer first
         if (generatedFactories.TryGetValue(typeof(T), out var factory))
         {
-            return (CsvRecordWriter<T>)writerCache.GetOrAdd(key, _ => factory(options));
+            return (CsvRecordWriter<T>)factory(options);
         }
 
-        // Fall back to reflection-based writer
-        return (CsvRecordWriter<T>)writerCache.GetOrAdd(key, _ => new CsvRecordWriter<T>(options));
+        // Fall back to reflection-based writer (property accessors are cached internally)
+        return new CsvRecordWriter<T>(options);
     }
 
     /// <summary>
-    /// Attempts to get a generated writer for the specified type.
+    /// Attempts to create a generated writer for the specified type.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="options">Writer options.</param>
@@ -348,8 +381,7 @@ internal static partial class CsvRecordWriterFactory
         if (generatedFactories.TryGetValue(typeof(T), out var factory))
         {
             options ??= CsvWriterOptions.Default;
-            var key = (typeof(T), options);
-            writer = (CsvRecordWriter<T>)writerCache.GetOrAdd(key, _ => factory(options));
+            writer = (CsvRecordWriter<T>)factory(options);
             return true;
         }
 

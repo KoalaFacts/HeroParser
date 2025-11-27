@@ -34,6 +34,13 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--writer")
+        {
+            // Run writer benchmarks (record serialization)
+            BenchmarkRunner.Run<WriterBenchmarks>();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--quotes")
         {
             // Run quoted vs unquoted benchmarks
@@ -63,6 +70,7 @@ public class Program
         Console.WriteLine("  --streaming        Run streaming throughput benchmarks (text vs stream vs async)");
         Console.WriteLine("  --vs-sep-reading   Run HeroParser vs Sep reading comparison");
         Console.WriteLine("  --vs-sep-writing   Run HeroParser vs Sep writing comparison");
+        Console.WriteLine("  --writer           Run writer benchmarks (record serialization)");
         Console.WriteLine("  --quotes           Run quoted vs unquoted comparison (VERIFY SIMD)");
         Console.WriteLine("  --simd             Run SIMD vs Scalar comparison");
         Console.WriteLine("  --features         Run new features overhead benchmarks (Comment/Trim/MaxFieldLength)");

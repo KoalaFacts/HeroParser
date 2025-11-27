@@ -1,6 +1,8 @@
 using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using System.Text;
 
 namespace HeroParser.SeparatedValues.Writing;
@@ -273,6 +275,22 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         char delimiter = options.Delimiter;
         char quote = options.Quote;
 
+        // Use SIMD for larger spans
+        if (Avx2.IsSupported && value.Length >= Vector256<ushort>.Count)
+        {
+            return NeedsQuotingSimd256(value, delimiter, quote);
+        }
+        else if (Sse2.IsSupported && value.Length >= Vector128<ushort>.Count)
+        {
+            return NeedsQuotingSimd128(value, delimiter, quote);
+        }
+
+        return NeedsQuotingScalar(value, delimiter, quote);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool NeedsQuotingScalar(ReadOnlySpan<char> value, char delimiter, char quote)
+    {
         foreach (char c in value)
         {
             if (c == delimiter || c == quote || c == '\r' || c == '\n')
@@ -281,6 +299,82 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
             }
         }
         return false;
+    }
+
+    private static bool NeedsQuotingSimd256(ReadOnlySpan<char> value, char delimiter, char quote)
+    {
+        // Create vectors for special characters we need to find
+        var delimiterVec = Vector256.Create((ushort)delimiter);
+        var quoteVec = Vector256.Create((ushort)quote);
+        var crVec = Vector256.Create((ushort)'\r');
+        var lfVec = Vector256.Create((ushort)'\n');
+
+        int i = 0;
+        int vectorLength = Vector256<ushort>.Count;
+        int lastVectorStart = value.Length - vectorLength;
+
+        // Process 16 chars at a time
+        while (i <= lastVectorStart)
+        {
+            var chars = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref Unsafe.AsRef(in value[i])));
+
+            var matchDelimiter = Vector256.Equals(chars, delimiterVec);
+            var matchQuote = Vector256.Equals(chars, quoteVec);
+            var matchCr = Vector256.Equals(chars, crVec);
+            var matchLf = Vector256.Equals(chars, lfVec);
+
+            var combined = Vector256.BitwiseOr(
+                Vector256.BitwiseOr(matchDelimiter, matchQuote),
+                Vector256.BitwiseOr(matchCr, matchLf));
+
+            if (combined != Vector256<ushort>.Zero)
+            {
+                return true;
+            }
+
+            i += vectorLength;
+        }
+
+        // Handle remaining elements with scalar
+        return NeedsQuotingScalar(value[i..], delimiter, quote);
+    }
+
+    private static bool NeedsQuotingSimd128(ReadOnlySpan<char> value, char delimiter, char quote)
+    {
+        // Create vectors for special characters we need to find
+        var delimiterVec = Vector128.Create((ushort)delimiter);
+        var quoteVec = Vector128.Create((ushort)quote);
+        var crVec = Vector128.Create((ushort)'\r');
+        var lfVec = Vector128.Create((ushort)'\n');
+
+        int i = 0;
+        int vectorLength = Vector128<ushort>.Count;
+        int lastVectorStart = value.Length - vectorLength;
+
+        // Process 8 chars at a time
+        while (i <= lastVectorStart)
+        {
+            var chars = Vector128.LoadUnsafe(ref Unsafe.As<char, ushort>(ref Unsafe.AsRef(in value[i])));
+
+            var matchDelimiter = Vector128.Equals(chars, delimiterVec);
+            var matchQuote = Vector128.Equals(chars, quoteVec);
+            var matchCr = Vector128.Equals(chars, crVec);
+            var matchLf = Vector128.Equals(chars, lfVec);
+
+            var combined = Vector128.BitwiseOr(
+                Vector128.BitwiseOr(matchDelimiter, matchQuote),
+                Vector128.BitwiseOr(matchCr, matchLf));
+
+            if (combined != Vector128<ushort>.Zero)
+            {
+                return true;
+            }
+
+            i += vectorLength;
+        }
+
+        // Handle remaining elements with scalar
+        return NeedsQuotingScalar(value[i..], delimiter, quote);
     }
 
     private void WriteFormattedValue(object? value)

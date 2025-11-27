@@ -141,6 +141,159 @@ await foreach (var person in Csv.Read<Person>()
 
 The builder provides a symmetric API to `CsvWriterBuilder<T>` for reading records.
 
+### Manual Row-by-Row Reading (Fluent)
+
+Use the non-generic builder for low-level row-by-row parsing:
+
+```csharp
+// Manual row-by-row reading with fluent configuration
+using var reader = Csv.Read()
+    .WithDelimiter(';')
+    .TrimFields()
+    .WithCommentCharacter('#')
+    .FromText(csvData);
+
+foreach (var row in reader)
+{
+    var id = row[0].Parse<int>();
+    var name = row[1].ToString();
+}
+
+// Stream from file with custom options
+using var fileReader = Csv.Read()
+    .WithMaxFieldSize(10_000)
+    .AllowNewlinesInQuotes()
+    .FromFile("data.csv");
+```
+
+### LINQ-Style Extension Methods
+
+CSV record readers provide familiar LINQ-style operations for working with records:
+
+```csharp
+// Materialize all records
+var allPeople = Csv.Read<Person>().FromText(csv).ToList();
+var peopleArray = Csv.Read<Person>().FromText(csv).ToArray();
+
+// Query operations
+var adults = Csv.Read<Person>()
+    .FromText(csv)
+    .Where(p => p.Age >= 18);
+
+var names = Csv.Read<Person>()
+    .FromText(csv)
+    .Select(p => p.Name);
+
+// First/Single operations
+var first = Csv.Read<Person>().FromText(csv).First();
+var firstAdult = Csv.Read<Person>().FromText(csv).First(p => p.Age >= 18);
+var single = Csv.Read<Person>().FromText(csv).SingleOrDefault();
+
+// Aggregation
+var count = Csv.Read<Person>().FromText(csv).Count();
+var adultCount = Csv.Read<Person>().FromText(csv).Count(p => p.Age >= 18);
+var hasRecords = Csv.Read<Person>().FromText(csv).Any();
+var allAdults = Csv.Read<Person>().FromText(csv).All(p => p.Age >= 18);
+
+// Pagination
+var page = Csv.Read<Person>().FromText(csv).Skip(10).Take(5);
+
+// Grouping and indexing
+var byCity = Csv.Read<Person>()
+    .FromText(csv)
+    .GroupBy(p => p.City);
+
+var byId = Csv.Read<Person>()
+    .FromText(csv)
+    .ToDictionary(p => p.Id);
+
+// Iteration
+Csv.Read<Person>()
+    .FromText(csv)
+    .ForEach(p => Console.WriteLine(p.Name));
+```
+
+> **Note**: Since CSV readers are ref structs, they cannot implement `IEnumerable<T>`. These extension methods consume the reader and return materialized results.
+
+### Advanced Reader Options
+
+#### Progress Reporting
+
+Track parsing progress for large files:
+
+```csharp
+var progress = new Progress<CsvProgress>(p =>
+{
+    var pct = p.TotalBytes > 0 ? (p.BytesProcessed * 100.0 / p.TotalBytes) : 0;
+    Console.WriteLine($"Processed {p.RowsProcessed} rows ({pct:F1}%)");
+});
+
+var records = Csv.Read<Person>()
+    .WithProgress(progress, intervalRows: 1000)
+    .FromFile("large-file.csv")
+    .ToList();
+```
+
+#### Error Handling
+
+Handle deserialization errors gracefully:
+
+```csharp
+var records = Csv.Read<Person>()
+    .OnError(ctx =>
+    {
+        Console.WriteLine($"Error at row {ctx.Row}, column '{ctx.MemberName}': {ctx.Exception?.Message}");
+        return DeserializeErrorAction.Skip;  // Or UseDefault, Throw
+    })
+    .FromText(csv)
+    .ToList();
+```
+
+#### Header Validation
+
+Enforce required headers and detect duplicates:
+
+```csharp
+// Require specific headers
+var records = Csv.Read<Person>()
+    .RequireHeaders("Name", "Email", "Age")
+    .FromText(csv)
+    .ToList();
+
+// Detect duplicate headers
+var records = Csv.Read<Person>()
+    .DetectDuplicateHeaders()
+    .FromText(csv)
+    .ToList();
+
+// Custom header validation
+var records = Csv.Read<Person>()
+    .ValidateHeaders(headers =>
+    {
+        if (!headers.Contains("Id"))
+            throw new CsvException(CsvErrorCode.InvalidHeader, "Missing required 'Id' column");
+    })
+    .FromText(csv)
+    .ToList();
+```
+
+#### Custom Type Converters
+
+Register custom converters for domain-specific types:
+
+```csharp
+var records = Csv.Read<Order>()
+    .RegisterConverter<Money>((column, culture) =>
+    {
+        var text = column.ToString();
+        if (Money.TryParse(text, out var money))
+            return money;
+        throw new FormatException($"Invalid money format: {text}");
+    })
+    .FromText(csv)
+    .ToList();
+```
+
 ## ✍️ CSV Writing
 
 HeroParser includes a high-performance CSV writer that is 2-5x faster than Sep with significantly lower memory allocations.
@@ -195,19 +348,53 @@ var options = new CsvWriterOptions
 string csv = Csv.WriteToText(records, options);
 ```
 
-### Fluent Builder API
+### Fluent Writer Builder
 
 ```csharp
-using var writer = Csv.CreateWriterBuilder()
+// Write records with fluent configuration
+var csv = Csv.Write<Person>()
     .WithDelimiter(';')
-    .WithQuoteStyle(QuoteStyle.Always)
+    .AlwaysQuote()
     .WithDateTimeFormat("yyyy-MM-dd")
-    .WithHeader(true)
-    .Build(File.CreateText("output.csv"));
+    .WithHeader()
+    .ToText(records);
 
-writer.WriteRow("Name", "Age", "Birthday");
-writer.WriteRow("Alice", 30, new DateTime(1994, 5, 15));
+// Write to file with async streaming
+await Csv.Write<Person>()
+    .WithDelimiter(',')
+    .WithoutHeader()
+    .ToFileAsync("output.csv", recordsAsync);
+```
+
+The builder provides a symmetric API to `CsvReaderBuilder<T>` for writing records.
+
+### Manual Row-by-Row Writing (Fluent)
+
+Use the non-generic builder for low-level row-by-row writing:
+
+```csharp
+// Manual row-by-row writing with fluent configuration
+using var writer = Csv.Write()
+    .WithDelimiter(';')
+    .AlwaysQuote()
+    .WithDateTimeFormat("yyyy-MM-dd")
+    .CreateWriter(Console.Out);
+
+writer.WriteField("Name");
+writer.WriteField("Age");
 writer.EndRow();
+
+writer.WriteField("Alice");
+writer.WriteField(30);
+writer.EndRow();
+
+writer.Flush();
+
+// Write to file with custom options
+using var fileWriter = Csv.Write()
+    .WithNewLine("\n")
+    .WithCulture("de-DE")
+    .CreateFileWriter("output.csv");
 ```
 
 ### Low-Level Row Writing
@@ -295,6 +482,11 @@ foreach (var row in Csv.ReadFromText(csv))
     if (row[1].TryParseDouble(out double d)) { }
     if (row[2].TryParseDateTime(out DateTime dt)) { }
     if (row[3].TryParseBoolean(out bool b)) { }
+
+    // Additional type parsing
+    if (row[4].TryParseGuid(out Guid id)) { }
+    if (row[5].TryParseEnum<DayOfWeek>(out var day)) { }  // Case-insensitive
+    if (row[6].TryParseTimeZoneInfo(out TimeZoneInfo tz)) { }
 }
 ```
 
@@ -505,6 +697,29 @@ dotnet test tests/HeroParser.Tests/HeroParser.Tests.csproj
 # Run all benchmarks
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
 ```
+
+## 🔧 Source Generators (AOT Support)
+
+For AOT (Ahead-of-Time) compilation scenarios, HeroParser supports source-generated binders that avoid reflection:
+
+```csharp
+using HeroParser.SeparatedValues.Records.Binding;
+
+[CsvGenerateBinder]
+public class Person
+{
+    public string Name { get; set; } = "";
+    public int Age { get; set; }
+    public string? Email { get; set; }
+}
+```
+
+The `[CsvGenerateBinder]` attribute instructs the source generator to emit a compile-time binder, enabling:
+- **AOT compatibility** - No runtime reflection required
+- **Faster startup** - Binders are pre-compiled
+- **Trimming-safe** - Works with .NET trimming/linking
+
+> **Note**: Source generators require the `HeroParser.Generators` package and a compatible SDK.
 
 ## ⚠️ RFC 4180 Compliance
 

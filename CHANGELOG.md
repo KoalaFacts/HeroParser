@@ -8,6 +8,16 @@
   - Configure delimiter, quote character, max columns/rows, and more
   - Terminal methods: `FromText()`, `FromFile()`, `FromStream()`, and async variants
   - All parser and record options accessible through fluent methods
+- **Non-Generic Reader Builder**: `Csv.Read()` for manual row-by-row CSV reading
+  - Fluent configuration for parser options (delimiter, quote, trimming, etc.)
+  - Terminal methods: `FromText()`, `FromFile()`, `FromStream()`, `FromFileAsync()`, `FromStreamAsync()`
+- **Fluent Writer Builder**: `Csv.Write<T>()` fluent API for writing CSV records
+  - Symmetric API with `CsvReaderBuilder<T>` for consistent developer experience
+  - Terminal methods: `ToText()`, `ToFile()`, `ToStream()`, and async variants
+  - Configure delimiter, quote style, date/number formats, culture, and more
+- **Non-Generic Writer Builder**: `Csv.Write()` for manual row-by-row CSV writing
+  - Fluent configuration for writer options (delimiter, quote style, formats)
+  - Terminal methods: `CreateWriter()`, `CreateFileWriter()`, `CreateStreamWriter()`
 - **CSV Writing**: High-performance CSV writer with RFC 4180 compliance
   - `Csv.WriteToText<T>()` - Write records to a string
   - `Csv.WriteToFile<T>()` / `Csv.WriteToFileAsync<T>()` - Write to files
@@ -24,6 +34,24 @@
   - `OnSerializeError` - Error handling callback with Skip/WriteNull/Throw options
 - **SIMD-Accelerated Writing**: Uses AVX2/SSE2 for single-pass field analysis
 - **Source Generator Support**: Compiled expression getters for record serialization
+- **LINQ-Style Extension Methods**: Familiar operations for CSV record readers
+  - `ToList()`, `ToArray()` - Materialize records into collections
+  - `First()`, `FirstOrDefault()`, `Single()`, `SingleOrDefault()` - Element access
+  - `Where()`, `Select()` - Filtering and projection
+  - `Skip()`, `Take()` - Pagination
+  - `Count()`, `Any()`, `All()` - Aggregation
+  - `ToDictionary()`, `GroupBy()` - Indexing and grouping
+  - `ForEach()` - Iteration
+- **Advanced Reader Options**:
+  - `WithProgress()` - Progress reporting for large file parsing
+  - `OnError()` - Deserialization error handling with Skip/UseDefault/Throw actions
+  - `RequireHeaders()` - Enforce required headers
+  - `ValidateHeaders()` - Custom header validation callback
+  - `DetectDuplicateHeaders()` - Detect duplicate header names
+  - `RegisterConverter<T>()` - Custom type converters for domain-specific types
+- **AOT Support**: `[CsvGenerateBinder]` attribute for source-generated binders
+  - Reflection-free binding for trimming and AOT scenarios
+  - Faster startup with pre-compiled binders
 
 ### Performance
 - CSV writing is 2-5x faster than Sep with 35-85% less memory allocation

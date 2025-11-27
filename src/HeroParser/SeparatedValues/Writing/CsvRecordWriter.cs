@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues.Records.Binding;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -39,6 +40,8 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     private readonly string?[] formatsBuffer;
     private readonly string[] headerBuffer;
 
+    [RequiresUnreferencedCode("Reflection-based writing may not work with trimming. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Reflection-based writing requires dynamic code. Use [CsvGenerateBinder] attribute for AOT support.")]
     public CsvRecordWriter(CsvWriterOptions? options = null)
     {
         writerOptions = options ?? CsvWriterOptions.Default;

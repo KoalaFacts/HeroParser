@@ -1,6 +1,7 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Records;
 using HeroParser.SeparatedValues.Records.Binding;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace HeroParser;
@@ -24,6 +25,8 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
         }
     }
 
+    [RequiresUnreferencedCode("Reflection-based binding may not work with trimming. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Reflection-based binding requires dynamic code. Use [CsvGenerateBinder] attribute for AOT support.")]
     public static CsvRecordBinder<T> Create(CsvRecordOptions? options)
         => CreateFromTemplates(options, CreateTemplatesFromReflection());
 

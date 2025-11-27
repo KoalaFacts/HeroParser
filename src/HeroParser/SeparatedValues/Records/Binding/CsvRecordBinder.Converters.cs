@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Records;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -26,6 +27,8 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
 
     private static class ConverterFactory
     {
+        [RequiresUnreferencedCode("Dynamic converter creation uses reflection.")]
+        [RequiresDynamicCode("Dynamic converter creation uses MakeGenericType/MakeGenericMethod.")]
         public static ColumnConverter CreateConverter(
             Type type,
             CultureInfo culture,
@@ -243,6 +246,8 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
         private static ColumnConverter BuildTimeZoneInfoConverter(bool isNullable)
             => WrapPrimitiveColumn(isNullable, (CsvCharSpanColumn column, out TimeZoneInfo result) => column.TryParseTimeZoneInfo(out result));
 
+        [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Called from annotated CreateConverter method.")]
+        [UnconditionalSuppressMessage("AOT", "IL2070", Justification = "Called from annotated CreateConverter method.")]
         private static ColumnConverter BuildEnumConverter(Type enumType, bool isNullable)
         {
             var method = typeof(ConverterFactory)

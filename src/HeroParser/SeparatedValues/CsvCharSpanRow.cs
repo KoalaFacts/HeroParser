@@ -112,6 +112,17 @@ public readonly ref struct CsvCharSpanRow
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool HasDangerousFields()
     {
+        // For small column counts, direct iteration is faster than SIMD overhead
+        if (columnCount <= 4)
+        {
+            for (int i = 0; i < columnCount; i++)
+            {
+                if (IsDangerousColumn(i))
+                    return true;
+            }
+            return false;
+        }
+
         // Fast path: SIMD pre-scan for any dangerous characters in the entire line
         // If no dangerous characters exist anywhere, we can return immediately
         if (!line.ContainsAny(allDangerousChars))
@@ -120,7 +131,7 @@ public readonly ref struct CsvCharSpanRow
         // Slow path: Check each column's first character
         for (int i = 0; i < columnCount; i++)
         {
-            if (IsDangerousColumnCore(i))
+            if (IsDangerousColumn(i))
                 return true;
         }
         return false;
@@ -134,31 +145,30 @@ public readonly ref struct CsvCharSpanRow
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsDangerousColumn(int index)
     {
-        return IsDangerousColumnCore(index);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool IsDangerousColumnCore(int index)
-    {
         var length = columnLengths[index];
         if (length == 0) return false;
 
         var start = columnStarts[index];
         char first = line[start];
 
-        // Always dangerous characters
-        if (first == '=' || first == '@' || first == '\t' || first == '\r')
-            return true;
-
-        // Smart detection for - and +
-        if (first == '-' || first == '+')
+        // Switch enables jump table optimization for O(1) character dispatch
+        switch (first)
         {
-            if (length == 1) return false;
-            char second = line[start + 1];
-            // Safe if followed by digit or decimal point (numbers, phone numbers)
-            return !((uint)(second - '0') <= 9 || second == '.');
-        }
+            case '=':
+            case '@':
+            case '\t':
+            case '\r':
+                return true;
 
-        return false;
+            case '-':
+            case '+':
+                if (length == 1) return false;
+                char second = line[start + 1];
+                // Safe if followed by digit or decimal point (numbers, phone numbers)
+                return !((uint)(second - '0') <= 9 || second == '.');
+
+            default:
+                return false;
+        }
     }
 }

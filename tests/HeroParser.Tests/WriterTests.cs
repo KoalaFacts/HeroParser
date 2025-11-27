@@ -341,7 +341,7 @@ public class WriterTests
             new TestPerson { Name = "Bob", Age = 25, City = "London" }
         };
 
-        var csv = Csv.Write<TestPerson>().ToText(records);
+        var csv = Csv.WriteToText<TestPerson>(records);
 
         Assert.Contains("Name", csv);
         Assert.Contains("Age", csv);
@@ -360,7 +360,8 @@ public class WriterTests
             new TestPerson { Name = "Alice", Age = 30, City = "New York" }
         };
 
-        var csv = Csv.Write<TestPerson>().WithoutHeader().ToText(records);
+        var options = new CsvWriterOptions { WriteHeader = false };
+        var csv = Csv.WriteToText<TestPerson>(records, options);
 
         Assert.DoesNotContain("Name", csv);
         Assert.Contains("Alice", csv);
@@ -384,7 +385,7 @@ public class WriterTests
             new PersonWithColumn { Name = "Alice", Age = 30 }
         };
 
-        var csv = Csv.Write<PersonWithColumn>().ToText(records);
+        var csv = Csv.WriteToText<PersonWithColumn>(records);
 
         Assert.Contains("Full Name", csv);
         Assert.Contains("Years Old", csv);
@@ -392,35 +393,14 @@ public class WriterTests
 
     #endregion
 
-    #region Fluent Builder API
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void FluentBuilder_ChainedMethods_Work()
-    {
-        var records = new[]
-        {
-            new TestPerson { Name = "Alice", Age = 30, City = "New York" }
-        };
-
-        var csv = Csv.Write<TestPerson>()
-            .WithDelimiter(';')
-            .WithNewLine("\n")
-            .AlwaysQuote()
-            .ToText(records);
-
-        Assert.Contains(";", csv);
-        Assert.DoesNotContain(",", csv);
-        Assert.EndsWith("\n", csv);
-        Assert.Contains("\"Alice\"", csv);
-    }
+    #region Low-Level Writer API
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CreateWriter_ManualWriting_Works()
     {
         using var sw = new StringWriter();
-        using var writer = Csv.Write().CreateWriter(sw, leaveOpen: true);
+        using var writer = Csv.CreateWriter(sw, leaveOpen: true);
 
         writer.WriteRow("Name", "Age");
         writer.WriteRow("Alice", "30");
@@ -444,7 +424,7 @@ public class WriterTests
         };
 
         using var ms = new MemoryStream();
-        Csv.Write<TestPerson>().ToStream(ms, records);
+        Csv.WriteToStream<TestPerson>(ms, records);
 
         ms.Position = 0;
         using var reader = new StreamReader(ms);
@@ -465,7 +445,7 @@ public class WriterTests
         var tempPath = Path.GetTempFileName();
         try
         {
-            Csv.Write<TestPerson>().ToFile(tempPath, records);
+            Csv.WriteToFile<TestPerson>(tempPath, records);
 
             var csv = File.ReadAllText(tempPath);
             Assert.Contains("Alice", csv);
@@ -490,7 +470,7 @@ public class WriterTests
             new TestPerson { Name = "Bob", Age = 25, City = "London" }
         };
 
-        var csv = Csv.Write<TestPerson>().ToText(original);
+        var csv = Csv.WriteToText<TestPerson>(original);
         var parsed = Csv.DeserializeRecords<TestPerson>(csv).ToList();
 
         Assert.Equal(2, parsed.Count);
@@ -549,6 +529,225 @@ public class WriterTests
         Assert.Equal("", reader.Current[0].ToString());
         Assert.Equal("b", reader.Current[1].ToString());
         Assert.Equal("", reader.Current[2].ToString());
+    }
+
+    public class AllTypesRecord
+    {
+        public int IntValue { get; set; }
+        public double DoubleValue { get; set; }
+        public decimal DecimalValue { get; set; }
+        public bool BoolValue { get; set; }
+        public DateTime DateTimeValue { get; set; }
+        public string? StringValue { get; set; }
+        public int? NullableInt { get; set; }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void RoundTrip_AllDataTypes_Preserves()
+    {
+        var original = new[]
+        {
+            new AllTypesRecord
+            {
+                IntValue = 42,
+                DoubleValue = 3.14159,
+                DecimalValue = 123.45m,
+                BoolValue = true,
+                DateTimeValue = new DateTime(2024, 12, 25, 10, 30, 0),
+                StringValue = "Hello",
+                NullableInt = 100
+            },
+            new AllTypesRecord
+            {
+                IntValue = -999,
+                DoubleValue = 0.0,
+                DecimalValue = 0m,
+                BoolValue = false,
+                DateTimeValue = new DateTime(2000, 1, 1),
+                StringValue = null,
+                NullableInt = null
+            }
+        };
+
+        var csv = Csv.WriteToText<AllTypesRecord>(original);
+        var parsed = Csv.DeserializeRecords<AllTypesRecord>(csv).ToList();
+
+        Assert.Equal(2, parsed.Count);
+
+        // First record
+        Assert.Equal(42, parsed[0].IntValue);
+        Assert.Equal(3.14159, parsed[0].DoubleValue, 5);
+        Assert.Equal(123.45m, parsed[0].DecimalValue);
+        Assert.True(parsed[0].BoolValue);
+        Assert.Equal(new DateTime(2024, 12, 25, 10, 30, 0), parsed[0].DateTimeValue);
+        Assert.Equal("Hello", parsed[0].StringValue);
+        Assert.Equal(100, parsed[0].NullableInt);
+
+        // Second record
+        Assert.Equal(-999, parsed[1].IntValue);
+        Assert.Equal(0.0, parsed[1].DoubleValue);
+        Assert.Equal(0m, parsed[1].DecimalValue);
+        Assert.False(parsed[1].BoolValue);
+        Assert.Null(parsed[1].StringValue);
+        Assert.Null(parsed[1].NullableInt);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void RoundTrip_NewlinesInFields_Preserves()
+    {
+        using var sw = new StringWriter();
+        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+
+        writer.WriteRow("line1\nline2", "normal");
+        writer.WriteRow("a\r\nb\r\nc", "d");
+        writer.Flush();
+
+        var csv = sw.ToString();
+
+        // Must enable AllowNewlinesInsideQuotes to parse multi-line fields
+        var parserOptions = new CsvParserOptions { AllowNewlinesInsideQuotes = true };
+        var reader = Csv.ReadFromText(csv, parserOptions);
+
+        Assert.True(reader.MoveNext());
+        Assert.Equal("line1\nline2", reader.Current[0].UnquoteToString());
+        Assert.Equal("normal", reader.Current[1].UnquoteToString());
+
+        Assert.True(reader.MoveNext());
+        Assert.Equal("a\r\nb\r\nc", reader.Current[0].UnquoteToString());
+        Assert.Equal("d", reader.Current[1].UnquoteToString());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void RoundTrip_UnicodeCharacters_Preserves()
+    {
+        var original = new[]
+        {
+            new TestPerson { Name = "日本語テスト", Age = 25, City = "東京" },
+            new TestPerson { Name = "中文测试", Age = 30, City = "北京" },
+            new TestPerson { Name = "한국어테스트", Age = 35, City = "서울" },
+            new TestPerson { Name = "Emoji 😀🎉", Age = 40, City = "Test 🌍" }
+        };
+
+        var csv = Csv.WriteToText<TestPerson>(original);
+        var parsed = Csv.DeserializeRecords<TestPerson>(csv).ToList();
+
+        Assert.Equal(4, parsed.Count);
+        Assert.Equal("日本語テスト", parsed[0].Name);
+        Assert.Equal("東京", parsed[0].City);
+        Assert.Equal("中文测试", parsed[1].Name);
+        Assert.Equal("北京", parsed[1].City);
+        Assert.Equal("한국어테스트", parsed[2].Name);
+        Assert.Equal("서울", parsed[2].City);
+        Assert.Equal("Emoji 😀🎉", parsed[3].Name);
+        Assert.Equal("Test 🌍", parsed[3].City);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void RoundTrip_CustomDelimiter_Preserves()
+    {
+        var original = new[]
+        {
+            new TestPerson { Name = "Alice", Age = 30, City = "New York" },
+            new TestPerson { Name = "Bob,Jr", Age = 25, City = "London" }
+        };
+
+        var options = new CsvWriterOptions { Delimiter = ';' };
+        var csv = Csv.WriteToText<TestPerson>(original, options);
+
+        var parserOptions = new CsvParserOptions { Delimiter = ';' };
+        var parsed = Csv.DeserializeRecords<TestPerson>(csv, parserOptions: parserOptions).ToList();
+
+        Assert.Equal(2, parsed.Count);
+        Assert.Equal("Alice", parsed[0].Name);
+        Assert.Equal("Bob,Jr", parsed[1].Name); // Comma should be preserved (not delimiter)
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void RoundTrip_TabDelimiter_Preserves()
+    {
+        var original = new[]
+        {
+            new TestPerson { Name = "Alice", Age = 30, City = "New York" },
+            new TestPerson { Name = "Bob", Age = 25, City = "London" }
+        };
+
+        var options = new CsvWriterOptions { Delimiter = '\t' };
+        var csv = Csv.WriteToText<TestPerson>(original, options);
+
+        var parserOptions = new CsvParserOptions { Delimiter = '\t' };
+        var parsed = Csv.DeserializeRecords<TestPerson>(csv, parserOptions: parserOptions).ToList();
+
+        Assert.Equal(2, parsed.Count);
+        Assert.Equal("Alice", parsed[0].Name);
+        Assert.Equal("New York", parsed[0].City);
+        Assert.Equal("Bob", parsed[1].Name);
+        Assert.Equal("London", parsed[1].City);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void RoundTrip_FieldWithDelimiter_Preserves()
+    {
+        // Test that a field containing the delimiter is properly quoted and round-trips
+        using var sw = new StringWriter();
+        using var writer = new CsvStreamWriter(sw, new CsvWriterOptions { Delimiter = '\t' }, leaveOpen: true);
+
+        writer.WriteRow("header1", "header2");
+        writer.WriteRow("normal", "value\twith\ttabs");
+        writer.Flush();
+
+        var csv = sw.ToString();
+
+        // Verify the tab-containing value is quoted in output
+        Assert.Contains("\"value\twith\ttabs\"", csv);
+
+        // Read back with tab delimiter
+        var parserOptions = new CsvParserOptions { Delimiter = '\t' };
+        var reader = Csv.ReadFromText(csv, parserOptions);
+
+        Assert.True(reader.MoveNext()); // header
+        Assert.True(reader.MoveNext()); // data row
+        Assert.Equal("normal", reader.Current[0].ToString());
+        Assert.Equal("value\twith\ttabs", reader.Current[1].UnquoteToString());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void RoundTrip_AlwaysQuoted_Preserves()
+    {
+        // Use low-level writer/reader to test quoting since DeserializeRecords
+        // expects unquoted header names for binding
+        using var sw = new StringWriter();
+        using var writer = new CsvStreamWriter(sw, new CsvWriterOptions { QuoteStyle = QuoteStyle.Always }, leaveOpen: true);
+
+        writer.WriteRow("Alice", "30", "NYC");
+        writer.WriteRow("Bob", "25", "LA");
+        writer.Flush();
+
+        var csv = sw.ToString();
+
+        // Verify all fields are quoted
+        Assert.Contains("\"Alice\"", csv);
+        Assert.Contains("\"30\"", csv);
+        Assert.Contains("\"NYC\"", csv);
+
+        // Read back and verify values are preserved
+        var reader = Csv.ReadFromText(csv);
+
+        Assert.True(reader.MoveNext());
+        Assert.Equal("Alice", reader.Current[0].UnquoteToString());
+        Assert.Equal("30", reader.Current[1].UnquoteToString());
+        Assert.Equal("NYC", reader.Current[2].UnquoteToString());
+
+        Assert.True(reader.MoveNext());
+        Assert.Equal("Bob", reader.Current[0].UnquoteToString());
+        Assert.Equal("25", reader.Current[1].UnquoteToString());
+        Assert.Equal("LA", reader.Current[2].UnquoteToString());
     }
 
     #endregion
@@ -617,7 +816,8 @@ public class WriterTests
     public void WriteRow_EmptyCollection_WritesNothing()
     {
         var records = Array.Empty<TestPerson>();
-        var csv = Csv.Write<TestPerson>().WithoutHeader().ToText(records);
+        var options = new CsvWriterOptions { WriteHeader = false };
+        var csv = Csv.WriteToText<TestPerson>(records, options);
 
         Assert.Equal("", csv);
     }
@@ -627,7 +827,7 @@ public class WriterTests
     public void WriteRow_EmptyCollectionWithHeader_WritesOnlyHeader()
     {
         var records = Array.Empty<TestPerson>();
-        var csv = Csv.Write<TestPerson>().WithHeader().ToText(records);
+        var csv = Csv.WriteToText<TestPerson>(records);
 
         Assert.Contains("Name", csv);
         Assert.Contains("Age", csv);

@@ -275,7 +275,7 @@ public static partial class Csv
     /// Deserializes CSV data from a stream into strongly typed records without buffering the entire payload.
     /// </summary>
     /// <remarks>
-    /// This is the symmetric counterpart to <see cref="SerializeRecords{T}(Stream, IEnumerable{T}, SeparatedValues.Writing.CsvWriterOptions?, Encoding?, bool)"/>.
+    /// This is the symmetric counterpart to <see cref="WriteToStream{T}"/>.
     /// </remarks>
     public static CsvStreamingRecordReader<T> DeserializeRecords<T>(
         Stream stream,
@@ -306,7 +306,7 @@ public static partial class Csv
     /// Asynchronously deserializes CSV data from a stream into strongly typed records without buffering the entire payload.
     /// </summary>
     /// <remarks>
-    /// This is the symmetric counterpart to <see cref="SerializeRecordsAsync{T}"/>.
+    /// This is the symmetric counterpart to <see cref="WriteToStreamAsync{T}"/>.
     /// </remarks>
     public static IAsyncEnumerable<T> DeserializeRecordsAsync<T>(
         Stream stream,

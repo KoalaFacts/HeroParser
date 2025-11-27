@@ -20,10 +20,17 @@ public class Program
             return;
         }
 
-        if (args.Length > 0 && args[0] == "--vs-sep")
+        if (args.Length > 0 && args[0] == "--vs-sep-reading")
         {
-            // Run only comparison benchmarks
-            BenchmarkRunner.Run<VsSepBenchmarks>();
+            // Run reading comparison benchmarks
+            BenchmarkRunner.Run<VsSepReadingBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--vs-sep-writing")
+        {
+            // Run writing comparison benchmarks
+            BenchmarkRunner.Run<VsSepWritingBenchmarks>();
             return;
         }
 
@@ -52,13 +59,14 @@ public class Program
         Console.WriteLine("=== HeroParser Benchmarks ===");
         Console.WriteLine();
         Console.WriteLine("Options:");
-        Console.WriteLine("  --throughput  Run throughput benchmarks");
-        Console.WriteLine("  --streaming   Run streaming throughput benchmarks (text vs stream vs async)");
-        Console.WriteLine("  --vs-sep      Run HeroParser vs Sep comparison");
-        Console.WriteLine("  --quotes      Run quoted vs unquoted comparison (VERIFY SIMD)");
-        Console.WriteLine("  --simd        Run SIMD vs Scalar comparison");
-        Console.WriteLine("  --features    Run new features overhead benchmarks (Comment/Trim/MaxFieldLength)");
-        Console.WriteLine("  --all         Run all benchmarks");
+        Console.WriteLine("  --throughput       Run throughput benchmarks");
+        Console.WriteLine("  --streaming        Run streaming throughput benchmarks (text vs stream vs async)");
+        Console.WriteLine("  --vs-sep-reading   Run HeroParser vs Sep reading comparison");
+        Console.WriteLine("  --vs-sep-writing   Run HeroParser vs Sep writing comparison");
+        Console.WriteLine("  --quotes           Run quoted vs unquoted comparison (VERIFY SIMD)");
+        Console.WriteLine("  --simd             Run SIMD vs Scalar comparison");
+        Console.WriteLine("  --features         Run new features overhead benchmarks (Comment/Trim/MaxFieldLength)");
+        Console.WriteLine("  --all              Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");
 
@@ -74,7 +82,8 @@ public class Program
         {
             BenchmarkRunner.Run<ThroughputBenchmarks>();
             BenchmarkRunner.Run<StreamingThroughputBenchmarks>();
-            BenchmarkRunner.Run<VsSepBenchmarks>();
+            BenchmarkRunner.Run<VsSepReadingBenchmarks>();
+            BenchmarkRunner.Run<VsSepWritingBenchmarks>();
             BenchmarkRunner.Run<QuotedVsUnquotedBenchmarks>();
         }
         else

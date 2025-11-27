@@ -78,26 +78,26 @@ public class WriterBenchmarks
     [Benchmark]
     public string WriteRecords()
     {
-        return Csv.Write<TestRecord>().ToText(records);
+        return Csv.WriteToText<TestRecord>(records);
     }
 
     [Benchmark]
     public string WriteRecordsNoHeader()
     {
-        return Csv.Write<TestRecord>().WithoutHeader().ToText(records);
+        return Csv.WriteToText<TestRecord>(records, new CsvWriterOptions { WriteHeader = false });
     }
 
     [Benchmark]
     public string WriteAlwaysQuoted()
     {
-        return Csv.Write<TestRecord>().AlwaysQuote().ToText(records);
+        return Csv.WriteToText<TestRecord>(records, new CsvWriterOptions { QuoteStyle = QuoteStyle.Always });
     }
 
     [Benchmark]
     public void WriteToStream()
     {
         using var ms = new MemoryStream();
-        Csv.Write<TestRecord>().ToStream(ms, records);
+        Csv.WriteToStream<TestRecord>(ms, records);
     }
 
     public class TestRecord
@@ -229,19 +229,19 @@ public class WriterDestinationBenchmarks
     [Benchmark(Baseline = true)]
     public string ToText()
     {
-        return Csv.Write<WriterBenchmarks.TestRecord>().ToText(records);
+        return Csv.WriteToText<WriterBenchmarks.TestRecord>(records);
     }
 
     [Benchmark]
     public void ToMemoryStream()
     {
         using var ms = new MemoryStream();
-        Csv.Write<WriterBenchmarks.TestRecord>().ToStream(ms, records);
+        Csv.WriteToStream<WriterBenchmarks.TestRecord>(ms, records);
     }
 
     [Benchmark]
     public void ToNullStream()
     {
-        Csv.Write<WriterBenchmarks.TestRecord>().ToStream(Stream.Null, records);
+        Csv.WriteToStream<WriterBenchmarks.TestRecord>(Stream.Null, records);
     }
 }

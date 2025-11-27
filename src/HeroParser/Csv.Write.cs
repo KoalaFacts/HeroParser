@@ -6,36 +6,6 @@ namespace HeroParser;
 public static partial class Csv
 {
     /// <summary>
-    /// Creates a fluent builder for writing records of type <typeparamref name="T"/> to CSV format.
-    /// </summary>
-    /// <typeparam name="T">The record type to write.</typeparam>
-    /// <returns>A <see cref="CsvWriterBuilder{T}"/> for configuring and executing the write operation.</returns>
-    /// <example>
-    /// <code>
-    /// var csv = Csv.Write&lt;Person&gt;()
-    ///     .WithDelimiter(';')
-    ///     .WithHeader()
-    ///     .ToText(records);
-    /// </code>
-    /// </example>
-    public static CsvWriterBuilder<T> Write<T>() => new();
-
-    /// <summary>
-    /// Creates a fluent builder for manual row-by-row CSV writing.
-    /// </summary>
-    /// <returns>A <see cref="CsvWriterBuilder"/> for configuring and creating a low-level writer.</returns>
-    /// <example>
-    /// <code>
-    /// using var writer = Csv.Write()
-    ///     .WithDelimiter(',')
-    ///     .CreateWriter(textWriter);
-    /// writer.WriteRow("Name", "Age");
-    /// writer.WriteRow("Alice", 30);
-    /// </code>
-    /// </example>
-    public static CsvWriterBuilder Write() => new();
-
-    /// <summary>
     /// Creates a low-level CSV writer with default options.
     /// </summary>
     /// <param name="writer">The TextWriter to write to.</param>
@@ -83,16 +53,13 @@ public static partial class Csv
     }
 
     /// <summary>
-    /// Serializes records to CSV format and returns the result as a string.
+    /// Writes records to CSV format and returns the result as a string.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
-    /// <param name="records">The records to serialize.</param>
+    /// <param name="records">The records to write.</param>
     /// <param name="options">Optional writer configuration.</param>
     /// <returns>The CSV content as a string.</returns>
-    /// <remarks>
-    /// This is the symmetric counterpart to <see cref="DeserializeRecords{T}(string, SeparatedValues.Records.CsvRecordOptions?, SeparatedValues.CsvParserOptions?)"/>.
-    /// </remarks>
-    public static string SerializeRecords<T>(IEnumerable<T> records, CsvWriterOptions? options = null)
+    public static string WriteToText<T>(IEnumerable<T> records, CsvWriterOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(records);
         options ??= CsvWriterOptions.Default;
@@ -107,49 +74,29 @@ public static partial class Csv
     }
 
     /// <summary>
-    /// Serializes records to a stream.
+    /// Serializes records to CSV format and returns the result as a string.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
-    /// <param name="stream">The stream to write to.</param>
     /// <param name="records">The records to serialize.</param>
     /// <param name="options">Optional writer configuration.</param>
-    /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
-    /// <param name="leaveOpen">When true, the stream remains open after writing.</param>
+    /// <returns>The CSV content as a string.</returns>
     /// <remarks>
-    /// This is the symmetric counterpart to <see cref="DeserializeRecords{T}(Stream, SeparatedValues.Records.CsvRecordOptions?, SeparatedValues.CsvParserOptions?, Encoding?, bool, int)"/>.
+    /// This is the symmetric counterpart to <see cref="DeserializeRecords{T}(string, SeparatedValues.Records.CsvRecordOptions?, SeparatedValues.CsvParserOptions?)"/>.
     /// </remarks>
-    public static void SerializeRecords<T>(
-        Stream stream,
-        IEnumerable<T> records,
-        CsvWriterOptions? options = null,
-        Encoding? encoding = null,
-        bool leaveOpen = true)
-    {
-        ArgumentNullException.ThrowIfNull(stream);
-        ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
-        encoding ??= Encoding.UTF8;
-
-        using var textWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
-        using var writer = new CsvStreamWriter(textWriter, options);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
-        recordWriter.WriteRecords(writer, records, options.WriteHeader);
-    }
+    public static string SerializeRecords<T>(IEnumerable<T> records, CsvWriterOptions? options = null)
+        => WriteToText<T>(records, options);
 
     /// <summary>
-    /// Asynchronously serializes records to a stream.
+    /// Asynchronously writes records to a stream.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="stream">The stream to write to.</param>
-    /// <param name="records">The records to serialize.</param>
+    /// <param name="records">The records to write.</param>
     /// <param name="options">Optional writer configuration.</param>
     /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
     /// <param name="leaveOpen">When true, the stream remains open after writing.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <remarks>
-    /// This is the symmetric counterpart to <see cref="DeserializeRecordsAsync{T}"/>.
-    /// </remarks>
-    public static async ValueTask SerializeRecordsAsync<T>(
+    public static async ValueTask WriteToStreamAsync<T>(
         Stream stream,
         IAsyncEnumerable<T> records,
         CsvWriterOptions? options = null,
@@ -170,7 +117,7 @@ public static partial class Csv
     }
 
     /// <summary>
-    /// Writes records to a file using default options.
+    /// Writes records to a file.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="path">The file path to write to.</param>
@@ -192,7 +139,42 @@ public static partial class Csv
     }
 
     /// <summary>
-    /// Writes records to a stream using default options.
+    /// Asynchronously writes records to a file.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="path">The file path to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async ValueTask WriteToFileAsync<T>(
+        string path,
+        IAsyncEnumerable<T> records,
+        CsvWriterOptions? options = null,
+        Encoding? encoding = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentNullException.ThrowIfNull(records);
+        options ??= CsvWriterOptions.Default;
+        encoding ??= Encoding.UTF8;
+
+        await using var stream = new FileStream(
+            path,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            FileOptions.Asynchronous);
+        await using var textWriter = new StreamWriter(stream, encoding);
+        await using var writer = new CsvStreamWriter(textWriter, options);
+        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes records to a stream.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="stream">The stream to write to.</param>

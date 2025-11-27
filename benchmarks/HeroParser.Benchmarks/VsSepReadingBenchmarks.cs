@@ -7,14 +7,14 @@ using System.Text;
 namespace HeroParser.Benchmarks;
 
 /// <summary>
-/// Head-to-head comparison: HeroParser vs Sep library.
+/// Head-to-head CSV READING comparison: HeroParser vs Sep library.
 /// Sep by nietras (https://github.com/nietras/Sep) is currently one of the fastest CSV parsers for .NET
 /// and served as the primary inspiration for HeroParser's SIMD architecture.
-/// These benchmarks ensure HeroParser remains competitive with Sep's performance.
+/// These benchmarks ensure HeroParser remains competitive with Sep's reading performance.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
-public class VsSepBenchmarks
+public class VsSepReadingBenchmarks
 {
     private string csv = null!;
     private byte[] utf8 = null!;

@@ -24,6 +24,13 @@ public sealed class CsvWriterBuilder<T>
     private int? maxRowCount;
     private CsvSerializeErrorHandler? onSerializeError;
 
+    // Security and DoS protection
+    private CsvInjectionProtection injectionProtection = CsvInjectionProtection.None;
+    private IReadOnlySet<char>? additionalDangerousChars;
+    private long? maxOutputSize;
+    private int? maxFieldSize;
+    private int? maxColumnCount;
+
     // Cached options - invalidated when any setting changes
     private CsvWriterOptions? cachedOptions;
 
@@ -243,6 +250,70 @@ public sealed class CsvWriterBuilder<T>
         return this;
     }
 
+    /// <summary>
+    /// Enables CSV injection protection with the specified mode.
+    /// </summary>
+    /// <param name="mode">The protection mode (default: EscapeWithQuote).</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// CSV injection occurs when user-supplied data begins with characters like <c>=</c>, <c>+</c>, <c>-</c>, <c>@</c>,
+    /// tab, or carriage return that spreadsheet applications interpret as formulas.
+    /// </remarks>
+    public CsvWriterBuilder<T> WithInjectionProtection(CsvInjectionProtection mode = CsvInjectionProtection.EscapeWithQuote)
+    {
+        injectionProtection = mode;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds additional characters to treat as dangerous for injection protection.
+    /// </summary>
+    /// <param name="chars">Additional dangerous characters.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder<T> WithDangerousChars(params char[] chars)
+    {
+        additionalDangerousChars = chars.ToHashSet();
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum total output size in characters (DoS protection).
+    /// </summary>
+    /// <param name="maxSize">The maximum size, or null for unlimited.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder<T> WithMaxOutputSize(long? maxSize)
+    {
+        maxOutputSize = maxSize;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum size for a single field in characters (DoS protection).
+    /// </summary>
+    /// <param name="maxSize">The maximum size, or null for unlimited.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder<T> WithMaxFieldSize(int? maxSize)
+    {
+        maxFieldSize = maxSize;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum number of columns per row (DoS protection).
+    /// </summary>
+    /// <param name="maxColumns">The maximum columns, or null for unlimited.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder<T> WithMaxColumnCount(int? maxColumns)
+    {
+        maxColumnCount = maxColumns;
+        cachedOptions = null;
+        return this;
+    }
+
     #region Terminal Methods
 
     /// <summary>
@@ -404,7 +475,12 @@ public sealed class CsvWriterBuilder<T>
             TimeOnlyFormat = timeOnlyFormat,
             NumberFormat = numberFormat,
             MaxRowCount = maxRowCount,
-            OnSerializeError = onSerializeError
+            OnSerializeError = onSerializeError,
+            InjectionProtection = injectionProtection,
+            AdditionalDangerousChars = additionalDangerousChars,
+            MaxOutputSize = maxOutputSize,
+            MaxFieldSize = maxFieldSize,
+            MaxColumnCount = maxColumnCount
         };
     }
 
@@ -427,6 +503,13 @@ public sealed class CsvWriterBuilder
     private string? timeOnlyFormat;
     private string? numberFormat;
     private Encoding encoding = Encoding.UTF8;
+
+    // Security and DoS protection
+    private CsvInjectionProtection injectionProtection = CsvInjectionProtection.None;
+    private IReadOnlySet<char>? additionalDangerousChars;
+    private long? maxOutputSize;
+    private int? maxFieldSize;
+    private int? maxColumnCount;
 
     // Cached options - invalidated when any setting changes
     private CsvWriterOptions? cachedOptions;
@@ -586,6 +669,66 @@ public sealed class CsvWriterBuilder
     }
 
     /// <summary>
+    /// Enables CSV injection protection with the specified mode.
+    /// </summary>
+    /// <param name="mode">The protection mode (default: EscapeWithQuote).</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder WithInjectionProtection(CsvInjectionProtection mode = CsvInjectionProtection.EscapeWithQuote)
+    {
+        injectionProtection = mode;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds additional characters to treat as dangerous for injection protection.
+    /// </summary>
+    /// <param name="chars">Additional dangerous characters.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder WithDangerousChars(params char[] chars)
+    {
+        additionalDangerousChars = chars.ToHashSet();
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum total output size in characters (DoS protection).
+    /// </summary>
+    /// <param name="maxSize">The maximum size, or null for unlimited.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder WithMaxOutputSize(long? maxSize)
+    {
+        maxOutputSize = maxSize;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum size for a single field in characters (DoS protection).
+    /// </summary>
+    /// <param name="maxSize">The maximum size, or null for unlimited.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder WithMaxFieldSize(int? maxSize)
+    {
+        maxFieldSize = maxSize;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum number of columns per row (DoS protection).
+    /// </summary>
+    /// <param name="maxColumns">The maximum columns, or null for unlimited.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder WithMaxColumnCount(int? maxColumns)
+    {
+        maxColumnCount = maxColumns;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
     /// Creates a writer for manual row-by-row writing.
     /// </summary>
     /// <param name="textWriter">The TextWriter to write to.</param>
@@ -639,7 +782,12 @@ public sealed class CsvWriterBuilder
             DateTimeFormat = dateTimeFormat,
             DateOnlyFormat = dateOnlyFormat,
             TimeOnlyFormat = timeOnlyFormat,
-            NumberFormat = numberFormat
+            NumberFormat = numberFormat,
+            InjectionProtection = injectionProtection,
+            AdditionalDangerousChars = additionalDangerousChars,
+            MaxOutputSize = maxOutputSize,
+            MaxFieldSize = maxFieldSize,
+            MaxColumnCount = maxColumnCount
         };
     }
 }

@@ -1,6 +1,7 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Records;
 using HeroParser.SeparatedValues.Records.Binding;
+using HeroParser.SeparatedValues.Validation;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
@@ -161,6 +162,8 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
         EnsureResolved(rowNumber);
 
         var instance = new T();
+        var validationEnabled = recordOptions.EnableValidation;
+        var fieldValidators = validationEnabled ? recordOptions.FieldValidators : null;
 
         foreach (var binding in bindings)
         {
@@ -193,10 +196,10 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
             }
 
             var column = row[columnIndex];
-            if (!binding.TryAssign(instance, column))
-            {
-                var fieldValue = column.ToString();
+            var rawValue = column.ToString();
 
+            if (!binding.TryAssign(instance, column, out var boundValue))
+            {
                 // Check if there's an error handler
                 if (recordOptions.OnDeserializeError is not null)
                 {
@@ -206,7 +209,7 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
                         Column = columnIndex + 1,
                         MemberName = binding.MemberName,
                         TargetType = binding.TargetType,
-                        FieldValue = fieldValue
+                        FieldValue = rawValue
                     };
 
                     var action = recordOptions.OnDeserializeError(context);
@@ -227,11 +230,73 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
                     $"Failed to convert column {columnIndex + 1} to {binding.TargetType.Name} for member '{binding.MemberName}'.",
                     rowNumber,
                     columnIndex + 1,
-                    fieldValue);
+                    rawValue);
+            }
+
+            // Run validators if validation is enabled
+            if (fieldValidators is not null &&
+                fieldValidators.TryGetValue(binding.MemberName, out var validators))
+            {
+                var skipRow = RunValidators(validators, boundValue, rawValue, binding.MemberName, rowNumber, columnIndex + 1);
+                if (skipRow)
+                {
+                    return null;
+                }
             }
         }
 
         return instance;
+    }
+
+    private bool RunValidators(
+        IReadOnlyList<IFieldValidator> validators,
+        object? value,
+        string? rawValue,
+        string fieldName,
+        int rowNumber,
+        int columnNumber)
+    {
+        foreach (var validator in validators)
+        {
+            var result = validator.Validate(value, rawValue);
+            if (!result.IsValid)
+            {
+                var errorMessage = result.ErrorMessage ?? "Validation failed.";
+
+                if (recordOptions.OnValidationError is not null)
+                {
+                    var context = new CsvValidationContext
+                    {
+                        Row = rowNumber,
+                        Column = columnNumber,
+                        FieldName = fieldName,
+                        Value = value,
+                        RawValue = rawValue
+                    };
+
+                    var action = recordOptions.OnValidationError(context, errorMessage);
+                    switch (action)
+                    {
+                        case ValidationErrorAction.SkipRow:
+                            return true; // Skip the row
+                        case ValidationErrorAction.UseDefault:
+                            return false; // Continue with default value (already set)
+                        case ValidationErrorAction.Throw:
+                        default:
+                            break;
+                    }
+                }
+
+                throw new CsvException(
+                    CsvErrorCode.ValidationError,
+                    $"Validation failed for field '{fieldName}': {errorMessage}",
+                    rowNumber,
+                    columnNumber,
+                    rawValue);
+            }
+        }
+
+        return false; // Don't skip the row
     }
 
     private void EnsureResolved(int rowNumber)

@@ -35,10 +35,24 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     private readonly string? timeOnlyFormat;
 #endif
 
+    // Security and DoS protection
+    private readonly CsvInjectionProtection injectionProtection;
+    private readonly IReadOnlySet<char>? additionalDangerousChars;
+    private readonly long? maxOutputSize;
+    private readonly int? maxFieldSize;
+    private readonly int? maxColumnCount;
+
+    // State tracking
     private char[] buffer;
     private int bufferPosition;
     private bool isFirstFieldInRow;
     private bool disposed;
+    private long totalCharsWritten;
+    private int currentRowColumnCount;
+
+    // Default dangerous characters for CSV injection (always dangerous)
+    // Note: '-' and '+' are handled separately with smart detection
+    private static ReadOnlySpan<char> AlwaysDangerousChars => ['=', '@', '\t', '\r'];
 
     private const int DEFAULT_BUFFER_SIZE = 16 * 1024; // 16KB
     private const int MAX_STACK_ALLOC_SIZE = 256;
@@ -72,9 +86,18 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         timeOnlyFormat = this.options.TimeOnlyFormat;
 #endif
 
+        // Security and DoS protection options
+        injectionProtection = this.options.InjectionProtection;
+        additionalDangerousChars = this.options.AdditionalDangerousChars;
+        maxOutputSize = this.options.MaxOutputSize;
+        maxFieldSize = this.options.MaxFieldSize;
+        maxColumnCount = this.options.MaxColumnCount;
+
         buffer = ArrayPool<char>.Shared.Rent(DEFAULT_BUFFER_SIZE);
         bufferPosition = 0;
         isFirstFieldInRow = true;
+        totalCharsWritten = 0;
+        currentRowColumnCount = 0;
     }
 
     /// <summary>
@@ -94,6 +117,15 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         ThrowIfDisposed();
 
+        // Check column count limit
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
         if (!isFirstFieldInRow)
         {
             WriteDelimiter();
@@ -111,12 +143,21 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         ThrowIfDisposed();
 
+        // Check column count limit
+        if (maxColumnCount.HasValue && values.Length > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row has {values.Length} columns, exceeds maximum of {maxColumnCount.Value}");
+        }
+
         for (int i = 0; i < values.Length; i++)
         {
             if (i > 0) WriteDelimiter();
             WriteFieldValue(values[i].AsSpan());
         }
         isFirstFieldInRow = true;
+        currentRowColumnCount = 0;
         WriteNewLine();
     }
 
@@ -128,12 +169,21 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         ThrowIfDisposed();
 
+        // Check column count limit
+        if (maxColumnCount.HasValue && values.Length > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row has {values.Length} columns, exceeds maximum of {maxColumnCount.Value}");
+        }
+
         for (int i = 0; i < values.Length; i++)
         {
             if (i > 0) WriteDelimiter();
             WriteFormattedValue(values[i]);
         }
         isFirstFieldInRow = true;
+        currentRowColumnCount = 0;
         WriteNewLine();
     }
 
@@ -145,12 +195,21 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         ThrowIfDisposed();
 
+        // Check column count limit
+        if (maxColumnCount.HasValue && values.Length > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row has {values.Length} columns, exceeds maximum of {maxColumnCount.Value}");
+        }
+
         for (int i = 0; i < values.Length; i++)
         {
             if (i > 0) WriteDelimiter();
             WriteFormattedValue(values[i]);
         }
         isFirstFieldInRow = true;
+        currentRowColumnCount = 0;
         WriteNewLine();
     }
 
@@ -163,6 +222,14 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         ThrowIfDisposed();
 
+        // Check column count limit
+        if (maxColumnCount.HasValue && values.Length > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row has {values.Length} columns, exceeds maximum of {maxColumnCount.Value}");
+        }
+
         for (int i = 0; i < values.Length; i++)
         {
             if (i > 0) WriteDelimiter();
@@ -170,6 +237,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
             WriteFormattedValueWithFormat(values[i], format);
         }
         isFirstFieldInRow = true;
+        currentRowColumnCount = 0;
         WriteNewLine();
     }
 
@@ -180,6 +248,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         ThrowIfDisposed();
         isFirstFieldInRow = true;
+        currentRowColumnCount = 0;
         WriteNewLine();
     }
 
@@ -223,6 +292,14 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
     private void WriteFieldValue(ReadOnlySpan<char> value)
     {
+        // Check field size limit
+        if (maxFieldSize.HasValue && value.Length > maxFieldSize.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.FieldSizeExceeded,
+                $"Field size {value.Length} exceeds maximum of {maxFieldSize.Value}");
+        }
+
         if (value.IsEmpty)
         {
             // Empty field - write quotes if AlwaysQuote, otherwise nothing
@@ -232,6 +309,13 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
                 buffer[bufferPosition++] = quote;
                 buffer[bufferPosition++] = quote;
             }
+            return;
+        }
+
+        // Check for injection and apply protection if needed
+        if (injectionProtection != CsvInjectionProtection.None && IsDangerousField(value))
+        {
+            WriteFieldWithInjectionProtection(value);
             return;
         }
 
@@ -258,6 +342,182 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
                 }
                 break;
         }
+    }
+
+    /// <summary>
+    /// Checks if a field starts with a dangerous character that could trigger formula execution.
+    /// Uses switch statement for O(1) lookup of common dangerous characters.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsDangerousField(ReadOnlySpan<char> value)
+    {
+        if (value.IsEmpty) return false;
+
+        char first = value[0];
+
+        switch (first)
+        {
+            // Always-dangerous characters
+            case '=':
+            case '@':
+            case '\t':
+            case '\r':
+                return true;
+
+            // Smart detection for '-' and '+':
+            // - If followed by digit or '.', it's likely a number/phone number (safe)
+            // - If followed by letter or '(', it's likely a formula (dangerous)
+            case '-':
+            case '+':
+                // Single character is safe
+                if (value.Length == 1) return false;
+                char second = value[1];
+                // Safe patterns: -123, +1-555, -.5, +.5
+                // Use uint comparison to check digit range in one instruction
+                return !((uint)(second - '0') <= 9 || second == '.');
+
+            default:
+                // Check additional custom dangerous characters
+                return additionalDangerousChars is not null && additionalDangerousChars.Contains(first);
+        }
+    }
+
+    /// <summary>
+    /// Writes a field with injection protection applied.
+    /// </summary>
+    private void WriteFieldWithInjectionProtection(ReadOnlySpan<char> value)
+    {
+        switch (injectionProtection)
+        {
+            case CsvInjectionProtection.None:
+                // Should not reach here since we check before calling, but handle gracefully
+                WriteFieldValueWithoutInjectionCheck(value);
+                break;
+
+            case CsvInjectionProtection.EscapeWithQuote:
+                // Prefix with single quote inside quotes: =SUM(A1) becomes "'=SUM(A1)"
+                WriteQuotedFieldWithPrefix('\'', value);
+                break;
+
+            case CsvInjectionProtection.EscapeWithTab:
+                // Prefix with tab inside quotes: =SUM(A1) becomes "\t=SUM(A1)"
+                WriteQuotedFieldWithPrefix('\t', value);
+                break;
+
+            case CsvInjectionProtection.Sanitize:
+                // Strip dangerous leading characters
+                var sanitized = StripDangerousPrefix(value);
+                WriteFieldValueWithoutInjectionCheck(sanitized);
+                break;
+
+            case CsvInjectionProtection.Reject:
+                throw new CsvException(
+                    CsvErrorCode.InjectionDetected,
+                    $"CSV injection detected: field starts with dangerous character '{value[0]}'");
+
+            default:
+                // Handle any future enum values gracefully
+                WriteFieldValueWithoutInjectionCheck(value);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Writes a field value without checking for injection (used after sanitization).
+    /// </summary>
+    private void WriteFieldValueWithoutInjectionCheck(ReadOnlySpan<char> value)
+    {
+        if (value.IsEmpty)
+        {
+            if (quoteStyle == QuoteStyle.Always)
+            {
+                EnsureCapacity(2);
+                buffer[bufferPosition++] = quote;
+                buffer[bufferPosition++] = quote;
+            }
+            return;
+        }
+
+        switch (quoteStyle)
+        {
+            case QuoteStyle.Always:
+                WriteQuotedFieldWithKnownQuoteCount(value, CountQuotes(value));
+                break;
+            case QuoteStyle.Never:
+                WriteUnquotedField(value);
+                break;
+            case QuoteStyle.WhenNeeded:
+            default:
+                var (needsQuoting, quoteCount) = AnalyzeFieldForQuoting(value);
+                if (needsQuoting)
+                {
+                    WriteQuotedFieldWithKnownQuoteCount(value, quoteCount);
+                }
+                else
+                {
+                    WriteUnquotedField(value);
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Writes a quoted field with a prefix character (for injection protection).
+    /// </summary>
+    private void WriteQuotedFieldWithPrefix(char prefix, ReadOnlySpan<char> value)
+    {
+        int quoteCount = CountQuotes(value);
+        // Total size: opening quote + prefix + value + escaped quotes + closing quote
+        int requiredSize = 3 + value.Length + quoteCount;
+        EnsureCapacity(requiredSize);
+
+        buffer[bufferPosition++] = quote;
+        buffer[bufferPosition++] = prefix;
+
+        if (quoteCount == 0)
+        {
+            value.CopyTo(buffer.AsSpan(bufferPosition));
+            bufferPosition += value.Length;
+        }
+        else
+        {
+            WriteWithQuoteEscaping(value);
+        }
+
+        buffer[bufferPosition++] = quote;
+    }
+
+    /// <summary>
+    /// Strips dangerous leading characters from a value.
+    /// </summary>
+    private ReadOnlySpan<char> StripDangerousPrefix(ReadOnlySpan<char> value)
+    {
+        int start = 0;
+        while (start < value.Length)
+        {
+            char c = value[start];
+            // Strip always-dangerous chars, plus '-' and '+' that aren't followed by digit/decimal
+            bool isDangerous = AlwaysDangerousChars.Contains(c) ||
+                               (additionalDangerousChars is not null && additionalDangerousChars.Contains(c));
+
+            // Smart handling for '-' and '+'
+            if (!isDangerous && (c == '-' || c == '+'))
+            {
+                // Check if followed by digit or decimal (safe pattern)
+                if (start + 1 < value.Length)
+                {
+                    char next = value[start + 1];
+                    isDangerous = !char.IsDigit(next) && next != '.';
+                }
+            }
+
+            if (!isDangerous)
+            {
+                break;
+            }
+            start++;
+        }
+        return value[start..];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -649,6 +909,15 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         if (bufferPosition > 0)
         {
+            // Track total output size for DoS protection
+            totalCharsWritten += bufferPosition;
+            if (maxOutputSize.HasValue && totalCharsWritten > maxOutputSize.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.OutputSizeExceeded,
+                    $"Output size {totalCharsWritten} exceeds maximum of {maxOutputSize.Value}");
+            }
+
             writer.Write(buffer.AsSpan(0, bufferPosition));
             bufferPosition = 0;
         }
@@ -658,6 +927,15 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         if (bufferPosition > 0)
         {
+            // Track total output size for DoS protection
+            totalCharsWritten += bufferPosition;
+            if (maxOutputSize.HasValue && totalCharsWritten > maxOutputSize.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.OutputSizeExceeded,
+                    $"Output size {totalCharsWritten} exceeds maximum of {maxOutputSize.Value}");
+            }
+
 #if NET6_0_OR_GREATER
             await writer.WriteAsync(buffer.AsMemory(0, bufferPosition), cancellationToken).ConfigureAwait(false);
 #else

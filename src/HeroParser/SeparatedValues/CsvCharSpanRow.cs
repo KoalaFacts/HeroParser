@@ -94,4 +94,58 @@ public readonly ref struct CsvCharSpanRow
     /// This is an alias for <see cref="Clone"/> that creates an owned copy of the row data.
     /// </remarks>
     public CsvCharSpanRow ToImmutable() => Clone();
+
+    /// <summary>
+    /// Checks if any column in the row starts with a potentially dangerous character
+    /// that could trigger CSV injection (formula injection) in spreadsheet applications.
+    /// </summary>
+    /// <returns>True if any column starts with a dangerous character pattern.</returns>
+    /// <remarks>
+    /// This method is optimized to avoid span allocations by directly accessing
+    /// the underlying buffer using pre-computed column positions.
+    /// Dangerous patterns: =, @, \t, \r, and -/+ followed by non-numeric characters.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool HasDangerousFields()
+    {
+        for (int i = 0; i < columnCount; i++)
+        {
+            if (IsDangerousColumn(i))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a specific column starts with a potentially dangerous character.
+    /// </summary>
+    /// <param name="index">Zero-based column index.</param>
+    /// <returns>True if the column starts with a dangerous character pattern.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool IsDangerousColumn(int index)
+    {
+        var length = columnLengths[index];
+        if (length == 0) return false;
+
+        var start = columnStarts[index];
+        char first = line[start];
+
+        switch (first)
+        {
+            case '=':
+            case '@':
+            case '\t':
+            case '\r':
+                return true;
+
+            case '-':
+            case '+':
+                if (length == 1) return false;
+                char second = line[start + 1];
+                return !((uint)(second - '0') <= 9 || second == '.');
+
+            default:
+                return false;
+        }
+    }
 }

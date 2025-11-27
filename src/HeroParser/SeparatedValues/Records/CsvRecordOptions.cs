@@ -1,4 +1,5 @@
 using System.Globalization;
+using HeroParser.SeparatedValues.Validation;
 
 namespace HeroParser.SeparatedValues.Records;
 
@@ -321,6 +322,54 @@ public sealed record CsvRecordOptions
     /// (not recommended for large files due to performance impact).
     /// </remarks>
     public int ProgressIntervalRows { get; init; } = 1000;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether field validation is enabled.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="true"/>, validators registered via <see cref="FieldValidators"/>
+    /// or validation attributes will be executed during record binding.
+    /// Validation is disabled by default for backward compatibility and performance.
+    /// </remarks>
+    public bool EnableValidation { get; init; } = false;
+
+    /// <summary>
+    /// Gets or sets a callback to handle validation errors during record binding.
+    /// </summary>
+    /// <remarks>
+    /// When set, this callback is invoked for each validation error, allowing you to:
+    /// <list type="bullet">
+    ///   <item><description>Log validation errors for later analysis</description></item>
+    ///   <item><description>Skip problematic rows (<see cref="ValidationErrorAction.SkipRow"/>)</description></item>
+    ///   <item><description>Use default values (<see cref="ValidationErrorAction.UseDefault"/>)</description></item>
+    ///   <item><description>Throw exceptions (<see cref="ValidationErrorAction.Throw"/>, the default)</description></item>
+    /// </list>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var errors = new List&lt;string&gt;();
+    /// var options = new CsvRecordOptions
+    /// {
+    ///     EnableValidation = true,
+    ///     OnValidationError = (ctx, msg) =>
+    ///     {
+    ///         errors.Add($"Row {ctx.Row}: {ctx.FieldName} - {msg}");
+    ///         return ValidationErrorAction.SkipRow;
+    ///     }
+    /// };
+    /// </code>
+    /// </example>
+    public CsvValidationErrorHandler? OnValidationError { get; init; } = null;
+
+    /// <summary>
+    /// Gets or sets the field validators to apply during record binding.
+    /// </summary>
+    /// <remarks>
+    /// This dictionary maps field/property names to their validators.
+    /// Multiple validators can be applied to a single field by using a composite validator.
+    /// Use the fluent builder API (<c>Csv.Read&lt;T&gt;().Validate(...)</c>) for easier configuration.
+    /// </remarks>
+    public IReadOnlyDictionary<string, IReadOnlyList<IFieldValidator>>? FieldValidators { get; init; } = null;
 
     internal StringComparer HeaderComparer => CaseSensitiveHeaders ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 

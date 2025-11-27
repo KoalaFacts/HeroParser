@@ -39,6 +39,15 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
             Setter(instance, value);
             return true;
         }
+
+        public bool TryAssign(T instance, CsvCharSpanColumn column, out object? boundValue)
+        {
+            if (!Converter(column, out boundValue))
+                return false;
+
+            Setter(instance, boundValue);
+            return true;
+        }
     }
 
     internal sealed record BindingTemplate(

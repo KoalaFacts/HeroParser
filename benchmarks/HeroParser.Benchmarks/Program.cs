@@ -62,6 +62,47 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--security")
+        {
+            // Run all security and validation benchmarks
+            BenchmarkRunner.Run<WriteInjectionProtectionBenchmarks>();
+            BenchmarkRunner.Run<ReadInjectionProtectionBenchmarks>();
+            BenchmarkRunner.Run<OutputLimitsBenchmarks>();
+            BenchmarkRunner.Run<ValidationBenchmarks>();
+            BenchmarkRunner.Run<SmartDetectionMicroBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--validation")
+        {
+            // Run only validation benchmarks
+            BenchmarkRunner.Run<ValidationBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--injection")
+        {
+            // Run all injection protection benchmarks (write and read)
+            BenchmarkRunner.Run<WriteInjectionProtectionBenchmarks>();
+            BenchmarkRunner.Run<ReadInjectionProtectionBenchmarks>();
+            BenchmarkRunner.Run<SmartDetectionMicroBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--injection-write")
+        {
+            // Run write-side injection protection benchmarks
+            BenchmarkRunner.Run<WriteInjectionProtectionBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--injection-read")
+        {
+            // Run read-side injection protection benchmarks
+            BenchmarkRunner.Run<ReadInjectionProtectionBenchmarks>();
+            return;
+        }
+
         // Default: show menu
         Console.WriteLine("=== HeroParser Benchmarks ===");
         Console.WriteLine();
@@ -74,6 +115,11 @@ public class Program
         Console.WriteLine("  --quotes           Run quoted vs unquoted comparison (VERIFY SIMD)");
         Console.WriteLine("  --simd             Run SIMD vs Scalar comparison");
         Console.WriteLine("  --features         Run new features overhead benchmarks (Comment/Trim/MaxFieldLength)");
+        Console.WriteLine("  --security         Run security and validation benchmarks (injection/limits/validation)");
+        Console.WriteLine("  --validation       Run only validation benchmarks");
+        Console.WriteLine("  --injection        Run all injection protection benchmarks");
+        Console.WriteLine("  --injection-write  Run write-side injection benchmarks");
+        Console.WriteLine("  --injection-read   Run read-side injection benchmarks");
         Console.WriteLine("  --all              Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");

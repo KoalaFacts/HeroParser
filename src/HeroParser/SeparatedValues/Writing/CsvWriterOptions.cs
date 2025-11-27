@@ -188,6 +188,55 @@ public sealed record CsvWriterOptions
     public CsvSerializeErrorHandler? OnSerializeError { get; init; } = null;
 
     /// <summary>
+    /// Gets or sets the CSV injection protection mode.
+    /// </summary>
+    /// <remarks>
+    /// <para>CSV injection occurs when user-supplied data begins with characters like <c>=</c>, <c>+</c>, <c>-</c>, <c>@</c>,
+    /// tab, or carriage return that spreadsheet applications interpret as formulas.</para>
+    /// <para>Default is <see cref="CsvInjectionProtection.None"/> for backward compatibility.</para>
+    /// </remarks>
+    public CsvInjectionProtection InjectionProtection { get; init; } = CsvInjectionProtection.None;
+
+    /// <summary>
+    /// Gets or sets additional characters to treat as dangerous beyond the defaults.
+    /// </summary>
+    /// <remarks>
+    /// <para>Default dangerous characters: <c>=</c>, <c>+</c>, <c>-</c>, <c>@</c>, tab (<c>\t</c>), carriage return (<c>\r</c>).</para>
+    /// <para>Use this property to add custom characters that should trigger injection protection.</para>
+    /// </remarks>
+    public IReadOnlySet<char>? AdditionalDangerousChars { get; init; }
+
+    /// <summary>
+    /// Gets or sets the maximum total output size in characters (DoS protection).
+    /// </summary>
+    /// <remarks>
+    /// When set to a positive value, writing will stop and throw <see cref="CsvException"/>
+    /// with <see cref="CsvErrorCode.OutputSizeExceeded"/> after the specified size is exceeded.
+    /// Set to <see langword="null"/> (the default) to disable this protection.
+    /// </remarks>
+    public long? MaxOutputSize { get; init; }
+
+    /// <summary>
+    /// Gets or sets the maximum size for a single field in characters (DoS protection).
+    /// </summary>
+    /// <remarks>
+    /// When set to a positive value, writing will throw <see cref="CsvException"/>
+    /// with <see cref="CsvErrorCode.FieldSizeExceeded"/> if any field exceeds this size.
+    /// Set to <see langword="null"/> (the default) to disable this protection.
+    /// </remarks>
+    public int? MaxFieldSize { get; init; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of columns per row (DoS protection).
+    /// </summary>
+    /// <remarks>
+    /// When set to a positive value, writing will throw <see cref="CsvException"/>
+    /// with <see cref="CsvErrorCode.TooManyColumnsWritten"/> if any row exceeds this count.
+    /// Set to <see langword="null"/> (the default) to disable this protection.
+    /// </remarks>
+    public int? MaxColumnCount { get; init; }
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>
@@ -246,6 +295,27 @@ public sealed record CsvWriterOptions
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
                 $"MaxRowCount must be positive when specified, got {MaxRowCount.Value}");
+        }
+
+        if (MaxOutputSize.HasValue && MaxOutputSize.Value <= 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxOutputSize must be positive when specified, got {MaxOutputSize.Value}");
+        }
+
+        if (MaxFieldSize.HasValue && MaxFieldSize.Value <= 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxFieldSize must be positive when specified, got {MaxFieldSize.Value}");
+        }
+
+        if (MaxColumnCount.HasValue && MaxColumnCount.Value <= 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxColumnCount must be positive when specified, got {MaxColumnCount.Value}");
         }
     }
 }

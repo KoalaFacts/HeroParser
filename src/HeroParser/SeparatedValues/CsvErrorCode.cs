@@ -28,5 +28,32 @@ public enum CsvErrorCode
     /// <summary>
     /// General parsing error.
     /// </summary>
-    ParseError = 99
+    ParseError = 99,
+
+    // Writer error codes (100+)
+
+    /// <summary>
+    /// Output exceeds maximum size limit.
+    /// </summary>
+    OutputSizeExceeded = 100,
+
+    /// <summary>
+    /// Field exceeds maximum size limit during write.
+    /// </summary>
+    FieldSizeExceeded = 101,
+
+    /// <summary>
+    /// Row exceeds maximum column count during write.
+    /// </summary>
+    TooManyColumnsWritten = 102,
+
+    /// <summary>
+    /// CSV injection pattern detected and protection mode is Reject.
+    /// </summary>
+    InjectionDetected = 103,
+
+    /// <summary>
+    /// Field validation failed during record binding.
+    /// </summary>
+    ValidationError = 104
 }

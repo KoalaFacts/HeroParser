@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.SeparatedValues.Records.Readers;
 using HeroParser.SeparatedValues.Streaming;
+using HeroParser.SeparatedValues.Validation;
 
 namespace HeroParser.SeparatedValues.Records;
 
@@ -40,6 +42,11 @@ public sealed class CsvReaderBuilder<T> where T : class, new()
     private IProgress<CsvProgress>? progress = null;
     private int progressIntervalRows = 1000;
     private List<Func<CsvRecordOptions, CsvRecordOptions>>? converterRegistrations;
+
+    // Validation options
+    private bool enableValidation = false;
+    private CsvValidationErrorHandler? onValidationError = null;
+    private Dictionary<string, List<IFieldValidator>>? fieldValidators;
 
     // Encoding for file/stream operations
     private Encoding encoding = Encoding.UTF8;
@@ -379,6 +386,142 @@ public sealed class CsvReaderBuilder<T> where T : class, new()
 
     #endregion
 
+    #region Validation Options
+
+    /// <summary>
+    /// Enables field validation during record binding.
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// Validation must be enabled for validators to be executed.
+    /// Use <see cref="Validate{TProperty}(Expression{Func{T, TProperty}}, IFieldValidator[])"/>
+    /// to configure validators for specific fields.
+    /// </remarks>
+    public CsvReaderBuilder<T> EnableValidation()
+    {
+        enableValidation = true;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Adds validators for a specific field using a property expression.
+    /// </summary>
+    /// <typeparam name="TProperty">The property type.</typeparam>
+    /// <param name="propertyExpression">Expression selecting the property to validate.</param>
+    /// <param name="validators">The validators to apply.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// This method automatically enables validation. Multiple validators can be applied
+    /// to the same field by calling this method multiple times.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// Csv.Read&lt;Person&gt;()
+    ///     .Validate(p => p.Name, CsvValidators.Required())
+    ///     .Validate(p => p.Age, CsvValidators.Range(0, 150))
+    ///     .Validate(p => p.Email, CsvValidators.Regex(@"^[\w.-]+@[\w.-]+\.\w+$"))
+    ///     .FromFile("people.csv");
+    /// </code>
+    /// </example>
+    public CsvReaderBuilder<T> Validate<TProperty>(Expression<Func<T, TProperty>> propertyExpression, params IFieldValidator[] validators)
+    {
+        ArgumentNullException.ThrowIfNull(propertyExpression);
+        ArgumentNullException.ThrowIfNull(validators);
+
+        if (validators.Length == 0)
+        {
+            return this;
+        }
+
+        var memberName = GetMemberName(propertyExpression);
+
+        fieldValidators ??= [];
+        if (!fieldValidators.TryGetValue(memberName, out var validatorList))
+        {
+            validatorList = [];
+            fieldValidators[memberName] = validatorList;
+        }
+        validatorList.AddRange(validators);
+
+        // Auto-enable validation when validators are added
+        enableValidation = true;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Adds validators for a field by name.
+    /// </summary>
+    /// <param name="fieldName">The field/property name to validate.</param>
+    /// <param name="validators">The validators to apply.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvReaderBuilder<T> Validate(string fieldName, params IFieldValidator[] validators)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(fieldName);
+        ArgumentNullException.ThrowIfNull(validators);
+
+        if (validators.Length == 0)
+        {
+            return this;
+        }
+
+        fieldValidators ??= [];
+        if (!fieldValidators.TryGetValue(fieldName, out var validatorList))
+        {
+            validatorList = [];
+            fieldValidators[fieldName] = validatorList;
+        }
+        validatorList.AddRange(validators);
+
+        // Auto-enable validation when validators are added
+        enableValidation = true;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the error handler for validation errors.
+    /// </summary>
+    /// <param name="handler">The error handler delegate.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// var errors = new List&lt;string&gt;();
+    /// Csv.Read&lt;Person&gt;()
+    ///     .Validate(p => p.Name, CsvValidators.Required())
+    ///     .OnValidationError((ctx, msg) =>
+    ///     {
+    ///         errors.Add($"Row {ctx.Row}: {msg}");
+    ///         return ValidationErrorAction.SkipRow;
+    ///     })
+    ///     .FromFile("people.csv");
+    /// </code>
+    /// </example>
+    public CsvReaderBuilder<T> OnValidationError(CsvValidationErrorHandler handler)
+    {
+        onValidationError = handler;
+        InvalidateCache();
+        return this;
+    }
+
+    private static string GetMemberName<TProperty>(Expression<Func<T, TProperty>> expression)
+    {
+        if (expression.Body is MemberExpression memberExpression)
+        {
+            return memberExpression.Member.Name;
+        }
+
+        if (expression.Body is UnaryExpression { Operand: MemberExpression unaryMember })
+        {
+            return unaryMember.Member.Name;
+        }
+
+        throw new ArgumentException("Expression must be a property access expression.", nameof(expression));
+    }
+
+    #endregion
+
     #region Terminal Methods
 
     /// <summary>
@@ -495,6 +638,18 @@ public sealed class CsvReaderBuilder<T> where T : class, new()
 
     private CsvRecordOptions CreateRecordOptions()
     {
+        // Build field validators dictionary if any were configured
+        IReadOnlyDictionary<string, IReadOnlyList<IFieldValidator>>? validatorsDict = null;
+        if (fieldValidators is { Count: > 0 })
+        {
+            var dict = new Dictionary<string, IReadOnlyList<IFieldValidator>>(fieldValidators.Count);
+            foreach (var kvp in fieldValidators)
+            {
+                dict[kvp.Key] = kvp.Value.AsReadOnly();
+            }
+            validatorsDict = dict;
+        }
+
         var options = new CsvRecordOptions
         {
             HasHeaderRow = hasHeaderRow,
@@ -508,7 +663,10 @@ public sealed class CsvReaderBuilder<T> where T : class, new()
             RequiredHeaders = requiredHeaders,
             ValidateHeaders = validateHeaders,
             Progress = progress,
-            ProgressIntervalRows = progressIntervalRows
+            ProgressIntervalRows = progressIntervalRows,
+            EnableValidation = enableValidation,
+            OnValidationError = onValidationError,
+            FieldValidators = validatorsDict
         };
 
         // Apply custom converter registrations

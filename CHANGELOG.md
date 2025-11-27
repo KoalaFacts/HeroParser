@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **Fluent Reader Builder**: `Csv.Read<T>()` fluent API for reading CSV records
+  - Symmetric API with `CsvWriterBuilder<T>` for consistent developer experience
+  - Configure delimiter, quote character, max columns/rows, and more
+  - Terminal methods: `FromText()`, `FromFile()`, `FromStream()`, and async variants
+  - All parser and record options accessible through fluent methods
 - **CSV Writing**: High-performance CSV writer with RFC 4180 compliance
   - `Csv.WriteToText<T>()` - Write records to a string
   - `Csv.WriteToFile<T>()` / `Csv.WriteToFileAsync<T>()` - Write to files

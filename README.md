@@ -116,6 +116,31 @@ while (await reader.MoveNextAsync())
 
 Async streaming uses pooled buffers and async I/O; each row stays valid until the next `MoveNextAsync` invocation.
 
+### Fluent Reader Builder
+
+Use the fluent builder API for a clean, chainable configuration:
+
+```csharp
+// Read CSV records with fluent configuration
+var records = Csv.Read<Person>()
+    .WithDelimiter(';')
+    .TrimFields()
+    .AllowMissingColumns()
+    .SkipRows(2)  // Skip metadata rows
+    .FromText(csvData)
+    .ToList();
+
+// Read from file with async streaming
+await foreach (var person in Csv.Read<Person>()
+    .WithDelimiter(',')
+    .FromFileAsync("data.csv"))
+{
+    Console.WriteLine($"{person.Name}: {person.Age}");
+}
+```
+
+The builder provides a symmetric API to `CsvWriterBuilder<T>` for reading records.
+
 ## ✍️ CSV Writing
 
 HeroParser includes a high-performance CSV writer that is 2-5x faster than Sep with significantly lower memory allocations.

@@ -84,7 +84,7 @@ public static partial class Csv
     /// This is the symmetric counterpart to <see cref="DeserializeRecords{T}(string, SeparatedValues.Records.CsvRecordOptions?, SeparatedValues.CsvParserOptions?)"/>.
     /// </remarks>
     public static string SerializeRecords<T>(IEnumerable<T> records, CsvWriterOptions? options = null)
-        => WriteToText<T>(records, options);
+        => WriteToText(records, options);
 
     /// <summary>
     /// Asynchronously writes records to a stream.

@@ -11,6 +11,42 @@ namespace HeroParser;
 public static partial class Csv
 {
     /// <summary>
+    /// Creates a fluent builder for reading and deserializing CSV records of type <typeparamref name="T"/>.
+    /// </summary>
+    /// <typeparam name="T">The record type to deserialize.</typeparam>
+    /// <returns>A <see cref="CsvReaderBuilder{T}"/> for configuring and executing the read operation.</returns>
+    /// <example>
+    /// <code>
+    /// var records = Csv.Read&lt;Person&gt;()
+    ///     .WithDelimiter(';')
+    ///     .TrimFields()
+    ///     .FromText(csvData);
+    /// </code>
+    /// </example>
+    public static CsvReaderBuilder<T> Read<T>() where T : class, new() => new();
+
+    /// <summary>
+    /// Creates a fluent builder for manual row-by-row CSV reading.
+    /// </summary>
+    /// <returns>A <see cref="CsvReaderBuilder"/> for configuring and creating a low-level CSV reader.</returns>
+    /// <example>
+    /// <code>
+    /// // Manual row-by-row reading
+    /// using var reader = Csv.Read()
+    ///     .WithDelimiter(';')
+    ///     .TrimFields()
+    ///     .FromText(csvData);
+    ///
+    /// foreach (var row in reader)
+    /// {
+    ///     var id = row[0].Parse&lt;int&gt;();
+    ///     var name = row[1].ToString();
+    /// }
+    /// </code>
+    /// </example>
+    public static CsvReaderBuilder Read() => new();
+
+    /// <summary>
     /// Creates a reader that iterates over CSV records stored in a managed <see cref="string"/>.
     /// </summary>
     /// <param name="data">Complete CSV payload encoded as UTF-16.</param>

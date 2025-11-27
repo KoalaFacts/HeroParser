@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 
 namespace HeroParser.SeparatedValues;
@@ -95,22 +96,31 @@ public readonly ref struct CsvCharSpanRow
     /// </remarks>
     public CsvCharSpanRow ToImmutable() => Clone();
 
+    // All potentially dangerous characters for SIMD pre-scan
+    private static readonly SearchValues<char> allDangerousChars = SearchValues.Create("=@\t\r-+");
+
     /// <summary>
     /// Checks if any column in the row starts with a potentially dangerous character
     /// that could trigger CSV injection (formula injection) in spreadsheet applications.
     /// </summary>
     /// <returns>True if any column starts with a dangerous character pattern.</returns>
     /// <remarks>
-    /// This method is optimized to avoid span allocations by directly accessing
-    /// the underlying buffer using pre-computed column positions.
+    /// This method uses SIMD-accelerated pre-scanning to quickly determine if any
+    /// dangerous characters exist in the row, making the common case (safe data) very fast.
     /// Dangerous patterns: =, @, \t, \r, and -/+ followed by non-numeric characters.
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool HasDangerousFields()
     {
+        // Fast path: SIMD pre-scan for any dangerous characters in the entire line
+        // If no dangerous characters exist anywhere, we can return immediately
+        if (!line.ContainsAny(allDangerousChars))
+            return false;
+
+        // Slow path: Check each column's first character
         for (int i = 0; i < columnCount; i++)
         {
-            if (IsDangerousColumn(i))
+            if (IsDangerousColumnCore(i))
                 return true;
         }
         return false;
@@ -124,28 +134,31 @@ public readonly ref struct CsvCharSpanRow
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsDangerousColumn(int index)
     {
+        return IsDangerousColumnCore(index);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsDangerousColumnCore(int index)
+    {
         var length = columnLengths[index];
         if (length == 0) return false;
 
         var start = columnStarts[index];
         char first = line[start];
 
-        switch (first)
+        // Always dangerous characters
+        if (first == '=' || first == '@' || first == '\t' || first == '\r')
+            return true;
+
+        // Smart detection for - and +
+        if (first == '-' || first == '+')
         {
-            case '=':
-            case '@':
-            case '\t':
-            case '\r':
-                return true;
-
-            case '-':
-            case '+':
-                if (length == 1) return false;
-                char second = line[start + 1];
-                return !((uint)(second - '0') <= 9 || second == '.');
-
-            default:
-                return false;
+            if (length == 1) return false;
+            char second = line[start + 1];
+            // Safe if followed by digit or decimal point (numbers, phone numbers)
+            return !((uint)(second - '0') <= 9 || second == '.');
         }
+
+        return false;
     }
 }

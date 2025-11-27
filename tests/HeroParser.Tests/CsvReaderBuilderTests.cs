@@ -460,4 +460,372 @@ public class CsvReaderBuilderTests
     }
 
     #endregion
+
+    #region Csv.Read() Entry Point Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvRead_GenericEntryPoint_Works()
+    {
+        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>().FromText(csv);
+        var records = reader.ToList();
+
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name);
+        Assert.Equal(30, records[0].Age);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvRead_NonGenericEntryPoint_Works()
+    {
+        var csv = "A,B,C\r\n1,2,3\r\n";
+
+        using var reader = Csv.Read().FromText(csv);
+        var rows = new List<string>();
+
+        foreach (var row in reader)
+        {
+            rows.Add(string.Concat(row[0].ToString(), ",", row[1].ToString(), ",", row[2].ToString()));
+        }
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("A,B,C", rows[0]);
+        Assert.Equal("1,2,3", rows[1]);
+    }
+
+    #endregion
+
+    #region Non-Generic Builder Additional Options Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_WithCommentCharacter_SkipsCommentLines()
+    {
+        var csv = "# This is a comment\r\nName,Age\r\n# Another comment\r\nAlice,30\r\n";
+
+        using var reader = Csv.Read()
+            .WithCommentCharacter('#')
+            .FromText(csv);
+
+        var rowCount = 0;
+        foreach (var row in reader)
+        {
+            rowCount++;
+        }
+
+        Assert.Equal(2, rowCount);  // Header + 1 data row (comments skipped)
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_AllowNewlinesInQuotes_Works()
+    {
+        var csv = "Name,Bio\r\n\"Alice\",\"Line1\r\nLine2\"\r\n";
+
+        using var reader = Csv.Read()
+            .AllowNewlinesInQuotes()
+            .FromText(csv);
+
+        var rowCount = 0;
+        string? bio = null;
+        foreach (var row in reader)
+        {
+            if (rowCount == 1)  // Skip header
+            {
+                bio = row[1].ToString();
+            }
+            rowCount++;
+        }
+
+        Assert.Equal(2, rowCount);
+        Assert.Contains("Line1", bio);
+        Assert.Contains("Line2", bio);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_DisableSimd_Works()
+    {
+        var csv = "A,B,C\r\n1,2,3\r\n";
+
+        using var reader = Csv.Read()
+            .DisableSimd()
+            .FromText(csv);
+
+        var rowCount = 0;
+        foreach (var _ in reader)
+        {
+            rowCount++;
+        }
+
+        Assert.Equal(2, rowCount);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_DisableQuotedFields_Works()
+    {
+        var csv = "A,B,C\r\n1,2,3\r\n";
+
+        using var reader = Csv.Read()
+            .DisableQuotedFields()
+            .FromText(csv);
+
+        var rowCount = 0;
+        foreach (var _ in reader)
+        {
+            rowCount++;
+        }
+
+        Assert.Equal(2, rowCount);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_WithMaxFieldSize_Works()
+    {
+        var csv = "A,B,C\r\n1,2,3\r\n";
+
+        using var reader = Csv.Read()
+            .WithMaxFieldSize(1000)
+            .FromText(csv);
+
+        var rowCount = 0;
+        foreach (var _ in reader)
+        {
+            rowCount++;
+        }
+
+        Assert.Equal(2, rowCount);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_WithMaxRowSize_Works()
+    {
+        var csv = "A,B,C\r\n1,2,3\r\n";
+
+        using var reader = Csv.Read()
+            .WithMaxRowSize(1024)
+            .FromText(csv);
+
+        var rowCount = 0;
+        foreach (var _ in reader)
+        {
+            rowCount++;
+        }
+
+        Assert.Equal(2, rowCount);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_WithEncoding_Works()
+    {
+        var csv = "Name,Age\r\nAlice,30\r\n";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+        using var ms = new MemoryStream(bytes);
+
+        using var reader = Csv.Read()
+            .WithEncoding(System.Text.Encoding.UTF8)
+            .FromStream(ms);
+
+        var rowCount = 0;
+        foreach (var _ in reader)
+        {
+            rowCount++;
+        }
+
+        Assert.Equal(2, rowCount);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task NonGenericBuilder_FromStreamAsync_Works()
+    {
+        var csv = "Name,Age\r\nAlice,30\r\nBob,25\r\n";
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        await using var reader = Csv.Read().FromStreamAsync(ms);
+        var rowCount = 0;
+        while (await reader.MoveNextAsync(cancellationToken))
+        {
+            rowCount++;
+        }
+
+        Assert.Equal(3, rowCount);  // Header + 2 data rows
+    }
+
+    #endregion
+
+    #region Generic Builder Additional Options Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_WithCommentCharacter_SkipsCommentLines()
+    {
+        var csv = "# Comment\r\nName,Age,City\r\n# Another comment\r\nAlice,30,NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>()
+            .WithCommentCharacter('#')
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_AllowNewlinesInQuotes_Works()
+    {
+        var csv = "Name,Age,City\r\n\"Multi\r\nLine\",30,NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>()
+            .AllowNewlinesInQuotes()
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+        Assert.Contains("Multi", records[0].Name);
+        Assert.Contains("Line", records[0].Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_WithCulture_Works()
+    {
+        // Use semicolon delimiter to avoid conflict with German decimal comma
+        var csv = "Value\r\n1234,56\r\n";
+
+        using var reader = Csv.Read<ValueRecord>()
+            .WithDelimiter(';')  // Use semicolon to avoid conflict with decimal comma
+            .WithCulture(new System.Globalization.CultureInfo("de-DE"))
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+        Assert.Equal(1234.56, records[0].Value, precision: 2);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_WithEncoding_Works()
+    {
+        var csv = "Name,Age,City\r\nÅngström,42,Stockholm\r\n";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+        using var ms = new MemoryStream(bytes);
+
+        using var reader = Csv.Read<TestPerson>()
+            .WithEncoding(System.Text.Encoding.UTF8)
+            .FromStream(ms);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+        Assert.Equal("Ångström", records[0].Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_WithMaxFieldSize_Works()
+    {
+        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>()
+            .WithMaxFieldSize(1000)
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_DisableSimd_Works()
+    {
+        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>()
+            .DisableSimd()
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_DisableQuotedFields_Works()
+    {
+        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>()
+            .DisableQuotedFields()
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_DetectDuplicateHeaders_Works()
+    {
+        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>()
+            .DetectDuplicateHeaders()
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_CaseSensitiveHeaders_Works()
+    {
+        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>()
+            .CaseSensitiveHeaders()
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_CompleteMethodChaining()
+    {
+        var csv = "Name;Age;City\r\nAlice;30;NYC\r\n";
+
+        using var reader = Csv.Read<TestPerson>()
+            .WithDelimiter(';')
+            .WithQuote('"')
+            .WithMaxColumns(10)
+            .WithMaxRows(1000)
+            .AllowMissingColumns()
+            .WithMaxFieldSize(1000)
+            .DisableSimd()
+            .DetectDuplicateHeaders()
+            .WithEncoding(System.Text.Encoding.UTF8)
+            .FromText(csv);
+
+        var records = reader.ToList();
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name);
+        Assert.Equal(30, records[0].Age);
+        Assert.Equal("NYC", records[0].City);
+    }
+
+    #endregion
 }

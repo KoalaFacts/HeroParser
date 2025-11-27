@@ -1,5 +1,6 @@
-using System.Buffers;
 using System.Runtime.CompilerServices;
+
+#pragma warning disable IDE0060 // Remove unused parameter - Dispose kept for API compatibility
 
 namespace HeroParser.SeparatedValues;
 
@@ -23,8 +24,10 @@ public ref struct CsvByteSpanReader
         position = 0;
         rowCount = 0;
         Current = default;
-        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
-        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
+        // Use dedicated arrays instead of ArrayPool to avoid sharing issues when
+        // GetEnumerator() creates a copy that shares the same array references
+        columnStartsBuffer = new int[options.MaxColumnCount];
+        columnLengthsBuffer = new int[options.MaxColumnCount];
     }
 
     /// <summary>Gets the current UTF-8 backed row.</summary>
@@ -84,12 +87,10 @@ public ref struct CsvByteSpanReader
     }
 
     /// <summary>
-    /// Returns pooled buffers used by the reader.
+    /// No-op for compatibility; dedicated arrays are used instead of pooled buffers.
     /// </summary>
-    /// <remarks>Always call this method (or use a <c>using</c> statement) when the reader is no longer needed.</remarks>
     public readonly void Dispose()
     {
-        ArrayPool<int>.Shared.Return(columnStartsBuffer, clearArray: false);
-        ArrayPool<int>.Shared.Return(columnLengthsBuffer, clearArray: false);
+        // No-op: dedicated arrays don't need to be returned to a pool
     }
 }

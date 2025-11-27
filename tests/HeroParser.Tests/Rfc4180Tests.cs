@@ -302,4 +302,62 @@ public class Rfc4180Tests
         var ex = Assert.Throws<CsvException>(() => Csv.ReadFromText("a", options));
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void Utf8_LargeDataWithQuotes_ParsesCorrectly()
+    {
+        // Replicates benchmark scenario: 10k rows, 25 columns, 50% quoted fields
+        const int rows = 10_000;
+        const int columns = 25;
+
+        var sb = new System.Text.StringBuilder();
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < columns; c++)
+            {
+                if (c > 0) sb.Append(',');
+
+                string value = $"value_{r}_{c}";
+                // Quote 50% of fields
+                if ((r * columns + c) % 2 == 0)
+                    sb.Append('"').Append(value).Append('"');
+                else
+                    sb.Append(value);
+            }
+            sb.AppendLine();
+        }
+
+        var csv = sb.ToString();
+        var utf8 = System.Text.Encoding.UTF8.GetBytes(csv);
+
+        var options = new CsvParserOptions
+        {
+            MaxColumnCount = 1_000,
+            MaxRowCount = 1_000_000,
+            EnableQuotedFields = true,
+            AllowNewlinesInsideQuotes = true
+        };
+
+        using var reader = Csv.ReadFromByteSpan(utf8, options);
+
+        int totalRows = 0;
+        int totalColumns = 0;
+        foreach (var row in reader)
+        {
+            totalRows++;
+            totalColumns += row.ColumnCount;
+
+            // Spot check some values
+            if (totalRows == 1)
+            {
+                Assert.Equal(columns, row.ColumnCount);
+                Assert.Equal("value_0_0", row[0].UnquoteToString()); // quoted
+                Assert.Equal("value_0_1", row[1].ToString());        // unquoted
+            }
+        }
+
+        Assert.Equal(rows, totalRows);
+        Assert.Equal(rows * columns, totalColumns);
+    }
 }

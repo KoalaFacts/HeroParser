@@ -409,4 +409,158 @@ public class CsvWriterBuilderTests
     }
 
     #endregion
+
+    #region Csv.Write() Entry Point Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvWrite_GenericEntryPoint_Works()
+    {
+        var records = new[] { new TestPerson { Name = "Alice", Age = 30, City = "NYC" } };
+
+        var csv = Csv.Write<TestPerson>()
+            .WithDelimiter(';')
+            .ToText(records);
+
+        Assert.Contains("Alice;30;NYC", csv);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvWrite_NonGenericEntryPoint_Works()
+    {
+        using var sw = new StringWriter();
+        using var writer = Csv.Write()
+            .WithDelimiter('|')
+            .CreateWriter(sw, leaveOpen: true);
+
+        writer.WriteRow("A", "B", "C");
+        writer.Flush();
+
+        Assert.Contains("A|B|C", sw.ToString());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvWrite_GenericEntryPoint_WithChaining()
+    {
+        var records = new[] { new TestPerson { Name = "Alice,Bob", Age = 30, City = null } };
+
+        var csv = Csv.Write<TestPerson>()
+            .WithDelimiter(';')
+            .WithQuote('\'')
+            .AlwaysQuote()
+            .WithNullValue("N/A")
+            .WithoutHeader()
+            .ToText(records);
+
+        Assert.Contains("'Alice,Bob'", csv);
+        Assert.Contains("N/A", csv);
+        Assert.DoesNotContain("Name", csv);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvWrite_NonGenericEntryPoint_WithChaining()
+    {
+        using var sw = new StringWriter();
+        using var writer = Csv.Write()
+            .WithDelimiter('\t')
+            .WithNewLine("\n")
+            .AlwaysQuote()
+            .CreateWriter(sw, leaveOpen: true);
+
+        writer.WriteRow("X", "Y");
+        writer.Flush();
+
+        var result = sw.ToString();
+        Assert.Contains("\"X\"\t\"Y\"", result);
+        Assert.EndsWith("\n", result);
+    }
+
+    #endregion
+
+    #region Async Terminal Method Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task Builder_ToFileAsync_WritesToFile()
+    {
+        var records = ToAsyncEnumerable([new TestPerson { Name = "Alice", Age = 30, City = "NYC" }]);
+        var tempPath = Path.Combine(Path.GetTempPath(), $"heroparser_writer_async_{Guid.NewGuid()}.csv");
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        try
+        {
+            await new CsvWriterBuilder<TestPerson>()
+                .WithDelimiter(';')
+                .ToFileAsync(tempPath, records, cancellationToken);
+
+            var csv = await File.ReadAllTextAsync(tempPath, cancellationToken);
+            Assert.Contains("Alice", csv);
+            Assert.Contains(";", csv);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task Builder_ToStreamAsync_WritesToStream()
+    {
+        var records = ToAsyncEnumerable([new TestPerson { Name = "Bob", Age = 25, City = "LA" }]);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        using var ms = new MemoryStream();
+        await new CsvWriterBuilder<TestPerson>()
+            .WithDelimiter('|')
+            .ToStreamAsync(ms, records, leaveOpen: true, cancellationToken);
+
+        ms.Position = 0;
+        var csv = new StreamReader(ms).ReadToEnd();
+        Assert.Contains("Bob|25|LA", csv);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task CsvWrite_GenericEntryPoint_ToFileAsync()
+    {
+        TestPerson[] data =
+        [
+            new TestPerson { Name = "Alice", Age = 30, City = "NYC" },
+            new TestPerson { Name = "Bob", Age = 25, City = "LA" }
+        ];
+        var records = ToAsyncEnumerable(data);
+        var tempPath = Path.Combine(Path.GetTempPath(), $"heroparser_entry_async_{Guid.NewGuid()}.csv");
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        try
+        {
+            await Csv.Write<TestPerson>()
+                .WithHeader()
+                .ToFileAsync(tempPath, records, cancellationToken);
+
+            var csv = await File.ReadAllTextAsync(tempPath, cancellationToken);
+            Assert.Contains("Name,Age,City", csv);
+            Assert.Contains("Alice,30,NYC", csv);
+            Assert.Contains("Bob,25,LA", csv);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
+    private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
+    {
+        foreach (var item in source)
+        {
+            await Task.Yield();
+            yield return item;
+        }
+    }
+
+    #endregion
 }

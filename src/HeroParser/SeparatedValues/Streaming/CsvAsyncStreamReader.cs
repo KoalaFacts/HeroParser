@@ -46,8 +46,9 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         this.options = options;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
-        columnStartsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
-        columnLengthsBuffer = ArrayPool<int>.Shared.Rent(options.MaxColumnCount);
+        // Use dedicated arrays for column indices - they're small and avoids sharing issues
+        columnStartsBuffer = new int[options.MaxColumnCount];
+        columnLengthsBuffer = new int[options.MaxColumnCount];
         offset = 0;
         length = 0;
         rowCount = 0;
@@ -138,7 +139,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
             var newBuffer = ArrayPool<char>.Shared.Rent(buffer.Length * 2);
             buffer.AsSpan(0, length).CopyTo(newBuffer);
-            ArrayPool<char>.Shared.Return(buffer, clearArray: false);
+            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = newBuffer;
         }
 
@@ -170,9 +171,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         if (disposed)
             return ValueTask.CompletedTask;
 
-        ArrayPool<int>.Shared.Return(columnStartsBuffer, clearArray: false);
-        ArrayPool<int>.Shared.Return(columnLengthsBuffer, clearArray: false);
-        ArrayPool<char>.Shared.Return(buffer, clearArray: false);
+        ArrayPool<char>.Shared.Return(buffer, clearArray: true);
 
         disposed = true;
         // StreamReader was created with leaveOpen flag, so it handles stream disposal correctly

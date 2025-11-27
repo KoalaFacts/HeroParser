@@ -6,6 +6,39 @@ namespace HeroParser;
 public static partial class Csv
 {
     /// <summary>
+    /// Creates a fluent builder for writing CSV records of type <typeparamref name="T"/>.
+    /// </summary>
+    /// <typeparam name="T">The record type to serialize.</typeparam>
+    /// <returns>A <see cref="CsvWriterBuilder{T}"/> for configuring and executing the write operation.</returns>
+    /// <example>
+    /// <code>
+    /// var csv = Csv.Write&lt;Person&gt;()
+    ///     .WithDelimiter(';')
+    ///     .WithHeader()
+    ///     .ToText(records);
+    /// </code>
+    /// </example>
+    public static CsvWriterBuilder<T> Write<T>() => new();
+
+    /// <summary>
+    /// Creates a fluent builder for manual row-by-row CSV writing.
+    /// </summary>
+    /// <returns>A <see cref="CsvWriterBuilder"/> for configuring and creating a low-level CSV writer.</returns>
+    /// <example>
+    /// <code>
+    /// // Manual row-by-row writing
+    /// using var writer = Csv.Write()
+    ///     .WithDelimiter(';')
+    ///     .CreateWriter(textWriter);
+    ///
+    /// writer.WriteField("Name");
+    /// writer.WriteField("Age");
+    /// writer.EndRow();
+    /// </code>
+    /// </example>
+    public static CsvWriterBuilder Write() => new();
+
+    /// <summary>
     /// Creates a low-level CSV writer with default options.
     /// </summary>
     /// <param name="writer">The TextWriter to write to.</param>

@@ -177,7 +177,7 @@ public class CriticalFeaturesTests
     {
         var csv = "Name,Age\nAlice,25\nBob,NULL\nCharlie,N/A";
         var recordOptions = new CsvRecordOptions { NullValues = ["NULL", "N/A"] };
-        var reader = Csv.ParseRecords<PersonWithNullableAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithNullableAge>(csv, recordOptions);
 
         var records = new List<PersonWithNullableAge>();
         foreach (var record in reader)
@@ -202,7 +202,7 @@ public class CriticalFeaturesTests
     {
         var csv = "Name,Age\nAlice,\nBob,NULL";
         var recordOptions = new CsvRecordOptions { NullValues = ["NULL"] };
-        var reader = Csv.ParseRecords<PersonWithNullableAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithNullableAge>(csv, recordOptions);
 
         var records = new List<PersonWithNullableAge>();
         foreach (var record in reader)
@@ -224,7 +224,7 @@ public class CriticalFeaturesTests
     {
         var csv = "Name,Age\nAlice,25\nBob,\nCharlie,30";
         var recordOptions = new CsvRecordOptions { NullValues = [""] };
-        var reader = Csv.ParseRecords<PersonWithNullableAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithNullableAge>(csv, recordOptions);
 
         var records = new List<PersonWithNullableAge>();
         foreach (var record in reader)
@@ -262,7 +262,7 @@ public class CriticalFeaturesTests
         CsvException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<PersonWithAge>(csv);
+            var reader = Csv.DeserializeRecords<PersonWithAge>(csv);
             while (reader.MoveNext()) { }
         }
         catch (CsvException e)
@@ -286,7 +286,7 @@ public class CriticalFeaturesTests
         CsvException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<PersonWithAge>(csv);
+            var reader = Csv.DeserializeRecords<PersonWithAge>(csv);
             while (reader.MoveNext()) { }
         }
         catch (CsvException e)
@@ -312,21 +312,21 @@ public class CriticalFeaturesTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void OnParseError_SkipRow_SkipsProblematicRows()
+    public void OnDeserializeError_SkipRow_SkipsProblematicRows()
     {
         var csv = "Name,Age\nAlice,25\nBob,invalid\nCharlie,30";
         var skippedRows = new List<int>();
         var recordOptions = new CsvRecordOptions
         {
-            OnParseError = ctx =>
+            OnDeserializeError = ctx =>
             {
                 skippedRows.Add(ctx.Row);
-                return ParseErrorAction.SkipRow;
+                return DeserializeErrorAction.SkipRow;
             }
         };
 
         var records = new List<PersonWithAge>();
-        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
         while (reader.MoveNext())
         {
             records.Add(reader.Current);
@@ -344,16 +344,16 @@ public class CriticalFeaturesTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void OnParseError_UseDefault_UsesDefaultValue()
+    public void OnDeserializeError_UseDefault_UsesDefaultValue()
     {
         var csv = "Name,Age\nAlice,invalid";
         var recordOptions = new CsvRecordOptions
         {
-            OnParseError = _ => ParseErrorAction.UseDefault
+            OnDeserializeError = _ => DeserializeErrorAction.UseDefault
         };
 
         var records = new List<PersonWithAge>();
-        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
         while (reader.MoveNext())
         {
             records.Add(reader.Current);
@@ -366,18 +366,18 @@ public class CriticalFeaturesTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void OnParseError_Throw_ThrowsException()
+    public void OnDeserializeError_Throw_ThrowsException()
     {
         var csv = "Name,Age\nAlice,invalid";
         var recordOptions = new CsvRecordOptions
         {
-            OnParseError = _ => ParseErrorAction.Throw
+            OnDeserializeError = _ => DeserializeErrorAction.Throw
         };
 
         CsvException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+            var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
             while (reader.MoveNext()) { }
         }
         catch (CsvException e)
@@ -390,20 +390,20 @@ public class CriticalFeaturesTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void OnParseError_ContextContainsCorrectInfo()
+    public void OnDeserializeError_ContextContainsCorrectInfo()
     {
         var csv = "Name,Age\nAlice,bad_value";
-        CsvParseErrorContext? capturedContext = null;
+        CsvDeserializeErrorContext? capturedContext = null;
         var recordOptions = new CsvRecordOptions
         {
-            OnParseError = ctx =>
+            OnDeserializeError = ctx =>
             {
                 capturedContext = ctx;
-                return ParseErrorAction.SkipRow;
+                return DeserializeErrorAction.SkipRow;
             }
         };
 
-        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
         while (reader.MoveNext()) { }
 
         Assert.NotNull(capturedContext);
@@ -478,7 +478,7 @@ public class CriticalFeaturesTests
         CsvException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+            var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
             while (reader.MoveNext()) { }
         }
         catch (CsvException e)
@@ -506,7 +506,7 @@ public class CriticalFeaturesTests
         CsvException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+            var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
             while (reader.MoveNext()) { }
         }
         catch (CsvException e)
@@ -533,7 +533,7 @@ public class CriticalFeaturesTests
 
         // Should not throw since Name != NAME when case-sensitive
         var records = new List<PersonWithAge>();
-        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
         while (reader.MoveNext())
         {
             records.Add(reader.Current);
@@ -555,7 +555,7 @@ public class CriticalFeaturesTests
 
         // Should not throw
         var records = new List<PersonWithAge>();
-        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
         while (reader.MoveNext())
         {
             records.Add(reader.Current);
@@ -659,7 +659,7 @@ public class CriticalFeaturesTests
         CsvException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+            var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
             while (reader.MoveNext()) { }
         }
         catch (CsvException e)
@@ -684,7 +684,7 @@ public class CriticalFeaturesTests
         };
 
         var records = new List<PersonWithAge>();
-        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
         while (reader.MoveNext())
         {
             records.Add(reader.Current);
@@ -705,7 +705,7 @@ public class CriticalFeaturesTests
         };
 
         var records = new List<PersonWithAge>();
-        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
         while (reader.MoveNext())
         {
             records.Add(reader.Current);
@@ -733,7 +733,7 @@ public class CriticalFeaturesTests
         CsvException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+            var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
             while (reader.MoveNext()) { }
         }
         catch (CsvException e)
@@ -761,7 +761,7 @@ public class CriticalFeaturesTests
             }
         };
 
-        var reader = Csv.ParseRecords<PersonWithAge>(csv, recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csv, recordOptions);
         while (reader.MoveNext()) { }
 
         Assert.NotNull(capturedContext);
@@ -796,7 +796,7 @@ public class CriticalFeaturesTests
         };
 
         var records = new List<PersonWithAge>();
-        var reader = Csv.ParseRecords<PersonWithAge>(csvBuilder.ToString(), recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csvBuilder.ToString(), recordOptions);
         while (reader.MoveNext())
         {
             records.Add(reader.Current);
@@ -826,7 +826,7 @@ public class CriticalFeaturesTests
         };
 
         var records = new List<PersonWithAge>();
-        var reader = Csv.ParseRecords<PersonWithAge>(csvBuilder.ToString(), recordOptions);
+        var reader = Csv.DeserializeRecords<PersonWithAge>(csvBuilder.ToString(), recordOptions);
         while (reader.MoveNext())
         {
             records.Add(reader.Current);

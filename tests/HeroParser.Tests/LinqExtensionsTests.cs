@@ -13,7 +13,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ToList_ReturnsAllRecords()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var list = reader.ToList();
 
         Assert.Equal(4, list.Count);
@@ -25,7 +25,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ToArray_ReturnsAllRecords()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var array = reader.ToArray();
 
         Assert.Equal(4, array.Length);
@@ -40,7 +40,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void First_ReturnsFirstRecord()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var first = reader.First();
 
         Assert.Equal("Alice", first.Name);
@@ -54,7 +54,7 @@ public class LinqExtensionsTests
         InvalidOperationException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<Person>("Name,Age,Score");
+            var reader = Csv.DeserializeRecords<Person>("Name,Age,Score");
             reader.First();
         }
         catch (InvalidOperationException e)
@@ -69,7 +69,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FirstOrDefault_ReturnsFirstRecord()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var first = reader.FirstOrDefault();
 
         Assert.NotNull(first);
@@ -80,7 +80,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FirstOrDefault_ReturnsNullOnEmpty()
     {
-        var reader = Csv.ParseRecords<Person>("Name,Age,Score");
+        var reader = Csv.DeserializeRecords<Person>("Name,Age,Score");
         var first = reader.FirstOrDefault();
 
         Assert.Null(first);
@@ -90,7 +90,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void First_WithPredicate_ReturnsFirstMatch()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var first = reader.First(p => p.Age == 30);
 
         Assert.Equal("Bob", first.Name);
@@ -103,7 +103,7 @@ public class LinqExtensionsTests
         InvalidOperationException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<Person>(TEST_CSV);
+            var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
             reader.First(p => p.Age == 99);
         }
         catch (InvalidOperationException e)
@@ -118,7 +118,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FirstOrDefault_WithPredicate_ReturnsFirstMatch()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var first = reader.FirstOrDefault(p => p.Score > 90);
 
         Assert.NotNull(first);
@@ -129,7 +129,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FirstOrDefault_WithPredicate_ReturnsNullOnNoMatch()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var first = reader.FirstOrDefault(p => p.Age == 99);
 
         Assert.Null(first);
@@ -143,7 +143,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Single_ReturnsSingleRecord()
     {
-        var reader = Csv.ParseRecords<Person>("Name,Age,Score\nAlice,25,100");
+        var reader = Csv.DeserializeRecords<Person>("Name,Age,Score\nAlice,25,100");
         var single = reader.Single();
 
         Assert.Equal("Alice", single.Name);
@@ -156,7 +156,7 @@ public class LinqExtensionsTests
         InvalidOperationException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<Person>("Name,Age,Score");
+            var reader = Csv.DeserializeRecords<Person>("Name,Age,Score");
             reader.Single();
         }
         catch (InvalidOperationException e)
@@ -174,7 +174,7 @@ public class LinqExtensionsTests
         InvalidOperationException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<Person>(TEST_CSV);
+            var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
             reader.Single();
         }
         catch (InvalidOperationException e)
@@ -189,7 +189,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void SingleOrDefault_ReturnsSingleRecord()
     {
-        var reader = Csv.ParseRecords<Person>("Name,Age,Score\nAlice,25,100");
+        var reader = Csv.DeserializeRecords<Person>("Name,Age,Score\nAlice,25,100");
         var single = reader.SingleOrDefault();
 
         Assert.NotNull(single);
@@ -200,7 +200,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void SingleOrDefault_ReturnsNullOnEmpty()
     {
-        var reader = Csv.ParseRecords<Person>("Name,Age,Score");
+        var reader = Csv.DeserializeRecords<Person>("Name,Age,Score");
         var single = reader.SingleOrDefault();
 
         Assert.Null(single);
@@ -213,7 +213,7 @@ public class LinqExtensionsTests
         InvalidOperationException? ex = null;
         try
         {
-            var reader = Csv.ParseRecords<Person>(TEST_CSV);
+            var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
             reader.SingleOrDefault();
         }
         catch (InvalidOperationException e)
@@ -232,7 +232,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Count_ReturnsCorrectCount()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var count = reader.Count();
 
         Assert.Equal(4, count);
@@ -242,7 +242,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Count_WithPredicate_CountsMatches()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var count = reader.Count(p => p.Age == 25);
 
         Assert.Equal(2, count);
@@ -256,7 +256,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Any_ReturnsTrueWhenRecordsExist()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         Assert.True(reader.Any());
     }
 
@@ -264,7 +264,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Any_ReturnsFalseWhenEmpty()
     {
-        var reader = Csv.ParseRecords<Person>("Name,Age,Score");
+        var reader = Csv.DeserializeRecords<Person>("Name,Age,Score");
         Assert.False(reader.Any());
     }
 
@@ -272,7 +272,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Any_WithPredicate_ReturnsTrueOnMatch()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         Assert.True(reader.Any(p => p.Score == 100));
     }
 
@@ -280,7 +280,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Any_WithPredicate_ReturnsFalseOnNoMatch()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         Assert.False(reader.Any(p => p.Score > 200));
     }
 
@@ -288,7 +288,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void All_ReturnsTrueWhenAllMatch()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         Assert.True(reader.All(p => p.Age > 0));
     }
 
@@ -296,7 +296,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void All_ReturnsFalseWhenAnyDoesNotMatch()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         Assert.False(reader.All(p => p.Age > 30));
     }
 
@@ -304,7 +304,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void All_ReturnsTrueOnEmpty()
     {
-        var reader = Csv.ParseRecords<Person>("Name,Age,Score");
+        var reader = Csv.DeserializeRecords<Person>("Name,Age,Score");
         Assert.True(reader.All(p => p.Age > 100)); // Vacuous truth
     }
 
@@ -316,7 +316,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Where_FiltersRecords()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var filtered = reader.Where(p => p.Age >= 30);
 
         Assert.Equal(2, filtered.Count);
@@ -327,7 +327,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Select_ProjectsRecords()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var names = reader.Select(p => p.Name);
 
         Assert.Equal(4, names.Count);
@@ -343,7 +343,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Skip_SkipsRecords()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var skipped = reader.Skip(2);
 
         Assert.Equal(2, skipped.Count);
@@ -355,7 +355,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Take_TakesRecords()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var taken = reader.Take(2);
 
         Assert.Equal(2, taken.Count);
@@ -367,7 +367,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Take_ReturnsAllWhenCountExceedsRecords()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var taken = reader.Take(100);
 
         Assert.Equal(4, taken.Count);
@@ -381,7 +381,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ForEach_ExecutesActionOnEachRecord()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var names = new List<string>();
 
         reader.ForEach(p => names.Add(p.Name));
@@ -398,7 +398,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ToDictionary_CreatesDictionaryByKey()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var dict = reader.ToDictionary(p => p.Name);
 
         Assert.Equal(4, dict.Count);
@@ -410,7 +410,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ToDictionary_WithValueSelector_CreatesProjectedDictionary()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var dict = reader.ToDictionary(p => p.Name, p => p.Score);
 
         Assert.Equal(4, dict.Count);
@@ -422,7 +422,7 @@ public class LinqExtensionsTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void GroupBy_GroupsRecordsByKey()
     {
-        var reader = Csv.ParseRecords<Person>(TEST_CSV);
+        var reader = Csv.DeserializeRecords<Person>(TEST_CSV);
         var groups = reader.GroupBy(p => p.Age);
 
         Assert.Equal(3, groups.Count); // Ages: 25, 30, 35
@@ -440,7 +440,7 @@ public class LinqExtensionsTests
     public void StreamingReader_ToList_Works()
     {
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(TEST_CSV));
-        var reader = Csv.ParseRecords<Person>(stream);
+        var reader = Csv.DeserializeRecords<Person>(stream);
         var list = reader.ToList();
 
         Assert.Equal(4, list.Count);
@@ -451,7 +451,7 @@ public class LinqExtensionsTests
     public void StreamingReader_First_Works()
     {
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(TEST_CSV));
-        var reader = Csv.ParseRecords<Person>(stream);
+        var reader = Csv.DeserializeRecords<Person>(stream);
         var first = reader.First();
 
         Assert.Equal("Alice", first.Name);
@@ -462,7 +462,7 @@ public class LinqExtensionsTests
     public void StreamingReader_Where_FiltersRecords()
     {
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(TEST_CSV));
-        var reader = Csv.ParseRecords<Person>(stream);
+        var reader = Csv.DeserializeRecords<Person>(stream);
         var filtered = reader.Where(p => p.Score >= 95);
 
         Assert.Equal(2, filtered.Count);

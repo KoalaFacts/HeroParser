@@ -14,7 +14,7 @@ public class RecordMappingTests
     {
         var csv = "Name,Age\nJane,42\nBob,25";
 
-        var reader = Csv.ParseRecords<Person>(csv);
+        var reader = Csv.DeserializeRecords<Person>(csv);
         var results = new List<Person>();
         foreach (var person in reader)
         {
@@ -35,7 +35,7 @@ public class RecordMappingTests
         var csv = "1,first\n2,second";
         var options = new CsvRecordOptions { HasHeaderRow = false };
 
-        var reader = Csv.ParseRecords<Positioned>(csv, options);
+        var reader = Csv.DeserializeRecords<Positioned>(csv, options);
         var results = new List<Positioned>();
         foreach (var item in reader)
         {
@@ -56,7 +56,7 @@ public class RecordMappingTests
         var csv = "Name,Age,Birthday\nJane,42,2024-01-01\nBob,,";
         var options = new CsvRecordOptions { HasHeaderRow = true };
 
-        var reader = Csv.ParseRecords<NullableSample>(csv, options);
+        var reader = Csv.DeserializeRecords<NullableSample>(csv, options);
         var results = new List<NullableSample>();
         foreach (var item in reader)
         {
@@ -81,7 +81,7 @@ public class RecordMappingTests
 
         Assert.Throws<CsvException>(() =>
         {
-            var reader = Csv.ParseRecords<MissingColumnType>(csv);
+            var reader = Csv.DeserializeRecords<MissingColumnType>(csv);
             reader.MoveNext();
         });
     }
@@ -94,7 +94,7 @@ public class RecordMappingTests
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
 
         var results = new List<Player>();
-        await foreach (var player in Csv.ParseRecordsAsync<Player>(stream, cancellationToken: TestContext.Current.CancellationToken))
+        await foreach (var player in Csv.DeserializeRecordsAsync<Player>(stream, cancellationToken: TestContext.Current.CancellationToken))
         {
             results.Add(player);
         }
@@ -159,7 +159,7 @@ public class RecordMappingTests
                 return false;
             });
 
-        var reader = Csv.ParseRecords<Product>(csv, options);
+        var reader = Csv.DeserializeRecords<Product>(csv, options);
         var results = new List<Product>();
         foreach (var item in reader) results.Add(item);
 
@@ -191,7 +191,7 @@ public class RecordMappingTests
                 return false;
             });
 
-        var reader = Csv.ParseRecords<Product>(csv, options);
+        var reader = Csv.DeserializeRecords<Product>(csv, options);
         var results = new List<Product>();
         foreach (var item in reader) results.Add(item);
 
@@ -218,7 +218,7 @@ public class RecordMappingTests
     {
         var csv = "Id,Date\n1,01/15/2024\n2,12/31/2023";
 
-        var reader = Csv.ParseRecords<DateFormatted>(csv);
+        var reader = Csv.DeserializeRecords<DateFormatted>(csv);
         var results = new List<DateFormatted>();
         foreach (var item in reader) results.Add(item);
 
@@ -233,7 +233,7 @@ public class RecordMappingTests
     {
         var csv = "Id,Timestamp\n1,2024-01-15 14:30:00";
 
-        var reader = Csv.ParseRecords<DateTimeFormatted>(csv);
+        var reader = Csv.DeserializeRecords<DateTimeFormatted>(csv);
         var results = new List<DateTimeFormatted>();
         foreach (var item in reader) results.Add(item);
 
@@ -274,7 +274,7 @@ public class RecordMappingTests
             Culture = System.Globalization.CultureInfo.GetCultureInfo("de-DE")
         };
 
-        var reader = Csv.ParseRecords<PriceItem>(csv, options);
+        var reader = Csv.DeserializeRecords<PriceItem>(csv, options);
         var results = new List<PriceItem>();
         foreach (var item in reader) results.Add(item);
 
@@ -293,7 +293,7 @@ public class RecordMappingTests
             Culture = System.Globalization.CultureInfo.GetCultureInfo("de-DE")
         };
 
-        var reader = Csv.ParseRecords<DateItem>(csv, options);
+        var reader = Csv.DeserializeRecords<DateItem>(csv, options);
         var results = new List<DateItem>();
         foreach (var item in reader) results.Add(item);
 

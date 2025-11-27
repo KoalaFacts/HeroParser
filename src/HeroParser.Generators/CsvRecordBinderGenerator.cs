@@ -12,6 +12,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private const string GENERATED_NAMESPACE = "HeroParser.SeparatedValues.Records.Binding";
     private const string BINDER_TYPE = "global::HeroParser.CsvRecordBinder";
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.CsvRecordBinderFactory";
+    private const string WRITER_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriter";
+    private const string WRITER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriterFactory";
     private static readonly string[] generateAttributeNames = ["HeroParser.SeparatedValues.Records.Binding.CsvGenerateBinderAttribute", "HeroParser.CsvGenerateBinderAttribute"];
 
     private static readonly string[] columnAttributeNames = ["HeroParser.SeparatedValues.Records.Binding.CsvColumnAttribute", "HeroParser.CsvColumnAttribute"];
@@ -67,25 +69,19 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             if (descriptor is null)
                 continue;
 
-            builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterGeneratedBinder(typeof({descriptor.FullyQualifiedName}), options => {BINDER_TYPE}<{descriptor.FullyQualifiedName}>.CreateFromTemplates(options, new {BINDER_TYPE}<{descriptor.FullyQualifiedName}>.BindingTemplate[]");
-            builder.AppendLine("{");
-            builder.Indent();
-
-            foreach (var member in descriptor.Members)
+            // Filter members for binder (those with setters)
+            var binderMembers = descriptor.Members.Where(m => m.SetterFactory != null).ToList();
+            if (binderMembers.Count > 0)
             {
-                builder.AppendLine($"new {BINDER_TYPE}<{descriptor.FullyQualifiedName}>.BindingTemplate(");
-                builder.Indent();
-                builder.AppendLine($"\"{member.MemberName}\",");
-                builder.AppendLine($"typeof({member.TypeName}),");
-                builder.AppendLine($"\"{member.HeaderName}\",");
-                builder.AppendLine(member.AttributeIndex is null ? "null," : $"{member.AttributeIndex},");
-                builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
-                builder.AppendLine($"{member.SetterFactory}),");
-                builder.Unindent();
+                EmitBinderRegistration(builder, descriptor.FullyQualifiedName, binderMembers);
             }
 
-            builder.Unindent();
-            builder.AppendLine("}));");
+            // Filter members for writer (those with getters)
+            var writerMembers = descriptor.Members.Where(m => m.GetterFactory != null).ToList();
+            if (writerMembers.Count > 0)
+            {
+                EmitWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers);
+            }
         }
 
         builder.Unindent();
@@ -94,6 +90,54 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("}");
 
         context.AddSource("CsvRecordBinderFactory.g.cs", builder.ToString());
+    }
+
+    private static void EmitBinderRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    {
+        builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterGeneratedBinder(typeof({fullyQualifiedName}), options => {BINDER_TYPE}<{fullyQualifiedName}>.CreateFromTemplates(options, new {BINDER_TYPE}<{fullyQualifiedName}>.BindingTemplate[]");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        foreach (var member in members)
+        {
+            builder.AppendLine($"new {BINDER_TYPE}<{fullyQualifiedName}>.BindingTemplate(");
+            builder.Indent();
+            builder.AppendLine($"\"{member.MemberName}\",");
+            builder.AppendLine($"typeof({member.TypeName}),");
+            builder.AppendLine($"\"{member.HeaderName}\",");
+            builder.AppendLine(member.AttributeIndex is null ? "null," : $"{member.AttributeIndex},");
+            builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
+            builder.AppendLine($"{member.SetterFactory}),");
+            builder.Unindent();
+        }
+
+        builder.Unindent();
+        builder.AppendLine("}));");
+        builder.AppendLine();
+    }
+
+    private static void EmitWriterRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    {
+        builder.AppendLine($"{WRITER_FACTORY_TYPE}.RegisterGeneratedWriter(typeof({fullyQualifiedName}), options => {WRITER_TYPE}<{fullyQualifiedName}>.CreateFromTemplates(options, new {WRITER_TYPE}<{fullyQualifiedName}>.WriterTemplate[]");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        foreach (var member in members)
+        {
+            builder.AppendLine($"new {WRITER_TYPE}<{fullyQualifiedName}>.WriterTemplate(");
+            builder.Indent();
+            builder.AppendLine($"\"{member.MemberName}\",");
+            builder.AppendLine($"typeof({member.TypeName}),");
+            builder.AppendLine($"\"{member.HeaderName}\",");
+            builder.AppendLine(member.AttributeIndex is null ? "null," : $"{member.AttributeIndex},");
+            builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
+            builder.AppendLine($"{member.GetterFactory}),");
+            builder.Unindent();
+        }
+
+        builder.Unindent();
+        builder.AppendLine("}));");
+        builder.AppendLine();
     }
 
     private static TypeDescriptor? BuildDescriptor(SourceProductionContext context, INamedTypeSymbol type)
@@ -106,7 +150,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         foreach (var property in type.GetMembers().OfType<IPropertySymbol>())
         {
-            if (property.IsStatic || property.SetMethod is null || property.SetMethod.DeclaredAccessibility != Accessibility.Public)
+            if (property.IsStatic)
+                continue;
+
+            // Check accessibility - need at least one of getter/setter to be public
+            var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public };
+            var hasGetter = property.GetMethod is { DeclaredAccessibility: Accessibility.Public };
+
+            if (!hasSetter && !hasGetter)
                 continue;
 
             var mapAttribute = GetFirstMatchingAttribute(property, columnAttributeNames);
@@ -146,8 +197,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             }
 
             var typeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));
-            var headerLiteral = headerName.Replace("\"", "\"\"");
-            var formatLiteral = format?.Replace("\"", "\\\"");
+            var headerLiteral = EscapeString(headerName);
+            var formatLiteral = format != null ? EscapeString(format) : null;
+
+            // Generate setter only if property has public setter (for binder/reader)
+            string? setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
+
+            // Generate getter only if property has public getter (for writer)
+            string? getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
 
             members.Add(new MemberDescriptor(
                 property.Name,
@@ -155,7 +212,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 attributeIndex,
                 typeName,
                 formatLiteral,
-                CreateSetter(typeName, type, property.Name)));
+                setterFactory,
+                getterFactory));
         }
 
         if (members.Count == 0)
@@ -208,6 +266,15 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static string CreateSetter(string typeName, INamedTypeSymbol type, string propertyName)
         => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target, object? val) => target.{propertyName} = ({typeName})val!";
 
+    private static string CreateGetter(INamedTypeSymbol type, string propertyName)
+        => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target) => target.{propertyName}";
+
+    private static string EscapeString(string value)
+    {
+        // Escape backslashes and quotes for C# string literals
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+
     private static bool HasGenerateAttribute(INamedTypeSymbol symbol)
         => symbol.GetAttributes().Any(attr => IsNamed(attr, generateAttributeNames));
 
@@ -254,7 +321,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         int? AttributeIndex,
         string TypeName,
         string? Format,
-        string SetterFactory);
+        string? SetterFactory,
+        string? GetterFactory);
 
     private sealed class SourceBuilder
     {

@@ -19,9 +19,9 @@ public delegate bool CsvTypeConverter<T>(ReadOnlySpan<char> value, CultureInfo c
 internal delegate bool InternalCustomConverter(ReadOnlySpan<char> value, CultureInfo culture, string? format, out object? result);
 
 /// <summary>
-/// Provides context about a parse error for error handling callbacks.
+/// Provides context about a deserialization error for error handling callbacks.
 /// </summary>
-public readonly struct CsvParseErrorContext
+public readonly struct CsvDeserializeErrorContext
 {
     /// <summary>
     /// Gets the 1-based row number where the error occurred.
@@ -47,12 +47,17 @@ public readonly struct CsvParseErrorContext
     /// Gets the raw field value that failed to parse.
     /// </summary>
     public string FieldValue { get; init; }
+
+    /// <summary>
+    /// Gets the exception that caused the deserialization failure (if any).
+    /// </summary>
+    public Exception? Exception { get; init; }
 }
 
 /// <summary>
-/// Specifies the action to take when a parse error occurs.
+/// Specifies the action to take when a deserialization error occurs.
 /// </summary>
-public enum ParseErrorAction
+public enum DeserializeErrorAction
 {
     /// <summary>
     /// Throw an exception (default behavior).
@@ -71,11 +76,11 @@ public enum ParseErrorAction
 }
 
 /// <summary>
-/// Delegate for handling parse errors during record binding.
+/// Delegate for handling deserialization errors during record binding.
 /// </summary>
-/// <param name="context">Context about the parse error.</param>
+/// <param name="context">Context about the deserialization error.</param>
 /// <returns>The action to take in response to the error.</returns>
-public delegate ParseErrorAction CsvParseErrorHandler(CsvParseErrorContext context);
+public delegate DeserializeErrorAction CsvDeserializeErrorHandler(CsvDeserializeErrorContext context);
 
 /// <summary>
 /// Provides context about headers for validation callbacks.
@@ -220,15 +225,15 @@ public sealed record CsvRecordOptions
     public bool DetectDuplicateHeaders { get; init; } = false;
 
     /// <summary>
-    /// Gets or sets a callback to handle parse errors during record binding.
+    /// Gets or sets a callback to handle deserialization errors during record binding.
     /// </summary>
     /// <remarks>
-    /// When set, this callback is invoked for each parse error, allowing you to:
+    /// When set, this callback is invoked for each deserialization error, allowing you to:
     /// <list type="bullet">
     ///   <item><description>Log errors for later analysis</description></item>
-    ///   <item><description>Skip problematic rows (<see cref="ParseErrorAction.SkipRow"/>)</description></item>
-    ///   <item><description>Use default values (<see cref="ParseErrorAction.UseDefault"/>)</description></item>
-    ///   <item><description>Throw exceptions (<see cref="ParseErrorAction.Throw"/>, the default)</description></item>
+    ///   <item><description>Skip problematic rows (<see cref="DeserializeErrorAction.SkipRow"/>)</description></item>
+    ///   <item><description>Use default values (<see cref="DeserializeErrorAction.UseDefault"/>)</description></item>
+    ///   <item><description>Throw exceptions (<see cref="DeserializeErrorAction.Throw"/>, the default)</description></item>
     /// </list>
     /// </remarks>
     /// <example>
@@ -236,15 +241,15 @@ public sealed record CsvRecordOptions
     /// var errors = new List&lt;string&gt;();
     /// var options = new CsvRecordOptions
     /// {
-    ///     OnParseError = ctx =>
+    ///     OnDeserializeError = ctx =>
     ///     {
     ///         errors.Add($"Row {ctx.Row}: Failed to parse '{ctx.FieldValue}' for {ctx.MemberName}");
-    ///         return ParseErrorAction.SkipRow;
+    ///         return DeserializeErrorAction.SkipRow;
     ///     }
     /// };
     /// </code>
     /// </example>
-    public CsvParseErrorHandler? OnParseError { get; init; } = null;
+    public CsvDeserializeErrorHandler? OnDeserializeError { get; init; } = null;
 
     /// <summary>
     /// Gets or sets the list of required header names that must be present in the CSV.

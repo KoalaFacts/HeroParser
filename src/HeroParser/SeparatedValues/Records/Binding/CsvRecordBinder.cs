@@ -195,9 +195,9 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
                 var fieldValue = column.ToString();
 
                 // Check if there's an error handler
-                if (recordOptions.OnParseError is not null)
+                if (recordOptions.OnDeserializeError is not null)
                 {
-                    var context = new CsvParseErrorContext
+                    var context = new CsvDeserializeErrorContext
                     {
                         Row = rowNumber,
                         Column = columnIndex + 1,
@@ -206,14 +206,14 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
                         FieldValue = fieldValue
                     };
 
-                    var action = recordOptions.OnParseError(context);
+                    var action = recordOptions.OnDeserializeError(context);
                     switch (action)
                     {
-                        case ParseErrorAction.SkipRow:
+                        case DeserializeErrorAction.SkipRow:
                             return null;
-                        case ParseErrorAction.UseDefault:
+                        case DeserializeErrorAction.UseDefault:
                             continue;
-                        case ParseErrorAction.Throw:
+                        case DeserializeErrorAction.Throw:
                         default:
                             break;
                     }

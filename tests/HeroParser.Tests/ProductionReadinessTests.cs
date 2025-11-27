@@ -111,7 +111,7 @@ public class ProductionReadinessTests
         };
 
         var records = new List<TestPerson>();
-        foreach (var record in Csv.ParseRecords<TestPerson>(csv, recordOptions))
+        foreach (var record in Csv.DeserializeRecords<TestPerson>(csv, recordOptions))
         {
             records.Add(record);
         }
@@ -136,7 +136,7 @@ public class ProductionReadinessTests
         };
 
         var records = new List<TestPerson>();
-        foreach (var record in Csv.ParseRecords<TestPerson>(csv, recordOptions))
+        foreach (var record in Csv.DeserializeRecords<TestPerson>(csv, recordOptions))
         {
             records.Add(record);
         }

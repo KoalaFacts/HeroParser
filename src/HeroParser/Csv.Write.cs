@@ -150,6 +150,31 @@ public static partial class Csv
     }
 
     /// <summary>
+    /// Asynchronously writes records to CSV format and returns the result as a string.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="records">The records to write.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The CSV content as a string.</returns>
+    public static async ValueTask<string> WriteToTextAsync<T>(
+        IAsyncEnumerable<T> records,
+        CsvWriterOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        options ??= CsvWriterOptions.Default;
+
+        await using var stringWriter = new StringWriter();
+        await using var writer = new CsvStreamWriter(stringWriter, options);
+        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        return stringWriter.ToString();
+    }
+
+    /// <summary>
     /// Writes records to a file.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>

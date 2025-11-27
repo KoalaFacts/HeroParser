@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -13,14 +15,15 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!-- Source Generator Testing - only needs Roslyn compiler APIs -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Reference HeroParser for attribute definitions -->
     <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
-    <!-- Reference as analyzer for runtime integration tests -->
-    <ProjectReference Include="../../src/HeroParser.Generators/HeroParser.Generators.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <!-- Reference generator as assembly for unit testing -->
+    <ProjectReference Include="../../src/HeroParser.Generators/HeroParser.Generators.csproj" />
   </ItemGroup>
 
 </Project>

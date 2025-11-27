@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -20,10 +21,24 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     private readonly CsvWriterOptions options;
     private readonly bool leaveOpen;
 
-    private char[] buffer;
-    private int bufferPosition;
-    private bool isFirstFieldInRow;
-    private bool disposed;
+    // Cached options for hot path access
+    private readonly char delimiter;
+    private readonly char quote;
+    private readonly ReadOnlyMemory<char> newLineMemory;
+    private readonly QuoteStyle quoteStyle;
+    private readonly CultureInfo culture;
+    private readonly string nullValue;
+    private readonly string? dateTimeFormat;
+    private readonly string? numberFormat;
+#if NET6_0_OR_GREATER
+    private readonly string? dateOnlyFormat;
+    private readonly string? timeOnlyFormat;
+#endif
+
+    private readonly char[] buffer;
+    private readonly int bufferPosition;
+    private readonly bool isFirstFieldInRow;
+    private readonly bool disposed;
 
     private const int DEFAULT_BUFFER_SIZE = 16 * 1024; // 16KB
     private const int MAX_STACK_ALLOC_SIZE = 256;
@@ -42,6 +57,20 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         this.options = options ?? CsvWriterOptions.Default;
         this.options.Validate();
         this.leaveOpen = leaveOpen;
+
+        // Cache frequently accessed options to avoid property access overhead in hot paths
+        delimiter = this.options.Delimiter;
+        quote = this.options.Quote;
+        newLineMemory = this.options.NewLine.AsMemory();
+        quoteStyle = this.options.QuoteStyle;
+        culture = this.options.Culture;
+        nullValue = this.options.NullValue;
+        dateTimeFormat = this.options.DateTimeFormat;
+        numberFormat = this.options.NumberFormat;
+#if NET6_0_OR_GREATER
+        dateOnlyFormat = this.options.DateOnlyFormat;
+        timeOnlyFormat = this.options.TimeOnlyFormat;
+#endif
 
         buffer = ArrayPool<char>.Shared.Rent(DEFAULT_BUFFER_SIZE);
         bufferPosition = 0;
@@ -180,16 +209,16 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     private void WriteDelimiter()
     {
         EnsureCapacity(1);
-        buffer[bufferPosition++] = options.Delimiter;
+        buffer[bufferPosition++] = delimiter;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteNewLine()
     {
-        var newLine = options.NewLine;
-        EnsureCapacity(newLine.Length);
-        newLine.AsSpan().CopyTo(buffer.AsSpan(bufferPosition));
-        bufferPosition += newLine.Length;
+        var newLineSpan = newLineMemory.Span;
+        EnsureCapacity(newLineSpan.Length);
+        newLineSpan.CopyTo(buffer.AsSpan(bufferPosition));
+        bufferPosition += newLineSpan.Length;
     }
 
     private void WriteFieldValue(ReadOnlySpan<char> value)
@@ -197,32 +226,41 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         if (value.IsEmpty)
         {
             // Empty field - write quotes if AlwaysQuote, otherwise nothing
-            if (options.QuoteStyle == QuoteStyle.Always)
+            if (quoteStyle == QuoteStyle.Always)
             {
                 EnsureCapacity(2);
-                buffer[bufferPosition++] = options.Quote;
-                buffer[bufferPosition++] = options.Quote;
+                buffer[bufferPosition++] = quote;
+                buffer[bufferPosition++] = quote;
             }
             return;
         }
 
-        bool needsQuoting = options.QuoteStyle switch
+        // Handle quoting based on style
+        switch (quoteStyle)
         {
-            QuoteStyle.Always => true,
-            QuoteStyle.Never => false,
-            _ => NeedsQuoting(value)
-        };
-
-        if (needsQuoting)
-        {
-            WriteQuotedField(value);
-        }
-        else
-        {
-            WriteUnquotedField(value);
+            case QuoteStyle.Always:
+                WriteQuotedFieldWithKnownQuoteCount(value, CountQuotes(value));
+                break;
+            case QuoteStyle.Never:
+                WriteUnquotedField(value);
+                break;
+            case QuoteStyle.WhenNeeded:
+            default:
+                // Single pass to check if quoting needed AND count quotes
+                var (needsQuoting, quoteCount) = AnalyzeFieldForQuoting(value);
+                if (needsQuoting)
+                {
+                    WriteQuotedFieldWithKnownQuoteCount(value, quoteCount);
+                }
+                else
+                {
+                    WriteUnquotedField(value);
+                }
+                break;
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteUnquotedField(ReadOnlySpan<char> value)
     {
         EnsureCapacity(value.Length);
@@ -230,17 +268,12 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         bufferPosition += value.Length;
     }
 
-    private void WriteQuotedField(ReadOnlySpan<char> value)
+    /// <summary>
+    /// Writes a quoted field when we already know the quote count (from single-pass analysis).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteQuotedFieldWithKnownQuoteCount(ReadOnlySpan<char> value, int quoteCount)
     {
-        char quote = options.Quote;
-
-        // Count quotes to calculate required size
-        int quoteCount = 0;
-        foreach (char c in value)
-        {
-            if (c == quote) quoteCount++;
-        }
-
         // Total size: opening quote + value + escaped quotes + closing quote
         int requiredSize = 2 + value.Length + quoteCount;
         EnsureCapacity(requiredSize);
@@ -249,71 +282,75 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
         if (quoteCount == 0)
         {
-            // Fast path: no quotes to escape
+            // Fast path: no quotes to escape - just copy
             value.CopyTo(buffer.AsSpan(bufferPosition));
             bufferPosition += value.Length;
         }
         else
         {
             // Escape quotes by doubling them
-            foreach (char c in value)
-            {
-                if (c == quote)
-                {
-                    buffer[bufferPosition++] = quote;
-                }
-                buffer[bufferPosition++] = c;
-            }
+            WriteWithQuoteEscaping(value);
         }
 
         buffer[bufferPosition++] = quote;
     }
 
+    /// <summary>
+    /// Single-pass analysis: determines if quoting is needed AND counts quotes simultaneously.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool NeedsQuoting(ReadOnlySpan<char> value)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldForQuoting(ReadOnlySpan<char> value)
     {
-        char delimiter = options.Delimiter;
-        char quote = options.Quote;
-
         // Use SIMD for larger spans
         if (Avx2.IsSupported && value.Length >= Vector256<ushort>.Count)
         {
-            return NeedsQuotingSimd256(value, delimiter, quote);
+            return AnalyzeFieldSimd256(value);
         }
         else if (Sse2.IsSupported && value.Length >= Vector128<ushort>.Count)
         {
-            return NeedsQuotingSimd128(value, delimiter, quote);
+            return AnalyzeFieldSimd128(value);
         }
 
-        return NeedsQuotingScalar(value, delimiter, quote);
+        return AnalyzeFieldScalar(value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool NeedsQuotingScalar(ReadOnlySpan<char> value, char delimiter, char quote)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldScalar(ReadOnlySpan<char> value)
     {
+        bool needsQuoting = false;
+        int quoteCount = 0;
+        char d = delimiter;
+        char q = quote;
+
         foreach (char c in value)
         {
-            if (c == delimiter || c == quote || c == '\r' || c == '\n')
+            if (c == q)
             {
-                return true;
+                needsQuoting = true;
+                quoteCount++;
+            }
+            else if (c == d || c == '\r' || c == '\n')
+            {
+                needsQuoting = true;
             }
         }
-        return false;
+
+        return (needsQuoting, quoteCount);
     }
 
-    private static bool NeedsQuotingSimd256(ReadOnlySpan<char> value, char delimiter, char quote)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldSimd256(ReadOnlySpan<char> value)
     {
-        // Create vectors for special characters we need to find
         var delimiterVec = Vector256.Create((ushort)delimiter);
         var quoteVec = Vector256.Create((ushort)quote);
         var crVec = Vector256.Create((ushort)'\r');
         var lfVec = Vector256.Create((ushort)'\n');
 
+        bool needsQuoting = false;
+        int quoteCount = 0;
         int i = 0;
         int vectorLength = Vector256<ushort>.Count;
         int lastVectorStart = value.Length - vectorLength;
 
-        // Process 16 chars at a time
         while (i <= lastVectorStart)
         {
             var chars = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref Unsafe.AsRef(in value[i])));
@@ -323,35 +360,55 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
             var matchCr = Vector256.Equals(chars, crVec);
             var matchLf = Vector256.Equals(chars, lfVec);
 
+            // Check if any special char found
             var combined = Vector256.BitwiseOr(
                 Vector256.BitwiseOr(matchDelimiter, matchQuote),
                 Vector256.BitwiseOr(matchCr, matchLf));
 
             if (combined != Vector256<ushort>.Zero)
             {
-                return true;
+                needsQuoting = true;
+                // Count quotes in this vector using population count
+                if (matchQuote != Vector256<ushort>.Zero)
+                {
+                    quoteCount += BitOperations.PopCount(matchQuote.ExtractMostSignificantBits());
+                }
             }
 
             i += vectorLength;
         }
 
         // Handle remaining elements with scalar
-        return NeedsQuotingScalar(value[i..], delimiter, quote);
+        for (; i < value.Length; i++)
+        {
+            char c = value[i];
+            if (c == quote)
+            {
+                needsQuoting = true;
+                quoteCount++;
+            }
+            else if (c == delimiter || c == '\r' || c == '\n')
+            {
+                needsQuoting = true;
+            }
+        }
+
+        return (needsQuoting, quoteCount);
     }
 
-    private static bool NeedsQuotingSimd128(ReadOnlySpan<char> value, char delimiter, char quote)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldSimd128(ReadOnlySpan<char> value)
     {
-        // Create vectors for special characters we need to find
         var delimiterVec = Vector128.Create((ushort)delimiter);
         var quoteVec = Vector128.Create((ushort)quote);
         var crVec = Vector128.Create((ushort)'\r');
         var lfVec = Vector128.Create((ushort)'\n');
 
+        bool needsQuoting = false;
+        int quoteCount = 0;
         int i = 0;
         int vectorLength = Vector128<ushort>.Count;
         int lastVectorStart = value.Length - vectorLength;
 
-        // Process 8 chars at a time
         while (i <= lastVectorStart)
         {
             var chars = Vector128.LoadUnsafe(ref Unsafe.As<char, ushort>(ref Unsafe.AsRef(in value[i])));
@@ -367,14 +424,63 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
             if (combined != Vector128<ushort>.Zero)
             {
-                return true;
+                needsQuoting = true;
+                if (matchQuote != Vector128<ushort>.Zero)
+                {
+                    quoteCount += BitOperations.PopCount(matchQuote.ExtractMostSignificantBits());
+                }
             }
 
             i += vectorLength;
         }
 
         // Handle remaining elements with scalar
-        return NeedsQuotingScalar(value[i..], delimiter, quote);
+        for (; i < value.Length; i++)
+        {
+            char c = value[i];
+            if (c == quote)
+            {
+                needsQuoting = true;
+                quoteCount++;
+            }
+            else if (c == delimiter || c == '\r' || c == '\n')
+            {
+                needsQuoting = true;
+            }
+        }
+
+        return (needsQuoting, quoteCount);
+    }
+
+    /// <summary>
+    /// Counts quotes in a span (for AlwaysQuote mode).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int CountQuotes(ReadOnlySpan<char> value)
+    {
+        int count = 0;
+        char q = quote;
+        foreach (char c in value)
+        {
+            if (c == q) count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Writes value to buffer, escaping quotes by doubling them.
+    /// </summary>
+    private void WriteWithQuoteEscaping(ReadOnlySpan<char> value)
+    {
+        char q = quote;
+        foreach (char c in value)
+        {
+            if (c == q)
+            {
+                buffer[bufferPosition++] = q;
+            }
+            buffer[bufferPosition++] = c;
+        }
     }
 
     private void WriteFormattedValue(object? value)
@@ -386,31 +492,121 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         if (value is null)
         {
-            WriteFieldValue(options.NullValue.AsSpan());
+            WriteFieldValue(nullValue.AsSpan());
             return;
         }
 
-        // Use explicit format if provided, otherwise fall back to type-based format from options
-        var effectiveFormat = format ?? GetFormatString(value);
-
-        // Use ISpanFormattable for zero-allocation formatting when available
+        // Direct type handling for common types - avoids interface dispatch overhead
+        // Check concrete types first before falling back to interface
         switch (value)
         {
             case string s:
                 WriteFieldValue(s.AsSpan());
-                break;
+                return;
 
-            case ISpanFormattable spanFormattable:
-                WriteSpanFormattable(spanFormattable, effectiveFormat);
-                break;
+            case int i:
+                WriteSpanFormattableDirectly(i, format ?? numberFormat);
+                return;
 
-            case IFormattable formattable:
-                WriteFieldValue(formattable.ToString(effectiveFormat, options.Culture).AsSpan());
-                break;
+            case long l:
+                WriteSpanFormattableDirectly(l, format ?? numberFormat);
+                return;
+
+            case double d:
+                WriteSpanFormattableDirectly(d, format ?? numberFormat);
+                return;
+
+            case decimal dec:
+                WriteSpanFormattableDirectly(dec, format ?? numberFormat);
+                return;
+
+            case bool b:
+                // Booleans never need quoting - write directly
+                WriteUnquotedField(b ? "True".AsSpan() : "False".AsSpan());
+                return;
+
+            case DateTime dt:
+                WriteSpanFormattableDirectly(dt, format ?? dateTimeFormat);
+                return;
+
+            case DateTimeOffset dto:
+                WriteSpanFormattableDirectly(dto, format ?? dateTimeFormat);
+                return;
+
+#if NET6_0_OR_GREATER
+            case DateOnly dateOnly:
+                WriteSpanFormattableDirectly(dateOnly, format ?? dateOnlyFormat);
+                return;
+
+            case TimeOnly timeOnly:
+                WriteSpanFormattableDirectly(timeOnly, format ?? timeOnlyFormat);
+                return;
+#endif
+
+            case float f:
+                WriteSpanFormattableDirectly(f, format ?? numberFormat);
+                return;
+
+            case byte by:
+                WriteSpanFormattableDirectly(by, format ?? numberFormat);
+                return;
+
+            case short sh:
+                WriteSpanFormattableDirectly(sh, format ?? numberFormat);
+                return;
+
+            case uint ui:
+                WriteSpanFormattableDirectly(ui, format ?? numberFormat);
+                return;
+
+            case ulong ul:
+                WriteSpanFormattableDirectly(ul, format ?? numberFormat);
+                return;
+
+            case Guid g:
+                WriteSpanFormattableDirectly(g, format);
+                return;
 
             default:
-                WriteFieldValue((value.ToString() ?? string.Empty).AsSpan());
+                // Fall through to interface-based handling below
                 break;
+        }
+
+        // Fallback for other ISpanFormattable types
+        if (value is ISpanFormattable spanFormattable)
+        {
+            WriteSpanFormattable(spanFormattable, format);
+            return;
+        }
+
+        // Final fallback for IFormattable
+        if (value is IFormattable formattable)
+        {
+            WriteFieldValue(formattable.ToString(format, culture).AsSpan());
+            return;
+        }
+
+        // Last resort: ToString()
+        WriteFieldValue((value.ToString() ?? string.Empty).AsSpan());
+    }
+
+    /// <summary>
+    /// Writes an ISpanFormattable value directly to the output buffer when possible.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteSpanFormattableDirectly<T>(T value, string? format) where T : ISpanFormattable
+    {
+        // Try stack allocation first for small values
+        Span<char> stackBuffer = stackalloc char[MAX_STACK_ALLOC_SIZE];
+
+        if (value.TryFormat(stackBuffer, out int charsWritten, format, culture))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            // Fall back to string allocation for large values
+            WriteFieldValue(value.ToString(format, culture).AsSpan());
         }
     }
 
@@ -419,32 +615,15 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         // Try stack allocation first for small values
         Span<char> stackBuffer = stackalloc char[MAX_STACK_ALLOC_SIZE];
 
-        if (value.TryFormat(stackBuffer, out int charsWritten, format, options.Culture))
+        if (value.TryFormat(stackBuffer, out int charsWritten, format, culture))
         {
             WriteFieldValue(stackBuffer[..charsWritten]);
         }
         else
         {
             // Fall back to string allocation for large values
-            WriteFieldValue(value.ToString(format, options.Culture).AsSpan());
+            WriteFieldValue(value.ToString(format, culture).AsSpan());
         }
-    }
-
-    private string? GetFormatString(object value)
-    {
-        return value switch
-        {
-            DateTime => options.DateTimeFormat,
-            DateTimeOffset => options.DateTimeFormat,
-#if NET6_0_OR_GREATER
-            DateOnly => options.DateOnlyFormat,
-            TimeOnly => options.TimeOnlyFormat,
-#endif
-            // Numeric types use NumberFormat
-            sbyte or byte or short or ushort or int or uint or long or ulong
-                or float or double or decimal => options.NumberFormat,
-            _ => null
-        };
     }
 
     #endregion

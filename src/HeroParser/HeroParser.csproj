@@ -7,7 +7,7 @@
     <Version>1.0.0</Version>
     <Authors>HeroParser Contributors</Authors>
     <Description>Ultra high-performance CSV parser and writer for .NET 8+. Features SIMD-accelerated parsing (AVX-512/AVX2/NEON), zero-allocation design, RFC 4180 compliance, and fluent APIs. Writing is 2-5x faster than Sep with 35-85% less memory. Includes async streaming, source generators for AOT, LINQ-style extensions, progress reporting, and custom type converters. No external dependencies.</Description>
-    <PackageTags>csv;csvhelper;csvparser;csvreader;csvwriter;delimited;tsv;parser;writer;simd;avx512;avx2;neon;performance;zeroallocation;rfc4180;async;streaming;aot;sourcegenerator;fluentapi;linq;dotnet;highperformance;serialization;deserialization;dataimport;dataexport;etl</PackageTags>
+    <PackageTags>csv;csvhelper;csv parser;csv reader;csv writer;excel;xlsl;delimited;tsv;parser;writer;rfc4180;</PackageTags>
     <RepositoryUrl>https://github.com/KoalaFacts/HeroParser</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

@@ -20,6 +20,7 @@ public ref struct CsvCharSpanReader
     private readonly int[] columnLengthsBuffer;
     private int position;
     private int rowCount;
+    private int sourceLineNumber; // Track source line number (1-based)
 
     internal CsvCharSpanReader(ReadOnlySpan<char> chars, CsvParserOptions options)
     {
@@ -27,6 +28,7 @@ public ref struct CsvCharSpanReader
         this.options = options;
         position = 0;
         rowCount = 0;
+        sourceLineNumber = 1; // Start at line 1
         Current = default;
         // Use dedicated arrays instead of ArrayPool to avoid sharing issues when
         // GetEnumerator() creates a copy that shares the same array references
@@ -55,6 +57,7 @@ public ref struct CsvCharSpanReader
                 return false;
 
             var remaining = chars[position..];
+            int rowStartLine = sourceLineNumber; // Capture line number where row starts
             var result = CsvStreamingParser.ParseRow(
                 remaining,
                 options,
@@ -63,6 +66,9 @@ public ref struct CsvCharSpanReader
 
             if (result.CharsConsumed == 0)
                 return false;
+
+            // Update source line number based on newlines encountered
+            sourceLineNumber += result.NewlineCount;
 
             var rowChars = remaining[..result.RowLength];
             if (rowChars.IsEmpty)
@@ -77,7 +83,8 @@ public ref struct CsvCharSpanReader
                 columnStartsBuffer,
                 columnLengthsBuffer,
                 result.ColumnCount,
-                rowCount);
+                rowCount,
+                rowStartLine); // Pass the line number where the row started
 
             position += result.CharsConsumed;
             if (rowCount > options.MaxRowCount)

@@ -16,6 +16,7 @@ public ref struct CsvStreamReader
     private int offset;
     private int length;
     private int rowCount;
+    private int sourceLineNumber; // Track source line number (1-based)
     private bool endOfStream;
 #pragma warning disable IDE0032 // Use auto property - can't use auto property here as bytesRead is modified in FillBuffer
     private long bytesRead;
@@ -33,6 +34,7 @@ public ref struct CsvStreamReader
         offset = 0;
         length = 0;
         rowCount = 0;
+        sourceLineNumber = 1; // Start at line 1
         endOfStream = false;
         Current = default;
         disposed = false;
@@ -62,6 +64,7 @@ public ref struct CsvStreamReader
         while (true)
         {
             var span = buffer.AsSpan(offset, length - offset);
+            int rowStartLine = sourceLineNumber; // Capture line number where row starts
             var result = CsvStreamingParser.ParseRow(
                 span,
                 options,
@@ -73,6 +76,9 @@ public ref struct CsvStreamReader
                 var rowChars = span[..result.RowLength];
                 offset += result.CharsConsumed;
 
+                // Update source line number based on newlines encountered
+                sourceLineNumber += result.NewlineCount;
+
                 if (rowChars.IsEmpty)
                     continue;
 
@@ -82,7 +88,8 @@ public ref struct CsvStreamReader
                     columnStartsBuffer,
                     columnLengthsBuffer,
                     result.ColumnCount,
-                    rowCount);
+                    rowCount,
+                    rowStartLine); // Pass the line number where the row started
                 if (rowCount > options.MaxRowCount)
                 {
                     throw new CsvException(

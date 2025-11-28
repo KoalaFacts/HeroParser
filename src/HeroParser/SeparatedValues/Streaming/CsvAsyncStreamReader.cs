@@ -16,12 +16,14 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private int offset;
     private int length;
     private int rowCount;
+    private int sourceLineNumber; // Track source line number (1-based)
     private bool endOfStream;
     private bool disposed;
     private int currentRowStart;
     private int currentRowLength;
     private int currentColumnCount;
     private int currentLineNumber;
+    private int currentSourceLineNumber; // Source line number for current row
 #pragma warning disable IDE0032 // Use auto property - can't use auto property here as bytesRead is modified in FillBufferAsync
     private long bytesRead;
 #pragma warning restore IDE0032
@@ -32,7 +34,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         columnStartsBuffer,
         columnLengthsBuffer,
         currentColumnCount,
-        currentLineNumber);
+        currentLineNumber,
+        currentSourceLineNumber);
 
     /// <summary>Gets the approximate number of bytes read from the underlying stream.</summary>
     /// <remarks>
@@ -52,12 +55,14 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         offset = 0;
         length = 0;
         rowCount = 0;
+        sourceLineNumber = 1; // Start at line 1
         endOfStream = false;
         disposed = false;
         currentRowStart = 0;
         currentRowLength = 0;
         currentColumnCount = 0;
         currentLineNumber = 0;
+        currentSourceLineNumber = 1;
     }
 
     /// <summary>
@@ -88,7 +93,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             {
                 var rowStart = offset;
                 var rowLength = result.RowLength;
+                int rowStartLine = sourceLineNumber; // Capture line number where row starts
                 offset += result.CharsConsumed;
+
+                // Update source line number based on newlines encountered
+                sourceLineNumber += result.NewlineCount;
 
                 if (rowLength == 0)
                     continue;
@@ -98,6 +107,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 currentRowLength = rowLength;
                 currentColumnCount = result.ColumnCount;
                 currentLineNumber = rowCount;
+                currentSourceLineNumber = rowStartLine;
                 if (rowCount > options.MaxRowCount)
                 {
                     throw new CsvException(

@@ -17,17 +17,20 @@ public readonly ref struct CsvByteSpanRow
     private readonly ReadOnlySpan<int> columnStarts;
     private readonly ReadOnlySpan<int> columnLengths;
     private readonly int lineNumber;
+    private readonly int sourceLineNumber;
 
     internal CsvByteSpanRow(
         ReadOnlySpan<byte> line,
         Span<int> columnStartsBuffer,
         Span<int> columnLengthsBuffer,
         int columnCount,
-        int lineNumber)
+        int lineNumber,
+        int sourceLineNumber)
     {
         this.line = line;
         this.columnCount = columnCount;
         this.lineNumber = lineNumber;
+        this.sourceLineNumber = sourceLineNumber;
         columnStarts = columnStartsBuffer[..columnCount];
         columnLengths = columnLengthsBuffer[..columnCount];
     }
@@ -35,8 +38,25 @@ public readonly ref struct CsvByteSpanRow
     /// <summary>Gets the number of parsed columns in the row.</summary>
     public int ColumnCount => columnCount;
 
-    /// <summary>Gets the 1-based line number of this row in the CSV data.</summary>
+    /// <summary>
+    /// Gets the 1-based logical row number in the CSV data.
+    /// </summary>
+    /// <remarks>
+    /// This represents the ordinal position of the row in the data (1st row, 2nd row, etc.).
+    /// For multi-line quoted fields, this counts the entire field as one row.
+    /// Use <see cref="SourceLineNumber"/> for the physical line number in the source file.
+    /// </remarks>
     public int LineNumber => lineNumber;
+
+    /// <summary>
+    /// Gets the 1-based source line number where this row starts in the original CSV file.
+    /// </summary>
+    /// <remarks>
+    /// This is the physical line number in the source file where the row begins.
+    /// For rows with multi-line quoted fields, this points to the line where the row starts,
+    /// not where it ends. This is useful for debugging, error reporting, and logging.
+    /// </remarks>
+    public int SourceLineNumber => sourceLineNumber;
 
     /// <summary>Gets a column by zero-based index.</summary>
     /// <param name="index">Zero-based column index.</param>
@@ -83,7 +103,7 @@ public readonly ref struct CsvByteSpanRow
         var newLine = line.ToArray();
         var newStarts = columnStarts.ToArray();
         var newLengths = columnLengths.ToArray();
-        return new CsvByteSpanRow(newLine, newStarts, newLengths, columnCount, lineNumber);
+        return new CsvByteSpanRow(newLine, newStarts, newLengths, columnCount, lineNumber, sourceLineNumber);
     }
 
     /// <summary>

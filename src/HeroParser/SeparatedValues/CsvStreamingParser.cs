@@ -23,7 +23,7 @@ internal static class CsvStreamingParser
         where T : unmanaged, IEquatable<T>
     {
         if (data.IsEmpty)
-            return new CsvRowParseResult(0, 0, 0);
+            return new CsvRowParseResult(0, 0, 0, 0);
 
         ref readonly T dataRef = ref MemoryMarshal.GetReference(data);
         ref T mutableRef = ref Unsafe.AsRef(in dataRef);
@@ -51,6 +51,7 @@ internal static class CsvStreamingParser
                 {
                     // This is a comment line, skip to end of line
                     int skipPos = checkPos;
+                    int commentNewlines = 0;
                     while (skipPos < data.Length && !Unsafe.Add(ref mutableRef, skipPos).Equals(lf) && !Unsafe.Add(ref mutableRef, skipPos).Equals(cr))
                     {
                         skipPos++;
@@ -61,11 +62,16 @@ internal static class CsvStreamingParser
                     {
                         T lineEnd = Unsafe.Add(ref mutableRef, skipPos);
                         consumed++;
+                        if (lineEnd.Equals(lf))
+                            commentNewlines++;
                         if (lineEnd.Equals(cr) && skipPos + 1 < data.Length && Unsafe.Add(ref mutableRef, skipPos + 1).Equals(lf))
+                        {
                             consumed++;
+                            commentNewlines++; // Count the LF in CRLF
+                        }
                     }
 
-                    return new CsvRowParseResult(0, 0, consumed);
+                    return new CsvRowParseResult(0, 0, consumed, commentNewlines);
                 }
                 else if (!c.Equals(space) && !c.Equals(tab))
                 {
@@ -83,6 +89,7 @@ internal static class CsvStreamingParser
         int currentStart = 0;
         int rowLength = 0;
         int charsConsumed = 0;
+        int newlineCount = 0; // Track number of \n characters encountered
         bool rowEnded = false;
         bool enableQuotes = options.EnableQuotedFields;
         int quoteStartPosition = -1; // Track where the opening quote was found
@@ -104,6 +111,7 @@ internal static class CsvStreamingParser
                 ref currentStart,
                 ref rowLength,
                 ref charsConsumed,
+                ref newlineCount,
                 ref rowEnded,
                 ref quoteStartPosition,
                 columnStarts,
@@ -166,7 +174,12 @@ internal static class CsvStreamingParser
                 }
 
                 if (enableQuotes && inQuotes)
+                {
+                    // Count newlines inside quoted fields
+                    if (c.Equals(lf))
+                        newlineCount++;
                     continue;
+                }
 
                 if (c.Equals(delimiter))
                 {
@@ -177,8 +190,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = i;
                     charsConsumed = i + 1;
+                    if (c.Equals(lf))
+                        newlineCount++;
                     if (c.Equals(cr) && i + 1 < data.Length && Unsafe.Add(ref mutableRef, i + 1).Equals(lf))
+                    {
                         charsConsumed++;
+                        newlineCount++; // Count the LF in CRLF
+                    }
                     rowEnded = true;
                     break;
                 }
@@ -221,7 +239,7 @@ internal static class CsvStreamingParser
                 tab);
         }
 
-        return new CsvRowParseResult(columnCount, rowLength, charsConsumed);
+        return new CsvRowParseResult(columnCount, rowLength, charsConsumed, newlineCount);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -239,6 +257,7 @@ internal static class CsvStreamingParser
         ref int currentStart,
         ref int rowLength,
         ref int charsConsumed,
+        ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
         Span<int> columnStarts,
@@ -259,7 +278,7 @@ internal static class CsvStreamingParser
                 Unsafe.As<T, byte>(ref lf),
                 Unsafe.As<T, byte>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
-                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded, ref quoteStartPosition,
+                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
                 columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
         else if (typeof(T) == typeof(char))
@@ -272,7 +291,7 @@ internal static class CsvStreamingParser
                 Unsafe.As<T, char>(ref lf),
                 Unsafe.As<T, char>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
-                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded, ref quoteStartPosition,
+                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
                 columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
 
@@ -295,6 +314,7 @@ internal static class CsvStreamingParser
         ref int currentStart,
         ref int rowLength,
         ref int charsConsumed,
+        ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
         Span<int> columnStarts,
@@ -368,7 +388,12 @@ internal static class CsvStreamingParser
                 }
 
                 if (enableQuotedFields && inQuotes)
+                {
+                    // Count newlines inside quoted fields
+                    if (c == lf)
+                        newlineCount++;
                     continue;
+                }
 
                 if (c == delimiter)
                 {
@@ -381,8 +406,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = absolute;
                     charsConsumed = absolute + 1;
+                    if (c == lf)
+                        newlineCount++;
                     if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                    {
                         charsConsumed++;
+                        newlineCount++; // Count the LF in CRLF
+                    }
                     rowEnded = true;
                     return true;
                 }
@@ -410,6 +440,7 @@ internal static class CsvStreamingParser
         ref int currentStart,
         ref int rowLength,
         ref int charsConsumed,
+        ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
         Span<int> columnStarts,
@@ -427,7 +458,7 @@ internal static class CsvStreamingParser
             return TrySimdParseUtf16Avx512(
                 ref mutableRef, dataLength, delimiter, quote, lf, cr,
                 ref position, ref inQuotes, ref skipNextQuote,
-                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded, ref quoteStartPosition,
+                ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
                 columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
 #endif
@@ -439,7 +470,7 @@ internal static class CsvStreamingParser
         return TrySimdParseUtf16Avx2(
             ref mutableRef, dataLength, delimiter, quote, lf, cr,
             ref position, ref inQuotes, ref skipNextQuote,
-            ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded, ref quoteStartPosition,
+            ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
             columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
     }
 
@@ -458,6 +489,7 @@ internal static class CsvStreamingParser
         ref int currentStart,
         ref int rowLength,
         ref int charsConsumed,
+        ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
         Span<int> columnStarts,
@@ -567,7 +599,12 @@ internal static class CsvStreamingParser
                 }
 
                 if (enableQuotedFields && inQuotes)
+                {
+                    // Count newlines inside quoted fields
+                    if (c == lf)
+                        newlineCount++;
                     continue;
+                }
 
                 if (c == delimiter)
                 {
@@ -580,8 +617,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = absolute;
                     charsConsumed = absolute + 1;
+                    if (c == lf)
+                        newlineCount++;
                     if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                    {
                         charsConsumed++;
+                        newlineCount++; // Count the LF in CRLF
+                    }
                     rowEnded = true;
                     return true;
                 }
@@ -655,7 +697,12 @@ internal static class CsvStreamingParser
                 }
 
                 if (enableQuotedFields && inQuotes)
+                {
+                    // Count newlines inside quoted fields
+                    if (c == lf)
+                        newlineCount++;
                     continue;
+                }
 
                 if (c == delimiter)
                 {
@@ -668,8 +715,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = absolute;
                     charsConsumed = absolute + 1;
+                    if (c == lf)
+                        newlineCount++;
                     if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                    {
                         charsConsumed++;
+                        newlineCount++; // Count the LF in CRLF
+                    }
                     rowEnded = true;
                     return true;
                 }
@@ -697,6 +749,7 @@ internal static class CsvStreamingParser
         ref int currentStart,
         ref int rowLength,
         ref int charsConsumed,
+        ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
         Span<int> columnStarts,
@@ -803,7 +856,12 @@ internal static class CsvStreamingParser
                 }
 
                 if (enableQuotedFields && inQuotes)
+                {
+                    // Count newlines inside quoted fields
+                    if (c == lf)
+                        newlineCount++;
                     continue;
+                }
 
                 if (c == delimiter)
                 {
@@ -816,8 +874,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = absolute;
                     charsConsumed = absolute + 1;
+                    if (c == lf)
+                        newlineCount++;
                     if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                    {
                         charsConsumed++;
+                        newlineCount++; // Count the LF in CRLF
+                    }
                     rowEnded = true;
                     return true;
                 }
@@ -830,7 +893,7 @@ internal static class CsvStreamingParser
         return TrySimdParseUtf16Avx2(
             ref mutableRef, dataLength, delimiter, quote, lf, cr,
             ref position, ref inQuotes, ref skipNextQuote,
-            ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref rowEnded, ref quoteStartPosition,
+            ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
             columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
     }
 #endif

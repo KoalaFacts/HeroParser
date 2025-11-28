@@ -13,14 +13,27 @@ public class CsvException : Exception
     public CsvErrorCode ErrorCode { get; }
 
     /// <summary>
-    /// Gets the 1-based row number where the error occurred, or <see langword="null"/> when unknown.
+    /// Gets the 1-based logical row number where the error occurred, or <see langword="null"/> when unknown.
     /// </summary>
+    /// <remarks>
+    /// This represents the ordinal position of the row in the data (1st row, 2nd row, etc.).
+    /// Use <see cref="SourceLineNumber"/> for the physical line number in the source file.
+    /// </remarks>
     public int? Row { get; }
 
     /// <summary>
     /// Gets the 1-based column where the error occurred, or <see langword="null"/> when unknown.
     /// </summary>
     public int? Column { get; }
+
+    /// <summary>
+    /// Gets the 1-based source line number where the error occurred, or <see langword="null"/> when unknown.
+    /// </summary>
+    /// <remarks>
+    /// This is the physical line number in the source file. For multi-line rows with quoted fields,
+    /// this may differ from <see cref="Row"/>. This is useful for debugging and error reporting.
+    /// </remarks>
+    public int? SourceLineNumber { get; }
 
     /// <summary>
     /// Gets the field value that caused the error, or <see langword="null"/> when not applicable.
@@ -111,11 +124,12 @@ public class CsvException : Exception
     /// <summary>
     /// Private constructor for factory method use.
     /// </summary>
-    private CsvException(CsvErrorCode errorCode, string message, int row, int? quoteStartPosition, bool _)
-        : base($"Row {row}: {message} (quote started at position {quoteStartPosition})")
+    private CsvException(CsvErrorCode errorCode, string message, int row, int? sourceLineNumber, int? quoteStartPosition, bool _)
+        : base(BuildUnterminatedQuoteMessage(row, sourceLineNumber, message, quoteStartPosition))
     {
         ErrorCode = errorCode;
         Row = row;
+        SourceLineNumber = sourceLineNumber;
         QuoteStartPosition = quoteStartPosition;
     }
 
@@ -127,7 +141,27 @@ public class CsvException : Exception
     /// <param name="quoteStartPosition">The 0-based character position where the opening quote was found.</param>
     /// <returns>A new <see cref="CsvException"/> instance.</returns>
     internal static CsvException UnterminatedQuote(string message, int row, int quoteStartPosition)
-        => new(CsvErrorCode.ParseError, message, row, quoteStartPosition, true);
+        => new(CsvErrorCode.ParseError, message, row, null, quoteStartPosition, true);
+
+    /// <summary>
+    /// Creates a new <see cref="CsvException"/> for unterminated quote errors with position and source line information.
+    /// </summary>
+    /// <param name="message">A human-readable description of the failure.</param>
+    /// <param name="row">The 1-based row number associated with the error.</param>
+    /// <param name="sourceLineNumber">The 1-based source line number where the error occurred.</param>
+    /// <param name="quoteStartPosition">The 0-based character position where the opening quote was found.</param>
+    /// <returns>A new <see cref="CsvException"/> instance.</returns>
+    internal static CsvException UnterminatedQuote(string message, int row, int sourceLineNumber, int quoteStartPosition)
+        => new(CsvErrorCode.ParseError, message, row, sourceLineNumber, quoteStartPosition, true);
+
+    private static string BuildUnterminatedQuoteMessage(int row, int? sourceLineNumber, string message, int? quoteStartPosition)
+    {
+        var prefix = sourceLineNumber.HasValue
+            ? $"Row {row} (Line {sourceLineNumber.Value})"
+            : $"Row {row}";
+
+        return $"{prefix}: {message} (quote started at position {quoteStartPosition})";
+    }
 
     private static string BuildMessageWithFieldValue(string baseMessage, string? fieldValue)
     {

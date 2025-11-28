@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **Source Line Number Tracking**: Track physical line numbers in source files for debugging and error reporting
+  - `CsvRow.LineNumber` - 1-based logical row number (ordinal position in CSV)
+  - `CsvRow.SourceLineNumber` - 1-based physical line number in source file (accounts for multi-line quoted fields)
+  - `CsvException.SourceLineNumber` - Physical line number where parse errors occurred
+  - Error messages now include both row and line number: "Row 5 (Line 12): ..."
 - **High-Performance Async CSV Writer**: `CsvAsyncStreamWriter` for true non-blocking async I/O
   - `Csv.CreateAsyncStreamWriter()` - Create a streaming async writer
   - `Csv.WriteToStreamAsync<T>(stream, IEnumerable<T>)` - Optimized overload for in-memory collections

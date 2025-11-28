@@ -14,15 +14,22 @@
 - **Zero Allocations**: Stack-only parsing with ArrayPool for column metadata
 - **Lazy Evaluation**: Columns parsed only when accessed
 - **Configurable RFC vs Speed**: Toggle quote parsing and opt-in newlines-in-quotes; defaults favor speed
+- **Fluent Builder API**: Configure readers with chainable methods (`Csv.Read<T>()`)
+- **LINQ-Style Extensions**: `Where()`, `Select()`, `First()`, `ToList()`, `GroupBy()`, and more
 
 ### Writing
 - **High-Performance CSV Writer**: 2-5x faster than Sep with 35-85% less memory allocation
 - **SIMD-Accelerated**: Uses AVX2/SSE2 for quote detection and field analysis
 - **RFC 4180 Compliant**: Proper quote escaping and field quoting
-- **Fluent Builder API**: Configure writers with chainable methods
+- **Fluent Builder API**: Configure writers with chainable methods (`Csv.Write<T>()`)
 - **Multiple Output Targets**: Write to strings, streams, or files
 
 ### General
+- **Async Streaming**: True async I/O with `IAsyncEnumerable<T>` support for reading and writing
+- **AOT/Trimming Support**: Source generators for reflection-free binding (`[CsvGenerateBinder]`)
+- **Line Number Tracking**: Both logical row numbers and physical source line numbers for error reporting
+- **Progress Reporting**: Track parsing progress for large files with callbacks
+- **Custom Type Converters**: Register converters for domain-specific types
 - **Multi-Framework**: .NET 8, 9, and 10 support
 - **Zero Dependencies**: No external packages for core library
 
@@ -653,7 +660,7 @@ foreach (var row in storedRows)
 
 ### Line Number Tracking
 
-Track the line number of each row for error reporting:
+Track row positions and source line numbers for error reporting:
 
 ```csharp
 foreach (var row in Csv.ReadFromText(csv))
@@ -664,10 +671,14 @@ foreach (var row in Csv.ReadFromText(csv))
     }
     catch (FormatException)
     {
-        Console.WriteLine($"Invalid data on line {row.LineNumber}");
+        // LineNumber: 1-based logical row position (ordinal)
+        // SourceLineNumber: 1-based physical line in the file (handles multi-line quoted fields)
+        Console.WriteLine($"Invalid data at row {row.LineNumber} (source line {row.SourceLineNumber})");
     }
 }
 ```
+
+This distinction is important when CSV files contain multi-line quoted fields - `LineNumber` gives you the row index while `SourceLineNumber` tells you the exact line in the source file where the row starts.
 
 ### ⚠️ Important: Resource Management
 

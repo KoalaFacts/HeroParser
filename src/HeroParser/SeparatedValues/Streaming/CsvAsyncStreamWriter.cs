@@ -466,6 +466,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
             case bool b:
                 // Booleans never need quoting - write directly
                 ReadOnlySpan<char> boolStr = b ? "True" : "False";
+                if (charBufferPosition + boolStr.Length > charBuffer.Length) return false;
                 boolStr.CopyTo(charBuffer.AsSpan(charBufferPosition));
                 charBufferPosition += boolStr.Length;
                 return true;

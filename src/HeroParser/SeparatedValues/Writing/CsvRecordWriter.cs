@@ -174,7 +174,7 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     }
 
     /// <summary>
-    /// Asynchronously writes multiple records.
+    /// Asynchronously writes multiple records using a sync writer (for backward compatibility).
     /// </summary>
     public async ValueTask WriteRecordsAsync(
         CsvStreamWriter writer,
@@ -206,6 +206,81 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             }
 
             WriteRecordInternal(writer, record, rowNumber);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously writes multiple records using a true async writer.
+    /// This is the preferred method for high-performance async scenarios.
+    /// </summary>
+    public async ValueTask WriteRecordsAsync(
+        Streaming.CsvAsyncStreamWriter writer,
+        IAsyncEnumerable<T> records,
+        bool includeHeader = true,
+        CancellationToken cancellationToken = default)
+    {
+        int rowNumber = 0;
+        int dataRowCount = 0;
+        var maxRows = writerOptions.MaxRowCount;
+
+        if (includeHeader && writerOptions.WriteHeader)
+        {
+            await writer.WriteRowAsync(headerBuffer, cancellationToken).ConfigureAwait(false);
+            rowNumber++;
+        }
+
+        await foreach (var record in records.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            rowNumber++;
+            dataRowCount++;
+
+            // Check MaxRowCount before writing
+            if (maxRows.HasValue && dataRowCount > maxRows.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"Exceeded maximum row count of {maxRows.Value}");
+            }
+
+            await WriteRecordInternalAsync(writer, record, rowNumber, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously writes multiple records from an IEnumerable using a true async writer.
+    /// Avoids IAsyncEnumerable overhead for in-memory collections.
+    /// </summary>
+    public async ValueTask WriteRecordsAsync(
+        Streaming.CsvAsyncStreamWriter writer,
+        IEnumerable<T> records,
+        bool includeHeader = true,
+        CancellationToken cancellationToken = default)
+    {
+        int rowNumber = 0;
+        int dataRowCount = 0;
+        var maxRows = writerOptions.MaxRowCount;
+
+        if (includeHeader && writerOptions.WriteHeader)
+        {
+            await writer.WriteRowAsync(headerBuffer, cancellationToken).ConfigureAwait(false);
+            rowNumber++;
+        }
+
+        foreach (var record in records)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            rowNumber++;
+            dataRowCount++;
+
+            // Check MaxRowCount before writing
+            if (maxRows.HasValue && dataRowCount > maxRows.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"Exceeded maximum row count of {maxRows.Value}");
+            }
+
+            await WriteRecordInternalAsync(writer, record, rowNumber, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -262,6 +337,61 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             }
         }
         writer.WriteRowWithFormats(valuesBuffer, formatsBuffer);
+    }
+
+    private async ValueTask WriteRecordInternalAsync(Streaming.CsvAsyncStreamWriter writer, T record, int rowNumber, CancellationToken cancellationToken)
+    {
+        if (record is null)
+        {
+            // Write empty row for null record
+            await writer.EndRowAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // Use pre-allocated buffers instead of allocating per-record
+        for (int i = 0; i < accessors.Length; i++)
+        {
+            var accessor = accessors[i];
+            try
+            {
+                valuesBuffer[i] = accessor.GetValue(record);
+            }
+            catch (Exception ex)
+            {
+                // Check if there's an error handler
+                if (writerOptions.OnSerializeError is not null)
+                {
+                    var context = new CsvSerializeErrorContext
+                    {
+                        Row = rowNumber,
+                        Column = i + 1,
+                        MemberName = accessor.MemberName,
+                        SourceType = typeof(T),
+                        Value = null, // Value unavailable since getter failed
+                        Exception = ex
+                    };
+
+                    var action = writerOptions.OnSerializeError(context);
+                    switch (action)
+                    {
+                        case SerializeErrorAction.SkipRow:
+                            return; // Don't write this row at all
+                        case SerializeErrorAction.WriteNull:
+                            valuesBuffer[i] = null; // Will be written as NullValue
+                            continue;
+                        case SerializeErrorAction.Throw:
+                        default:
+                            break;
+                    }
+                }
+
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Row {rowNumber}, Column {i + 1}: Failed to get value for member '{accessor.MemberName}': {ex.Message}",
+                    ex);
+            }
+        }
+        await writer.WriteRowAsync(valuesBuffer, cancellationToken).ConfigureAwait(false);
     }
 
     private void WriteHeaderRow(CsvStreamWriter writer)

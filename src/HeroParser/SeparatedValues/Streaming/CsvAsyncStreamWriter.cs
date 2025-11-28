@@ -263,6 +263,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         {
             if (quoteStyle == Writing.QuoteStyle.Always)
             {
+                if (charBufferPosition + 2 > charBuffer.Length) return false;
                 charBuffer[charBufferPosition++] = quote;
                 charBuffer[charBufferPosition++] = quote;
             }
@@ -280,9 +281,15 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         switch (quoteStyle)
         {
             case Writing.QuoteStyle.Always:
-                WriteQuotedFieldSync(value);
+                {
+                    int alwaysQuoteCount = CountQuotes(value);
+                    int requiredSize = 2 + value.Length + alwaysQuoteCount;
+                    if (charBufferPosition + requiredSize > charBuffer.Length) return false;
+                    WriteQuotedFieldSync(value);
+                }
                 break;
             case Writing.QuoteStyle.Never:
+                if (charBufferPosition + value.Length > charBuffer.Length) return false;
                 value.CopyTo(charBuffer.AsSpan(charBufferPosition));
                 charBufferPosition += value.Length;
                 break;
@@ -291,10 +298,13 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 var (needsQuoting, quoteCount) = AnalyzeFieldForQuoting(value);
                 if (needsQuoting)
                 {
+                    int requiredSize = 2 + value.Length + quoteCount;
+                    if (charBufferPosition + requiredSize > charBuffer.Length) return false;
                     WriteQuotedFieldWithKnownQuoteCountSync(value, quoteCount);
                 }
                 else
                 {
+                    if (charBufferPosition + value.Length > charBuffer.Length) return false;
                     value.CopyTo(charBuffer.AsSpan(charBufferPosition));
                     charBufferPosition += value.Length;
                 }
@@ -387,40 +397,39 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryWriteObjectRowSync(object?[] values)
     {
-        // Conservative estimate: each field may need up to MAX_STACK_ALLOC_SIZE chars + quotes
-        // Plus delimiters: values.Length - 1
-        // Plus newline: newLineMemory.Length
-        int estimatedMaxSize = newLineMemory.Length + (values.Length > 0 ? values.Length - 1 : 0);
-
-        // For object values, we estimate each could be MAX_STACK_ALLOC_SIZE + 2 for quotes
-        // This is pessimistic but ensures we don't run out of buffer mid-row
-        estimatedMaxSize += values.Length * (MAX_STACK_ALLOC_SIZE + 2);
-
-        // Check if we have enough buffer space for worst case
-        if (charBufferPosition + estimatedMaxSize > charBuffer.Length)
-        {
-            return false;
-        }
+        // Save position so we can restore on failure
+        int savedPosition = charBufferPosition;
 
         // Write the entire row synchronously
         for (int i = 0; i < values.Length; i++)
         {
             if (i > 0)
             {
+                if (charBufferPosition + 1 > charBuffer.Length)
+                {
+                    charBufferPosition = savedPosition;
+                    return false;
+                }
                 charBuffer[charBufferPosition++] = delimiter;
             }
 
             if (!WriteFormattedValueSync(values[i]))
             {
                 // Value couldn't be written synchronously, fall back to async
-                // Reset buffer position for this row (we'll rewrite from scratch in async path)
+                charBufferPosition = savedPosition;
                 return false;
             }
         }
 
         // Write newline
+        int newLineLen = newLineMemory.Length;
+        if (charBufferPosition + newLineLen > charBuffer.Length)
+        {
+            charBufferPosition = savedPosition;
+            return false;
+        }
         newLineMemory.Span.CopyTo(charBuffer.AsSpan(charBufferPosition));
-        charBufferPosition += newLineMemory.Length;
+        charBufferPosition += newLineLen;
 
         return true;
     }

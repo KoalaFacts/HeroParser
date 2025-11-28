@@ -476,85 +476,32 @@ public sealed class CsvWriterBuilder<T>
         await using var writer = new Streaming.CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
 
-        int rowNumber = 0;
-        int dataRowCount = 0;
-        var maxRows = options.MaxRowCount;
-
-        if (writeHeader && options.WriteHeader)
-        {
-            await WriteHeaderAsync(writer, recordWriter, cancellationToken).ConfigureAwait(false);
-            rowNumber++;
-        }
-
-        await foreach (var record in records.WithCancellation(cancellationToken).ConfigureAwait(false))
-        {
-            rowNumber++;
-            dataRowCount++;
-
-            // Check MaxRowCount before writing
-            if (maxRows.HasValue && dataRowCount > maxRows.Value)
-            {
-                throw new CsvException(
-                    CsvErrorCode.TooManyRows,
-                    $"Exceeded maximum row count of {maxRows.Value}");
-            }
-
-            await WriteRecordAsync(writer, recordWriter, record, cancellationToken).ConfigureAwait(false);
-        }
-
+        // Use the proper async method with compiled accessors (no reflection)
+        await recordWriter.WriteRecordsAsync(writer, records, writeHeader && options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async ValueTask WriteHeaderAsync(Streaming.CsvAsyncStreamWriter writer, CsvRecordWriter<T> recordWriter, CancellationToken cancellationToken)
+    /// <summary>
+    /// Writes records to a stream asynchronously using the true async writer (IEnumerable overload).
+    /// Avoids IAsyncEnumerable overhead for in-memory collections.
+    /// </summary>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="leaveOpen">When true, leaves the stream open after writing.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A ValueTask representing the asynchronous write operation.</returns>
+    public async ValueTask ToStreamAsyncStreaming(Stream stream, IEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
     {
-        // Get header names using reflection from the record writer
-        var accessorsField = recordWriter.GetType().GetField("accessors", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (accessorsField != null)
-        {
-            var accessors = (Array?)accessorsField.GetValue(recordWriter);
-            if (accessors != null)
-            {
-                var headers = new string[accessors.Length];
-                for (int i = 0; i < accessors.Length; i++)
-                {
-                    var accessor = accessors.GetValue(i);
-                    var headerNameProp = accessor?.GetType().GetProperty("HeaderName");
-                    headers[i] = headerNameProp?.GetValue(accessor) as string ?? "";
-                }
-                await writer.WriteRowAsync(headers, cancellationToken).ConfigureAwait(false);
-            }
-        }
-    }
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
 
-    private static async ValueTask WriteRecordAsync(Streaming.CsvAsyncStreamWriter writer, CsvRecordWriter<T> recordWriter, T record, CancellationToken cancellationToken)
-    {
-        if (record is null)
-        {
-            await writer.EndRowAsync(cancellationToken).ConfigureAwait(false);
-            return;
-        }
+        var options = GetOptions();
+        await using var writer = new Streaming.CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
 
-        // Extract values from record using the record writer's accessors
-        var accessorsField = recordWriter.GetType().GetField("accessors", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var valuesBufferField = recordWriter.GetType().GetField("valuesBuffer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-        if (accessorsField != null && valuesBufferField != null)
-        {
-            var accessors = (Array?)accessorsField.GetValue(recordWriter);
-            var valuesBuffer = (object[]?)valuesBufferField.GetValue(recordWriter);
-
-            if (accessors != null && valuesBuffer != null)
-            {
-                for (int i = 0; i < accessors.Length; i++)
-                {
-                    var accessor = accessors.GetValue(i);
-                    var getValueMethod = accessor?.GetType().GetMethod("GetValue");
-                    valuesBuffer[i] = getValueMethod?.Invoke(accessor, [record!])!;
-                }
-
-                await writer.WriteRowAsync(valuesBuffer, cancellationToken).ConfigureAwait(false);
-            }
-        }
+        // Use the proper async method with compiled accessors (no reflection)
+        await recordWriter.WriteRecordsAsync(writer, records, writeHeader && options.WriteHeader, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     #endregion

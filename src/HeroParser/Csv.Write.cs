@@ -121,7 +121,7 @@ public static partial class Csv
         => WriteToText(records, options);
 
     /// <summary>
-    /// Asynchronously writes records to a stream.
+    /// Asynchronously writes records to a stream using IAsyncEnumerable.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="stream">The stream to write to.</param>
@@ -143,8 +143,36 @@ public static partial class Csv
         options ??= CsvWriterOptions.Default;
         encoding ??= Encoding.UTF8;
 
-        await using var textWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
-        await using var writer = new CsvStreamWriter(textWriter, options);
+        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Asynchronously writes records to a stream using IEnumerable (avoids IAsyncEnumerable overhead for in-memory collections).
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
+    /// <param name="leaveOpen">When true, the stream remains open after writing.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async ValueTask WriteToStreamAsync<T>(
+        Stream stream,
+        IEnumerable<T> records,
+        CsvWriterOptions? options = null,
+        Encoding? encoding = null,
+        bool leaveOpen = true,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+        options ??= CsvWriterOptions.Default;
+        encoding ??= Encoding.UTF8;
+
+        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -173,7 +201,7 @@ public static partial class Csv
     }
 
     /// <summary>
-    /// Asynchronously writes records to a file.
+    /// Asynchronously writes records to a file using IAsyncEnumerable.
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="path">The file path to write to.</param>
@@ -200,8 +228,41 @@ public static partial class Csv
             FileShare.None,
             bufferSize: 4096,
             FileOptions.Asynchronous);
-        await using var textWriter = new StreamWriter(stream, encoding);
-        await using var writer = new CsvStreamWriter(textWriter, options);
+        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen: false);
+        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Asynchronously writes records to a file using IEnumerable (avoids IAsyncEnumerable overhead for in-memory collections).
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="path">The file path to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async ValueTask WriteToFileAsync<T>(
+        string path,
+        IEnumerable<T> records,
+        CsvWriterOptions? options = null,
+        Encoding? encoding = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentNullException.ThrowIfNull(records);
+        options ??= CsvWriterOptions.Default;
+        encoding ??= Encoding.UTF8;
+
+        await using var stream = new FileStream(
+            path,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            FileOptions.Asynchronous);
+        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen: false);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);

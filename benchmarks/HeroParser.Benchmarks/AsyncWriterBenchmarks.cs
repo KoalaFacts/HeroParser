@@ -122,6 +122,16 @@ public class AsyncWriterBenchmarks
         await Csv.WriteToStreamAsync(ms, ToAsyncEnumerable(records)).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Async writer using IEnumerable directly (avoids IAsyncEnumerable wrapper overhead)
+    /// </summary>
+    [Benchmark]
+    public async Task AsyncWriter_Records_Direct_MemoryStream()
+    {
+        using var ms = new MemoryStream();
+        await Csv.WriteToStreamAsync(ms, records).ConfigureAwait(false);
+    }
+
     #endregion
 
     #region Sync vs Async - File Writing
@@ -136,6 +146,15 @@ public class AsyncWriterBenchmarks
     public async Task AsyncWriter_Records_File()
     {
         await Csv.WriteToFileAsync(filePath, ToAsyncEnumerable(records)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Async file writer using IEnumerable directly (avoids IAsyncEnumerable wrapper overhead)
+    /// </summary>
+    [Benchmark]
+    public async Task AsyncWriter_Records_Direct_File()
+    {
+        await Csv.WriteToFileAsync(filePath, records).ConfigureAwait(false);
     }
 
     #endregion
@@ -158,6 +177,18 @@ public class AsyncWriterBenchmarks
         await Csv.Write<TestRecord>()
             .WithHeader()
             .ToStreamAsyncStreaming(ms, ToAsyncEnumerable(records)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builder async streaming with IEnumerable directly (avoids IAsyncEnumerable wrapper overhead)
+    /// </summary>
+    [Benchmark]
+    public async Task AsyncBuilder_ToStreamAsyncStreaming_Direct()
+    {
+        using var ms = new MemoryStream();
+        await Csv.Write<TestRecord>()
+            .WithHeader()
+            .ToStreamAsyncStreaming(ms, records).ConfigureAwait(false);
     }
 
     #endregion

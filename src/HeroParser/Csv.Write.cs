@@ -1,4 +1,5 @@
 using HeroParser.SeparatedValues.Writing;
+using HeroParser.SeparatedValues.Streaming;
 using System.Text;
 
 namespace HeroParser;
@@ -204,6 +205,24 @@ public static partial class Csv
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Creates a streaming async CSV writer for direct stream writing.
+    /// </summary>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
+    /// <param name="leaveOpen">When true, the stream remains open after the writer is disposed.</param>
+    /// <returns>A <see cref="CsvAsyncStreamWriter"/> for async CSV writing.</returns>
+    public static CsvAsyncStreamWriter CreateAsyncStreamWriter(
+        Stream stream,
+        CsvWriterOptions? options = null,
+        Encoding? encoding = null,
+        bool leaveOpen = true)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        return new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
     }
 
     /// <summary>

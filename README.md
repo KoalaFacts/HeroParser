@@ -466,10 +466,13 @@ dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --vs-sep-rea
 # Writing: HeroParser vs Sep comparison
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --vs-sep-writing
 
-# Writing: Record serialization benchmarks
+# Writing: All writer benchmarks (sync + async)
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --writer
 
-# Writing: Async vs sync writer comparison
+# Writing: Sync writer benchmarks only
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --sync-writer
+
+# Writing: Async writer benchmarks only
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --async-writer
 
 # Run all configured benchmarks

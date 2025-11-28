@@ -455,6 +455,55 @@ public sealed class CsvWriterBuilder<T>
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Asynchronously writes records directly to a stream using the streaming async writer.
+    /// </summary>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="leaveOpen">When true, leaves the stream open after writing.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A ValueTask representing the asynchronous write operation.</returns>
+    /// <remarks>
+    /// This method uses <see cref="Streaming.CsvAsyncStreamWriter"/> for truly non-blocking I/O.
+    /// Prefer this over <see cref="ToStreamAsync"/> for large datasets or when streaming is critical.
+    /// </remarks>
+    public async ValueTask ToStreamAsyncStreaming(Stream stream, IAsyncEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+
+        var options = GetOptions();
+        await using var writer = new Streaming.CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+
+        // Use the proper async method with compiled accessors (no reflection)
+        await recordWriter.WriteRecordsAsync(writer, records, writeHeader && options.WriteHeader, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes records to a stream asynchronously using the true async writer (IEnumerable overload).
+    /// Avoids IAsyncEnumerable overhead for in-memory collections.
+    /// </summary>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="leaveOpen">When true, leaves the stream open after writing.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A ValueTask representing the asynchronous write operation.</returns>
+    public async ValueTask ToStreamAsyncStreaming(Stream stream, IEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+
+        var options = GetOptions();
+        await using var writer = new Streaming.CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+
+        // Use the proper async method with compiled accessors (no reflection)
+        await recordWriter.WriteRecordsAsync(writer, records, writeHeader && options.WriteHeader, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     #endregion
 
     #region Private Helpers

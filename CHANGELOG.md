@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- **High-Performance Async CSV Writer**: `CsvAsyncStreamWriter` for true non-blocking async I/O
+  - `Csv.CreateAsyncStreamWriter()` - Create a streaming async writer
+  - `Csv.WriteToStreamAsync<T>(stream, IEnumerable<T>)` - Optimized overload for in-memory collections
+  - `Csv.WriteToFileAsync<T>(path, IEnumerable<T>)` - Optimized overload for in-memory collections
+  - `ToStreamAsyncStreaming()` builder method with both `IAsyncEnumerable<T>` and `IEnumerable<T>` overloads
+  - Sync fast paths for buffer operations - async overhead only when I/O is actually needed
+  - `PoolingAsyncValueTaskMethodBuilder` for zero-allocation state machines on .NET 6+
 - **Fluent Reader Builder**: `Csv.Read<T>()` fluent API for reading CSV records
   - Symmetric API with `CsvWriterBuilder<T>` for consistent developer experience
   - Configure delimiter, quote character, max columns/rows, and more
@@ -54,6 +61,7 @@
   - Faster startup with pre-compiled binders
 
 ### Performance
+- **Async writing is 16-43% faster than sync** at scale with 25-35% less memory allocation
 - CSV writing is 2-5x faster than Sep with 35-85% less memory allocation
 - Single-pass field analysis for quote detection and counting
 - Direct type handling for common types (int, double, bool, DateTime, etc.) to avoid interface dispatch

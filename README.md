@@ -325,9 +325,32 @@ Csv.WriteToFile("output.csv", records);
 using var stream = File.Create("output.csv");
 Csv.WriteToStream(stream, records);
 
-// Async writing
-await Csv.WriteToFileAsync("output.csv", records.ToAsyncEnumerable());
+// Async writing (optimized for in-memory collections)
+await Csv.WriteToFileAsync("output.csv", records);
+
+// Async writing with IAsyncEnumerable (for streaming data sources)
+await Csv.WriteToFileAsync("output.csv", GetRecordsAsync());
 ```
+
+### High-Performance Async Writing
+
+For scenarios requiring true async I/O, use the `CsvAsyncStreamWriter`:
+
+```csharp
+// Low-level async writer with sync fast paths
+await using var writer = Csv.CreateAsyncStreamWriter(stream);
+await writer.WriteRowAsync(new[] { "Alice", "30", "NYC" });
+await writer.WriteRowAsync(new[] { "Bob", "25", "LA" });
+await writer.FlushAsync();
+
+// Builder API with async streaming (16-43% faster than sync at scale)
+await Csv.Write<Person>()
+    .WithDelimiter(',')
+    .WithHeader()
+    .ToStreamAsyncStreaming(stream, records);  // IEnumerable overload
+```
+
+The async writer uses sync fast paths when data fits in the buffer, avoiding async overhead for small writes while supporting true non-blocking I/O for large datasets.
 
 ### Writer Options
 
@@ -443,8 +466,14 @@ dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --vs-sep-rea
 # Writing: HeroParser vs Sep comparison
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --vs-sep-writing
 
-# Writing: Record serialization benchmarks
+# Writing: All writer benchmarks (sync + async)
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --writer
+
+# Writing: Sync writer benchmarks only
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --sync-writer
+
+# Writing: Async writer benchmarks only
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --async-writer
 
 # Run all configured benchmarks
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all

@@ -7,6 +7,18 @@ using System.Runtime.Intrinsics.X86;
 namespace HeroParser.SeparatedValues;
 
 /// <summary>
+/// Marker struct for compile-time specialization: track line numbers.
+/// Using generic type parameters allows the JIT to eliminate dead branches.
+/// </summary>
+internal readonly struct TrackLineNumbers { }
+
+/// <summary>
+/// Marker struct for compile-time specialization: skip line number tracking.
+/// Using generic type parameters allows the JIT to eliminate dead branches.
+/// </summary>
+internal readonly struct NoTrackLineNumbers { }
+
+/// <summary>
 /// Unified streaming parser for both UTF-16 (char) and UTF-8 (byte) data.
 /// Uses generic specialization for zero-overhead abstraction.
 ///
@@ -15,12 +27,34 @@ namespace HeroParser.SeparatedValues;
 /// </summary>
 internal static class CsvStreamingParser
 {
+    /// <summary>
+    /// Parses a single row from CSV data (convenience overload with runtime boolean).
+    /// For best performance, use the generic overload with TTrack type parameter directly.
+    /// </summary>
     public static CsvRowParseResult ParseRow<T>(
+        ReadOnlySpan<T> data,
+        CsvParserOptions options,
+        Span<int> columnStarts,
+        Span<int> columnLengths,
+        bool trackLineNumbers)
+        where T : unmanaged, IEquatable<T>
+    {
+        return trackLineNumbers
+            ? ParseRow<T, TrackLineNumbers>(data, options, columnStarts, columnLengths)
+            : ParseRow<T, NoTrackLineNumbers>(data, options, columnStarts, columnLengths);
+    }
+
+    /// <summary>
+    /// Parses a single row from CSV data with compile-time line tracking specialization.
+    /// TTrack should be either TrackLineNumbers or NoTrackLineNumbers.
+    /// </summary>
+    public static CsvRowParseResult ParseRow<T, TTrack>(
         ReadOnlySpan<T> data,
         CsvParserOptions options,
         Span<int> columnStarts,
         Span<int> columnLengths)
         where T : unmanaged, IEquatable<T>
+        where TTrack : struct
     {
         if (data.IsEmpty)
             return new CsvRowParseResult(0, 0, 0, 0);
@@ -62,12 +96,13 @@ internal static class CsvStreamingParser
                     {
                         T lineEnd = Unsafe.Add(ref mutableRef, skipPos);
                         consumed++;
-                        if (lineEnd.Equals(lf))
+                        if (typeof(TTrack) == typeof(TrackLineNumbers) && lineEnd.Equals(lf))
                             commentNewlines++;
                         if (lineEnd.Equals(cr) && skipPos + 1 < data.Length && Unsafe.Add(ref mutableRef, skipPos + 1).Equals(lf))
                         {
                             consumed++;
-                            commentNewlines++; // Count the LF in CRLF
+                            if (typeof(TTrack) == typeof(TrackLineNumbers))
+                                commentNewlines++; // Count the LF in CRLF
                         }
                     }
 
@@ -97,7 +132,7 @@ internal static class CsvStreamingParser
         // SIMD fast path (if enabled and no escape character - escape handling requires sequential processing)
         if (options.UseSimdIfAvailable && !hasEscapeChar)
         {
-            TrySimdParse(
+            TrySimdParse<T, TTrack>(
                 ref mutableRef,
                 data.Length,
                 delimiter,
@@ -176,7 +211,7 @@ internal static class CsvStreamingParser
                 if (enableQuotes && inQuotes)
                 {
                     // Count newlines inside quoted fields
-                    if (c.Equals(lf))
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c.Equals(lf))
                         newlineCount++;
                     continue;
                 }
@@ -190,12 +225,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = i;
                     charsConsumed = i + 1;
-                    if (c.Equals(lf))
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c.Equals(lf))
                         newlineCount++;
                     if (c.Equals(cr) && i + 1 < data.Length && Unsafe.Add(ref mutableRef, i + 1).Equals(lf))
                     {
                         charsConsumed++;
-                        newlineCount++; // Count the LF in CRLF
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++; // Count the LF in CRLF
                     }
                     rowEnded = true;
                     break;
@@ -243,7 +279,7 @@ internal static class CsvStreamingParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TrySimdParse<T>(
+    private static bool TrySimdParse<T, TTrack>(
         ref T mutableRef,
         int dataLength,
         T delimiter,
@@ -267,10 +303,11 @@ internal static class CsvStreamingParser
         bool enableQuotedFields,
         int? maxFieldLength)
         where T : unmanaged, IEquatable<T>
+        where TTrack : struct
     {
         if (typeof(T) == typeof(byte))
         {
-            return TrySimdParseUtf8(
+            return TrySimdParseUtf8<TTrack>(
                 ref Unsafe.As<T, byte>(ref mutableRef),
                 dataLength,
                 Unsafe.As<T, byte>(ref delimiter),
@@ -283,7 +320,7 @@ internal static class CsvStreamingParser
         }
         else if (typeof(T) == typeof(char))
         {
-            return TrySimdParseUtf16(
+            return TrySimdParseUtf16<TTrack>(
                 ref Unsafe.As<T, char>(ref mutableRef),
                 dataLength,
                 Unsafe.As<T, char>(ref delimiter),
@@ -300,7 +337,7 @@ internal static class CsvStreamingParser
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #pragma warning disable IDE0060 // Remove unused parameter - maxFieldLength is checked in scalar fallback
-    private static bool TrySimdParseUtf8(
+    private static bool TrySimdParseUtf8<TTrack>(
         ref byte mutableRef,
         int dataLength,
         byte delimiter,
@@ -323,6 +360,7 @@ internal static class CsvStreamingParser
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
         int? maxFieldLength)
+        where TTrack : struct
 #pragma warning restore IDE0060
     {
         if (!Avx2.IsSupported)
@@ -390,7 +428,7 @@ internal static class CsvStreamingParser
                 if (enableQuotedFields && inQuotes)
                 {
                     // Count newlines inside quoted fields
-                    if (c == lf)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
                         newlineCount++;
                     continue;
                 }
@@ -406,12 +444,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = absolute;
                     charsConsumed = absolute + 1;
-                    if (c == lf)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
                         newlineCount++;
                     if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
                     {
                         charsConsumed++;
-                        newlineCount++; // Count the LF in CRLF
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++; // Count the LF in CRLF
                     }
                     rowEnded = true;
                     return true;
@@ -426,7 +465,7 @@ internal static class CsvStreamingParser
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #pragma warning disable IDE0060 // Remove unused parameter - maxFieldLength is checked in scalar fallback
-    private static bool TrySimdParseUtf16(
+    private static bool TrySimdParseUtf16<TTrack>(
         ref char mutableRef,
         int dataLength,
         char delimiter,
@@ -449,13 +488,14 @@ internal static class CsvStreamingParser
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
         int? maxFieldLength)
+        where TTrack : struct
 #pragma warning restore IDE0060
     {
 #if NET8_0_OR_GREATER
         // Try AVX-512BW first (32 chars per iteration with native 16-bit ops)
         if (Avx512BW.IsSupported)
         {
-            return TrySimdParseUtf16Avx512(
+            return TrySimdParseUtf16Avx512<TTrack>(
                 ref mutableRef, dataLength, delimiter, quote, lf, cr,
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
@@ -467,7 +507,7 @@ internal static class CsvStreamingParser
         if (!Avx2.IsSupported)
             return false;
 
-        return TrySimdParseUtf16Avx2(
+        return TrySimdParseUtf16Avx2<TTrack>(
             ref mutableRef, dataLength, delimiter, quote, lf, cr,
             ref position, ref inQuotes, ref skipNextQuote,
             ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
@@ -475,7 +515,7 @@ internal static class CsvStreamingParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TrySimdParseUtf16Avx2(
+    private static bool TrySimdParseUtf16Avx2<TTrack>(
         ref char mutableRef,
         int dataLength,
         char delimiter,
@@ -498,6 +538,7 @@ internal static class CsvStreamingParser
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
         int? maxFieldLength)
+        where TTrack : struct
     {
         ref ushort ushortRef = ref Unsafe.As<char, ushort>(ref mutableRef);
 
@@ -601,7 +642,7 @@ internal static class CsvStreamingParser
                 if (enableQuotedFields && inQuotes)
                 {
                     // Count newlines inside quoted fields
-                    if (c == lf)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
                         newlineCount++;
                     continue;
                 }
@@ -617,12 +658,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = absolute;
                     charsConsumed = absolute + 1;
-                    if (c == lf)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
                         newlineCount++;
                     if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
                     {
                         charsConsumed++;
-                        newlineCount++; // Count the LF in CRLF
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++; // Count the LF in CRLF
                     }
                     rowEnded = true;
                     return true;
@@ -699,7 +741,7 @@ internal static class CsvStreamingParser
                 if (enableQuotedFields && inQuotes)
                 {
                     // Count newlines inside quoted fields
-                    if (c == lf)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
                         newlineCount++;
                     continue;
                 }
@@ -715,12 +757,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = absolute;
                     charsConsumed = absolute + 1;
-                    if (c == lf)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
                         newlineCount++;
                     if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
                     {
                         charsConsumed++;
-                        newlineCount++; // Count the LF in CRLF
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++; // Count the LF in CRLF
                     }
                     rowEnded = true;
                     return true;
@@ -735,7 +778,7 @@ internal static class CsvStreamingParser
 
 #if NET8_0_OR_GREATER
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TrySimdParseUtf16Avx512(
+    private static bool TrySimdParseUtf16Avx512<TTrack>(
         ref char mutableRef,
         int dataLength,
         char delimiter,
@@ -758,6 +801,7 @@ internal static class CsvStreamingParser
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
         int? maxFieldLength)
+        where TTrack : struct
     {
         ref ushort ushortRef = ref Unsafe.As<char, ushort>(ref mutableRef);
 
@@ -858,7 +902,7 @@ internal static class CsvStreamingParser
                 if (enableQuotedFields && inQuotes)
                 {
                     // Count newlines inside quoted fields
-                    if (c == lf)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
                         newlineCount++;
                     continue;
                 }
@@ -874,12 +918,13 @@ internal static class CsvStreamingParser
                 {
                     rowLength = absolute;
                     charsConsumed = absolute + 1;
-                    if (c == lf)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
                         newlineCount++;
                     if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
                     {
                         charsConsumed++;
-                        newlineCount++; // Count the LF in CRLF
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++; // Count the LF in CRLF
                     }
                     rowEnded = true;
                     return true;
@@ -890,7 +935,7 @@ internal static class CsvStreamingParser
         }
 
         // Handle remaining with AVX2 path
-        return TrySimdParseUtf16Avx2(
+        return TrySimdParseUtf16Avx2<TTrack>(
             ref mutableRef, dataLength, delimiter, quote, lf, cr,
             ref position, ref inQuotes, ref skipNextQuote,
             ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,

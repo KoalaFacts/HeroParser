@@ -11,12 +11,13 @@ public ref struct CsvStreamReader
     private readonly CsvParserOptions options;
     private readonly int[] columnStartsBuffer;
     private readonly int[] columnLengthsBuffer;
+    private readonly bool trackLineNumbers;
     private bool disposed;
     private char[] buffer;
     private int offset;
     private int length;
     private int rowCount;
-    private int sourceLineNumber; // Track source line number (1-based)
+    private int sourceLineNumber; // Track source line number (1-based), only when TrackSourceLineNumbers enabled
     private bool endOfStream;
 #pragma warning disable IDE0032 // Use auto property - can't use auto property here as bytesRead is modified in FillBuffer
     private long bytesRead;
@@ -25,6 +26,7 @@ public ref struct CsvStreamReader
     internal CsvStreamReader(Stream stream, CsvParserOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
         this.options = options;
+        trackLineNumbers = options.TrackSourceLineNumbers;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         // Use dedicated arrays instead of ArrayPool to avoid sharing issues when
         // GetEnumerator() creates a copy that shares the same array references
@@ -64,20 +66,22 @@ public ref struct CsvStreamReader
         while (true)
         {
             var span = buffer.AsSpan(offset, length - offset);
-            int rowStartLine = sourceLineNumber; // Capture line number where row starts
+            int rowStartLine = trackLineNumbers ? sourceLineNumber : 0; // Only capture when tracking enabled
             var result = CsvStreamingParser.ParseRow(
                 span,
                 options,
                 columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount));
+                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount),
+                trackLineNumbers);
 
             if (result.CharsConsumed > 0)
             {
                 var rowChars = span[..result.RowLength];
                 offset += result.CharsConsumed;
 
-                // Update source line number based on newlines encountered
-                sourceLineNumber += result.NewlineCount;
+                // Update source line number based on newlines encountered (only when tracking enabled)
+                if (trackLineNumbers)
+                    sourceLineNumber += result.NewlineCount;
 
                 if (rowChars.IsEmpty)
                     continue;
@@ -89,7 +93,7 @@ public ref struct CsvStreamReader
                     columnLengthsBuffer,
                     result.ColumnCount,
                     rowCount,
-                    rowStartLine); // Pass the line number where the row started
+                    trackLineNumbers ? rowStartLine : rowCount); // Use rowCount as fallback when tracking disabled
                 if (rowCount > options.MaxRowCount)
                 {
                     throw new CsvException(

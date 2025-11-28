@@ -102,6 +102,16 @@ public sealed record CsvParserOptions
     public int? MaxRowSize { get; init; } = 512 * 1024; // 512K chars = ~1MB
 
     /// <summary>
+    /// Gets or sets a value indicating whether source line numbers should be tracked during parsing.
+    /// </summary>
+    /// <remarks>
+    /// When enabled, <see cref="CsvCharSpanRow.SourceLineNumber"/> and <see cref="CsvByteSpanRow.SourceLineNumber"/>
+    /// track the physical line number in the source file (accounting for multi-line quoted fields).
+    /// Disabled by default for maximum performance. Enable when you need accurate line numbers for error reporting.
+    /// </remarks>
+    public bool TrackSourceLineNumbers { get; init; } = false;
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>

@@ -14,14 +14,16 @@ public ref struct CsvByteSpanReader
     private readonly CsvParserOptions options;
     private readonly int[] columnStartsBuffer;
     private readonly int[] columnLengthsBuffer;
+    private readonly bool trackLineNumbers;
     private int position;
     private int rowCount;
-    private int sourceLineNumber; // Track source line number (1-based)
+    private int sourceLineNumber; // Track source line number (1-based), only when TrackSourceLineNumbers enabled
 
     internal CsvByteSpanReader(ReadOnlySpan<byte> utf8, CsvParserOptions options)
     {
         this.utf8 = utf8;
         this.options = options;
+        trackLineNumbers = options.TrackSourceLineNumbers;
         position = 0;
         rowCount = 0;
         sourceLineNumber = 1; // Start at line 1
@@ -53,18 +55,20 @@ public ref struct CsvByteSpanReader
                 return false;
 
             var remaining = utf8[position..];
-            int rowStartLine = sourceLineNumber; // Capture line number where row starts
+            int rowStartLine = trackLineNumbers ? sourceLineNumber : 0; // Only capture when tracking enabled
             var result = CsvStreamingParser.ParseRow(
                 remaining,
                 options,
                 columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount));
+                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount),
+                trackLineNumbers);
 
             if (result.CharsConsumed == 0)
                 return false;
 
-            // Update source line number based on newlines encountered
-            sourceLineNumber += result.NewlineCount;
+            // Update source line number based on newlines encountered (only when tracking enabled)
+            if (trackLineNumbers)
+                sourceLineNumber += result.NewlineCount;
 
             var rowBytes = remaining[..result.RowLength];
             if (rowBytes.IsEmpty)
@@ -80,7 +84,7 @@ public ref struct CsvByteSpanReader
                 columnLengthsBuffer,
                 result.ColumnCount,
                 rowCount,
-                rowStartLine); // Pass the line number where the row started
+                trackLineNumbers ? rowStartLine : rowCount); // Use rowCount as fallback when tracking disabled
 
             position += result.CharsConsumed;
             if (rowCount > options.MaxRowCount)

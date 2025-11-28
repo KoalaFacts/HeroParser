@@ -7,6 +7,7 @@
   - `Csv.CreateAsyncStreamWriter()` - Create a streaming async writer
   - `Csv.WriteToStreamAsync<T>(stream, IEnumerable<T>)` - Optimized overload for in-memory collections
   - `Csv.WriteToFileAsync<T>(path, IEnumerable<T>)` - Optimized overload for in-memory collections
+  - `Csv.WriteToTextAsync<T>(IAsyncEnumerable<T>)` - Write async enumerable sources to a string
   - `ToStreamAsyncStreaming()` builder method with both `IAsyncEnumerable<T>` and `IEnumerable<T>` overloads
   - Sync fast paths for buffer operations - async overhead only when I/O is actually needed
   - `PoolingAsyncValueTaskMethodBuilder` for zero-allocation state machines on .NET 6+

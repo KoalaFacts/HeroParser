@@ -278,7 +278,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     /// types like Money, Address, or other value objects that are not natively supported.
     /// <para>
     /// The converter receives the column value, the culture from <see cref="WithCulture(CultureInfo)"/>, and the format
-    /// string from <see cref="Binding.FixedWidthColumnAttribute.Format"/> if specified.
+    /// string from <see cref="FixedWidthColumnAttribute.Format"/> if specified.
     /// </para>
     /// </remarks>
     /// <example>

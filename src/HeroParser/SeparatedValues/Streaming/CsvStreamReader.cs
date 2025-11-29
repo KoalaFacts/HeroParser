@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 
 namespace HeroParser.SeparatedValues.Streaming;
@@ -7,6 +8,9 @@ namespace HeroParser.SeparatedValues.Streaming;
 /// </summary>
 public ref struct CsvStreamReader
 {
+    // Absolute maximum buffer size (128 MB) to prevent unbounded memory growth even when MaxRowSize is null
+    private const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
+
     private readonly StreamReader reader;
     private readonly CsvParserOptions options;
     private readonly int[] columnStartsBuffer;
@@ -28,9 +32,8 @@ public ref struct CsvStreamReader
         this.options = options;
         trackLineNumbers = options.TrackSourceLineNumbers;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
-        // Use dedicated arrays instead of ArrayPool to avoid sharing issues when
-        // GetEnumerator() creates a copy that shares the same array references
-        buffer = new char[Math.Max(initialBufferSize, 4096)];
+        // Use ArrayPool for buffer to reduce allocations
+        buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
         columnStartsBuffer = new int[options.MaxColumnCount];
         columnLengthsBuffer = new int[options.MaxColumnCount];
         offset = 0;
@@ -126,16 +129,18 @@ public ref struct CsvStreamReader
         if (length == buffer.Length)
         {
             // Check MaxRowSize to prevent unbounded buffer growth (DoS protection)
-            if (options.MaxRowSize.HasValue && buffer.Length >= options.MaxRowSize.Value)
+            int effectiveMaxSize = options.MaxRowSize ?? ABSOLUTE_MAX_BUFFER_SIZE;
+            if (buffer.Length >= effectiveMaxSize)
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
-                    $"Row exceeds maximum size of {options.MaxRowSize.Value:N0} characters. " +
+                    $"Row exceeds maximum size of {effectiveMaxSize:N0} characters. " +
                     "Increase MaxRowSize or ensure rows have proper line endings.");
             }
 
-            var newBuffer = new char[buffer.Length * 2];
+            var newBuffer = ArrayPool<char>.Shared.Rent(buffer.Length * 2);
             buffer.AsSpan(0, length).CopyTo(newBuffer);
+            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = newBuffer;
         }
 
@@ -158,6 +163,9 @@ public ref struct CsvStreamReader
     {
         if (disposed)
             return;
+
+        // Return buffer to pool
+        ArrayPool<char>.Shared.Return(buffer, clearArray: true);
 
         // StreamReader was created with leaveOpen flag, so it handles stream disposal correctly
         reader.Dispose();

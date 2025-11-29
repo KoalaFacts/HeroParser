@@ -8,6 +8,9 @@ namespace HeroParser.SeparatedValues.Streaming;
 /// </summary>
 public sealed class CsvAsyncStreamReader : IAsyncDisposable
 {
+    // Absolute maximum buffer size (128 MB) to prevent unbounded memory growth even when MaxRowSize is null
+    private const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
+
     private readonly StreamReader reader;
     private readonly CsvParserOptions options;
     private readonly int[] columnStartsBuffer;
@@ -143,11 +146,12 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         if (length == buffer.Length)
         {
             // Check MaxRowSize to prevent unbounded buffer growth (DoS protection)
-            if (options.MaxRowSize.HasValue && buffer.Length >= options.MaxRowSize.Value)
+            int effectiveMaxSize = options.MaxRowSize ?? ABSOLUTE_MAX_BUFFER_SIZE;
+            if (buffer.Length >= effectiveMaxSize)
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
-                    $"Row exceeds maximum size of {options.MaxRowSize.Value:N0} characters. " +
+                    $"Row exceeds maximum size of {effectiveMaxSize:N0} characters. " +
                     "Increase MaxRowSize or ensure rows have proper line endings.");
             }
 

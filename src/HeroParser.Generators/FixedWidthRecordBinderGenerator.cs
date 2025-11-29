@@ -641,7 +641,8 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             0 => "Left",
             1 => "Right",
-            2 => "None",
+            2 => "Center",
+            3 => "None",
             _ => "Left"
         };
     }

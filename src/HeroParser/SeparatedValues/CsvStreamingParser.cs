@@ -336,7 +336,6 @@ internal static class CsvStreamingParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0060 // Remove unused parameter - maxFieldLength is checked in scalar fallback
     private static bool TrySimdParseUtf8<TTrack>(
         ref byte mutableRef,
         int dataLength,
@@ -361,7 +360,6 @@ internal static class CsvStreamingParser
         bool enableQuotedFields,
         int? maxFieldLength)
         where TTrack : struct
-#pragma warning restore IDE0060
     {
         if (!Avx2.IsSupported)
             return false;
@@ -464,7 +462,6 @@ internal static class CsvStreamingParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0060 // Remove unused parameter - maxFieldLength is checked in scalar fallback
     private static bool TrySimdParseUtf16<TTrack>(
         ref char mutableRef,
         int dataLength,
@@ -489,7 +486,6 @@ internal static class CsvStreamingParser
         bool enableQuotedFields,
         int? maxFieldLength)
         where TTrack : struct
-#pragma warning restore IDE0060
     {
 #if NET8_0_OR_GREATER
         // Try AVX-512BW first (32 chars per iteration with native 16-bit ops)

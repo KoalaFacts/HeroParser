@@ -449,7 +449,12 @@ public class FixedWidthRecordBindingTests
     public void GenericBuilder_BindsWithDifferentAlignments()
     {
         // Arrange: Left trims trailing, Right trims leading, None keeps all
-        var data = "Hello          World  Padded   ";
+        // Field positions: 0-9 (LeftAligned), 10-19 (RightAligned), 20-29 (NoTrim)
+        // Build string with exact field positions using concatenation:
+        var data = "Hello".PadRight(10) +  // Chars 0-9:   "Hello     "
+                   "World".PadLeft(10) +   // Chars 10-19: "     World"
+                   "  Padded  ";           // Chars 20-29: "  Padded  "
+        Assert.Equal(30, data.Length); // Verify exact length
 
         // Act
         var records = HeroParser.FixedWidth.Read<AlignmentRecord>().FromText(data).ToList();

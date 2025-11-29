@@ -1,10 +1,10 @@
-# HeroParser - A .Net High-Performance CSV Parser & Writer with RFC 4180 Compliance
+# HeroParser - A .Net High-Performance CSV & Fixed-Width Parser
 
 [![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**High-Performance SIMD Parsing & Writing** | RFC 4180 Quote Handling | Zero Allocations
+**High-Performance SIMD CSV Parsing** | **Fixed-Width File Support** | RFC 4180 Quote Handling | Zero Allocations
 
 ## 🚀 Key Features
 
@@ -719,6 +719,257 @@ finally
     reader.Dispose(); // Always dispose!
 }
 ```
+
+## 📁 Fixed-Width File Parsing
+
+HeroParser includes comprehensive support for fixed-width (fixed-length) file parsing and writing, commonly used in legacy systems, mainframe exports, and financial data interchange.
+
+### Basic Reading
+
+```csharp
+// Define record type with column mappings
+[FixedWidthGenerateBinder]
+public class Employee
+{
+    [FixedWidthColumn(Start = 0, Length = 10)]
+    public string Id { get; set; } = "";
+
+    [FixedWidthColumn(Start = 10, Length = 30)]
+    public string Name { get; set; } = "";
+
+    [FixedWidthColumn(Start = 40, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+    public decimal Salary { get; set; }
+}
+
+// Read records with fluent builder
+foreach (var emp in FixedWidth.Read<Employee>().FromFile("employees.dat"))
+{
+    Console.WriteLine($"{emp.Name}: {emp.Salary:C}");
+}
+```
+
+### Reading from Files and Streams
+
+```csharp
+// Read from string
+var records = FixedWidth.Read<Employee>().FromText(data).ToList();
+
+// Read from file
+var records = FixedWidth.Read<Employee>().FromFile("data.dat").ToList();
+
+// Read from stream
+var records = FixedWidth.Read<Employee>().FromStream(stream).ToList();
+
+// Async file reading
+await foreach (var emp in FixedWidth.Read<Employee>().FromFileAsync("data.dat"))
+{
+    Console.WriteLine(emp.Name);
+}
+```
+
+### Manual Row-by-Row Reading
+
+```csharp
+// Configure and read manually without binding to a type
+foreach (var row in FixedWidth.Read()
+    .WithRecordLength(80)
+    .WithDefaultPadChar(' ')
+    .FromFile("legacy.dat"))
+{
+    var id = row.GetField(0, 10).ToString();
+    var name = row.GetField(10, 30).ToString();
+    Console.WriteLine($"{id}: {name}");
+}
+```
+
+### Field Alignment
+
+Fixed-width fields support four alignment modes that control how padding is trimmed:
+
+```csharp
+public class Transaction
+{
+    // Left-aligned: "John      " -> "John" (trims trailing spaces)
+    [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Left)]
+    public string Name { get; set; } = "";
+
+    // Right-aligned: "000012345" -> "12345" (trims leading zeros)
+    [FixedWidthColumn(Start = 10, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+    public int Amount { get; set; }
+
+    // Center-aligned: "  Data  " -> "Data" (trims both sides)
+    [FixedWidthColumn(Start = 20, Length = 10, Alignment = FieldAlignment.Center)]
+    public string Code { get; set; } = "";
+
+    // None: No trimming, raw value preserved
+    [FixedWidthColumn(Start = 30, Length = 10, Alignment = FieldAlignment.None)]
+    public string RawField { get; set; } = "";
+}
+```
+
+### Date/Time Format Strings
+
+```csharp
+public class Record
+{
+    // Parse date with exact format
+    [FixedWidthColumn(Start = 0, Length = 8, Format = "yyyyMMdd")]
+    public DateTime TransactionDate { get; set; }
+
+    // Parse time with exact format
+    [FixedWidthColumn(Start = 8, Length = 6, Format = "HHmmss")]
+    public TimeOnly TransactionTime { get; set; }
+}
+```
+
+### Fluent Builder Options
+
+```csharp
+var records = FixedWidth.Read<Employee>()
+    .WithDefaultPadChar(' ')           // Default padding character
+    .WithDefaultAlignment(FieldAlignment.Left)  // Default field alignment
+    .WithRecordLength(80)              // Fixed record length (vs line-based)
+    .SkipRows(2)                       // Skip header rows
+    .WithCommentCharacter('#')         // Skip comment lines
+    .WithMaxRecords(10_000)            // Limit records (DoS protection)
+    .WithMaxInputSize(50 * 1024 * 1024) // 50 MB max file size
+    .WithCulture("de-DE")              // Culture for parsing
+    .WithNullValues("NULL", "N/A")     // Values treated as null
+    .TrackLineNumbers()                // Enable line number tracking
+    .OnError((ctx, ex) =>              // Error handling
+    {
+        Console.WriteLine($"Error at record {ctx.RecordNumber}: {ex.Message}");
+        return FixedWidthDeserializeErrorAction.SkipRecord;
+    })
+    .FromFile("data.dat")
+    .ToList();
+```
+
+### Validation Attributes
+
+```csharp
+using HeroParser.FixedWidths.Validation;
+
+public class ValidatedRecord
+{
+    [FixedWidthColumn(Start = 0, Length = 10)]
+    [FixedWidthRequired]  // Field cannot be empty/whitespace
+    public string Id { get; set; } = "";
+
+    [FixedWidthColumn(Start = 10, Length = 20)]
+    [FixedWidthStringLength(MinLength = 2, MaxLength = 20)]
+    public string Name { get; set; } = "";
+
+    [FixedWidthColumn(Start = 30, Length = 10)]
+    [FixedWidthRange(Minimum = 0, Maximum = 1000000)]
+    public decimal Amount { get; set; }
+
+    [FixedWidthColumn(Start = 40, Length = 15)]
+    [FixedWidthRegex(@"^\d{3}-\d{3}-\d{4}$", ErrorMessage = "Invalid phone format")]
+    public string Phone { get; set; } = "";
+}
+```
+
+### Writing Fixed-Width Data
+
+```csharp
+// Write records to string
+var text = FixedWidth.WriteToText(employees);
+
+// Write to file
+FixedWidth.WriteToFile("output.dat", employees);
+
+// Write to stream
+FixedWidth.WriteToStream(stream, employees);
+
+// Async writing
+await FixedWidth.WriteToFileAsync("output.dat", employees);
+
+// With options
+await FixedWidth.WriteToFileAsync("output.dat", employees, new FixedWidthWriterOptions
+{
+    NewLine = "\r\n",
+    DefaultPadChar = ' '
+});
+```
+
+### Fluent Writer Builder
+
+```csharp
+// Write with fluent configuration
+var text = FixedWidth.Write<Employee>()
+    .WithPadChar(' ')
+    .AlignLeft()
+    .ToText(employees);
+
+// Write to file
+FixedWidth.Write<Employee>()
+    .WithNewLine("\r\n")
+    .ToFile("output.dat", employees);
+```
+
+### Manual Row-by-Row Writing
+
+```csharp
+using var writer = FixedWidth.Write()
+    .WithPadChar(' ')
+    .CreateFileWriter("output.dat");
+
+// Write header
+writer.WriteField("ID", 10);
+writer.WriteField("NAME", 30);
+writer.WriteField("AMOUNT", 10, FieldAlignment.Right);
+writer.EndRow();
+
+// Write data
+writer.WriteField("001", 10);
+writer.WriteField("Alice", 30);
+writer.WriteField("12345", 10, FieldAlignment.Right, '0');
+writer.EndRow();
+
+writer.Flush();
+```
+
+### Custom Type Converters
+
+```csharp
+var records = FixedWidth.Read<Order>()
+    .RegisterConverter<Money>((value, culture, format, out result) =>
+    {
+        if (decimal.TryParse(value, NumberStyles.Currency, culture, out var amount))
+        {
+            result = new Money(amount);
+            return true;
+        }
+        result = default;
+        return false;
+    })
+    .FromFile("orders.dat")
+    .ToList();
+```
+
+### Source Generator (AOT Support)
+
+For AOT compilation and trimming support, use the `[FixedWidthGenerateBinder]` attribute:
+
+```csharp
+using HeroParser.FixedWidths.Records.Binding;
+
+[FixedWidthGenerateBinder]
+public class Employee
+{
+    [FixedWidthColumn(Start = 0, Length = 10)]
+    public string Id { get; set; } = "";
+
+    [FixedWidthColumn(Start = 10, Length = 30)]
+    public string Name { get; set; } = "";
+}
+```
+
+The source generator creates compile-time binders, enabling:
+- **AOT compatibility** - No runtime reflection
+- **Faster startup** - Binders are pre-compiled
+- **Trimming-safe** - Works with .NET trimming/linking
 
 ## 🏗️ Building
 

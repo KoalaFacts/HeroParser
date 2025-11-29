@@ -3,6 +3,34 @@
 ## Unreleased
 
 ### Added
+- **Fixed-Width File Parsing**: Complete support for fixed-width (fixed-length) file formats
+  - `FixedWidth.Read<T>()` - Fluent builder for reading and deserializing records
+  - `FixedWidth.Read()` - Non-generic builder for manual row-by-row reading
+  - `FixedWidthCharSpanReader` / `FixedWidthByteSpanReader` - Zero-allocation span-based readers
+  - `[FixedWidthColumn]` attribute - Map properties to fixed-position fields with Start, Length, Alignment, PadChar, Format
+  - `FieldAlignment` enum - Left, Right, Center, None alignment modes for proper padding trimming
+  - Line-based or fixed-record-length parsing modes
+  - Comment lines, empty line skipping, row skipping
+  - DoS protection: `MaxRecordCount`, `MaxInputSize` limits
+  - Progress reporting with `IProgress<FixedWidthProgress>`
+  - Custom type converters via `RegisterConverter<T>()`
+  - Null value handling with `WithNullValues()`
+- **Fixed-Width File Writing**: Complete support for fixed-width output
+  - `FixedWidth.Write<T>()` - Fluent builder for writing typed records
+  - `FixedWidth.Write()` - Non-generic builder for manual row-by-row writing
+  - `FixedWidth.WriteToText()`, `WriteToFile()`, `WriteToStream()` - Direct writing methods
+  - `FixedWidth.WriteToFileAsync()`, `WriteToStreamAsync()` - Async writing with IAsyncEnumerable support
+  - `FixedWidthStreamWriter` - Low-level writer for manual field writing
+  - Configurable padding, alignment, and newline options
+- **Fixed-Width Validation Attributes**: Data validation during deserialization
+  - `[FixedWidthRequired]` - Ensure field is not null/empty/whitespace
+  - `[FixedWidthStringLength]` - Validate string length with min/max
+  - `[FixedWidthRange]` - Validate numeric values within range
+  - `[FixedWidthRegex]` - Validate against regular expression pattern
+- **Fixed-Width Source Generator**: AOT-compatible record binding
+  - `[FixedWidthGenerateBinder]` attribute for compile-time binder generation
+  - Reflection-free binding for trimming and AOT scenarios
+  - Source-generated alignment enum handling
 - **Source Line Number Tracking**: Track physical line numbers in source files for debugging and error reporting
   - `CsvRow.LineNumber` - 1-based logical row number (ordinal position in CSV)
   - `CsvRow.SourceLineNumber` - 1-based physical line number in source file (accounts for multi-line quoted fields)
@@ -72,6 +100,11 @@
 - Single-pass field analysis for quote detection and counting
 - Direct type handling for common types (int, double, bool, DateTime, etc.) to avoid interface dispatch
 - Cached options in hot paths for minimal property access overhead
+
+### Fixed
+- **FieldAlignment enum mapping in source generator**: Corrected `FieldAlignment.Center` (value 2) and `FieldAlignment.None` (value 3) mapping that was causing incorrect padding trimming behavior
+- **ArrayPool usage in CsvStreamReader**: Buffer allocation now uses `ArrayPool<char>` for reduced memory pressure
+- **Unbounded buffer growth protection**: Added 128MB absolute limit (`ABSOLUTE_MAX_BUFFER_SIZE`) for DoS protection in stream readers
 
 ## 1.0.0 - 2025-11-20
 - Added configurable RFC compliance options (newlines-in-quotes opt-in, ability to disable quote parsing for speed).

@@ -440,6 +440,54 @@ public sealed class FixedWidthWriterBuilder<T>
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Writes records to a stream asynchronously with streaming semantics.
+    /// </summary>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="records">The async enumerable of records to write.</param>
+    /// <param name="leaveOpen">When true, leaves the stream open after writing.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A ValueTask representing the asynchronous write operation.</returns>
+    /// <remarks>
+    /// This method streams records directly to the output without buffering all records first.
+    /// Prefer this over <see cref="ToStreamAsync(Stream, IAsyncEnumerable{T}, bool, CancellationToken)"/>
+    /// when working with large datasets or when immediate streaming is critical.
+    /// </remarks>
+    public async ValueTask ToStreamAsyncStreaming(Stream stream, IAsyncEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+
+        var options = GetOptions();
+        await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
+        await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes records to a stream asynchronously with streaming semantics (IEnumerable overload).
+    /// Avoids IAsyncEnumerable overhead for in-memory collections.
+    /// </summary>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="leaveOpen">When true, leaves the stream open after writing.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A ValueTask representing the asynchronous write operation.</returns>
+    public async ValueTask ToStreamAsyncStreaming(Stream stream, IEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+
+        var options = GetOptions();
+        await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
+        await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     #endregion
 
     #region Private Helpers

@@ -267,6 +267,32 @@ public static partial class FixedWidth
     public static string SerializeRecords<T>(IEnumerable<T> records, FixedWidthWriterOptions? options = null)
         => WriteToText(records, options);
 
+    /// <summary>
+    /// Asynchronously writes records to fixed-width format and returns the result as a string.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="records">The async enumerable of records to write.</param>
+    /// <param name="options">Optional writer configuration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The fixed-width content as a string.</returns>
+    public static async ValueTask<string> WriteToTextAsync<T>(
+        IAsyncEnumerable<T> records,
+        FixedWidthWriterOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        options ??= FixedWidthWriterOptions.Default;
+        options.Validate();
+
+        await using var stringWriter = new StringWriter();
+        await using var writer = new FixedWidthStreamWriter(stringWriter, options, leaveOpen: true);
+        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        return stringWriter.ToString();
+    }
+
     #endregion
 
     #region Stream Writer Creation

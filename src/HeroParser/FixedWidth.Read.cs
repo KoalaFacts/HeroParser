@@ -3,6 +3,7 @@ using System.Text;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Records;
 using HeroParser.FixedWidths.Records.Binding;
+using HeroParser.FixedWidths.Streaming;
 
 namespace HeroParser;
 
@@ -199,6 +200,60 @@ public static partial class FixedWidth
         using var reader = new StreamReader(stream, encoding, leaveOpen: leaveOpen);
         var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         return new FixedWidthTextSource(text, options);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a fixed-width file without loading the entire payload into memory.
+    /// </summary>
+    /// <param name="path">Filesystem path to the fixed-width file.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthParserOptions.Default"/>.</param>
+    /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
+    public static FixedWidthAsyncStreamReader CreateAsyncStreamReader(
+        string path,
+        FixedWidthParserOptions? options = null,
+        Encoding? encoding = null,
+        int bufferSize = 16 * 1024)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        encoding ??= Encoding.UTF8;
+        options ??= FixedWidthParserOptions.Default;
+        options.Validate();
+
+        var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+        return new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen: false, initialBufferSize: bufferSize);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a <see cref="Stream"/> without loading the entire payload into memory.
+    /// </summary>
+    /// <param name="stream">Readable stream containing fixed-width data.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthParserOptions.Default"/>.</param>
+    /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, the provided <paramref name="stream"/> remains open after parsing.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
+    public static FixedWidthAsyncStreamReader CreateAsyncStreamReader(
+        Stream stream,
+        FixedWidthParserOptions? options = null,
+        Encoding? encoding = null,
+        bool leaveOpen = true,
+        int bufferSize = 16 * 1024)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        encoding ??= Encoding.UTF8;
+        options ??= FixedWidthParserOptions.Default;
+        options.Validate();
+
+        return new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen, initialBufferSize: bufferSize);
     }
 
     /// <summary>

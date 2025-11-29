@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths.Records.Binding;
+using HeroParser.FixedWidths.Streaming;
 using FixedWidthFactory = HeroParser.FixedWidth;
 
 namespace HeroParser.FixedWidths.Records;
@@ -732,6 +733,39 @@ public sealed class FixedWidthReaderBuilder
         using var reader = new StreamReader(stream, encoding, leaveOpen: true);
         var text = reader.ReadToEnd();
         return FromText(text);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a file without loading the entire payload into memory.
+    /// </summary>
+    /// <param name="path">The file path to read from.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
+    /// <remarks>
+    /// Unlike <see cref="FromFile"/>, this method does not load the entire file into memory.
+    /// Use this for large files that need to be processed record-by-record.
+    /// </remarks>
+    public FixedWidthAsyncStreamReader FromFileAsync(string path, int bufferSize = 16 * 1024)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        return FixedWidthFactory.CreateAsyncStreamReader(path, GetOptions(), encoding, bufferSize);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a stream without loading the entire payload into memory.
+    /// </summary>
+    /// <param name="stream">The stream to read from.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, the stream remains open after the reader is disposed.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
+    /// <remarks>
+    /// Unlike <see cref="FromStream"/>, this method does not load the entire stream into memory.
+    /// Use this for large streams that need to be processed record-by-record.
+    /// </remarks>
+    public FixedWidthAsyncStreamReader FromStreamAsync(Stream stream, bool leaveOpen = true, int bufferSize = 16 * 1024)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        return FixedWidthFactory.CreateAsyncStreamReader(stream, GetOptions(), encoding, leaveOpen, bufferSize);
     }
 
     #endregion

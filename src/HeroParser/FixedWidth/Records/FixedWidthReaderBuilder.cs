@@ -21,6 +21,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     private bool skipEmptyLines = true;
     private char? commentCharacter = null;
     private int skipRows = 0;
+    private long? maxInputSize = 100 * 1024 * 1024; // 100 MB default
 
     // Record options
     private CultureInfo culture = CultureInfo.InvariantCulture;
@@ -158,6 +159,18 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
         return this;
     }
 
+    /// <summary>
+    /// Sets the maximum input size in bytes for file and stream operations.
+    /// </summary>
+    /// <param name="maxBytes">The maximum size in bytes, or null to disable the limit.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthReaderBuilder<T> WithMaxInputSize(long? maxBytes)
+    {
+        maxInputSize = maxBytes;
+        InvalidateCache();
+        return this;
+    }
+
     #endregion
 
     #region Record Options
@@ -267,6 +280,10 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
+        var options = GetOptions();
+        var fileInfo = new FileInfo(path);
+        options.ValidateInputSize(fileInfo.Length);
+
         var text = File.ReadAllText(path, encoding);
         return FromText(text);
     }
@@ -279,6 +296,12 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     public IEnumerable<T> FromStream(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
+
+        var options = GetOptions();
+        if (stream.CanSeek)
+        {
+            options.ValidateInputSize(stream.Length);
+        }
 
         using var reader = new StreamReader(stream, encoding, leaveOpen: true);
         var text = reader.ReadToEnd();
@@ -296,6 +319,10 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var options = GetOptions();
+        var fileInfo = new FileInfo(path);
+        options.ValidateInputSize(fileInfo.Length);
 
         var text = await File.ReadAllTextAsync(path, encoding, cancellationToken).ConfigureAwait(false);
         foreach (var record in FromText(text))
@@ -317,6 +344,12 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     {
         ArgumentNullException.ThrowIfNull(stream);
 
+        var options = GetOptions();
+        if (stream.CanSeek)
+        {
+            options.ValidateInputSize(stream.Length);
+        }
+
         using var reader = new StreamReader(stream, encoding, leaveOpen: true);
         var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         foreach (var record in FromText(text))
@@ -330,9 +363,9 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     /// Iterates over records from fixed-width text using a callback, reusing a single instance for minimal allocation.
     /// </summary>
     /// <remarks>
-    /// This method uses object reuse to minimize allocations. The same record instance is passed to each callback invocation.
-    /// Do not store the record instance directly - copy any needed values within the callback.
-    /// String properties will still allocate new strings for each row.
+    /// <para><b>IMPORTANT:</b> This method uses object reuse to minimize allocations. The same record instance is passed to each callback invocation.
+    /// Do not store the record instance directly - copy any needed values within the callback.</para>
+    /// <para>String properties will still allocate new strings for each row.</para>
     /// </remarks>
     /// <param name="text">The fixed-width content to parse.</param>
     /// <param name="callback">The callback to invoke for each record.</param>
@@ -350,9 +383,9 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     /// Iterates over records from a file using a callback, reusing a single instance for minimal allocation.
     /// </summary>
     /// <remarks>
-    /// This method uses object reuse to minimize allocations. The same record instance is passed to each callback invocation.
-    /// Do not store the record instance directly - copy any needed values within the callback.
-    /// String properties will still allocate new strings for each row.
+    /// <para><b>IMPORTANT:</b> This method uses object reuse to minimize allocations. The same record instance is passed to each callback invocation.
+    /// Do not store the record instance directly - copy any needed values within the callback.</para>
+    /// <para>String properties will still allocate new strings for each row.</para>
     /// </remarks>
     /// <param name="path">The file path to read from.</param>
     /// <param name="callback">The callback to invoke for each record.</param>
@@ -360,6 +393,10 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(callback);
+
+        var options = GetOptions();
+        var fileInfo = new FileInfo(path);
+        options.ValidateInputSize(fileInfo.Length);
 
         var text = File.ReadAllText(path, encoding);
         ForEachFromText(text, callback);
@@ -386,7 +423,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
             TrackSourceLineNumbers = trackSourceLineNumbers,
             SkipEmptyLines = skipEmptyLines,
             CommentCharacter = commentCharacter,
-            SkipRows = skipRows
+            SkipRows = skipRows,
+            MaxInputSize = maxInputSize
         };
     }
 
@@ -408,6 +446,7 @@ public sealed class FixedWidthReaderBuilder
     private bool skipEmptyLines = true;
     private char? commentCharacter = null;
     private int skipRows = 0;
+    private long? maxInputSize = 100 * 1024 * 1024; // 100 MB default
 
     // Encoding for file/stream operations
     private Encoding encoding = Encoding.UTF8;
@@ -538,6 +577,18 @@ public sealed class FixedWidthReaderBuilder
     }
 
     /// <summary>
+    /// Sets the maximum input size in bytes for file and stream operations.
+    /// </summary>
+    /// <param name="maxBytes">The maximum size in bytes, or null to disable the limit.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthReaderBuilder WithMaxInputSize(long? maxBytes)
+    {
+        maxInputSize = maxBytes;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
     /// Sets the encoding for file and stream operations.
     /// </summary>
     /// <param name="encoding">The encoding to use.</param>
@@ -575,6 +626,11 @@ public sealed class FixedWidthReaderBuilder
     public FixedWidthCharSpanReader FromFile(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var options = GetOptions();
+        var fileInfo = new FileInfo(path);
+        options.ValidateInputSize(fileInfo.Length);
+
         var text = File.ReadAllText(path, encoding);
         return FromText(text);
     }
@@ -591,6 +647,13 @@ public sealed class FixedWidthReaderBuilder
     public FixedWidthCharSpanReader FromStream(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
+
+        var options = GetOptions();
+        if (stream.CanSeek)
+        {
+            options.ValidateInputSize(stream.Length);
+        }
+
         using var reader = new StreamReader(stream, encoding, leaveOpen: true);
         var text = reader.ReadToEnd();
         return FromText(text);
@@ -617,7 +680,8 @@ public sealed class FixedWidthReaderBuilder
             TrackSourceLineNumbers = trackSourceLineNumbers,
             SkipEmptyLines = skipEmptyLines,
             CommentCharacter = commentCharacter,
-            SkipRows = skipRows
+            SkipRows = skipRows,
+            MaxInputSize = maxInputSize
         };
     }
 
@@ -631,17 +695,6 @@ public readonly record struct FixedWidthProgress
 {
     /// <summary>Gets the number of records processed so far.</summary>
     public int RecordsProcessed { get; init; }
-
-    /// <summary>Gets the number of bytes processed so far (if available).</summary>
-    public long BytesProcessed { get; init; }
-
-    /// <summary>Gets the total bytes to process (if known).</summary>
-    public long? TotalBytes { get; init; }
-
-    /// <summary>Gets the percentage complete (0-100, if total is known).</summary>
-    public double? PercentComplete => TotalBytes.HasValue && TotalBytes.Value > 0
-        ? (double)BytesProcessed / TotalBytes.Value * 100
-        : null;
 }
 
 /// <summary>

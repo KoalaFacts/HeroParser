@@ -78,6 +78,11 @@ public static partial class FixedWidth
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
+        options ??= FixedWidthParserOptions.Default;
+
+        // Check file size before reading
+        var fileInfo = new FileInfo(path);
+        options.ValidateInputSize(fileInfo.Length);
 
         var text = File.ReadAllText(path, encoding);
         return ReadFromText(text, options);
@@ -98,6 +103,13 @@ public static partial class FixedWidth
     {
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
+        options ??= FixedWidthParserOptions.Default;
+
+        // Check stream size before reading (if seekable)
+        if (stream.CanSeek)
+        {
+            options.ValidateInputSize(stream.Length);
+        }
 
         using var reader = new StreamReader(stream, encoding, leaveOpen: leaveOpen);
         var text = reader.ReadToEnd();
@@ -124,6 +136,10 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthParserOptions.Default;
         options.Validate();
+
+        // Check file size before reading
+        var fileInfo = new FileInfo(path);
+        options.ValidateInputSize(fileInfo.Length);
 
         var text = await File.ReadAllTextAsync(path, encoding, cancellationToken).ConfigureAwait(false);
         return new FixedWidthTextSource(text, options);
@@ -152,6 +168,12 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthParserOptions.Default;
         options.Validate();
+
+        // Check stream size before reading (if seekable)
+        if (stream.CanSeek)
+        {
+            options.ValidateInputSize(stream.Length);
+        }
 
         using var reader = new StreamReader(stream, encoding, leaveOpen: leaveOpen);
         var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);

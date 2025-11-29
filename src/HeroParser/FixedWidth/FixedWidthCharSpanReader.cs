@@ -211,14 +211,7 @@ public ref struct FixedWidthCharSpanReader
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int FindLineEnd(ReadOnlySpan<char> span)
-    {
-        for (int i = 0; i < span.Length; i++)
-        {
-            if (span[i] == '\n' || span[i] == '\r')
-                return i;
-        }
-        return -1;
-    }
+        => span.IndexOfAny('\r', '\n');
 
     private static int CountNewlines(ReadOnlySpan<char> span)
     {

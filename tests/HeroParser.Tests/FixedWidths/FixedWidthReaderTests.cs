@@ -1,7 +1,7 @@
 using HeroParser.FixedWidths;
 using Xunit;
 
-namespace HeroParser.Tests.FixedWidth;
+namespace HeroParser.Tests.FixedWidths;
 
 public class FixedWidthReaderTests
 {
@@ -17,7 +17,7 @@ public class FixedWidthReaderTests
 
         // Act
         var records = new List<(string Id, string Name, string Amount)>();
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             // GetField trims by default (Left alignment trims trailing spaces)
             var id = row.GetField(0, 10).ToString();
@@ -42,7 +42,7 @@ public class FixedWidthReaderTests
         // Act
         string name = "";
         string amount = "";
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             // Left-aligned field (text) - trim trailing spaces
             name = row.GetField(10, 20, ' ', FieldAlignment.Left).ToString();
@@ -64,7 +64,7 @@ public class FixedWidthReaderTests
 
         // Act
         string rawName = "";
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             // GetRawField returns the field without any trimming
             rawName = row.GetRawField(10, 20).ToString();
@@ -86,7 +86,7 @@ public class FixedWidthReaderTests
 
         // Act
         var records = new List<string>();
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data, options))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             records.Add(row.RawRecord.ToString());
         }
@@ -109,7 +109,7 @@ public class FixedWidthReaderTests
 
         // Act
         var count = 0;
-        foreach (var _ in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var _ in FixedWidth.ReadFromText(data))
         {
             count++;
         }
@@ -132,7 +132,7 @@ public class FixedWidthReaderTests
 
         // Act
         var lineNumbers = new List<int>();
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data, options))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             lineNumbers.Add(row.SourceLineNumber);
         }
@@ -149,7 +149,7 @@ public class FixedWidthReaderTests
 
         // Act
         FixedWidthCharSpanColumn field = default;
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             field = row.GetField(100, 10); // Beyond the record length
             break;
@@ -168,7 +168,7 @@ public class FixedWidthReaderTests
 
         // Act
         string fieldValue = "";
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             fieldValue = row.GetField(0, 100).ToString(); // Request more than available
             break;
@@ -187,7 +187,7 @@ public class FixedWidthReaderTests
         // Act
         bool success = false;
         int result = 0;
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             var column = row.GetField(0, 10, '0', FieldAlignment.Right);
             success = column.TryParseInt32(out result);
@@ -208,7 +208,7 @@ public class FixedWidthReaderTests
         // Act
         bool success = false;
         decimal result = 0;
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             var column = row.GetField(0, 11, '0', FieldAlignment.Right);
             success = column.TryParseDecimal(out result);
@@ -229,7 +229,7 @@ public class FixedWidthReaderTests
         // Act
         bool success = false;
         DateTime result = default;
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             var column = row.GetField(0, 8);
             success = column.TryParseDateTime(out result, "yyyyMMdd");
@@ -249,7 +249,7 @@ public class FixedWidthReaderTests
 
         // Act
         ImmutableFixedWidthRow? immutableRow = null;
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data))
         {
             immutableRow = row.ToImmutable();
         }
@@ -275,7 +275,7 @@ public class FixedWidthReaderTests
         // Act & Assert
         var ex = Assert.Throws<FixedWidthException>(() =>
         {
-            foreach (var _ in HeroParser.FixedWidth.ReadFromText(data, options))
+            foreach (var _ in FixedWidth.ReadFromText(data, options))
             {
                 // Iterate through all
             }
@@ -300,7 +300,7 @@ public class FixedWidthReaderTests
 
         // Act
         var records = new List<string>();
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data, options))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             records.Add(row.RawRecord.ToString());
         }
@@ -331,7 +331,7 @@ public class FixedWidthReaderTests
 
         // Act
         var lineNumbers = new List<int>();
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data, options))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             lineNumbers.Add(row.SourceLineNumber);
         }
@@ -356,7 +356,7 @@ public class FixedWidthReaderTests
 
         // Act
         var records = new List<string>();
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data, options))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             records.Add(row.RawRecord.ToString());
         }
@@ -387,7 +387,7 @@ public class FixedWidthReaderTests
 
         // Act
         var lineNumbers = new List<int>();
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data, options))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             lineNumbers.Add(row.SourceLineNumber);
         }
@@ -416,7 +416,7 @@ public class FixedWidthReaderTests
 
         // Act
         var records = new List<string>();
-        foreach (var row in HeroParser.FixedWidth.ReadFromText(data, options))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             records.Add(row.RawRecord.ToString());
         }
@@ -439,7 +439,7 @@ public class FixedWidthReaderTests
 
         // Act
         var records = new List<string>();
-        foreach (var row in HeroParser.FixedWidth.Read()
+        foreach (var row in FixedWidth.Read()
             .WithCommentCharacter('#')
             .FromText(data))
         {
@@ -464,7 +464,7 @@ public class FixedWidthReaderTests
 
         // Act
         var records = new List<string>();
-        foreach (var row in HeroParser.FixedWidth.Read()
+        foreach (var row in FixedWidth.Read()
             .SkipRows(1)
             .FromText(data))
         {

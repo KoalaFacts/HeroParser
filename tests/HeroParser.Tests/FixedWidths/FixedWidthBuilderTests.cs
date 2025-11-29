@@ -3,7 +3,7 @@ using HeroParser.FixedWidths.Records;
 using HeroParser.FixedWidths.Records.Binding;
 using Xunit;
 
-namespace HeroParser.Tests.FixedWidth;
+namespace HeroParser.Tests.FixedWidths;
 
 /// <summary>
 /// Simple synchronous progress reporter for testing.
@@ -23,7 +23,7 @@ public class FixedWidthBuilderTests
 
         // Act
         var records = new List<string>();
-        foreach (var row in HeroParser.FixedWidth.Read().FromText(data))
+        foreach (var row in FixedWidth.Read().FromText(data))
         {
             records.Add(row.RawRecord.ToString());
         }
@@ -43,7 +43,7 @@ public class FixedWidthBuilderTests
 
         // Act
         var records = new List<string>();
-        foreach (var row in HeroParser.FixedWidth.Read()
+        foreach (var row in FixedWidth.Read()
             .WithRecordLength(10)
             .FromText(data))
         {
@@ -65,7 +65,7 @@ public class FixedWidthBuilderTests
 
         // Act
         string trimmed = "";
-        foreach (var row in HeroParser.FixedWidth.Read()
+        foreach (var row in FixedWidth.Read()
             .WithDefaultPadChar('*')
             .WithDefaultAlignment(FieldAlignment.Left)
             .FromText(data))
@@ -86,7 +86,7 @@ public class FixedWidthBuilderTests
 
         // Act
         var lineNumbers = new List<int>();
-        foreach (var row in HeroParser.FixedWidth.Read()
+        foreach (var row in FixedWidth.Read()
             .TrackLineNumbers()
             .FromText(data))
         {
@@ -105,7 +105,7 @@ public class FixedWidthBuilderTests
 
         // Act
         var count = 0;
-        foreach (var _ in HeroParser.FixedWidth.Read()
+        foreach (var _ in FixedWidth.Read()
             .SkipEmptyLines()
             .FromText(data))
         {
@@ -124,7 +124,7 @@ public class FixedWidthBuilderTests
 
         // Act
         var count = 0;
-        foreach (var _ in HeroParser.FixedWidth.Read()
+        foreach (var _ in FixedWidth.Read()
             .IncludeEmptyLines()
             .FromText(data))
         {
@@ -144,7 +144,7 @@ public class FixedWidthBuilderTests
         // Act & Assert
         var ex = Assert.Throws<FixedWidthException>(() =>
         {
-            foreach (var _ in HeroParser.FixedWidth.Read()
+            foreach (var _ in FixedWidth.Read()
                 .WithMaxRecords(3)
                 .FromText(data))
             {
@@ -180,7 +180,7 @@ public class FixedWidthRecordBindingTests
             "0000000002Jane Smith          0000067890";
 
         // Act
-        var employees = HeroParser.FixedWidth.Read<Employee>().FromText(data).ToList();
+        var employees = FixedWidth.Read<Employee>().FromText(data).ToList();
 
         // Assert
         Assert.Equal(2, employees.Count);
@@ -214,7 +214,7 @@ public class FixedWidthRecordBindingTests
         var data = "00123202312251";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<TypedRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<TypedRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -240,7 +240,7 @@ public class FixedWidthRecordBindingTests
     public void GenericBuilder_BindsBooleanVariations(string input, bool expected)
     {
         // Act
-        var records = HeroParser.FixedWidth.Read<BooleanRecord>().FromText(input).ToList();
+        var records = FixedWidth.Read<BooleanRecord>().FromText(input).ToList();
 
         // Assert
         Assert.Single(records);
@@ -261,7 +261,7 @@ public class FixedWidthRecordBindingTests
         var data = "     ";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullableRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<NullableRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -275,7 +275,7 @@ public class FixedWidthRecordBindingTests
         var data = "  123";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullableRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<NullableRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -298,7 +298,7 @@ public class FixedWidthRecordBindingTests
     public void GenericBuilder_BindsEnumFields(string input, Status expected)
     {
         // Act
-        var records = HeroParser.FixedWidth.Read<EnumRecord>().FromText(input).ToList();
+        var records = FixedWidth.Read<EnumRecord>().FromText(input).ToList();
 
         // Assert
         Assert.Single(records);
@@ -313,7 +313,7 @@ public class FixedWidthRecordBindingTests
         var skippedCount = 0;
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullableRecord>()
+        var records = FixedWidth.Read<NullableRecord>()
             .OnError((ctx, ex) =>
             {
                 skippedCount++;
@@ -337,7 +337,7 @@ public class FixedWidthRecordBindingTests
 
         // Act & Assert
         var ex = Assert.Throws<FixedWidthException>(() =>
-            HeroParser.FixedWidth.Read<NullableRecord>().FromText(data).ToList());
+            FixedWidth.Read<NullableRecord>().FromText(data).ToList());
 
         Assert.Equal(FixedWidthErrorCode.ParseError, ex.ErrorCode);
         Assert.Contains("NullableInt", ex.Message);
@@ -370,7 +370,7 @@ public class FixedWidthRecordBindingTests
         var data = "1234567890  123255   3.14159   2.71828";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NumericTypesRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<NumericTypesRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -401,7 +401,7 @@ public class FixedWidthRecordBindingTests
         var data = "2023-12-2514:30:452023-12-25T14:30:45+05:00";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<DateTypesRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<DateTypesRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -425,7 +425,7 @@ public class FixedWidthRecordBindingTests
         var data = "12345678-1234-1234-1234-123456789abc";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<GuidRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<GuidRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -457,7 +457,7 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(30, data.Length); // Verify exact length
 
         // Act
-        var records = HeroParser.FixedWidth.Read<AlignmentRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<AlignmentRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -486,7 +486,7 @@ public class FixedWidthRecordBindingTests
         var data = new string(' ', 56);
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullableTypesRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<NullableTypesRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -503,7 +503,7 @@ public class FixedWidthRecordBindingTests
         var data = "123456789 2023-12-2512345678-1234-1234-1234-123456789abc";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullableTypesRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<NullableTypesRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -519,7 +519,7 @@ public class FixedWidthRecordBindingTests
     public void GenericBuilder_BindsEnumByNumericValue(string input, Status expected)
     {
         // Act
-        var records = HeroParser.FixedWidth.Read<EnumRecord>().FromText(input).ToList();
+        var records = FixedWidth.Read<EnumRecord>().FromText(input).ToList();
 
         // Assert
         Assert.Single(records);
@@ -543,7 +543,7 @@ public class FixedWidthRecordBindingTests
         var data = "Hello*****0000000123";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<CustomPadCharRecord>().FromText(data).ToList();
+        var records = FixedWidth.Read<CustomPadCharRecord>().FromText(data).ToList();
 
         // Assert
         Assert.Single(records);
@@ -570,7 +570,7 @@ public class FixedWidthRecordBindingTests
         var data = "N/A       0000000123";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullValueTestRecord>()
+        var records = FixedWidth.Read<NullValueTestRecord>()
             .WithNullValues("N/A", "NULL")
             .FromText(data)
             .ToList();
@@ -588,7 +588,7 @@ public class FixedWidthRecordBindingTests
         var data = "Value     NULL      ";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullValueTestRecord>()
+        var records = FixedWidth.Read<NullValueTestRecord>()
             .WithNullValues("NULL")
             .FromText(data)
             .ToList();
@@ -611,7 +611,7 @@ public class FixedWidthRecordBindingTests
             """;
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullValueTestRecord>()
+        var records = FixedWidth.Read<NullValueTestRecord>()
             .WithNullValues("N/A", "NULL", "-")
             .FromText(data)
             .ToList();
@@ -631,7 +631,7 @@ public class FixedWidthRecordBindingTests
         var data = "null      0000000001";
 
         // Act
-        var records = HeroParser.FixedWidth.Read<NullValueTestRecord>()
+        var records = FixedWidth.Read<NullValueTestRecord>()
             .WithNullValues("NULL")
             .FromText(data)
             .ToList();
@@ -668,7 +668,7 @@ public class FixedWidthRecordBindingTests
         var progress = new TestProgress<FixedWidthProgress>(progressReports.Add);
 
         // Act
-        var records = HeroParser.FixedWidth.Read<SimpleRecord>()
+        var records = FixedWidth.Read<SimpleRecord>()
             .WithProgress(progress, intervalRows: 2)
             .FromText(data)
             .ToList();
@@ -696,7 +696,7 @@ public class FixedWidthRecordBindingTests
         var progress = new TestProgress<FixedWidthProgress>(progressReports.Add);
 
         // Act
-        var records = HeroParser.FixedWidth.Read<SimpleRecord>()
+        var records = FixedWidth.Read<SimpleRecord>()
             .WithProgress(progress, intervalRows: 10)
             .FromText(data)
             .ToList();
@@ -718,7 +718,7 @@ public class FixedWidthRecordBindingTests
         var progress = new TestProgress<FixedWidthProgress>(progressReports.Add);
 
         // Act
-        var records = HeroParser.FixedWidth.Read<SimpleRecord>()
+        var records = FixedWidth.Read<SimpleRecord>()
             .WithProgress(progress) // Uses default interval of 1000
             .FromText(data)
             .ToList();
@@ -742,7 +742,7 @@ public class FixedWidthRecordBindingTests
 
         // Act
         var employees = new List<(string Id, string Name, decimal Salary)>();
-        HeroParser.FixedWidth.Read<Employee>().ForEachFromText(data, record =>
+        FixedWidth.Read<Employee>().ForEachFromText(data, record =>
         {
             // Copy values since the same instance is reused
             employees.Add((record.Id, record.Name, record.Salary));
@@ -770,7 +770,7 @@ public class FixedWidthRecordBindingTests
         Employee? capturedInstance = null;
         var instancesSeen = new HashSet<Employee>(ReferenceEqualityComparer.Instance);
 
-        HeroParser.FixedWidth.Read<Employee>().ForEachFromText(data, record =>
+        FixedWidth.Read<Employee>().ForEachFromText(data, record =>
         {
             capturedInstance ??= record;
             instancesSeen.Add(record);
@@ -791,7 +791,7 @@ public class FixedWidthRecordBindingTests
 
         // Act
         var totalSalary = 0m;
-        HeroParser.FixedWidth.Read<Employee>().ForEachFromText(data, record =>
+        FixedWidth.Read<Employee>().ForEachFromText(data, record =>
         {
             totalSalary += record.Salary;
         });

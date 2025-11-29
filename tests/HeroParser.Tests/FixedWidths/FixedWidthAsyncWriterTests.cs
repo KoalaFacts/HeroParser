@@ -4,7 +4,7 @@ using HeroParser.FixedWidths.Writing;
 using System.Text;
 using Xunit;
 
-namespace HeroParser.Tests.FixedWidth;
+namespace HeroParser.Tests.FixedWidths;
 
 /// <summary>
 /// Tests for async fixed-width writer functionality.
@@ -43,7 +43,7 @@ public class FixedWidthAsyncWriterTests
 
         try
         {
-            await HeroParser.FixedWidth.WriteToFileAsync(tempPath, records, cancellationToken: TestContext.Current.CancellationToken);
+            await FixedWidth.WriteToFileAsync(tempPath, records, cancellationToken: TestContext.Current.CancellationToken);
 
             var content = await File.ReadAllTextAsync(tempPath, TestContext.Current.CancellationToken);
 
@@ -76,7 +76,7 @@ public class FixedWidthAsyncWriterTests
 
         try
         {
-            await HeroParser.FixedWidth.WriteToFileAsync(tempPath, records, cancellationToken: TestContext.Current.CancellationToken);
+            await FixedWidth.WriteToFileAsync(tempPath, records, cancellationToken: TestContext.Current.CancellationToken);
 
             var content = await File.ReadAllTextAsync(tempPath, TestContext.Current.CancellationToken);
 
@@ -110,7 +110,7 @@ public class FixedWidthAsyncWriterTests
         };
 
         using var ms = new MemoryStream();
-        await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+        await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
 
         ms.Position = 0;
         using var reader = new StreamReader(ms);
@@ -130,7 +130,7 @@ public class FixedWidthAsyncWriterTests
         ]);
 
         using var ms = new MemoryStream();
-        await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+        await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
 
         ms.Position = 0;
         using var reader = new StreamReader(ms);
@@ -159,7 +159,7 @@ public class FixedWidthAsyncWriterTests
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
             {
-                await HeroParser.FixedWidth.WriteToFileAsync(tempPath, records, cancellationToken: cts.Token);
+                await FixedWidth.WriteToFileAsync(tempPath, records, cancellationToken: cts.Token);
             });
         }
         finally
@@ -183,7 +183,7 @@ public class FixedWidthAsyncWriterTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
-            await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: cts.Token);
+            await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: cts.Token);
         });
     }
 
@@ -200,7 +200,7 @@ public class FixedWidthAsyncWriterTests
 
         using var ms = new MemoryStream();
 
-        await HeroParser.FixedWidth.WriteToStreamAsync(
+        await FixedWidth.WriteToStreamAsync(
             ms,
             records,
             leaveOpen: true,
@@ -232,7 +232,7 @@ public class FixedWidthAsyncWriterTests
         var options = new FixedWidthWriterOptions { NewLine = "\n" };
 
         using var ms = new MemoryStream();
-        await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, options, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+        await FixedWidth.WriteToStreamAsync(ms, records, options, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
 
         ms.Position = 0;
         using var reader = new StreamReader(ms);
@@ -256,7 +256,7 @@ public class FixedWidthAsyncWriterTests
 
         await Assert.ThrowsAsync<FixedWidthException>(async () =>
         {
-            await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, options, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+            await FixedWidth.WriteToStreamAsync(ms, records, options, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
         });
     }
 
@@ -276,7 +276,7 @@ public class FixedWidthAsyncWriterTests
 
         try
         {
-            await HeroParser.FixedWidth.Write<TestRecord>()
+            await FixedWidth.Write<TestRecord>()
                 .WithPadChar(' ')
                 .ToFileAsync(tempPath, records, TestContext.Current.CancellationToken);
 
@@ -304,7 +304,7 @@ public class FixedWidthAsyncWriterTests
         ]);
 
         using var ms = new MemoryStream();
-        await HeroParser.FixedWidth.Write<TestRecord>()
+        await FixedWidth.Write<TestRecord>()
             .WithPadChar(' ')
             .ToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -328,7 +328,7 @@ public class FixedWidthAsyncWriterTests
         var records = Array.Empty<TestRecord>();
 
         using var ms = new MemoryStream();
-        await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+        await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
 
         // May contain BOM or preamble bytes, but no actual record data
         ms.Position = 0;
@@ -348,7 +348,7 @@ public class FixedWidthAsyncWriterTests
         };
 
         using var ms = new MemoryStream();
-        await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+        await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
 
         ms.Position = 0;
         using var reader = new StreamReader(ms, Encoding.UTF8);
@@ -368,7 +368,7 @@ public class FixedWidthAsyncWriterTests
         };
 
         using var ms = new MemoryStream();
-        await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+        await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
 
         // Should not throw
         Assert.True(ms.Length > 0);
@@ -384,9 +384,143 @@ public class FixedWidthAsyncWriterTests
         };
 
         var ms = new MemoryStream();
-        await HeroParser.FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
+        await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Stream should be disposed
+        Assert.False(ms.CanRead);
+        Assert.False(ms.CanWrite);
+    }
+
+    #endregion
+
+    #region WriteToTextAsync Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToTextAsync_IAsyncEnumerable_ReturnsCorrectString()
+    {
+        var records = ToAsyncEnumerable([
+            new TestRecord { Name = "Alice", Age = 30, City = "NYC" },
+            new TestRecord { Name = "Bob", Age = 25, City = "LA" }
+        ]);
+
+        var result = await FixedWidth.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Contains("Alice", result);
+        Assert.Contains("00030", result);
+        Assert.Contains("Bob", result);
+        Assert.Contains("00025", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToTextAsync_EmptyRecords_ReturnsEmptyString()
+    {
+        var records = ToAsyncEnumerable(Array.Empty<TestRecord>());
+
+        var result = await FixedWidth.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(string.IsNullOrEmpty(result));
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToTextAsync_WithOptions_AppliesOptions()
+    {
+        var records = ToAsyncEnumerable([
+            new TestRecord { Name = "Test", Age = 1, City = "City" }
+        ]);
+
+        var options = new FixedWidthWriterOptions { NewLine = "\n" };
+        var result = await FixedWidth.WriteToTextAsync(records, options, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("\r\n", result);
+        Assert.Contains("Test", result);
+    }
+
+    #endregion
+
+    #region ToStreamAsyncStreaming Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToStreamAsyncStreaming_IAsyncEnumerable_WritesCorrectly()
+    {
+        var records = ToAsyncEnumerable([
+            new TestRecord { Name = "Streaming1", Age = 10, City = "City1" },
+            new TestRecord { Name = "Streaming2", Age = 20, City = "City2" }
+        ]);
+
+        using var ms = new MemoryStream();
+        await FixedWidth.Write<TestRecord>()
+            .ToStreamAsyncStreaming(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var content = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("Streaming1", content);
+        Assert.Contains("00010", content);
+        Assert.Contains("Streaming2", content);
+        Assert.Contains("00020", content);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToStreamAsyncStreaming_IEnumerable_WritesCorrectly()
+    {
+        var records = new[]
+        {
+            new TestRecord { Name = "DirectStream1", Age = 15, City = "TestCity1" },
+            new TestRecord { Name = "DirectStream2", Age = 25, City = "TestCity2" }
+        };
+
+        using var ms = new MemoryStream();
+        await FixedWidth.Write<TestRecord>()
+            .ToStreamAsyncStreaming(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var content = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("DirectStream1", content);
+        Assert.Contains("00015", content);
+        Assert.Contains("DirectStream2", content);
+        Assert.Contains("00025", content);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToStreamAsyncStreaming_LargeDataset_StreamsEfficiently()
+    {
+        const int recordCount = 5_000;
+        var records = GenerateLargeAsyncDataset(recordCount);
+
+        using var ms = new MemoryStream();
+        await FixedWidth.Write<TestRecord>()
+            .ToStreamAsyncStreaming(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var content = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        var lineCount = content.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+        Assert.True(lineCount >= recordCount, $"Expected at least {recordCount} lines, got {lineCount}");
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToStreamAsyncStreaming_LeaveOpenFalse_ClosesStream()
+    {
+        var records = new[]
+        {
+            new TestRecord { Name = "Test", Age = 1, City = "City" }
+        };
+
+        var ms = new MemoryStream();
+        await FixedWidth.Write<TestRecord>()
+            .ToStreamAsyncStreaming(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
+
         Assert.False(ms.CanRead);
         Assert.False(ms.CanWrite);
     }

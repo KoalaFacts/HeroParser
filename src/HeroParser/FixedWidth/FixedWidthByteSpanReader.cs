@@ -25,6 +25,10 @@ public ref struct FixedWidthByteSpanReader
     /// </summary>
     /// <param name="bytes">The UTF-8 byte span containing fixed-width data.</param>
     /// <param name="options">Parser options.</param>
+    /// <remarks>
+    /// This constructor is internal to ensure proper initialization through factory methods.
+    /// Use <see cref="FixedWidth.ReadFromUtf8ByteSpan"/> to create instances.
+    /// </remarks>
     internal FixedWidthByteSpanReader(ReadOnlySpan<byte> bytes, FixedWidthParserOptions options)
     {
         this.bytes = bytes;

@@ -35,7 +35,20 @@ public class FixedWidthException : Exception
     /// <summary>
     /// Gets the field value that caused the error, or <see langword="null"/> when not applicable.
     /// </summary>
+    /// <remarks>
+    /// The value is truncated to 100 characters if longer, with "..." appended.
+    /// This helps with debugging parse errors by showing the problematic content.
+    /// </remarks>
     public string? FieldValue { get; }
+
+    /// <summary>
+    /// Gets the name of the field/property that caused the error, or <see langword="null"/> when not applicable.
+    /// </summary>
+    /// <remarks>
+    /// This property contains the name of the record property being bound when a parse error occurs.
+    /// It helps identify which field in the record type failed to parse.
+    /// </remarks>
+    public string? FieldName { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FixedWidthException"/> class.
@@ -105,6 +118,59 @@ public class FixedWidthException : Exception
         ErrorCode = errorCode;
         Record = record;
         SourceLineNumber = sourceLineNumber;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FixedWidthException"/> class with field name and context.
+    /// </summary>
+    /// <param name="errorCode">The error classification.</param>
+    /// <param name="message">A human-readable description of the failure.</param>
+    /// <param name="record">The 1-based record number associated with the error.</param>
+    /// <param name="fieldName">The name of the field/property that caused the error.</param>
+    /// <param name="fieldStart">The 0-based field start position.</param>
+    /// <param name="fieldLength">The field length.</param>
+    /// <param name="fieldValue">The field value that caused the error.</param>
+    public FixedWidthException(FixedWidthErrorCode errorCode, string message, int record, string fieldName, int fieldStart, int fieldLength, string? fieldValue)
+        : base(BuildMessageWithFieldContext($"Record {record}, Field '{fieldName}' [{fieldStart}:{fieldStart + fieldLength}]: {message}", fieldValue))
+    {
+        ErrorCode = errorCode;
+        Record = record;
+        FieldName = fieldName;
+        FieldStart = fieldStart;
+        FieldLength = fieldLength;
+        FieldValue = TruncateFieldValue(fieldValue);
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FixedWidthException"/> class with field name, context and source line.
+    /// </summary>
+    /// <param name="errorCode">The error classification.</param>
+    /// <param name="message">A human-readable description of the failure.</param>
+    /// <param name="record">The 1-based record number associated with the error.</param>
+    /// <param name="sourceLineNumber">The 1-based source line number.</param>
+    /// <param name="fieldName">The name of the field/property that caused the error.</param>
+    /// <param name="fieldStart">The 0-based field start position.</param>
+    /// <param name="fieldLength">The field length.</param>
+    /// <param name="fieldValue">The field value that caused the error.</param>
+    public FixedWidthException(FixedWidthErrorCode errorCode, string message, int record, int sourceLineNumber, string fieldName, int fieldStart, int fieldLength, string? fieldValue)
+        : base(BuildMessageWithFieldContext($"Record {record} (Line {sourceLineNumber}), Field '{fieldName}' [{fieldStart}:{fieldStart + fieldLength}]: {message}", fieldValue))
+    {
+        ErrorCode = errorCode;
+        Record = record;
+        SourceLineNumber = sourceLineNumber;
+        FieldName = fieldName;
+        FieldStart = fieldStart;
+        FieldLength = fieldLength;
+        FieldValue = TruncateFieldValue(fieldValue);
+    }
+
+    private static string BuildMessageWithFieldContext(string baseMessage, string? fieldValue)
+    {
+        if (string.IsNullOrEmpty(fieldValue))
+            return baseMessage;
+
+        var truncated = TruncateFieldValue(fieldValue);
+        return $"{baseMessage} Value: '{truncated}'";
     }
 
     private static string BuildMessageWithFieldValue(string baseMessage, string? fieldValue)

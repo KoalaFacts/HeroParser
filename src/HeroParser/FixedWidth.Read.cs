@@ -221,6 +221,9 @@ public static partial class FixedWidth
         options ??= FixedWidthParserOptions.Default;
         culture ??= CultureInfo.InvariantCulture;
 
+        // Validate input size for DoS protection (string length * 2 bytes per char)
+        options.ValidateInputSize(data.Length * sizeof(char));
+
         var reader = ReadFromText(data, options);
         return FixedWidthRecordBinder<T>.Bind(reader, culture, onError);
     }

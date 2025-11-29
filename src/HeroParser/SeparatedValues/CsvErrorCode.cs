@@ -3,6 +3,14 @@ namespace HeroParser.SeparatedValues;
 /// <summary>
 /// Error codes for CSV parsing failures.
 /// </summary>
+/// <remarks>
+/// Error code ranges are aligned with <see cref="FixedWidths.FixedWidthErrorCode"/>:
+/// <list type="bullet">
+/// <item>1-49: Reader/parsing errors (TooManyColumns, InvalidOptions, etc.)</item>
+/// <item>99: General parse error</item>
+/// <item>100+: Writer errors (OutputSizeExceeded, FieldSizeExceeded, etc.)</item>
+/// </list>
+/// </remarks>
 public enum CsvErrorCode
 {
     /// <summary>

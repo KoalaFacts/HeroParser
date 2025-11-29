@@ -3,8 +3,18 @@ namespace HeroParser.FixedWidths;
 /// <summary>
 /// Error codes for fixed-width file parsing failures.
 /// </summary>
+/// <remarks>
+/// Error code ranges are aligned with <see cref="SeparatedValues.CsvErrorCode"/>:
+/// <list type="bullet">
+/// <item>1-49: Reader/parsing errors (TooManyRecords, InvalidOptions, etc.)</item>
+/// <item>99: General parse error</item>
+/// <item>100+: Writer errors (OutputSizeExceeded, FieldOverflow, etc.)</item>
+/// </list>
+/// </remarks>
 public enum FixedWidthErrorCode
 {
+    // Reader/Parsing errors (1-49)
+
     /// <summary>
     /// Record exceeds maximum record limit.
     /// </summary>
@@ -30,23 +40,25 @@ public enum FixedWidthErrorCode
     /// </summary>
     ParseError = 99,
 
-    /// <summary>
-    /// Field validation failed during record binding.
-    /// </summary>
-    ValidationError = 100,
+    // Writer errors (100+) - aligned with CsvErrorCode
 
     /// <summary>
     /// Output size exceeded the maximum allowed limit.
     /// </summary>
-    OutputSizeExceeded = 200,
+    OutputSizeExceeded = 100,
 
     /// <summary>
     /// Field value exceeds the maximum field width.
     /// </summary>
-    FieldOverflow = 201,
+    FieldOverflow = 101,
 
     /// <summary>
     /// Too many rows written to the output.
     /// </summary>
-    TooManyRowsWritten = 202
+    TooManyRowsWritten = 102,
+
+    /// <summary>
+    /// Field validation failed during record binding.
+    /// </summary>
+    ValidationError = 104
 }

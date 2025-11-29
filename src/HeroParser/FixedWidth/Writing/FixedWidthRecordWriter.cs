@@ -26,6 +26,75 @@ internal sealed class FixedWidthRecordWriter<T>
     }
 
     /// <summary>
+    /// Constructor for source-generated writers using templates.
+    /// </summary>
+    private FixedWidthRecordWriter(FixedWidthWriterOptions options, IReadOnlyList<WriterTemplate> templates)
+    {
+        this.options = options;
+        fields = InstantiateFieldDefinitions(templates);
+
+        // Calculate total record length from field definitions
+        RecordLength = fields.Length > 0
+            ? fields.Max(f => f.Start + f.Length)
+            : 0;
+    }
+
+    /// <summary>
+    /// Creates a record writer from source-generated templates.
+    /// </summary>
+    /// <param name="options">Writer options.</param>
+    /// <param name="templates">The generated templates.</param>
+    /// <returns>A new record writer.</returns>
+    internal static FixedWidthRecordWriter<T> CreateFromTemplates(
+        FixedWidthWriterOptions options,
+        IReadOnlyList<WriterTemplate> templates)
+    {
+        return new FixedWidthRecordWriter<T>(options, templates);
+    }
+
+    /// <summary>
+    /// Template for source-generated writers.
+    /// </summary>
+    /// <param name="MemberName">The property name.</param>
+    /// <param name="SourceType">The property type.</param>
+    /// <param name="Start">The 0-based start position in the record.</param>
+    /// <param name="Length">The field width.</param>
+    /// <param name="Alignment">The field alignment.</param>
+    /// <param name="PadChar">The padding character.</param>
+    /// <param name="Format">Optional format string for the value.</param>
+    /// <param name="Getter">The getter delegate for extracting the value.</param>
+    internal sealed record WriterTemplate(
+        string MemberName,
+        Type SourceType,
+        int Start,
+        int Length,
+        FieldAlignment Alignment,
+        char PadChar,
+        string? Format,
+        Func<T, object?> Getter);
+
+    private static FieldDefinition[] InstantiateFieldDefinitions(IReadOnlyList<WriterTemplate> templates)
+    {
+        var result = new FieldDefinition[templates.Count];
+        for (int i = 0; i < templates.Count; i++)
+        {
+            var template = templates[i];
+            result[i] = new FieldDefinition
+            {
+                Name = template.MemberName,
+                PropertyType = template.SourceType,
+                Start = template.Start,
+                Length = template.Length,
+                Alignment = template.Alignment,
+                PadChar = template.PadChar == '\0' ? ' ' : template.PadChar,
+                Format = template.Format,
+                Getter = template.Getter
+            };
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Gets the total record length calculated from field definitions.
     /// </summary>
     public int RecordLength { get; }
@@ -393,29 +462,49 @@ internal sealed class FixedWidthRecordWriter<T>
 /// <summary>
 /// Factory for creating cached FixedWidthRecordWriter instances.
 /// </summary>
-internal static class FixedWidthRecordWriterFactory
+internal static partial class FixedWidthRecordWriterFactory
 {
-    private static readonly Dictionary<(Type, FixedWidthWriterOptions), object> cache = [];
-#if NET9_0_OR_GREATER
-    private static readonly Lock lockObj = new();
-#else
-    private static readonly object lockObj = new();
-#endif
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<FixedWidthWriterOptions, object>> generatedFactories = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, FixedWidthWriterOptions), object> reflectionCache = new();
 
+    static FixedWidthRecordWriterFactory()
+    {
+        RegisterGeneratedWriters(generatedFactories);
+    }
+
+    /// <summary>
+    /// Creates a new record writer for the specified type and options.
+    /// Prefers generated writers when available, falling back to reflection-based writers.
+    /// </summary>
     public static FixedWidthRecordWriter<T> GetWriter<T>(FixedWidthWriterOptions options)
     {
-        var key = (typeof(T), options);
-
-        lock (lockObj)
+        // Try generated writer first (not cached - each call creates new instance with options)
+        if (generatedFactories.TryGetValue(typeof(T), out var factory))
         {
-            if (cache.TryGetValue(key, out var cached))
-            {
-                return (FixedWidthRecordWriter<T>)cached;
-            }
-
-            var writer = new FixedWidthRecordWriter<T>(options);
-            cache[key] = writer;
-            return writer;
+            return (FixedWidthRecordWriter<T>)factory(options);
         }
+
+        // Fall back to reflection-based writer (cached)
+        var key = (typeof(T), options);
+        return (FixedWidthRecordWriter<T>)reflectionCache.GetOrAdd(key, _ => new FixedWidthRecordWriter<T>(options));
     }
+
+    /// <summary>
+    /// Allows generated writers in referencing assemblies to register themselves at module load.
+    /// </summary>
+    /// <param name="type">The record type the writer handles.</param>
+    /// <param name="factory">Factory for creating the writer with options.</param>
+    public static void RegisterGeneratedWriter(Type type, Func<FixedWidthWriterOptions, object> factory)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        generatedFactories[type] = factory;
+    }
+
+    /// <summary>
+    /// Populated by the source generator; becomes a no-op when no generators run.
+    /// </summary>
+    /// <param name="factories">Cache to register writer factories into.</param>
+    static partial void RegisterGeneratedWriters(System.Collections.Concurrent.ConcurrentDictionary<Type, Func<FixedWidthWriterOptions, object>> factories);
 }

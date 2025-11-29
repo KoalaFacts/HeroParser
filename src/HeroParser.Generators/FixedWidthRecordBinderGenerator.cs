@@ -11,10 +11,18 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 {
     private const string GENERATED_NAMESPACE = "HeroParser.FixedWidths.Records.Binding";
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthRecordBinderFactory";
+    private const string WRITER_TYPE = "global::HeroParser.FixedWidths.Writing.FixedWidthRecordWriter";
+    private const string WRITER_FACTORY_TYPE = "global::HeroParser.FixedWidths.Writing.FixedWidthRecordWriterFactory";
     private const string FIELD_ALIGNMENT_TYPE = "global::HeroParser.FixedWidths.FieldAlignment";
     private const string ROW_TYPE = "global::HeroParser.FixedWidths.FixedWidthCharSpanRow";
-    private static readonly string[] generateAttributeNames = ["HeroParser.FixedWidths.Records.Binding.FixedWidthGenerateBinderAttribute"];
-    private static readonly string[] columnAttributeNames = ["HeroParser.FixedWidths.Records.Binding.FixedWidthColumnAttribute"];
+    private static readonly string[] generateAttributeNames = [
+        "HeroParser.FixedWidths.Records.Binding.FixedWidthGenerateBinderAttribute",
+        "HeroParser.FixedWidthGenerateBinderAttribute"
+    ];
+    private static readonly string[] columnAttributeNames = [
+        "HeroParser.FixedWidths.Records.Binding.FixedWidthColumnAttribute",
+        "HeroParser.FixedWidthColumnAttribute"
+    ];
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -87,10 +95,18 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             if (descriptor is null)
                 continue;
 
+            // Register binder (for reading - members with setters)
             var binderMembers = descriptor.Members.Where(m => m.SetterFactory != null).ToList();
             if (binderMembers.Count > 0)
             {
                 EmitBinderRegistration(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName);
+            }
+
+            // Register writer (for writing - members with getters)
+            var writerMembers = descriptor.Members.Where(m => m.GetterFactory != null).ToList();
+            if (writerMembers.Count > 0)
+            {
+                EmitWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers);
             }
         }
 
@@ -487,6 +503,32 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterTypedBinder<{fullyQualifiedName}>((culture, nullValues) => new {binderClassName}(culture, nullValues));");
     }
 
+    private static void EmitWriterRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    {
+        builder.AppendLine($"{WRITER_FACTORY_TYPE}.RegisterGeneratedWriter(typeof({fullyQualifiedName}), options => {WRITER_TYPE}<{fullyQualifiedName}>.CreateFromTemplates(options, new {WRITER_TYPE}<{fullyQualifiedName}>.WriterTemplate[]");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        foreach (var member in members)
+        {
+            builder.AppendLine($"new {WRITER_TYPE}<{fullyQualifiedName}>.WriterTemplate(");
+            builder.Indent();
+            builder.AppendLine($"\"{member.MemberName}\",");
+            builder.AppendLine($"typeof({member.TypeofTypeName}),");
+            builder.AppendLine($"{member.Start},");
+            builder.AppendLine($"{member.Length},");
+            builder.AppendLine($"{FIELD_ALIGNMENT_TYPE}.{member.Alignment},");
+            builder.AppendLine($"'{EscapeChar(member.PadChar)}',");
+            builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
+            builder.AppendLine($"{member.GetterFactory}),");
+            builder.Unindent();
+        }
+
+        builder.Unindent();
+        builder.AppendLine("}));");
+        builder.AppendLine();
+    }
+
     private static TypeDescriptor? BuildDescriptor(SourceProductionContext context, INamedTypeSymbol type)
     {
         // Skip types that are not publicly accessible (private, internal nested, etc.)
@@ -500,10 +542,12 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             if (property.IsStatic)
                 continue;
 
-            // Check accessibility - need setter to be public for binding
+            // Check accessibility - need at least one of getter/setter to be public
             var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public };
+            var hasGetter = property.GetMethod is { DeclaredAccessibility: Accessibility.Public };
 
-            if (!hasSetter)
+            // Skip if neither getter nor setter is public
+            if (!hasSetter && !hasGetter)
                 continue;
 
             var mapAttribute = GetFirstMatchingAttribute(property, columnAttributeNames);
@@ -569,7 +613,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 padChar = ' ';
 
             // Generate setter only if property has public setter (for binder/reader)
-            string? setterFactory = CreateSetter(typeName, type, property.Name);
+            string? setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
+
+            // Generate getter only if property has public getter (for writer)
+            string? getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
 
             members.Add(new MemberDescriptor(
                 property.Name,
@@ -581,6 +628,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 typeofTypeName,
                 formatLiteral,
                 setterFactory,
+                getterFactory,
                 baseTypeName,
                 isNullable,
                 isEnum));
@@ -689,6 +737,9 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private static string CreateSetter(string typeName, INamedTypeSymbol type, string propertyName)
         => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target, object? val) => target.{propertyName} = ({typeName})val!";
 
+    private static string CreateGetter(INamedTypeSymbol type, string propertyName)
+        => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target) => target.{propertyName}";
+
     private static string EscapeString(string value)
     {
         // Escape backslashes and quotes for C# string literals
@@ -759,6 +810,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         string TypeofTypeName,
         string? Format,
         string? SetterFactory,
+        string? GetterFactory,
         string BaseTypeName,
         bool IsNullable,
         bool IsEnum);

@@ -22,6 +22,11 @@ public ref struct FixedWidthCharSpanReader
     /// </summary>
     /// <param name="chars">The character span containing fixed-width data.</param>
     /// <param name="options">Parser options.</param>
+    /// <remarks>
+    /// This constructor is internal to ensure proper initialization through factory methods.
+    /// Use <see cref="FixedWidth.ReadFromText"/>, <see cref="FixedWidth.ReadFromCharSpan"/>,
+    /// <see cref="FixedWidth.ReadFromFile"/>, or <see cref="FixedWidth.ReadFromStream"/> to create instances.
+    /// </remarks>
     internal FixedWidthCharSpanReader(ReadOnlySpan<char> chars, FixedWidthParserOptions options)
     {
         this.chars = chars;

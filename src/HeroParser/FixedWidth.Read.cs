@@ -64,6 +64,27 @@ public static partial class FixedWidth
     }
 
     /// <summary>
+    /// Creates a reader over a UTF-8 byte span for direct byte-level parsing without UTF-16 conversion.
+    /// </summary>
+    /// <param name="data">Span containing the fixed-width content encoded as UTF-8.</param>
+    /// <param name="options">
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// </param>
+    /// <returns>A streaming reader that exposes each record as a <see cref="FixedWidthByteSpanRow"/>.</returns>
+    /// <remarks>
+    /// This method works directly on UTF-8 bytes without decoding to UTF-16, which can be more efficient
+    /// for scenarios where you're primarily parsing numeric or ASCII data. Use this when you need to avoid
+    /// the overhead of UTF-8 to UTF-16 conversion.
+    /// </remarks>
+    /// <exception cref="FixedWidthException">Thrown when the input violates the supplied <paramref name="options"/>.</exception>
+    public static FixedWidthByteSpanReader ReadFromUtf8ByteSpan(ReadOnlySpan<byte> data, FixedWidthParserOptions? options = null)
+    {
+        options ??= FixedWidthParserOptions.Default;
+        options.Validate();
+        return new FixedWidthByteSpanReader(data, options);
+    }
+
+    /// <summary>
     /// Creates a reader from a fixed-width file on disk using UTF-8 encoding by default.
     /// </summary>
     /// <param name="path">Filesystem path to the fixed-width file.</param>

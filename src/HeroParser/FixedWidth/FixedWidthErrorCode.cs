@@ -33,5 +33,20 @@ public enum FixedWidthErrorCode
     /// <summary>
     /// Field validation failed during record binding.
     /// </summary>
-    ValidationError = 100
+    ValidationError = 100,
+
+    /// <summary>
+    /// Output size exceeded the maximum allowed limit.
+    /// </summary>
+    OutputSizeExceeded = 200,
+
+    /// <summary>
+    /// Field value exceeds the maximum field width.
+    /// </summary>
+    FieldOverflow = 201,
+
+    /// <summary>
+    /// Too many rows written to the output.
+    /// </summary>
+    TooManyRowsWritten = 202
 }

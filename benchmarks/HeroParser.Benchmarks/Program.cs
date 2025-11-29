@@ -125,6 +125,38 @@ public class Program
             BenchmarkRunner.Run<FixedWidthMicroBenchmarks>();
             BenchmarkRunner.Run<FixedWidthStreamingBenchmarks>();
             BenchmarkRunner.Run<FixedWidthFieldParseBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthWriterBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthCustomConverterBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthByteSpanBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthAlignmentBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--fixed-width-writer")
+        {
+            // Run fixed-width writer benchmarks
+            BenchmarkRunner.Run<FixedWidthWriterBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--fixed-width-converters")
+        {
+            // Run custom converter benchmarks
+            BenchmarkRunner.Run<FixedWidthCustomConverterBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--fixed-width-bytespan")
+        {
+            // Run byte span benchmarks
+            BenchmarkRunner.Run<FixedWidthByteSpanBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--fixed-width-alignment")
+        {
+            // Run alignment benchmarks
+            BenchmarkRunner.Run<FixedWidthAlignmentBenchmarks>();
             return;
         }
 
@@ -161,9 +193,13 @@ public class Program
         Console.WriteLine("  --injection        Run all injection protection benchmarks");
         Console.WriteLine("  --injection-write  Run write-side injection benchmarks");
         Console.WriteLine("  --injection-read   Run read-side injection benchmarks");
-        Console.WriteLine("  --fixed-width      Run all fixed-width benchmarks (throughput + streaming + parsing)");
+        Console.WriteLine("  --fixed-width      Run all fixed-width benchmarks (throughput + streaming + parsing + writer)");
         Console.WriteLine("  --fixed-width-streaming  Run fixed-width streaming throughput benchmarks");
         Console.WriteLine("  --fixed-width-parsing    Run fixed-width field parsing benchmarks");
+        Console.WriteLine("  --fixed-width-writer     Run fixed-width writer benchmarks");
+        Console.WriteLine("  --fixed-width-converters Run fixed-width custom converter benchmarks");
+        Console.WriteLine("  --fixed-width-bytespan   Run fixed-width byte span vs char span benchmarks");
+        Console.WriteLine("  --fixed-width-alignment  Run fixed-width alignment operation benchmarks");
         Console.WriteLine("  --all              Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");

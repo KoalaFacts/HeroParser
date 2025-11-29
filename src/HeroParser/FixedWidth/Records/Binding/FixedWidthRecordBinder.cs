@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using HeroParser.FixedWidths.Records;
+using CustomConverterDictionary = System.Collections.Generic.IReadOnlyDictionary<System.Type, HeroParser.FixedWidths.Records.InternalFixedWidthConverter>;
 
 namespace HeroParser.FixedWidths.Records.Binding;
 
@@ -18,16 +19,19 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
     private readonly CultureInfo culture;
     private readonly FixedWidthDeserializeErrorHandler? errorHandler;
     private readonly HashSet<string>? nullValues;
+    private readonly CustomConverterDictionary? customConverters;
 
     private FixedWidthRecordBinder(
         CultureInfo culture,
         FixedWidthDeserializeErrorHandler? errorHandler,
         IReadOnlyList<BindingTemplate> templates,
-        IReadOnlyList<string>? nullValues = null)
+        IReadOnlyList<string>? nullValues = null,
+        CustomConverterDictionary? customConverters = null)
     {
         this.culture = culture;
         this.errorHandler = errorHandler;
         this.nullValues = nullValues is { Count: > 0 } ? new HashSet<string>(nullValues, StringComparer.Ordinal) : null;
+        this.customConverters = customConverters;
         bindings = InstantiateBindings(templates);
     }
 
@@ -39,16 +43,18 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
     public static FixedWidthRecordBinder<T> Create(
         CultureInfo? culture,
         FixedWidthDeserializeErrorHandler? errorHandler,
-        IReadOnlyList<string>? nullValues = null)
+        IReadOnlyList<string>? nullValues = null,
+        CustomConverterDictionary? customConverters = null)
     {
-        // Try source-generated binder first
-        if (FixedWidthRecordBinderFactory.TryGetBinder<T>(culture, errorHandler, nullValues, out var generatedBinder))
+        // Try source-generated binder first (only when no custom converters)
+        if (customConverters is null &&
+            FixedWidthRecordBinderFactory.TryGetBinder<T>(culture, errorHandler, nullValues, out var generatedBinder))
         {
             return generatedBinder!;
         }
 
         // Fall back to reflection
-        return CreateFromTemplates(culture, errorHandler, CreateTemplatesFromReflection(), nullValues);
+        return CreateFromTemplates(culture, errorHandler, CreateTemplatesFromReflection(), nullValues, customConverters);
     }
 
     /// <summary>
@@ -58,13 +64,15 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
         CultureInfo? culture,
         FixedWidthDeserializeErrorHandler? errorHandler,
         IReadOnlyList<BindingTemplate> templates,
-        IReadOnlyList<string>? nullValues = null)
+        IReadOnlyList<string>? nullValues = null,
+        CustomConverterDictionary? customConverters = null)
     {
         return new FixedWidthRecordBinder<T>(
             culture ?? CultureInfo.InvariantCulture,
             errorHandler,
             templates,
-            nullValues);
+            nullValues,
+            customConverters);
     }
 
     /// <summary>
@@ -164,6 +172,7 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
         CultureInfo? culture,
         FixedWidthDeserializeErrorHandler? errorHandler,
         IReadOnlyList<string>? nullValues = null,
+        CustomConverterDictionary? customConverters = null,
         IProgress<FixedWidthProgress>? progress = null,
         int progressIntervalRows = 1000)
     {
@@ -171,14 +180,15 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
         var estimatedCapacity = reader.EstimateRowCount();
 
         // Prefer typed binder for boxing-free parsing when no error handler is needed
-        if (errorHandler is null &&
+        // Only use typed binder when no custom converters are specified
+        if (errorHandler is null && customConverters is null &&
             FixedWidthRecordBinderFactory.TryGetTypedBinder<T>(culture, nullValues, out var typedBinder))
         {
             return BindWithTypedBinder(reader, typedBinder!, estimatedCapacity, progress, progressIntervalRows);
         }
 
         // Fall back to generic binder
-        var binder = Create(culture, errorHandler, nullValues);
+        var binder = Create(culture, errorHandler, nullValues, customConverters);
         var results = new List<T>(estimatedCapacity);
         int recordsProcessed = 0;
 
@@ -264,19 +274,21 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
         FixedWidthCharSpanReader reader,
         CultureInfo? culture,
         IReadOnlyList<string>? nullValues,
+        CustomConverterDictionary? customConverters,
         Action<T> callback)
     {
         ArgumentNullException.ThrowIfNull(callback);
 
-        // Try typed binder for best performance
-        if (FixedWidthRecordBinderFactory.TryGetTypedBinder<T>(culture, nullValues, out var typedBinder))
+        // Try typed binder for best performance (only when no custom converters)
+        if (customConverters is null &&
+            FixedWidthRecordBinderFactory.TryGetTypedBinder<T>(culture, nullValues, out var typedBinder))
         {
             ForEachWithTypedBinder(reader, typedBinder!, callback);
             return;
         }
 
         // Fall back to generic binder
-        var binder = Create(culture, null, nullValues);
+        var binder = Create(culture, null, nullValues, customConverters);
         var instance = new T();
 
         foreach (var row in reader)
@@ -336,7 +348,11 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
 
         foreach (var template in templates)
         {
-            var converter = ConverterFactory.CreateConverter(template.TargetType, culture, template.Format);
+            var converter = ConverterFactory.CreateConverter(
+                template.TargetType,
+                culture,
+                template.Format,
+                customConverters);
             // Wrap typed setter in untyped delegate
             var setter = new SetterWrapper<T>(template.Setter);
 
@@ -467,12 +483,27 @@ internal sealed class SetterWrapper<T>(Action<T, object?> typedSetter) where T :
 /// </summary>
 internal static class ConverterFactory
 {
-    public static ColumnConverter CreateConverter(Type targetType, CultureInfo culture, string? format)
+    public static ColumnConverter CreateConverter(
+        Type targetType,
+        CultureInfo culture,
+        string? format,
+        CustomConverterDictionary? customConverters = null)
     {
         // Handle nullable types
         var underlyingType = Nullable.GetUnderlyingType(targetType);
         var isNullable = underlyingType is not null;
         var actualType = underlyingType ?? targetType;
+
+        // Check for custom converter first (takes precedence over built-in converters)
+        if (customConverters is not null && customConverters.TryGetValue(actualType, out var customConverter))
+        {
+            var customWrapper = new CustomConverterWrapper(customConverter, culture, format);
+            if (isNullable)
+            {
+                return new NullableWrapper(customWrapper.Convert).Convert;
+            }
+            return customWrapper.Convert;
+        }
 
         ColumnConverter baseConverter = actualType switch
         {
@@ -491,7 +522,8 @@ internal static class ConverterFactory
             _ when actualType == typeof(TimeOnly) => new TimeOnlyConverter(culture, format).Convert,
             _ when actualType == typeof(Guid) => ConvertToGuid,
             _ when actualType.IsEnum => new EnumConverter(actualType).Convert,
-            _ => throw new NotSupportedException($"Type '{targetType}' is not supported for fixed-width binding.")
+            _ => throw new NotSupportedException($"Type '{targetType}' is not supported for fixed-width binding. " +
+                $"Register a custom converter using .RegisterConverter<{actualType.Name}>().")
         };
 
         // Wrap for nullable types
@@ -501,6 +533,18 @@ internal static class ConverterFactory
         }
 
         return baseConverter;
+    }
+
+    /// <summary>
+    /// Wrapper for custom converters to adapt them to the ColumnConverter signature.
+    /// </summary>
+    private sealed class CustomConverterWrapper(
+        InternalFixedWidthConverter converter,
+        CultureInfo culture,
+        string? format)
+    {
+        public bool Convert(ReadOnlySpan<char> span, out object? value)
+            => converter(span, culture, format, out value);
     }
 
     private static bool ConvertToString(ReadOnlySpan<char> span, out object? value)

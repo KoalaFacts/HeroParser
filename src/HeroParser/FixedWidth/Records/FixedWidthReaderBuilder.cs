@@ -7,6 +7,22 @@ using FixedWidthFactory = HeroParser.FixedWidth;
 namespace HeroParser.FixedWidths.Records;
 
 /// <summary>
+/// Delegate for custom type conversion in fixed-width parsing.
+/// </summary>
+/// <typeparam name="T">The type to convert to.</typeparam>
+/// <param name="value">The raw character span containing the field value.</param>
+/// <param name="culture">The culture to use for parsing.</param>
+/// <param name="format">Optional format string for parsing.</param>
+/// <param name="result">The converted value when successful.</param>
+/// <returns><see langword="true"/> if conversion succeeded; otherwise <see langword="false"/>.</returns>
+public delegate bool FixedWidthTypeConverter<T>(ReadOnlySpan<char> value, CultureInfo culture, string? format, out T? result);
+
+/// <summary>
+/// Internal delegate for custom type conversion that works with the binder.
+/// </summary>
+internal delegate bool InternalFixedWidthConverter(ReadOnlySpan<char> value, CultureInfo culture, string? format, out object? result);
+
+/// <summary>
 /// Fluent builder for configuring and executing fixed-width file reading operations.
 /// </summary>
 /// <typeparam name="T">The record type to deserialize.</typeparam>
@@ -32,6 +48,9 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
 
     // Encoding for file/stream operations
     private Encoding encoding = Encoding.UTF8;
+
+    // Custom converters
+    private Dictionary<Type, InternalFixedWidthConverter>? customConverters;
 
     // Cached options - invalidated when any setting changes
     private FixedWidthParserOptions? cachedOptions;
@@ -248,6 +267,61 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
         return this;
     }
 
+    /// <summary>
+    /// Registers a custom type converter for a specific type.
+    /// </summary>
+    /// <typeparam name="TValue">The type to convert to.</typeparam>
+    /// <param name="converter">The converter delegate.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// Custom converters take precedence over built-in converters. Use this to handle domain-specific
+    /// types like Money, Address, or other value objects that are not natively supported.
+    /// <para>
+    /// The converter receives the column value, the culture from <see cref="WithCulture(CultureInfo)"/>, and the format
+    /// string from <see cref="Binding.FixedWidthColumnAttribute.Format"/> if specified.
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var builder = FixedWidth.Read&lt;Transaction&gt;()
+    ///     .RegisterConverter&lt;Money&gt;((value, culture, format, out result) =>
+    ///     {
+    ///         if (decimal.TryParse(value, NumberStyles.Currency, culture, out var amount))
+    ///         {
+    ///             result = new Money(amount);
+    ///             return true;
+    ///         }
+    ///         result = default;
+    ///         return false;
+    ///     });
+    /// </code>
+    /// </example>
+    public FixedWidthReaderBuilder<T> RegisterConverter<TValue>(FixedWidthTypeConverter<TValue> converter)
+    {
+        ArgumentNullException.ThrowIfNull(converter);
+
+        customConverters ??= [];
+        customConverters[typeof(TValue)] = WrapConverter(converter);
+        InvalidateCache();
+        return this;
+    }
+
+    private static InternalFixedWidthConverter WrapConverter<TValue>(FixedWidthTypeConverter<TValue> converter)
+    {
+        return WrapperImpl;
+
+        bool WrapperImpl(ReadOnlySpan<char> value, CultureInfo culture, string? format, out object? result)
+        {
+            if (converter(value, culture, format, out var typedResult))
+            {
+                result = typedResult;
+                return true;
+            }
+            result = null;
+            return false;
+        }
+    }
+
     #endregion
 
     #region Terminal Methods
@@ -267,6 +341,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
             culture,
             onDeserializeError,
             nullValues,
+            customConverters,
             progress,
             progressIntervalRows);
     }
@@ -376,7 +451,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
 
         var options = GetOptions();
         var reader = FixedWidthFactory.ReadFromText(text, options);
-        FixedWidthRecordBinder<T>.ForEach(reader, culture, nullValues, callback);
+        FixedWidthRecordBinder<T>.ForEach(reader, culture, nullValues, customConverters, callback);
     }
 
     /// <summary>

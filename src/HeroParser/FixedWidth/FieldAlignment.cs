@@ -18,6 +18,12 @@ public enum FieldAlignment
     Right,
 
     /// <summary>
+    /// Data is center-aligned with padding on both sides.
+    /// Trimming removes both leading and trailing pad characters.
+    /// </summary>
+    Center,
+
+    /// <summary>
     /// No trimming is performed; the raw field value is used as-is.
     /// </summary>
     None

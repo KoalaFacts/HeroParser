@@ -118,6 +118,30 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--fixed-width")
+        {
+            // Run all fixed-width parsing benchmarks
+            BenchmarkRunner.Run<FixedWidthBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthMicroBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthStreamingBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthFieldParseBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--fixed-width-streaming")
+        {
+            // Run fixed-width streaming throughput benchmarks
+            BenchmarkRunner.Run<FixedWidthStreamingBenchmarks>();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--fixed-width-parsing")
+        {
+            // Run fixed-width field parsing benchmarks
+            BenchmarkRunner.Run<FixedWidthFieldParseBenchmarks>();
+            return;
+        }
+
         // Default: show menu
         Console.WriteLine("=== HeroParser Benchmarks ===");
         Console.WriteLine();
@@ -137,6 +161,9 @@ public class Program
         Console.WriteLine("  --injection        Run all injection protection benchmarks");
         Console.WriteLine("  --injection-write  Run write-side injection benchmarks");
         Console.WriteLine("  --injection-read   Run read-side injection benchmarks");
+        Console.WriteLine("  --fixed-width      Run all fixed-width benchmarks (throughput + streaming + parsing)");
+        Console.WriteLine("  --fixed-width-streaming  Run fixed-width streaming throughput benchmarks");
+        Console.WriteLine("  --fixed-width-parsing    Run fixed-width field parsing benchmarks");
         Console.WriteLine("  --all              Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");
@@ -156,6 +183,10 @@ public class Program
             BenchmarkRunner.Run<VsSepReadingBenchmarks>();
             BenchmarkRunner.Run<VsSepWritingBenchmarks>();
             BenchmarkRunner.Run<QuotedVsUnquotedBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthMicroBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthStreamingBenchmarks>();
+            BenchmarkRunner.Run<FixedWidthFieldParseBenchmarks>();
         }
         else
         {

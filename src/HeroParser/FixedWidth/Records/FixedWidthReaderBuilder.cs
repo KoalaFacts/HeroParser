@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths.Records.Binding;
+using FixedWidthFactory = HeroParser.FixedWidth;
 
 namespace HeroParser.FixedWidths.Records;
 
@@ -249,7 +250,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
 
         var options = GetOptions();
         return FixedWidthRecordBinder<T>.Bind(
-            FixedWidths.FixedWidth.ReadFromText(text, options),
+            FixedWidthFactory.ReadFromText(text, options),
             culture,
             onDeserializeError,
             nullValues,
@@ -341,7 +342,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
         ArgumentNullException.ThrowIfNull(callback);
 
         var options = GetOptions();
-        var reader = FixedWidths.FixedWidth.ReadFromText(text, options);
+        var reader = FixedWidthFactory.ReadFromText(text, options);
         FixedWidthRecordBinder<T>.ForEach(reader, culture, nullValues, callback);
     }
 
@@ -559,7 +560,7 @@ public sealed class FixedWidthReaderBuilder
     public FixedWidthCharSpanReader FromText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        return FixedWidths.FixedWidth.ReadFromText(text, GetOptions());
+        return FixedWidthFactory.ReadFromText(text, GetOptions());
     }
 
     /// <summary>

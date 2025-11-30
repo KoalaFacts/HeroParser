@@ -16,7 +16,7 @@ namespace HeroParser.SeparatedValues.Streaming;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Uses <see cref="ArrayPool{T}"/> for buffer management to minimize allocations.
+/// Uses per-instance pools for buffer management to minimize allocations and isolate pooled buffers.
 /// Supports all <see cref="Writing.CsvWriterOptions"/> including quote styles, injection protection,
 /// and DoS protection limits.
 /// </para>
@@ -52,6 +52,8 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     private readonly int? maxFieldSize;
     private readonly int? maxColumnCount;
 
+    private readonly ArrayPool<char> charPool;
+    private readonly ArrayPool<byte> bytePool;
     // State tracking
     private char[] charBuffer;
     private int charBufferPosition;
@@ -107,9 +109,10 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         maxFieldSize = this.options.MaxFieldSize;
         maxColumnCount = this.options.MaxColumnCount;
 
-        charBuffer = ArrayPool<char>.Shared.Rent(DEFAULT_CHAR_BUFFER_SIZE);
-        Array.Clear(charBuffer); // Clear potential stale data from pool
-        byteBuffer = ArrayPool<byte>.Shared.Rent(DEFAULT_BYTE_BUFFER_SIZE);
+        charPool = ArrayPool<char>.Create();
+        bytePool = ArrayPool<byte>.Create();
+        charBuffer = RentCharBuffer(DEFAULT_CHAR_BUFFER_SIZE);
+        byteBuffer = RentByteBuffer(DEFAULT_BYTE_BUFFER_SIZE);
         // Note: byteBuffer doesn't need clearing as it's overwritten during encoding
         charBufferPosition = 0;
         isFirstFieldInRow = true;
@@ -1533,8 +1536,8 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
             if (byteCount > byteBuffer.Length)
             {
                 var oldByteBuffer = byteBuffer;
-                byteBuffer = ArrayPool<byte>.Shared.Rent(byteCount);
-                ArrayPool<byte>.Shared.Return(oldByteBuffer);
+                byteBuffer = RentByteBuffer(byteCount);
+                ReturnByteBuffer(oldByteBuffer);
             }
 
             int bytesWritten = encoding.GetBytes(charBuffer.AsSpan(0, charBufferPosition), byteBuffer);
@@ -1550,9 +1553,8 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     {
         int newSize = Math.Max(charBuffer.Length * 2, minimumRequired);
         var oldBuffer = charBuffer;
-        charBuffer = ArrayPool<char>.Shared.Rent(newSize);
-        Array.Clear(charBuffer); // Clear potential stale data from pool
-        ArrayPool<char>.Shared.Return(oldBuffer);
+        charBuffer = RentCharBuffer(newSize);
+        ReturnCharBuffer(oldBuffer);
     }
 
     #endregion
@@ -1585,8 +1587,8 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(charBuffer, clearArray: true);
-            ArrayPool<byte>.Shared.Return(byteBuffer, clearArray: true);
+            ReturnCharBuffer(charBuffer);
+            ReturnByteBuffer(byteBuffer);
             charBuffer = null!;
             byteBuffer = null!;
 
@@ -1595,6 +1597,34 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 await stream.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    #endregion
+
+    #region Pool Helpers
+
+    private char[] RentCharBuffer(int minimumLength)
+    {
+        var rented = charPool.Rent(minimumLength);
+        Array.Clear(rented);
+        return rented;
+    }
+
+    private byte[] RentByteBuffer(int minimumLength)
+    {
+        var rented = bytePool.Rent(minimumLength);
+        // byte buffers are fully written before use; no clear required
+        return rented;
+    }
+
+    private void ReturnCharBuffer(char[] toReturn)
+    {
+        charPool.Return(toReturn, clearArray: true);
+    }
+
+    private void ReturnByteBuffer(byte[] toReturn)
+    {
+        bytePool.Return(toReturn, clearArray: true);
     }
 
     #endregion

@@ -11,6 +11,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     // Absolute maximum buffer size (128 MB) to prevent unbounded memory growth
     private const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
 
+    private readonly ArrayPool<char> charPool;
     private readonly StreamReader reader;
     private readonly FixedWidthParserOptions options;
     private readonly bool trackLineNumbers;
@@ -47,9 +48,9 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     {
         this.options = options;
         trackLineNumbers = options.TrackSourceLineNumbers;
+        charPool = ArrayPool<char>.Create();
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
-        buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
-        Array.Clear(buffer); // Clear potential stale data from pool
+        buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
         offset = 0;
         length = 0;
         recordCount = 0;
@@ -278,10 +279,9 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                     "Ensure records have proper line endings.");
             }
 
-            var newBuffer = ArrayPool<char>.Shared.Rent(buffer.Length * 2);
-            Array.Clear(newBuffer); // Clear potential stale data from pool
+            var newBuffer = RentBuffer(buffer.Length * 2);
             buffer.AsSpan(0, length).CopyTo(newBuffer);
-            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
+            ReturnBuffer(buffer);
             buffer = newBuffer;
         }
 
@@ -333,10 +333,22 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         if (disposed)
             return ValueTask.CompletedTask;
 
-        ArrayPool<char>.Shared.Return(buffer, clearArray: true);
+        ReturnBuffer(buffer);
 
         disposed = true;
         reader.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private char[] RentBuffer(int minimumLength)
+    {
+        var rented = charPool.Rent(minimumLength);
+        Array.Clear(rented);
+        return rented;
+    }
+
+    private void ReturnBuffer(char[] toReturn)
+    {
+        charPool.Return(toReturn, clearArray: true);
     }
 }

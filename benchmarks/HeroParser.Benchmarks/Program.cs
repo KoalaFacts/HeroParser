@@ -9,168 +9,170 @@ public class Program
         if (args.Length > 0 && args[0] == "--throughput")
         {
             // Run only throughput benchmarks
-            BenchmarkRunner.Run<ThroughputBenchmarks>();
+            RunBenchmarks(args, typeof(ThroughputBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--streaming")
         {
             // Run streaming vs text benchmarks
-            BenchmarkRunner.Run<StreamingThroughputBenchmarks>();
+            RunBenchmarks(args, typeof(StreamingThroughputBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--vs-sep-reading")
         {
             // Run reading comparison benchmarks
-            BenchmarkRunner.Run<VsSepReadingBenchmarks>();
+            RunBenchmarks(args, typeof(VsSepReadingBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--vs-sep-writing")
         {
             // Run writing comparison benchmarks
-            BenchmarkRunner.Run<VsSepWritingBenchmarks>();
+            RunBenchmarks(args, typeof(VsSepWritingBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--writer")
         {
             // Run all writer benchmarks (both sync and async)
-            BenchmarkRunner.Run<WriterBenchmarks>();
-            BenchmarkRunner.Run<AsyncWriterBenchmarks>();
+            RunBenchmarks(args, typeof(WriterBenchmarks), typeof(AsyncWriterBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--sync-writer")
         {
             // Run sync writer benchmarks only
-            BenchmarkRunner.Run<WriterBenchmarks>();
+            RunBenchmarks(args, typeof(WriterBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--async-writer")
         {
             // Run async writer benchmarks only (sync vs async comparison)
-            BenchmarkRunner.Run<AsyncWriterBenchmarks>();
+            RunBenchmarks(args, typeof(AsyncWriterBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--quotes")
         {
             // Run quoted vs unquoted benchmarks
-            BenchmarkRunner.Run<QuotedVsUnquotedBenchmarks>();
+            RunBenchmarks(args, typeof(QuotedVsUnquotedBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--simd")
         {
             // Run SIMD comparison benchmarks
-            BenchmarkRunner.Run<SimdComparisonBenchmarks>();
+            RunBenchmarks(args, typeof(SimdComparisonBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--features")
         {
             // Run new features overhead benchmarks
-            BenchmarkRunner.Run<NewFeaturesBenchmark>();
+            RunBenchmarks(args, typeof(NewFeaturesBenchmark));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--security")
         {
             // Run all security and validation benchmarks
-            BenchmarkRunner.Run<WriteInjectionProtectionBenchmarks>();
-            BenchmarkRunner.Run<ReadInjectionProtectionBenchmarks>();
-            BenchmarkRunner.Run<OutputLimitsBenchmarks>();
-            BenchmarkRunner.Run<ValidationBenchmarks>();
-            BenchmarkRunner.Run<SmartDetectionMicroBenchmarks>();
+            RunBenchmarks(args,
+                typeof(WriteInjectionProtectionBenchmarks),
+                typeof(ReadInjectionProtectionBenchmarks),
+                typeof(OutputLimitsBenchmarks),
+                typeof(ValidationBenchmarks),
+                typeof(SmartDetectionMicroBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--validation")
         {
             // Run only validation benchmarks
-            BenchmarkRunner.Run<ValidationBenchmarks>();
+            RunBenchmarks(args, typeof(ValidationBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--injection")
         {
             // Run all injection protection benchmarks (write and read)
-            BenchmarkRunner.Run<WriteInjectionProtectionBenchmarks>();
-            BenchmarkRunner.Run<ReadInjectionProtectionBenchmarks>();
-            BenchmarkRunner.Run<SmartDetectionMicroBenchmarks>();
+            RunBenchmarks(args,
+                typeof(WriteInjectionProtectionBenchmarks),
+                typeof(ReadInjectionProtectionBenchmarks),
+                typeof(SmartDetectionMicroBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--injection-write")
         {
             // Run write-side injection protection benchmarks
-            BenchmarkRunner.Run<WriteInjectionProtectionBenchmarks>();
+            RunBenchmarks(args, typeof(WriteInjectionProtectionBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--injection-read")
         {
             // Run read-side injection protection benchmarks
-            BenchmarkRunner.Run<ReadInjectionProtectionBenchmarks>();
+            RunBenchmarks(args, typeof(ReadInjectionProtectionBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--fixed-width")
         {
             // Run all fixed-width parsing benchmarks
-            BenchmarkRunner.Run<FixedWidthBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthMicroBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthStreamingBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthFieldParseBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthWriterBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthCustomConverterBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthByteSpanBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthAlignmentBenchmarks>();
+            RunBenchmarks(args,
+                typeof(FixedWidthBenchmarks),
+                typeof(FixedWidthMicroBenchmarks),
+                typeof(FixedWidthStreamingBenchmarks),
+                typeof(FixedWidthFieldParseBenchmarks),
+                typeof(FixedWidthWriterBenchmarks),
+                typeof(FixedWidthCustomConverterBenchmarks),
+                typeof(FixedWidthByteSpanBenchmarks),
+                typeof(FixedWidthAlignmentBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--fixed-width-writer")
         {
             // Run fixed-width writer benchmarks
-            BenchmarkRunner.Run<FixedWidthWriterBenchmarks>();
+            RunBenchmarks(args, typeof(FixedWidthWriterBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--fixed-width-converters")
         {
             // Run custom converter benchmarks
-            BenchmarkRunner.Run<FixedWidthCustomConverterBenchmarks>();
+            RunBenchmarks(args, typeof(FixedWidthCustomConverterBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--fixed-width-bytespan")
         {
             // Run byte span benchmarks
-            BenchmarkRunner.Run<FixedWidthByteSpanBenchmarks>();
+            RunBenchmarks(args, typeof(FixedWidthByteSpanBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--fixed-width-alignment")
         {
             // Run alignment benchmarks
-            BenchmarkRunner.Run<FixedWidthAlignmentBenchmarks>();
+            RunBenchmarks(args, typeof(FixedWidthAlignmentBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--fixed-width-streaming")
         {
             // Run fixed-width streaming throughput benchmarks
-            BenchmarkRunner.Run<FixedWidthStreamingBenchmarks>();
+            RunBenchmarks(args, typeof(FixedWidthStreamingBenchmarks));
             return;
         }
 
         if (args.Length > 0 && args[0] == "--fixed-width-parsing")
         {
             // Run fixed-width field parsing benchmarks
-            BenchmarkRunner.Run<FixedWidthFieldParseBenchmarks>();
+            RunBenchmarks(args, typeof(FixedWidthFieldParseBenchmarks));
             return;
         }
 
@@ -228,6 +230,23 @@ public class Program
         {
             Console.WriteLine($"Unknown option: {args[0]}");
             Console.WriteLine("Use --help to see available options");
+        }
+    }
+
+    private static void RunBenchmarks(string[] args, params Type[] benchmarks)
+    {
+        var extraArgs = args.Length > 1 ? args[1..] : [];
+
+        if (extraArgs.Length > 0)
+        {
+            BenchmarkSwitcher.FromTypes(benchmarks).Run(extraArgs);
+        }
+        else
+        {
+            foreach (var benchmark in benchmarks)
+            {
+                BenchmarkRunner.Run(benchmark);
+            }
         }
     }
 }

@@ -11,7 +11,7 @@ namespace HeroParser.FixedWidths.Streaming;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Uses <see cref="ArrayPool{T}"/> for buffer management to minimize allocations.
+/// Uses per-instance pools for buffer management to minimize allocations and isolate pooled buffers.
 /// Supports all <see cref="FixedWidthWriterOptions"/> including padding, alignment,
 /// and overflow behavior.
 /// </para>
@@ -43,6 +43,8 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
     // DoS protection
     private readonly long? maxOutputSize;
 
+    private readonly ArrayPool<char> charPool;
+    private readonly ArrayPool<byte> bytePool;
     // State tracking
     private char[] charBuffer;
     private int charBufferPosition;
@@ -88,9 +90,10 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         // DoS protection
         maxOutputSize = this.options.MaxOutputSize;
 
-        charBuffer = ArrayPool<char>.Shared.Rent(DEFAULT_CHAR_BUFFER_SIZE);
-        Array.Clear(charBuffer); // Clear potential stale data from pool
-        byteBuffer = ArrayPool<byte>.Shared.Rent(DEFAULT_BYTE_BUFFER_SIZE);
+        charPool = ArrayPool<char>.Create();
+        bytePool = ArrayPool<byte>.Create();
+        charBuffer = RentCharBuffer(DEFAULT_CHAR_BUFFER_SIZE);
+        byteBuffer = RentByteBuffer(DEFAULT_BYTE_BUFFER_SIZE);
         // Note: byteBuffer doesn't need clearing as it's overwritten during encoding
         charBufferPosition = 0;
         totalCharsWritten = 0;
@@ -492,8 +495,8 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
             if (byteCount > byteBuffer.Length)
             {
                 var oldByteBuffer = byteBuffer;
-                byteBuffer = ArrayPool<byte>.Shared.Rent(byteCount);
-                ArrayPool<byte>.Shared.Return(oldByteBuffer);
+                byteBuffer = RentByteBuffer(byteCount);
+                ReturnByteBuffer(oldByteBuffer);
             }
 
             int bytesWritten = encoding.GetBytes(charBuffer.AsSpan(0, charBufferPosition), byteBuffer);
@@ -509,9 +512,8 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
     {
         int newSize = Math.Max(charBuffer.Length * 2, minimumRequired);
         var oldBuffer = charBuffer;
-        charBuffer = ArrayPool<char>.Shared.Rent(newSize);
-        Array.Clear(charBuffer); // Clear potential stale data from pool
-        ArrayPool<char>.Shared.Return(oldBuffer);
+        charBuffer = RentCharBuffer(newSize);
+        ReturnCharBuffer(oldBuffer);
     }
 
     #endregion
@@ -544,8 +546,8 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(charBuffer, clearArray: true);
-            ArrayPool<byte>.Shared.Return(byteBuffer, clearArray: true);
+            ReturnCharBuffer(charBuffer);
+            ReturnByteBuffer(byteBuffer);
             charBuffer = null!;
             byteBuffer = null!;
 
@@ -554,6 +556,34 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
                 await stream.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    #endregion
+
+    #region Pool Helpers
+
+    private char[] RentCharBuffer(int minimumLength)
+    {
+        var rented = charPool.Rent(minimumLength);
+        Array.Clear(rented);
+        return rented;
+    }
+
+    private byte[] RentByteBuffer(int minimumLength)
+    {
+        var rented = bytePool.Rent(minimumLength);
+        // Byte buffers are fully written before use; no clear required for correctness.
+        return rented;
+    }
+
+    private void ReturnCharBuffer(char[] toReturn)
+    {
+        charPool.Return(toReturn, clearArray: true);
+    }
+
+    private void ReturnByteBuffer(byte[] toReturn)
+    {
+        bytePool.Return(toReturn, clearArray: true);
     }
 
     #endregion

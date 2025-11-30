@@ -5,7 +5,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using System.Text;
-using HeroParser.Internal;
 
 namespace HeroParser.SeparatedValues.Writing;
 
@@ -13,11 +12,12 @@ namespace HeroParser.SeparatedValues.Writing;
 /// High-performance, low-allocation CSV writer that writes to a <see cref="TextWriter"/>.
 /// </summary>
 /// <remarks>
-/// Uses <see cref="ArrayPool{T}"/> for buffer management to minimize allocations.
+/// Uses per-instance pools for buffer management to minimize allocations and avoid shared pool contamination.
 /// Call <see cref="Dispose"/> or use a <c>using</c> statement to return pooled buffers.
 /// </remarks>
 public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 {
+    private readonly ArrayPool<char> charPool;
     private readonly TextWriter writer;
     private readonly CsvWriterOptions options;
     private readonly bool leaveOpen;
@@ -94,8 +94,8 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         maxFieldSize = this.options.MaxFieldSize;
         maxColumnCount = this.options.MaxColumnCount;
 
-        buffer = ArrayPool<char>.Shared.Rent(DEFAULT_BUFFER_SIZE);
-        Array.Clear(buffer); // Clear potential stale data from pool
+        charPool = ArrayPool<char>.Create();
+        buffer = RentBuffer(DEFAULT_BUFFER_SIZE);
         bufferPosition = 0;
         isFirstFieldInRow = true;
         totalCharsWritten = 0;
@@ -951,9 +951,8 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         int newSize = Math.Max(buffer.Length * 2, minimumRequired);
         var oldBuffer = buffer;
-        buffer = ArrayPool<char>.Shared.Rent(newSize);
-        Array.Clear(buffer); // Clear potential stale data from pool
-        ArrayPool<char>.Shared.Return(oldBuffer);
+        buffer = RentBuffer(newSize);
+        ReturnBuffer(oldBuffer);
     }
 
     #endregion
@@ -982,7 +981,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
+            ReturnBuffer(buffer);
             buffer = null!;
 
             if (!leaveOpen)
@@ -1006,7 +1005,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
+            ReturnBuffer(buffer);
             buffer = null!;
 
             if (!leaveOpen)
@@ -1021,6 +1020,22 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
                 }
             }
         }
+    }
+
+    #endregion
+
+    #region Pool Helpers
+
+    private char[] RentBuffer(int minimumLength)
+    {
+        var rented = charPool.Rent(minimumLength);
+        Array.Clear(rented);
+        return rented;
+    }
+
+    private void ReturnBuffer(char[] toReturn)
+    {
+        charPool.Return(toReturn, clearArray: true);
     }
 
     #endregion

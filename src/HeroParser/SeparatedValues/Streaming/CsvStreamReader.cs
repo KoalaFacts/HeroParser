@@ -11,6 +11,7 @@ public ref struct CsvStreamReader
     // Absolute maximum buffer size (128 MB) to prevent unbounded memory growth even when MaxRowSize is null
     private const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
 
+    private readonly ArrayPool<char> charPool;
     private readonly StreamReader reader;
     private readonly CsvParserOptions options;
     private readonly int[] columnStartsBuffer;
@@ -31,10 +32,9 @@ public ref struct CsvStreamReader
     {
         this.options = options;
         trackLineNumbers = options.TrackSourceLineNumbers;
+        charPool = ArrayPool<char>.Create();
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
-        // Use ArrayPool for buffer to reduce allocations
-        buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
-        Array.Clear(buffer); // Clear potential stale data from pool
+        buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
         columnStartsBuffer = new int[options.MaxColumnCount];
         columnLengthsBuffer = new int[options.MaxColumnCount];
         offset = 0;
@@ -139,10 +139,9 @@ public ref struct CsvStreamReader
                     "Increase MaxRowSize or ensure rows have proper line endings.");
             }
 
-            var newBuffer = ArrayPool<char>.Shared.Rent(buffer.Length * 2);
-            Array.Clear(newBuffer); // Clear potential stale data from pool
+            var newBuffer = RentBuffer(buffer.Length * 2);
             buffer.AsSpan(0, length).CopyTo(newBuffer);
-            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
+            ReturnBuffer(buffer);
             buffer = newBuffer;
         }
 
@@ -167,10 +166,22 @@ public ref struct CsvStreamReader
             return;
 
         // Return buffer to pool
-        ArrayPool<char>.Shared.Return(buffer, clearArray: true);
+        ReturnBuffer(buffer);
 
         // StreamReader was created with leaveOpen flag, so it handles stream disposal correctly
         reader.Dispose();
         disposed = true;
+    }
+
+    private readonly char[] RentBuffer(int minimumLength)
+    {
+        var rented = charPool.Rent(minimumLength);
+        Array.Clear(rented);
+        return rented;
+    }
+
+    private readonly void ReturnBuffer(char[] toReturn)
+    {
+        charPool.Return(toReturn, clearArray: true);
     }
 }

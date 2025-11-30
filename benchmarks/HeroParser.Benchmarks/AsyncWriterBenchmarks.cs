@@ -106,6 +106,36 @@ public class AsyncWriterBenchmarks
 
     #endregion
 
+    #region Sync vs Async - Factory Method Comparison
+
+    [Benchmark]
+    public void SyncWriter_CreateStreamWriter_Stream()
+    {
+        using var ms = new MemoryStream();
+        using var writer = Csv.CreateStreamWriter(ms);
+
+        for (int r = 0; r < Rows; r++)
+        {
+            writer.WriteRow(stringRow);
+        }
+        writer.Flush();
+    }
+
+    [Benchmark]
+    public async Task AsyncWriter_CreateAsyncStreamWriter()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = Csv.CreateAsyncStreamWriter(ms);
+
+        for (int r = 0; r < Rows; r++)
+        {
+            await writer.WriteRowAsync(stringRow).ConfigureAwait(false);
+        }
+        await writer.FlushAsync().ConfigureAwait(false);
+    }
+
+    #endregion
+
     #region Sync vs Async - Record Writing to Stream
 
     [Benchmark]

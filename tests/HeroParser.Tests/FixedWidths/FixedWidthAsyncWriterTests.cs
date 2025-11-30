@@ -1,6 +1,7 @@
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.FixedWidths.Writing;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Xunit;
 
@@ -887,6 +888,266 @@ public class FixedWidthAsyncWriterTests
 
     #endregion
 
+    #region Error Propagation Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToTextAsync_ErrorInAsyncSource_PropagatesException()
+    {
+        // Arrange
+        var records = CreateAsyncEnumerableWithError();
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAnyAsync<Exception>(
+            async () => await FixedWidth.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("Simulated error", ex.Message);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToStreamAsync_ErrorInAsyncSource_PropagatesException()
+    {
+        // Arrange
+        var records = CreateAsyncEnumerableWithError();
+        using var ms = new MemoryStream();
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAnyAsync<Exception>(
+            async () => await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("Simulated error", ex.Message);
+    }
+
+    #endregion
+
+    #region Cancellation Mid-Stream Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToTextAsync_CancellationMidStream_ThrowsOperationCanceledException()
+    {
+        // Arrange
+        var cts = new CancellationTokenSource();
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
+        var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);
+
+        // Act & Assert
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await FixedWidth.WriteToTextAsync(records, cancellationToken: linkedCts.Token)
+        );
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToStreamAsync_CancellationMidStream_ThrowsOperationCanceledException()
+    {
+        // Arrange
+        var cts = new CancellationTokenSource();
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
+        var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);
+        using var ms = new MemoryStream();
+
+        // Act & Assert
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: linkedCts.Token)
+        );
+    }
+
+    #endregion
+
+    #region Simulated Database Source Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToTextAsync_SimulatedDatabaseSource_WritesCorrectly()
+    {
+        // Arrange
+        var records = SimulateDatabaseQueryAsync();
+
+        // Act
+        var result = await FixedWidth.WriteToTextAsync(records, cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains("Product 1", result);
+        Assert.Contains("Product 10", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToStreamAsync_SimulatedDatabaseSource_WritesCorrectly()
+    {
+        // Arrange
+        var records = SimulateDatabaseQueryAsync();
+        using var ms = new MemoryStream();
+
+        // Act
+        await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var content = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains("Product 1", content);
+        Assert.Contains("Product 10", content);
+    }
+
+    #endregion
+
+    #region Builder ToTextAsync Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToTextAsync_IAsyncEnumerable_WritesCorrectly()
+    {
+        // Arrange
+        var records = ToAsyncEnumerable([
+            new TestRecord { Name = "Alice", Age = 30, City = "NYC" },
+            new TestRecord { Name = "Bob", Age = 25, City = "LA" }
+        ]);
+
+        // Act
+        var result = await FixedWidth.Write<TestRecord>()
+            .WithPadChar(' ')
+            .ToTextAsync(records, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains("Alice", result);
+        Assert.Contains("00030", result);
+        Assert.Contains("Bob", result);
+        Assert.Contains("00025", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToTextAsync_IEnumerable_WritesCorrectly()
+    {
+        // Arrange
+        var records = ToAsyncEnumerable([
+            new TestRecord { Name = "Charlie", Age = 35, City = "SF" },
+            new TestRecord { Name = "Diana", Age = 28, City = "Boston" }
+        ]);
+
+        // Act
+        var result = await FixedWidth.Write<TestRecord>()
+            .ToTextAsync(records, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains("Charlie", result);
+        Assert.Contains("00035", result);
+        Assert.Contains("Diana", result);
+        Assert.Contains("00028", result);
+    }
+
+    #endregion
+
+    #region WriteToTextAsync Cancellation Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToTextAsync_WithCancellation_ThrowsWhenCancelled()
+    {
+        // Arrange
+        var cts = new CancellationTokenSource();
+        var records = CreateAsyncEnumerableWithDelay(
+            new TestRecord { Name = "Alice", Age = 30, City = "NYC" },
+            new TestRecord { Name = "Bob", Age = 25, City = "LA" }
+        );
+
+        cts.Cancel();
+
+        // Act & Assert
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await FixedWidth.WriteToTextAsync(records, cancellationToken: cts.Token)
+        );
+    }
+
+    #endregion
+
+    #region WriteToFileAsync Encoding Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToFileAsync_WithEncoding_UsesCorrectEncoding()
+    {
+        // Arrange
+        var tempPath = Path.Combine(Path.GetTempPath(), $"fixedwidth_encoding_test_{Guid.NewGuid()}.dat");
+        try
+        {
+            var records = ToAsyncEnumerable([
+                new TestRecord { Name = "Müller", Age = 30, City = "München" },
+                new TestRecord { Name = "François", Age = 25, City = "Paris" }
+            ]);
+
+            // Act
+            await FixedWidth.WriteToFileAsync(tempPath, records, encoding: Encoding.UTF8, cancellationToken: TestContext.Current.CancellationToken);
+
+            // Assert
+            var content = await File.ReadAllTextAsync(tempPath, Encoding.UTF8, TestContext.Current.CancellationToken);
+            Assert.Contains("Müller", content);
+            Assert.Contains("François", content);
+            Assert.Contains("München", content);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToFileAsync_IEnumerable_WithEncoding_UsesCorrectEncoding()
+    {
+        // Arrange
+        var tempPath = Path.Combine(Path.GetTempPath(), $"fixedwidth_encoding_sync_test_{Guid.NewGuid()}.dat");
+        try
+        {
+            var records = new[]
+            {
+                new TestRecord { Name = "Müller", Age = 30, City = "München" },
+                new TestRecord { Name = "François", Age = 25, City = "Paris" }
+            };
+
+            // Act
+            await FixedWidth.WriteToFileAsync(tempPath, records, encoding: Encoding.UTF8, cancellationToken: TestContext.Current.CancellationToken);
+
+            // Assert
+            var content = await File.ReadAllTextAsync(tempPath, Encoding.UTF8, TestContext.Current.CancellationToken);
+            Assert.Contains("Müller", content);
+            Assert.Contains("François", content);
+            Assert.Contains("München", content);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
+    #endregion
+
+    #region Additional Test Models
+
+    public class ProductRecord
+    {
+        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        public int Id { get; set; }
+
+        [FixedWidthColumn(Start = 10, Length = 30)]
+        public string? Name { get; set; }
+
+        [FixedWidthColumn(Start = 40, Length = 15, Alignment = FieldAlignment.Right)]
+        public decimal Price { get; set; }
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
@@ -895,6 +1156,50 @@ public class FixedWidthAsyncWriterTests
         {
             await Task.Yield();
             yield return item;
+        }
+    }
+
+    private static async IAsyncEnumerable<T> CreateAsyncEnumerableWithDelay<T>(params T[] items)
+    {
+        foreach (var item in items)
+        {
+            await Task.Delay(50);
+            yield return item;
+        }
+    }
+
+    private static async IAsyncEnumerable<TestRecord> CreateAsyncEnumerableWithCancellationTrigger(
+        CancellationTokenSource cts,
+        int cancelAfterCount,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        for (int i = 0; i < 100; i++)
+        {
+            if (i == cancelAfterCount)
+            {
+                cts.Cancel();
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+            yield return new TestRecord { Name = $"Person {i}", Age = 20 + i, City = "City" };
+        }
+    }
+
+    private static async IAsyncEnumerable<TestRecord> CreateAsyncEnumerableWithError()
+    {
+        yield return new TestRecord { Name = "Alice", Age = 30, City = "NYC" };
+        await Task.Yield();
+        throw new InvalidOperationException("Simulated error in async enumerable");
+    }
+
+    private static async IAsyncEnumerable<ProductRecord> SimulateDatabaseQueryAsync()
+    {
+        // Simulate database query with async delay
+        for (int i = 1; i <= 10; i++)
+        {
+            await Task.Delay(1); // Simulate database latency
+            yield return new ProductRecord { Id = i, Name = $"Product {i}", Price = i * 10.5m };
         }
     }
 

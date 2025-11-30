@@ -493,6 +493,286 @@ public class AsyncWriterTests
 
     #endregion
 
+    #region CreateStreamWriter(Stream) Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_ReturnsWriter()
+    {
+        using var ms = new MemoryStream();
+        using var writer = Csv.CreateStreamWriter(ms, leaveOpen: true);
+
+        writer.WriteRow(["Hello", "World"]);
+        writer.Flush();
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = reader.ReadToEnd();
+
+        Assert.Contains("Hello", result);
+        Assert.Contains("World", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_WithOptions_AppliesOptions()
+    {
+        using var ms = new MemoryStream();
+        var options = new CsvWriterOptions { Delimiter = ';' };
+        using var writer = Csv.CreateStreamWriter(ms, options, leaveOpen: true);
+
+        writer.WriteRow(["A", "B", "C"]);
+        writer.Flush();
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = reader.ReadToEnd();
+
+        Assert.Contains("A;B;C", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_LeaveOpenFalse_DisposesStream()
+    {
+        var ms = new MemoryStream();
+        using (var writer = Csv.CreateStreamWriter(ms, leaveOpen: false))
+        {
+            writer.WriteRow(["Test"]);
+        }
+
+        Assert.False(ms.CanRead);
+        Assert.False(ms.CanWrite);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_LeaveOpenTrue_PreservesStream()
+    {
+        using var ms = new MemoryStream();
+        using (var writer = Csv.CreateStreamWriter(ms, leaveOpen: true))
+        {
+            writer.WriteRow(["Test"]);
+        }
+
+        Assert.True(ms.CanRead);
+        Assert.True(ms.CanWrite);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_CustomEncoding_UsesEncoding()
+    {
+        using var ms = new MemoryStream();
+        using var writer = Csv.CreateStreamWriter(ms, encoding: Encoding.Unicode, leaveOpen: true);
+
+        writer.WriteRow(["Test"]);
+        writer.Flush();
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms, Encoding.Unicode);
+        var result = reader.ReadToEnd();
+
+        Assert.Contains("Test", result);
+    }
+
+    #endregion
+
+    #region CreateAsyncStreamWriter Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_Stream_ReturnsWriter()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = Csv.CreateAsyncStreamWriter(ms, leaveOpen: true);
+
+        await writer.WriteRowAsync(["Hello", "World"], TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("Hello", result);
+        Assert.Contains("World", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_WithOptions_AppliesOptions()
+    {
+        using var ms = new MemoryStream();
+        var options = new CsvWriterOptions { Delimiter = ';' };
+        await using var writer = Csv.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
+
+        await writer.WriteRowAsync(["A", "B", "C"], TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("A;B;C", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_LeaveOpenFalse_DisposesStream()
+    {
+        var ms = new MemoryStream();
+        await using (var writer = Csv.CreateAsyncStreamWriter(ms, leaveOpen: false))
+        {
+            await writer.WriteRowAsync(["Test"], TestContext.Current.CancellationToken);
+        }
+
+        Assert.False(ms.CanRead);
+        Assert.False(ms.CanWrite);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_LeaveOpenTrue_PreservesStream()
+    {
+        using var ms = new MemoryStream();
+        await using (var writer = Csv.CreateAsyncStreamWriter(ms, leaveOpen: true))
+        {
+            await writer.WriteRowAsync(["Test"], TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(ms.CanRead);
+        Assert.True(ms.CanWrite);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_MultipleRows_WritesCorrectly()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = Csv.CreateAsyncStreamWriter(ms, leaveOpen: true);
+
+        await writer.WriteRowAsync(["Alice", "30", "NYC"], TestContext.Current.CancellationToken);
+        await writer.WriteRowAsync(["Bob", "25", "LA"], TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("Alice", result);
+        Assert.Contains("Bob", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_WriteFieldAsync_WritesFields()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = Csv.CreateAsyncStreamWriter(ms, leaveOpen: true);
+
+        await writer.WriteFieldAsync("Field1", TestContext.Current.CancellationToken);
+        await writer.WriteFieldAsync("Field2", TestContext.Current.CancellationToken);
+        await writer.WriteFieldAsync("Field3", TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("Field1,Field2,Field3", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_QuoteStyleAlways_QuotesAllFields()
+    {
+        using var ms = new MemoryStream();
+        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.Always };
+        await using var writer = Csv.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
+
+        await writer.WriteRowAsync(["simple", "text"], TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("\"simple\",\"text\"", result);
+    }
+
+    #endregion
+
+    #region ToStreamAsyncStreaming Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToStreamAsyncStreaming_IAsyncEnumerable_WritesCorrectly()
+    {
+        var records = ToAsyncEnumerable([
+            new TestRecord { Name = "Streaming1", Age = 10, City = "City1" },
+            new TestRecord { Name = "Streaming2", Age = 20, City = "City2" }
+        ]);
+
+        using var ms = new MemoryStream();
+        await Csv.Write<TestRecord>()
+            .WithHeader()
+            .ToStreamAsyncStreaming(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var content = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("Streaming1", content);
+        Assert.Contains("10", content);
+        Assert.Contains("Streaming2", content);
+        Assert.Contains("20", content);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToStreamAsyncStreaming_IEnumerable_WritesCorrectly()
+    {
+        var records = new[]
+        {
+            new TestRecord { Name = "DirectStream1", Age = 15, City = "TestCity1" },
+            new TestRecord { Name = "DirectStream2", Age = 25, City = "TestCity2" }
+        };
+
+        using var ms = new MemoryStream();
+        await Csv.Write<TestRecord>()
+            .WithHeader()
+            .ToStreamAsyncStreaming(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var content = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("DirectStream1", content);
+        Assert.Contains("15", content);
+        Assert.Contains("DirectStream2", content);
+        Assert.Contains("25", content);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task Builder_ToStreamAsyncStreaming_LeaveOpenFalse_ClosesStream()
+    {
+        var records = new[]
+        {
+            new TestRecord { Name = "Test", Age = 1, City = "City" }
+        };
+
+        var ms = new MemoryStream();
+        await Csv.Write<TestRecord>()
+            .ToStreamAsyncStreaming(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(ms.CanRead);
+        Assert.False(ms.CanWrite);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)

@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **Fixed-Width Async Stream Writer**: `FixedWidthAsyncStreamWriter` for true non-blocking async I/O
+  - `FixedWidth.CreateAsyncStreamWriter(Stream)` - Create a streaming async writer
+  - `FixedWidth.CreateStreamWriter(Stream)` - Create a sync writer from a stream
+  - `FixedWidth.CreateWriter(TextWriter)` - Alias for `CreateStreamWriter(TextWriter)` to match CSV API
+  - Complete API parity between CSV and FixedWidth writer factory methods
 - **Fixed-Width File Parsing**: Complete support for fixed-width (fixed-length) file formats
   - `FixedWidth.Read<T>()` - Fluent builder for reading and deserializing records
   - `FixedWidth.Read()` - Non-generic builder for manual row-by-row reading

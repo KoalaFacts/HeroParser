@@ -1,5 +1,6 @@
 using System.Text;
 using HeroParser.FixedWidths;
+using HeroParser.FixedWidths.Streaming;
 using HeroParser.FixedWidths.Writing;
 
 namespace HeroParser;
@@ -298,6 +299,20 @@ public static partial class FixedWidth
     #region Stream Writer Creation
 
     /// <summary>
+    /// Creates a writer for manual row-by-row fixed-width writing.
+    /// </summary>
+    /// <param name="textWriter">The underlying text writer.</param>
+    /// <param name="options">Optional writer options.</param>
+    /// <param name="leaveOpen">When true, leaves the text writer open on dispose.</param>
+    /// <returns>A configured FixedWidthStreamWriter.</returns>
+    /// <remarks>This method is an alias for <see cref="CreateStreamWriter(TextWriter, FixedWidthWriterOptions?, bool)"/> to match CSV API naming.</remarks>
+    public static FixedWidthStreamWriter CreateWriter(
+        TextWriter textWriter,
+        FixedWidthWriterOptions? options = null,
+        bool leaveOpen = false)
+        => CreateStreamWriter(textWriter, options, leaveOpen);
+
+    /// <summary>
     /// Creates a stream writer for manual row-by-row fixed-width writing.
     /// </summary>
     /// <param name="textWriter">The underlying text writer.</param>
@@ -314,6 +329,29 @@ public static partial class FixedWidth
         options.Validate();
 
         return new FixedWidthStreamWriter(textWriter, options, leaveOpen);
+    }
+
+    /// <summary>
+    /// Creates a stream writer for manual row-by-row fixed-width writing.
+    /// </summary>
+    /// <param name="stream">The underlying stream to write to.</param>
+    /// <param name="options">Optional writer options.</param>
+    /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
+    /// <param name="leaveOpen">When true, leaves the stream open on dispose.</param>
+    /// <returns>A configured FixedWidthStreamWriter.</returns>
+    public static FixedWidthStreamWriter CreateStreamWriter(
+        Stream stream,
+        FixedWidthWriterOptions? options = null,
+        Encoding? encoding = null,
+        bool leaveOpen = true)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        options ??= FixedWidthWriterOptions.Default;
+        options.Validate();
+        encoding ??= Encoding.UTF8;
+
+        var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
+        return new FixedWidthStreamWriter(streamWriter, options, leaveOpen: false);
     }
 
     /// <summary>
@@ -336,6 +374,28 @@ public static partial class FixedWidth
         var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         var streamWriter = new StreamWriter(stream, encoding);
         return new FixedWidthStreamWriter(streamWriter, options, leaveOpen: false);
+    }
+
+    /// <summary>
+    /// Creates an async stream writer for manual row-by-row fixed-width writing.
+    /// </summary>
+    /// <param name="stream">The underlying stream to write to.</param>
+    /// <param name="options">Optional writer options.</param>
+    /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
+    /// <param name="leaveOpen">When true, leaves the stream open on dispose.</param>
+    /// <returns>A configured FixedWidthAsyncStreamWriter.</returns>
+    public static FixedWidthAsyncStreamWriter CreateAsyncStreamWriter(
+        Stream stream,
+        FixedWidthWriterOptions? options = null,
+        Encoding? encoding = null,
+        bool leaveOpen = true)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        options ??= FixedWidthWriterOptions.Default;
+        options.Validate();
+        encoding ??= Encoding.UTF8;
+
+        return new FixedWidthAsyncStreamWriter(stream, options, encoding, leaveOpen);
     }
 
     #endregion

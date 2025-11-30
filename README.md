@@ -930,6 +930,32 @@ writer.EndRow();
 writer.Flush();
 ```
 
+### Low-Level Writer Creation
+
+```csharp
+// Create writer from TextWriter
+using var writer = FixedWidth.CreateWriter(Console.Out);
+
+// Create writer from Stream
+using var stream = File.Create("output.dat");
+using var streamWriter = FixedWidth.CreateStreamWriter(stream);
+```
+
+### Async Row-by-Row Writing
+
+For scenarios requiring true async I/O, use the `FixedWidthAsyncStreamWriter`:
+
+```csharp
+// Low-level async writer with sync fast paths
+await using var writer = FixedWidth.CreateAsyncStreamWriter(stream);
+await writer.WriteFieldAsync("Alice", 20);
+await writer.WriteFieldAsync("30", 5, FieldAlignment.Right);
+await writer.EndRowAsync();
+await writer.FlushAsync();
+```
+
+The async writer uses sync fast paths when data fits in the buffer, avoiding async overhead for small writes while supporting true non-blocking I/O for large datasets.
+
 ### Custom Type Converters
 
 ```csharp

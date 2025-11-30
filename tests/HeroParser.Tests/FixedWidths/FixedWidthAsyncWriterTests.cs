@@ -527,6 +527,366 @@ public class FixedWidthAsyncWriterTests
 
     #endregion
 
+    #region CreateWriter Tests (Alias for CreateStreamWriter)
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateWriter_TextWriter_ReturnsWriter()
+    {
+        using var sw = new StringWriter();
+        using var writer = FixedWidth.CreateWriter(sw);
+
+        writer.WriteField("Test", 10);
+        writer.EndRow();
+        writer.Flush();
+
+        var result = sw.ToString();
+        Assert.StartsWith("Test", result);
+        Assert.Equal(10 + Environment.NewLine.Length, result.Length);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateWriter_WithOptions_AppliesOptions()
+    {
+        using var sw = new StringWriter();
+        var options = new FixedWidthWriterOptions
+        {
+            DefaultPadChar = '*',
+            DefaultAlignment = FieldAlignment.Right
+        };
+        using var writer = FixedWidth.CreateWriter(sw, options);
+
+        writer.WriteField("Hi", 5);
+        writer.EndRow();
+        writer.Flush();
+
+        var result = sw.ToString();
+        Assert.StartsWith("***Hi", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateWriter_LeaveOpenTrue_DoesNotDisposeTextWriter()
+    {
+        var sw = new StringWriter();
+        using (var writer = FixedWidth.CreateWriter(sw, leaveOpen: true))
+        {
+            writer.WriteField("Test", 10);
+            writer.EndRow();
+        }
+
+        // Should still be able to write to StringWriter
+        sw.Write("More");
+        Assert.Contains("More", sw.ToString());
+    }
+
+    #endregion
+
+    #region CreateStreamWriter(Stream) Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_ReturnsWriter()
+    {
+        using var ms = new MemoryStream();
+        using var writer = FixedWidth.CreateStreamWriter(ms, leaveOpen: true);
+
+        writer.WriteField("Hello", 10);
+        writer.EndRow();
+        writer.Flush();
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = reader.ReadToEnd();
+
+        Assert.StartsWith("Hello", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_WithOptions_AppliesOptions()
+    {
+        using var ms = new MemoryStream();
+        var options = new FixedWidthWriterOptions
+        {
+            DefaultPadChar = '-',
+            DefaultAlignment = FieldAlignment.Center
+        };
+        using var writer = FixedWidth.CreateStreamWriter(ms, options, leaveOpen: true);
+
+        writer.WriteField("Hi", 6);
+        writer.EndRow();
+        writer.Flush();
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = reader.ReadToEnd();
+
+        Assert.Contains("--Hi--", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_LeaveOpenFalse_DisposesStream()
+    {
+        var ms = new MemoryStream();
+        using (var writer = FixedWidth.CreateStreamWriter(ms, leaveOpen: false))
+        {
+            writer.WriteField("Test", 10);
+            writer.EndRow();
+        }
+
+        Assert.False(ms.CanRead);
+        Assert.False(ms.CanWrite);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_LeaveOpenTrue_PreservesStream()
+    {
+        using var ms = new MemoryStream();
+        using (var writer = FixedWidth.CreateStreamWriter(ms, leaveOpen: true))
+        {
+            writer.WriteField("Test", 10);
+            writer.EndRow();
+        }
+
+        Assert.True(ms.CanRead);
+        Assert.True(ms.CanWrite);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void CreateStreamWriter_Stream_CustomEncoding_UsesEncoding()
+    {
+        using var ms = new MemoryStream();
+        using var writer = FixedWidth.CreateStreamWriter(ms, encoding: Encoding.Unicode, leaveOpen: true);
+
+        writer.WriteField("Test", 10);
+        writer.EndRow();
+        writer.Flush();
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms, Encoding.Unicode);
+        var result = reader.ReadToEnd();
+
+        Assert.StartsWith("Test", result);
+    }
+
+    #endregion
+
+    #region CreateAsyncStreamWriter Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_Stream_ReturnsWriter()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: true);
+
+        await writer.WriteFieldAsync("Hello", 10, TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.StartsWith("Hello", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_WithAlignment_AppliesAlignment()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: true);
+
+        await writer.WriteFieldAsync("Hi", 5, FieldAlignment.Right, TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.StartsWith("   Hi", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_WithOptions_AppliesOptions()
+    {
+        using var ms = new MemoryStream();
+        var options = new FixedWidthWriterOptions
+        {
+            DefaultPadChar = '*',
+            DefaultAlignment = FieldAlignment.Right
+        };
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
+
+        await writer.WriteFieldAsync("Hi", 5, TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.StartsWith("***Hi", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_LeaveOpenFalse_DisposesStream()
+    {
+        var ms = new MemoryStream();
+        await using (var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: false))
+        {
+            await writer.WriteFieldAsync("Test", 10, TestContext.Current.CancellationToken);
+            await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.False(ms.CanRead);
+        Assert.False(ms.CanWrite);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_LeaveOpenTrue_PreservesStream()
+    {
+        using var ms = new MemoryStream();
+        await using (var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: true))
+        {
+            await writer.WriteFieldAsync("Test", 10, TestContext.Current.CancellationToken);
+            await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(ms.CanRead);
+        Assert.True(ms.CanWrite);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_MultipleRows_WritesCorrectly()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: true);
+
+        await writer.WriteFieldAsync("Alice", 10, TestContext.Current.CancellationToken);
+        await writer.WriteFieldAsync("30", 5, FieldAlignment.Right, TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+
+        await writer.WriteFieldAsync("Bob", 10, TestContext.Current.CancellationToken);
+        await writer.WriteFieldAsync("25", 5, FieldAlignment.Right, TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("Alice", result);
+        Assert.Contains("   30", result);
+        Assert.Contains("Bob", result);
+        Assert.Contains("   25", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_FormattedValues_WritesCorrectly()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: true);
+
+        await writer.WriteFieldAsync(12345, 10, cancellationToken: TestContext.Current.CancellationToken);
+        await writer.WriteFieldAsync(3.14159m, 10, format: "F2", cancellationToken: TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("12345", result);
+        Assert.Contains("3.14", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_NullValue_WritesNullValue()
+    {
+        using var ms = new MemoryStream();
+        var options = new FixedWidthWriterOptions { NullValue = "NULL" };
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
+
+        await writer.WriteFieldAsync((object?)null, 10, cancellationToken: TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.StartsWith("NULL", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_OverflowBehavior_Throws()
+    {
+        using var ms = new MemoryStream();
+        var options = new FixedWidthWriterOptions { OverflowBehavior = OverflowBehavior.Throw };
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
+
+        await Assert.ThrowsAsync<FixedWidthException>(async () =>
+        {
+            await writer.WriteFieldAsync("This text is way too long", 5, TestContext.Current.CancellationToken);
+        });
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_OverflowBehavior_Truncates()
+    {
+        using var ms = new MemoryStream();
+        var options = new FixedWidthWriterOptions { OverflowBehavior = OverflowBehavior.Truncate };
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
+
+        await writer.WriteFieldAsync("Hello World", 5, TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.StartsWith("Hello", result);
+        Assert.DoesNotContain("World", result.Split('\n')[0]);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CreateAsyncStreamWriter_CenterAlignment_PadsBothSides()
+    {
+        using var ms = new MemoryStream();
+        await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: true);
+
+        await writer.WriteFieldAsync("Hi".AsMemory(), 6, FieldAlignment.Center, ' ', TestContext.Current.CancellationToken);
+        await writer.EndRowAsync(TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var result = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.StartsWith("  Hi  ", result);
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)

@@ -89,7 +89,9 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         maxOutputSize = this.options.MaxOutputSize;
 
         charBuffer = ArrayPool<char>.Shared.Rent(DEFAULT_CHAR_BUFFER_SIZE);
+        Array.Clear(charBuffer); // Clear potential stale data from pool
         byteBuffer = ArrayPool<byte>.Shared.Rent(DEFAULT_BYTE_BUFFER_SIZE);
+        // Note: byteBuffer doesn't need clearing as it's overwritten during encoding
         charBufferPosition = 0;
         totalCharsWritten = 0;
     }
@@ -508,6 +510,7 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         int newSize = Math.Max(charBuffer.Length * 2, minimumRequired);
         var oldBuffer = charBuffer;
         charBuffer = ArrayPool<char>.Shared.Rent(newSize);
+        Array.Clear(charBuffer); // Clear potential stale data from pool
         ArrayPool<char>.Shared.Return(oldBuffer);
     }
 
@@ -541,8 +544,8 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(charBuffer);
-            ArrayPool<byte>.Shared.Return(byteBuffer);
+            ArrayPool<char>.Shared.Return(charBuffer, clearArray: true);
+            ArrayPool<byte>.Shared.Return(byteBuffer, clearArray: true);
             charBuffer = null!;
             byteBuffer = null!;
 

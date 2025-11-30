@@ -83,7 +83,8 @@ public static partial class Csv
         encoding ??= Encoding.UTF8;
 
         var textWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
-        return new CsvStreamWriter(textWriter, options, leaveOpen: true);
+        // Always dispose the StreamWriter we created; its leaveOpen controls whether the Stream is disposed
+        return new CsvStreamWriter(textWriter, options, leaveOpen: false);
     }
 
     /// <summary>

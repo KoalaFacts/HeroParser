@@ -54,6 +54,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         trackLineNumbers = options.TrackSourceLineNumbers;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
+        Array.Clear(buffer); // Clear potential stale data from pool
         // Use dedicated arrays for column indices - they're small and avoids sharing issues
         columnStartsBuffer = new int[options.MaxColumnCount];
         columnLengthsBuffer = new int[options.MaxColumnCount];
@@ -156,6 +157,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             }
 
             var newBuffer = ArrayPool<char>.Shared.Rent(buffer.Length * 2);
+            Array.Clear(newBuffer); // Clear potential stale data from pool
             buffer.AsSpan(0, length).CopyTo(newBuffer);
             ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = newBuffer;

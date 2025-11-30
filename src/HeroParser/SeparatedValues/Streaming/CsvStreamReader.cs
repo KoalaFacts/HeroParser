@@ -34,6 +34,7 @@ public ref struct CsvStreamReader
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         // Use ArrayPool for buffer to reduce allocations
         buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
+        Array.Clear(buffer); // Clear potential stale data from pool
         columnStartsBuffer = new int[options.MaxColumnCount];
         columnLengthsBuffer = new int[options.MaxColumnCount];
         offset = 0;
@@ -139,6 +140,7 @@ public ref struct CsvStreamReader
             }
 
             var newBuffer = ArrayPool<char>.Shared.Rent(buffer.Length * 2);
+            Array.Clear(newBuffer); // Clear potential stale data from pool
             buffer.AsSpan(0, length).CopyTo(newBuffer);
             ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = newBuffer;

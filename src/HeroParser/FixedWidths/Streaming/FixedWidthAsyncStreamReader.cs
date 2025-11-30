@@ -49,6 +49,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         trackLineNumbers = options.TrackSourceLineNumbers;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = ArrayPool<char>.Shared.Rent(Math.Max(initialBufferSize, 4096));
+        Array.Clear(buffer); // Clear potential stale data from pool
         offset = 0;
         length = 0;
         recordCount = 0;
@@ -278,6 +279,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             }
 
             var newBuffer = ArrayPool<char>.Shared.Rent(buffer.Length * 2);
+            Array.Clear(newBuffer); // Clear potential stale data from pool
             buffer.AsSpan(0, length).CopyTo(newBuffer);
             ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = newBuffer;

@@ -76,6 +76,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         maxOutputSize = this.options.MaxOutputSize;
 
         buffer = ArrayPool<char>.Shared.Rent(DEFAULT_BUFFER_SIZE);
+        Array.Clear(buffer); // Clear potential stale data from pool
         bufferPosition = 0;
         totalCharsWritten = 0;
     }
@@ -434,6 +435,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         int newSize = Math.Max(buffer.Length * 2, minimumRequired);
         var oldBuffer = buffer;
         buffer = ArrayPool<char>.Shared.Rent(newSize);
+        Array.Clear(buffer); // Clear potential stale data from pool
         ArrayPool<char>.Shared.Return(oldBuffer);
     }
 
@@ -463,7 +465,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(buffer);
+            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = null!;
 
             if (!leaveOpen)
@@ -487,7 +489,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(buffer);
+            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = null!;
 
             if (!leaveOpen)

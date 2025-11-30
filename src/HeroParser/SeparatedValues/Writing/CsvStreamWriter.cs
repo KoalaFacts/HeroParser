@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using System.Text;
+using HeroParser.Internal;
 
 namespace HeroParser.SeparatedValues.Writing;
 
@@ -94,6 +95,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         maxColumnCount = this.options.MaxColumnCount;
 
         buffer = ArrayPool<char>.Shared.Rent(DEFAULT_BUFFER_SIZE);
+        Array.Clear(buffer); // Clear potential stale data from pool
         bufferPosition = 0;
         isFirstFieldInRow = true;
         totalCharsWritten = 0;
@@ -950,6 +952,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         int newSize = Math.Max(buffer.Length * 2, minimumRequired);
         var oldBuffer = buffer;
         buffer = ArrayPool<char>.Shared.Rent(newSize);
+        Array.Clear(buffer); // Clear potential stale data from pool
         ArrayPool<char>.Shared.Return(oldBuffer);
     }
 
@@ -979,7 +982,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(buffer);
+            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = null!;
 
             if (!leaveOpen)
@@ -1003,7 +1006,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         }
         finally
         {
-            ArrayPool<char>.Shared.Return(buffer);
+            ArrayPool<char>.Shared.Return(buffer, clearArray: true);
             buffer = null!;
 
             if (!leaveOpen)

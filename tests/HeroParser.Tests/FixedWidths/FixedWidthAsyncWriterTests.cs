@@ -543,7 +543,8 @@ public class FixedWidthAsyncWriterTests
 
         var result = sw.ToString();
         Assert.StartsWith("Test", result);
-        Assert.Equal(10 + Environment.NewLine.Length, result.Length);
+        // Writer defaults to CRLF ("\r\n") regardless of platform for RFC compliance
+        Assert.Equal(10 + 2, result.Length);
     }
 
     [Fact]

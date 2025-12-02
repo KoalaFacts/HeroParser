@@ -56,6 +56,7 @@ public static partial class FixedWidth
     {
         ArgumentNullException.ThrowIfNull(records);
         options ??= FixedWidthWriterOptions.Default;
+
         options.Validate();
 
         using var stringWriter = new StringWriter();
@@ -84,8 +85,9 @@ public static partial class FixedWidth
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
         options ??= FixedWidthWriterOptions.Default;
-        options.Validate();
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         using var streamWriter = new StreamWriter(fileStream, encoding);
@@ -113,8 +115,9 @@ public static partial class FixedWidth
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
         options ??= FixedWidthWriterOptions.Default;
-        options.Validate();
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
@@ -141,8 +144,9 @@ public static partial class FixedWidth
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
         options ??= FixedWidthWriterOptions.Default;
-        options.Validate();
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         await using var fileStream = new FileStream(
             path,
@@ -178,8 +182,9 @@ public static partial class FixedWidth
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
         options ??= FixedWidthWriterOptions.Default;
-        options.Validate();
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         await using var fileStream = new FileStream(
             path,
@@ -217,8 +222,9 @@ public static partial class FixedWidth
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
         options ??= FixedWidthWriterOptions.Default;
-        options.Validate();
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
@@ -248,8 +254,9 @@ public static partial class FixedWidth
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
         options ??= FixedWidthWriterOptions.Default;
-        options.Validate();
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
@@ -283,6 +290,7 @@ public static partial class FixedWidth
     {
         ArgumentNullException.ThrowIfNull(records);
         options ??= FixedWidthWriterOptions.Default;
+
         options.Validate();
 
         await using var stringWriter = new StringWriter();
@@ -368,8 +376,9 @@ public static partial class FixedWidth
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         options ??= FixedWidthWriterOptions.Default;
-        options.Validate();
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         var streamWriter = new StreamWriter(stream, encoding);
@@ -392,8 +401,9 @@ public static partial class FixedWidth
     {
         ArgumentNullException.ThrowIfNull(stream);
         options ??= FixedWidthWriterOptions.Default;
-        options.Validate();
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         return new FixedWidthAsyncStreamWriter(stream, options, encoding, leaveOpen);
     }

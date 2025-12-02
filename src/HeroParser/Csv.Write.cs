@@ -99,6 +99,8 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(records);
         options ??= CsvWriterOptions.Default;
 
+        options.Validate();
+
         using var stringWriter = new StringWriter();
         using var writer = new CsvStreamWriter(stringWriter, options);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
@@ -144,6 +146,8 @@ public static partial class Csv
         options ??= CsvWriterOptions.Default;
         encoding ??= Encoding.UTF8;
 
+        options.Validate();
+
         await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
@@ -173,6 +177,8 @@ public static partial class Csv
         options ??= CsvWriterOptions.Default;
         encoding ??= Encoding.UTF8;
 
+        options.Validate();
+
         await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
@@ -194,6 +200,8 @@ public static partial class Csv
     {
         ArgumentNullException.ThrowIfNull(records);
         options ??= CsvWriterOptions.Default;
+
+        options.Validate();
 
         await using var stringWriter = new StringWriter();
         await using var writer = new CsvStreamWriter(stringWriter, options);
@@ -218,6 +226,8 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(records);
         options ??= CsvWriterOptions.Default;
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         using var textWriter = new StreamWriter(stream, encoding);
@@ -246,6 +256,8 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(records);
         options ??= CsvWriterOptions.Default;
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         await using var stream = new FileStream(
             path,
@@ -280,6 +292,8 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(records);
         options ??= CsvWriterOptions.Default;
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         await using var stream = new FileStream(
             path,
@@ -327,6 +341,8 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(records);
         options ??= CsvWriterOptions.Default;
         encoding ??= Encoding.UTF8;
+
+        options.Validate();
 
         using var textWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         using var writer = new CsvStreamWriter(textWriter, options);

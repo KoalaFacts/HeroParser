@@ -36,6 +36,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     private int maxRecordCount = 100_000;
     private bool trackSourceLineNumbers = false;
     private bool skipEmptyLines = true;
+    private bool allowShortRows = false;
     private char? commentCharacter = null;
     private int skipRows = 0;
     private long? maxInputSize = 100 * 1024 * 1024; // 100 MB default
@@ -150,6 +151,23 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
     public FixedWidthReaderBuilder<T> IncludeEmptyLines()
     {
         skipEmptyLines = false;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Sets whether to allow rows that are shorter than expected.
+    /// When enabled, fields that extend beyond the row's actual length return empty values.
+    /// </summary>
+    /// <param name="allow">True to allow short rows (default when called), false to throw on short rows.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// This is useful when parsing files where trailing fields may be omitted if empty,
+    /// similar to how CSV parsers handle missing columns at the end of rows.
+    /// </remarks>
+    public FixedWidthReaderBuilder<T> AllowShortRows(bool allow = true)
+    {
+        allowShortRows = allow;
         InvalidateCache();
         return this;
     }
@@ -498,6 +516,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : class, new()
             MaxRecordCount = maxRecordCount,
             TrackSourceLineNumbers = trackSourceLineNumbers,
             SkipEmptyLines = skipEmptyLines,
+            AllowShortRows = allowShortRows,
             CommentCharacter = commentCharacter,
             SkipRows = skipRows,
             MaxInputSize = maxInputSize
@@ -520,6 +539,7 @@ public sealed class FixedWidthReaderBuilder
     private int maxRecordCount = 100_000;
     private bool trackSourceLineNumbers = false;
     private bool skipEmptyLines = true;
+    private bool allowShortRows = false;
     private char? commentCharacter = null;
     private int skipRows = 0;
     private long? maxInputSize = 100 * 1024 * 1024; // 100 MB default
@@ -623,6 +643,23 @@ public sealed class FixedWidthReaderBuilder
     public FixedWidthReaderBuilder IncludeEmptyLines()
     {
         skipEmptyLines = false;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Sets whether to allow rows that are shorter than expected.
+    /// When enabled, fields that extend beyond the row's actual length return empty values.
+    /// </summary>
+    /// <param name="allow">True to allow short rows (default when called), false to throw on short rows.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// This is useful when parsing files where trailing fields may be omitted if empty,
+    /// similar to how CSV parsers handle missing columns at the end of rows.
+    /// </remarks>
+    public FixedWidthReaderBuilder AllowShortRows(bool allow = true)
+    {
+        allowShortRows = allow;
         InvalidateCache();
         return this;
     }
@@ -788,6 +825,7 @@ public sealed class FixedWidthReaderBuilder
             MaxRecordCount = maxRecordCount,
             TrackSourceLineNumbers = trackSourceLineNumbers,
             SkipEmptyLines = skipEmptyLines,
+            AllowShortRows = allowShortRows,
             CommentCharacter = commentCharacter,
             SkipRows = skipRows,
             MaxInputSize = maxInputSize

@@ -807,6 +807,47 @@ public class Transaction
 }
 ```
 
+### Alternative Field Bound Syntax: End Property
+
+You can specify field bounds using either `Start`/`Length` or `Start`/`End`:
+
+```csharp
+public class Record
+{
+    // Using Length: field from position 0, 10 characters long
+    [FixedWidthColumn(Start = 0, Length = 10)]
+    public string Id { get; set; } = "";
+
+    // Using End: field from position 10 to 30 (exclusive), same as Length = 20
+    [FixedWidthColumn(Start = 10, End = 30)]
+    public string Name { get; set; } = "";
+
+    // Using End with other options
+    [FixedWidthColumn(Start = 30, End = 40, Alignment = FieldAlignment.Right, PadChar = '0')]
+    public decimal Amount { get; set; }
+}
+```
+
+The `End` property specifies the exclusive ending position of the field. When both `Length` and `End` are specified, `Length` takes precedence.
+
+### Handling Short Rows
+
+When parsing files where trailing fields may be omitted or rows vary in length, use `AllowShortRows()`:
+
+```csharp
+// Handle short rows gracefully - missing fields return empty values
+var records = FixedWidth.Read<Employee>()
+    .AllowShortRows()
+    .FromFile("variable-length.dat")
+    .ToList();
+
+// By default, accessing fields beyond row length throws FixedWidthException
+// Use AllowShortRows() when:
+// - Trailing fields are optional
+// - Records may have variable lengths
+// - Legacy files have inconsistent formatting
+```
+
 ### Date/Time Format Strings
 
 ```csharp

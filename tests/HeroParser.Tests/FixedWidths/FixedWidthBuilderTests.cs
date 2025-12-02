@@ -801,4 +801,210 @@ public class FixedWidthRecordBindingTests
     }
 
     #endregion
+
+    #region AllowShortRows Tests
+
+    [FixedWidthGenerateBinder]
+    public class ShortRowRecord
+    {
+        [FixedWidthColumn(Start = 0, Length = 10)]
+        public string Field1 { get; set; } = "";
+
+        [FixedWidthColumn(Start = 10, Length = 10)]
+        public string Field2 { get; set; } = "";
+
+        [FixedWidthColumn(Start = 20, Length = 10)]
+        public string Field3 { get; set; } = "";
+    }
+
+    [Fact]
+    public void GenericBuilder_AllowShortRows_HandlesShortRowsGracefully()
+    {
+        // Arrange - First row is complete, second row is short (missing Field3)
+        var data =
+            "Field1    Field2    Field3    \n" +
+            "Short1    Short2    ";
+
+        // Act
+        var records = FixedWidth.Read<ShortRowRecord>()
+            .AllowShortRows()
+            .FromText(data)
+            .ToList();
+
+        // Assert
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Field1", records[0].Field1);
+        Assert.Equal("Field2", records[0].Field2);
+        Assert.Equal("Field3", records[0].Field3);
+        Assert.Equal("Short1", records[1].Field1);
+        Assert.Equal("Short2", records[1].Field2);
+        Assert.Equal("", records[1].Field3);
+    }
+
+    [Fact]
+    public void GenericBuilder_AllowShortRows_HandlesVeryShortRows()
+    {
+        // Arrange - Row only has first field
+        var data = "OnlyField1";
+
+        // Act
+        var records = FixedWidth.Read<ShortRowRecord>()
+            .AllowShortRows()
+            .FromText(data)
+            .ToList();
+
+        // Assert
+        Assert.Single(records);
+        Assert.Equal("OnlyField1", records[0].Field1);
+        Assert.Equal("", records[0].Field2);
+        Assert.Equal("", records[0].Field3);
+    }
+
+    [Fact]
+    public void GenericBuilder_AllowShortRows_False_ThrowsOnShortRows()
+    {
+        // Arrange - Row is short (missing Field3)
+        var data = "Field1    Field2    ";
+
+        // Act & Assert
+        var ex = Assert.Throws<FixedWidthException>(() =>
+            FixedWidth.Read<ShortRowRecord>()
+                .AllowShortRows(false)
+                .FromText(data)
+                .ToList());
+
+        Assert.Equal(FixedWidthErrorCode.FieldOutOfBounds, ex.ErrorCode);
+        Assert.Contains("AllowShortRows", ex.Message);
+    }
+
+    [Fact]
+    public void NonGenericBuilder_AllowShortRows_HandlesShortRowsGracefully()
+    {
+        // Arrange - Short row
+        var data = "Short";
+
+        // Act
+        string? field1 = null;
+        string? field2 = null;
+        foreach (var row in FixedWidth.Read()
+            .AllowShortRows()
+            .FromText(data))
+        {
+            field1 = row.GetField(0, 10).ToString();
+            field2 = row.GetField(10, 10).ToString();
+        }
+
+        // Assert
+        Assert.Equal("Short", field1);
+        Assert.Equal("", field2);
+    }
+
+    [Fact]
+    public void NonGenericBuilder_AllowShortRows_False_ThrowsOnShortRows()
+    {
+        // Arrange
+        var data = "Short";
+
+        // Act & Assert
+        var ex = Assert.Throws<FixedWidthException>(() =>
+        {
+            foreach (var row in FixedWidth.Read()
+                .AllowShortRows(false)
+                .FromText(data))
+            {
+                _ = row.GetField(0, 10); // This should throw
+            }
+        });
+
+        Assert.Equal(FixedWidthErrorCode.FieldOutOfBounds, ex.ErrorCode);
+    }
+
+    #endregion
+
+    #region End Property Tests
+
+    [FixedWidthGenerateBinder]
+    public class EndPropertyRecord
+    {
+        // Using End instead of Length
+        [FixedWidthColumn(Start = 0, End = 10)]
+        public string Field1 { get; set; } = "";
+
+        [FixedWidthColumn(Start = 10, End = 25)]
+        public string Field2 { get; set; } = "";
+
+        // Mix of Length and End
+        [FixedWidthColumn(Start = 25, Length = 5)]
+        public string Field3 { get; set; } = "";
+    }
+
+    [Fact]
+    public void GenericBuilder_EndProperty_WorksAsAlternativeToLength()
+    {
+        // Arrange: Field1 (0-10), Field2 (10-25), Field3 (25-30)
+        var data = "Field1    Field2         F3   ";
+
+        // Act
+        var records = FixedWidth.Read<EndPropertyRecord>().FromText(data).ToList();
+
+        // Assert
+        Assert.Single(records);
+        Assert.Equal("Field1", records[0].Field1);    // End=10 means length 10
+        Assert.Equal("Field2", records[0].Field2);    // End=25 means length 15
+        Assert.Equal("F3", records[0].Field3);        // Length=5
+    }
+
+    [FixedWidthGenerateBinder]
+    public class EndPropertyNumericRecord
+    {
+        [FixedWidthColumn(Start = 0, End = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        public int Number { get; set; }
+    }
+
+    [Fact]
+    public void GenericBuilder_EndProperty_WorksWithNumericTypes()
+    {
+        // Arrange: Field at 0-5 (length 5)
+        var data = "00123";
+
+        // Act
+        var records = FixedWidth.Read<EndPropertyNumericRecord>().FromText(data).ToList();
+
+        // Assert
+        Assert.Single(records);
+        Assert.Equal(123, records[0].Number);
+    }
+
+    [Fact]
+    public void FixedWidthColumnAttribute_End_CalculatesLength()
+    {
+        // Verify the attribute calculates Length from End correctly
+        var attr = new FixedWidthColumnAttribute { Start = 5, End = 15 };
+
+        Assert.Equal(10, attr.Length);
+        Assert.Equal(15, attr.End);
+    }
+
+    [Fact]
+    public void FixedWidthColumnAttribute_Length_CalculatesEnd()
+    {
+        // Verify the attribute calculates End from Length correctly
+        var attr = new FixedWidthColumnAttribute { Start = 5, Length = 10 };
+
+        Assert.Equal(10, attr.Length);
+        Assert.Equal(15, attr.End);
+    }
+
+    [Fact]
+    public void FixedWidthColumnAttribute_LengthTakesPrecedenceOverEnd()
+    {
+        // When both are specified, Length takes precedence for determining field bounds
+        // The source generator will use Length for the actual field extraction
+        var attr = new FixedWidthColumnAttribute { Start = 0, Length = 10, End = 20 };
+
+        Assert.Equal(10, attr.Length); // Length value is used for field extraction
+        Assert.Equal(20, attr.End);    // End retains its set value (source generator ignores it when Length is set)
+    }
+
+    #endregion
 }

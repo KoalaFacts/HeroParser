@@ -556,6 +556,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
             int start = 0;
             int length = 0;
+            int end = -1;
             char padChar = '\0';
             string alignment = "Left";
             string? format = null;
@@ -566,6 +567,8 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                     start = s;
                 if (arg.Key == "Length" && arg.Value.Value is int l)
                     length = l;
+                if (arg.Key == "End" && arg.Value.Value is int e)
+                    end = e;
                 if (arg.Key == "PadChar" && arg.Value.Value is char p)
                     padChar = p;
                 if (arg.Key == "Alignment" && arg.Value.Value is int a)
@@ -573,6 +576,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 if (arg.Key == "Format" && arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f))
                     format = f;
             }
+
+            // If End is specified but Length is not, calculate Length from End - Start
+            if (length == 0 && end > start)
+                length = end - start;
 
             // Constructor arguments take precedence
             if (mapAttribute.ConstructorArguments.Length >= 1 && mapAttribute.ConstructorArguments[0].Value is int startArg)

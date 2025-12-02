@@ -12,10 +12,12 @@
   - `FixedWidth.Read<T>()` - Fluent builder for reading and deserializing records
   - `FixedWidth.Read()` - Non-generic builder for manual row-by-row reading
   - `FixedWidthCharSpanReader` / `FixedWidthByteSpanReader` - Zero-allocation span-based readers
-  - `[FixedWidthColumn]` attribute - Map properties to fixed-position fields with Start, Length, Alignment, PadChar, Format
+  - `[FixedWidthColumn]` attribute - Map properties to fixed-position fields with Start, Length/End, Alignment, PadChar, Format
+  - `End` property as alternative to `Length` - specify field bounds as `Start`/`End` range (e.g., `Start = 0, End = 10`)
   - `FieldAlignment` enum - Left, Right, Center, None alignment modes for proper padding trimming
   - Line-based or fixed-record-length parsing modes
   - Comment lines, empty line skipping, row skipping
+  - `AllowShortRows()` - Handle rows shorter than expected gracefully (missing fields return empty values)
   - DoS protection: `MaxRecordCount`, `MaxInputSize` limits
   - Progress reporting with `IProgress<FixedWidthProgress>`
   - Custom type converters via `RegisterConverter<T>()`

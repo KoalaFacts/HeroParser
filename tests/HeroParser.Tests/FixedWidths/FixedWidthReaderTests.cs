@@ -142,14 +142,15 @@ public class FixedWidthReaderTests
     }
 
     [Fact]
-    public void GetField_OutOfBounds_ReturnsEmpty()
+    public void GetField_OutOfBounds_ReturnsEmpty_WhenAllowShortRows()
     {
         // Arrange
         var data = "Short";
+        var options = new FixedWidthParserOptions { AllowShortRows = true };
 
         // Act
         FixedWidthCharSpanColumn field = default;
-        foreach (var row in FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             field = row.GetField(100, 10); // Beyond the record length
             break;
@@ -161,14 +162,33 @@ public class FixedWidthReaderTests
     }
 
     [Fact]
-    public void GetField_PartialField_ReturnsAvailableData()
+    public void GetField_OutOfBounds_ThrowsByDefault()
     {
         // Arrange
         var data = "Short";
 
+        // Act & Assert
+        var ex = Assert.Throws<FixedWidthException>(() =>
+        {
+            foreach (var row in FixedWidth.ReadFromText(data))
+            {
+                _ = row.GetField(100, 10); // Beyond the record length - should throw
+            }
+        });
+
+        Assert.Equal(FixedWidthErrorCode.FieldOutOfBounds, ex.ErrorCode);
+    }
+
+    [Fact]
+    public void GetField_PartialField_ReturnsAvailableData_WhenAllowShortRows()
+    {
+        // Arrange
+        var data = "Short";
+        var options = new FixedWidthParserOptions { AllowShortRows = true };
+
         // Act
         string fieldValue = "";
-        foreach (var row in FixedWidth.ReadFromText(data))
+        foreach (var row in FixedWidth.ReadFromText(data, options))
         {
             fieldValue = row.GetField(0, 100).ToString(); // Request more than available
             break;
@@ -176,6 +196,24 @@ public class FixedWidthReaderTests
 
         // Assert
         Assert.Equal("Short", fieldValue);
+    }
+
+    [Fact]
+    public void GetField_PartialField_ThrowsByDefault()
+    {
+        // Arrange
+        var data = "Short";
+
+        // Act & Assert
+        var ex = Assert.Throws<FixedWidthException>(() =>
+        {
+            foreach (var row in FixedWidth.ReadFromText(data))
+            {
+                _ = row.GetField(0, 100); // Beyond the record length - should throw
+            }
+        });
+
+        Assert.Equal(FixedWidthErrorCode.FieldOutOfBounds, ex.ErrorCode);
     }
 
     [Fact]

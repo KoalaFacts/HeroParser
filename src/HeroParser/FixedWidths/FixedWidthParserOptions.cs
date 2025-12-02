@@ -43,6 +43,17 @@ public sealed record FixedWidthParserOptions
     public bool SkipEmptyLines { get; init; } = true;
 
     /// <summary>
+    /// Gets or sets whether to allow rows that are shorter than the expected record length.
+    /// When <see langword="true"/>, fields that extend beyond the row's actual length will return empty values.
+    /// When <see langword="false"/> (default), accessing fields beyond the row length throws an exception.
+    /// </summary>
+    /// <remarks>
+    /// This is useful when parsing files where the last few fields may be omitted if empty,
+    /// similar to how CSV parsers handle missing columns at the end of rows.
+    /// </remarks>
+    public bool AllowShortRows { get; init; } = false;
+
+    /// <summary>
     /// Gets or sets the comment character. Lines starting with this character are skipped.
     /// Only applies when <see cref="RecordLength"/> is <see langword="null"/>.
     /// </summary>

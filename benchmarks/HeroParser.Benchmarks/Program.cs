@@ -169,6 +169,13 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--multi-schema")
+        {
+            // Run multi-schema benchmarks
+            RunBenchmarks(args, typeof(MultiSchemaBenchmarks));
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--fixed-width-parsing")
         {
             // Run fixed-width field parsing benchmarks
@@ -202,6 +209,7 @@ public class Program
         Console.WriteLine("  --fixed-width-converters Run fixed-width custom converter benchmarks");
         Console.WriteLine("  --fixed-width-bytespan   Run fixed-width byte span vs char span benchmarks");
         Console.WriteLine("  --fixed-width-alignment  Run fixed-width alignment operation benchmarks");
+        Console.WriteLine("  --multi-schema     Run multi-schema CSV parsing benchmarks");
         Console.WriteLine("  --all              Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");

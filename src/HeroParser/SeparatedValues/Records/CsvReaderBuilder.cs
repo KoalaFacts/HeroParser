@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Text;
+using HeroParser.SeparatedValues.Records.MultiSchema;
 using HeroParser.SeparatedValues.Records.Readers;
 using HeroParser.SeparatedValues.Streaming;
 using HeroParser.SeparatedValues.Validation;
@@ -863,6 +864,56 @@ public sealed class CsvReaderBuilder
         this.encoding = encoding ?? Encoding.UTF8;
         // Note: encoding is not part of CsvParserOptions, so no need to invalidate cachedOptions
         return this;
+    }
+
+    #endregion
+
+    #region Multi-Schema
+
+    /// <summary>
+    /// Transitions to a multi-schema reader builder for parsing CSV files with multiple record types.
+    /// </summary>
+    /// <returns>A <see cref="CsvMultiSchemaReaderBuilder"/> for configuring multi-schema reading.</returns>
+    /// <remarks>
+    /// Multi-schema reading allows a single CSV file to contain different record types,
+    /// distinguished by a discriminator column value.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var records = Csv.Read()
+    ///     .WithDelimiter(';')
+    ///     .WithMultiSchema()
+    ///     .WithDiscriminator(0)
+    ///     .MapRecord&lt;HeaderRecord&gt;("H")
+    ///     .MapRecord&lt;DetailRecord&gt;("D")
+    ///     .FromText(csv);
+    ///
+    /// foreach (var record in records)
+    /// {
+    ///     switch (record)
+    ///     {
+    ///         case HeaderRecord h: Console.WriteLine($"Header: {h.Date}"); break;
+    ///         case DetailRecord d: Console.WriteLine($"Detail: {d.Amount}"); break;
+    ///     }
+    /// }
+    /// </code>
+    /// </example>
+    public CsvMultiSchemaReaderBuilder WithMultiSchema()
+    {
+        return new CsvMultiSchemaReaderBuilder(
+            delimiter,
+            quote,
+            maxColumnCount,
+            maxRowCount,
+            useSimdIfAvailable,
+            allowNewlinesInQuotes,
+            enableQuotedFields,
+            commentCharacter,
+            trimFields,
+            maxFieldSize,
+            escapeCharacter,
+            maxRowSize,
+            encoding);
     }
 
     #endregion

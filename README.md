@@ -222,6 +222,134 @@ Csv.Read<Person>()
 
 > **Note**: Since CSV readers are ref structs, they cannot implement `IEnumerable<T>`. These extension methods consume the reader and return materialized results.
 
+### Multi-Schema CSV Parsing
+
+Parse CSV files where different rows map to different record types based on a discriminator column. This is common in banking/financial file formats (NACHA, BAI, EDI) with header/detail/trailer patterns:
+
+```csharp
+// Define record types
+[CsvGenerateBinder]
+public class HeaderRecord
+{
+    [CsvColumn(Name = "Type")]
+    public string Type { get; set; } = "";
+
+    [CsvColumn(Name = "Date")]
+    public DateTime Date { get; set; }
+}
+
+[CsvGenerateBinder]
+public class DetailRecord
+{
+    [CsvColumn(Name = "Type")]
+    public string Type { get; set; } = "";
+
+    [CsvColumn(Name = "Id")]
+    public int Id { get; set; }
+
+    [CsvColumn(Name = "Amount")]
+    public decimal Amount { get; set; }
+}
+
+[CsvGenerateBinder]
+public class TrailerRecord
+{
+    [CsvColumn(Name = "Type")]
+    public string Type { get; set; } = "";
+
+    [CsvColumn(Name = "Count")]
+    public int Count { get; set; }
+}
+
+// Parse with discriminator-based type routing
+var csv = """
+Type,Id,Amount,Date,Count
+H,0,0.00,2024-01-15,0
+D,1,100.50,,0
+D,2,200.75,,0
+T,0,301.25,,2
+""";
+
+foreach (var record in Csv.Read()
+    .WithMultiSchema()
+    .WithDiscriminator("Type")           // By column name
+    .MapRecord<HeaderRecord>("H")
+    .MapRecord<DetailRecord>("D")
+    .MapRecord<TrailerRecord>("T")
+    .AllowMissingColumns()
+    .FromText(csv))
+{
+    switch (record)
+    {
+        case HeaderRecord h:
+            Console.WriteLine($"Header: {h.Date}");
+            break;
+        case DetailRecord d:
+            Console.WriteLine($"Detail: {d.Id} = {d.Amount:C}");
+            break;
+        case TrailerRecord t:
+            Console.WriteLine($"Trailer: {t.Count} records");
+            break;
+    }
+}
+```
+
+#### Discriminator Options
+
+```csharp
+// By column index (0-based)
+.WithDiscriminator(columnIndex: 0)
+
+// By column name (resolved from header)
+.WithDiscriminator("RecordType")
+
+// Case-insensitive discriminator matching (default)
+.CaseSensitiveDiscriminator(false)
+```
+
+#### Handling Unmatched Rows
+
+```csharp
+// Skip rows that don't match any registered type
+.OnUnmatchedRow(UnmatchedRowBehavior.Skip)
+
+// Throw exception for unmatched rows (default)
+.OnUnmatchedRow(UnmatchedRowBehavior.Throw)
+
+// Use custom factory for unmatched rows
+.MapRecord((discriminator, columns, rowNum) => new UnknownRecord
+{
+    Type = discriminator,
+    RawData = string.Join(",", columns)
+})
+```
+
+#### Streaming and Async Support
+
+```csharp
+// From file
+foreach (var record in Csv.Read()
+    .WithMultiSchema()
+    .WithDiscriminator("Type")
+    .MapRecord<HeaderRecord>("H")
+    .MapRecord<DetailRecord>("D")
+    .FromFile("transactions.csv"))
+{
+    // Process records
+}
+
+// Async streaming
+await foreach (var record in Csv.Read()
+    .WithMultiSchema()
+    .WithDiscriminator("Type")
+    .MapRecord<HeaderRecord>("H")
+    .MapRecord<DetailRecord>("D")
+    .FromFileAsync("transactions.csv"))
+{
+    // Process records asynchronously
+}
+```
+
 ### Advanced Reader Options
 
 #### Progress Reporting

@@ -19,8 +19,52 @@ C# with multi-framework targeting (net8.0, net9.0, net10.0): Follow standard con
 
 ## Recent Changes
 - 001-aim-to-be: Added C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Zero external dependencies for core library
+- Multi-Schema CSV: Added multi-schema CSV parsing for banking/financial file formats with header/detail/trailer patterns
 
 <!-- MANUAL ADDITIONS START -->
+
+## Multi-Schema CSV Parsing
+
+HeroParser supports multi-schema CSV parsing where different rows map to different record types based on a discriminator column. This is common in banking/financial formats (NACHA, BAI, EDI).
+
+### API Overview
+
+```csharp
+// Fluent builder API
+foreach (var record in Csv.Read()
+    .WithMultiSchema()
+    .WithDiscriminator("Type")      // By column name or index
+    .MapRecord<HeaderRecord>("H")
+    .MapRecord<DetailRecord>("D")
+    .MapRecord<TrailerRecord>("T")
+    .AllowMissingColumns()
+    .FromText(csv))
+{
+    // Use pattern matching to handle different record types
+    switch (record)
+    {
+        case HeaderRecord h: // ...
+        case DetailRecord d: // ...
+        case TrailerRecord t: // ...
+    }
+}
+```
+
+### Key Files
+
+- `src/HeroParser/SeparatedValues/Records/MultiSchema/CsvMultiSchemaReaderBuilder.cs` - Fluent builder
+- `src/HeroParser/SeparatedValues/Records/MultiSchema/CsvMultiSchemaBinder.cs` - Type dispatching
+- `src/HeroParser/SeparatedValues/Records/MultiSchema/CsvMultiSchemaRecordReader.cs` - Span-based reader
+- `src/HeroParser/SeparatedValues/Records/MultiSchema/CsvMultiSchemaStreamingRecordReader.cs` - Stream-based reader
+- `src/HeroParser/SeparatedValues/Records/MultiSchema/UnmatchedRowBehavior.cs` - Enum for unmatched row handling
+
+### Features
+
+- Discriminator by column index or header name
+- Case-sensitive or case-insensitive discriminator matching
+- Skip, throw, or use custom factory for unmatched rows
+- Streaming from files, streams, and async variants
+- Works with source-generated binders (`[CsvGenerateBinder]`)
 
 ## Code Quality Rules
 

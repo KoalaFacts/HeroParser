@@ -10,6 +10,7 @@ public class CsvMultiSchemaReaderTests
 {
     #region Test Record Types
 
+    [CsvGenerateBinder]
     public class HeaderRecord
     {
         [CsvColumn(Name = "Type")]
@@ -22,6 +23,7 @@ public class CsvMultiSchemaReaderTests
         public string Version { get; set; } = "";
     }
 
+    [CsvGenerateBinder]
     public class DetailRecord
     {
         [CsvColumn(Name = "Type")]
@@ -34,6 +36,7 @@ public class CsvMultiSchemaReaderTests
         public decimal Amount { get; set; }
     }
 
+    [CsvGenerateBinder]
     public class TrailerRecord
     {
         [CsvColumn(Name = "Type")]
@@ -46,6 +49,7 @@ public class CsvMultiSchemaReaderTests
         public decimal TotalAmount { get; set; }
     }
 
+    // UnknownRecord is created via custom factory, not deserialized from CSV
     public class UnknownRecord
     {
         public string Type { get; set; } = "";
@@ -753,6 +757,7 @@ public class CsvMultiSchemaReaderTests
 
     #region Simple Test Record Types (for index-based tests)
 
+    [CsvGenerateBinder]
     public class SimpleHeader
     {
         [CsvColumn(Index = 0)]
@@ -765,6 +770,7 @@ public class CsvMultiSchemaReaderTests
         public string Version { get; set; } = "";
     }
 
+    [CsvGenerateBinder]
     public class SimpleDetail
     {
         [CsvColumn(Index = 0)]
@@ -777,6 +783,7 @@ public class CsvMultiSchemaReaderTests
         public decimal Amount { get; set; }
     }
 
+    [CsvGenerateBinder]
     public class SimpleTrailer
     {
         [CsvColumn(Index = 0)]
@@ -789,6 +796,7 @@ public class CsvMultiSchemaReaderTests
         public decimal Total { get; set; }
     }
 
+    [CsvGenerateBinder]
     public class TypeValueRecord
     {
         [CsvColumn(Name = "Type")]

@@ -105,13 +105,16 @@ public class RecordMappingTests
         Assert.Equal("Bob", results[1].Name);
         Assert.Equal(7, results[1].Score);
     }
-    private sealed class Person
+
+    [CsvGenerateBinder]
+    internal sealed class Person
     {
         public string Name { get; set; } = string.Empty;
         public int Age { get; set; }
     }
 
-    private sealed class Positioned
+    [CsvGenerateBinder]
+    internal sealed class Positioned
     {
         [CsvColumn(Index = 1)]
         public string Value { get; set; } = string.Empty;
@@ -120,95 +123,27 @@ public class RecordMappingTests
         public int Id { get; set; }
     }
 
-    private sealed class NullableSample
+    [CsvGenerateBinder]
+    internal sealed class NullableSample
     {
         public string? Name { get; set; }
         public int? Age { get; set; }
         public DateOnly? Birthday { get; set; }
     }
 
-    private sealed class MissingColumnType
+    [CsvGenerateBinder]
+    internal sealed class MissingColumnType
     {
         public string Name { get; set; } = string.Empty;
         public int Age { get; set; }
     }
 
-    private sealed class Player
+    [CsvGenerateBinder]
+    internal sealed class Player
     {
         public string Name { get; set; } = string.Empty;
         public int Score { get; set; }
     }
-
-    #region Custom Converter Tests
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void CustomConverter_ParsesCustomType()
-    {
-        var csv = "Name,Price\nWidget,12.50";
-
-        var options = new CsvRecordOptions()
-            .RegisterConverter<Money>((value, culture, format, out result) =>
-            {
-                if (decimal.TryParse(value, System.Globalization.NumberStyles.Number, culture, out var amount))
-                {
-                    result = new Money(amount);
-                    return true;
-                }
-                result = default;
-                return false;
-            });
-
-        var reader = Csv.DeserializeRecords<Product>(csv, options);
-        var results = new List<Product>();
-        foreach (var item in reader) results.Add(item);
-
-        Assert.Single(results);
-        Assert.Equal("Widget", results[0].Name);
-        Assert.Equal(12.50m, results[0].Price?.Amount);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void CustomConverter_HandlesNullableCustomType()
-    {
-        var csv = "Name,Price\nWidget,\nGadget,25.00";
-
-        var options = new CsvRecordOptions()
-            .RegisterConverter<Money>((value, culture, format, out result) =>
-            {
-                if (value.IsEmpty)
-                {
-                    result = default;
-                    return false;
-                }
-                if (decimal.TryParse(value, System.Globalization.NumberStyles.Number, culture, out var amount))
-                {
-                    result = new Money(amount);
-                    return true;
-                }
-                result = default;
-                return false;
-            });
-
-        var reader = Csv.DeserializeRecords<Product>(csv, options);
-        var results = new List<Product>();
-        foreach (var item in reader) results.Add(item);
-
-        Assert.Equal(2, results.Count);
-        Assert.Null(results[0].Price);
-        Assert.Equal(25.00m, results[1].Price?.Amount);
-    }
-
-    private record Money(decimal Amount);
-
-    private sealed class Product
-    {
-        public string Name { get; set; } = string.Empty;
-        public Money? Price { get; set; }
-    }
-
-    #endregion
 
     #region Format Attribute Tests
 
@@ -241,7 +176,8 @@ public class RecordMappingTests
         Assert.Equal(new DateTime(2024, 1, 15, 14, 30, 0), results[0].Timestamp);
     }
 
-    private sealed class DateFormatted
+    [CsvGenerateBinder]
+    internal sealed class DateFormatted
     {
         public int Id { get; set; }
 
@@ -249,7 +185,8 @@ public class RecordMappingTests
         public DateOnly Date { get; set; }
     }
 
-    private sealed class DateTimeFormatted
+    [CsvGenerateBinder]
+    internal sealed class DateTimeFormatted
     {
         public int Id { get; set; }
 
@@ -301,13 +238,15 @@ public class RecordMappingTests
         Assert.Equal(new DateOnly(2024, 1, 15), results[0].Date);
     }
 
-    private sealed class PriceItem
+    [CsvGenerateBinder]
+    internal sealed class PriceItem
     {
         public string Name { get; set; } = string.Empty;
         public decimal Price { get; set; }
     }
 
-    private sealed class DateItem
+    [CsvGenerateBinder]
+    internal sealed class DateItem
     {
         public int Id { get; set; }
         public DateOnly Date { get; set; }

@@ -182,7 +182,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         var binderClassName = $"TypedBinder_{safeClassName}";
 
         // Use internal (not file) so the registration file can reference this class
-        builder.AppendLine($"internal sealed class {binderClassName} : global::HeroParser.FixedWidths.Records.Binding.ITypedBinder<{fullyQualifiedName}>");
+        builder.AppendLine($"internal sealed class {binderClassName} : global::HeroParser.FixedWidths.Records.Binding.IFixedWidthTypedBinder<{fullyQualifiedName}>");
         builder.AppendLine("{");
         builder.Indent();
 

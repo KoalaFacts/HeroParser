@@ -7,7 +7,7 @@ using System.Reflection;
 
 namespace HeroParser;
 
-internal sealed partial class CsvRecordBinder<T> where T : class, new()
+internal sealed partial class CsvRecordBinder<T> : ICsvTypedBinder<T> where T : class, new()
 {
     private readonly IReadOnlyList<MemberBinding> bindings;
     private readonly CsvRecordOptions recordOptions;
@@ -160,8 +160,19 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
     public T? Bind(CsvCharSpanRow row, int rowNumber)
     {
         EnsureResolved(rowNumber);
-
         var instance = new T();
+        return BindInto(instance, row, rowNumber) ? instance : null;
+    }
+
+    /// <summary>
+    /// Binds a CSV row into an existing record instance.
+    /// </summary>
+    /// <param name="instance">The existing instance to bind into.</param>
+    /// <param name="row">The CSV row to bind.</param>
+    /// <param name="rowNumber">The 1-based row number for error reporting.</param>
+    /// <returns>True if binding succeeded, false if the row should be skipped.</returns>
+    public bool BindInto(T instance, CsvCharSpanRow row, int rowNumber)
+    {
         var validationEnabled = recordOptions.EnableValidation;
         var fieldValidators = validationEnabled ? recordOptions.FieldValidators : null;
 
@@ -216,7 +227,7 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
                     switch (action)
                     {
                         case DeserializeErrorAction.SkipRow:
-                            return null;
+                            return false;
                         case DeserializeErrorAction.UseDefault:
                             continue;
                         case DeserializeErrorAction.Throw:
@@ -240,12 +251,12 @@ internal sealed partial class CsvRecordBinder<T> where T : class, new()
                 var skipRow = RunValidators(validators, boundValue, rawValue, binding.MemberName, rowNumber, columnIndex + 1);
                 if (skipRow)
                 {
-                    return null;
+                    return false;
                 }
             }
         }
 
-        return instance;
+        return true;
     }
 
     private bool RunValidators(

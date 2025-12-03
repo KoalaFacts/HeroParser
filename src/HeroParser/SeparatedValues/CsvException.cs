@@ -122,6 +122,24 @@ public class CsvException : Exception
     }
 
     /// <summary>
+    /// Creates a new <see cref="CsvException"/> with detailed parsing error information including the inner exception.
+    /// </summary>
+    /// <param name="errorCode">The error classification.</param>
+    /// <param name="message">A human-readable description of the failure.</param>
+    /// <param name="row">The 1-based row number associated with the error.</param>
+    /// <param name="column">The 1-based column associated with the error.</param>
+    /// <param name="fieldValue">The field value that caused the error.</param>
+    /// <param name="innerException">The inner exception that caused this error.</param>
+    public CsvException(CsvErrorCode errorCode, string message, int row, int column, string? fieldValue, Exception innerException)
+        : base(BuildMessageWithFieldValue($"Row {row}, Column {column}: {message}", fieldValue), innerException)
+    {
+        ErrorCode = errorCode;
+        Row = row;
+        Column = column;
+        FieldValue = TruncateFieldValue(fieldValue);
+    }
+
+    /// <summary>
     /// Private constructor for factory method use.
     /// </summary>
     private CsvException(CsvErrorCode errorCode, string message, int row, int? sourceLineNumber, int? quoteStartPosition, bool _)

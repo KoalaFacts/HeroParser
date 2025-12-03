@@ -1,4 +1,5 @@
 using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -470,7 +471,8 @@ public class LinqExtensionsTests
 
     #endregion
 
-    private sealed class Person
+    [CsvGenerateBinder]
+    internal sealed class Person
     {
         public string Name { get; set; } = string.Empty;
         public int Age { get; set; }

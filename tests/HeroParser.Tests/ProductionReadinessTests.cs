@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using System.Text;
 using Xunit;
 
@@ -355,7 +356,8 @@ public class ProductionReadinessTests
     }
 
     // Helper class for record binding tests
-    private sealed class TestPerson
+    [CsvGenerateBinder]
+    internal sealed class TestPerson
     {
         public string Name { get; set; } = "";
         public int Age { get; set; }

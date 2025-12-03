@@ -324,7 +324,8 @@ public class WriterTests
 
     #region Record Writing
 
-    public class TestPerson
+    [CsvGenerateBinder]
+    internal class TestPerson
     {
         public string? Name { get; set; }
         public int Age { get; set; }
@@ -367,7 +368,8 @@ public class WriterTests
         Assert.Contains("Alice", csv);
     }
 
-    public class PersonWithColumn
+    [CsvGenerateBinder]
+    internal class PersonWithColumn
     {
         [CsvColumn(Name = "Full Name")]
         public string? Name { get; set; }
@@ -531,7 +533,8 @@ public class WriterTests
         Assert.Equal("", reader.Current[2].ToString());
     }
 
-    public class AllTypesRecord
+    [CsvGenerateBinder]
+    internal class AllTypesRecord
     {
         public int IntValue { get; set; }
         public double DoubleValue { get; set; }
@@ -571,7 +574,9 @@ public class WriterTests
         };
 
         var csv = Csv.WriteToText(original);
-        var parsed = Csv.DeserializeRecords<AllTypesRecord>(csv).ToList();
+        // Use NullValues to treat empty strings as null (CSV doesn't distinguish null vs empty string)
+        var recordOptions = new CsvRecordOptions { NullValues = [""] };
+        var parsed = Csv.DeserializeRecords<AllTypesRecord>(csv, recordOptions).ToList();
 
         Assert.Equal(2, parsed.Count);
 

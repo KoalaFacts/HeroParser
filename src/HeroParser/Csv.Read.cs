@@ -3,6 +3,7 @@ using HeroParser.SeparatedValues.Records;
 using HeroParser.SeparatedValues.Records.Binding;
 using HeroParser.SeparatedValues.Records.Readers;
 using HeroParser.SeparatedValues.Streaming;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -302,15 +303,8 @@ public static partial class Csv
         recordOptions ??= CsvRecordOptions.Default;
 
         var reader = ReadFromCharSpan(data.AsSpan(), parserOptions);
+        var binder = CreateBinder<T>(recordOptions);
 
-        // Prefer typed binder for boxing-free performance
-        if (CsvRecordBinderFactory.TryGetTypedBinder(recordOptions, out ICsvTypedBinder<T>? typedBinder) && typedBinder is not null)
-        {
-            return new CsvRecordReader<T>(reader, typedBinder, recordOptions.SkipRows,
-                recordOptions.Progress, recordOptions.ProgressIntervalRows);
-        }
-
-        var binder = ResolveBinder<T>(recordOptions);
         return new CsvRecordReader<T>(reader, binder, recordOptions.SkipRows,
             recordOptions.Progress, recordOptions.ProgressIntervalRows);
     }
@@ -341,14 +335,8 @@ public static partial class Csv
             try { totalBytes = stream.Length; } catch { /* Ignore if not available */ }
         }
 
-        // Prefer typed binder for boxing-free performance
-        if (CsvRecordBinderFactory.TryGetTypedBinder(recordOptions, out ICsvTypedBinder<T>? typedBinder) && typedBinder is not null)
-        {
-            return new CsvStreamingRecordReader<T>(reader, typedBinder, recordOptions.SkipRows,
-                recordOptions.Progress, recordOptions.ProgressIntervalRows, totalBytes);
-        }
+        var binder = CreateBinder<T>(recordOptions);
 
-        var binder = ResolveBinder<T>(recordOptions);
         return new CsvStreamingRecordReader<T>(reader, binder, recordOptions.SkipRows,
             recordOptions.Progress, recordOptions.ProgressIntervalRows, totalBytes);
     }
@@ -387,12 +375,7 @@ public static partial class Csv
         recordOptions ??= CsvRecordOptions.Default;
 
         await using var reader = CreateAsyncStreamReader(stream, parserOptions, encoding, leaveOpen, bufferSize);
-
-        // Try to get typed binder for boxing-free performance
-        var typedBinder = CsvRecordBinderFactory.TryGetTypedBinder(recordOptions, out ICsvTypedBinder<T>? typed) && typed is not null
-            ? typed
-            : null;
-        var legacyBinder = typedBinder is null ? ResolveBinder<T>(recordOptions) : null;
+        var binder = CreateBinder<T>(recordOptions);
 
         // Get stream length if available for progress reporting
         long totalBytes = -1;
@@ -419,26 +402,13 @@ public static partial class Csv
                 continue;
             }
 
-            T? result;
-            if (typedBinder is not null)
+            if (binder.NeedsHeaderResolution)
             {
-                if (typedBinder.NeedsHeaderResolution)
-                {
-                    typedBinder.BindHeader(row, rowNumber);
-                    continue;
-                }
-                result = typedBinder.Bind(row, rowNumber);
-            }
-            else
-            {
-                if (legacyBinder!.NeedsHeaderResolution)
-                {
-                    legacyBinder.BindHeader(row, rowNumber);
-                    continue;
-                }
-                result = legacyBinder.Bind(row, rowNumber);
+                binder.BindHeader(row, rowNumber);
+                continue;
             }
 
+            var result = binder.Bind(row, rowNumber);
             if (result is null)
             {
                 // Row was skipped due to error handling
@@ -473,13 +443,36 @@ public static partial class Csv
         }
     }
 
-    private static CsvRecordBinder<T> ResolveBinder<T>(CsvRecordOptions? recordOptions) where T : class, new()
+    /// <summary>
+    /// Creates the appropriate binder for the record type, falling back to reflection-based
+    /// binding when advanced features like validation are enabled.
+    /// </summary>
+    [RequiresUnreferencedCode("Reflection-based binding may not work with trimming. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Reflection-based binding requires dynamic code. Use [CsvGenerateBinder] attribute for AOT support.")]
+    private static ICsvTypedBinder<T> CreateBinder<T>(CsvRecordOptions recordOptions)
+        where T : class, new()
     {
-        if (CsvRecordBinderFactory.TryGetBinder(recordOptions, out CsvRecordBinder<T>? generated) && generated is not null)
+        // Use reflection-based binder when validation features are enabled
+        // (descriptor binder doesn't support validation callbacks)
+        var needsReflectionBinder = recordOptions.EnableValidation
+            || recordOptions.FieldValidators is { Count: > 0 }
+            || recordOptions.OnDeserializeError is not null
+            || recordOptions.OnValidationError is not null
+            || recordOptions.DetectDuplicateHeaders
+            || recordOptions.RequiredHeaders is { Count: > 0 }
+            || recordOptions.ValidateHeaders is not null;
+
+        if (needsReflectionBinder)
         {
-            return generated;
+            return CsvRecordBinder<T>.Create(recordOptions);
         }
 
-        return CsvRecordBinder<T>.Create(recordOptions);
+        // Use descriptor-based binder for maximum performance
+        if (CsvRecordBinderFactory.TryCreateDescriptorBinder(recordOptions, out ICsvTypedBinder<T>? binder) && binder is not null)
+        {
+            return binder;
+        }
+
+        throw new InvalidOperationException($"No binder found for type {typeof(T).Name}. Ensure the type is decorated with [CsvGenerateBinder] attribute.");
     }
 }

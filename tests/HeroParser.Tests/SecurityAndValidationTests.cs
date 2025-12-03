@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using HeroParser.SeparatedValues.Validation;
 using HeroParser.SeparatedValues.Writing;
 using Xunit;
@@ -17,7 +18,8 @@ public class SecurityAndValidationTests
 {
     #region Test Record Types
 
-    public class Person
+    [CsvGenerateBinder]
+    internal class Person
     {
         public string? Name { get; set; }
         public int Age { get; set; }

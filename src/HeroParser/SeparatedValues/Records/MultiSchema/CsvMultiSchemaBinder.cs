@@ -234,26 +234,19 @@ internal interface IMultiSchemaBinder
 }
 
 /// <summary>
-/// Wrapper that adapts the generic CsvRecordBinder{T} to the non-generic IMultiSchemaBinder interface.
+/// Wrapper that adapts the generic ICsvTypedBinder{T} to the non-generic IMultiSchemaBinder interface.
 /// </summary>
-[RequiresUnreferencedCode("Multi-schema binding requires reflection for dynamic type binding.")]
-[RequiresDynamicCode("Multi-schema binding requires dynamic code generation.")]
 internal sealed class MultiSchemaBinderWrapper<T> : IMultiSchemaBinder where T : class, new()
 {
-    private readonly CsvRecordBinder<T> binder;
+    private readonly ICsvTypedBinder<T> binder;
 
     public MultiSchemaBinderWrapper(CsvRecordOptions recordOptions)
     {
-        // Try to get a source-generated binder first
-        if (CsvRecordBinderFactory.TryGetBinder(recordOptions, out CsvRecordBinder<T>? generatedBinder) && generatedBinder is not null)
+        if (!CsvRecordBinderFactory.TryCreateDescriptorBinder(recordOptions, out ICsvTypedBinder<T>? descriptorBinder) || descriptorBinder is null)
         {
-            binder = generatedBinder;
+            throw new InvalidOperationException($"No binder found for type {typeof(T).Name}. Ensure the type is decorated with [CsvGenerateBinder] attribute.");
         }
-        else
-        {
-            // Fall back to reflection-based binding
-            binder = CsvRecordBinder<T>.Create(recordOptions);
-        }
+        binder = descriptorBinder;
     }
 
     public void BindHeader(CsvCharSpanRow headerRow, int rowNumber)

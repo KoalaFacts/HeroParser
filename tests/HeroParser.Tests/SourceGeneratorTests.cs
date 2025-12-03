@@ -12,7 +12,7 @@ public class SourceGeneratorTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void GeneratedBinder_IsRegistered_AndBindsRows()
     {
-        Assert.True(CsvRecordBinderFactory.TryGetBinder<GeneratedPerson>(null, out var binder));
+        Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedPerson>(null, out var binder));
         Assert.NotNull(binder);
         var notNullBinder = binder!;
 
@@ -50,7 +50,7 @@ public class SourceGeneratorTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void GeneratedBinder_RespectsAttributes_AndHeaderless()
     {
-        Assert.True(CsvRecordBinderFactory.TryGetBinder<GeneratedAttributed>(new CsvRecordOptions { HasHeaderRow = false }, out var binder));
+        Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedAttributed>(new CsvRecordOptions { HasHeaderRow = false }, out var binder));
         Assert.NotNull(binder);
         var b = binder!;
 
@@ -78,21 +78,17 @@ public class SourceGeneratorTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void NonAnnotatedType_FallsBackToReflection()
+    public void NonAnnotatedType_ThrowsInvalidOperation()
     {
         var csv = "Name,Age\nJane,42";
-        var reader = Csv.DeserializeRecords<ReflectionOnly>(csv);
-        Assert.True(reader.MoveNext());
-        var item = reader.Current;
-        Assert.Equal("Jane", item.Name);
-        Assert.Equal(42, item.Age);
+        Assert.Throws<InvalidOperationException>(() => Csv.DeserializeRecords<NonAnnotatedRecord>(csv));
     }
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task AsyncStreaming_UsesGeneratedBinder()
     {
-        Assert.True(CsvRecordBinderFactory.TryGetBinder<GeneratedPerson>(null, out var binder));
+        Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedPerson>(null, out var binder));
         Assert.NotNull(binder);
 
         var csv = "Name,Age\nAlice,9\nBob,7";
@@ -113,19 +109,14 @@ public class SourceGeneratorTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void UnsupportedType_SkipsGeneration_FallsBackToReflection()
+    public void UnsupportedType_SkipsGeneration_NoBinder()
     {
-        // Array property should be unsupported by generator, so TryGetBinder should fail and reflection should still work.
+        // Array property should be unsupported by generator, so no binder should be registered
         var options = new CsvRecordOptions { AllowMissingColumns = true };
-        Assert.False(CsvRecordBinderFactory.TryGetBinder<UnsupportedProperty>(options, out _));
-
-        var csv = "Name\nJane";
-        var reader = Csv.DeserializeRecords<UnsupportedProperty>(csv, options);
-        Assert.True(reader.MoveNext());
-        Assert.Equal("Jane", reader.Current.Name);
+        Assert.False(CsvRecordBinderFactory.TryCreateDescriptorBinder<UnsupportedProperty>(options, out _));
     }
 
-    private sealed class ReflectionOnly
+    private sealed class NonAnnotatedRecord
     {
         public string Name { get; set; } = string.Empty;
         public int Age { get; set; }
@@ -184,21 +175,6 @@ public class SourceGeneratorTests
     }
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void NonAnnotatedType_Writer_FallsBackToReflection()
-    {
-        // ReflectionOnly doesn't have [CsvGenerateBinder], so no generated writer should exist
-        Assert.False(CsvRecordWriterFactory.TryGetWriter<ReflectionOnly>(null, out _));
-
-        // But writing should still work via reflection
-        var records = new[] { new ReflectionOnly { Name = "Jane", Age = 42 } };
-        var csv = Csv.WriteToText(records);
-
-        Assert.Contains("Name,Age", csv);
-        Assert.Contains("Jane,42", csv);
-    }
-
-    [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void RoundTrip_GeneratedBinderAndWriter()
     {
@@ -220,34 +196,6 @@ public class SourceGeneratorTests
         Assert.Equal(30, parsed[0].Age);
         Assert.Equal("Bob", parsed[1].Name);
         Assert.Equal(25, parsed[1].Age);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void GeneratedWriter_MatchesReflectionWriter_Output()
-    {
-        var generatedRecords = new[]
-        {
-            new GeneratedPerson { Name = "Alice", Age = 30 },
-            new GeneratedPerson { Name = "Bob", Age = 25 }
-        };
-
-        var reflectionRecords = new[]
-        {
-            new ReflectionOnly { Name = "Alice", Age = 30 },
-            new ReflectionOnly { Name = "Bob", Age = 25 }
-        };
-
-        var generatedCsv = Csv.WriteToText(generatedRecords);
-        var reflectionCsv = Csv.WriteToText(reflectionRecords);
-
-        // Both should have the same structure (same number of rows)
-        var generatedLines = generatedCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var reflectionLines = reflectionCsv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(generatedLines.Length, reflectionLines.Length);
-
-        // Both should have the same content since properties are the same
-        Assert.Equal(generatedCsv, reflectionCsv);
     }
 
     #endregion

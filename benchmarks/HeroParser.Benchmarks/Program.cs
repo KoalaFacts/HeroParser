@@ -176,6 +176,20 @@ public class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--memory")
+        {
+            // Run memory vs string binding benchmarks
+            RunBenchmarks(args, typeof(MemoryBinderBenchmarks));
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--binder-overhead")
+        {
+            // Run binder overhead profiling benchmarks
+            RunBenchmarks(args, typeof(BinderOverheadBenchmarks));
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--fixed-width-parsing")
         {
             // Run fixed-width field parsing benchmarks
@@ -210,6 +224,7 @@ public class Program
         Console.WriteLine("  --fixed-width-bytespan   Run fixed-width byte span vs char span benchmarks");
         Console.WriteLine("  --fixed-width-alignment  Run fixed-width alignment operation benchmarks");
         Console.WriteLine("  --multi-schema     Run multi-schema CSV parsing benchmarks");
+        Console.WriteLine("  --memory           Run memory vs string binding benchmarks");
         Console.WriteLine("  --all              Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");

@@ -16,14 +16,11 @@ namespace HeroParser.Generators;
 public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 {
     private const string GENERATED_NAMESPACE = "HeroParser.SeparatedValues.Records.Binding";
-    private const string BINDER_TYPE = "global::HeroParser.CsvRecordBinder";
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.CsvRecordBinderFactory";
-    private const string TYPED_BINDER_INTERFACE = "global::HeroParser.SeparatedValues.Records.Binding.ICsvTypedBinder";
     private const string WRITER_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriter";
     private const string WRITER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriterFactory";
-    private const string ROW_TYPE = "global::HeroParser.SeparatedValues.CsvCharSpanRow";
-    private const string EXCEPTION_TYPE = "global::HeroParser.SeparatedValues.CsvException";
-    private const string ERROR_CODE_TYPE = "global::HeroParser.SeparatedValues.CsvErrorCode";
+    private const string DESCRIPTOR_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.CsvRecordDescriptor";
+    private const string PROPERTY_DESCRIPTOR_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.CsvPropertyDescriptor";
 
     private static readonly string[] generateAttributeNames =
     [
@@ -114,300 +111,186 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"namespace {GENERATED_NAMESPACE};");
         builder.AppendLine();
 
-        EmitTypedBinderClass(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName, binderMembers);
+        // Emit descriptor class for optimized binding
+        EmitDescriptorClass(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName, binderMembers);
 
         context.AddSource($"CsvTypedBinder.{descriptor.SafeClassName}.g.cs", builder.ToString());
     }
 
-    private static void EmitTypedBinderClass(SourceBuilder builder, string fullyQualifiedName, string safeClassName, IReadOnlyList<MemberDescriptor> members)
+    private static void EmitDescriptorClass(SourceBuilder builder, string fullyQualifiedName, string safeClassName, IReadOnlyList<MemberDescriptor> members)
     {
-        var binderClassName = $"CsvTypedBinder_{safeClassName}";
+        var descriptorClassName = $"CsvDescriptor_{safeClassName}";
 
-        builder.AppendLine($"internal sealed class {binderClassName} : {TYPED_BINDER_INTERFACE}<{fullyQualifiedName}>");
+        builder.AppendLine($"internal static class {descriptorClassName}");
         builder.AppendLine("{");
         builder.Indent();
 
-        // Fields for configuration
-        builder.AppendLine("private readonly CultureInfo culture;");
-        builder.AppendLine("private readonly StringComparison headerComparison;");
-        builder.AppendLine("private readonly bool hasHeaderRow;");
-        builder.AppendLine("private readonly bool allowMissingColumns;");
-        builder.AppendLine("private readonly HashSet<string>? nullValues;");
-        builder.AppendLine("private bool resolved;");
-        builder.AppendLine();
-
-        // Column index fields for each member
+        // Emit static setter methods for each property
         foreach (var member in members)
         {
-            builder.AppendLine($"private int columnIndex_{member.MemberName} = -1;");
+            EmitPropertySetterMethod(builder, fullyQualifiedName, member);
         }
         builder.AppendLine();
 
-        // Constructor
-        builder.AppendLine($"public {binderClassName}(global::HeroParser.SeparatedValues.Records.CsvRecordOptions? options)");
+        // Emit static descriptor instance using lazy initialization for thread safety
+        builder.AppendLine($"private static {DESCRIPTOR_TYPE}<{fullyQualifiedName}>? _instance;");
+        builder.AppendLine();
+
+        // Emit GetDescriptor method that returns the cached descriptor
+        builder.AppendLine($"public static {DESCRIPTOR_TYPE}<{fullyQualifiedName}> GetDescriptor()");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine("options ??= global::HeroParser.SeparatedValues.Records.CsvRecordOptions.Default;");
-        builder.AppendLine("this.culture = options.EffectiveCulture;");
-        builder.AppendLine("this.headerComparison = options.CaseSensitiveHeaders ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;");
-        builder.AppendLine("this.hasHeaderRow = options.HasHeaderRow;");
-        builder.AppendLine("this.allowMissingColumns = options.AllowMissingColumns;");
-        builder.AppendLine("this.nullValues = options.NullValues is { Count: > 0 } ? new HashSet<string>(options.NullValues, StringComparer.Ordinal) : null;");
+        builder.AppendLine("return _instance ??= CreateDescriptor();");
+        builder.Unindent();
+        builder.AppendLine("}");
         builder.AppendLine();
 
-        // Initialize column indices from attribute indices or ordinal position
-        builder.AppendLine("if (!hasHeaderRow)");
+        // Emit CreateDescriptor method that builds the descriptor
+        builder.AppendLine($"private static {DESCRIPTOR_TYPE}<{fullyQualifiedName}> CreateDescriptor()");
         builder.AppendLine("{");
         builder.Indent();
-        int ordinal = 0;
-        foreach (var member in members)
-        {
-            if (member.AttributeIndex.HasValue)
-            {
-                builder.AppendLine($"columnIndex_{member.MemberName} = {member.AttributeIndex.Value};");
-            }
-            else
-            {
-                builder.AppendLine($"columnIndex_{member.MemberName} = {ordinal};");
-            }
-            ordinal++;
-        }
-        builder.AppendLine("resolved = true;");
-        builder.Unindent();
-        builder.AppendLine("}");
-
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine();
-
-        // NeedsHeaderResolution property
-        builder.AppendLine("public bool NeedsHeaderResolution => hasHeaderRow && !resolved;");
-        builder.AppendLine();
-
-        // BindHeader method
-        EmitBindHeaderMethod(builder, members);
-        builder.AppendLine();
-
-        // Bind method
-        EmitBindMethod(builder, fullyQualifiedName);
-        builder.AppendLine();
-
-        // BindInto method
-        EmitBindIntoMethod(builder, fullyQualifiedName, members);
-        builder.AppendLine();
-
-        // Helper methods
-        EmitHelperMethods(builder);
-
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine();
-    }
-
-    private static void EmitBindHeaderMethod(SourceBuilder builder, IReadOnlyList<MemberDescriptor> members)
-    {
-        builder.AppendLine($"public void BindHeader({ROW_TYPE} headerRow, int rowNumber)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("if (!hasHeaderRow || resolved) return;");
-        builder.AppendLine();
-
-        foreach (var member in members)
-        {
-            if (member.AttributeIndex.HasValue)
-            {
-                builder.AppendLine($"columnIndex_{member.MemberName} = {member.AttributeIndex.Value};");
-            }
-            else
-            {
-                builder.AppendLine($"columnIndex_{member.MemberName} = FindHeaderIndex(headerRow, \"{member.HeaderName}\");");
-                builder.AppendLine($"if (columnIndex_{member.MemberName} < 0 && !allowMissingColumns)");
-                builder.AppendLine("{");
-                builder.Indent();
-                builder.AppendLine($"throw new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, \"Column '{member.HeaderName}' not found in header.\", rowNumber);");
-                builder.Unindent();
-                builder.AppendLine("}");
-            }
-        }
-
-        builder.AppendLine("resolved = true;");
-        builder.Unindent();
-        builder.AppendLine("}");
-    }
-
-    private static void EmitBindMethod(SourceBuilder builder, string fullyQualifiedName)
-    {
-        builder.AppendLine($"public {fullyQualifiedName}? Bind({ROW_TYPE} row, int rowNumber)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine($"var instance = new {fullyQualifiedName}();");
-        builder.AppendLine("if (!BindInto(instance, row, rowNumber)) return null;");
-        builder.AppendLine("return instance;");
-        builder.Unindent();
-        builder.AppendLine("}");
-    }
-
-    private static void EmitBindIntoMethod(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
-    {
-        builder.AppendLine($"public bool BindInto({fullyQualifiedName} instance, {ROW_TYPE} row, int rowNumber)");
+        builder.AppendLine($"var properties = new {PROPERTY_DESCRIPTOR_TYPE}<{fullyQualifiedName}>[]");
         builder.AppendLine("{");
         builder.Indent();
 
         foreach (var member in members)
         {
-            EmitMemberBinding(builder, member);
+            var isRequired = !member.IsNullable && member.BaseTypeName != "string";
+            var indexValue = member.AttributeIndex.HasValue ? member.AttributeIndex.Value.ToString() : "-1";
+            builder.AppendLine($"new {PROPERTY_DESCRIPTOR_TYPE}<{fullyQualifiedName}>(\"{member.HeaderName}\", {indexValue}, Set_{member.MemberName}, {(isRequired ? "true" : "false")}),");
         }
 
-        builder.AppendLine("return true;");
         builder.Unindent();
-        builder.AppendLine("}");
-    }
-
-    private static void EmitMemberBinding(SourceBuilder builder, MemberDescriptor member)
-    {
-        var indexVar = $"columnIndex_{member.MemberName}";
-
-        builder.AppendLine($"// {member.MemberName}");
-        builder.AppendLine($"if ({indexVar} >= 0 && {indexVar} < row.ColumnCount)");
-        builder.AppendLine("{");
-        builder.Indent();
-
-        builder.AppendLine($"var column_{member.MemberName} = row[{indexVar}];");
-        builder.AppendLine($"var span_{member.MemberName} = column_{member.MemberName}.CharSpan;");
-
-        // Check for null values
-        builder.AppendLine($"if (!IsNullValue(span_{member.MemberName}))");
-        builder.AppendLine("{");
-        builder.Indent();
-
-        EmitTypedParsing(builder, member, $"span_{member.MemberName}", $"column_{member.MemberName}");
-
+        builder.AppendLine("};");
+        builder.AppendLine($"return new {DESCRIPTOR_TYPE}<{fullyQualifiedName}>(properties);");
         builder.Unindent();
         builder.AppendLine("}");
 
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine($"else if ({indexVar} >= 0 && !allowMissingColumns)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine($"throw new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Row has only {{row.ColumnCount}} columns but '{member.MemberName}' expects index {{{indexVar}}}.\", rowNumber, {indexVar} + 1);");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
     }
 
-    private static void EmitTypedParsing(SourceBuilder builder, MemberDescriptor member, string spanVar, string columnVar)
+    private static void EmitPropertySetterMethod(SourceBuilder builder, string fullyQualifiedName, MemberDescriptor member)
+    {
+        builder.AppendLine($"private static void Set_{member.MemberName}({fullyQualifiedName} instance, ReadOnlySpan<char> span, CultureInfo culture)");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        // Emit parsing logic based on type
+        EmitSetterParsingLogic(builder, member);
+
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private static void EmitSetterParsingLogic(SourceBuilder builder, MemberDescriptor member)
     {
         var baseType = member.BaseTypeName;
-        var isNullable = member.IsNullable;
-        var propertyName = member.MemberName;
 
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
         switch (baseType)
         {
             case "string":
-                builder.AppendLine($"instance.{propertyName} = new string({spanVar});");
+                builder.AppendLine($"instance.{member.MemberName} = new string(span);");
                 break;
 
             case "int":
             case "System.Int32":
-                EmitNumericParsing(builder, member, spanVar, "int", "Integer");
+                EmitSetterNumericParsing(builder, member, "int", "Integer");
                 break;
 
             case "long":
             case "System.Int64":
-                EmitNumericParsing(builder, member, spanVar, "long", "Integer");
+                EmitSetterNumericParsing(builder, member, "long", "Integer");
                 break;
 
             case "short":
             case "System.Int16":
-                EmitNumericParsing(builder, member, spanVar, "short", "Integer");
+                EmitSetterNumericParsing(builder, member, "short", "Integer");
                 break;
 
             case "byte":
             case "System.Byte":
-                EmitNumericParsing(builder, member, spanVar, "byte", "Integer");
+                EmitSetterNumericParsing(builder, member, "byte", "Integer");
                 break;
 
             case "uint":
             case "System.UInt32":
-                EmitNumericParsing(builder, member, spanVar, "uint", "Integer");
+                EmitSetterNumericParsing(builder, member, "uint", "Integer");
                 break;
 
             case "ulong":
             case "System.UInt64":
-                EmitNumericParsing(builder, member, spanVar, "ulong", "Integer");
+                EmitSetterNumericParsing(builder, member, "ulong", "Integer");
                 break;
 
             case "ushort":
             case "System.UInt16":
-                EmitNumericParsing(builder, member, spanVar, "ushort", "Integer");
+                EmitSetterNumericParsing(builder, member, "ushort", "Integer");
                 break;
 
             case "sbyte":
             case "System.SByte":
-                EmitNumericParsing(builder, member, spanVar, "sbyte", "Integer");
+                EmitSetterNumericParsing(builder, member, "sbyte", "Integer");
                 break;
 
             case "decimal":
             case "System.Decimal":
-                EmitNumericParsing(builder, member, spanVar, "decimal", "Number");
+                EmitSetterNumericParsing(builder, member, "decimal", "Number");
                 break;
 
             case "double":
             case "System.Double":
-                EmitFloatParsing(builder, member, spanVar, "double");
+                EmitSetterFloatParsing(builder, member, "double");
                 break;
 
             case "float":
             case "System.Single":
-                EmitFloatParsing(builder, member, spanVar, "float");
+                EmitSetterFloatParsing(builder, member, "float");
                 break;
 
             case "bool":
             case "System.Boolean":
-                EmitBooleanParsing(builder, member, spanVar);
+                EmitSetterBooleanParsing(builder, member);
                 break;
 
             case "System.DateTime":
-                EmitDateTimeParsing(builder, member, spanVar, "DateTime");
+                EmitSetterDateTimeParsing(builder, member, "DateTime");
                 break;
 
             case "System.DateTimeOffset":
-                EmitDateTimeParsing(builder, member, spanVar, "DateTimeOffset");
+                EmitSetterDateTimeParsing(builder, member, "DateTimeOffset");
                 break;
 
             case "System.DateOnly":
-                EmitDateTimeParsing(builder, member, spanVar, "DateOnly");
+                EmitSetterDateTimeParsing(builder, member, "DateOnly");
                 break;
 
             case "System.TimeOnly":
-                EmitDateTimeParsing(builder, member, spanVar, "TimeOnly");
+                EmitSetterDateTimeParsing(builder, member, "TimeOnly");
                 break;
 
             case "System.Guid":
-                EmitGuidParsing(builder, member, spanVar);
-                break;
-
-            case "System.TimeZoneInfo":
-                EmitTimeZoneInfoParsing(builder, member, columnVar);
+                EmitSetterGuidParsing(builder, member);
                 break;
 
             default:
                 if (member.IsEnum)
                 {
-                    EmitEnumParsing(builder, member, spanVar, isNullable);
+                    EmitSetterEnumParsing(builder, member);
                 }
                 else
                 {
-                    builder.AppendLine($"instance.{propertyName} = new string({spanVar});");
+                    builder.AppendLine($"instance.{member.MemberName} = new string(span);");
                 }
                 break;
         }
 #pragma warning restore IDE0010
     }
 
-    private static void EmitNumericParsing(SourceBuilder builder, MemberDescriptor member, string spanVar, string typeName, string numberStyle)
+    private static void EmitSetterNumericParsing(SourceBuilder builder, MemberDescriptor member, string typeName, string numberStyle)
     {
         var propertyName = member.MemberName;
         var isNullable = member.IsNullable;
@@ -415,18 +298,16 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         if (isNullable)
         {
-            builder.AppendLine($"if ({spanVar}.IsEmpty) {{ /* null */ }}");
-            builder.AppendLine($"else if ({typeName}.TryParse({spanVar}, {styles}, culture, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"if (!span.IsEmpty && {typeName}.TryParse(span, {styles}, culture, out var parsed))");
+            builder.AppendLine($"    instance.{propertyName} = parsed;");
         }
         else
         {
-            builder.AppendLine($"if ({typeName}.TryParse({spanVar}, {styles}, culture, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"instance.{propertyName} = {typeName}.Parse(span, {styles}, culture);");
         }
     }
 
-    private static void EmitFloatParsing(SourceBuilder builder, MemberDescriptor member, string spanVar, string typeName)
+    private static void EmitSetterFloatParsing(SourceBuilder builder, MemberDescriptor member, string typeName)
     {
         var propertyName = member.MemberName;
         var isNullable = member.IsNullable;
@@ -434,36 +315,32 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         if (isNullable)
         {
-            builder.AppendLine($"if ({spanVar}.IsEmpty) {{ /* null */ }}");
-            builder.AppendLine($"else if ({typeName}.TryParse({spanVar}, {STYLES}, culture, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"if (!span.IsEmpty && {typeName}.TryParse(span, {STYLES}, culture, out var parsed))");
+            builder.AppendLine($"    instance.{propertyName} = parsed;");
         }
         else
         {
-            builder.AppendLine($"if ({typeName}.TryParse({spanVar}, {STYLES}, culture, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"instance.{propertyName} = {typeName}.Parse(span, {STYLES}, culture);");
         }
     }
 
-    private static void EmitBooleanParsing(SourceBuilder builder, MemberDescriptor member, string spanVar)
+    private static void EmitSetterBooleanParsing(SourceBuilder builder, MemberDescriptor member)
     {
         var propertyName = member.MemberName;
         var isNullable = member.IsNullable;
 
         if (isNullable)
         {
-            builder.AppendLine($"if ({spanVar}.IsEmpty) {{ /* null */ }}");
-            builder.AppendLine($"else if (bool.TryParse({spanVar}, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"if (!span.IsEmpty && bool.TryParse(span, out var parsed))");
+            builder.AppendLine($"    instance.{propertyName} = parsed;");
         }
         else
         {
-            builder.AppendLine($"if (bool.TryParse({spanVar}, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"instance.{propertyName} = bool.Parse(span);");
         }
     }
 
-    private static void EmitDateTimeParsing(SourceBuilder builder, MemberDescriptor member, string spanVar, string typeName)
+    private static void EmitSetterDateTimeParsing(SourceBuilder builder, MemberDescriptor member, string typeName)
     {
         var propertyName = member.MemberName;
         var format = member.Format;
@@ -471,129 +348,65 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         if (isNullable)
         {
-            builder.AppendLine($"if ({spanVar}.IsEmpty) {{ /* null */ }}");
+            builder.AppendLine($"if (!span.IsEmpty)");
+            builder.AppendLine("{");
+            builder.Indent();
             if (format != null)
             {
-                builder.AppendLine($"else if ({typeName}.TryParseExact({spanVar}, \"{EscapeString(format)}\", culture, DateTimeStyles.None, out var parsed_{propertyName}))");
+                builder.AppendLine($"if ({typeName}.TryParseExact(span, \"{EscapeString(format)}\", culture, DateTimeStyles.None, out var parsed))");
             }
             else
             {
-                builder.AppendLine($"else if ({typeName}.TryParse({spanVar}, culture, DateTimeStyles.None, out var parsed_{propertyName}))");
+                builder.AppendLine($"if ({typeName}.TryParse(span, culture, DateTimeStyles.None, out var parsed))");
             }
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"    instance.{propertyName} = parsed;");
+            builder.Unindent();
+            builder.AppendLine("}");
         }
         else
         {
             if (format != null)
             {
-                builder.AppendLine($"if ({typeName}.TryParseExact({spanVar}, \"{EscapeString(format)}\", culture, DateTimeStyles.None, out var parsed_{propertyName}))");
+                builder.AppendLine($"instance.{propertyName} = {typeName}.ParseExact(span, \"{EscapeString(format)}\", culture, DateTimeStyles.None);");
             }
             else
             {
-                builder.AppendLine($"if ({typeName}.TryParse({spanVar}, culture, DateTimeStyles.None, out var parsed_{propertyName}))");
+                builder.AppendLine($"instance.{propertyName} = {typeName}.Parse(span, culture, DateTimeStyles.None);");
             }
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
     }
 
-    private static void EmitGuidParsing(SourceBuilder builder, MemberDescriptor member, string spanVar)
+    private static void EmitSetterGuidParsing(SourceBuilder builder, MemberDescriptor member)
     {
         var propertyName = member.MemberName;
         var isNullable = member.IsNullable;
 
         if (isNullable)
         {
-            builder.AppendLine($"if ({spanVar}.IsEmpty) {{ /* null */ }}");
-            builder.AppendLine($"else if (Guid.TryParse({spanVar}, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"if (!span.IsEmpty && Guid.TryParse(span, out var parsed))");
+            builder.AppendLine($"    instance.{propertyName} = parsed;");
         }
         else
         {
-            builder.AppendLine($"if (Guid.TryParse({spanVar}, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"instance.{propertyName} = Guid.Parse(span);");
         }
     }
 
-    private static void EmitTimeZoneInfoParsing(SourceBuilder builder, MemberDescriptor member, string columnVar)
-    {
-        var propertyName = member.MemberName;
-        var isNullable = member.IsNullable;
-
-        if (isNullable)
-        {
-            builder.AppendLine($"if ({columnVar}.IsEmpty) {{ /* null */ }}");
-            builder.AppendLine($"else if ({columnVar}.TryParseTimeZoneInfo(out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else
-        {
-            builder.AppendLine($"if ({columnVar}.TryParseTimeZoneInfo(out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-    }
-
-    private static void EmitEnumParsing(SourceBuilder builder, MemberDescriptor member, string spanVar, bool isNullable)
+    private static void EmitSetterEnumParsing(SourceBuilder builder, MemberDescriptor member)
     {
         var propertyName = member.MemberName;
         var enumType = member.TypeofTypeName;
+        var isNullable = member.IsNullable;
 
         if (isNullable)
         {
-            builder.AppendLine($"if ({spanVar}.IsEmpty) {{ /* null */ }}");
-            builder.AppendLine($"else if (Enum.TryParse<{enumType}>({spanVar}, ignoreCase: true, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"if (!span.IsEmpty && Enum.TryParse<{enumType}>(span, ignoreCase: true, out var parsed))");
+            builder.AppendLine($"    instance.{propertyName} = parsed;");
         }
         else
         {
-            builder.AppendLine($"if (Enum.TryParse<{enumType}>({spanVar}, ignoreCase: true, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"instance.{propertyName} = Enum.Parse<{enumType}>(span, ignoreCase: true);");
         }
-    }
-
-    private static void EmitHelperMethods(SourceBuilder builder)
-    {
-        // FindHeaderIndex helper
-        builder.AppendLine($"private int FindHeaderIndex({ROW_TYPE} headerRow, string headerName)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("var target = headerName.AsSpan();");
-        builder.AppendLine("for (int i = 0; i < headerRow.ColumnCount; i++)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("var candidate = headerRow[i].CharSpan;");
-        builder.AppendLine("if (headerComparison == StringComparison.Ordinal)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("if (candidate.SequenceEqual(target)) return i;");
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine("else if (candidate.Equals(target, headerComparison))");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("return i;");
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine("return -1;");
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine();
-
-        // IsNullValue helper
-        builder.AppendLine("private bool IsNullValue(ReadOnlySpan<char> span)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("if (nullValues is null) return false;");
-        builder.AppendLine("foreach (var nv in nullValues)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("if (span.SequenceEqual(nv.AsSpan())) return true;");
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine("return false;");
-        builder.Unindent();
-        builder.AppendLine("}");
     }
 
     private static void EmitRegistration(SourceProductionContext context, IReadOnlyList<TypeDescriptor> descriptors)
@@ -621,10 +434,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var binderMembers = GetMembersWithSetters(descriptor.Members);
             if (binderMembers.Count > 0)
             {
-                // Register legacy binder for backwards compatibility
-                EmitLegacyBinderRegistration(builder, descriptor.FullyQualifiedName, binderMembers);
-
-                // Register typed binder for performance
+                // Register descriptor-based binder for performance
                 EmitTypedBinderRegistration(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName);
             }
 
@@ -646,32 +456,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
     private static void EmitTypedBinderRegistration(SourceBuilder builder, string fullyQualifiedName, string safeClassName)
     {
-        var binderClassName = $"CsvTypedBinder_{safeClassName}";
-        builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterTypedBinder<{fullyQualifiedName}>(options => new {binderClassName}(options));");
-    }
-
-    private static void EmitLegacyBinderRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
-    {
-        builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterGeneratedBinder(typeof({fullyQualifiedName}), options => {BINDER_TYPE}<{fullyQualifiedName}>.CreateFromTemplates(options, new {BINDER_TYPE}<{fullyQualifiedName}>.BindingTemplate[]");
-        builder.AppendLine("{");
-        builder.Indent();
-
-        foreach (var member in members)
-        {
-            builder.AppendLine($"new {BINDER_TYPE}<{fullyQualifiedName}>.BindingTemplate(");
-            builder.Indent();
-            builder.AppendLine($"\"{member.MemberName}\",");
-            builder.AppendLine($"typeof({member.TypeName}),");
-            builder.AppendLine($"\"{member.HeaderName}\",");
-            builder.AppendLine(member.AttributeIndex is null ? "null," : $"{member.AttributeIndex},");
-            builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
-            builder.AppendLine($"{member.SetterFactory}),");
-            builder.Unindent();
-        }
-
-        builder.Unindent();
-        builder.AppendLine("}));");
-        builder.AppendLine();
+        var descriptorClassName = $"CsvDescriptor_{safeClassName}";
+        builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterDescriptor<{fullyQualifiedName}>({descriptorClassName}.GetDescriptor);");
     }
 
     private static List<MemberDescriptor> GetMembersWithSetters(IReadOnlyList<MemberDescriptor> members)
@@ -707,7 +493,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine($"new {WRITER_TYPE}<{fullyQualifiedName}>.WriterTemplate(");
             builder.Indent();
             builder.AppendLine($"\"{member.MemberName}\",");
-            builder.AppendLine($"typeof({member.TypeName}),");
+            builder.AppendLine($"typeof({member.TypeofTypeName}),");
             builder.AppendLine($"\"{member.HeaderName}\",");
             builder.AppendLine(member.AttributeIndex is null ? "null," : $"{member.AttributeIndex},");
             builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
@@ -780,6 +566,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var formatLiteral = format != null ? EscapeString(format) : null;
 
             var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
+            var isReadOnlyMemoryChar = IsReadOnlyMemoryChar(property.Type);
 
             var setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
             var getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
@@ -795,7 +582,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 getterFactory,
                 baseTypeName,
                 isNullable,
-                isEnum));
+                isEnum,
+                isReadOnlyMemoryChar));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)
@@ -851,5 +639,6 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         string? GetterFactory,
         string BaseTypeName,
         bool IsNullable,
-        bool IsEnum);
+        bool IsEnum,
+        bool IsReadOnlyMemoryChar);
 }

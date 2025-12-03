@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Records.Binding;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -243,7 +244,8 @@ public class CriticalFeaturesTests
         Assert.Equal(30, records[2].Age);
     }
 
-    private class PersonWithNullableAge
+    [CsvGenerateBinder]
+    internal class PersonWithNullableAge
     {
         public string Name { get; set; } = string.Empty;
         public int? Age { get; set; }
@@ -300,7 +302,8 @@ public class CriticalFeaturesTests
         Assert.EndsWith("...", ex.FieldValue);
     }
 
-    private class PersonWithAge
+    [CsvGenerateBinder]
+    internal class PersonWithAge
     {
         public string Name { get; set; } = string.Empty;
         public int Age { get; set; }

@@ -108,9 +108,18 @@ internal static class GeneratorHelpers
             "System.TimeOnly" => true,
             "System.Guid" => true,
             "System.TimeZoneInfo" => true,
+            "System.ReadOnlyMemory<char>" => true,
             _ when type.TypeKind == TypeKind.Enum => true,
             _ => false
         };
+    }
+
+    /// <summary>
+    /// Checks if a type is ReadOnlyMemory&lt;char&gt;.
+    /// </summary>
+    public static bool IsReadOnlyMemoryChar(ITypeSymbol type)
+    {
+        return type.ToDisplayString() == "System.ReadOnlyMemory<char>";
     }
 
     /// <summary>

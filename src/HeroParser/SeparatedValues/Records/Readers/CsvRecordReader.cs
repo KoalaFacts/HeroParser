@@ -8,8 +8,7 @@ namespace HeroParser.SeparatedValues.Records.Readers;
 public ref struct CsvRecordReader<T> where T : class, new()
 {
     private CsvCharSpanReader reader;
-    private readonly CsvRecordBinder<T>? legacyBinder;
-    private readonly ICsvTypedBinder<T>? typedBinder;
+    private readonly ICsvTypedBinder<T> binder;
     private readonly int skipRows;
     private readonly IProgress<CsvProgress>? progress;
     private readonly int progressInterval;
@@ -17,27 +16,11 @@ public ref struct CsvRecordReader<T> where T : class, new()
     private int skippedCount;
     private int dataRowCount;
 
-    internal CsvRecordReader(CsvCharSpanReader reader, CsvRecordBinder<T> binder, int skipRows = 0,
+    internal CsvRecordReader(CsvCharSpanReader reader, ICsvTypedBinder<T> binder, int skipRows = 0,
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000)
     {
         this.reader = reader;
-        legacyBinder = binder;
-        typedBinder = null;
-        this.skipRows = skipRows;
-        this.progress = progress;
-        this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
-        Current = default!;
-        rowNumber = 0;
-        skippedCount = 0;
-        dataRowCount = 0;
-    }
-
-    internal CsvRecordReader(CsvCharSpanReader reader, ICsvTypedBinder<T> typedBinder, int skipRows = 0,
-        IProgress<CsvProgress>? progress = null, int progressInterval = 1000)
-    {
-        this.reader = reader;
-        legacyBinder = null;
-        this.typedBinder = typedBinder;
+        this.binder = binder;
         this.skipRows = skipRows;
         this.progress = progress;
         this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
@@ -58,15 +41,6 @@ public ref struct CsvRecordReader<T> where T : class, new()
     /// </summary>
     public bool MoveNext()
     {
-        // Use typed binder for boxing-free performance when available
-        if (typedBinder is not null)
-            return MoveNextTyped();
-
-        return MoveNextLegacy();
-    }
-
-    private bool MoveNextTyped()
-    {
         while (reader.MoveNext())
         {
             rowNumber++;
@@ -79,52 +53,13 @@ public ref struct CsvRecordReader<T> where T : class, new()
                 continue;
             }
 
-            if (typedBinder!.NeedsHeaderResolution)
+            if (binder.NeedsHeaderResolution)
             {
-                typedBinder.BindHeader(row, rowNumber);
+                binder.BindHeader(row, rowNumber);
                 continue;
             }
 
-            var result = typedBinder.Bind(row, rowNumber);
-            if (result is null)
-            {
-                // Row was skipped due to error handling
-                continue;
-            }
-
-            dataRowCount++;
-            ReportProgress();
-
-            Current = result;
-            return true;
-        }
-
-        ReportFinalProgress();
-        Current = default!;
-        return false;
-    }
-
-    private bool MoveNextLegacy()
-    {
-        while (reader.MoveNext())
-        {
-            rowNumber++;
-            var row = reader.Current;
-
-            // Skip rows if requested
-            if (skippedCount < skipRows)
-            {
-                skippedCount++;
-                continue;
-            }
-
-            if (legacyBinder!.NeedsHeaderResolution)
-            {
-                legacyBinder.BindHeader(row, rowNumber);
-                continue;
-            }
-
-            var result = legacyBinder.Bind(row, rowNumber);
+            var result = binder.Bind(row, rowNumber);
             if (result is null)
             {
                 // Row was skipped due to error handling

@@ -9,8 +9,8 @@ using static HeroParser.Generators.GeneratorHelpers;
 namespace HeroParser.Generators;
 
 /// <summary>
-/// Source generator for CSV record binders.
-/// Generates both legacy boxing-based binders and high-performance typed binders.
+/// Source generator for CSV record descriptors.
+/// Generates property descriptors for high-performance binding via CsvDescriptorBinder{T}.
 /// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class CsvRecordBinderGenerator : IIncrementalGenerator

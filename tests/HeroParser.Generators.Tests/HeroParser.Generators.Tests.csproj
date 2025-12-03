@@ -20,10 +20,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Reference HeroParser for attribute definitions -->
+    <!-- Reference HeroParser for attribute definitions and runtime APIs -->
     <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
     <!-- Reference generator as assembly for unit testing -->
     <ProjectReference Include="../../src/HeroParser.Generators/HeroParser.Generators.csproj" />
+    <!-- Also reference as analyzer for integration tests with generated code -->
+    <ProjectReference Include="../../src/HeroParser.Generators/HeroParser.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

@@ -35,8 +35,9 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
-        Assert.Contains("TestNamespace.Person", result.GeneratedSources[0].SourceText.ToString());
+        Assert.Equal(2, result.GeneratedSources.Length);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("TestNamespace.Person", allGeneratedCode);
     }
 
     [Fact]
@@ -62,11 +63,11 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        Assert.Equal(2, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("product_name", generatedCode);
-        Assert.Contains("unit_price", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("product_name", allGeneratedCode);
+        Assert.Contains("unit_price", allGeneratedCode);
     }
 
     [Fact]
@@ -116,10 +117,10 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        Assert.Equal(2, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("NullableRecord", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("NullableRecord", allGeneratedCode);
     }
 
     [Fact]
@@ -154,14 +155,14 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        Assert.Equal(2, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("Int32Value", generatedCode);
-        Assert.Contains("Int64Value", generatedCode);
-        Assert.Contains("DateTimeValue", generatedCode);
-        Assert.Contains("GuidValue", generatedCode);
-        Assert.Contains("EnumValue", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("Int32Value", allGeneratedCode);
+        Assert.Contains("Int64Value", allGeneratedCode);
+        Assert.Contains("DateTimeValue", allGeneratedCode);
+        Assert.Contains("GuidValue", allGeneratedCode);
+        Assert.Contains("EnumValue", allGeneratedCode);
     }
 
     [Fact]
@@ -184,12 +185,12 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        Assert.Equal(2, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("Name", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("Name", allGeneratedCode);
         // Read-only property should still appear in writer but not in binder
-        Assert.Contains("ComputedValue", generatedCode);
+        Assert.Contains("ComputedValue", allGeneratedCode);
     }
 
     [Fact]
@@ -208,10 +209,10 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        Assert.Equal(2, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("PersonRecord", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("PersonRecord", allGeneratedCode);
     }
 
     [Fact]
@@ -238,11 +239,11 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        Assert.Equal(2, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("yyyy-MM-dd", generatedCode);
-        Assert.Contains("N2", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("yyyy-MM-dd", allGeneratedCode);
+        Assert.Contains("N2", allGeneratedCode);
     }
 
     [Fact]
@@ -290,11 +291,12 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        // Multiple annotated types generate: one descriptor file per type + one registration file
+        Assert.Equal(3, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("TestNamespace.Person", generatedCode);
-        Assert.Contains("TestNamespace.Product", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("TestNamespace.Person", allGeneratedCode);
+        Assert.Contains("TestNamespace.Product", allGeneratedCode);
     }
 
     [Fact]
@@ -345,10 +347,10 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        Assert.Equal(2, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("Outer.Inner", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("Outer.Inner", allGeneratedCode);
     }
 
     [Fact]
@@ -369,12 +371,12 @@ public class CsvRecordBinderGeneratorTests
 
         var result = RunGenerator(source);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
 
         // Verify binder registration
-        Assert.Contains("CsvRecordBinderFactory", generatedCode);
+        Assert.Contains("CsvRecordBinderFactory", allGeneratedCode);
         // Verify writer registration
-        Assert.Contains("CsvRecordWriterFactory", generatedCode);
+        Assert.Contains("CsvRecordWriterFactory", allGeneratedCode);
     }
 
     [Fact]
@@ -435,10 +437,10 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Single(result.GeneratedSources);
+        Assert.Equal(2, result.GeneratedSources.Length);
 
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
-        Assert.Contains("GlobalRecord", generatedCode);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("GlobalRecord", allGeneratedCode);
     }
 
     [Fact]
@@ -459,14 +461,15 @@ public class CsvRecordBinderGeneratorTests
             """;
 
         var result = RunGenerator(source);
-        var generatedCode = result.GeneratedSources[0].SourceText.ToString();
 
-        // Parse the generated code to verify it's valid C# syntax
-        var generatedTree = CSharpSyntaxTree.ParseText(generatedCode);
-        var diagnostics = generatedTree.GetDiagnostics().ToList();
-
-        // Verify no syntax errors in generated code
-        Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        // Verify all generated files have valid C# syntax
+        foreach (var generatedSource in result.GeneratedSources)
+        {
+            var generatedCode = generatedSource.SourceText.ToString();
+            var generatedTree = CSharpSyntaxTree.ParseText(generatedCode);
+            var diagnostics = generatedTree.GetDiagnostics().ToList();
+            Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        }
     }
 
     #region Test Infrastructure

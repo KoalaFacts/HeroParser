@@ -1,15 +1,23 @@
+using HeroParser.Generators.Tests.Generated;
 using HeroParser.SeparatedValues.Records;
 using HeroParser.SeparatedValues.Records.Binding;
 using HeroParser.SeparatedValues.Writing;
-using HeroParser.Tests.Generated;
 using Xunit;
 
-namespace HeroParser.Tests;
+namespace HeroParser.Generators.Tests;
 
-public class SourceGeneratorTests
+/// <summary>
+/// Integration tests that verify the source generator produces working binders and writers.
+/// These tests compile with the generator as an analyzer, so the generated code is available at runtime.
+/// </summary>
+public class GeneratorIntegrationTests
 {
+    private const string CATEGORY = "Category";
+    private const string UNIT = "Unit";
+    private const string INTEGRATION = "Integration";
+
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [Trait(CATEGORY, UNIT)]
     public void GeneratedBinder_IsRegistered_AndBindsRows()
     {
         Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedPerson>(null, out var binder));
@@ -47,7 +55,7 @@ public class SourceGeneratorTests
     }
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [Trait(CATEGORY, UNIT)]
     public void GeneratedBinder_RespectsAttributes_AndHeaderless()
     {
         Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedAttributed>(new CsvRecordOptions { HasHeaderRow = false }, out var binder));
@@ -77,7 +85,7 @@ public class SourceGeneratorTests
     }
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [Trait(CATEGORY, UNIT)]
     public void NonAnnotatedType_ThrowsInvalidOperation()
     {
         var csv = "Name,Age\nJane,42";
@@ -85,7 +93,7 @@ public class SourceGeneratorTests
     }
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    [Trait(CATEGORY, INTEGRATION)]
     public async Task AsyncStreaming_UsesGeneratedBinder()
     {
         Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedPerson>(null, out var binder));
@@ -108,7 +116,7 @@ public class SourceGeneratorTests
     }
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [Trait(CATEGORY, UNIT)]
     public void UnsupportedType_SkipsGeneration_NoBinder()
     {
         // Array property should be unsupported by generator, so no binder should be registered
@@ -116,23 +124,10 @@ public class SourceGeneratorTests
         Assert.False(CsvRecordBinderFactory.TryCreateDescriptorBinder<UnsupportedProperty>(options, out _));
     }
 
-    private sealed class NonAnnotatedRecord
-    {
-        public string Name { get; set; } = string.Empty;
-        public int Age { get; set; }
-    }
-
-    [CsvGenerateBinder]
-    private sealed class UnsupportedProperty
-    {
-        public string Name { get; set; } = string.Empty;
-        public int[] Scores { get; set; } = [];
-    }
-
     #region Generated Writer Tests
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [Trait(CATEGORY, UNIT)]
     public void GeneratedWriter_IsRegistered_ForAnnotatedType()
     {
         // Verify the generated writer is registered
@@ -141,7 +136,7 @@ public class SourceGeneratorTests
     }
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [Trait(CATEGORY, UNIT)]
     public void GeneratedWriter_WritesRecords()
     {
         var records = new[]
@@ -158,7 +153,7 @@ public class SourceGeneratorTests
     }
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [Trait(CATEGORY, UNIT)]
     public void GeneratedWriter_RespectsAttributeNames()
     {
         var records = new[]
@@ -175,7 +170,7 @@ public class SourceGeneratorTests
     }
 
     [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    [Trait(CATEGORY, INTEGRATION)]
     public void RoundTrip_GeneratedBinderAndWriter()
     {
         // Create records
@@ -196,6 +191,23 @@ public class SourceGeneratorTests
         Assert.Equal(30, parsed[0].Age);
         Assert.Equal("Bob", parsed[1].Name);
         Assert.Equal(25, parsed[1].Age);
+    }
+
+    #endregion
+
+    #region Test Types
+
+    private sealed class NonAnnotatedRecord
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+    }
+
+    [CsvGenerateBinder]
+    private sealed class UnsupportedProperty
+    {
+        public string Name { get; set; } = string.Empty;
+        public int[] Scores { get; set; } = [];
     }
 
     #endregion

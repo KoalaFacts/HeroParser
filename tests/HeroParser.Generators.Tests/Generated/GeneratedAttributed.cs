@@ -1,6 +1,6 @@
 using HeroParser.SeparatedValues.Records.Binding;
 
-namespace HeroParser.Tests.Generated;
+namespace HeroParser.Generators.Tests.Generated;
 
 [CsvGenerateBinder]
 internal sealed class GeneratedAttributed

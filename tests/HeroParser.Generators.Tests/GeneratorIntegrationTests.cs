@@ -20,9 +20,8 @@ public class GeneratorIntegrationTests
     [Trait(CATEGORY, UNIT)]
     public void GeneratedBinder_IsRegistered_AndBindsRows()
     {
-        Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedPerson>(null, out var binder));
+        Assert.True(CsvRecordBinderFactory.TryCreateBinder<GeneratedPerson>(null, out var binder));
         Assert.NotNull(binder);
-        var notNullBinder = binder!;
 
         var csv = "Name,Age\nJane,42\nBob,25";
         var reader = Csv.ReadFromText(csv);
@@ -32,13 +31,13 @@ public class GeneratorIntegrationTests
         {
             row++;
             var current = reader.Current;
-            if (notNullBinder.NeedsHeaderResolution)
+            if (binder.NeedsHeaderResolution)
             {
-                notNullBinder.BindHeader(current, row);
+                binder.BindHeader(current, row);
                 continue;
             }
 
-            var person = notNullBinder.Bind(current, row);
+            var person = binder.Bind(current, row);
             Assert.NotNull(person);
             if (row == 2)
             {
@@ -58,9 +57,8 @@ public class GeneratorIntegrationTests
     [Trait(CATEGORY, UNIT)]
     public void GeneratedBinder_RespectsAttributes_AndHeaderless()
     {
-        Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedAttributed>(new CsvRecordOptions { HasHeaderRow = false }, out var binder));
+        Assert.True(CsvRecordBinderFactory.TryCreateBinder<GeneratedAttributed>(new CsvRecordOptions { HasHeaderRow = false }, out var binder));
         Assert.NotNull(binder);
-        var b = binder!;
 
         var csv = "1,full_name\n2,other";
         var reader = Csv.ReadFromText(csv);
@@ -69,16 +67,16 @@ public class GeneratorIntegrationTests
         while (reader.MoveNext())
         {
             row++;
-            var entity = b.Bind(reader.Current, row);
+            var entity = binder.Bind(reader.Current, row);
             Assert.NotNull(entity);
             if (row == 1)
             {
-                Assert.Equal(1, entity!.Id);
+                Assert.Equal(1, entity.Id);
                 Assert.Equal("full_name", entity.Name);
             }
             else
             {
-                Assert.Equal(2, entity!.Id);
+                Assert.Equal(2, entity.Id);
                 Assert.Equal("other", entity.Name);
             }
         }
@@ -96,7 +94,7 @@ public class GeneratorIntegrationTests
     [Trait(CATEGORY, INTEGRATION)]
     public async Task AsyncStreaming_UsesGeneratedBinder()
     {
-        Assert.True(CsvRecordBinderFactory.TryCreateDescriptorBinder<GeneratedPerson>(null, out var binder));
+        Assert.True(CsvRecordBinderFactory.TryCreateBinder<GeneratedPerson>(null, out var binder));
         Assert.NotNull(binder);
 
         var csv = "Name,Age\nAlice,9\nBob,7";
@@ -121,7 +119,7 @@ public class GeneratorIntegrationTests
     {
         // Array property should be unsupported by generator, so no binder should be registered
         var options = new CsvRecordOptions { AllowMissingColumns = true };
-        Assert.False(CsvRecordBinderFactory.TryCreateDescriptorBinder<UnsupportedProperty>(options, out _));
+        Assert.False(CsvRecordBinderFactory.TryCreateBinder<UnsupportedProperty>(options, out _));
     }
 
     #region Generated Writer Tests

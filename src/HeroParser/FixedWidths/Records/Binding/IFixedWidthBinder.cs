@@ -1,11 +1,11 @@
 namespace HeroParser.FixedWidths.Records.Binding;
 
 /// <summary>
-/// Interface for fully-typed binders that avoid boxing during parsing.
-/// Implemented by source-generated binders for maximum performance.
+/// Interface for fixed-width binders that avoid boxing during parsing.
+/// Implemented by both reflection-based and descriptor-based binders.
 /// </summary>
 /// <typeparam name="T">The record type to bind to.</typeparam>
-internal interface IFixedWidthTypedBinder<T> where T : class, new()
+internal interface IFixedWidthBinder<T> where T : class, new()
 {
     /// <summary>
     /// Binds a fixed-width row to a record instance without boxing.

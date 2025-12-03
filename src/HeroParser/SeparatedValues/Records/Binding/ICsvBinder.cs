@@ -1,11 +1,11 @@
 namespace HeroParser.SeparatedValues.Records.Binding;
 
 /// <summary>
-/// Interface for fully-typed CSV binders that avoid boxing during parsing.
-/// Implemented by source-generated binders for maximum performance.
+/// Interface for CSV binders that avoid boxing during parsing.
+/// Implemented by both reflection-based and descriptor-based binders.
 /// </summary>
 /// <typeparam name="T">The record type to bind to.</typeparam>
-internal interface ICsvTypedBinder<T> where T : class, new()
+internal interface ICsvBinder<T> where T : class, new()
 {
     /// <summary>
     /// Gets whether the binder needs header resolution before binding data rows.

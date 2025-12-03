@@ -7,7 +7,7 @@ namespace HeroParser.SeparatedValues.Records.Binding;
 /// High-performance binder that uses pre-compiled property descriptors.
 /// </summary>
 /// <typeparam name="T">The record type.</typeparam>
-public sealed class CsvDescriptorBinder<T> : ICsvTypedBinder<T> where T : class, new()
+public sealed class CsvDescriptorBinder<T> : ICsvBinder<T> where T : class, new()
 {
     private readonly CsvRecordDescriptor<T> descriptor;
     private readonly CultureInfo culture;

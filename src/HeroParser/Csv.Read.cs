@@ -449,7 +449,7 @@ public static partial class Csv
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based binding may not work with trimming. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
     [RequiresDynamicCode("Reflection-based binding requires dynamic code. Use [CsvGenerateBinder] attribute for AOT support.")]
-    private static ICsvTypedBinder<T> CreateBinder<T>(CsvRecordOptions recordOptions)
+    private static ICsvBinder<T> CreateBinder<T>(CsvRecordOptions recordOptions)
         where T : class, new()
     {
         // Use reflection-based binder when validation features are enabled
@@ -468,7 +468,7 @@ public static partial class Csv
         }
 
         // Use descriptor-based binder for maximum performance
-        if (CsvRecordBinderFactory.TryCreateDescriptorBinder(recordOptions, out ICsvTypedBinder<T>? binder) && binder is not null)
+        if (CsvRecordBinderFactory.TryCreateDescriptorBinder(recordOptions, out ICsvBinder<T>? binder) && binder is not null)
         {
             return binder;
         }

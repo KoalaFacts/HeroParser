@@ -4,108 +4,71 @@ using System.Globalization;
 namespace HeroParser.FixedWidths.Records.Binding;
 
 /// <summary>
-/// Resolves binders from generated code when available, falling back to runtime reflection.
+/// Resolves binders from generated code using descriptor-based binding.
 /// </summary>
 /// <remarks>
 /// Thread-Safety: All operations are thread-safe. Uses ConcurrentDictionary for lock-free reads.
-/// Individual binders returned by <see cref="TryGetBinder{T}"/> are not shared between threads
-/// and each factory invocation creates a new instance.
+/// Descriptors are immutable and shared, while binders are created per-request.
 /// </remarks>
-internal static partial class FixedWidthRecordBinderFactory
+internal static class FixedWidthRecordBinderFactory
 {
-    private static readonly ConcurrentDictionary<Type, Func<CultureInfo?, FixedWidthDeserializeErrorHandler?, IReadOnlyList<string>?, object>> generatedFactories = new();
+    private static readonly ConcurrentDictionary<Type, object> descriptorFactories = new();
 
-    // Legacy factories without nullValues support
-    private static readonly ConcurrentDictionary<Type, Func<CultureInfo?, FixedWidthDeserializeErrorHandler?, object>> legacyFactories = new();
-
-    // Typed binder factories (no boxing)
-    private static readonly ConcurrentDictionary<Type, object> typedBinderFactories = new();
-
-    static FixedWidthRecordBinderFactory()
-    {
-        RegisterGeneratedBinders(generatedFactories);
-        RegisterGeneratedBindersLegacy(legacyFactories);
-    }
-
-    public static bool TryGetBinder<T>(
-        CultureInfo? culture,
-        FixedWidthDeserializeErrorHandler? errorHandler,
-        IReadOnlyList<string>? nullValues,
-        out FixedWidthRecordBinder<T>? binder)
+    /// <summary>
+    /// Registers a descriptor factory for high-performance binding.
+    /// The descriptor is cached and shared across all binding operations.
+    /// </summary>
+    /// <typeparam name="T">The record type the descriptor handles.</typeparam>
+    /// <param name="factory">Factory for getting the cached descriptor.</param>
+    public static void RegisterDescriptor<T>(Func<FixedWidthRecordDescriptor<T>> factory)
         where T : class, new()
     {
-        if (generatedFactories.TryGetValue(typeof(T), out var factory))
+        ArgumentNullException.ThrowIfNull(factory);
+        descriptorFactories[typeof(T)] = factory;
+    }
+
+    /// <summary>
+    /// Tries to get a cached descriptor for the specified type.
+    /// Descriptors are immutable and thread-safe, shared across all binding operations.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="descriptor">The descriptor if found.</param>
+    /// <returns>True if a descriptor was found, false otherwise.</returns>
+    public static bool TryGetDescriptor<T>(out FixedWidthRecordDescriptor<T>? descriptor)
+        where T : class, new()
+    {
+        if (descriptorFactories.TryGetValue(typeof(T), out var factory))
         {
-            binder = (FixedWidthRecordBinder<T>)factory(culture, errorHandler, nullValues);
+            descriptor = ((Func<FixedWidthRecordDescriptor<T>>)factory)();
             return true;
         }
 
-        // Try legacy factories (without nullValues support)
-        if (legacyFactories.TryGetValue(typeof(T), out var legacyFactory))
+        descriptor = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Creates a descriptor-based binder for maximum performance.
+    /// Uses the cached descriptor with the optimized binding loop.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="culture">Culture for parsing.</param>
+    /// <param name="nullValues">Values to treat as null.</param>
+    /// <param name="binder">The created binder.</param>
+    /// <returns>True if a descriptor was found and binder created, false otherwise.</returns>
+    public static bool TryCreateDescriptorBinder<T>(
+        CultureInfo? culture,
+        IReadOnlyList<string>? nullValues,
+        out IFixedWidthBinder<T>? binder)
+        where T : class, new()
+    {
+        if (TryGetDescriptor<T>(out var descriptor) && descriptor is not null)
         {
-            binder = (FixedWidthRecordBinder<T>)legacyFactory(culture, errorHandler);
+            binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
             return true;
         }
 
         binder = null;
         return false;
     }
-
-    /// <summary>
-    /// Tries to get a typed binder that avoids boxing during parsing.
-    /// </summary>
-    public static bool TryGetTypedBinder<T>(
-        CultureInfo? culture,
-        IReadOnlyList<string>? nullValues,
-        out IFixedWidthTypedBinder<T>? binder)
-        where T : class, new()
-    {
-        if (typedBinderFactories.TryGetValue(typeof(T), out var factoryObj) &&
-            factoryObj is Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthTypedBinder<T>> factory)
-        {
-            binder = factory(culture, nullValues);
-            return true;
-        }
-
-        binder = null;
-        return false;
-    }
-
-    /// <summary>
-    /// Registers a typed binder factory for boxing-free parsing.
-    /// </summary>
-    public static void RegisterTypedBinder<T>(
-        Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthTypedBinder<T>> factory)
-        where T : class, new()
-    {
-        ArgumentNullException.ThrowIfNull(factory);
-        typedBinderFactories[typeof(T)] = factory;
-    }
-
-    /// <summary>
-    /// Allows generated binders in referencing assemblies to register themselves at module load.
-    /// </summary>
-    /// <param name="type">The record type the binder handles.</param>
-    /// <param name="factory">Factory for creating the binder with options.</param>
-    public static void RegisterGeneratedBinder(
-        Type type,
-        Func<CultureInfo?, FixedWidthDeserializeErrorHandler?, IReadOnlyList<string>?, object> factory)
-    {
-        ArgumentNullException.ThrowIfNull(type);
-        ArgumentNullException.ThrowIfNull(factory);
-
-        generatedFactories[type] = factory;
-    }
-
-    /// <summary>
-    /// Populated by the source generator; becomes a no-op when no generators run.
-    /// </summary>
-    static partial void RegisterGeneratedBinders(
-        ConcurrentDictionary<Type, Func<CultureInfo?, FixedWidthDeserializeErrorHandler?, IReadOnlyList<string>?, object>> factories);
-
-    /// <summary>
-    /// Legacy registration method for backwards compatibility.
-    /// </summary>
-    static partial void RegisterGeneratedBindersLegacy(
-        ConcurrentDictionary<Type, Func<CultureInfo?, FixedWidthDeserializeErrorHandler?, object>> factories);
 }

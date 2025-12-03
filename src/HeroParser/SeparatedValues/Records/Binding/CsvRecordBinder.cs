@@ -7,7 +7,7 @@ using System.Reflection;
 
 namespace HeroParser;
 
-internal sealed partial class CsvRecordBinder<T> : ICsvTypedBinder<T> where T : class, new()
+internal sealed partial class CsvRecordBinder<T> : ICsvBinder<T> where T : class, new()
 {
     private readonly IReadOnlyList<MemberBinding> bindings;
     private readonly CsvRecordOptions recordOptions;

@@ -234,15 +234,15 @@ internal interface IMultiSchemaBinder
 }
 
 /// <summary>
-/// Wrapper that adapts the generic ICsvTypedBinder{T} to the non-generic IMultiSchemaBinder interface.
+/// Wrapper that adapts the generic ICsvBinder{T} to the non-generic IMultiSchemaBinder interface.
 /// </summary>
 internal sealed class MultiSchemaBinderWrapper<T> : IMultiSchemaBinder where T : class, new()
 {
-    private readonly ICsvTypedBinder<T> binder;
+    private readonly ICsvBinder<T> binder;
 
     public MultiSchemaBinderWrapper(CsvRecordOptions recordOptions)
     {
-        if (!CsvRecordBinderFactory.TryCreateDescriptorBinder(recordOptions, out ICsvTypedBinder<T>? descriptorBinder) || descriptorBinder is null)
+        if (!CsvRecordBinderFactory.TryCreateDescriptorBinder(recordOptions, out ICsvBinder<T>? descriptorBinder) || descriptorBinder is null)
         {
             throw new InvalidOperationException($"No binder found for type {typeof(T).Name}. Ensure the type is decorated with [CsvGenerateBinder] attribute.");
         }

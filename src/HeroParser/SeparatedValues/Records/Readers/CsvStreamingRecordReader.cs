@@ -10,7 +10,7 @@ public ref struct CsvStreamingRecordReader<T> where T : class, new()
 {
     private CsvStreamReader reader;
     private readonly CsvRecordBinder<T>? legacyBinder;
-    private readonly ICsvTypedBinder<T>? typedBinder;
+    private readonly ICsvBinder<T>? typedBinder;
     private readonly int skipRows;
     private readonly IProgress<CsvProgress>? progress;
     private readonly int progressInterval;
@@ -35,7 +35,7 @@ public ref struct CsvStreamingRecordReader<T> where T : class, new()
         dataRowCount = 0;
     }
 
-    internal CsvStreamingRecordReader(CsvStreamReader reader, ICsvTypedBinder<T> typedBinder, int skipRows = 0,
+    internal CsvStreamingRecordReader(CsvStreamReader reader, ICsvBinder<T> typedBinder, int skipRows = 0,
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000, long totalBytes = -1)
     {
         this.reader = reader;

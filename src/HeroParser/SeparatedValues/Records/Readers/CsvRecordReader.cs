@@ -8,7 +8,7 @@ namespace HeroParser.SeparatedValues.Records.Readers;
 public ref struct CsvRecordReader<T> where T : class, new()
 {
     private CsvCharSpanReader reader;
-    private readonly ICsvTypedBinder<T> binder;
+    private readonly ICsvBinder<T> binder;
     private readonly int skipRows;
     private readonly IProgress<CsvProgress>? progress;
     private readonly int progressInterval;
@@ -16,7 +16,7 @@ public ref struct CsvRecordReader<T> where T : class, new()
     private int skippedCount;
     private int dataRowCount;
 
-    internal CsvRecordReader(CsvCharSpanReader reader, ICsvTypedBinder<T> binder, int skipRows = 0,
+    internal CsvRecordReader(CsvCharSpanReader reader, ICsvBinder<T> binder, int skipRows = 0,
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000)
     {
         this.reader = reader;

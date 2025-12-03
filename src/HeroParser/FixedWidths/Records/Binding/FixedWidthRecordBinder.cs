@@ -11,7 +11,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// Binds fixed-width row data to typed record instances.
 /// </summary>
 /// <typeparam name="T">The record type to bind to.</typeparam>
-internal sealed class FixedWidthRecordBinder<T> where T : class, new()
+internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T : class, new()
 {
     private static readonly ConcurrentDictionary<Type, List<BindingTemplate>> bindingCache = new();
 
@@ -36,7 +36,7 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
     }
 
     /// <summary>
-    /// Creates a binder, preferring source-generated code when available.
+    /// Creates a reflection-based binder for types without [FixedWidthGenerateBinder].
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based binding may not work with trimming. Use [FixedWidthGenerateBinder] attribute for AOT/trimming support.")]
     [RequiresDynamicCode("Reflection-based binding requires dynamic code. Use [FixedWidthGenerateBinder] attribute for AOT support.")]
@@ -46,14 +46,6 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
         IReadOnlyList<string>? nullValues = null,
         CustomConverterDictionary? customConverters = null)
     {
-        // Try source-generated binder first (only when no custom converters)
-        if (customConverters is null &&
-            FixedWidthRecordBinderFactory.TryGetBinder<T>(culture, errorHandler, nullValues, out var generatedBinder))
-        {
-            return generatedBinder!;
-        }
-
-        // Fall back to reflection
         return CreateFromTemplates(culture, errorHandler, CreateTemplatesFromReflection(), nullValues, customConverters);
     }
 
@@ -145,6 +137,64 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
     }
 
     /// <summary>
+    /// Binds a fixed-width row into an existing record instance.
+    /// </summary>
+    /// <param name="instance">The existing instance to bind into.</param>
+    /// <param name="row">The row to bind.</param>
+    /// <returns>True if binding succeeded, false if the row should be skipped.</returns>
+    public bool BindInto(T instance, FixedWidthCharSpanRow row)
+    {
+        foreach (var binding in bindings)
+        {
+            var column = row.GetField(
+                binding.Start,
+                binding.Length,
+                binding.PadChar,
+                binding.Alignment);
+
+            // Check if value matches null values list
+            if (nullValues is not null && IsNullValue(column.CharSpan))
+            {
+                binding.SetValue(instance, null);
+                continue;
+            }
+
+            if (!binding.TryConvert(column, out var value))
+            {
+                var rawValue = column.ToString();
+
+                if (errorHandler is not null)
+                {
+                    var context = new FixedWidthErrorContext
+                    {
+                        RecordNumber = row.RecordNumber,
+                        SourceLineNumber = row.SourceLineNumber,
+                        FieldName = binding.MemberName,
+                        RawValue = rawValue,
+                        TargetType = binding.TargetType
+                    };
+
+                    var action = errorHandler(context, new FormatException(
+                        $"Failed to convert field '{binding.MemberName}' value '{rawValue}' to {binding.TargetType.Name}."));
+
+                    if (action == FixedWidthDeserializeErrorAction.SkipRecord)
+                        return false;
+                }
+
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.ParseError,
+                    $"Failed to convert field '{binding.MemberName}' value '{rawValue}' to {binding.TargetType.Name}.",
+                    row.RecordNumber,
+                    row.SourceLineNumber);
+            }
+
+            binding.SetValue(instance, value);
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Checks if the span matches any configured null value using span comparison (no allocation).
     /// </summary>
     private bool IsNullValue(ReadOnlySpan<char> span)
@@ -179,12 +229,12 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
         // Estimate capacity to avoid List resizing allocations
         var estimatedCapacity = reader.EstimateRowCount();
 
-        // Prefer typed binder for boxing-free parsing when no error handler is needed
-        // Only use typed binder when no custom converters are specified
+        // Prefer descriptor binder for boxing-free parsing when no error handler is needed
+        // Only use descriptor binder when no custom converters are specified
         if (errorHandler is null && customConverters is null &&
-            FixedWidthRecordBinderFactory.TryGetTypedBinder<T>(culture, nullValues, out var typedBinder))
+            FixedWidthRecordBinderFactory.TryCreateDescriptorBinder<T>(culture, nullValues, out var descriptorBinder))
         {
-            return BindWithTypedBinder(reader, typedBinder!, estimatedCapacity, progress, progressIntervalRows);
+            return BindWithTypedBinder(reader, descriptorBinder!, estimatedCapacity, progress, progressIntervalRows);
         }
 
         // Fall back to generic binder
@@ -223,7 +273,7 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
 
     private static List<T> BindWithTypedBinder(
         FixedWidthCharSpanReader reader,
-        IFixedWidthTypedBinder<T> binder,
+        IFixedWidthBinder<T> binder,
         int estimatedCapacity,
         IProgress<FixedWidthProgress>? progress,
         int progressIntervalRows)
@@ -279,11 +329,11 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
     {
         ArgumentNullException.ThrowIfNull(callback);
 
-        // Try typed binder for best performance (only when no custom converters)
+        // Try descriptor binder for best performance (only when no custom converters)
         if (customConverters is null &&
-            FixedWidthRecordBinderFactory.TryGetTypedBinder<T>(culture, nullValues, out var typedBinder))
+            FixedWidthRecordBinderFactory.TryCreateDescriptorBinder<T>(culture, nullValues, out var descriptorBinder))
         {
-            ForEachWithTypedBinder(reader, typedBinder!, callback);
+            ForEachWithTypedBinder(reader, descriptorBinder!, callback);
             return;
         }
 
@@ -328,7 +378,7 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
 
     private static void ForEachWithTypedBinder(
         FixedWidthCharSpanReader reader,
-        IFixedWidthTypedBinder<T> binder,
+        IFixedWidthBinder<T> binder,
         Action<T> callback)
     {
         var instance = new T();

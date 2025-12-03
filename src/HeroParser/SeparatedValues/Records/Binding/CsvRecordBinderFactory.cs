@@ -56,7 +56,7 @@ internal static class CsvRecordBinderFactory
     /// <param name="options">CSV record options.</param>
     /// <param name="binder">The created binder.</param>
     /// <returns>True if a descriptor was found and binder created, false otherwise.</returns>
-    public static bool TryCreateDescriptorBinder<T>(CsvRecordOptions? options, out ICsvTypedBinder<T>? binder)
+    public static bool TryCreateDescriptorBinder<T>(CsvRecordOptions? options, out ICsvBinder<T>? binder)
         where T : class, new()
     {
         if (TryGetDescriptor<T>(out var descriptor) && descriptor is not null)

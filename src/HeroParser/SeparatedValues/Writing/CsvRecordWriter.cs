@@ -28,7 +28,7 @@ internal interface ICsvRecordWriter<in T>
 /// Reflection-based CSV record writer that extracts values from records.
 /// </summary>
 /// <typeparam name="T">The record type to write.</typeparam>
-internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
+public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
 {
     private static readonly ConcurrentDictionary<Type, PropertyAccessor[]> propertyCache = new();
 
@@ -40,6 +40,10 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     private readonly string?[] formatsBuffer;
     private readonly string[] headerBuffer;
 
+    /// <summary>
+    /// Creates a new reflection-based CSV record writer.
+    /// </summary>
+    /// <param name="options">Writer options, or null for defaults.</param>
     [RequiresUnreferencedCode("Reflection-based writing may not work with trimming. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
     [RequiresDynamicCode("Reflection-based writing requires dynamic code. Use [CsvGenerateBinder] attribute for AOT support.")]
     public CsvRecordWriter(CsvWriterOptions? options = null)
@@ -89,7 +93,7 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// <param name="options">Writer options.</param>
     /// <param name="templates">The generated templates.</param>
     /// <returns>A new record writer.</returns>
-    internal static CsvRecordWriter<T> CreateFromTemplates(
+    public static CsvRecordWriter<T> CreateFromTemplates(
         CsvWriterOptions? options,
         IReadOnlyList<WriterTemplate> templates)
     {
@@ -106,7 +110,7 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// <param name="AttributeIndex">Optional explicit column index.</param>
     /// <param name="Format">Optional format string for the value.</param>
     /// <param name="Getter">The getter delegate for extracting the value.</param>
-    internal sealed record WriterTemplate(
+    public sealed record WriterTemplate(
         string MemberName,
         Type SourceType,
         string HeaderName,
@@ -475,7 +479,7 @@ internal sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
 /// creates a new writer instance with its own reusable buffers.
 /// Property accessor metadata is cached for performance.
 /// </remarks>
-internal static partial class CsvRecordWriterFactory
+public static partial class CsvRecordWriterFactory
 {
     private static readonly ConcurrentDictionary<Type, Func<CsvWriterOptions?, object>> generatedFactories = new();
 

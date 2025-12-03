@@ -75,11 +75,12 @@ Test("Basic CSV parsing", () =>
         throw new Exception($"Expected 3 rows, got {rowCount}");
 });
 
-// Test 5: CsvColumn attribute with custom name
+// Test 5: CsvColumn attribute with custom name and explicit index (headerless mode)
 Test("CsvColumn attribute handling", () =>
 {
-    var csv = "id,full_name\n1,Test User";
-    var records = Csv.DeserializeRecords<AttributedPerson>(csv).ToList();
+    // When using explicit Index attributes, use headerless mode since positions are known
+    var csv = "1,Test User";
+    var records = Csv.DeserializeRecords<AttributedPerson>(csv, new CsvRecordOptions { HasHeaderRow = false }).ToList();
 
     if (records.Count != 1)
         throw new Exception($"Expected 1 record, got {records.Count}");

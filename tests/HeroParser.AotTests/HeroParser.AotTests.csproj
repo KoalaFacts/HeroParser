@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
+    <!-- Reference generator as analyzer to generate binders for types in this project -->
+    <ProjectReference Include="../../src/HeroParser.Generators/HeroParser.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

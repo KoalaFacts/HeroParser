@@ -11,7 +11,7 @@ namespace HeroParser.SeparatedValues.Records.Binding;
 /// Thread-Safety: All operations are thread-safe. Uses ConcurrentDictionary for lock-free reads.
 /// Descriptors are immutable and shared, while binders are created per-request.
 /// </remarks>
-internal static class CsvRecordBinderFactory
+public static class CsvRecordBinderFactory
 {
     private static readonly ConcurrentDictionary<Type, object> descriptorFactories = new();
 
@@ -35,7 +35,7 @@ internal static class CsvRecordBinderFactory
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="descriptor">The descriptor if found.</param>
     /// <returns>True if a descriptor was found, false otherwise.</returns>
-    public static bool TryGetDescriptor<T>(out CsvRecordDescriptor<T>? descriptor)
+    internal static bool TryGetDescriptor<T>(out CsvRecordDescriptor<T>? descriptor)
         where T : class, new()
     {
         if (descriptorFactories.TryGetValue(typeof(T), out var factory))
@@ -56,7 +56,7 @@ internal static class CsvRecordBinderFactory
     /// <param name="options">CSV record options.</param>
     /// <param name="binder">The created binder.</param>
     /// <returns>True if a descriptor was found and binder created, false otherwise.</returns>
-    public static bool TryCreateDescriptorBinder<T>(CsvRecordOptions? options, out ICsvBinder<T>? binder)
+    internal static bool TryCreateDescriptorBinder<T>(CsvRecordOptions? options, out ICsvBinder<T>? binder)
         where T : class, new()
     {
         if (TryGetDescriptor<T>(out var descriptor) && descriptor is not null)

@@ -57,11 +57,11 @@ internal static partial class FixedWidthRecordBinderFactory
     public static bool TryGetTypedBinder<T>(
         CultureInfo? culture,
         IReadOnlyList<string>? nullValues,
-        out ITypedBinder<T>? binder)
+        out IFixedWidthTypedBinder<T>? binder)
         where T : class, new()
     {
         if (typedBinderFactories.TryGetValue(typeof(T), out var factoryObj) &&
-            factoryObj is Func<CultureInfo?, IReadOnlyList<string>?, ITypedBinder<T>> factory)
+            factoryObj is Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthTypedBinder<T>> factory)
         {
             binder = factory(culture, nullValues);
             return true;
@@ -75,7 +75,7 @@ internal static partial class FixedWidthRecordBinderFactory
     /// Registers a typed binder factory for boxing-free parsing.
     /// </summary>
     public static void RegisterTypedBinder<T>(
-        Func<CultureInfo?, IReadOnlyList<string>?, ITypedBinder<T>> factory)
+        Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthTypedBinder<T>> factory)
         where T : class, new()
     {
         ArgumentNullException.ThrowIfNull(factory);

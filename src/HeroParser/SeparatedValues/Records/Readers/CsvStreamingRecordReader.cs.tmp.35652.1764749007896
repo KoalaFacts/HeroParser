@@ -23,8 +23,8 @@ public ref struct CsvStreamingRecordReader<T> where T : class, new()
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000, long totalBytes = -1)
     {
         this.reader = reader;
-        legacyBinder = binder;
-        typedBinder = null;
+        this.legacyBinder = binder;
+        this.typedBinder = null;
         this.skipRows = skipRows;
         this.progress = progress;
         this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
@@ -39,7 +39,7 @@ public ref struct CsvStreamingRecordReader<T> where T : class, new()
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000, long totalBytes = -1)
     {
         this.reader = reader;
-        legacyBinder = null;
+        this.legacyBinder = null;
         this.typedBinder = typedBinder;
         this.skipRows = skipRows;
         this.progress = progress;

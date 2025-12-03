@@ -302,6 +302,14 @@ public static partial class Csv
         recordOptions ??= CsvRecordOptions.Default;
 
         var reader = ReadFromCharSpan(data.AsSpan(), parserOptions);
+
+        // Prefer typed binder for boxing-free performance
+        if (CsvRecordBinderFactory.TryGetTypedBinder(recordOptions, out ICsvTypedBinder<T>? typedBinder) && typedBinder is not null)
+        {
+            return new CsvRecordReader<T>(reader, typedBinder, recordOptions.SkipRows,
+                recordOptions.Progress, recordOptions.ProgressIntervalRows);
+        }
+
         var binder = ResolveBinder<T>(recordOptions);
         return new CsvRecordReader<T>(reader, binder, recordOptions.SkipRows,
             recordOptions.Progress, recordOptions.ProgressIntervalRows);
@@ -325,7 +333,6 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(stream);
         recordOptions ??= CsvRecordOptions.Default;
         var reader = ReadFromStream(stream, parserOptions, encoding, leaveOpen, bufferSize);
-        var binder = ResolveBinder<T>(recordOptions);
 
         // Get stream length if available for progress reporting
         long totalBytes = -1;
@@ -334,6 +341,14 @@ public static partial class Csv
             try { totalBytes = stream.Length; } catch { /* Ignore if not available */ }
         }
 
+        // Prefer typed binder for boxing-free performance
+        if (CsvRecordBinderFactory.TryGetTypedBinder(recordOptions, out ICsvTypedBinder<T>? typedBinder) && typedBinder is not null)
+        {
+            return new CsvStreamingRecordReader<T>(reader, typedBinder, recordOptions.SkipRows,
+                recordOptions.Progress, recordOptions.ProgressIntervalRows, totalBytes);
+        }
+
+        var binder = ResolveBinder<T>(recordOptions);
         return new CsvStreamingRecordReader<T>(reader, binder, recordOptions.SkipRows,
             recordOptions.Progress, recordOptions.ProgressIntervalRows, totalBytes);
     }
@@ -372,7 +387,12 @@ public static partial class Csv
         recordOptions ??= CsvRecordOptions.Default;
 
         await using var reader = CreateAsyncStreamReader(stream, parserOptions, encoding, leaveOpen, bufferSize);
-        var binder = ResolveBinder<T>(recordOptions);
+
+        // Try to get typed binder for boxing-free performance
+        var typedBinder = CsvRecordBinderFactory.TryGetTypedBinder(recordOptions, out ICsvTypedBinder<T>? typed) && typed is not null
+            ? typed
+            : null;
+        var legacyBinder = typedBinder is null ? ResolveBinder<T>(recordOptions) : null;
 
         // Get stream length if available for progress reporting
         long totalBytes = -1;
@@ -399,13 +419,26 @@ public static partial class Csv
                 continue;
             }
 
-            if (binder.NeedsHeaderResolution)
+            T? result;
+            if (typedBinder is not null)
             {
-                binder.BindHeader(row, rowNumber);
-                continue;
+                if (typedBinder.NeedsHeaderResolution)
+                {
+                    typedBinder.BindHeader(row, rowNumber);
+                    continue;
+                }
+                result = typedBinder.Bind(row, rowNumber);
+            }
+            else
+            {
+                if (legacyBinder!.NeedsHeaderResolution)
+                {
+                    legacyBinder.BindHeader(row, rowNumber);
+                    continue;
+                }
+                result = legacyBinder.Bind(row, rowNumber);
             }
 
-            var result = binder.Bind(row, rowNumber);
             if (result is null)
             {
                 // Row was skipped due to error handling

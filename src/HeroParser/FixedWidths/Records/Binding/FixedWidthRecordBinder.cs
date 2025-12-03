@@ -223,7 +223,7 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
 
     private static List<T> BindWithTypedBinder(
         FixedWidthCharSpanReader reader,
-        ITypedBinder<T> binder,
+        IFixedWidthTypedBinder<T> binder,
         int estimatedCapacity,
         IProgress<FixedWidthProgress>? progress,
         int progressIntervalRows)
@@ -328,7 +328,7 @@ internal sealed class FixedWidthRecordBinder<T> where T : class, new()
 
     private static void ForEachWithTypedBinder(
         FixedWidthCharSpanReader reader,
-        ITypedBinder<T> binder,
+        IFixedWidthTypedBinder<T> binder,
         Action<T> callback)
     {
         var instance = new T();

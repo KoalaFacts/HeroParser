@@ -5,7 +5,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// Implemented by source-generated binders for maximum performance.
 /// </summary>
 /// <typeparam name="T">The record type to bind to.</typeparam>
-internal interface ITypedBinder<T> where T : class, new()
+internal interface IFixedWidthTypedBinder<T> where T : class, new()
 {
     /// <summary>
     /// Binds a fixed-width row to a record instance without boxing.

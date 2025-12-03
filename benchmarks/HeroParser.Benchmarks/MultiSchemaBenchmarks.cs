@@ -187,6 +187,7 @@ public class MultiSchemaBenchmarks
 
     #region Record Types
 
+    [CsvGenerateBinder]
     public class HeaderRecord
     {
         [CsvColumn(Name = "Type")]
@@ -196,6 +197,7 @@ public class MultiSchemaBenchmarks
         public string Date { get; set; } = "";
     }
 
+    [CsvGenerateBinder]
     public class DetailRecord
     {
         [CsvColumn(Name = "Type")]
@@ -208,6 +210,7 @@ public class MultiSchemaBenchmarks
         public decimal Amount { get; set; }
     }
 
+    [CsvGenerateBinder]
     public class TrailerRecord
     {
         [CsvColumn(Name = "Type")]

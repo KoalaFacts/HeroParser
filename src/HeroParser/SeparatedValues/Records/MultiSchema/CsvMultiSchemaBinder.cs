@@ -242,11 +242,11 @@ internal sealed class MultiSchemaBinderWrapper<T> : IMultiSchemaBinder where T :
 
     public MultiSchemaBinderWrapper(CsvRecordOptions recordOptions)
     {
-        if (!CsvRecordBinderFactory.TryCreateDescriptorBinder(recordOptions, out ICsvBinder<T>? descriptorBinder) || descriptorBinder is null)
+        if (!CsvRecordBinderFactory.TryCreateBinder(recordOptions, out ICsvBinder<T>? createdBinder) || createdBinder is null)
         {
             throw new InvalidOperationException($"No binder found for type {typeof(T).Name}. Ensure the type is decorated with [CsvGenerateBinder] attribute.");
         }
-        binder = descriptorBinder;
+        binder = createdBinder;
     }
 
     public void BindHeader(CsvCharSpanRow headerRow, int rowNumber)

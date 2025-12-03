@@ -467,8 +467,8 @@ public static partial class Csv
             return CsvRecordBinder<T>.Create(recordOptions);
         }
 
-        // Use descriptor-based binder for maximum performance
-        if (CsvRecordBinderFactory.TryCreateDescriptorBinder(recordOptions, out ICsvBinder<T>? binder) && binder is not null)
+        // Use generated binder for maximum performance (inline or descriptor-based)
+        if (CsvRecordBinderFactory.TryCreateBinder(recordOptions, out ICsvBinder<T>? binder) && binder is not null)
         {
             return binder;
         }

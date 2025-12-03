@@ -3,9 +3,14 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using static HeroParser.Generators.GeneratorHelpers;
 
 namespace HeroParser.Generators;
 
+/// <summary>
+/// Source generator for fixed-width record binders.
+/// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 {
@@ -15,69 +20,110 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private const string WRITER_FACTORY_TYPE = "global::HeroParser.FixedWidths.Writing.FixedWidthRecordWriterFactory";
     private const string FIELD_ALIGNMENT_TYPE = "global::HeroParser.FixedWidths.FieldAlignment";
     private const string ROW_TYPE = "global::HeroParser.FixedWidths.FixedWidthCharSpanRow";
-    private static readonly string[] generateAttributeNames = [
+
+    private static readonly string[] generateAttributeNames =
+    [
         "HeroParser.FixedWidths.Records.Binding.FixedWidthGenerateBinderAttribute",
         "HeroParser.FixedWidthGenerateBinderAttribute"
     ];
-    private static readonly string[] columnAttributeNames = [
+
+    private static readonly string[] columnAttributeNames =
+    [
         "HeroParser.FixedWidths.Records.Binding.FixedWidthColumnAttribute",
         "HeroParser.FixedWidthColumnAttribute"
     ];
 
+#pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
+    private static readonly DiagnosticDescriptor unsupportedPropertyTypeDiagnostic = new(
+        "HERO002",
+        "Unsupported property type",
+        "Property '{0}' of type '{1}' is not supported by the fixed-width record binder generator. Supported types include primitives, DateTime, DateTimeOffset, DateOnly, TimeOnly, Guid, and enums.",
+        "HeroParser.Generators",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+#pragma warning restore RS2008
+
+    /// <inheritdoc/>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var candidates = context.SyntaxProvider
-            .CreateSyntaxProvider(
-                static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
-                static (ctx, _) =>
-                {
-                    if (ctx.SemanticModel.GetDeclaredSymbol(ctx.Node) is not INamedTypeSymbol symbol)
-                        return null;
+        // Use ForAttributeWithMetadataName for better caching - register for both attribute names
+        var provider1 = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                generateAttributeNames[0],
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
+            .Where(static x => x is not null);
 
-                    return HasGenerateAttribute(symbol) ? symbol : null;
-                })
-            .Where(x => x is not null)
-            .Select((symbol, _) => symbol!)!;
+        var provider2 = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                generateAttributeNames[1],
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
+            .Where(static x => x is not null);
 
-        var collected = candidates.Collect();
+        // Combine both providers
+        var combined = provider1.Collect().Combine(provider2.Collect());
 
-        context.RegisterSourceOutput(collected, static (spc, symbols) => Emit(spc, symbols!));
+        // Generate per-type binder files for better incrementality
+        context.RegisterSourceOutput(provider1, static (spc, descriptor) => EmitTypedBinder(spc, descriptor!));
+        context.RegisterSourceOutput(provider2, static (spc, descriptor) => EmitTypedBinder(spc, descriptor!));
+
+        // Generate registration file
+        context.RegisterSourceOutput(combined, static (spc, tuple) =>
+        {
+            var all = tuple.Left.Concat(tuple.Right).Where(x => x is not null).ToList();
+            if (all.Count > 0)
+                EmitRegistration(spc, all!);
+        });
     }
 
-    private static void Emit(SourceProductionContext context, IReadOnlyList<INamedTypeSymbol> symbols)
+    private static TypeDescriptor? TransformToDescriptor(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
     {
-        if (symbols.Count == 0)
+        if (ctx.TargetSymbol is not INamedTypeSymbol symbol)
+            return null;
+
+        if (symbol.IsAbstract || !IsTypeAccessible(symbol))
+            return null;
+
+        return BuildDescriptor(symbol, ct);
+    }
+
+    private static void EmitTypedBinder(SourceProductionContext context, TypeDescriptor descriptor)
+    {
+        // Report diagnostics
+        foreach (var diag in descriptor.Diagnostics)
+        {
+            context.ReportDiagnostic(diag);
+        }
+
+        var binderMembers = GetMembersWithSetters(descriptor.Members);
+        if (binderMembers.Count == 0)
             return;
 
-        var builder = new SourceBuilder();
+        var builder = new SourceBuilder(8192);
         builder.AppendLine("// <auto-generated/>");
         builder.AppendLine("#nullable enable");
         builder.AppendLine("using System;");
         builder.AppendLine("using System.Collections.Generic;");
         builder.AppendLine("using System.Globalization;");
-        builder.AppendLine("using System.Runtime.CompilerServices;");
         builder.AppendLine();
         builder.AppendLine($"namespace {GENERATED_NAMESPACE};");
         builder.AppendLine();
 
-        // Emit typed binder classes for each type
-        foreach (var symbol in symbols)
-        {
-            if (symbol is null || symbol.IsAbstract)
-                continue;
+        EmitTypedBinderClass(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName, binderMembers);
 
-            var descriptor = BuildDescriptor(context, symbol);
-            if (descriptor is null)
-                continue;
+        context.AddSource($"FixedWidthBinder.{descriptor.SafeClassName}.g.cs", builder.ToString());
+    }
 
-            var binderMembers = descriptor.Members.Where(m => m.SetterFactory != null).ToList();
-            if (binderMembers.Count > 0)
-            {
-                EmitTypedBinderClass(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName, binderMembers);
-            }
-        }
-
-        // Emit registration class
+    private static void EmitRegistration(SourceProductionContext context, IReadOnlyList<TypeDescriptor> descriptors)
+    {
+        var builder = new SourceBuilder(8192);
+        builder.AppendLine("// <auto-generated/>");
+        builder.AppendLine("#nullable enable");
+        builder.AppendLine("using System.Runtime.CompilerServices;");
+        builder.AppendLine();
+        builder.AppendLine($"namespace {GENERATED_NAMESPACE};");
+        builder.AppendLine();
         builder.AppendLine("file static class FixedWidthRecordBinderGeneratedRegistration");
         builder.AppendLine("{");
         builder.Indent();
@@ -86,24 +132,15 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("{");
         builder.Indent();
 
-        foreach (var symbol in symbols)
+        foreach (var descriptor in descriptors)
         {
-            if (symbol is null || symbol.IsAbstract)
-                continue;
-
-            var descriptor = BuildDescriptor(context, symbol);
-            if (descriptor is null)
-                continue;
-
-            // Register binder (for reading - members with setters)
-            var binderMembers = descriptor.Members.Where(m => m.SetterFactory != null).ToList();
+            var binderMembers = GetMembersWithSetters(descriptor.Members);
             if (binderMembers.Count > 0)
             {
                 EmitBinderRegistration(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName);
             }
 
-            // Register writer (for writing - members with getters)
-            var writerMembers = descriptor.Members.Where(m => m.GetterFactory != null).ToList();
+            var writerMembers = GetMembersWithGetters(descriptor.Members);
             if (writerMembers.Count > 0)
             {
                 EmitWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers);
@@ -115,14 +152,37 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.Unindent();
         builder.AppendLine("}");
 
-        context.AddSource("FixedWidthRecordBinderFactory.g.cs", builder.ToString());
+        context.AddSource("FixedWidthRecordBinderFactory.Registration.g.cs", builder.ToString());
+    }
+
+    private static List<MemberDescriptor> GetMembersWithSetters(IReadOnlyList<MemberDescriptor> members)
+    {
+        var result = new List<MemberDescriptor>(members.Count);
+        foreach (var m in members)
+        {
+            if (m.SetterFactory != null)
+                result.Add(m);
+        }
+        return result;
+    }
+
+    private static List<MemberDescriptor> GetMembersWithGetters(IReadOnlyList<MemberDescriptor> members)
+    {
+        var result = new List<MemberDescriptor>(members.Count);
+        foreach (var m in members)
+        {
+            if (m.GetterFactory != null)
+                result.Add(m);
+        }
+        return result;
     }
 
     private static void EmitTypedBinderClass(SourceBuilder builder, string fullyQualifiedName, string safeClassName, IReadOnlyList<MemberDescriptor> members)
     {
         var binderClassName = $"TypedBinder_{safeClassName}";
 
-        builder.AppendLine($"file sealed class {binderClassName} : global::HeroParser.FixedWidths.Records.Binding.ITypedBinder<{fullyQualifiedName}>");
+        // Use internal (not file) so the registration file can reference this class
+        builder.AppendLine($"internal sealed class {binderClassName} : global::HeroParser.FixedWidths.Records.Binding.ITypedBinder<{fullyQualifiedName}>");
         builder.AppendLine("{");
         builder.Indent();
 
@@ -141,7 +201,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("}");
         builder.AppendLine();
 
-        // Bind method - fully typed, no boxing
+        // Bind method
         builder.AppendLine($"public {fullyQualifiedName}? Bind({ROW_TYPE} row)");
         builder.AppendLine("{");
         builder.Indent();
@@ -150,24 +210,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
         foreach (var member in members)
         {
-            var fieldVar = $"field_{member.MemberName}";
-            var spanVar = $"span_{member.MemberName}";
-
-            builder.AppendLine($"// {member.MemberName}");
-            builder.AppendLine($"var {fieldVar} = row.GetField({member.Start}, {member.Length}, '{EscapeChar(member.PadChar)}', {FIELD_ALIGNMENT_TYPE}.{member.Alignment});");
-            builder.AppendLine($"var {spanVar} = {fieldVar}.CharSpan;");
-
-            // Null value check
-            builder.AppendLine($"if (nullValues is null || !IsNullValue({spanVar}))");
-            builder.AppendLine("{");
-            builder.Indent();
-
-            // Generate type-specific parsing code (throws on parse failure)
-            EmitTypedParsing(builder, member, spanVar, fieldVar);
-
-            builder.Unindent();
-            builder.AppendLine("}");
-            builder.AppendLine();
+            EmitMemberBinding(builder, member);
         }
 
         builder.AppendLine("return instance;");
@@ -175,31 +218,14 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("}");
         builder.AppendLine();
 
-        // BindInto method - binds into an existing instance to avoid object allocation
+        // BindInto method
         builder.AppendLine($"public bool BindInto({fullyQualifiedName} instance, {ROW_TYPE} row)");
         builder.AppendLine("{");
         builder.Indent();
 
         foreach (var member in members)
         {
-            var fieldVar = $"field_{member.MemberName}";
-            var spanVar = $"span_{member.MemberName}";
-
-            builder.AppendLine($"// {member.MemberName}");
-            builder.AppendLine($"var {fieldVar} = row.GetField({member.Start}, {member.Length}, '{EscapeChar(member.PadChar)}', {FIELD_ALIGNMENT_TYPE}.{member.Alignment});");
-            builder.AppendLine($"var {spanVar} = {fieldVar}.CharSpan;");
-
-            // Null value check
-            builder.AppendLine($"if (nullValues is null || !IsNullValue({spanVar}))");
-            builder.AppendLine("{");
-            builder.Indent();
-
-            // Generate type-specific parsing code (throws on parse failure)
-            EmitTypedParsing(builder, member, spanVar, fieldVar);
-
-            builder.Unindent();
-            builder.AppendLine("}");
-            builder.AppendLine();
+            EmitMemberBinding(builder, member);
         }
 
         builder.AppendLine("return true;");
@@ -227,13 +253,33 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
+    private static void EmitMemberBinding(SourceBuilder builder, MemberDescriptor member)
+    {
+        var fieldVar = $"field_{member.MemberName}";
+        var spanVar = $"span_{member.MemberName}";
+
+        builder.AppendLine($"// {member.MemberName}");
+        builder.AppendLine($"var {fieldVar} = row.GetField({member.Start}, {member.Length}, '{EscapeChar(member.PadChar)}', {FIELD_ALIGNMENT_TYPE}.{member.Alignment});");
+        builder.AppendLine($"var {spanVar} = {fieldVar}.CharSpan;");
+
+        builder.AppendLine($"if (nullValues is null || !IsNullValue({spanVar}))");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        EmitTypedParsing(builder, member, spanVar, fieldVar);
+
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
     private static void EmitTypedParsing(SourceBuilder builder, MemberDescriptor member, string spanVar, string fieldVar)
     {
         var baseType = member.BaseTypeName;
         var isNullable = member.IsNullable;
         var propertyName = member.MemberName;
 
-        // Handle each supported type with direct parsing (no boxing)
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
         switch (baseType)
         {
             case "string":
@@ -301,37 +347,36 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 break;
 
             default:
-                // For enums and other types, fall back to string conversion
                 if (member.IsEnum)
                 {
                     EmitEnumParsing(builder, member, spanVar, fieldVar, isNullable);
                 }
                 else
                 {
-                    // Unsupported - use string
                     builder.AppendLine($"instance.{propertyName} = new string({spanVar});");
                 }
                 break;
         }
+#pragma warning restore IDE0010
     }
 
     private static void EmitFloatParsing(SourceBuilder builder, MemberDescriptor member, string spanVar, string fieldVar, string typeName)
     {
         var propertyName = member.MemberName;
         var isNullable = member.IsNullable;
-        var styles = "NumberStyles.Float | NumberStyles.AllowThousands";
+        const string STYLES = "NumberStyles.Float | NumberStyles.AllowThousands";
 
         if (isNullable)
         {
             builder.AppendLine($"if ({spanVar}.IsEmpty || {spanVar}.IsWhiteSpace()) {{ /* null */ }}");
-            builder.AppendLine($"else if ({typeName}.TryParse({spanVar}, {styles}, culture, out var parsed_{propertyName}))");
+            builder.AppendLine($"else if ({typeName}.TryParse({spanVar}, {STYLES}, culture, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
             builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, fieldVar, typeName);
         }
         else
         {
-            builder.AppendLine($"if ({typeName}.TryParse({spanVar}, {styles}, culture, out var parsed_{propertyName}))");
+            builder.AppendLine($"if ({typeName}.TryParse({spanVar}, {STYLES}, culture, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
             builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, fieldVar, typeName);
@@ -529,24 +574,21 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    private static TypeDescriptor? BuildDescriptor(SourceProductionContext context, INamedTypeSymbol type)
+    private static TypeDescriptor? BuildDescriptor(INamedTypeSymbol type, CancellationToken ct)
     {
-        // Skip types that are not publicly accessible (private, internal nested, etc.)
-        if (!IsTypeAccessible(type))
-            return null;
-
         var members = new List<MemberDescriptor>();
+        var diagnostics = new List<Diagnostic>();
 
         foreach (var property in type.GetMembers().OfType<IPropertySymbol>())
         {
+            ct.ThrowIfCancellationRequested();
+
             if (property.IsStatic)
                 continue;
 
-            // Check accessibility - need at least one of getter/setter to be public
             var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public };
             var hasGetter = property.GetMethod is { DeclaredAccessibility: Accessibility.Public };
 
-            // Skip if neither getter nor setter is public
             if (!hasSetter && !hasGetter)
                 continue;
 
@@ -561,21 +603,32 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             string alignment = "Left";
             string? format = null;
 
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
             foreach (var arg in mapAttribute.NamedArguments)
             {
-                if (arg.Key == "Start" && arg.Value.Value is int s)
-                    start = s;
-                if (arg.Key == "Length" && arg.Value.Value is int l)
-                    length = l;
-                if (arg.Key == "End" && arg.Value.Value is int e)
-                    end = e;
-                if (arg.Key == "PadChar" && arg.Value.Value is char p)
-                    padChar = p;
-                if (arg.Key == "Alignment" && arg.Value.Value is int a)
-                    alignment = GetAlignmentName(a);
-                if (arg.Key == "Format" && arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f))
-                    format = f;
+                switch (arg.Key)
+                {
+                    case "Start" when arg.Value.Value is int s:
+                        start = s;
+                        break;
+                    case "Length" when arg.Value.Value is int l:
+                        length = l;
+                        break;
+                    case "End" when arg.Value.Value is int e:
+                        end = e;
+                        break;
+                    case "PadChar" when arg.Value.Value is char p:
+                        padChar = p;
+                        break;
+                    case "Alignment" when arg.Value.Value is int a:
+                        alignment = GetAlignmentName(a);
+                        break;
+                    case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
+                        format = f;
+                        break;
+                }
             }
+#pragma warning restore IDE0010
 
             // If End is specified but Length is not, calculate Length from End - Start
             if (length == 0 && end > start)
@@ -587,43 +640,27 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             if (mapAttribute.ConstructorArguments.Length >= 2 && mapAttribute.ConstructorArguments[1].Value is int lengthArg)
                 length = lengthArg;
 
-            // Check if type is supported (for diagnostic reporting)
             if (!IsSupportedType(property.Type))
             {
-                // Report diagnostic for unsupported property type
-                var diagnostic = Diagnostic.Create(
-                    new DiagnosticDescriptor(
-                        "HERO002",
-                        "Unsupported property type",
-                        "Property '{0}' of type '{1}' is not supported by the fixed-width record binder generator. Supported types include primitives, DateTime, DateTimeOffset, DateOnly, TimeOnly, Guid, and enums.",
-                        "HeroParser.Generators",
-                        DiagnosticSeverity.Warning,
-                        isEnabledByDefault: true),
+                diagnostics.Add(Diagnostic.Create(
+                    unsupportedPropertyTypeDiagnostic,
                     property.Locations.FirstOrDefault() ?? Location.None,
                     property.Name,
-                    property.Type.ToDisplayString());
-                context.ReportDiagnostic(diagnostic);
-                continue; // Skip this property but continue with others
+                    property.Type.ToDisplayString()));
+                continue;
             }
 
-            // Type name with nullable modifiers for setter cast
-            var typeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));
-            // Type name without nullable modifiers for typeof() - strip trailing ?
+            var typeName = property.Type.ToDisplayString(FullyQualifiedFormatWithNullable);
             var typeofTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var formatLiteral = format != null ? EscapeString(format) : null;
 
-            // Get base type info for typed parsing
             var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
 
-            // Default pad char to space if not specified
             if (padChar == '\0')
                 padChar = ' ';
 
-            // Generate setter only if property has public setter (for binder/reader)
-            string? setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
-
-            // Generate getter only if property has public getter (for writer)
-            string? getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
+            var setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
+            var getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
 
             members.Add(new MemberDescriptor(
                 property.Name,
@@ -641,16 +678,15 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 isEnum));
         }
 
-        if (members.Count == 0)
+        if (members.Count == 0 && diagnostics.Count == 0)
             return null;
 
         // Sort by Start position
-        var sortedMembers = members.OrderBy(m => m.Start).ToArray();
+        members.Sort((a, b) => a.Start.CompareTo(b.Start));
 
-        var fqName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));
-        // Create a safe class name for the generated binder (handles nested types, generics, etc.)
+        var fqName = type.ToDisplayString(FullyQualifiedFormatWithNullable);
         var safeClassName = CreateSafeClassName(type);
-        return new TypeDescriptor(fqName, safeClassName, sortedMembers);
+        return new TypeDescriptor(fqName, safeClassName, members, diagnostics);
     }
 
     private static (string baseTypeName, bool isNullable, bool isEnum) GetBaseTypeInfo(ITypeSymbol type)
@@ -658,14 +694,12 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         var isNullable = false;
         var actualType = type;
 
-        // Handle Nullable<T>
         if (type is INamedTypeSymbol { IsGenericType: true, Name: "Nullable" } nullable)
         {
             isNullable = true;
             actualType = nullable.TypeArguments[0];
         }
 
-        // Handle nullable reference types (string?)
         if (type.NullableAnnotation == NullableAnnotation.Annotated && type.OriginalDefinition.SpecialType == SpecialType.None)
         {
             isNullable = true;
@@ -675,19 +709,6 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         var baseTypeName = actualType.ToDisplayString();
 
         return (baseTypeName, isNullable, isEnum);
-    }
-
-    private static string CreateSafeClassName(INamedTypeSymbol type)
-    {
-        // Create a safe identifier from the type name (handles nested types, namespaces, generics)
-        var name = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-            .Replace("global::", "")
-            .Replace(".", "_")
-            .Replace("<", "_")
-            .Replace(">", "_")
-            .Replace(",", "_")
-            .Replace(" ", "");
-        return name;
     }
 
     private static string GetAlignmentName(int value)
@@ -702,110 +723,17 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         };
     }
 
-    private static bool IsSupportedType(ITypeSymbol type)
-    {
-        var underlying = type is INamedTypeSymbol named && named.IsGenericType && named.Name == "Nullable"
-            ? named.TypeArguments[0]
-            : type;
-
-        return underlying.SpecialType switch
-        {
-            SpecialType.System_String => true,
-            SpecialType.System_Int32 => true,
-            SpecialType.System_Int64 => true,
-            SpecialType.System_Int16 => true,
-            SpecialType.System_Byte => true,
-            SpecialType.System_UInt32 => true,
-            SpecialType.System_UInt64 => true,
-            SpecialType.System_UInt16 => true,
-            SpecialType.System_SByte => true,
-            SpecialType.System_Double => true,
-            SpecialType.System_Single => true,
-            SpecialType.System_Decimal => true,
-            SpecialType.System_Boolean => true,
-            _ => IsSupportedComplexType(underlying)
-        };
-    }
-
-    private static bool IsSupportedComplexType(ITypeSymbol type)
-    {
-        return type.ToDisplayString() switch
-        {
-            "System.DateTime" => true,
-            "System.DateTimeOffset" => true,
-            "System.DateOnly" => true,
-            "System.TimeOnly" => true,
-            "System.Guid" => true,
-            _ when type.TypeKind == TypeKind.Enum => true,
-            _ => false
-        };
-    }
-
     private static string CreateSetter(string typeName, INamedTypeSymbol type, string propertyName)
         => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target, object? val) => target.{propertyName} = ({typeName})val!";
 
     private static string CreateGetter(INamedTypeSymbol type, string propertyName)
         => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target) => target.{propertyName}";
 
-    private static string EscapeString(string value)
-    {
-        // Escape backslashes and quotes for C# string literals
-        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
-    }
-
-    private static string EscapeChar(char c)
-    {
-        return c switch
-        {
-            '\'' => "\\'",
-            '\\' => "\\\\",
-            '\0' => "\\0",
-            '\n' => "\\n",
-            '\r' => "\\r",
-            '\t' => "\\t",
-            _ => c.ToString()
-        };
-    }
-
-    private static bool HasGenerateAttribute(INamedTypeSymbol symbol)
-        => symbol.GetAttributes().Any(attr => IsNamed(attr, generateAttributeNames));
-
-    private static AttributeData? GetFirstMatchingAttribute(ISymbol symbol, IReadOnlyList<string> names)
-        => symbol.GetAttributes().FirstOrDefault(attr => IsNamed(attr, names));
-
-    private static bool IsNamed(AttributeData attribute, IReadOnlyList<string> names)
-    {
-        var name = attribute.AttributeClass?.ToDisplayString();
-        if (name is null)
-            return false;
-
-        foreach (var candidate in names)
-        {
-            if (string.Equals(name, candidate, StringComparison.Ordinal))
-                return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsTypeAccessible(INamedTypeSymbol type)
-    {
-        // Check if the type itself and all containing types are at least internal
-        var current = type;
-        while (current is not null)
-        {
-            if (current.DeclaredAccessibility == Accessibility.Private ||
-                current.DeclaredAccessibility == Accessibility.Protected ||
-                current.DeclaredAccessibility == Accessibility.ProtectedAndInternal)
-            {
-                return false;
-            }
-            current = current.ContainingType;
-        }
-        return true;
-    }
-
-    private sealed record TypeDescriptor(string FullyQualifiedName, string SafeClassName, IReadOnlyList<MemberDescriptor> Members);
+    private sealed record TypeDescriptor(
+        string FullyQualifiedName,
+        string SafeClassName,
+        IReadOnlyList<MemberDescriptor> Members,
+        IReadOnlyList<Diagnostic> Diagnostics);
 
     private sealed record MemberDescriptor(
         string MemberName,
@@ -821,23 +749,4 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         string BaseTypeName,
         bool IsNullable,
         bool IsEnum);
-
-    private sealed class SourceBuilder
-    {
-        private readonly System.Text.StringBuilder builder = new();
-        private int indent;
-        private const string INDENT_STRING = "    ";
-
-        public void Indent() => indent++;
-        public void Unindent() => indent = Math.Max(0, indent - 1);
-
-        public void AppendLine(string line = "")
-        {
-            for (int i = 0; i < indent; i++)
-                builder.Append(INDENT_STRING);
-            builder.AppendLine(line);
-        }
-
-        public override string ToString() => builder.ToString();
-    }
 }

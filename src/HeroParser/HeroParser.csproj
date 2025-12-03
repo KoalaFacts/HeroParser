@@ -23,16 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HeroParser.Generators\HeroParser.Generators.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\HeroParser.Generators\HeroParser.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="$(OutputPath)\..\..\..\HeroParser.Generators\bin\$(Configuration)\netstandard2.0\HeroParser.Generators.dll"
-          Pack="true"
-          PackagePath="analyzers/dotnet/cs"
-          Visible="false" />
+    <None Include="$(OutputPath)\..\..\..\HeroParser.Generators\bin\$(Configuration)\netstandard2.0\HeroParser.Generators.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
 </Project>

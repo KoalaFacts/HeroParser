@@ -7,8 +7,6 @@ namespace HeroParser;
 
 public static partial class FixedWidth
 {
-    #region Fluent Builders
-
     /// <summary>
     /// Creates a typed writer builder for writing fixed-width records.
     /// </summary>
@@ -40,10 +38,6 @@ public static partial class FixedWidth
     /// </code>
     /// </example>
     public static FixedWidthWriterBuilder Write() => new();
-
-    #endregion
-
-    #region Direct Writing Methods
 
     /// <summary>
     /// Writes records to a string.
@@ -302,10 +296,6 @@ public static partial class FixedWidth
         return stringWriter.ToString();
     }
 
-    #endregion
-
-    #region Stream Writer Creation
-
     /// <summary>
     /// Creates a writer for manual row-by-row fixed-width writing.
     /// </summary>
@@ -407,6 +397,4 @@ public static partial class FixedWidth
 
         return new FixedWidthAsyncStreamWriter(stream, options, encoding, leaveOpen);
     }
-
-    #endregion
 }

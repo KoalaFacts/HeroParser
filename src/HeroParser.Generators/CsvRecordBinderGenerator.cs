@@ -3,9 +3,14 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using static HeroParser.Generators.GeneratorHelpers;
 
 namespace HeroParser.Generators;
 
+/// <summary>
+/// Source generator for CSV record binders.
+/// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 {
@@ -14,36 +19,93 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.CsvRecordBinderFactory";
     private const string WRITER_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriter";
     private const string WRITER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriterFactory";
-    private static readonly string[] generateAttributeNames = ["HeroParser.SeparatedValues.Records.Binding.CsvGenerateBinderAttribute", "HeroParser.CsvGenerateBinderAttribute"];
 
-    private static readonly string[] columnAttributeNames = ["HeroParser.SeparatedValues.Records.Binding.CsvColumnAttribute", "HeroParser.CsvColumnAttribute"];
+    private static readonly string[] generateAttributeNames =
+    [
+        "HeroParser.SeparatedValues.Records.Binding.CsvGenerateBinderAttribute",
+        "HeroParser.CsvGenerateBinderAttribute"
+    ];
 
+    private static readonly string[] columnAttributeNames =
+    [
+        "HeroParser.SeparatedValues.Records.Binding.CsvColumnAttribute",
+        "HeroParser.CsvColumnAttribute"
+    ];
+
+#pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
+    private static readonly DiagnosticDescriptor unsupportedPropertyTypeDiagnostic = new(
+        "HERO001",
+        "Unsupported property type",
+        "Property '{0}' of type '{1}' is not supported by the CSV record binder generator. Supported types include primitives, DateTime, DateTimeOffset, DateOnly, TimeOnly, Guid, TimeZoneInfo, and enums.",
+        "HeroParser.Generators",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+#pragma warning restore RS2008
+
+    /// <inheritdoc/>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var candidates = context.SyntaxProvider
-            .CreateSyntaxProvider(
-                static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
-                static (ctx, _) =>
-                {
-                    if (ctx.SemanticModel.GetDeclaredSymbol(ctx.Node) is not INamedTypeSymbol symbol)
-                        return null;
+        // Use ForAttributeWithMetadataName for better caching - register for both attribute names
+        var provider1 = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                generateAttributeNames[0],
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
+            .Where(static x => x is not null);
 
-                    return HasGenerateAttribute(symbol) ? symbol : null;
-                })
-            .Where(x => x is not null)
-            .Select((symbol, _) => symbol!)!;
+        var provider2 = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                generateAttributeNames[1],
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
+            .Where(static x => x is not null);
 
-        var collected = candidates.Collect();
+        // Combine both providers
+        var combined = provider1.Collect().Combine(provider2.Collect());
 
-        context.RegisterSourceOutput(collected, static (spc, symbols) => Emit(spc, symbols!));
+        // Generate per-type files for better incrementality
+        context.RegisterSourceOutput(provider1, static (spc, descriptor) => EmitTypeSource(spc, descriptor!));
+        context.RegisterSourceOutput(provider2, static (spc, descriptor) => EmitTypeSource(spc, descriptor!));
+
+        // Generate registration file
+        context.RegisterSourceOutput(combined, static (spc, tuple) =>
+        {
+            var all = tuple.Left.Concat(tuple.Right).Where(x => x is not null).ToList();
+            if (all.Count > 0)
+                EmitRegistration(spc, all!);
+        });
     }
 
-    private static void Emit(SourceProductionContext context, IReadOnlyList<INamedTypeSymbol> symbols)
+    private static TypeDescriptor? TransformToDescriptor(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
     {
-        if (symbols.Count == 0)
-            return;
+        if (ctx.TargetSymbol is not INamedTypeSymbol symbol)
+            return null;
 
+        if (symbol.IsAbstract || !IsTypeAccessible(symbol))
+            return null;
+
+        return BuildDescriptor(symbol, ct);
+    }
+
+    private static void EmitTypeSource(SourceProductionContext context, TypeDescriptor descriptor)
+    {
         var builder = new SourceBuilder();
+        builder.AppendLine("// <auto-generated/>");
+        builder.AppendLine("#nullable enable");
+        builder.AppendLine();
+
+        // Report diagnostics for unsupported properties
+        foreach (var diag in descriptor.Diagnostics)
+        {
+            context.ReportDiagnostic(diag);
+        }
+
+        context.AddSource($"CsvBinder.{descriptor.SafeClassName}.g.cs", builder.ToString());
+    }
+
+    private static void EmitRegistration(SourceProductionContext context, IReadOnlyList<TypeDescriptor> descriptors)
+    {
+        var builder = new SourceBuilder(8192);
         builder.AppendLine("// <auto-generated/>");
         builder.AppendLine("#nullable enable");
         builder.AppendLine("using System;");
@@ -60,24 +122,17 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("{");
         builder.Indent();
 
-        foreach (var symbol in symbols)
+        foreach (var descriptor in descriptors)
         {
-            if (symbol is null || symbol.IsAbstract)
-                continue;
-
-            var descriptor = BuildDescriptor(context, symbol);
-            if (descriptor is null)
-                continue;
-
             // Filter members for binder (those with setters)
-            var binderMembers = descriptor.Members.Where(m => m.SetterFactory != null).ToList();
+            var binderMembers = GetMembersWithSetters(descriptor.Members);
             if (binderMembers.Count > 0)
             {
                 EmitBinderRegistration(builder, descriptor.FullyQualifiedName, binderMembers);
             }
 
             // Filter members for writer (those with getters)
-            var writerMembers = descriptor.Members.Where(m => m.GetterFactory != null).ToList();
+            var writerMembers = GetMembersWithGetters(descriptor.Members);
             if (writerMembers.Count > 0)
             {
                 EmitWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers);
@@ -89,7 +144,29 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.Unindent();
         builder.AppendLine("}");
 
-        context.AddSource("CsvRecordBinderFactory.g.cs", builder.ToString());
+        context.AddSource("CsvRecordBinderFactory.Registration.g.cs", builder.ToString());
+    }
+
+    private static List<MemberDescriptor> GetMembersWithSetters(IReadOnlyList<MemberDescriptor> members)
+    {
+        var result = new List<MemberDescriptor>(members.Count);
+        foreach (var m in members)
+        {
+            if (m.SetterFactory != null)
+                result.Add(m);
+        }
+        return result;
+    }
+
+    private static List<MemberDescriptor> GetMembersWithGetters(IReadOnlyList<MemberDescriptor> members)
+    {
+        var result = new List<MemberDescriptor>(members.Count);
+        foreach (var m in members)
+        {
+            if (m.GetterFactory != null)
+                result.Add(m);
+        }
+        return result;
     }
 
     private static void EmitBinderRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
@@ -140,20 +217,18 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    private static TypeDescriptor? BuildDescriptor(SourceProductionContext context, INamedTypeSymbol type)
+    private static TypeDescriptor? BuildDescriptor(INamedTypeSymbol type, CancellationToken ct)
     {
-        // Skip types that are not publicly accessible (private, internal nested, etc.)
-        if (!IsTypeAccessible(type))
-            return null;
-
         var members = new List<MemberDescriptor>();
+        var diagnostics = new List<Diagnostic>();
 
         foreach (var property in type.GetMembers().OfType<IPropertySymbol>())
         {
+            ct.ThrowIfCancellationRequested();
+
             if (property.IsStatic)
                 continue;
 
-            // Check accessibility - need at least one of getter/setter to be public
             var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public };
             var hasGetter = property.GetMethod is { DeclaredAccessibility: Accessibility.Public };
 
@@ -164,47 +239,44 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var headerName = property.Name;
             int? attributeIndex = null;
             string? format = null;
+
             if (mapAttribute is not null)
             {
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
                 foreach (var arg in mapAttribute.NamedArguments)
                 {
-                    if (arg.Key == "Name" && arg.Value.Value is string s && !string.IsNullOrWhiteSpace(s))
-                        headerName = s;
-                    if (arg.Key == "Index" && arg.Value.Value is int i && i >= 0)
-                        attributeIndex = i;
-                    if (arg.Key == "Format" && arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f))
-                        format = f;
+                    switch (arg.Key)
+                    {
+                        case "Name" when arg.Value.Value is string s && !string.IsNullOrWhiteSpace(s):
+                            headerName = s;
+                            break;
+                        case "Index" when arg.Value.Value is int i && i >= 0:
+                            attributeIndex = i;
+                            break;
+                        case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
+                            format = f;
+                            break;
+                    }
                 }
+#pragma warning restore IDE0010
             }
 
-            // Check if type is supported (for diagnostic reporting)
             if (!IsSupportedType(property.Type))
             {
-                // Report diagnostic for unsupported property type
-                var diagnostic = Diagnostic.Create(
-                    new DiagnosticDescriptor(
-                        "HERO001",
-                        "Unsupported property type",
-                        "Property '{0}' of type '{1}' is not supported by the CSV record binder generator. Supported types include primitives, DateTime, DateTimeOffset, DateOnly, TimeOnly, Guid, TimeZoneInfo, and enums.",
-                        "HeroParser.Generators",
-                        DiagnosticSeverity.Warning,
-                        isEnabledByDefault: true),
+                diagnostics.Add(Diagnostic.Create(
+                    unsupportedPropertyTypeDiagnostic,
                     property.Locations.FirstOrDefault() ?? Location.None,
                     property.Name,
-                    property.Type.ToDisplayString());
-                context.ReportDiagnostic(diagnostic);
-                continue; // Skip this property but continue with others
+                    property.Type.ToDisplayString()));
+                continue;
             }
 
-            var typeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));
+            var typeName = property.Type.ToDisplayString(FullyQualifiedFormatWithNullable);
             var headerLiteral = EscapeString(headerName);
             var formatLiteral = format != null ? EscapeString(format) : null;
 
-            // Generate setter only if property has public setter (for binder/reader)
-            string? setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
-
-            // Generate getter only if property has public getter (for writer)
-            string? getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
+            var setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
+            var getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
 
             members.Add(new MemberDescriptor(
                 property.Name,
@@ -216,51 +288,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 getterFactory));
         }
 
-        if (members.Count == 0)
+        if (members.Count == 0 && diagnostics.Count == 0)
             return null;
 
-        var fqName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));
-        return new TypeDescriptor(fqName, members);
-    }
-
-    private static bool IsSupportedType(ITypeSymbol type)
-    {
-        var underlying = type is INamedTypeSymbol named && named.IsGenericType && named.Name == "Nullable"
-            ? named.TypeArguments[0]
-            : type;
-
-        return underlying.SpecialType switch
-        {
-            SpecialType.System_String => true,
-            SpecialType.System_Int32 => true,
-            SpecialType.System_Int64 => true,
-            SpecialType.System_Int16 => true,
-            SpecialType.System_Byte => true,
-            SpecialType.System_UInt32 => true,
-            SpecialType.System_UInt64 => true,
-            SpecialType.System_UInt16 => true,
-            SpecialType.System_SByte => true,
-            SpecialType.System_Double => true,
-            SpecialType.System_Single => true,
-            SpecialType.System_Decimal => true,
-            SpecialType.System_Boolean => true,
-            _ => IsSupportedComplexType(underlying)
-        };
-    }
-
-    private static bool IsSupportedComplexType(ITypeSymbol type)
-    {
-        return type.ToDisplayString() switch
-        {
-            "System.DateTime" => true,
-            "System.DateTimeOffset" => true,
-            "System.DateOnly" => true,
-            "System.TimeOnly" => true,
-            "System.Guid" => true,
-            "System.TimeZoneInfo" => true,
-            _ when type.TypeKind == TypeKind.Enum => true,
-            _ => false
-        };
+        var fqName = type.ToDisplayString(FullyQualifiedFormatWithNullable);
+        var safeClassName = CreateSafeClassName(type);
+        return new TypeDescriptor(fqName, safeClassName, members, diagnostics);
     }
 
     private static string CreateSetter(string typeName, INamedTypeSymbol type, string propertyName)
@@ -269,51 +302,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static string CreateGetter(INamedTypeSymbol type, string propertyName)
         => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target) => target.{propertyName}";
 
-    private static string EscapeString(string value)
-    {
-        // Escape backslashes and quotes for C# string literals
-        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
-    }
-
-    private static bool HasGenerateAttribute(INamedTypeSymbol symbol)
-        => symbol.GetAttributes().Any(attr => IsNamed(attr, generateAttributeNames));
-
-    private static AttributeData? GetFirstMatchingAttribute(ISymbol symbol, IReadOnlyList<string> names)
-        => symbol.GetAttributes().FirstOrDefault(attr => IsNamed(attr, names));
-
-    private static bool IsNamed(AttributeData attribute, IReadOnlyList<string> names)
-    {
-        var name = attribute.AttributeClass?.ToDisplayString();
-        if (name is null)
-            return false;
-
-        foreach (var candidate in names)
-        {
-            if (string.Equals(name, candidate, StringComparison.Ordinal))
-                return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsTypeAccessible(INamedTypeSymbol type)
-    {
-        // Check if the type itself and all containing types are at least internal
-        var current = type;
-        while (current is not null)
-        {
-            if (current.DeclaredAccessibility == Accessibility.Private ||
-                current.DeclaredAccessibility == Accessibility.Protected ||
-                current.DeclaredAccessibility == Accessibility.ProtectedAndInternal)
-            {
-                return false;
-            }
-            current = current.ContainingType;
-        }
-        return true;
-    }
-
-    private sealed record TypeDescriptor(string FullyQualifiedName, IReadOnlyList<MemberDescriptor> Members);
+    private sealed record TypeDescriptor(
+        string FullyQualifiedName,
+        string SafeClassName,
+        IReadOnlyList<MemberDescriptor> Members,
+        IReadOnlyList<Diagnostic> Diagnostics);
 
     private sealed record MemberDescriptor(
         string MemberName,
@@ -323,23 +316,4 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         string? Format,
         string? SetterFactory,
         string? GetterFactory);
-
-    private sealed class SourceBuilder
-    {
-        private readonly System.Text.StringBuilder builder = new();
-        private int indent;
-        private const string INDENT_STRING = "    ";
-
-        public void Indent() => indent++;
-        public void Unindent() => indent = Math.Max(0, indent - 1);
-
-        public void AppendLine(string line = "")
-        {
-            for (int i = 0; i < indent; i++)
-                builder.Append(INDENT_STRING);
-            builder.AppendLine(line);
-        }
-
-        public override string ToString() => builder.ToString();
-    }
 }

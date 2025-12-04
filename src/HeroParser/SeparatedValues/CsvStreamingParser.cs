@@ -40,28 +40,34 @@ internal static class CsvStreamingParser
     /// Parses a single row from CSV data (convenience overload with runtime boolean).
     /// For best performance, use the generic overload with TTrack type parameter directly.
     /// </summary>
+    /// <remarks>
+    /// Uses Ends-only storage: columnEnds[0] = -1, columnEnds[1..N] = delimiter positions.
+    /// Column start = columnEnds[index] + 1, length = columnEnds[index+1] - columnEnds[index] - 1.
+    /// </remarks>
     public static CsvRowParseResult ParseRow<T>(
         ReadOnlySpan<T> data,
         CsvParserOptions options,
-        Span<int> columnStarts,
-        Span<int> columnLengths,
+        Span<int> columnEnds,
         bool trackLineNumbers)
         where T : unmanaged, IEquatable<T>
     {
         return trackLineNumbers
-            ? ParseRow<T, TrackLineNumbers>(data, options, columnStarts, columnLengths)
-            : ParseRow<T, NoTrackLineNumbers>(data, options, columnStarts, columnLengths);
+            ? ParseRow<T, TrackLineNumbers>(data, options, columnEnds)
+            : ParseRow<T, NoTrackLineNumbers>(data, options, columnEnds);
     }
 
     /// <summary>
     /// Parses a single row from CSV data with compile-time line tracking specialization.
     /// TTrack should be either TrackLineNumbers or NoTrackLineNumbers.
     /// </summary>
+    /// <remarks>
+    /// Uses Ends-only storage: columnEnds[0] = -1, columnEnds[1..N] = delimiter positions.
+    /// Column start = columnEnds[index] + 1, length = columnEnds[index+1] - columnEnds[index] - 1.
+    /// </remarks>
     public static CsvRowParseResult ParseRow<T, TTrack>(
         ReadOnlySpan<T> data,
         CsvParserOptions options,
-        Span<int> columnStarts,
-        Span<int> columnLengths)
+        Span<int> columnEnds)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
     {
@@ -138,6 +144,9 @@ internal static class CsvStreamingParser
         bool enableQuotes = options.EnableQuotedFields;
         int quoteStartPosition = -1; // Track where the opening quote was found
 
+        // columnEnds[0] = -1 (virtual position before first column)
+        columnEnds[0] = -1;
+
         // SIMD fast path (if enabled and no escape character - escape handling requires sequential processing)
         if (options.UseSimdIfAvailable && !hasEscapeChar)
         {
@@ -158,8 +167,7 @@ internal static class CsvStreamingParser
                 ref newlineCount,
                 ref rowEnded,
                 ref quoteStartPosition,
-                columnStarts,
-                columnLengths,
+                columnEnds,
                 options.MaxColumnCount,
                 options.AllowNewlinesInsideQuotes,
                 enableQuotes,
@@ -228,7 +236,7 @@ internal static class CsvStreamingParser
                 if (c.Equals(delimiter))
                 {
                     AppendColumn(i, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, options.MaxColumnCount, options.MaxFieldSize);
+                        columnEnds, options.MaxColumnCount, options.MaxFieldSize);
                 }
                 else if (c.Equals(lf) || c.Equals(cr))
                 {
@@ -269,20 +277,11 @@ internal static class CsvStreamingParser
         }
 
         AppendFinalColumn(rowLength, ref columnCount, ref currentStart,
-            columnStarts, columnLengths, options.MaxColumnCount, options.MaxFieldSize);
+            columnEnds, options.MaxColumnCount, options.MaxFieldSize);
 
-        // Apply trimming if enabled (only for unquoted fields)
-        if (options.TrimFields)
-        {
-            ApplyTrimming(
-                ref mutableRef,
-                columnStarts,
-                columnLengths,
-                columnCount,
-                quote,
-                space,
-                tab);
-        }
+        // Note: TrimFields is handled at read time in the row types.
+        // This is because ends-only storage cannot independently adjust column starts
+        // without affecting adjacent columns.
 
         return new CsvRowParseResult(columnCount, rowLength, charsConsumed, newlineCount);
     }
@@ -305,8 +304,7 @@ internal static class CsvStreamingParser
         ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
-        Span<int> columnStarts,
-        Span<int> columnLengths,
+        Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
@@ -325,7 +323,7 @@ internal static class CsvStreamingParser
                 Unsafe.As<T, byte>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+                columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
         else if (typeof(T) == typeof(char))
         {
@@ -338,7 +336,7 @@ internal static class CsvStreamingParser
                 Unsafe.As<T, char>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+                columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
 
         return false;
@@ -362,8 +360,7 @@ internal static class CsvStreamingParser
         ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
-        Span<int> columnStarts,
-        Span<int> columnLengths,
+        Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
@@ -381,16 +378,87 @@ internal static class CsvStreamingParser
         while (position + Vector256<byte>.Count <= dataLength)
         {
             var chunk = Vector256.LoadUnsafe(ref Unsafe.Add(ref mutableRef, position));
-            var specials = enableQuotedFields
-                ? Avx2.Or(
-                    Avx2.Or(Avx2.CompareEqual(chunk, delimiterVec), Avx2.CompareEqual(chunk, quoteVec)),
-                    Avx2.Or(Avx2.CompareEqual(chunk, lfVec), Avx2.CompareEqual(chunk, crVec)))
-                : Avx2.Or(
-                    Avx2.CompareEqual(chunk, delimiterVec),
-                    Avx2.Or(Avx2.CompareEqual(chunk, lfVec), Avx2.CompareEqual(chunk, crVec)));
+            var delimMatch = Avx2.CompareEqual(chunk, delimiterVec);
+            var lfMatch = Avx2.CompareEqual(chunk, lfVec);
+            var crMatch = Avx2.CompareEqual(chunk, crVec);
+
+            Vector256<byte> specials;
+            if (enableQuotedFields)
+            {
+                var quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
+                specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), Avx2.Or(lfMatch, crMatch));
+            }
+            else
+            {
+                specials = Avx2.Or(delimMatch, Avx2.Or(lfMatch, crMatch));
+            }
 
             uint mask = (uint)Avx2.MoveMask(specials);
 
+            // Fast paths only when quotes are disabled - avoids overhead for quoted case
+            if (!enableQuotedFields)
+            {
+                uint delimMask = (uint)Avx2.MoveMask(delimMatch);
+                uint lineEndingMask = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch));
+
+                // FAST PATH 1: Only separators, no line endings
+                if (delimMask == mask)
+                {
+                    while (mask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(mask);
+                        mask &= mask - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+                    position += Vector256<byte>.Count;
+                    continue;
+                }
+
+                // FAST PATH 2: Separators + line endings
+                if ((delimMask | lineEndingMask) == mask)
+                {
+                    // Process all delimiters first
+                    uint delimsToProcess = delimMask;
+                    while (delimsToProcess != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                        delimsToProcess &= delimsToProcess - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+
+                    // Check if there's a line ending in this chunk
+                    if (lineEndingMask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(lineEndingMask);
+                        int absolute = position + bit;
+                        rowLength = absolute;
+                        charsConsumed = absolute + 1;
+                        byte c = Unsafe.Add(ref mutableRef, absolute);
+                        // Check for CRLF
+                        if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                        {
+                            charsConsumed++;
+                            if (typeof(TTrack) == typeof(TrackLineNumbers))
+                                newlineCount++;
+                        }
+                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                        {
+                            newlineCount++;
+                        }
+                        rowEnded = true;
+                        return true;
+                    }
+
+                    position += Vector256<byte>.Count;
+                    continue;
+                }
+            }
+
+            // Slow path: handle quotes, line endings, and other special cases
             while (mask != 0)
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
@@ -443,7 +511,7 @@ internal static class CsvStreamingParser
                 if (c == delimiter)
                 {
                     AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, maxColumns, maxFieldLength);
+                        columnEnds, maxColumns, maxFieldLength);
                     continue;
                 }
 
@@ -488,8 +556,7 @@ internal static class CsvStreamingParser
         ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
-        Span<int> columnStarts,
-        Span<int> columnLengths,
+        Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
@@ -504,7 +571,7 @@ internal static class CsvStreamingParser
                 ref mutableRef, dataLength, delimiter, quote, lf, cr,
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-                columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+                columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
         }
 #endif
 
@@ -516,7 +583,7 @@ internal static class CsvStreamingParser
             ref mutableRef, dataLength, delimiter, quote, lf, cr,
             ref position, ref inQuotes, ref skipNextQuote,
             ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-            columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+            columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -537,8 +604,7 @@ internal static class CsvStreamingParser
         ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
-        Span<int> columnStarts,
-        Span<int> columnLengths,
+        Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
@@ -547,15 +613,25 @@ internal static class CsvStreamingParser
     {
         ref ushort ushortRef = ref Unsafe.As<char, ushort>(ref mutableRef);
 
-        // Create vectors for comparison (as 16-bit)
+        // SIMD optimization: NARROW chars to bytes FIRST, then compare
+        // This allows byte-sized comparisons which are faster and don't need packing
+        // All CSV special characters (comma, quote, CR, LF) have values < 128, so narrowing is safe
+        var delimiterByteVec = Vector256.Create((byte)delimiter);
+        var quoteByteVec = Vector256.Create((byte)quote);
+        var lfByteVec = Vector256.Create((byte)lf);
+        var crByteVec = Vector256.Create((byte)cr);
+
+        // Vector to limit chars to byte range before narrowing (chars > 255 become 255)
+        var maxVec = Vector256.Create((ushort)255);
+
+        // Fallback vectors for 16-char processing (used when < 32 chars remain)
         var delimiterVec = Vector256.Create((ushort)delimiter);
         var quoteVec = Vector256.Create((ushort)quote);
         var lfVec = Vector256.Create((ushort)lf);
         var crVec = Vector256.Create((ushort)cr);
 
-        // Sep-style optimization: process 32 chars at once by packing two 16-bit vectors to one 8-bit vector
-        // This doubles throughput by using byte-level MoveMask instead of 16-bit ExtractMostSignificantBits
-        const int CharsPerIteration = 32; // Two Vector256<ushort> = 32 chars
+        // Process 32 chars per iteration by narrowing two 16-char vectors to one 32-byte vector
+        const int CharsPerIteration = 32;
 
         while (position + CharsPerIteration <= dataLength)
         {
@@ -563,47 +639,102 @@ internal static class CsvStreamingParser
             var v0 = Vector256.LoadUnsafe(ref Unsafe.Add(ref ushortRef, position));
             var v1 = Vector256.LoadUnsafe(ref Unsafe.Add(ref ushortRef, position + 16));
 
-            // Compare both vectors against special characters
-            Vector256<ushort> specials0, specials1;
+            // Narrow chars to bytes FIRST
+            // Clamp to byte range to avoid undefined behavior (chars > 255 become 255)
+            var limited0 = Avx2.Min(v0, maxVec);
+            var limited1 = Avx2.Min(v1, maxVec);
+
+            // Pack unsigned: takes low byte of each 16-bit element
+            // This gives us [v0_low, v1_low, v0_high, v1_high] interleaved
+            var narrowed = Avx2.PackUnsignedSaturate(limited0.AsInt16(), limited1.AsInt16());
+            // Fix lane ordering: [0,2,1,3] -> sequential bytes
+            var bytes = Avx2.Permute4x64(narrowed.AsInt64(), 0b_11_01_10_00).AsByte();
+
+            // Compare narrowed bytes against byte-sized special characters
+            // Byte comparisons are faster than 16-bit comparisons
+            var delimMatch = Avx2.CompareEqual(bytes, delimiterByteVec);
+            var lfMatch = Avx2.CompareEqual(bytes, lfByteVec);
+            var crMatch = Avx2.CompareEqual(bytes, crByteVec);
+
+            Vector256<byte> specials;
             if (enableQuotedFields)
             {
-                var d0 = Avx2.CompareEqual(v0, delimiterVec);
-                var q0 = Avx2.CompareEqual(v0, quoteVec);
-                var l0 = Avx2.CompareEqual(v0, lfVec);
-                var r0 = Avx2.CompareEqual(v0, crVec);
-                specials0 = Avx2.Or(Avx2.Or(d0, q0), Avx2.Or(l0, r0));
-
-                var d1 = Avx2.CompareEqual(v1, delimiterVec);
-                var q1 = Avx2.CompareEqual(v1, quoteVec);
-                var l1 = Avx2.CompareEqual(v1, lfVec);
-                var r1 = Avx2.CompareEqual(v1, crVec);
-                specials1 = Avx2.Or(Avx2.Or(d1, q1), Avx2.Or(l1, r1));
+                var quoteMatch = Avx2.CompareEqual(bytes, quoteByteVec);
+                specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), Avx2.Or(lfMatch, crMatch));
             }
             else
             {
-                var d0 = Avx2.CompareEqual(v0, delimiterVec);
-                var l0 = Avx2.CompareEqual(v0, lfVec);
-                var r0 = Avx2.CompareEqual(v0, crVec);
-                specials0 = Avx2.Or(d0, Avx2.Or(l0, r0));
-
-                var d1 = Avx2.CompareEqual(v1, delimiterVec);
-                var l1 = Avx2.CompareEqual(v1, lfVec);
-                var r1 = Avx2.CompareEqual(v1, crVec);
-                specials1 = Avx2.Or(d1, Avx2.Or(l1, r1));
+                specials = Avx2.Or(delimMatch, Avx2.Or(lfMatch, crMatch));
             }
 
-            // Pack two 16-bit vectors into one 8-bit vector
-            // Use PackSignedSaturate because comparison results are 0xFFFF (-1) for match, 0x0000 (0) for no match
-            // PackUnsignedSaturate would saturate -1 to 0, losing the match info!
-            // PackSignedSaturate saturates -1 to -128 (0x80), preserving the high bit for MoveMask
-            var packed = Avx2.PackSignedSaturate(specials0.AsInt16(), specials1.AsInt16());
-            // Permute: PackSignedSaturate interleaves lanes [v0_low,v1_low,v0_high,v1_high]
-            // We need [v0_low,v0_high,v1_low,v1_high] = lanes [0,2,1,3]
-            var bytes = Avx2.Permute4x64(packed.AsInt64(), 0b_11_01_10_00).AsByte();
+            // Extract 32-bit mask directly from byte comparison results
+            uint mask = (uint)Avx2.MoveMask(specials);
 
-            // Extract 32-bit mask (one bit per character)
-            uint mask = (uint)Avx2.MoveMask(bytes);
+            // Fast paths only when quotes are disabled - avoids overhead for quoted case
+            if (!enableQuotedFields)
+            {
+                uint delimMask = (uint)Avx2.MoveMask(delimMatch);
+                uint lineEndingMask = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch));
 
+                // FAST PATH 1: Only separators, no line endings
+                if (delimMask == mask)
+                {
+                    while (mask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(mask);
+                        mask &= mask - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+                    position += CharsPerIteration;
+                    continue;
+                }
+
+                // FAST PATH 2: Separators + line endings
+                if ((delimMask | lineEndingMask) == mask)
+                {
+                    // Process all delimiters first
+                    uint delimsToProcess = delimMask;
+                    while (delimsToProcess != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                        delimsToProcess &= delimsToProcess - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+
+                    // Check if there's a line ending in this chunk
+                    if (lineEndingMask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(lineEndingMask);
+                        int absolute = position + bit;
+                        rowLength = absolute;
+                        charsConsumed = absolute + 1;
+                        // Check for CRLF
+                        if (Unsafe.Add(ref mutableRef, absolute) == cr &&
+                            absolute + 1 < dataLength &&
+                            Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                        {
+                            charsConsumed++;
+                            if (typeof(TTrack) == typeof(TrackLineNumbers))
+                                newlineCount++;
+                        }
+                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                        {
+                            newlineCount++;
+                        }
+                        rowEnded = true;
+                        return true;
+                    }
+
+                    position += CharsPerIteration;
+                    continue;
+                }
+            }
+
+            // Slow path: handle quotes, line endings, and other special cases
             while (mask != 0)
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
@@ -655,7 +786,7 @@ internal static class CsvStreamingParser
                 if (c == delimiter)
                 {
                     AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, maxColumns, maxFieldLength);
+                        columnEnds, maxColumns, maxFieldLength);
                     continue;
                 }
 
@@ -754,7 +885,7 @@ internal static class CsvStreamingParser
                 if (c == delimiter)
                 {
                     AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, maxColumns, maxFieldLength);
+                        columnEnds, maxColumns, maxFieldLength);
                     continue;
                 }
 
@@ -800,8 +931,7 @@ internal static class CsvStreamingParser
         ref int newlineCount,
         ref bool rowEnded,
         ref int quoteStartPosition,
-        Span<int> columnStarts,
-        Span<int> columnLengths,
+        Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
         bool enableQuotedFields,
@@ -810,12 +940,16 @@ internal static class CsvStreamingParser
     {
         ref ushort ushortRef = ref Unsafe.As<char, ushort>(ref mutableRef);
 
-        var delimiterVec = Vector512.Create((ushort)delimiter);
-        var quoteVec = Vector512.Create((ushort)quote);
-        var lfVec = Vector512.Create((ushort)lf);
-        var crVec = Vector512.Create((ushort)cr);
+        // SIMD optimization: NARROW chars to bytes FIRST, then compare
+        var delimiterByteVec = Vector512.Create((byte)delimiter);
+        var quoteByteVec = Vector512.Create((byte)quote);
+        var lfByteVec = Vector512.Create((byte)lf);
+        var crByteVec = Vector512.Create((byte)cr);
 
-        // Process 64 chars per iteration by packing two 32-char vectors to one 64-byte vector
+        // Vector to limit chars to byte range before narrowing
+        var maxVec = Vector512.Create((ushort)255);
+
+        // Process 64 chars per iteration by narrowing two 32-char vectors to one 64-byte vector
         const int CharsPerIteration = 64;
 
         while (position + CharsPerIteration <= dataLength)
@@ -824,46 +958,100 @@ internal static class CsvStreamingParser
             var v0 = Vector512.LoadUnsafe(ref Unsafe.Add(ref ushortRef, position));
             var v1 = Vector512.LoadUnsafe(ref Unsafe.Add(ref ushortRef, position + 32));
 
-            // Compare both vectors against special characters
-            Vector512<ushort> specials0, specials1;
+            // Narrow chars to bytes FIRST
+            var limited0 = Vector512.Min(v0, maxVec);
+            var limited1 = Vector512.Min(v1, maxVec);
+
+            // Pack unsigned: takes low byte of each 16-bit element
+            var narrowed = Avx512BW.PackUnsignedSaturate(limited0.AsInt16(), limited1.AsInt16());
+            // Permute to fix interleaved lane order (AVX-512 uses 4 128-bit lanes)
+            var bytes = Avx512F.PermuteVar8x64(narrowed.AsInt64(),
+                Vector512.Create(0L, 2, 4, 6, 1, 3, 5, 7)).AsByte();
+
+            // Compare narrowed bytes against byte-sized special characters
+            var delimMatch = Vector512.Equals(bytes, delimiterByteVec);
+            var lfMatch = Vector512.Equals(bytes, lfByteVec);
+            var crMatch = Vector512.Equals(bytes, crByteVec);
+
+            Vector512<byte> specials;
             if (enableQuotedFields)
             {
-                var d0 = Vector512.Equals(v0, delimiterVec);
-                var q0 = Vector512.Equals(v0, quoteVec);
-                var l0 = Vector512.Equals(v0, lfVec);
-                var r0 = Vector512.Equals(v0, crVec);
-                specials0 = Vector512.BitwiseOr(Vector512.BitwiseOr(d0, q0), Vector512.BitwiseOr(l0, r0));
-
-                var d1 = Vector512.Equals(v1, delimiterVec);
-                var q1 = Vector512.Equals(v1, quoteVec);
-                var l1 = Vector512.Equals(v1, lfVec);
-                var r1 = Vector512.Equals(v1, crVec);
-                specials1 = Vector512.BitwiseOr(Vector512.BitwiseOr(d1, q1), Vector512.BitwiseOr(l1, r1));
+                var quoteMatch = Vector512.Equals(bytes, quoteByteVec);
+                specials = Vector512.BitwiseOr(Vector512.BitwiseOr(delimMatch, quoteMatch), Vector512.BitwiseOr(lfMatch, crMatch));
             }
             else
             {
-                var d0 = Vector512.Equals(v0, delimiterVec);
-                var l0 = Vector512.Equals(v0, lfVec);
-                var r0 = Vector512.Equals(v0, crVec);
-                specials0 = Vector512.BitwiseOr(d0, Vector512.BitwiseOr(l0, r0));
-
-                var d1 = Vector512.Equals(v1, delimiterVec);
-                var l1 = Vector512.Equals(v1, lfVec);
-                var r1 = Vector512.Equals(v1, crVec);
-                specials1 = Vector512.BitwiseOr(d1, Vector512.BitwiseOr(l1, r1));
+                specials = Vector512.BitwiseOr(delimMatch, Vector512.BitwiseOr(lfMatch, crMatch));
             }
 
-            // Pack two 16-bit vectors into one 8-bit vector using AVX-512BW
-            // Use PackSignedSaturate because comparison results are 0xFFFF (-1) for match
-            // PackSignedSaturate saturates -1 to -128 (0x80), preserving the high bit for mask extraction
-            var packed = Avx512BW.PackSignedSaturate(specials0.AsInt16(), specials1.AsInt16());
-            // Permute to fix interleaved lane order (AVX-512 uses 4 128-bit lanes)
-            var bytes = Avx512F.PermuteVar8x64(packed.AsInt64(),
-                Vector512.Create(0L, 2, 4, 6, 1, 3, 5, 7)).AsByte();
-
             // Extract 64-bit mask (one bit per character)
-            ulong mask = bytes.ExtractMostSignificantBits();
+            ulong mask = specials.ExtractMostSignificantBits();
 
+            // Fast paths only when quotes are disabled - avoids overhead for quoted case
+            if (!enableQuotedFields)
+            {
+                ulong delimMask = delimMatch.ExtractMostSignificantBits();
+                ulong lineEndingMask = Vector512.BitwiseOr(lfMatch, crMatch).ExtractMostSignificantBits();
+
+                // FAST PATH 1: Only separators, no line endings
+                if (delimMask == mask)
+                {
+                    while (mask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(mask);
+                        mask &= mask - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+                    position += CharsPerIteration;
+                    continue;
+                }
+
+                // FAST PATH 2: Separators + line endings
+                if ((delimMask | lineEndingMask) == mask)
+                {
+                    // Process all delimiters first
+                    ulong delimsToProcess = delimMask;
+                    while (delimsToProcess != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                        delimsToProcess &= delimsToProcess - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+
+                    // Check if there's a line ending in this chunk
+                    if (lineEndingMask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(lineEndingMask);
+                        int absolute = position + bit;
+                        rowLength = absolute;
+                        charsConsumed = absolute + 1;
+                        // Check for CRLF
+                        if (Unsafe.Add(ref mutableRef, absolute) == cr &&
+                            absolute + 1 < dataLength &&
+                            Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                        {
+                            charsConsumed++;
+                            if (typeof(TTrack) == typeof(TrackLineNumbers))
+                                newlineCount++;
+                        }
+                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                        {
+                            newlineCount++;
+                        }
+                        rowEnded = true;
+                        return true;
+                    }
+
+                    position += CharsPerIteration;
+                    continue;
+                }
+            }
+
+            // Slow path: handle quotes, line endings, and other special cases
             while (mask != 0)
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
@@ -915,7 +1103,7 @@ internal static class CsvStreamingParser
                 if (c == delimiter)
                 {
                     AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnStarts, columnLengths, maxColumns, maxFieldLength);
+                        columnEnds, maxColumns, maxFieldLength);
                     continue;
                 }
 
@@ -944,7 +1132,7 @@ internal static class CsvStreamingParser
             ref mutableRef, dataLength, delimiter, quote, lf, cr,
             ref position, ref inQuotes, ref skipNextQuote,
             ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-            columnStarts, columnLengths, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+            columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
     }
 #endif
 
@@ -958,13 +1146,16 @@ internal static class CsvStreamingParser
         throw new NotSupportedException($"Type {typeof(T)} not supported");
     }
 
+    /// <summary>
+    /// Appends a column end position (ends-only storage).
+    /// Writes to columnEnds[columnCount + 1] = delimiterIndex.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void AppendColumn(
         int delimiterIndex,
         ref int columnCount,
         ref int currentStart,
-        Span<int> starts,
-        Span<int> lengths,
+        Span<int> columnEnds,
         int maxColumns,
         int? maxFieldLength)
     {
@@ -975,19 +1166,24 @@ internal static class CsvStreamingParser
         if (maxFieldLength.HasValue && fieldLength > maxFieldLength.Value)
             ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
 
-        starts[columnCount] = currentStart;
-        lengths[columnCount] = fieldLength;
+        // store only the end position (delimiter index)
+        // Column start = columnEnds[columnCount] + 1
+        // Column length = columnEnds[columnCount + 1] - columnEnds[columnCount] - 1
+        columnEnds[columnCount + 1] = delimiterIndex;
         columnCount++;
         currentStart = delimiterIndex + 1;
     }
 
+    /// <summary>
+    /// Appends the final column end position (ends-only storage).
+    /// Writes to columnEnds[columnCount + 1] = rowLength.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void AppendFinalColumn(
         int rowLength,
         ref int columnCount,
         ref int currentStart,
-        Span<int> starts,
-        Span<int> lengths,
+        Span<int> columnEnds,
         int maxColumns,
         int? maxFieldLength)
     {
@@ -998,62 +1194,9 @@ internal static class CsvStreamingParser
         if (maxFieldLength.HasValue && fieldLength > maxFieldLength.Value)
             ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
 
-        starts[columnCount] = currentStart;
-        lengths[columnCount] = fieldLength;
+        // store only the end position (row length for final column)
+        columnEnds[columnCount + 1] = rowLength;
         columnCount++;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ApplyTrimming<T>(
-        ref T mutableRef,
-        Span<int> starts,
-        Span<int> lengths,
-        int columnCount,
-        T quote,
-        T space,
-        T tab)
-        where T : unmanaged, IEquatable<T>
-    {
-        for (int i = 0; i < columnCount; i++)
-        {
-            int start = starts[i];
-            int length = lengths[i];
-
-            if (length == 0)
-                continue;
-
-            // Check if field is quoted - if so, skip trimming
-            bool isQuoted = length >= 2 &&
-                           Unsafe.Add(ref mutableRef, start).Equals(quote) &&
-                           Unsafe.Add(ref mutableRef, start + length - 1).Equals(quote);
-
-            if (isQuoted)
-                continue;
-
-            int trimStart = start;
-            int trimEnd = start + length;
-
-            // Trim leading whitespace
-            while (trimStart < trimEnd)
-            {
-                T c = Unsafe.Add(ref mutableRef, trimStart);
-                if (!c.Equals(space) && !c.Equals(tab))
-                    break;
-                trimStart++;
-            }
-
-            // Trim trailing whitespace
-            while (trimEnd > trimStart)
-            {
-                T c = Unsafe.Add(ref mutableRef, trimEnd - 1);
-                if (!c.Equals(space) && !c.Equals(tab))
-                    break;
-                trimEnd--;
-            }
-
-            starts[i] = trimStart;
-            lengths[i] = trimEnd - trimStart;
-        }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

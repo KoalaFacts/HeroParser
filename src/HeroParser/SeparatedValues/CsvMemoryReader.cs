@@ -16,13 +16,13 @@ namespace HeroParser.SeparatedValues;
 /// reader instance. However, the <see cref="CsvMemoryRow"/> instances produced by this reader
 /// are immutable and safe to pass between threads after creation.
 /// </para>
+/// <para>Uses Ends-only column indexing to minimize memory writes during parsing.</para>
 /// </remarks>
 public struct CsvMemoryReader
 {
     private readonly ReadOnlyMemory<char> chars;
     private readonly CsvParserOptions options;
-    private readonly int[] columnStartsBuffer;
-    private readonly int[] columnLengthsBuffer;
+    private readonly int[] columnEndsBuffer;
     private readonly bool trackLineNumbers;
     private int position;
     private int rowCount;
@@ -42,8 +42,8 @@ public struct CsvMemoryReader
         rowCount = 0;
         sourceLineNumber = 1;
         Current = default;
-        columnStartsBuffer = new int[options.MaxColumnCount];
-        columnLengthsBuffer = new int[options.MaxColumnCount];
+        // Ends-only storage: need maxColumns + 1 entries
+        columnEndsBuffer = new int[options.MaxColumnCount + 1];
     }
 
     /// <summary>Gets the current memory-backed row.</summary>
@@ -68,8 +68,7 @@ public struct CsvMemoryReader
             var result = CsvStreamingParser.ParseRow(
                 remaining.Span,
                 options,
-                columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount),
+                columnEndsBuffer.AsSpan(0, options.MaxColumnCount + 1),
                 trackLineNumbers);
 
             if (result.CharsConsumed == 0)
@@ -87,19 +86,18 @@ public struct CsvMemoryReader
             rowCount++;
             var rowMemory = remaining[..result.RowLength];
 
-            // Contiguous array format: [starts..., lengths...]
-            // Single allocation per row with efficient Array.Copy
+            // Ends-only storage: copy only the ends array
             int count = result.ColumnCount;
-            var columnData = new int[count * 2];
-            Array.Copy(columnStartsBuffer, 0, columnData, 0, count);
-            Array.Copy(columnLengthsBuffer, 0, columnData, count, count);
+            var columnEnds = new int[count + 1];
+            Array.Copy(columnEndsBuffer, 0, columnEnds, 0, count + 1);
 
             Current = new CsvMemoryRow(
                 rowMemory,
-                columnData,
+                columnEnds,
                 count,
                 rowCount,
-                trackLineNumbers ? rowStartLine : rowCount);
+                trackLineNumbers ? rowStartLine : rowCount,
+                options.TrimFields);
 
             position += result.CharsConsumed;
             if (rowCount > options.MaxRowCount)

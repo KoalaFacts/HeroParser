@@ -15,31 +15,36 @@ namespace HeroParser.SeparatedValues;
 /// <b>Thread Safety:</b> This struct is immutable after construction and is safe to share
 /// across multiple threads. Each row owns its column index data independently with no shared state.
 /// </para>
+/// <para>
+/// Uses Ends-only storage: columnEnds[0] = -1, columnEnds[1..N] = column end positions.
+/// Column start = columnEnds[index] + 1, length = columnEnds[index+1] - columnEnds[index] - 1.
+/// </para>
 /// </remarks>
 public readonly struct CsvMemoryRow
 {
     private readonly ReadOnlyMemory<char> line;
-    // Contiguous array format: [starts..., lengths...]
-    // First half contains column start positions, second half contains lengths.
-    // This reduces allocations by 50% compared to two separate arrays
-    // and allows efficient Array.Copy usage.
-    private readonly int[] columnData;
+    // Ends-only storage: [columnEnds[0], columnEnds[1], ..., columnEnds[columnCount]]
+    // where columnEnds[0] = -1 (sentinel), columnEnds[1..N] = column end positions
+    private readonly int[] columnEnds;
     private readonly int columnCount;
     private readonly int lineNumber;
     private readonly int sourceLineNumber;
+    private readonly bool trimFields;
 
     internal CsvMemoryRow(
         ReadOnlyMemory<char> line,
-        int[] columnData,
+        int[] columnEnds,
         int columnCount,
         int lineNumber,
-        int sourceLineNumber)
+        int sourceLineNumber,
+        bool trimFields = false)
     {
         this.line = line;
-        this.columnData = columnData;
+        this.columnEnds = columnEnds;
         this.columnCount = columnCount;
         this.lineNumber = lineNumber;
         this.sourceLineNumber = sourceLineNumber;
+        this.trimFields = trimFields;
     }
 
     /// <summary>Gets the number of parsed columns in the row.</summary>
@@ -63,9 +68,16 @@ public readonly struct CsvMemoryRow
                     $"Column index {index} is out of range. Column count is {columnCount}.");
             }
 
-            // Contiguous layout: starts in first half, lengths in second half
-            var start = columnData[index];
-            var length = columnData[columnCount + index];
+            // compute start and length from ends
+            var start = columnEnds[index] + 1;
+            var end = columnEnds[index + 1];
+
+            if (trimFields)
+            {
+                (start, end) = TrimBounds(start, end);
+            }
+
+            var length = end - start;
             return new CsvMemoryColumn(line.Slice(start, length));
         }
     }
@@ -80,8 +92,17 @@ public readonly struct CsvMemoryRow
                 $"Column index {index} is out of range. Column count is {columnCount}.");
         }
 
-        // Contiguous layout: starts in first half, lengths in second half
-        return line.Slice(columnData[index], columnData[columnCount + index]);
+        // compute start and length from ends
+        var start = columnEnds[index] + 1;
+        var end = columnEnds[index + 1];
+
+        if (trimFields)
+        {
+            (start, end) = TrimBounds(start, end);
+        }
+
+        var length = end - start;
+        return line.Slice(start, length);
     }
 
     /// <summary>Gets a column's span directly by zero-based index for parsing.</summary>
@@ -94,8 +115,17 @@ public readonly struct CsvMemoryRow
                 $"Column index {index} is out of range. Column count is {columnCount}.");
         }
 
-        // Contiguous layout: starts in first half, lengths in second half
-        return line.Slice(columnData[index], columnData[columnCount + index]).Span;
+        // compute start and length from ends
+        var start = columnEnds[index] + 1;
+        var end = columnEnds[index + 1];
+
+        if (trimFields)
+        {
+            (start, end) = TrimBounds(start, end);
+        }
+
+        var length = end - start;
+        return line.Slice(start, length).Span;
     }
 
     /// <summary>Materializes the row into a string array.</summary>
@@ -104,10 +134,48 @@ public readonly struct CsvMemoryRow
         var result = new string[columnCount];
         for (int i = 0; i < columnCount; i++)
         {
-            // Contiguous layout: starts in first half, lengths in second half
-            result[i] = new string(line.Slice(columnData[i], columnData[columnCount + i]).Span);
+            // compute start and length from ends
+            var start = columnEnds[i] + 1;
+            var end = columnEnds[i + 1];
+
+            if (trimFields)
+            {
+                (start, end) = TrimBounds(start, end);
+            }
+
+            var length = end - start;
+            result[i] = new string(line.Slice(start, length).Span);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Trims leading and trailing whitespace from the specified bounds.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private (int start, int end) TrimBounds(int start, int end)
+    {
+        var span = line.Span;
+
+        // Skip quoted fields (they start and end with quotes)
+        if (end - start >= 2 && span[start] == '"' && span[end - 1] == '"')
+        {
+            return (start, end);
+        }
+
+        // Trim leading whitespace
+        while (start < end && (span[start] == ' ' || span[start] == '\t'))
+        {
+            start++;
+        }
+
+        // Trim trailing whitespace
+        while (end > start && (span[end - 1] == ' ' || span[end - 1] == '\t'))
+        {
+            end--;
+        }
+
+        return (start, end);
     }
 
     /// <summary>
@@ -119,21 +187,22 @@ public readonly struct CsvMemoryRow
     internal static CsvMemoryRow FromSpanRow(CsvCharSpanRow spanRow, ReadOnlyMemory<char> sourceMemory, int rowOffset)
     {
         int count = spanRow.ColumnCount;
-        // Contiguous array format: [starts..., lengths...]
-        var columnData = new int[count * 2];
+        // Ends-only storage: need count + 1 entries
+        var columnEnds = new int[count + 1];
+        columnEnds[0] = -1; // Sentinel
 
         for (int i = 0; i < count; i++)
         {
-            // Get column info - we need to calculate offsets from the row
+            // Get column info and compute end position
             var column = spanRow[i];
-            // The column span is relative to the row, add row offset
-            columnData[i] = i; // Will be set properly below (placeholder)
-            columnData[count + i] = column.CharSpan.Length;
+            // The column span is relative to the row
+            // columnEnds[i + 1] = end of column i
+            // Since we're building from scratch, compute cumulative positions
+            int start = columnEnds[i] + 1;
+            columnEnds[i + 1] = start + column.CharSpan.Length;
         }
 
-        // Recalculate starts based on the source memory
-        // This is a simplified approach - in practice we'd need the actual offsets
         var rowMemory = sourceMemory[rowOffset..];
-        return new CsvMemoryRow(rowMemory, columnData, count, spanRow.LineNumber, spanRow.SourceLineNumber);
+        return new CsvMemoryRow(rowMemory, columnEnds, count, spanRow.LineNumber, spanRow.SourceLineNumber);
     }
 }

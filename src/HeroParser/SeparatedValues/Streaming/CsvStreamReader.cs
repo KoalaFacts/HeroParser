@@ -14,8 +14,7 @@ public ref struct CsvStreamReader
     private readonly ArrayPool<char> charPool;
     private readonly StreamReader reader;
     private readonly CsvParserOptions options;
-    private readonly int[] columnStartsBuffer;
-    private readonly int[] columnLengthsBuffer;
+    private readonly int[] columnEndsBuffer;
     private readonly bool trackLineNumbers;
     private bool disposed;
     private char[] buffer;
@@ -36,8 +35,8 @@ public ref struct CsvStreamReader
         charPool = ArrayPool<char>.Shared;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
-        columnStartsBuffer = new int[options.MaxColumnCount];
-        columnLengthsBuffer = new int[options.MaxColumnCount];
+        // Ends-only storage: need maxColumns + 1 entries
+        columnEndsBuffer = new int[options.MaxColumnCount + 1];
         offset = 0;
         length = 0;
         rowCount = 0;
@@ -75,8 +74,7 @@ public ref struct CsvStreamReader
             var result = CsvStreamingParser.ParseRow(
                 span,
                 options,
-                columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount),
+                columnEndsBuffer.AsSpan(0, options.MaxColumnCount + 1),
                 trackLineNumbers);
 
             if (result.CharsConsumed > 0)
@@ -94,11 +92,11 @@ public ref struct CsvStreamReader
                 rowCount++;
                 Current = new CsvCharSpanRow(
                     rowChars,
-                    columnStartsBuffer,
-                    columnLengthsBuffer,
+                    columnEndsBuffer,
                     result.ColumnCount,
                     rowCount,
-                    trackLineNumbers ? rowStartLine : rowCount); // Use rowCount as fallback when tracking disabled
+                    trackLineNumbers ? rowStartLine : rowCount, // Use rowCount as fallback when tracking disabled
+                    options.TrimFields);
                 if (rowCount > options.MaxRowCount)
                 {
                     throw new CsvException(

@@ -6,6 +6,9 @@ namespace HeroParser.SeparatedValues.Streaming;
 /// <summary>
 /// Async CSV reader that streams from a file or stream without loading the entire payload into memory.
 /// </summary>
+/// <remarks>
+/// <para>Uses Ends-only column indexing to minimize memory writes during parsing.</para>
+/// </remarks>
 public sealed class CsvAsyncStreamReader : IAsyncDisposable
 {
     // Absolute maximum buffer size (128 MB) to prevent unbounded memory growth even when MaxRowSize is null
@@ -14,8 +17,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private readonly ArrayPool<char> charPool;
     private readonly StreamReader reader;
     private readonly CsvParserOptions options;
-    private readonly int[] columnStartsBuffer;
-    private readonly int[] columnLengthsBuffer;
+    private readonly int[] columnEndsBuffer;
     private readonly bool trackLineNumbers;
     private char[] buffer;
     private int offset;
@@ -36,11 +38,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
     public CsvCharSpanRow Current => new(
         buffer.AsSpan(currentRowStart, currentRowLength),
-        columnStartsBuffer,
-        columnLengthsBuffer,
+        columnEndsBuffer,
         currentColumnCount,
         currentLineNumber,
-        currentSourceLineNumber);
+        currentSourceLineNumber,
+        options.TrimFields);
 
     /// <summary>Gets the approximate number of bytes read from the underlying stream.</summary>
     /// <remarks>
@@ -57,9 +59,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         charPool = ArrayPool<char>.Shared;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
-        // Use dedicated arrays for column indices - they're small and avoids sharing issues
-        columnStartsBuffer = new int[options.MaxColumnCount];
-        columnLengthsBuffer = new int[options.MaxColumnCount];
+        // Ends-only storage: need maxColumns + 1 entries
+        columnEndsBuffer = new int[options.MaxColumnCount + 1];
         offset = 0;
         length = 0;
         rowCount = 0;
@@ -94,8 +95,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             var result = CsvStreamingParser.ParseRow(
                 span,
                 options,
-                columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount),
+                columnEndsBuffer.AsSpan(0, options.MaxColumnCount + 1),
                 trackLineNumbers);
 
             if (result.CharsConsumed > 0)

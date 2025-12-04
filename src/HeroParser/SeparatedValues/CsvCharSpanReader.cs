@@ -8,16 +8,18 @@ namespace HeroParser.SeparatedValues;
 /// Enumerates CSV rows from a UTF-16 span without allocating intermediate objects.
 /// </summary>
 /// <remarks>
-/// Rows are parsed lazily as <see cref="MoveNext"/> advances.
+/// <para>Rows are parsed lazily as <see cref="MoveNext"/> advances.</para>
+/// <para>
 /// This reader uses dedicated arrays (not pooled) to ensure thread-safety when multiple
 /// readers are used concurrently or when <see cref="GetEnumerator"/> creates a copy.
+/// </para>
+/// <para>Uses Ends-only column indexing to minimize memory writes during parsing.</para>
 /// </remarks>
 public ref struct CsvCharSpanReader
 {
     private readonly ReadOnlySpan<char> chars;
     private readonly CsvParserOptions options;
-    private readonly int[] columnStartsBuffer;
-    private readonly int[] columnLengthsBuffer;
+    private readonly int[] columnEndsBuffer;
     private readonly bool trackLineNumbers;
     private int position;
     private int rowCount;
@@ -32,10 +34,8 @@ public ref struct CsvCharSpanReader
         rowCount = 0;
         sourceLineNumber = 1; // Start at line 1
         Current = default;
-        // Use dedicated arrays instead of ArrayPool to avoid sharing issues when
-        // GetEnumerator() creates a copy that shares the same array references
-        columnStartsBuffer = new int[options.MaxColumnCount];
-        columnLengthsBuffer = new int[options.MaxColumnCount];
+        // Ends-only storage: need maxColumns + 1 entries
+        columnEndsBuffer = new int[options.MaxColumnCount + 1];
     }
 
     /// <summary>Gets the current UTF-16 backed row.</summary>
@@ -63,8 +63,7 @@ public ref struct CsvCharSpanReader
             var result = CsvStreamingParser.ParseRow(
                 remaining,
                 options,
-                columnStartsBuffer.AsSpan(0, options.MaxColumnCount),
-                columnLengthsBuffer.AsSpan(0, options.MaxColumnCount),
+                columnEndsBuffer.AsSpan(0, options.MaxColumnCount + 1),
                 trackLineNumbers);
 
             if (result.CharsConsumed == 0)
@@ -84,11 +83,11 @@ public ref struct CsvCharSpanReader
             rowCount++;
             Current = new CsvCharSpanRow(
                 rowChars,
-                columnStartsBuffer,
-                columnLengthsBuffer,
+                columnEndsBuffer,
                 result.ColumnCount,
                 rowCount,
-                trackLineNumbers ? rowStartLine : rowCount); // Use rowCount as fallback when tracking disabled
+                trackLineNumbers ? rowStartLine : rowCount, // Use rowCount as fallback when tracking disabled
+                options.TrimFields);
 
             position += result.CharsConsumed;
             if (rowCount > options.MaxRowCount)

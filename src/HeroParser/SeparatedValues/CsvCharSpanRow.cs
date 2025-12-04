@@ -7,33 +7,40 @@ namespace HeroParser.SeparatedValues;
 /// Represents a single CSV row backed by the original UTF-16 characters.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Thread-Safety: This is a ref struct that wraps stack-allocated or pooled memory and cannot be
 /// shared across threads. Each reader should be used on a single thread. Use <see cref="Clone"/>
 /// or <see cref="ToImmutable"/> to create owned copies if you need to store rows beyond the enumeration scope.
+/// </para>
+/// <para>
+/// Uses Ends-only storage: columnEnds[0] = -1, columnEnds[1..N] = column end positions.
+/// Column start = columnEnds[index] + 1, length = columnEnds[index+1] - columnEnds[index] - 1.
+/// </para>
 /// </remarks>
 public readonly ref struct CsvCharSpanRow
 {
     private readonly ReadOnlySpan<char> line;
     private readonly int columnCount;
-    private readonly ReadOnlySpan<int> columnStarts;
-    private readonly ReadOnlySpan<int> columnLengths;
+    private readonly ReadOnlySpan<int> columnEnds;
     private readonly int lineNumber;
     private readonly int sourceLineNumber;
+    private readonly bool trimFields;
 
     internal CsvCharSpanRow(
         ReadOnlySpan<char> line,
-        Span<int> columnStartsBuffer,
-        Span<int> columnLengthsBuffer,
+        ReadOnlySpan<int> columnEndsBuffer,
         int columnCount,
         int lineNumber,
-        int sourceLineNumber)
+        int sourceLineNumber,
+        bool trimFields = false)
     {
         this.line = line;
         this.columnCount = columnCount;
         this.lineNumber = lineNumber;
         this.sourceLineNumber = sourceLineNumber;
-        columnStarts = columnStartsBuffer[..columnCount];
-        columnLengths = columnLengthsBuffer[..columnCount];
+        this.trimFields = trimFields;
+        // columnEnds has columnCount + 1 entries (including the -1 sentinel)
+        columnEnds = columnEndsBuffer[..(columnCount + 1)];
     }
 
     /// <summary>Gets the number of parsed columns in the row.</summary>
@@ -74,8 +81,17 @@ public readonly ref struct CsvCharSpanRow
                     $"Column index {index} is out of range. Column count is {columnCount}.");
             }
 
-            var start = columnStarts[index];
-            var length = columnLengths[index];
+            // compute start and length from ends
+            var start = columnEnds[index] + 1;
+            var end = columnEnds[index + 1];
+
+            if (trimFields)
+            {
+                // Apply trimming at read time
+                (start, end) = TrimBounds(start, end);
+            }
+
+            var length = end - start;
             return new CsvCharSpanColumn(line.Slice(start, length));
         }
     }
@@ -86,9 +102,46 @@ public readonly ref struct CsvCharSpanRow
         var result = new string[columnCount];
         for (int i = 0; i < columnCount; i++)
         {
-            result[i] = new string(line.Slice(columnStarts[i], columnLengths[i]));
+            // compute start and length from ends
+            var start = columnEnds[i] + 1;
+            var end = columnEnds[i + 1];
+
+            if (trimFields)
+            {
+                (start, end) = TrimBounds(start, end);
+            }
+
+            var length = end - start;
+            result[i] = new string(line.Slice(start, length));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Trims leading and trailing whitespace from the specified bounds.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private (int start, int end) TrimBounds(int start, int end)
+    {
+        // Skip quoted fields (they start and end with quotes)
+        if (end - start >= 2 && line[start] == '"' && line[end - 1] == '"')
+        {
+            return (start, end);
+        }
+
+        // Trim leading whitespace
+        while (start < end && (line[start] == ' ' || line[start] == '\t'))
+        {
+            start++;
+        }
+
+        // Trim trailing whitespace
+        while (end > start && (line[end - 1] == ' ' || line[end - 1] == '\t'))
+        {
+            end--;
+        }
+
+        return (start, end);
     }
 
     /// <summary>
@@ -102,9 +155,8 @@ public readonly ref struct CsvCharSpanRow
     public CsvCharSpanRow Clone()
     {
         var newLine = line.ToArray();
-        var newStarts = columnStarts.ToArray();
-        var newLengths = columnLengths.ToArray();
-        return new CsvCharSpanRow(newLine, newStarts, newLengths, columnCount, lineNumber, sourceLineNumber);
+        var newEnds = columnEnds.ToArray();
+        return new CsvCharSpanRow(newLine, newEnds, columnCount, lineNumber, sourceLineNumber, trimFields);
     }
 
     /// <summary>
@@ -165,10 +217,19 @@ public readonly ref struct CsvCharSpanRow
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsDangerousColumn(int index)
     {
-        var length = columnLengths[index];
+        // compute start and length from ends
+        var start = columnEnds[index] + 1;
+        var end = columnEnds[index + 1];
+
+        if (trimFields)
+        {
+            (start, end) = TrimBounds(start, end);
+        }
+
+        var length = end - start;
+
         if (length == 0) return false;
 
-        var start = columnStarts[index];
         char first = line[start];
 
         // Switch enables jump table optimization for O(1) character dispatch

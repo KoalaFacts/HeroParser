@@ -177,32 +177,4 @@ public readonly struct CsvMemoryRow
 
         return (start, end);
     }
-
-    /// <summary>
-    /// Creates a <see cref="CsvMemoryRow"/> from a <see cref="CsvCharSpanRow"/> and source memory.
-    /// </summary>
-    /// <param name="spanRow">The span-based row.</param>
-    /// <param name="sourceMemory">The source memory that backs the row's span.</param>
-    /// <param name="rowOffset">The offset of the row within the source memory.</param>
-    internal static CsvMemoryRow FromSpanRow(CsvCharSpanRow spanRow, ReadOnlyMemory<char> sourceMemory, int rowOffset)
-    {
-        int count = spanRow.ColumnCount;
-        // Ends-only storage: need count + 1 entries
-        var columnEnds = new int[count + 1];
-        columnEnds[0] = -1; // Sentinel
-
-        for (int i = 0; i < count; i++)
-        {
-            // Get column info and compute end position
-            var column = spanRow[i];
-            // The column span is relative to the row
-            // columnEnds[i + 1] = end of column i
-            // Since we're building from scratch, compute cumulative positions
-            int start = columnEnds[i] + 1;
-            columnEnds[i + 1] = start + column.CharSpan.Length;
-        }
-
-        var rowMemory = sourceMemory[rowOffset..];
-        return new CsvMemoryRow(rowMemory, columnEnds, count, spanRow.LineNumber, spanRow.SourceLineNumber);
-    }
 }

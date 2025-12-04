@@ -1,8 +1,9 @@
-using HeroParser.SeparatedValues;
-using HeroParser.SeparatedValues.Records;
-using HeroParser.SeparatedValues.Records.Binding;
-using HeroParser.SeparatedValues.Records.Readers;
-using HeroParser.SeparatedValues.Streaming;
+using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Records;
+using HeroParser.SeparatedValues.Reading.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Records.Readers;
+using HeroParser.SeparatedValues.Reading.Span;
+using HeroParser.SeparatedValues.Reading.Streaming;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text;

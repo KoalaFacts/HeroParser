@@ -1,4 +1,6 @@
 using HeroParser.SeparatedValues;
+using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Span;
 using Xunit;
 
 namespace HeroParser.Tests;

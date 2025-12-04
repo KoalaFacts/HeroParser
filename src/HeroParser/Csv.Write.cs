@@ -1,5 +1,5 @@
 using HeroParser.SeparatedValues.Writing;
-using HeroParser.SeparatedValues.Streaming;
+using HeroParser.SeparatedValues.Reading.Streaming;
 using System.Text;
 
 namespace HeroParser;
@@ -118,7 +118,7 @@ public static partial class Csv
     /// <param name="options">Optional writer configuration.</param>
     /// <returns>The CSV content as a string.</returns>
     /// <remarks>
-    /// This is the symmetric counterpart to <see cref="DeserializeRecords{T}(string, SeparatedValues.Records.CsvRecordOptions?, SeparatedValues.CsvParserOptions?)"/>.
+    /// This is the symmetric counterpart to <see cref="DeserializeRecords{T}(string, SeparatedValues.Reading.Records.CsvRecordOptions?, SeparatedValues.Core.CsvParserOptions?)"/>.
     /// </remarks>
     public static string SerializeRecords<T>(IEnumerable<T> records, CsvWriterOptions? options = null)
         => WriteToText(records, options);

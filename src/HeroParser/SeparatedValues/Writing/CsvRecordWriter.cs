@@ -1,4 +1,5 @@
-using HeroParser.SeparatedValues.Records.Binding;
+using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Records.Binding;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -218,7 +219,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// This is the preferred method for high-performance async scenarios.
     /// </summary>
     public async ValueTask WriteRecordsAsync(
-        Streaming.CsvAsyncStreamWriter writer,
+        CsvAsyncStreamWriter writer,
         IAsyncEnumerable<T> records,
         bool includeHeader = true,
         CancellationToken cancellationToken = default)
@@ -255,7 +256,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// Avoids IAsyncEnumerable overhead for in-memory collections.
     /// </summary>
     public async ValueTask WriteRecordsAsync(
-        Streaming.CsvAsyncStreamWriter writer,
+        CsvAsyncStreamWriter writer,
         IEnumerable<T> records,
         bool includeHeader = true,
         CancellationToken cancellationToken = default)
@@ -343,7 +344,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         writer.WriteRowWithFormats(valuesBuffer, formatsBuffer);
     }
 
-    private async ValueTask WriteRecordInternalAsync(Streaming.CsvAsyncStreamWriter writer, T record, int rowNumber, CancellationToken cancellationToken)
+    private async ValueTask WriteRecordInternalAsync(CsvAsyncStreamWriter writer, T record, int rowNumber, CancellationToken cancellationToken)
     {
         if (record is null)
         {

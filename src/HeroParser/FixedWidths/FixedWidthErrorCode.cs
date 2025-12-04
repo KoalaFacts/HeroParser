@@ -4,7 +4,7 @@ namespace HeroParser.FixedWidths;
 /// Error codes for fixed-width file parsing failures.
 /// </summary>
 /// <remarks>
-/// Error code ranges are aligned with <see cref="SeparatedValues.CsvErrorCode"/>:
+/// Error code ranges are aligned with <see cref="SeparatedValues.Core.CsvErrorCode"/>:
 /// <list type="bullet">
 /// <item>1-49: Reader/parsing errors (TooManyRecords, InvalidOptions, etc.)</item>
 /// <item>99: General parse error</item>

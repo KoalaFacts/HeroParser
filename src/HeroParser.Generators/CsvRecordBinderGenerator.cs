@@ -15,25 +15,25 @@ namespace HeroParser.Generators;
 [Generator(LanguageNames.CSharp)]
 public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 {
-    private const string GENERATED_NAMESPACE = "HeroParser.SeparatedValues.Records.Binding";
-    private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.CsvRecordBinderFactory";
-    private const string BINDER_INTERFACE_TYPE = "global::HeroParser.SeparatedValues.Records.Binding.ICsvBinder";
-    private const string ROW_TYPE = "global::HeroParser.SeparatedValues.CsvCharSpanRow";
-    private const string OPTIONS_TYPE = "global::HeroParser.SeparatedValues.Records.CsvRecordOptions";
-    private const string EXCEPTION_TYPE = "global::HeroParser.SeparatedValues.CsvException";
-    private const string ERROR_CODE_TYPE = "global::HeroParser.SeparatedValues.CsvErrorCode";
+    private const string GENERATED_NAMESPACE = "HeroParser.SeparatedValues.Reading.Records.Binding";
+    private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Reading.Records.Binding.CsvRecordBinderFactory";
+    private const string BINDER_INTERFACE_TYPE = "global::HeroParser.SeparatedValues.Reading.Records.Binding.ICsvBinder";
+    private const string ROW_TYPE = "global::HeroParser.SeparatedValues.Reading.Span.CsvCharSpanRow";
+    private const string OPTIONS_TYPE = "global::HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions";
+    private const string EXCEPTION_TYPE = "global::HeroParser.SeparatedValues.Core.CsvException";
+    private const string ERROR_CODE_TYPE = "global::HeroParser.SeparatedValues.Core.CsvErrorCode";
     private const string WRITER_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriter";
     private const string WRITER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriterFactory";
 
     private static readonly string[] generateAttributeNames =
     [
-        "HeroParser.SeparatedValues.Records.Binding.CsvGenerateBinderAttribute",
+        "HeroParser.SeparatedValues.Reading.Records.Binding.CsvGenerateBinderAttribute",
         "HeroParser.CsvGenerateBinderAttribute"
     ];
 
     private static readonly string[] columnAttributeNames =
     [
-        "HeroParser.SeparatedValues.Records.Binding.CsvColumnAttribute",
+        "HeroParser.SeparatedValues.Reading.Records.Binding.CsvColumnAttribute",
         "HeroParser.CsvColumnAttribute"
     ];
 

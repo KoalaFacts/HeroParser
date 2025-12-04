@@ -1,5 +1,5 @@
 using HeroParser.SeparatedValues;
-using HeroParser.SeparatedValues.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Records.Binding;
 using HeroParser.SeparatedValues.Writing;
 using System.Runtime.CompilerServices;
 using System.Text;

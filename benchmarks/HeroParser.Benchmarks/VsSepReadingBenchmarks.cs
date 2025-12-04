@@ -1,6 +1,7 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.SeparatedValues;
+using HeroParser.SeparatedValues.Core;
 using nietras.SeparatedValues;
 using System.Text;
 

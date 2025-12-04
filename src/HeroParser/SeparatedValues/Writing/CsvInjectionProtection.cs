@@ -50,7 +50,7 @@ public enum CsvInjectionProtection
     /// </summary>
     /// <remarks>
     /// <para>Use this for strict security requirements where any potentially dangerous data should be rejected.</para>
-    /// <para>Throws <see cref="CsvException"/> with <see cref="CsvErrorCode.InjectionDetected"/>.</para>
+    /// <para>Throws <see cref="Core.CsvException"/> with <see cref="Core.CsvErrorCode.InjectionDetected"/>.</para>
     /// </remarks>
     Reject = 4
 }

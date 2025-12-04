@@ -1,6 +1,7 @@
 using HeroParser.SeparatedValues;
-using HeroParser.SeparatedValues.Records;
-using HeroParser.SeparatedValues.Records.Binding;
+using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Records;
+using HeroParser.SeparatedValues.Reading.Records.Binding;
 using Xunit;
 
 namespace HeroParser.Tests;

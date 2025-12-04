@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
-using HeroParser.SeparatedValues.Streaming;
+using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Streaming;
 using HeroParser.SeparatedValues.Writing;
 using System.Text;
 using Xunit;

@@ -464,7 +464,7 @@ public sealed class CsvWriterBuilder<T>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A ValueTask representing the asynchronous write operation.</returns>
     /// <remarks>
-    /// This method uses <see cref="Streaming.CsvAsyncStreamWriter"/> for truly non-blocking I/O.
+    /// This method uses <see cref="CsvAsyncStreamWriter"/> for truly non-blocking I/O.
     /// Prefer this over <see cref="ToStreamAsync"/> for large datasets or when streaming is critical.
     /// </remarks>
     public async ValueTask ToStreamAsyncStreaming(Stream stream, IAsyncEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
@@ -473,7 +473,7 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        await using var writer = new Streaming.CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
 
         // Use the proper async method with compiled accessors (no reflection)
@@ -496,7 +496,7 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        await using var writer = new Streaming.CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
 
         // Use the proper async method with compiled accessors (no reflection)

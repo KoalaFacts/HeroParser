@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using System.Text;
+using HeroParser.SeparatedValues.Core;
 
 namespace HeroParser.SeparatedValues.Writing;
 

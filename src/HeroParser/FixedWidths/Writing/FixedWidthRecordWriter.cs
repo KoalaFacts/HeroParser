@@ -9,11 +9,15 @@ namespace HeroParser.FixedWidths.Writing;
 /// Writes typed records to fixed-width format using column attributes.
 /// </summary>
 /// <typeparam name="T">The record type to write.</typeparam>
-internal sealed class FixedWidthRecordWriter<T>
+public sealed class FixedWidthRecordWriter<T>
 {
     private readonly FieldDefinition[] fields;
     private readonly FixedWidthWriterOptions options;
 
+    /// <summary>
+    /// Creates a new record writer with reflection-based field discovery.
+    /// </summary>
+    /// <param name="options">The writer options.</param>
     public FixedWidthRecordWriter(FixedWidthWriterOptions options)
     {
         this.options = options;
@@ -45,7 +49,7 @@ internal sealed class FixedWidthRecordWriter<T>
     /// <param name="options">Writer options.</param>
     /// <param name="templates">The generated templates.</param>
     /// <returns>A new record writer.</returns>
-    internal static FixedWidthRecordWriter<T> CreateFromTemplates(
+    public static FixedWidthRecordWriter<T> CreateFromTemplates(
         FixedWidthWriterOptions options,
         IReadOnlyList<WriterTemplate> templates)
     {
@@ -63,7 +67,7 @@ internal sealed class FixedWidthRecordWriter<T>
     /// <param name="PadChar">The padding character.</param>
     /// <param name="Format">Optional format string for the value.</param>
     /// <param name="Getter">The getter delegate for extracting the value.</param>
-    internal sealed record WriterTemplate(
+    public sealed record WriterTemplate(
         string MemberName,
         Type SourceType,
         int Start,
@@ -462,7 +466,7 @@ internal sealed class FixedWidthRecordWriter<T>
 /// <summary>
 /// Factory for creating cached FixedWidthRecordWriter instances.
 /// </summary>
-internal static partial class FixedWidthRecordWriterFactory
+public static partial class FixedWidthRecordWriterFactory
 {
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<FixedWidthWriterOptions, object>> generatedFactories = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, FixedWidthWriterOptions), object> reflectionCache = new();

@@ -10,7 +10,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// Thread-Safety: All operations are thread-safe. Uses ConcurrentDictionary for lock-free reads.
 /// Descriptors are immutable and shared, while binders are created per-request.
 /// </remarks>
-internal static class FixedWidthRecordBinderFactory
+public static class FixedWidthRecordBinderFactory
 {
     private static readonly ConcurrentDictionary<Type, object> descriptorFactories = new();
 

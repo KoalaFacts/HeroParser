@@ -166,6 +166,11 @@ internal static class GeneratorHelpers
 /// <summary>
 /// Helper for building generated source code with proper indentation.
 /// </summary>
+/// <remarks>
+/// This class is designed for single-use generation within a source generator context.
+/// While the <see cref="Clear"/> method is available for reuse scenarios, typical usage
+/// involves creating a new instance for each generated file.
+/// </remarks>
 internal sealed class SourceBuilder
 {
     private const string INDENT_STRING = "    ";
@@ -221,8 +226,11 @@ internal sealed class SourceBuilder
     public override string ToString() => builder.ToString();
 
     /// <summary>
-    /// Clears the builder and resets indentation.
+    /// Clears the builder content and resets indentation to zero, allowing the instance to be reused.
     /// </summary>
+    /// <remarks>
+    /// Call this method to reset the builder for generating a new file in the same source generator run.
+    /// </remarks>
     public void Clear()
     {
         builder.Clear();

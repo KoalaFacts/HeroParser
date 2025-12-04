@@ -48,7 +48,8 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     {
         this.options = options;
         trackLineNumbers = options.TrackSourceLineNumbers;
-        charPool = ArrayPool<char>.Create();
+        // Use shared pool for better memory efficiency - arrays are always cleared on return
+        charPool = ArrayPool<char>.Shared;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
         offset = 0;
@@ -333,9 +334,9 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         if (disposed)
             return ValueTask.CompletedTask;
 
-        ReturnBuffer(buffer);
-
         disposed = true;
+        ReturnBuffer(buffer);
+        buffer = null!; // Prevent use-after-free
         reader.Dispose();
         return ValueTask.CompletedTask;
     }

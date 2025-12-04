@@ -94,7 +94,8 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         maxFieldSize = this.options.MaxFieldSize;
         maxColumnCount = this.options.MaxColumnCount;
 
-        charPool = ArrayPool<char>.Create();
+        // Use shared pool for better memory efficiency - arrays are always cleared on return
+        charPool = ArrayPool<char>.Shared;
         buffer = RentBuffer(DEFAULT_BUFFER_SIZE);
         bufferPosition = 0;
         isFirstFieldInRow = true;

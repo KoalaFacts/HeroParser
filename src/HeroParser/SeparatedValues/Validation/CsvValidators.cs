@@ -221,11 +221,17 @@ public static class CsvValidators
 
     private sealed class RegexValidator : IFieldValidator
     {
+        /// <summary>
+        /// Regex timeout to prevent ReDoS attacks. 150ms is enough for typical validation
+        /// while limiting exposure to catastrophic backtracking patterns.
+        /// </summary>
+        private static readonly TimeSpan regexTimeout = TimeSpan.FromMilliseconds(150);
+
         private readonly Regex regex;
 
         public RegexValidator(string pattern, RegexOptions options)
         {
-            regex = new Regex(pattern, options, TimeSpan.FromSeconds(1));
+            regex = new Regex(pattern, options, regexTimeout);
         }
 
         public CsvValidationResult Validate(object? value, string? rawValue)

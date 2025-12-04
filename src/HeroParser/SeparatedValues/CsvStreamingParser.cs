@@ -21,10 +21,19 @@ internal readonly struct NoTrackLineNumbers { }
 /// <summary>
 /// Unified streaming parser for both UTF-16 (char) and UTF-8 (byte) data.
 /// Uses generic specialization for zero-overhead abstraction.
-///
+/// </summary>
+/// <remarks>
+/// <para>
 /// SIMD parsing techniques inspired by Sep (https://github.com/nietras/Sep) by nietras,
 /// which pioneered bitmask-based quote-aware SIMD parsing for CSV.
-/// </summary>
+/// </para>
+/// <para>
+/// <strong>Implementation Note:</strong> The SIMD parsing methods (TrySimdParseUtf8, TrySimdParseUtf16Avx2,
+/// TrySimdParseUtf16Avx512) contain similar parsing state machine logic with SIMD-specific vector operations.
+/// Future refactoring could extract the common state machine into a shared method using delegates or source
+/// generation to reduce maintenance burden, though this must be balanced against performance impact.
+/// </para>
+/// </remarks>
 internal static class CsvStreamingParser
 {
     /// <summary>

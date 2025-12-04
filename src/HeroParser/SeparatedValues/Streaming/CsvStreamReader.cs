@@ -32,7 +32,8 @@ public ref struct CsvStreamReader
     {
         this.options = options;
         trackLineNumbers = options.TrackSourceLineNumbers;
-        charPool = ArrayPool<char>.Create();
+        // Use shared pool for better memory efficiency - arrays are always cleared on return
+        charPool = ArrayPool<char>.Shared;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
         columnStartsBuffer = new int[options.MaxColumnCount];
@@ -165,12 +166,12 @@ public ref struct CsvStreamReader
         if (disposed)
             return;
 
-        // Return buffer to pool
+        disposed = true;
         ReturnBuffer(buffer);
+        buffer = null!; // Prevent use-after-free
 
         // StreamReader was created with leaveOpen flag, so it handles stream disposal correctly
         reader.Dispose();
-        disposed = true;
     }
 
     private readonly char[] RentBuffer(int minimumLength)

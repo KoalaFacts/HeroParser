@@ -76,7 +76,8 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         // DoS protection
         maxOutputSize = this.options.MaxOutputSize;
 
-        charPool = ArrayPool<char>.Create();
+        // Use shared pool for better memory efficiency - arrays are always cleared on return
+        charPool = ArrayPool<char>.Shared;
         buffer = RentBuffer(DEFAULT_BUFFER_SIZE);
         bufferPosition = 0;
         totalCharsWritten = 0;

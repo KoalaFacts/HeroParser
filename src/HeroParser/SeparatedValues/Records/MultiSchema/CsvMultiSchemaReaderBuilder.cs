@@ -8,8 +8,17 @@ namespace HeroParser.SeparatedValues.Records.MultiSchema;
 /// Fluent builder for configuring and executing multi-schema CSV reading operations.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Multi-schema reading allows a single CSV file to contain different record types,
 /// distinguished by a discriminator column value.
+/// </para>
+/// <para>
+/// <strong>AOT/Trimming Compatibility:</strong> Multi-schema binding uses reflection internally
+/// to create binders for the registered record types. For full Native AOT or trimming support,
+/// ensure all mapped record types are decorated with the <c>[CsvGenerateBinder]</c> attribute
+/// to use source-generated binders. Without source-generated binders, reflection-based binding
+/// may fail in trimmed or AOT-compiled applications.
+/// </para>
 /// </remarks>
 public sealed class CsvMultiSchemaReaderBuilder
 {
@@ -320,6 +329,10 @@ public sealed class CsvMultiSchemaReaderBuilder
     /// <typeparam name="T">The record type to create for matching rows.</typeparam>
     /// <param name="discriminatorValue">The discriminator value that identifies this record type.</param>
     /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// For AOT/trimming compatibility, decorate <typeparamref name="T"/> with <c>[CsvGenerateBinder]</c>
+    /// to enable source-generated binding instead of reflection-based binding.
+    /// </remarks>
     public CsvMultiSchemaReaderBuilder MapRecord<T>(string discriminatorValue) where T : class, new()
     {
         ArgumentNullException.ThrowIfNull(discriminatorValue);

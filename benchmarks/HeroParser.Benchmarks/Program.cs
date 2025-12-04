@@ -176,13 +176,6 @@ public class Program
             return;
         }
 
-        if (args.Length > 0 && args[0] == "--memory")
-        {
-            // Run memory vs string binding benchmarks
-            RunBenchmarks(args, typeof(MemoryBinderBenchmarks));
-            return;
-        }
-
         if (args.Length > 0 && args[0] == "--binder-overhead")
         {
             // Run binder overhead profiling benchmarks

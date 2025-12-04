@@ -342,6 +342,163 @@ public class SecurityAndValidationTests
         Assert.False(row.IsDangerousColumn(1)); // "\"@test\""
     }
 
+    #region CsvByteSpanRow HasDangerousFields Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvByteSpanRow_HasDangerousFields_ReturnsFalse_ForSafeData()
+    {
+        var csv = "Name,Value,Amount\r\nAlice,Test,-100\r\nBob,Data,+200"u8;
+        foreach (var row in Csv.ReadFromByteSpan(csv))
+        {
+            Assert.False(row.HasDangerousFields());
+        }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvByteSpanRow_HasDangerousFields_ReturnsTrue_ForDangerousData()
+    {
+        var csv = "Name,Value\r\n=SUM(A1),Test\r\n@exploit,Data"u8;
+        var reader = Csv.ReadFromByteSpan(csv);
+
+        Assert.True(reader.MoveNext()); // Header "Name,Value"
+        Assert.True(reader.MoveNext()); // "=SUM(A1),Test"
+        Assert.True(reader.Current.HasDangerousFields());
+        Assert.True(reader.MoveNext()); // "@exploit,Data"
+        Assert.True(reader.Current.HasDangerousFields());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvByteSpanRow_IsDangerousColumn_DetectsSpecificColumn()
+    {
+        var csv = "Safe,Dangerous,AlsoSafe\r\nNormal,=FORMULA,Data"u8;
+        var reader = Csv.ReadFromByteSpan(csv);
+
+        Assert.True(reader.MoveNext()); // Skip header
+        Assert.True(reader.MoveNext()); // Data row
+
+        var row = reader.Current;
+        Assert.False(row.IsDangerousColumn(0)); // "Normal"
+        Assert.True(row.IsDangerousColumn(1));  // "=FORMULA"
+        Assert.False(row.IsDangerousColumn(2)); // "Data"
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvByteSpanRow_IsDangerousColumn_SmartDetection_AllowsNumbers()
+    {
+        var csv = "Amount,Phone,Value\r\n-100,+1-555-1234,+.75"u8;
+        var reader = Csv.ReadFromByteSpan(csv);
+
+        Assert.True(reader.MoveNext()); // Skip header
+        Assert.True(reader.MoveNext()); // Data row
+
+        var row = reader.Current;
+        Assert.False(row.IsDangerousColumn(0)); // "-100" (number)
+        Assert.False(row.IsDangerousColumn(1)); // "+1-555-1234" (phone)
+        Assert.False(row.IsDangerousColumn(2)); // "+.75" (decimal)
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvByteSpanRow_IsDangerousColumn_SmartDetection_DetectsFormulas()
+    {
+        var csv = "A,B,C,D\r\n-HYPERLINK(),+SUM(A1),-A1+B1,+CMD|'"u8;
+        var reader = Csv.ReadFromByteSpan(csv);
+
+        Assert.True(reader.MoveNext()); // Skip header
+        Assert.True(reader.MoveNext()); // Data row
+
+        var row = reader.Current;
+        Assert.True(row.IsDangerousColumn(0)); // "-HYPERLINK()"
+        Assert.True(row.IsDangerousColumn(1)); // "+SUM(A1)"
+        Assert.True(row.IsDangerousColumn(2)); // "-A1+B1"
+        Assert.True(row.IsDangerousColumn(3)); // "+CMD|'"
+    }
+
+    #endregion
+
+    #region CsvMemoryRow HasDangerousFields Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvMemoryRow_HasDangerousFields_ReturnsFalse_ForSafeData()
+    {
+        var csv = "Name,Value,Amount\r\nAlice,Test,-100\r\nBob,Data,+200".AsMemory();
+        var reader = new CsvMemoryReader(csv, CsvParserOptions.Default);
+        foreach (var row in reader)
+        {
+            Assert.False(row.HasDangerousFields());
+        }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvMemoryRow_HasDangerousFields_ReturnsTrue_ForDangerousData()
+    {
+        var csv = "Name,Value\r\n=SUM(A1),Test\r\n@exploit,Data".AsMemory();
+        var reader = new CsvMemoryReader(csv, CsvParserOptions.Default);
+
+        Assert.True(reader.MoveNext()); // Header "Name,Value"
+        Assert.True(reader.MoveNext()); // "=SUM(A1),Test"
+        Assert.True(reader.Current.HasDangerousFields());
+        Assert.True(reader.MoveNext()); // "@exploit,Data"
+        Assert.True(reader.Current.HasDangerousFields());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvMemoryRow_IsDangerousColumn_DetectsSpecificColumn()
+    {
+        var csv = "Safe,Dangerous,AlsoSafe\r\nNormal,=FORMULA,Data".AsMemory();
+        var reader = new CsvMemoryReader(csv, CsvParserOptions.Default);
+
+        Assert.True(reader.MoveNext()); // Skip header
+        Assert.True(reader.MoveNext()); // Data row
+
+        var row = reader.Current;
+        Assert.False(row.IsDangerousColumn(0)); // "Normal"
+        Assert.True(row.IsDangerousColumn(1));  // "=FORMULA"
+        Assert.False(row.IsDangerousColumn(2)); // "Data"
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvMemoryRow_IsDangerousColumn_SmartDetection_AllowsNumbers()
+    {
+        var csv = "Amount,Phone,Value\r\n-100,+1-555-1234,+.75".AsMemory();
+        var reader = new CsvMemoryReader(csv, CsvParserOptions.Default);
+
+        Assert.True(reader.MoveNext()); // Skip header
+        Assert.True(reader.MoveNext()); // Data row
+
+        var row = reader.Current;
+        Assert.False(row.IsDangerousColumn(0)); // "-100" (number)
+        Assert.False(row.IsDangerousColumn(1)); // "+1-555-1234" (phone)
+        Assert.False(row.IsDangerousColumn(2)); // "+.75" (decimal)
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvMemoryRow_IsDangerousColumn_SmartDetection_DetectsFormulas()
+    {
+        var csv = "A,B,C,D\r\n-HYPERLINK(),+SUM(A1),-A1+B1,+CMD|'".AsMemory();
+        var reader = new CsvMemoryReader(csv, CsvParserOptions.Default);
+
+        Assert.True(reader.MoveNext()); // Skip header
+        Assert.True(reader.MoveNext()); // Data row
+
+        var row = reader.Current;
+        Assert.True(row.IsDangerousColumn(0)); // "-HYPERLINK()"
+        Assert.True(row.IsDangerousColumn(1)); // "+SUM(A1)"
+        Assert.True(row.IsDangerousColumn(2)); // "-A1+B1"
+        Assert.True(row.IsDangerousColumn(3)); // "+CMD|'"
+    }
+
+    #endregion
+
     #endregion
 
     #region Output Size Limits Tests

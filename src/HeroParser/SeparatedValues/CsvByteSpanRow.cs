@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -171,4 +172,89 @@ public readonly ref struct CsvByteSpanRow
     /// This is an alias for <see cref="Clone"/> that creates an owned copy of the row data.
     /// </remarks>
     public CsvByteSpanRow ToImmutable() => Clone();
+
+    // All potentially dangerous characters for SIMD pre-scan (UTF-8 bytes)
+    private static readonly SearchValues<byte> allDangerousBytes = SearchValues.Create("=@\t\r-+"u8);
+
+    /// <summary>
+    /// Checks if any column in the row starts with a potentially dangerous character
+    /// that could trigger CSV injection (formula injection) in spreadsheet applications.
+    /// </summary>
+    /// <returns>True if any column starts with a dangerous character pattern.</returns>
+    /// <remarks>
+    /// This method uses SIMD-accelerated pre-scanning to quickly determine if any
+    /// dangerous characters exist in the row, making the common case (safe data) very fast.
+    /// Dangerous patterns: =, @, \t, \r, and -/+ followed by non-numeric characters.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool HasDangerousFields()
+    {
+        // For small column counts, direct iteration is faster than SIMD overhead
+        if (columnCount <= 4)
+        {
+            for (int i = 0; i < columnCount; i++)
+            {
+                if (IsDangerousColumn(i))
+                    return true;
+            }
+            return false;
+        }
+
+        // Fast path: SIMD pre-scan for any dangerous characters in the entire line
+        // If no dangerous characters exist anywhere, we can return immediately
+        if (!line.ContainsAny(allDangerousBytes))
+            return false;
+
+        // Slow path: Check each column's first character
+        for (int i = 0; i < columnCount; i++)
+        {
+            if (IsDangerousColumn(i))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a specific column starts with a potentially dangerous character.
+    /// </summary>
+    /// <param name="index">Zero-based column index.</param>
+    /// <returns>True if the column starts with a dangerous character pattern.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool IsDangerousColumn(int index)
+    {
+        // compute start and length from ends
+        var start = columnEnds[index] + 1;
+        var end = columnEnds[index + 1];
+
+        if (trimFields)
+        {
+            (start, end) = TrimBounds(start, end);
+        }
+
+        var length = end - start;
+
+        if (length == 0) return false;
+
+        byte first = line[start];
+
+        // Switch enables jump table optimization for O(1) character dispatch
+        switch (first)
+        {
+            case (byte)'=':
+            case (byte)'@':
+            case (byte)'\t':
+            case (byte)'\r':
+                return true;
+
+            case (byte)'-':
+            case (byte)'+':
+                if (length == 1) return false;
+                byte second = line[start + 1];
+                // Safe if followed by digit or decimal point (numbers, phone numbers)
+                return !((uint)(second - '0') <= 9 || second == '.');
+
+            default:
+                return false;
+        }
+    }
 }

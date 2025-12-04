@@ -79,19 +79,19 @@ public ref struct CsvStreamReader
 
             if (result.CharsConsumed > 0)
             {
-                var rowChars = span[..result.RowLength];
+                var rowLength = result.RowLength;
                 offset += result.CharsConsumed;
 
                 // Update source line number based on newlines encountered (only when tracking enabled)
                 if (trackLineNumbers)
                     sourceLineNumber += result.NewlineCount;
 
-                if (rowChars.IsEmpty)
+                if (rowLength == 0)
                     continue;
 
                 rowCount++;
                 Current = new CsvCharSpanRow(
-                    rowChars,
+                    span[..rowLength],
                     columnEndsBuffer,
                     result.ColumnCount,
                     rowCount,

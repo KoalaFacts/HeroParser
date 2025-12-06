@@ -5,6 +5,9 @@ using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using HeroParser.SeparatedValues.Core;
 
+// CLMUL-based branchless quote masking (Phase 1 optimization)
+// Uses PCLMULQDQ instruction to compute prefix XOR in O(1), avoiding per-quote iteration
+
 namespace HeroParser.SeparatedValues.Reading.Shared;
 
 /// <summary>
@@ -59,6 +62,35 @@ internal static class CsvRowParser
         Span<int> columnEnds)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
+    {
+        // Dispatch to compile-time specialized version based on EnableQuotedFields
+        return options.EnableQuotedFields
+            ? ParseRow<T, TTrack, QuotesEnabled>(data, options, columnEnds)
+            : ParseRow<T, TTrack, QuotesDisabled>(data, options, columnEnds);
+    }
+
+    /// <summary>
+    /// Parses a single row from CSV data with compile-time line tracking and quote handling specialization.
+    /// TTrack should be either TrackLineNumbers or NoTrackLineNumbers.
+    /// TQuotePolicy should be either QuotesEnabled or QuotesDisabled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Uses Ends-only storage: columnEnds[0] = -1, columnEnds[1..N] = delimiter positions.
+    /// Column start = columnEnds[index] + 1, length = columnEnds[index+1] - columnEnds[index] - 1.
+    /// </para>
+    /// <para>
+    /// The TQuotePolicy generic parameter enables JIT constant folding. When TQuotePolicy is QuotesDisabled,
+    /// the JIT compiler eliminates all quote-handling branches, producing optimal machine code for unquoted CSV.
+    /// </para>
+    /// </remarks>
+    public static CsvRowParseResult ParseRow<T, TTrack, TQuotePolicy>(
+        ReadOnlySpan<T> data,
+        CsvParserOptions options,
+        Span<int> columnEnds)
+        where T : unmanaged, IEquatable<T>
+        where TTrack : struct
+        where TQuotePolicy : struct
     {
         if (data.IsEmpty)
             return new CsvRowParseResult(0, 0, 0, 0);
@@ -130,7 +162,6 @@ internal static class CsvRowParser
         int charsConsumed = 0;
         int newlineCount = 0; // Track number of \n characters encountered
         bool rowEnded = false;
-        bool enableQuotes = options.EnableQuotedFields;
         int quoteStartPosition = -1; // Track where the opening quote was found
 
         // columnEnds[0] = -1 (virtual position before first column)
@@ -139,7 +170,7 @@ internal static class CsvRowParser
         // SIMD fast path (if enabled and no escape character - escape handling requires sequential processing)
         if (options.UseSimdIfAvailable && !hasEscapeChar)
         {
-            TrySimdParse<T, TTrack>(
+            TrySimdParse<T, TTrack, TQuotePolicy>(
                 ref mutableRef,
                 data.Length,
                 delimiter,
@@ -159,7 +190,6 @@ internal static class CsvRowParser
                 columnEnds,
                 options.MaxColumnCount,
                 options.AllowNewlinesInsideQuotes,
-                enableQuotes,
                 options.MaxFieldSize);
         }
 
@@ -184,7 +214,8 @@ internal static class CsvRowParser
                     continue;
                 }
 
-                if (enableQuotes && c.Equals(quote))
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c.Equals(quote))
                 {
                     if (skipNextQuote)
                     {
@@ -206,7 +237,8 @@ internal static class CsvRowParser
                     continue;
                 }
 
-                if (enableQuotes && inQuotes && !options.AllowNewlinesInsideQuotes &&
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes && !options.AllowNewlinesInsideQuotes &&
                     (c.Equals(lf) || c.Equals(cr)))
                 {
                     throw new CsvException(
@@ -214,7 +246,8 @@ internal static class CsvRowParser
                         "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
                 }
 
-                if (enableQuotes && inQuotes)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
                     // Count newlines inside quoted fields
                     if (typeof(TTrack) == typeof(TrackLineNumbers) && c.Equals(lf))
@@ -251,7 +284,8 @@ internal static class CsvRowParser
             charsConsumed = rowLength;
         }
 
-        if (enableQuotes && inQuotes)
+        // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+        if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
         {
             if (quoteStartPosition >= 0)
             {
@@ -275,8 +309,40 @@ internal static class CsvRowParser
         return new CsvRowParseResult(columnCount, rowLength, charsConsumed, newlineCount);
     }
 
+    /// <summary>
+    /// Computes the "inside quotes" mask using CLMUL (carry-less multiplication).
+    /// CLMUL with all-ones computes prefix XOR, which toggles at each quote position.
+    /// </summary>
+    /// <param name="quoteMask">Bitmask of quote positions in the chunk</param>
+    /// <param name="prevInQuotes">Whether we were inside quotes at the start of this chunk</param>
+    /// <returns>Bitmask where 1 = inside quotes, 0 = outside quotes</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TrySimdParse<T, TTrack>(
+    private static uint ComputeInQuotesMaskClmul(uint quoteMask, bool prevInQuotes)
+    {
+        // CLMUL(quoteMask, 0xFFFFFFFFFFFFFFFF) computes the prefix XOR
+        // Result: c[i] = XOR of quoteMask[0..i] (inclusive)
+        // We want: inQuotes[i] = parity of quotes BEFORE position i = c[i-1]
+        // So we shift left by 1 after CLMUL
+        var quoteMaskVec = Vector128.CreateScalarUnsafe((long)quoteMask);
+        var allOnes = Vector128.CreateScalarUnsafe(-1L);
+
+        var prefixXor = Pclmulqdq.CarrylessMultiply(quoteMaskVec, allOnes, 0);
+        ulong clmulResult = (ulong)prefixXor.GetElement(0);
+
+        // Shift left by 1: new[0] = 0, new[i] = c[i-1] for i > 0
+        // This gives us the parity of quotes BEFORE each position
+        uint inQuotesMask = (uint)(clmulResult << 1);
+
+        // If we started inside quotes, flip the entire mask
+        // This handles: inQuotes[i] = prevInQuotes XOR c[i-1]
+        if (prevInQuotes)
+            inQuotesMask = ~inQuotesMask;
+
+        return inQuotesMask;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TrySimdParse<T, TTrack, TQuotePolicy>(
         ref T mutableRef,
         int dataLength,
         T delimiter,
@@ -296,14 +362,14 @@ internal static class CsvRowParser
         Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
-        bool enableQuotedFields,
         int? maxFieldLength)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
+        where TQuotePolicy : struct
     {
         if (typeof(T) == typeof(byte))
         {
-            return TrySimdParseUtf8<TTrack>(
+            return TrySimdParseUtf8<TTrack, TQuotePolicy>(
                 ref Unsafe.As<T, byte>(ref mutableRef),
                 dataLength,
                 Unsafe.As<T, byte>(ref delimiter),
@@ -312,11 +378,11 @@ internal static class CsvRowParser
                 Unsafe.As<T, byte>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-                columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+                columnEnds, maxColumns, allowNewlinesInsideQuotes, maxFieldLength);
         }
         else if (typeof(T) == typeof(char))
         {
-            return TrySimdParseUtf16<TTrack>(
+            return TrySimdParseUtf16<TTrack, TQuotePolicy>(
                 ref Unsafe.As<T, char>(ref mutableRef),
                 dataLength,
                 Unsafe.As<T, char>(ref delimiter),
@@ -325,14 +391,14 @@ internal static class CsvRowParser
                 Unsafe.As<T, char>(ref cr),
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-                columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+                columnEnds, maxColumns, allowNewlinesInsideQuotes, maxFieldLength);
         }
 
         return false;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TrySimdParseUtf8<TTrack>(
+    private static bool TrySimdParseUtf8<TTrack, TQuotePolicy>(
         ref byte mutableRef,
         int dataLength,
         byte delimiter,
@@ -352,9 +418,9 @@ internal static class CsvRowParser
         Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
-        bool enableQuotedFields,
         int? maxFieldLength)
         where TTrack : struct
+        where TQuotePolicy : struct
     {
         if (!Avx2.IsSupported)
             return false;
@@ -372,7 +438,9 @@ internal static class CsvRowParser
             var crMatch = Avx2.CompareEqual(chunk, crVec);
 
             Vector256<byte> specials;
-            if (enableQuotedFields)
+            // JIT eliminates the else branch when TQuotePolicy is QuotesEnabled
+            // JIT eliminates the if branch when TQuotePolicy is QuotesDisabled
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
             {
                 var quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
                 specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), Avx2.Or(lfMatch, crMatch));
@@ -384,8 +452,8 @@ internal static class CsvRowParser
 
             uint mask = (uint)Avx2.MoveMask(specials);
 
-            // Fast paths only when quotes are disabled - avoids overhead for quoted case
-            if (!enableQuotedFields)
+            // Fast paths when quotes are disabled - JIT eliminates this entire block when TQuotePolicy is QuotesEnabled
+            if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
             {
                 uint delimMask = (uint)Avx2.MoveMask(delimMatch);
                 uint lineEndingMask = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch));
@@ -450,6 +518,131 @@ internal static class CsvRowParser
                 }
             }
 
+            // CLMUL fast path for quoted fields (when PCLMULQDQ is available)
+            // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported)
+            {
+                var quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
+                uint quoteMask = (uint)Avx2.MoveMask(quoteMatch);
+                uint delimMask = (uint)Avx2.MoveMask(delimMatch);
+                uint lineEndingMask = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch));
+
+                // CLMUL FAST PATH: No doubled quotes in this chunk
+                // Doubled quotes (escaped) require sequential processing, but are rare
+                bool hasDoubledQuotes = (quoteMask & (quoteMask >> 1)) != 0;
+
+                // Also check for doubled quote at chunk boundary (last quote + first char of next chunk)
+                if (!hasDoubledQuotes && quoteMask != 0 && (quoteMask & 0x80000000u) != 0)
+                {
+                    int nextPos = position + 32;
+                    if (nextPos < dataLength && Unsafe.Add(ref mutableRef, nextPos) == quote)
+                    {
+                        // Potential doubled quote spanning chunks - use slow path
+                        hasDoubledQuotes = true;
+                    }
+                }
+
+                if (!hasDoubledQuotes && !skipNextQuote)
+                {
+                    // Compute "inside quotes" mask using CLMUL prefix XOR
+                    uint inQuotesMask = quoteMask != 0
+                        ? ComputeInQuotesMaskClmul(quoteMask, inQuotes)
+                        : (inQuotes ? 0xFFFFFFFF : 0);
+
+                    // Filter: only process delimiters/line endings OUTSIDE quotes
+                    uint filteredDelimMask = delimMask & ~inQuotesMask;
+                    uint filteredLineEndMask = lineEndingMask & ~inQuotesMask;
+
+                    // Check for disallowed newlines inside quotes
+                    if (!allowNewlinesInsideQuotes && (lineEndingMask & inQuotesMask) != 0)
+                    {
+                        throw new CsvException(
+                            CsvErrorCode.ParseError,
+                            "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                    }
+
+                    // Count newlines inside quotes (if tracking line numbers)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        uint lfMask = (uint)Avx2.MoveMask(lfMatch);
+                        uint lfInsideQuotes = lfMask & inQuotesMask;
+                        newlineCount += BitOperations.PopCount(lfInsideQuotes);
+                    }
+
+                    // FAST PATH 1: Only delimiters outside quotes, no line endings
+                    if (filteredLineEndMask == 0)
+                    {
+                        // Track quote start position for error reporting
+                        if (quoteMask != 0 && !inQuotes)
+                        {
+                            int firstQuoteBit = BitOperations.TrailingZeroCount(quoteMask);
+                            quoteStartPosition = position + firstQuoteBit;
+                        }
+
+                        // Update inQuotes state for next chunk (odd number of quotes toggles state)
+                        if ((BitOperations.PopCount(quoteMask) & 1) != 0)
+                            inQuotes = !inQuotes;
+
+                        while (filteredDelimMask != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
+                            filteredDelimMask &= filteredDelimMask - 1;
+                            int absolute = position + bit;
+                            AppendColumn(absolute, ref columnCount, ref currentStart,
+                                columnEnds, maxColumns, maxFieldLength);
+                        }
+                        position += Vector256<byte>.Count;
+                        continue;
+                    }
+
+                    // FAST PATH 2: Delimiters + line endings outside quotes
+                    int lineEndBit = BitOperations.TrailingZeroCount(filteredLineEndMask);
+
+                    // Only count quotes BEFORE the line ending (quotes after belong to next row)
+                    uint quotesInThisRow = quoteMask & ((1u << lineEndBit) - 1);
+
+                    // Track quote start position for error reporting
+                    if (quotesInThisRow != 0 && !inQuotes)
+                    {
+                        int firstQuoteBit = BitOperations.TrailingZeroCount(quotesInThisRow);
+                        quoteStartPosition = position + firstQuoteBit;
+                    }
+
+                    // Update inQuotes state based only on quotes in this row
+                    if ((BitOperations.PopCount(quotesInThisRow) & 1) != 0)
+                        inQuotes = !inQuotes;
+
+                    // Process delimiters before line ending
+                    while (filteredDelimMask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
+                        if (bit >= lineEndBit) break;
+                        filteredDelimMask &= filteredDelimMask - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+
+                    // Handle line ending
+                    int lineEndAbsolute = position + lineEndBit;
+                    rowLength = lineEndAbsolute;
+                    charsConsumed = lineEndAbsolute + 1;
+                    byte lineEndChar = Unsafe.Add(ref mutableRef, lineEndAbsolute);
+                    if (lineEndChar == cr && lineEndAbsolute + 1 < dataLength && Unsafe.Add(ref mutableRef, lineEndAbsolute + 1) == lf)
+                    {
+                        charsConsumed++;
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++;
+                    }
+                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        newlineCount++;
+                    }
+                    rowEnded = true;
+                    return true;
+                }
+            }
+
             // Slow path: handle quotes, line endings, and other special cases
             while (mask != 0)
             {
@@ -463,7 +656,8 @@ internal static class CsvRowParser
                 int absolute = position + bit;
                 byte c = Unsafe.Add(ref mutableRef, absolute);
 
-                if (enableQuotedFields && c == quote)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c == quote)
                 {
                     if (skipNextQuote)
                     {
@@ -485,14 +679,16 @@ internal static class CsvRowParser
                     continue;
                 }
 
-                if (enableQuotedFields && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
                 {
                     throw new CsvException(
                         CsvErrorCode.ParseError,
                         "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
                 }
 
-                if (enableQuotedFields && inQuotes)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
                     // Count newlines inside quoted fields
                     if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
@@ -531,7 +727,7 @@ internal static class CsvRowParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TrySimdParseUtf16<TTrack>(
+    private static bool TrySimdParseUtf16<TTrack, TQuotePolicy>(
         ref char mutableRef,
         int dataLength,
         char delimiter,
@@ -551,19 +747,19 @@ internal static class CsvRowParser
         Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
-        bool enableQuotedFields,
         int? maxFieldLength)
         where TTrack : struct
+        where TQuotePolicy : struct
     {
 #if NET8_0_OR_GREATER
         // Try AVX-512BW first (32 chars per iteration with native 16-bit ops)
         if (Avx512BW.IsSupported)
         {
-            return TrySimdParseUtf16Avx512<TTrack>(
+            return TrySimdParseUtf16Avx512<TTrack, TQuotePolicy>(
                 ref mutableRef, dataLength, delimiter, quote, lf, cr,
                 ref position, ref inQuotes, ref skipNextQuote,
                 ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-                columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+                columnEnds, maxColumns, allowNewlinesInsideQuotes, maxFieldLength);
         }
 #endif
 
@@ -571,15 +767,15 @@ internal static class CsvRowParser
         if (!Avx2.IsSupported)
             return false;
 
-        return TrySimdParseUtf16Avx2<TTrack>(
+        return TrySimdParseUtf16Avx2<TTrack, TQuotePolicy>(
             ref mutableRef, dataLength, delimiter, quote, lf, cr,
             ref position, ref inQuotes, ref skipNextQuote,
             ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-            columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+            columnEnds, maxColumns, allowNewlinesInsideQuotes, maxFieldLength);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TrySimdParseUtf16Avx2<TTrack>(
+    private static bool TrySimdParseUtf16Avx2<TTrack, TQuotePolicy>(
         ref char mutableRef,
         int dataLength,
         char delimiter,
@@ -599,9 +795,9 @@ internal static class CsvRowParser
         Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
-        bool enableQuotedFields,
         int? maxFieldLength)
         where TTrack : struct
+        where TQuotePolicy : struct
     {
         ref ushort ushortRef = ref Unsafe.As<char, ushort>(ref mutableRef);
 
@@ -649,7 +845,9 @@ internal static class CsvRowParser
             var crMatch = Avx2.CompareEqual(bytes, crByteVec);
 
             Vector256<byte> specials;
-            if (enableQuotedFields)
+            // JIT eliminates the else branch when TQuotePolicy is QuotesEnabled
+            // JIT eliminates the if branch when TQuotePolicy is QuotesDisabled
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
             {
                 var quoteMatch = Avx2.CompareEqual(bytes, quoteByteVec);
                 specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), Avx2.Or(lfMatch, crMatch));
@@ -662,8 +860,8 @@ internal static class CsvRowParser
             // Extract 32-bit mask directly from byte comparison results
             uint mask = (uint)Avx2.MoveMask(specials);
 
-            // Fast paths only when quotes are disabled - avoids overhead for quoted case
-            if (!enableQuotedFields)
+            // Fast paths when quotes are disabled - JIT eliminates this entire block when TQuotePolicy is QuotesEnabled
+            if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
             {
                 uint delimMask = (uint)Avx2.MoveMask(delimMatch);
                 uint lineEndingMask = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch));
@@ -729,6 +927,130 @@ internal static class CsvRowParser
                 }
             }
 
+            // CLMUL fast path for quoted fields (when PCLMULQDQ is available)
+            // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported)
+            {
+                var quoteMatch = Avx2.CompareEqual(bytes, quoteByteVec);
+                uint quoteMask = (uint)Avx2.MoveMask(quoteMatch);
+                uint delimMask = (uint)Avx2.MoveMask(delimMatch);
+                uint lineEndingMask = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch));
+
+                // CLMUL FAST PATH: No doubled quotes in this chunk
+                bool hasDoubledQuotes = (quoteMask & (quoteMask >> 1)) != 0;
+
+                // Also check for doubled quote at chunk boundary (last quote + first char of next chunk)
+                if (!hasDoubledQuotes && quoteMask != 0 && (quoteMask & 0x80000000u) != 0)
+                {
+                    int nextPos = position + CharsPerIteration;
+                    if (nextPos < dataLength && Unsafe.Add(ref mutableRef, nextPos) == quote)
+                    {
+                        // Potential doubled quote spanning chunks - use slow path
+                        hasDoubledQuotes = true;
+                    }
+                }
+
+                if (!hasDoubledQuotes && !skipNextQuote)
+                {
+                    // Compute "inside quotes" mask using CLMUL prefix XOR
+                    uint inQuotesMask = quoteMask != 0
+                        ? ComputeInQuotesMaskClmul(quoteMask, inQuotes)
+                        : (inQuotes ? 0xFFFFFFFF : 0);
+
+                    // Filter: only process delimiters/line endings OUTSIDE quotes
+                    uint filteredDelimMask = delimMask & ~inQuotesMask;
+                    uint filteredLineEndMask = lineEndingMask & ~inQuotesMask;
+
+                    // Check for disallowed newlines inside quotes
+                    if (!allowNewlinesInsideQuotes && (lineEndingMask & inQuotesMask) != 0)
+                    {
+                        throw new CsvException(
+                            CsvErrorCode.ParseError,
+                            "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                    }
+
+                    // Count newlines inside quotes (if tracking line numbers)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        uint lfMask = (uint)Avx2.MoveMask(lfMatch);
+                        uint lfInsideQuotes = lfMask & inQuotesMask;
+                        newlineCount += BitOperations.PopCount(lfInsideQuotes);
+                    }
+
+                    // FAST PATH 1: Only delimiters outside quotes, no line endings
+                    if (filteredLineEndMask == 0)
+                    {
+                        // Track quote start position for error reporting
+                        if (quoteMask != 0 && !inQuotes)
+                        {
+                            int firstQuoteBit = BitOperations.TrailingZeroCount(quoteMask);
+                            quoteStartPosition = position + firstQuoteBit;
+                        }
+
+                        // Update inQuotes state for next chunk (odd number of quotes toggles state)
+                        if ((BitOperations.PopCount(quoteMask) & 1) != 0)
+                            inQuotes = !inQuotes;
+
+                        while (filteredDelimMask != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
+                            filteredDelimMask &= filteredDelimMask - 1;
+                            int absolute = position + bit;
+                            AppendColumn(absolute, ref columnCount, ref currentStart,
+                                columnEnds, maxColumns, maxFieldLength);
+                        }
+                        position += CharsPerIteration;
+                        continue;
+                    }
+
+                    // FAST PATH 2: Delimiters + line endings outside quotes
+                    int lineEndBit = BitOperations.TrailingZeroCount(filteredLineEndMask);
+
+                    // Only count quotes BEFORE the line ending (quotes after belong to next row)
+                    uint quotesInThisRow = quoteMask & ((1u << lineEndBit) - 1);
+
+                    // Track quote start position for error reporting
+                    if (quotesInThisRow != 0 && !inQuotes)
+                    {
+                        int firstQuoteBit = BitOperations.TrailingZeroCount(quotesInThisRow);
+                        quoteStartPosition = position + firstQuoteBit;
+                    }
+
+                    // Update inQuotes state based only on quotes in this row
+                    if ((BitOperations.PopCount(quotesInThisRow) & 1) != 0)
+                        inQuotes = !inQuotes;
+
+                    // Process delimiters before line ending
+                    while (filteredDelimMask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
+                        if (bit >= lineEndBit) break;
+                        filteredDelimMask &= filteredDelimMask - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+
+                    // Handle line ending
+                    int lineEndAbsolute = position + lineEndBit;
+                    rowLength = lineEndAbsolute;
+                    charsConsumed = lineEndAbsolute + 1;
+                    char lineEndChar = Unsafe.Add(ref mutableRef, lineEndAbsolute);
+                    if (lineEndChar == cr && lineEndAbsolute + 1 < dataLength && Unsafe.Add(ref mutableRef, lineEndAbsolute + 1) == lf)
+                    {
+                        charsConsumed++;
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++;
+                    }
+                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        newlineCount++;
+                    }
+                    rowEnded = true;
+                    return true;
+                }
+            }
+
             // Slow path: handle quotes, line endings, and other special cases
             while (mask != 0)
             {
@@ -741,7 +1063,8 @@ internal static class CsvRowParser
                 int absolute = position + bit;
                 char c = Unsafe.Add(ref mutableRef, absolute);
 
-                if (enableQuotedFields && c == quote)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c == quote)
                 {
                     if (skipNextQuote)
                     {
@@ -763,14 +1086,16 @@ internal static class CsvRowParser
                     continue;
                 }
 
-                if (enableQuotedFields && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
                 {
                     throw new CsvException(
                         CsvErrorCode.ParseError,
                         "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
                 }
 
-                if (enableQuotedFields && inQuotes)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
                     // Count newlines inside quoted fields
                     if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
@@ -811,7 +1136,9 @@ internal static class CsvRowParser
             var chunk = Vector256.LoadUnsafe(ref Unsafe.Add(ref ushortRef, position));
 
             Vector256<ushort> specials;
-            if (enableQuotedFields)
+            // JIT eliminates the else branch when TQuotePolicy is QuotesEnabled
+            // JIT eliminates the if branch when TQuotePolicy is QuotesDisabled
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
             {
                 var delimMatch = Avx2.CompareEqual(chunk, delimiterVec);
                 var quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
@@ -840,7 +1167,8 @@ internal static class CsvRowParser
                 int absolute = position + bit;
                 char c = Unsafe.Add(ref mutableRef, absolute);
 
-                if (enableQuotedFields && c == quote)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c == quote)
                 {
                     if (skipNextQuote)
                     {
@@ -862,14 +1190,16 @@ internal static class CsvRowParser
                     continue;
                 }
 
-                if (enableQuotedFields && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
                 {
                     throw new CsvException(
                         CsvErrorCode.ParseError,
                         "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
                 }
 
-                if (enableQuotedFields && inQuotes)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
                     // Count newlines inside quoted fields
                     if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
@@ -909,7 +1239,7 @@ internal static class CsvRowParser
 
 #if NET8_0_OR_GREATER
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TrySimdParseUtf16Avx512<TTrack>(
+    private static bool TrySimdParseUtf16Avx512<TTrack, TQuotePolicy>(
         ref char mutableRef,
         int dataLength,
         char delimiter,
@@ -929,9 +1259,9 @@ internal static class CsvRowParser
         Span<int> columnEnds,
         int maxColumns,
         bool allowNewlinesInsideQuotes,
-        bool enableQuotedFields,
         int? maxFieldLength)
         where TTrack : struct
+        where TQuotePolicy : struct
     {
         ref ushort ushortRef = ref Unsafe.As<char, ushort>(ref mutableRef);
 
@@ -958,7 +1288,9 @@ internal static class CsvRowParser
             // Always compute quote mask when quoted fields enabled
             uint quoteMask = 0;
             Vector512<ushort> specials;
-            if (enableQuotedFields)
+            // JIT eliminates the else branch when TQuotePolicy is QuotesEnabled
+            // JIT eliminates the if branch when TQuotePolicy is QuotesDisabled
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
             {
                 var quoteMatch = Vector512.Equals(chunk, quoteVec);
                 quoteMask = (uint)quoteMatch.ExtractMostSignificantBits();
@@ -976,6 +1308,7 @@ internal static class CsvRowParser
 
             // DYNAMIC FAST PATH: Use fast path when no quotes in this chunk AND not inside quotes
             // This is the key optimization - most CSV chunks have no quotes even when EnableQuotedFields is on
+            // When TQuotePolicy is QuotesDisabled, quoteMask is always 0 and inQuotes is always false
             if (!inQuotes && quoteMask == 0)
             {
                 uint delimMask = (uint)delimMatch.ExtractMostSignificantBits();
@@ -1043,6 +1376,127 @@ internal static class CsvRowParser
                 }
             }
 
+            // CLMUL fast path for quoted fields with quotes present (when PCLMULQDQ is available)
+            // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported && quoteMask != 0)
+            {
+                uint delimMask = (uint)delimMatch.ExtractMostSignificantBits();
+                var lineEndMatch = Vector512.BitwiseOr(lfMatch, crMatch);
+                uint lineEndingMask = (uint)lineEndMatch.ExtractMostSignificantBits();
+
+                // CLMUL FAST PATH: No doubled quotes in this chunk
+                bool hasDoubledQuotes = (quoteMask & (quoteMask >> 1)) != 0;
+
+                // Also check for doubled quote at chunk boundary (last quote + first char of next chunk)
+                if (!hasDoubledQuotes && (quoteMask & 0x80000000u) != 0)
+                {
+                    int nextPos = position + CharsPerIteration;
+                    if (nextPos < dataLength && Unsafe.Add(ref mutableRef, nextPos) == quote)
+                    {
+                        // Potential doubled quote spanning chunks - use slow path
+                        hasDoubledQuotes = true;
+                    }
+                }
+
+                if (!hasDoubledQuotes && !skipNextQuote)
+                {
+                    // Compute "inside quotes" mask using CLMUL prefix XOR
+                    uint inQuotesMask = ComputeInQuotesMaskClmul(quoteMask, inQuotes);
+
+                    // Filter: only process delimiters/line endings OUTSIDE quotes
+                    uint filteredDelimMask = delimMask & ~inQuotesMask;
+                    uint filteredLineEndMask = lineEndingMask & ~inQuotesMask;
+
+                    // Check for disallowed newlines inside quotes
+                    if (!allowNewlinesInsideQuotes && (lineEndingMask & inQuotesMask) != 0)
+                    {
+                        throw new CsvException(
+                            CsvErrorCode.ParseError,
+                            "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                    }
+
+                    // Count newlines inside quotes (if tracking line numbers)
+                    if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        uint lfMask = (uint)lfMatch.ExtractMostSignificantBits();
+                        uint lfInsideQuotes = lfMask & inQuotesMask;
+                        newlineCount += BitOperations.PopCount(lfInsideQuotes);
+                    }
+
+                    // FAST PATH 1: Only delimiters outside quotes, no line endings
+                    if (filteredLineEndMask == 0)
+                    {
+                        // Track quote start position for error reporting
+                        if (quoteMask != 0 && !inQuotes)
+                        {
+                            int firstQuoteBit = BitOperations.TrailingZeroCount(quoteMask);
+                            quoteStartPosition = position + firstQuoteBit;
+                        }
+
+                        // Update inQuotes state for next chunk (odd number of quotes toggles state)
+                        if ((BitOperations.PopCount(quoteMask) & 1) != 0)
+                            inQuotes = !inQuotes;
+
+                        while (filteredDelimMask != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
+                            filteredDelimMask &= filteredDelimMask - 1;
+                            int absolute = position + bit;
+                            AppendColumn(absolute, ref columnCount, ref currentStart,
+                                columnEnds, maxColumns, maxFieldLength);
+                        }
+                        position += CharsPerIteration;
+                        continue;
+                    }
+
+                    // FAST PATH 2: Delimiters + line endings outside quotes
+                    int lineEndBit = BitOperations.TrailingZeroCount(filteredLineEndMask);
+
+                    // Only count quotes BEFORE the line ending (quotes after belong to next row)
+                    uint quotesInThisRow = quoteMask & ((1u << lineEndBit) - 1);
+
+                    // Track quote start position for error reporting
+                    if (quotesInThisRow != 0 && !inQuotes)
+                    {
+                        int firstQuoteBit = BitOperations.TrailingZeroCount(quotesInThisRow);
+                        quoteStartPosition = position + firstQuoteBit;
+                    }
+
+                    // Update inQuotes state based only on quotes in this row
+                    if ((BitOperations.PopCount(quotesInThisRow) & 1) != 0)
+                        inQuotes = !inQuotes;
+
+                    // Process delimiters before line ending
+                    while (filteredDelimMask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
+                        if (bit >= lineEndBit) break;
+                        filteredDelimMask &= filteredDelimMask - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+
+                    // Handle line ending
+                    int lineEndAbsolute = position + lineEndBit;
+                    rowLength = lineEndAbsolute;
+                    charsConsumed = lineEndAbsolute + 1;
+                    char lineEndChar = Unsafe.Add(ref mutableRef, lineEndAbsolute);
+                    if (lineEndChar == cr && lineEndAbsolute + 1 < dataLength && Unsafe.Add(ref mutableRef, lineEndAbsolute + 1) == lf)
+                    {
+                        charsConsumed++;
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++;
+                    }
+                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        newlineCount++;
+                    }
+                    rowEnded = true;
+                    return true;
+                }
+            }
+
             // Slow path: handle quotes, line endings, and other special cases
             while (mask != 0)
             {
@@ -1055,7 +1509,8 @@ internal static class CsvRowParser
                 int absolute = position + bit;
                 char c = Unsafe.Add(ref mutableRef, absolute);
 
-                if (enableQuotedFields && c == quote)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c == quote)
                 {
                     if (skipNextQuote)
                     {
@@ -1077,14 +1532,16 @@ internal static class CsvRowParser
                     continue;
                 }
 
-                if (enableQuotedFields && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
                 {
                     throw new CsvException(
                         CsvErrorCode.ParseError,
                         "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
                 }
 
-                if (enableQuotedFields && inQuotes)
+                // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
                     // Count newlines inside quoted fields
                     if (typeof(TTrack) == typeof(TrackLineNumbers) && c == lf)
@@ -1120,11 +1577,11 @@ internal static class CsvRowParser
         }
 
         // Handle remaining with AVX2 path
-        return TrySimdParseUtf16Avx2<TTrack>(
+        return TrySimdParseUtf16Avx2<TTrack, TQuotePolicy>(
             ref mutableRef, dataLength, delimiter, quote, lf, cr,
             ref position, ref inQuotes, ref skipNextQuote,
             ref columnCount, ref currentStart, ref rowLength, ref charsConsumed, ref newlineCount, ref rowEnded, ref quoteStartPosition,
-            columnEnds, maxColumns, allowNewlinesInsideQuotes, enableQuotedFields, maxFieldLength);
+            columnEnds, maxColumns, allowNewlinesInsideQuotes, maxFieldLength);
     }
 #endif
 

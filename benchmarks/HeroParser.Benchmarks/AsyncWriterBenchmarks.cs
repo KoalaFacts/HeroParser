@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
-using HeroParser.SeparatedValues.Reading.Streaming;
+using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using System.Text;
 

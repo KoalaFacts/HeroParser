@@ -3,7 +3,7 @@ using BenchmarkDotNet.Engines;
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 using System.Globalization;
 using System.Text;
 
@@ -78,10 +78,10 @@ public class BinderOverheadBenchmarks
         int total = 0;
         foreach (var row in reader)
         {
-            var s0 = row[0].CharSpan;
-            var s1 = row[1].CharSpan;
-            var s2 = row[2].CharSpan;
-            var s3 = row[3].CharSpan;
+            var s0 = row[0].Span;
+            var s1 = row[1].Span;
+            var s2 = row[2].Span;
+            var s3 = row[3].Span;
             total += s0.Length + s1.Length + s2.Length + s3.Length;
         }
         return total;
@@ -101,10 +101,10 @@ public class BinderOverheadBenchmarks
         int total = 0;
         foreach (var row in reader)
         {
-            var s0 = new string(row[0].CharSpan);
-            var s1 = new string(row[1].CharSpan);
-            var s2 = new string(row[2].CharSpan);
-            var s3 = new string(row[3].CharSpan);
+            var s0 = new string(row[0].Span);
+            var s1 = new string(row[1].Span);
+            var s2 = new string(row[2].Span);
+            var s3 = new string(row[3].Span);
             total += s0.Length + s1.Length + s2.Length + s3.Length;
         }
         return total;
@@ -146,10 +146,10 @@ public class BinderOverheadBenchmarks
         {
             var obj = new SimpleRecord
             {
-                Name = new string(row[0].CharSpan),
-                Value = new string(row[1].CharSpan),
-                Description = new string(row[2].CharSpan),
-                Category = new string(row[3].CharSpan)
+                Name = new string(row[0].Span),
+                Value = new string(row[1].Span),
+                Description = new string(row[2].Span),
+                Category = new string(row[3].Span)
             };
             total += obj.Name.Length;
         }
@@ -170,13 +170,13 @@ public class BinderOverheadBenchmarks
         int total = 0;
         foreach (var row in reader)
         {
-            int.TryParse(row[1].CharSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var val);
+            int.TryParse(row[1].Span, NumberStyles.Integer, CultureInfo.InvariantCulture, out var val);
             var obj = new TypedRecord
             {
-                Name = new string(row[0].CharSpan),
+                Name = new string(row[0].Span),
                 Value = val,
-                Description = new string(row[2].CharSpan),
-                Category = new string(row[3].CharSpan)
+                Description = new string(row[2].Span),
+                Category = new string(row[3].Span)
             };
             total += obj.Value;
         }
@@ -204,13 +204,13 @@ public class BinderOverheadBenchmarks
                 continue;
             }
 
-            int.TryParse(row[1].CharSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out var val);
+            int.TryParse(row[1].Span, NumberStyles.Integer, CultureInfo.InvariantCulture, out var val);
             var obj = new TypedRecord
             {
-                Name = new string(row[0].CharSpan),
+                Name = new string(row[0].Span),
                 Value = val,
-                Description = new string(row[2].CharSpan),
-                Category = new string(row[3].CharSpan)
+                Description = new string(row[2].Span),
+                Category = new string(row[3].Span)
             };
             total += obj.Value;
         }

@@ -96,7 +96,7 @@ public sealed record CsvParserOptions
     /// </summary>
     /// <remarks>
     /// This limit prevents unbounded buffer growth when parsing rows without line breaks (DoS protection).
-    /// Only applies to streaming readers (<see cref="Reading.Streaming.CsvStreamReader"/> and <see cref="Reading.Streaming.CsvAsyncStreamReader"/>).
+    /// Only applies to streaming readers.
     /// Set to <see langword="null"/> to disable this protection (not recommended for untrusted input).
     /// </remarks>
     public int? MaxRowSize { get; init; } = 512 * 1024; // 512K chars = ~1MB
@@ -105,7 +105,7 @@ public sealed record CsvParserOptions
     /// Gets or sets a value indicating whether source line numbers should be tracked during parsing.
     /// </summary>
     /// <remarks>
-    /// When enabled, <see cref="Reading.Span.CsvCharSpanRow.SourceLineNumber"/> and <see cref="Reading.Span.CsvByteSpanRow.SourceLineNumber"/>
+    /// When enabled, <see cref="Reading.Rows.CsvRow{T}.SourceLineNumber"/>
     /// track the physical line number in the source file (accounting for multi-line quoted fields).
     /// Disabled by default for maximum performance. Enable when you need accurate line numbers for error reporting.
     /// </remarks>

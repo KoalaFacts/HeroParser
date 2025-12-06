@@ -1,7 +1,7 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 using System.Text;
 using Xunit;
 
@@ -308,52 +308,6 @@ public class ProductionReadinessTests
         Assert.Equal("3", reader.Current[0].ToString());
 
         Assert.False(reader.MoveNext());
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void LineNumberTrackingWorksWithStreamReader()
-    {
-        var csv = "a,b\n1,2\n3,4";
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
-        using var reader = Csv.ReadFromStream(stream);
-
-        Assert.True(reader.MoveNext());
-        Assert.Equal(1, reader.Current.LineNumber);
-        Assert.Equal("a", reader.Current[0].ToString());
-
-        Assert.True(reader.MoveNext());
-        Assert.Equal(2, reader.Current.LineNumber);
-        Assert.Equal("1", reader.Current[0].ToString());
-
-        Assert.True(reader.MoveNext());
-        Assert.Equal(3, reader.Current.LineNumber);
-        Assert.Equal("3", reader.Current[0].ToString());
-
-        Assert.False(reader.MoveNext());
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task LineNumberTrackingWorksWithAsyncStreamReader()
-    {
-        var csv = "a,b\n1,2\n3,4";
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
-        await using var reader = Csv.CreateAsyncStreamReader(stream);
-
-        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(1, reader.Current.LineNumber);
-        Assert.Equal("a", reader.Current[0].ToString());
-
-        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(2, reader.Current.LineNumber);
-        Assert.Equal("1", reader.Current[0].ToString());
-
-        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(3, reader.Current.LineNumber);
-        Assert.Equal("3", reader.Current[0].ToString());
-
-        Assert.False(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
     }
 
     // Helper class for record binding tests

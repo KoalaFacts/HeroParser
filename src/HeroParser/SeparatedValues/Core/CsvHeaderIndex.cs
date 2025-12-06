@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using HeroParser.SeparatedValues.Reading.Span;
+using HeroParser.SeparatedValues.Reading.Rows;
 
 namespace HeroParser.SeparatedValues.Core;
 
@@ -13,7 +13,7 @@ namespace HeroParser.SeparatedValues.Core;
 ///   <item><description>For ≤16 columns: Uses array-based linear search (faster due to cache locality)</description></item>
 ///   <item><description>For &gt;16 columns: Uses dictionary-based O(1) lookup</description></item>
 /// </list>
-/// <para>Case-insensitive by default (matching <see cref="Reading.Records.CsvRecordOptions.CaseSensitiveHeaders"/>).</para>
+/// <para>Case-insensitive by default.</para>
 /// </remarks>
 public sealed class CsvHeaderIndex
 {
@@ -28,7 +28,7 @@ public sealed class CsvHeaderIndex
     /// </summary>
     /// <param name="headerRow">The row containing header names.</param>
     /// <param name="caseSensitive">When false (default), header lookups are case-insensitive.</param>
-    public CsvHeaderIndex(CsvCharSpanRow headerRow, bool caseSensitive = false)
+    public CsvHeaderIndex(CsvRow<char> headerRow, bool caseSensitive = false)
         : this(headerRow.ToStringArray(), caseSensitive)
     {
     }
@@ -38,7 +38,7 @@ public sealed class CsvHeaderIndex
     /// </summary>
     /// <param name="headerRow">The row containing header names.</param>
     /// <param name="caseSensitive">When false (default), header lookups are case-insensitive.</param>
-    public CsvHeaderIndex(CsvByteSpanRow headerRow, bool caseSensitive = false)
+    public CsvHeaderIndex(CsvRow<byte> headerRow, bool caseSensitive = false)
         : this(headerRow.ToStringArray(), caseSensitive)
     {
     }

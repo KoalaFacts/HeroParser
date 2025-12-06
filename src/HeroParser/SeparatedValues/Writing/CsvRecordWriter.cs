@@ -1,5 +1,5 @@
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -452,20 +452,12 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         return lambda.Compile();
     }
 
-    private sealed class PropertyAccessor
+    private sealed class PropertyAccessor(string memberName, string headerName, string? format, Func<object, object?> getter)
     {
-        public string MemberName { get; }
-        public string HeaderName { get; }
-        public string? Format { get; }
-        private readonly Func<object, object?> getter;
-
-        public PropertyAccessor(string memberName, string headerName, string? format, Func<object, object?> getter)
-        {
-            MemberName = memberName;
-            HeaderName = headerName;
-            Format = format;
-            this.getter = getter;
-        }
+        public string MemberName { get; } = memberName;
+        public string HeaderName { get; } = headerName;
+        public string? Format { get; } = format;
+        private readonly Func<object, object?> getter = getter;
 
         public object? GetValue(object instance) => getter(instance);
     }

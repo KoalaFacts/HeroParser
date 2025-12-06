@@ -1,6 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Span;
+using HeroParser.SeparatedValues.Reading.Rows;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -21,7 +21,7 @@ public class ReadmeExamplesTests
         {
             // Access columns by index - no allocations
             var id = row[0].Parse<int>();
-            var name = row[1].CharSpan; // ReadOnlySpan<char>
+            var name = row[1].Span; // ReadOnlySpan<char>
             var price = row[2].Parse<decimal>();
 
             Assert.True(id > 0);
@@ -91,7 +91,7 @@ public class ReadmeExamplesTests
         var csv = "skip,data\n1,2\n3,4\n5,6";
         int processedCount = 0;
 
-        static bool ShouldSkip(CsvCharSpanRow row) => row[0].ToString() == "skip";
+        static bool ShouldSkip(CsvRow<char> row) => row[0].ToString() == "skip";
 
         // Columns are NOT parsed until first access
 

@@ -38,7 +38,7 @@ namespace HeroParser;
 /// Call <c>Dispose</c> (or use a <c>using</c> statement) when you are finished to return pooled buffers.
 /// </para>
 /// </remarks>
-/// <seealso cref="SeparatedValues.Reading.Records.CsvReaderBuilder{T}"/>
+/// <seealso cref="SeparatedValues.Reading.Records.CsvRecordReaderBuilder{T}"/>
 /// <seealso cref="SeparatedValues.Writing.CsvWriterBuilder{T}"/>
 public static partial class Csv
 {

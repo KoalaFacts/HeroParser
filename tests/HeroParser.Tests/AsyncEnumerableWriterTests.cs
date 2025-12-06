@@ -1,5 +1,5 @@
 using HeroParser.SeparatedValues;
-using HeroParser.SeparatedValues.Reading.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -7,6 +7,8 @@ using Xunit;
 
 namespace HeroParser.Tests;
 
+// Run async writer tests sequentially to avoid ArrayPool race conditions
+[Collection("AsyncWriterTests")]
 public class AsyncEnumerableWriterTests
 {
     #region Test Models

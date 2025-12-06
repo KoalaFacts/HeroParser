@@ -1,5 +1,5 @@
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -147,97 +147,6 @@ public class CsvReaderBuilderTests
 
     #endregion
 
-    #region File and Stream Tests
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void Builder_FromFile_ReadsFromFile()
-    {
-        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
-        var tempPath = Path.Combine(Path.GetTempPath(), $"heroparser_test_{Guid.NewGuid()}.csv");
-
-        try
-        {
-            File.WriteAllText(tempPath, csv);
-
-            using var reader = Csv.Read<TestPerson>().FromFile(tempPath);
-            var records = reader.ToList();
-
-            Assert.Single(records);
-            Assert.Equal("Alice", records[0].Name);
-        }
-        finally
-        {
-            File.Delete(tempPath);
-        }
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void Builder_FromStream_ReadsFromStream()
-    {
-        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
-        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
-
-        using var reader = Csv.Read<TestPerson>().FromStream(ms);
-        var records = reader.ToList();
-
-        Assert.Single(records);
-        Assert.Equal("Alice", records[0].Name);
-    }
-
-    #endregion
-
-    #region Async Tests
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task Builder_FromFileAsync_ReadsFromFile()
-    {
-        var csv = "Name,Age,City\r\nAlice,30,NYC\r\nBob,25,LA\r\n";
-        var tempPath = Path.Combine(Path.GetTempPath(), $"heroparser_test_async_{Guid.NewGuid()}.csv");
-        var cancellationToken = TestContext.Current.CancellationToken;
-
-        try
-        {
-            await File.WriteAllTextAsync(tempPath, csv, cancellationToken);
-
-            var records = new List<TestPerson>();
-            await foreach (var record in Csv.Read<TestPerson>().FromFileAsync(tempPath, cancellationToken))
-            {
-                records.Add(record);
-            }
-
-            Assert.Equal(2, records.Count);
-            Assert.Equal("Alice", records[0].Name);
-            Assert.Equal("Bob", records[1].Name);
-        }
-        finally
-        {
-            File.Delete(tempPath);
-        }
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task Builder_FromStreamAsync_ReadsFromStream()
-    {
-        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
-        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
-        var cancellationToken = TestContext.Current.CancellationToken;
-
-        var records = new List<TestPerson>();
-        await foreach (var record in Csv.Read<TestPerson>().FromStreamAsync(ms, cancellationToken: cancellationToken))
-        {
-            records.Add(record);
-        }
-
-        Assert.Single(records);
-        Assert.Equal("Alice", records[0].Name);
-    }
-
-    #endregion
-
     #region Method Chaining Tests
 
     [Fact]
@@ -368,76 +277,6 @@ public class CsvReaderBuilderTests
         }
 
         Assert.Equal(1, rowCount);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void NonGenericBuilder_FromFile_ReadsFromFile()
-    {
-        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
-        var tempPath = Path.Combine(Path.GetTempPath(), $"heroparser_test_ng_{Guid.NewGuid()}.csv");
-
-        try
-        {
-            File.WriteAllText(tempPath, csv);
-
-            using var reader = Csv.Read().FromFile(tempPath);
-            var rowCount = 0;
-            foreach (var row in reader)
-            {
-                rowCount++;
-            }
-
-            Assert.Equal(2, rowCount);  // Header + 1 data row
-        }
-        finally
-        {
-            File.Delete(tempPath);
-        }
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void NonGenericBuilder_FromStream_ReadsFromStream()
-    {
-        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
-        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
-
-        using var reader = Csv.Read().FromStream(ms);
-        var rowCount = 0;
-        foreach (var row in reader)
-        {
-            rowCount++;
-        }
-
-        Assert.Equal(2, rowCount);  // Header + 1 data row
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task NonGenericBuilder_FromFileAsync_ReadsFromFile()
-    {
-        var csv = "Name,Age,City\r\nAlice,30,NYC\r\nBob,25,LA\r\n";
-        var tempPath = Path.Combine(Path.GetTempPath(), $"heroparser_test_ng_async_{Guid.NewGuid()}.csv");
-        var cancellationToken = TestContext.Current.CancellationToken;
-
-        try
-        {
-            await File.WriteAllTextAsync(tempPath, csv, cancellationToken);
-
-            await using var reader = Csv.Read().FromFileAsync(tempPath);
-            var rowCount = 0;
-            while (await reader.MoveNextAsync(cancellationToken))
-            {
-                rowCount++;
-            }
-
-            Assert.Equal(3, rowCount);  // Header + 2 data rows
-        }
-        finally
-        {
-            File.Delete(tempPath);
-        }
     }
 
     [Fact]
@@ -625,45 +464,6 @@ public class CsvReaderBuilderTests
         Assert.Equal(2, rowCount);
     }
 
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void NonGenericBuilder_WithEncoding_Works()
-    {
-        var csv = "Name,Age\r\nAlice,30\r\n";
-        var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
-        using var ms = new MemoryStream(bytes);
-
-        using var reader = Csv.Read()
-            .WithEncoding(System.Text.Encoding.UTF8)
-            .FromStream(ms);
-
-        var rowCount = 0;
-        foreach (var _ in reader)
-        {
-            rowCount++;
-        }
-
-        Assert.Equal(2, rowCount);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task NonGenericBuilder_FromStreamAsync_Works()
-    {
-        var csv = "Name,Age\r\nAlice,30\r\nBob,25\r\n";
-        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
-        var cancellationToken = TestContext.Current.CancellationToken;
-
-        await using var reader = Csv.Read().FromStreamAsync(ms);
-        var rowCount = 0;
-        while (await reader.MoveNextAsync(cancellationToken))
-        {
-            rowCount++;
-        }
-
-        Assert.Equal(3, rowCount);  // Header + 2 data rows
-    }
-
     #endregion
 
     #region Generic Builder Additional Options Tests
@@ -718,23 +518,6 @@ public class CsvReaderBuilderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void GenericBuilder_WithEncoding_Works()
-    {
-        var csv = "Name,Age,City\r\nÅngström,42,Stockholm\r\n";
-        var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
-        using var ms = new MemoryStream(bytes);
-
-        using var reader = Csv.Read<TestPerson>()
-            .WithEncoding(System.Text.Encoding.UTF8)
-            .FromStream(ms);
-
-        var records = reader.ToList();
-        Assert.Single(records);
-        Assert.Equal("Ångström", records[0].Name);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void GenericBuilder_WithMaxFieldSize_Works()
     {
         var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
@@ -779,20 +562,6 @@ public class CsvReaderBuilderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void GenericBuilder_DetectDuplicateHeaders_Works()
-    {
-        var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
-
-        using var reader = Csv.Read<TestPerson>()
-            .DetectDuplicateHeaders()
-            .FromText(csv);
-
-        var records = reader.ToList();
-        Assert.Single(records);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void GenericBuilder_CaseSensitiveHeaders_Works()
     {
         var csv = "Name,Age,City\r\nAlice,30,NYC\r\n";
@@ -820,8 +589,6 @@ public class CsvReaderBuilderTests
             .AllowMissingColumns()
             .WithMaxFieldSize(1000)
             .DisableSimd()
-            .DetectDuplicateHeaders()
-            .WithEncoding(System.Text.Encoding.UTF8)
             .FromText(csv);
 
         var records = reader.ToList();

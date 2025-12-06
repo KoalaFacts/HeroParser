@@ -1,5 +1,5 @@
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -430,43 +430,6 @@ public class LinqExtensionsTests
         Assert.Equal(2, groups[25].Count); // Alice and Charlie
         Assert.Single(groups[30]); // Bob
         Assert.Single(groups[35]); // Diana
-    }
-
-    #endregion
-
-    #region Streaming Reader Tests
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void StreamingReader_ToList_Works()
-    {
-        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(TEST_CSV));
-        var reader = Csv.DeserializeRecords<Person>(stream);
-        var list = reader.ToList();
-
-        Assert.Equal(4, list.Count);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void StreamingReader_First_Works()
-    {
-        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(TEST_CSV));
-        var reader = Csv.DeserializeRecords<Person>(stream);
-        var first = reader.First();
-
-        Assert.Equal("Alice", first.Name);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void StreamingReader_Where_FiltersRecords()
-    {
-        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(TEST_CSV));
-        var reader = Csv.DeserializeRecords<Person>(stream);
-        var filtered = reader.Where(p => p.Score >= 95);
-
-        Assert.Equal(2, filtered.Count);
     }
 
     #endregion

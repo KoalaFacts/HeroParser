@@ -1,6 +1,5 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Streaming;
 using HeroParser.SeparatedValues.Writing;
 using System.Text;
 using Xunit;
@@ -10,6 +9,8 @@ namespace HeroParser.Tests;
 /// <summary>
 /// Tests for async CSV writer functionality using CsvAsyncStreamWriter.
 /// </summary>
+// Run async writer tests sequentially to avoid ArrayPool race conditions
+[Collection("AsyncWriterTests")]
 public class AsyncWriterTests
 {
     #region Test Models

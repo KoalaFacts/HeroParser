@@ -469,36 +469,24 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
 /// <summary>
 /// Runtime binding information for a single field.
 /// </summary>
-internal sealed class FieldBinding
+internal sealed class FieldBinding(
+    string memberName,
+    Type targetType,
+    int start,
+    int length,
+    char padChar,
+    FieldAlignment alignment,
+    ColumnConverter converter,
+    Action<object, object?> setter)
 {
-    public string MemberName { get; }
-    public Type TargetType { get; }
-    public int Start { get; }
-    public int Length { get; }
-    public char PadChar { get; }
-    public FieldAlignment Alignment { get; }
-    private readonly ColumnConverter converter;
-    private readonly Action<object, object?> setter;
-
-    public FieldBinding(
-        string memberName,
-        Type targetType,
-        int start,
-        int length,
-        char padChar,
-        FieldAlignment alignment,
-        ColumnConverter converter,
-        Action<object, object?> setter)
-    {
-        MemberName = memberName;
-        TargetType = targetType;
-        Start = start;
-        Length = length;
-        PadChar = padChar;
-        Alignment = alignment;
-        this.converter = converter;
-        this.setter = setter;
-    }
+    public string MemberName { get; } = memberName;
+    public Type TargetType { get; } = targetType;
+    public int Start { get; } = start;
+    public int Length { get; } = length;
+    public char PadChar { get; } = padChar;
+    public FieldAlignment Alignment { get; } = alignment;
+    private readonly ColumnConverter converter = converter;
+    private readonly Action<object, object?> setter = setter;
 
     public bool TryConvert(FixedWidthCharSpanColumn column, out object? value)
         => converter(column.CharSpan, out value);

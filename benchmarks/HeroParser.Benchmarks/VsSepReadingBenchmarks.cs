@@ -1,18 +1,11 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
-using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using nietras.SeparatedValues;
 using System.Text;
 
 namespace HeroParser.Benchmarks;
 
-/// <summary>
-/// Head-to-head CSV READING comparison: HeroParser vs Sep library.
-/// Sep by nietras (https://github.com/nietras/Sep) is currently one of the fastest CSV parsers for .NET
-/// and served as the primary inspiration for HeroParser's SIMD architecture.
-/// These benchmarks ensure HeroParser remains competitive with Sep's reading performance.
-/// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
 public class VsSepReadingBenchmarks
@@ -20,10 +13,12 @@ public class VsSepReadingBenchmarks
     private string csv = null!;
     private byte[] utf8 = null!;
 
-    [Params(100, 1_000, 10_000, 100_000)]
+    [Params(10_000)]
+    // [Params(100, 1_000, 10_000, 100_000)]
     public int Rows { get; set; }
 
-    [Params(10, 25, 50, 100)]
+    [Params(25)]
+    // [Params(10, 25, 50, 100)]
     public int Columns { get; set; }
 
     [Params(false, true)]
@@ -76,15 +71,15 @@ public class VsSepReadingBenchmarks
         return total;
     }
 
-    [Benchmark(Description = "HeroParser (string)")]
+    [Benchmark(Description = "HeroParser UTF-16 (string)")]
     public int HeroParser_ParseString()
     {
         var options = new CsvParserOptions
         {
             MaxColumnCount = 1_000,
             MaxRowCount = 1_000_000,
-            EnableQuotedFields = WithQuotes,              // skip quote machinery when data has no quotes
-            AllowNewlinesInsideQuotes = WithQuotes        // only meaningful when quotes are present
+            EnableQuotedFields = WithQuotes,
+            AllowNewlinesInsideQuotes = WithQuotes
         };
 
         using var reader = Csv.ReadFromText(csv, new()
@@ -104,8 +99,8 @@ public class VsSepReadingBenchmarks
         return total;
     }
 
-    [Benchmark(Description = "HeroParser (UTF-8)")]
-    public int HeroParser_ParseUtf8()
+    [Benchmark(Description = "HeroParser UTF-8 (byte[])")]
+    public int HeroParser_ParseBytes()
     {
         var options = new CsvParserOptions
         {

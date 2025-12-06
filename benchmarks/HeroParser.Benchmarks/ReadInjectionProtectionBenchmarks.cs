@@ -103,7 +103,7 @@ public class ReadInjectionProtectionBenchmarks
         {
             for (int c = 0; c < row.ColumnCount; c++)
             {
-                var span = row[c].CharSpan;
+                var span = row[c].Span;
                 IsDangerousField(span);
             }
             count += row.ColumnCount;
@@ -121,7 +121,7 @@ public class ReadInjectionProtectionBenchmarks
         {
             for (int c = 0; c < row.ColumnCount; c++)
             {
-                var span = row[c].CharSpan;
+                var span = row[c].Span;
                 IsDangerousField(span);
             }
             count += row.ColumnCount;
@@ -139,7 +139,7 @@ public class ReadInjectionProtectionBenchmarks
         {
             for (int c = 0; c < row.ColumnCount; c++)
             {
-                var span = row[c].CharSpan;
+                var span = row[c].Span;
                 IsDangerousField(span);
             }
             count += row.ColumnCount;

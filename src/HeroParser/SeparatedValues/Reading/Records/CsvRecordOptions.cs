@@ -1,5 +1,5 @@
 using System.Globalization;
-using HeroParser.SeparatedValues.Validation;
+using HeroParser.SeparatedValues.Reading.Shared;
 
 namespace HeroParser.SeparatedValues.Reading.Records;
 
@@ -18,119 +18,6 @@ public delegate bool CsvTypeConverter<T>(ReadOnlySpan<char> value, CultureInfo c
 /// Internal delegate for custom type conversion that works with the binder.
 /// </summary>
 internal delegate bool InternalCustomConverter(ReadOnlySpan<char> value, CultureInfo culture, string? format, out object? result);
-
-/// <summary>
-/// Provides context about a deserialization error for error handling callbacks.
-/// </summary>
-public readonly struct CsvDeserializeErrorContext
-{
-    /// <summary>
-    /// Gets the 1-based row number where the error occurred.
-    /// </summary>
-    public int Row { get; init; }
-
-    /// <summary>
-    /// Gets the 1-based column number where the error occurred.
-    /// </summary>
-    public int Column { get; init; }
-
-    /// <summary>
-    /// Gets the name of the member (property) being bound.
-    /// </summary>
-    public string MemberName { get; init; }
-
-    /// <summary>
-    /// Gets the target type that the value was being converted to.
-    /// </summary>
-    public Type TargetType { get; init; }
-
-    /// <summary>
-    /// Gets the raw field value that failed to parse.
-    /// </summary>
-    public string FieldValue { get; init; }
-
-    /// <summary>
-    /// Gets the exception that caused the deserialization failure (if any).
-    /// </summary>
-    public Exception? Exception { get; init; }
-}
-
-/// <summary>
-/// Specifies the action to take when a deserialization error occurs.
-/// </summary>
-public enum DeserializeErrorAction
-{
-    /// <summary>
-    /// Throw an exception (default behavior).
-    /// </summary>
-    Throw,
-
-    /// <summary>
-    /// Skip the current row and continue processing.
-    /// </summary>
-    SkipRow,
-
-    /// <summary>
-    /// Use the default value for the property and continue.
-    /// </summary>
-    UseDefault
-}
-
-/// <summary>
-/// Delegate for handling deserialization errors during record binding.
-/// </summary>
-/// <param name="context">Context about the deserialization error.</param>
-/// <returns>The action to take in response to the error.</returns>
-public delegate DeserializeErrorAction CsvDeserializeErrorHandler(CsvDeserializeErrorContext context);
-
-/// <summary>
-/// Provides context about headers for validation callbacks.
-/// </summary>
-public readonly struct CsvHeaderValidationContext
-{
-    /// <summary>
-    /// Gets the collection of header names found in the CSV.
-    /// </summary>
-    public IReadOnlyList<string> Headers { get; init; }
-
-    /// <summary>
-    /// Gets the header comparer being used (case-sensitive or case-insensitive).
-    /// </summary>
-    public StringComparer HeaderComparer { get; init; }
-}
-
-/// <summary>
-/// Delegate for validating CSV headers before processing data.
-/// </summary>
-/// <param name="context">Context containing header information.</param>
-/// <returns>A validation result indicating success or failure with an error message.</returns>
-public delegate CsvHeaderValidationResult CsvHeaderValidator(CsvHeaderValidationContext context);
-
-/// <summary>
-/// Result of header validation.
-/// </summary>
-public readonly struct CsvHeaderValidationResult
-{
-    /// <summary>
-    /// Gets a value indicating whether the validation passed.
-    /// </summary>
-    public bool IsValid { get; init; }
-
-    /// <summary>
-    /// Gets the error message when validation fails.
-    /// </summary>
-    public string? ErrorMessage { get; init; }
-
-    /// <summary>
-    /// Creates a successful validation result.
-    /// </summary>
-    public static CsvHeaderValidationResult Success => new() { IsValid = true };
-
-    /// <summary>
-    /// Creates a failed validation result with an error message.
-    /// </summary>
-    public static CsvHeaderValidationResult Failure(string errorMessage) => new() { IsValid = false, ErrorMessage = errorMessage };
-}
 
 /// <summary>
 /// Represents progress information during CSV parsing.
@@ -216,85 +103,6 @@ public sealed record CsvRecordOptions
     public int SkipRows { get; init; } = 0;
 
     /// <summary>
-    /// Gets or sets a value indicating whether to detect and report duplicate header names.
-    /// </summary>
-    /// <remarks>
-    /// When <see langword="true"/>, a <see cref="Core.CsvException"/> is thrown if the header row
-    /// contains duplicate column names (according to <see cref="CaseSensitiveHeaders"/>).
-    /// This helps catch data quality issues early. Default is <see langword="false"/>.
-    /// </remarks>
-    public bool DetectDuplicateHeaders { get; init; } = false;
-
-    /// <summary>
-    /// Gets or sets a callback to handle deserialization errors during record binding.
-    /// </summary>
-    /// <remarks>
-    /// When set, this callback is invoked for each deserialization error, allowing you to:
-    /// <list type="bullet">
-    ///   <item><description>Log errors for later analysis</description></item>
-    ///   <item><description>Skip problematic rows (<see cref="DeserializeErrorAction.SkipRow"/>)</description></item>
-    ///   <item><description>Use default values (<see cref="DeserializeErrorAction.UseDefault"/>)</description></item>
-    ///   <item><description>Throw exceptions (<see cref="DeserializeErrorAction.Throw"/>, the default)</description></item>
-    /// </list>
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// var errors = new List&lt;string&gt;();
-    /// var options = new CsvRecordOptions
-    /// {
-    ///     OnDeserializeError = ctx =>
-    ///     {
-    ///         errors.Add($"Row {ctx.Row}: Failed to parse '{ctx.FieldValue}' for {ctx.MemberName}");
-    ///         return DeserializeErrorAction.SkipRow;
-    ///     }
-    /// };
-    /// </code>
-    /// </example>
-    public CsvDeserializeErrorHandler? OnDeserializeError { get; init; } = null;
-
-    /// <summary>
-    /// Gets or sets the list of required header names that must be present in the CSV.
-    /// </summary>
-    /// <remarks>
-    /// When set, a <see cref="Core.CsvException"/> is thrown during header processing if any
-    /// required header is missing. Header matching respects <see cref="CaseSensitiveHeaders"/>.
-    /// This validation occurs immediately when headers are processed, before any data rows.
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// var options = new CsvRecordOptions
-    /// {
-    ///     RequiredHeaders = ["Name", "Email", "Id"]
-    /// };
-    /// </code>
-    /// </example>
-    public IReadOnlyList<string>? RequiredHeaders { get; init; } = null;
-
-    /// <summary>
-    /// Gets or sets a callback for custom header validation.
-    /// </summary>
-    /// <remarks>
-    /// This callback is invoked after <see cref="RequiredHeaders"/> validation (if any)
-    /// and before any data rows are processed. Use it for complex validation logic such as
-    /// checking header order, ensuring certain combinations of headers exist, or rejecting
-    /// unexpected headers.
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// var options = new CsvRecordOptions
-    /// {
-    ///     ValidateHeaders = ctx =>
-    ///     {
-    ///         if (ctx.Headers.Count > 10)
-    ///             return CsvHeaderValidationResult.Failure("Too many columns");
-    ///         return CsvHeaderValidationResult.Success;
-    ///     }
-    /// };
-    /// </code>
-    /// </example>
-    public CsvHeaderValidator? ValidateHeaders { get; init; } = null;
-
-    /// <summary>
     /// Gets or sets the progress reporter for receiving parsing progress updates.
     /// </summary>
     /// <remarks>
@@ -323,54 +131,6 @@ public sealed record CsvRecordOptions
     /// </remarks>
     public int ProgressIntervalRows { get; init; } = 1000;
 
-    /// <summary>
-    /// Gets or sets a value indicating whether field validation is enabled.
-    /// </summary>
-    /// <remarks>
-    /// When <see langword="true"/>, validators registered via <see cref="FieldValidators"/>
-    /// or validation attributes will be executed during record binding.
-    /// Validation is disabled by default for backward compatibility and performance.
-    /// </remarks>
-    public bool EnableValidation { get; init; } = false;
-
-    /// <summary>
-    /// Gets or sets a callback to handle validation errors during record binding.
-    /// </summary>
-    /// <remarks>
-    /// When set, this callback is invoked for each validation error, allowing you to:
-    /// <list type="bullet">
-    ///   <item><description>Log validation errors for later analysis</description></item>
-    ///   <item><description>Skip problematic rows (<see cref="ValidationErrorAction.SkipRow"/>)</description></item>
-    ///   <item><description>Use default values (<see cref="ValidationErrorAction.UseDefault"/>)</description></item>
-    ///   <item><description>Throw exceptions (<see cref="ValidationErrorAction.Throw"/>, the default)</description></item>
-    /// </list>
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// var errors = new List&lt;string&gt;();
-    /// var options = new CsvRecordOptions
-    /// {
-    ///     EnableValidation = true,
-    ///     OnValidationError = (ctx, msg) =>
-    ///     {
-    ///         errors.Add($"Row {ctx.Row}: {ctx.FieldName} - {msg}");
-    ///         return ValidationErrorAction.SkipRow;
-    ///     }
-    /// };
-    /// </code>
-    /// </example>
-    public CsvValidationErrorHandler? OnValidationError { get; init; } = null;
-
-    /// <summary>
-    /// Gets or sets the field validators to apply during record binding.
-    /// </summary>
-    /// <remarks>
-    /// This dictionary maps field/property names to their validators.
-    /// Multiple validators can be applied to a single field by using a composite validator.
-    /// Use the fluent builder API (<c>Csv.Read&lt;T&gt;().Validate(...)</c>) for easier configuration.
-    /// </remarks>
-    public IReadOnlyDictionary<string, IReadOnlyList<IFieldValidator>>? FieldValidators { get; init; } = null;
-
     internal StringComparer HeaderComparer => CaseSensitiveHeaders ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
     /// <summary>
@@ -389,7 +149,7 @@ public sealed record CsvRecordOptions
     /// types like Money, Address, or other value objects that are not natively supported.
     /// <para>
     /// The converter receives the column value, the culture from <see cref="Culture"/>, and the format
-    /// string from <see cref="Binding.CsvColumnAttribute.Format"/> if specified.
+    /// string from <see cref="CsvColumnAttribute.Format"/> if specified.
     /// </para>
     /// </remarks>
     /// <example>

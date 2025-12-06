@@ -13,13 +13,6 @@ public class Program
             return;
         }
 
-        if (args.Length > 0 && args[0] == "--streaming")
-        {
-            // Run streaming vs text benchmarks
-            RunBenchmarks(args, typeof(StreamingThroughputBenchmarks));
-            return;
-        }
-
         if (args.Length > 0 && args[0] == "--vs-sep-reading")
         {
             // Run reading comparison benchmarks
@@ -78,20 +71,11 @@ public class Program
 
         if (args.Length > 0 && args[0] == "--security")
         {
-            // Run all security and validation benchmarks
+            // Run all security benchmarks
             RunBenchmarks(args,
                 typeof(WriteInjectionProtectionBenchmarks),
                 typeof(ReadInjectionProtectionBenchmarks),
-                typeof(OutputLimitsBenchmarks),
-                typeof(ValidationBenchmarks),
-                typeof(SmartDetectionMicroBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--validation")
-        {
-            // Run only validation benchmarks
-            RunBenchmarks(args, typeof(ValidationBenchmarks));
+                typeof(OutputLimitsBenchmarks));
             return;
         }
 
@@ -100,8 +84,7 @@ public class Program
             // Run all injection protection benchmarks (write and read)
             RunBenchmarks(args,
                 typeof(WriteInjectionProtectionBenchmarks),
-                typeof(ReadInjectionProtectionBenchmarks),
-                typeof(SmartDetectionMicroBenchmarks));
+                typeof(ReadInjectionProtectionBenchmarks));
             return;
         }
 
@@ -169,13 +152,6 @@ public class Program
             return;
         }
 
-        if (args.Length > 0 && args[0] == "--multi-schema")
-        {
-            // Run multi-schema benchmarks
-            RunBenchmarks(args, typeof(MultiSchemaBenchmarks));
-            return;
-        }
-
         if (args.Length > 0 && args[0] == "--binder-overhead")
         {
             // Run binder overhead profiling benchmarks
@@ -195,7 +171,6 @@ public class Program
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --throughput       Run throughput benchmarks");
-        Console.WriteLine("  --streaming        Run streaming throughput benchmarks (text vs stream vs async)");
         Console.WriteLine("  --vs-sep-reading   Run HeroParser vs Sep reading comparison");
         Console.WriteLine("  --vs-sep-writing   Run HeroParser vs Sep writing comparison");
         Console.WriteLine("  --writer           Run all writer benchmarks (sync + async)");
@@ -216,7 +191,6 @@ public class Program
         Console.WriteLine("  --fixed-width-converters Run fixed-width custom converter benchmarks");
         Console.WriteLine("  --fixed-width-bytespan   Run fixed-width byte span vs char span benchmarks");
         Console.WriteLine("  --fixed-width-alignment  Run fixed-width alignment operation benchmarks");
-        Console.WriteLine("  --multi-schema     Run multi-schema CSV parsing benchmarks");
         Console.WriteLine("  --memory           Run memory vs string binding benchmarks");
         Console.WriteLine("  --all              Run all benchmarks");
         Console.WriteLine();
@@ -233,7 +207,6 @@ public class Program
         else if (args[0] == "--all")
         {
             BenchmarkRunner.Run<ThroughputBenchmarks>();
-            BenchmarkRunner.Run<StreamingThroughputBenchmarks>();
             BenchmarkRunner.Run<VsSepReadingBenchmarks>();
             BenchmarkRunner.Run<VsSepWritingBenchmarks>();
             BenchmarkRunner.Run<QuotedVsUnquotedBenchmarks>();

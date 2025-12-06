@@ -1,5 +1,3 @@
-using HeroParser.SeparatedValues.Reading.Records.Readers;
-
 namespace HeroParser.SeparatedValues.Reading.Records;
 
 /// <summary>
@@ -18,7 +16,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <returns>A list containing all records.</returns>
     /// <remarks>This method consumes the reader. The reader should not be used after calling this method.</remarks>
-    public static List<T> ToList<T>(this CsvRecordReader<T> reader) where T : class, new()
+    public static List<T> ToList<T>(this CsvRecordReader<char, T> reader) where T : class, new()
     {
         var list = new List<T>();
         while (reader.MoveNext())
@@ -35,7 +33,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <returns>An array containing all records.</returns>
     /// <remarks>This method consumes the reader. The reader should not be used after calling this method.</remarks>
-    public static T[] ToArray<T>(this CsvRecordReader<T> reader) where T : class, new()
+    public static T[] ToArray<T>(this CsvRecordReader<char, T> reader) where T : class, new()
         => reader.ToList().ToArray();
 
     /// <summary>
@@ -46,7 +44,7 @@ public static class ExtensionsToCsvRecordReader
     /// <returns>The first record.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the reader contains no records.</exception>
     /// <remarks>This method consumes only the first record. The reader can continue to be used after calling this method.</remarks>
-    public static T First<T>(this CsvRecordReader<T> reader) where T : class, new()
+    public static T First<T>(this CsvRecordReader<char, T> reader) where T : class, new()
     {
         if (reader.MoveNext())
         {
@@ -62,7 +60,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <returns>The first record, or <see langword="null"/> if no records exist.</returns>
     /// <remarks>This method consumes only the first record. The reader can continue to be used after calling this method.</remarks>
-    public static T? FirstOrDefault<T>(this CsvRecordReader<T> reader) where T : class, new()
+    public static T? FirstOrDefault<T>(this CsvRecordReader<char, T> reader) where T : class, new()
     {
         if (reader.MoveNext())
         {
@@ -79,7 +77,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="predicate">A function to test each record.</param>
     /// <returns>The first record that matches the predicate.</returns>
     /// <exception cref="InvalidOperationException">Thrown when no record matches the predicate.</exception>
-    public static T First<T>(this CsvRecordReader<T> reader, Func<T, bool> predicate) where T : class, new()
+    public static T First<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : class, new()
     {
         while (reader.MoveNext())
         {
@@ -98,7 +96,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="predicate">A function to test each record.</param>
     /// <returns>The first matching record, or <see langword="null"/> if no records match.</returns>
-    public static T? FirstOrDefault<T>(this CsvRecordReader<T> reader, Func<T, bool> predicate) where T : class, new()
+    public static T? FirstOrDefault<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : class, new()
     {
         while (reader.MoveNext())
         {
@@ -118,7 +116,7 @@ public static class ExtensionsToCsvRecordReader
     /// <returns>The single record.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the reader contains zero or more than one record.</exception>
     /// <remarks>This method consumes the reader to verify exactly one record exists.</remarks>
-    public static T Single<T>(this CsvRecordReader<T> reader) where T : class, new()
+    public static T Single<T>(this CsvRecordReader<char, T> reader) where T : class, new()
     {
         if (!reader.MoveNext())
         {
@@ -143,7 +141,7 @@ public static class ExtensionsToCsvRecordReader
     /// <returns>The single record, or <see langword="null"/> if no records exist.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the reader contains more than one record.</exception>
     /// <remarks>This method consumes the reader to verify at most one record exists.</remarks>
-    public static T? SingleOrDefault<T>(this CsvRecordReader<T> reader) where T : class, new()
+    public static T? SingleOrDefault<T>(this CsvRecordReader<char, T> reader) where T : class, new()
     {
         if (!reader.MoveNext())
         {
@@ -167,7 +165,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <returns>The number of records.</returns>
     /// <remarks>This method consumes the entire reader.</remarks>
-    public static int Count<T>(this CsvRecordReader<T> reader) where T : class, new()
+    public static int Count<T>(this CsvRecordReader<char, T> reader) where T : class, new()
     {
         int count = 0;
         while (reader.MoveNext())
@@ -185,7 +183,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="predicate">A function to test each record.</param>
     /// <returns>The number of matching records.</returns>
     /// <remarks>This method consumes the entire reader.</remarks>
-    public static int Count<T>(this CsvRecordReader<T> reader, Func<T, bool> predicate) where T : class, new()
+    public static int Count<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : class, new()
     {
         int count = 0;
         while (reader.MoveNext())
@@ -205,7 +203,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <returns><see langword="true"/> if the reader contains at least one record; otherwise, <see langword="false"/>.</returns>
     /// <remarks>This method consumes only the first record if one exists.</remarks>
-    public static bool Any<T>(this CsvRecordReader<T> reader) where T : class, new()
+    public static bool Any<T>(this CsvRecordReader<char, T> reader) where T : class, new()
         => reader.MoveNext();
 
     /// <summary>
@@ -215,7 +213,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="predicate">A function to test each record.</param>
     /// <returns><see langword="true"/> if any record matches the predicate; otherwise, <see langword="false"/>.</returns>
-    public static bool Any<T>(this CsvRecordReader<T> reader, Func<T, bool> predicate) where T : class, new()
+    public static bool Any<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : class, new()
     {
         while (reader.MoveNext())
         {
@@ -235,7 +233,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="predicate">A function to test each record.</param>
     /// <returns><see langword="true"/> if all records match the predicate; otherwise, <see langword="false"/>.</returns>
     /// <remarks>This method returns <see langword="true"/> for an empty reader (vacuous truth).</remarks>
-    public static bool All<T>(this CsvRecordReader<T> reader, Func<T, bool> predicate) where T : class, new()
+    public static bool All<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : class, new()
     {
         while (reader.MoveNext())
         {
@@ -255,7 +253,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="predicate">A function to test each record.</param>
     /// <returns>A list containing all records that match the predicate.</returns>
     /// <remarks>This method consumes the entire reader.</remarks>
-    public static List<T> Where<T>(this CsvRecordReader<T> reader, Func<T, bool> predicate) where T : class, new()
+    public static List<T> Where<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : class, new()
     {
         var results = new List<T>();
         while (reader.MoveNext())
@@ -277,7 +275,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="selector">A transform function to apply to each record.</param>
     /// <returns>A list containing the projected results.</returns>
     /// <remarks>This method consumes the entire reader.</remarks>
-    public static List<TResult> Select<TSource, TResult>(this CsvRecordReader<TSource> reader, Func<TSource, TResult> selector)
+    public static List<TResult> Select<TSource, TResult>(this CsvRecordReader<char, TSource> reader, Func<TSource, TResult> selector)
         where TSource : class, new()
     {
         var results = new List<TResult>();
@@ -296,7 +294,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="count">The number of records to skip.</param>
     /// <returns>A list containing all records after skipping the specified count.</returns>
     /// <remarks>This method consumes the entire reader.</remarks>
-    public static List<T> Skip<T>(this CsvRecordReader<T> reader, int count) where T : class, new()
+    public static List<T> Skip<T>(this CsvRecordReader<char, T> reader, int count) where T : class, new()
     {
         var results = new List<T>();
         int skipped = 0;
@@ -320,7 +318,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="count">The number of records to take.</param>
     /// <returns>A list containing up to the specified number of records.</returns>
     /// <remarks>This method consumes only the records needed, up to <paramref name="count"/>.</remarks>
-    public static List<T> Take<T>(this CsvRecordReader<T> reader, int count) where T : class, new()
+    public static List<T> Take<T>(this CsvRecordReader<char, T> reader, int count) where T : class, new()
     {
         var results = new List<T>(count);
         int taken = 0;
@@ -339,7 +337,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="action">The action to perform on each record.</param>
     /// <remarks>This method consumes the entire reader.</remarks>
-    public static void ForEach<T>(this CsvRecordReader<T> reader, Action<T> action) where T : class, new()
+    public static void ForEach<T>(this CsvRecordReader<char, T> reader, Action<T> action) where T : class, new()
     {
         while (reader.MoveNext())
         {
@@ -358,7 +356,7 @@ public static class ExtensionsToCsvRecordReader
     /// <exception cref="ArgumentException">Thrown when duplicate keys are encountered.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static Dictionary<TKey, T> ToDictionary<T, TKey>(
-        this CsvRecordReader<T> reader,
+        this CsvRecordReader<char, T> reader,
         Func<T, TKey> keySelector)
         where T : class, new()
         where TKey : notnull
@@ -384,7 +382,7 @@ public static class ExtensionsToCsvRecordReader
     /// <exception cref="ArgumentException">Thrown when duplicate keys are encountered.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static Dictionary<TKey, TValue> ToDictionary<T, TKey, TValue>(
-        this CsvRecordReader<T> reader,
+        this CsvRecordReader<char, T> reader,
         Func<T, TKey> keySelector,
         Func<T, TValue> valueSelector)
         where T : class, new()
@@ -408,7 +406,7 @@ public static class ExtensionsToCsvRecordReader
     /// <returns>A dictionary mapping keys to lists of records.</returns>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static Dictionary<TKey, List<T>> GroupBy<T, TKey>(
-        this CsvRecordReader<T> reader,
+        this CsvRecordReader<char, T> reader,
         Func<T, TKey> keySelector)
         where T : class, new()
         where TKey : notnull
@@ -427,118 +425,4 @@ public static class ExtensionsToCsvRecordReader
         return groups;
     }
 
-    #region Streaming Record Reader Extensions
-
-    /// <summary>
-    /// Materializes all records from the streaming reader into a <see cref="List{T}"/>.
-    /// </summary>
-    public static List<T> ToList<T>(this CsvStreamingRecordReader<T> reader) where T : class, new()
-    {
-        var list = new List<T>();
-        while (reader.MoveNext())
-        {
-            list.Add(reader.Current);
-        }
-        reader.Dispose();
-        return list;
-    }
-
-    /// <summary>
-    /// Materializes all records from the streaming reader into an array.
-    /// </summary>
-    public static T[] ToArray<T>(this CsvStreamingRecordReader<T> reader) where T : class, new()
-        => reader.ToList().ToArray();
-
-    /// <summary>
-    /// Returns the first record from the streaming reader.
-    /// </summary>
-    public static T First<T>(this CsvStreamingRecordReader<T> reader) where T : class, new()
-    {
-        if (reader.MoveNext())
-        {
-            return reader.Current;
-        }
-        throw new InvalidOperationException("The CSV contains no records.");
-    }
-
-    /// <summary>
-    /// Returns the first record from the streaming reader, or <see langword="null"/> if empty.
-    /// </summary>
-    public static T? FirstOrDefault<T>(this CsvStreamingRecordReader<T> reader) where T : class, new()
-    {
-        if (reader.MoveNext())
-        {
-            return reader.Current;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Counts the total number of records in the streaming reader.
-    /// </summary>
-    public static int Count<T>(this CsvStreamingRecordReader<T> reader) where T : class, new()
-    {
-        int count = 0;
-        while (reader.MoveNext())
-        {
-            count++;
-        }
-        reader.Dispose();
-        return count;
-    }
-
-    /// <summary>
-    /// Determines whether the streaming reader contains any records.
-    /// </summary>
-    public static bool Any<T>(this CsvStreamingRecordReader<T> reader) where T : class, new()
-        => reader.MoveNext();
-
-    /// <summary>
-    /// Filters records from the streaming reader based on a predicate and returns all matches.
-    /// </summary>
-    public static List<T> Where<T>(this CsvStreamingRecordReader<T> reader, Func<T, bool> predicate) where T : class, new()
-    {
-        var results = new List<T>();
-        while (reader.MoveNext())
-        {
-            if (predicate(reader.Current))
-            {
-                results.Add(reader.Current);
-            }
-        }
-        reader.Dispose();
-        return results;
-    }
-
-    /// <summary>
-    /// Projects each record from the streaming reader into a new form.
-    /// </summary>
-    public static List<TResult> Select<TSource, TResult>(this CsvStreamingRecordReader<TSource> reader, Func<TSource, TResult> selector)
-        where TSource : class, new()
-    {
-        var results = new List<TResult>();
-        while (reader.MoveNext())
-        {
-            results.Add(selector(reader.Current));
-        }
-        reader.Dispose();
-        return results;
-    }
-
-    /// <summary>
-    /// Takes a specified number of records from the start of the streaming reader.
-    /// </summary>
-    public static List<T> Take<T>(this CsvStreamingRecordReader<T> reader, int count) where T : class, new()
-    {
-        var results = new List<T>(count);
-        int taken = 0;
-        while (taken < count && reader.MoveNext())
-        {
-            results.Add(reader.Current);
-            taken++;
-        }
-        return results;
-    }
-
-    #endregion
 }

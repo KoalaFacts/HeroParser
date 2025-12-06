@@ -6,6 +6,8 @@ namespace HeroParser.Tests;
 /// <summary>
 /// Tests for CsvWriterBuilder{T} and CsvWriterBuilder fluent builder APIs.
 /// </summary>
+// Run async writer tests sequentially to avoid ArrayPool race conditions
+[Collection("AsyncWriterTests")]
 public class CsvWriterBuilderTests
 {
     #region Test Record Types

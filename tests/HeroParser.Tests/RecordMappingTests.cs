@@ -1,12 +1,14 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests;
 
+// Run tests with writer/async operations sequentially to avoid ArrayPool race conditions
+[Collection("AsyncWriterTests")]
 public class RecordMappingTests
 {
     [Fact]
@@ -85,26 +87,6 @@ public class RecordMappingTests
             var reader = Csv.DeserializeRecords<MissingColumnType>(csv);
             reader.MoveNext();
         });
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
-    public async Task AsyncStreaming_MapsRecords()
-    {
-        var csv = "Name,Score\nAlice,9\nBob,7";
-        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
-
-        var results = new List<Player>();
-        await foreach (var player in Csv.DeserializeRecordsAsync<Player>(stream, cancellationToken: TestContext.Current.CancellationToken))
-        {
-            results.Add(player);
-        }
-
-        Assert.Equal(2, results.Count);
-        Assert.Equal("Alice", results[0].Name);
-        Assert.Equal(9, results[0].Score);
-        Assert.Equal("Bob", results[1].Name);
-        Assert.Equal(7, results[1].Score);
     }
 
     [CsvGenerateBinder]
@@ -251,6 +233,109 @@ public class RecordMappingTests
     {
         public int Id { get; set; }
         public DateOnly Date { get; set; }
+    }
+
+    #endregion
+
+    #region Byte-Based Record Reading Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DeserializeRecordsFromBytes_ParsesUtf8Data()
+    {
+        var csv = "Name,Age\nJane,42\nBob,25"u8;
+
+        var reader = Csv.DeserializeRecordsFromBytes<Person>(csv);
+        var results = new List<Person>();
+        foreach (var person in reader)
+        {
+            results.Add(person);
+        }
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("Jane", results[0].Name);
+        Assert.Equal(42, results[0].Age);
+        Assert.Equal("Bob", results[1].Name);
+        Assert.Equal(25, results[1].Age);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DeserializeRecordsFromBytes_ParsesNumericTypes()
+    {
+        var csv = "Id,Price,Quantity,Score\n1,99.99,100,3.14"u8;
+
+        var reader = Csv.DeserializeRecordsFromBytes<NumericRecord>(csv);
+        var results = new List<NumericRecord>();
+        foreach (var item in reader)
+        {
+            results.Add(item);
+        }
+
+        Assert.Single(results);
+        Assert.Equal(1, results[0].Id);
+        Assert.Equal(99.99m, results[0].Price);
+        Assert.Equal(100L, results[0].Quantity);
+        Assert.Equal(3.14, results[0].Score, 0.001);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DeserializeRecordsFromBytes_ParsesDateTimeTypes()
+    {
+        // Note: Utf8Parser has limited DateTime format support
+        // Use 'G' format (M/d/yyyy h:mm:ss tt) for compatibility
+        var csv = "Id,Date,Timestamp\n1,2024-06-15,06/15/2024 10:30:00"u8;
+
+        var reader = Csv.DeserializeRecordsFromBytes<DateTimeRecord>(csv);
+        var results = new List<DateTimeRecord>();
+        foreach (var item in reader)
+        {
+            results.Add(item);
+        }
+
+        Assert.Single(results);
+        Assert.Equal(1, results[0].Id);
+        Assert.Equal(new DateOnly(2024, 6, 15), results[0].Date);
+        Assert.Equal(new DateTime(2024, 6, 15, 10, 30, 0), results[0].Timestamp);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DeserializeRecordsFromBytes_WithoutHeader_BindsByIndex()
+    {
+        var csv = "1,first\n2,second"u8;
+        var options = new CsvRecordOptions { HasHeaderRow = false };
+
+        var reader = Csv.DeserializeRecordsFromBytes<Positioned>(csv, options);
+        var results = new List<Positioned>();
+        foreach (var item in reader)
+        {
+            results.Add(item);
+        }
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(1, results[0].Id);
+        Assert.Equal("first", results[0].Value);
+        Assert.Equal(2, results[1].Id);
+        Assert.Equal("second", results[1].Value);
+    }
+
+    [CsvGenerateBinder]
+    internal sealed class NumericRecord
+    {
+        public int Id { get; set; }
+        public decimal Price { get; set; }
+        public long Quantity { get; set; }
+        public double Score { get; set; }
+    }
+
+    [CsvGenerateBinder]
+    internal sealed class DateTimeRecord
+    {
+        public int Id { get; set; }
+        public DateOnly Date { get; set; }
+        public DateTime Timestamp { get; set; }
     }
 
     #endregion

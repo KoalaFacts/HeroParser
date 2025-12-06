@@ -10,6 +10,8 @@ namespace HeroParser.Tests.FixedWidths;
 /// <summary>
 /// Tests for async fixed-width writer functionality.
 /// </summary>
+// Run async writer tests sequentially to avoid ArrayPool race conditions
+[Collection("AsyncWriterTests")]
 public class FixedWidthAsyncWriterTests
 {
     #region Test Models

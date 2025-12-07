@@ -1,5 +1,5 @@
 using HeroParser.AotTests.Models;
-using HeroParser.SeparatedValues.Records;
+using HeroParser.SeparatedValues.Reading.Records;
 
 namespace HeroParser.AotTests.Tests;
 

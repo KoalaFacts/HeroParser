@@ -1,6 +1,7 @@
 using HeroParser.Generators.Tests.Generated;
-using HeroParser.SeparatedValues.Records;
-using HeroParser.SeparatedValues.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Binders;
+using HeroParser.SeparatedValues.Reading.Records;
+using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using Xunit;
 
@@ -20,7 +21,8 @@ public class GeneratorIntegrationTests
     [Trait(CATEGORY, UNIT)]
     public void GeneratedBinder_IsRegistered_AndBindsRows()
     {
-        Assert.True(CsvRecordBinderFactory.TryCreateBinder<GeneratedPerson>(null, out var binder));
+        // Using GetCharBinder to verify binder is registered
+        var binder = CsvRecordBinderFactory.GetCharBinder<GeneratedPerson>(null);
         Assert.NotNull(binder);
 
         var csv = "Name,Age\nJane,42\nBob,25";
@@ -57,7 +59,7 @@ public class GeneratorIntegrationTests
     [Trait(CATEGORY, UNIT)]
     public void GeneratedBinder_RespectsAttributes_AndHeaderless()
     {
-        Assert.True(CsvRecordBinderFactory.TryCreateBinder<GeneratedAttributed>(new CsvRecordOptions { HasHeaderRow = false }, out var binder));
+        var binder = CsvRecordBinderFactory.GetCharBinder<GeneratedAttributed>(new CsvRecordOptions { HasHeaderRow = false });
         Assert.NotNull(binder);
 
         var csv = "1,full_name\n2,other";
@@ -92,16 +94,15 @@ public class GeneratorIntegrationTests
 
     [Fact]
     [Trait(CATEGORY, INTEGRATION)]
-    public async Task AsyncStreaming_UsesGeneratedBinder()
+    public void SyncStreaming_UsesGeneratedBinder()
     {
-        Assert.True(CsvRecordBinderFactory.TryCreateBinder<GeneratedPerson>(null, out var binder));
+        var binder = CsvRecordBinderFactory.GetCharBinder<GeneratedPerson>(null);
         Assert.NotNull(binder);
 
         var csv = "Name,Age\nAlice,9\nBob,7";
-        await using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
         var results = new List<GeneratedPerson>();
-        await foreach (var person in Csv.DeserializeRecordsAsync<GeneratedPerson>(stream, cancellationToken: TestContext.Current.CancellationToken))
+        foreach (var person in Csv.DeserializeRecords<GeneratedPerson>(csv))
         {
             results.Add(person);
         }
@@ -119,7 +120,7 @@ public class GeneratorIntegrationTests
     {
         // Array property should be unsupported by generator, so no binder should be registered
         var options = new CsvRecordOptions { AllowMissingColumns = true };
-        Assert.False(CsvRecordBinderFactory.TryCreateBinder<UnsupportedProperty>(options, out _));
+        Assert.Throws<InvalidOperationException>(() => CsvRecordBinderFactory.GetCharBinder<UnsupportedProperty>(options));
     }
 
     #region Generated Writer Tests

@@ -20,7 +20,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithSimpleClass_GeneratesBinderAndWriter()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -35,7 +35,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("TestNamespace.Person", allGeneratedCode);
     }
@@ -45,7 +45,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithCsvColumnAttribute_UsesCustomHeaderName()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -63,7 +63,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("product_name", allGeneratedCode);
@@ -75,7 +75,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithUnsupportedType_ReportsHERO001Diagnostic()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -101,7 +101,7 @@ public class CsvRecordBinderGeneratorTests
     {
         var source = """
             using System;
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -117,7 +117,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("NullableRecord", allGeneratedCode);
@@ -129,7 +129,7 @@ public class CsvRecordBinderGeneratorTests
     {
         var source = """
             using System;
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -155,7 +155,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("Int32Value", allGeneratedCode);
@@ -170,7 +170,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithReadOnlyProperty_SkipsInBinder()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -185,7 +185,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("Name", allGeneratedCode);
@@ -198,7 +198,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithRecordType_GeneratesCorrectly()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -209,7 +209,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("PersonRecord", allGeneratedCode);
@@ -221,7 +221,7 @@ public class CsvRecordBinderGeneratorTests
     {
         var source = """
             using System;
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -239,7 +239,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("yyyy-MM-dd", allGeneratedCode);
@@ -270,7 +270,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithMultipleAnnotatedTypes_GeneratesForAll()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -291,8 +291,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        // Multiple annotated types generate: one descriptor file per type + one registration file
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Multiple annotated types generate: 2 files per type (descriptor + binder/writer) + 1 shared registration
+        Assert.Equal(5, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("TestNamespace.Person", allGeneratedCode);
@@ -305,7 +305,7 @@ public class CsvRecordBinderGeneratorTests
     {
         var source = """
             using System.Collections.Generic;
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -330,7 +330,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithNestedClass_GeneratesWithFullName()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -347,7 +347,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("Outer.Inner", allGeneratedCode);
@@ -358,7 +358,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_OutputContainsBothBinderAndWriter()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -384,7 +384,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_IncrementalCaching_DoesNotRegenerateUnchangedInput()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 
@@ -425,7 +425,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithGlobalNamespace_GeneratesCorrectly()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             [CsvGenerateBinder]
             public class GlobalRecord
@@ -437,7 +437,7 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(2, result.GeneratedSources.Length);
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("GlobalRecord", allGeneratedCode);
@@ -448,7 +448,7 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_ProducesValidCSharpSyntax()
     {
         var source = """
-            using HeroParser.SeparatedValues.Records.Binding;
+            using HeroParser.SeparatedValues.Reading.Shared;
 
             namespace TestNamespace;
 

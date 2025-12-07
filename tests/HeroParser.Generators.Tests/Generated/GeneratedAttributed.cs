@@ -1,4 +1,4 @@
-using HeroParser.SeparatedValues.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 
 namespace HeroParser.Generators.Tests.Generated;
 

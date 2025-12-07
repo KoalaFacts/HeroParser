@@ -78,4 +78,31 @@ foreach (var record in Csv.Read()
 - For xUnit tests: Use `TestContext.Current.CancellationToken` instead of suppressing `xUnit1051`
 - Always include a justification comment explaining WHY the suppression is acceptable
 
+## Performance Optimization Lessons
+
+### What Works
+
+- **CLMUL-based quote handling**: The PCLMULQDQ instruction for branchless prefix XOR enables ~6% faster quoted CSV parsing than Sep
+- **Compile-time specialization**: Generic type parameters (`TQuotePolicy`, `TTrack`) allow JIT to eliminate dead code paths
+- **`AppendColumn` method**: The JIT already optimizes this well - don't try to "improve" it
+
+### What Doesn't Work
+
+Attempted optimizations that caused regressions:
+
+1. **Batch validation with PopCount**: Using `BitOperations.PopCount()` to count delimiters and validate bounds once per chunk actually adds overhead. The per-delimiter check in `AppendColumn` is already well-optimized by the JIT.
+
+2. **Unsafe.Add for columnEnds writes**: Replacing array indexing with `Unsafe.Add(ref columnEndsRef, index)` didn't help - the JIT already eliminates bounds checks when it can prove safety.
+
+3. **Hoisting maxFieldLength checks**: Pre-computing `maxFieldLength ?? int.MaxValue` and using a `checkLimit` boolean adds more overhead than the nullable check itself.
+
+**Key insight**: The .NET JIT is very good at optimizing simple, idiomatic code. "Clever" micro-optimizations often backfire by preventing JIT optimizations or adding instruction overhead.
+
+### Benchmark Baseline (vs Sep)
+
+| Scenario | Ratio | Notes |
+|----------|-------|-------|
+| Unquoted CSV | 1.29x slower | Sep's unquoted fast path is highly optimized |
+| Quoted CSV | 0.94x (faster) | CLMUL optimization pays off |
+
 <!-- MANUAL ADDITIONS END -->

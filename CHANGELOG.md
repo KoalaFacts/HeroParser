@@ -102,6 +102,7 @@
   - Faster startup with pre-compiled binders
 
 ### Performance
+- **CLMUL-based quote handling**: Uses PCLMULQDQ instruction for branchless prefix XOR computation, enabling ~6% faster parsing than Sep for quoted CSV data
 - **Async writing is 16-43% faster than sync** at scale with 25-35% less memory allocation
 - CSV writing is 2-5x faster than Sep with 35-85% less memory allocation
 - Single-pass field analysis for quote detection and counting

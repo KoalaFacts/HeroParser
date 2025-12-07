@@ -614,6 +614,29 @@ dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --async-writ
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
 ```
 
+### Reading Performance vs Sep
+
+HeroParser uses CLMUL-based branchless quote masking (PCLMULQDQ instruction) for efficient quote-aware SIMD parsing. Results on AMD Ryzen AI 9 HX PRO 370, .NET 10:
+
+| Scenario | Sep | HeroParser UTF-8 | Ratio | Notes |
+|----------|-----|------------------|-------|-------|
+| Without Quotes | 433 μs | 557 μs | 1.29x | Simple CSV data |
+| With Quotes | 939 μs | 883 μs | **0.94x** | CLMUL optimization shines |
+
+**Key takeaways:**
+- **Quoted CSV**: HeroParser is ~6% faster than Sep thanks to CLMUL-based quote handling
+- **Unquoted CSV**: Sep is ~29% faster due to its highly optimized unquoted fast path
+- **Memory**: Both libraries have similar allocation profiles (~4 KB per 10K rows)
+
+### Writing Performance vs Sep
+
+HeroParser's CSV writer is significantly faster than Sep:
+
+| Scenario | Sep | HeroParser | Speedup | Memory Reduction |
+|----------|-----|------------|---------|------------------|
+| Sync Writing | baseline | 2-5x faster | 2-5x | 35-85% less |
+| Async Writing | baseline | 16-43% faster | - | 25-35% less |
+
 ### Quote Handling (RFC 4180)
 
 ```csharp

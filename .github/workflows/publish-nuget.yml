@@ -177,7 +177,7 @@ jobs:
 
       - name: Upload package artifacts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: nuget-packages-v${{ needs.get-version.outputs.version }}
           path: |

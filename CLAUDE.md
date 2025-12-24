@@ -100,9 +100,37 @@ Attempted optimizations that caused regressions:
 
 ### Benchmark Baseline (vs Sep)
 
-| Scenario | Ratio | Notes |
-|----------|-------|-------|
-| Unquoted CSV | 1.29x slower | Sep's unquoted fast path is highly optimized |
-| Quoted CSV | 0.94x (faster) | CLMUL optimization pays off |
+**Latest Results (.NET 10, AVX-512, 10k rows × 25 cols):**
+
+| Encoding | Scenario | HeroParser | Sep | Ratio | Winner |
+|----------|----------|------------|-----|-------|--------|
+| UTF-16 | Unquoted | 404.6 μs | 333.9 μs | 1.21x slower | Sep |
+| UTF-16 | Quoted | 732.9 μs | 630.9 μs | 1.16x slower | Sep |
+| UTF-8 | Unquoted | 345.6 μs | 333.9 μs | 1.03x slower | Sep |
+| UTF-8 | Quoted | 594.9 μs | 630.9 μs | **0.94x (6% faster!)** | **HeroParser** ✅ |
+
+**UTF-16 Pack-Saturate Research (Dec 2024):**
+
+Investigated Sep's approach of packing UTF-16 chars to bytes using `PackUnsignedSaturate`:
+- **Theory**: Pack 64 chars → bytes, compare as bytes (2x throughput vs native ushort compare)
+- **Micro-benchmark results**: 20-30% faster for simple delimiter detection
+- **Challenge**: `PackUnsignedSaturate` shuffles bytes; requires complex position mapping for actual parsing
+- **Decision**: Not implemented due to complexity vs marginal benefit
+  - UTF-16 has inherent 2x memory bandwidth overhead (fundamental limit)
+  - UTF-8 is already competitive and preferred for modern workloads
+  - Implementation complexity high; testing burden significant
+  - 20% improvement on UTF-16 would still be ~1.00x vs Sep (barely tied)
+
+**Recommendation**: Focus on UTF-8 performance (already excellent) rather than UTF-16 optimization.
+
+### Unicode Handling
+
+**Tested character sets** (Dec 2024):
+- ✅ Chinese: Both Sep and HeroParser handle correctly
+- ✅ Arabic: Both parsers handle correctly
+- ✅ Emoji: Both parsers handle correctly
+- ✅ Mixed Unicode: Full support in both parsers
+
+**Initial hypothesis about Sep's char→byte saturation causing Unicode issues was incorrect.** Both parsers handle full Unicode properly.
 
 <!-- MANUAL ADDITIONS END -->

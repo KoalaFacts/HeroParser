@@ -844,42 +844,38 @@ internal static class CsvRowParser
                 var delimMatch = Avx2.CompareEqual(chunk, delimiterVec16);
                 var lfMatch = Avx2.CompareEqual(chunk, lfVec16);
                 var crMatch = Avx2.CompareEqual(chunk, crVec16);
+                var lineEndMatch = Avx2.Or(lfMatch, crMatch);
 
                 Vector256<ushort> specials;
                 if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
                 {
                     var quoteMatch = Avx2.CompareEqual(chunk, quoteVec16);
-                    specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), Avx2.Or(lfMatch, crMatch));
+                    specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), lineEndMatch);
                 }
                 else
                 {
-                    specials = Avx2.Or(delimMatch, Avx2.Or(lfMatch, crMatch));
+                    specials = Avx2.Or(delimMatch, lineEndMatch);
                 }
 
-                // Extract 16-bit mask from ushort comparisons
-                uint mask = (uint)Avx2.MoveMask(specials.AsByte()) & 0xAAAAAAAAu;
-                mask = (mask | (mask >> 1)) & 0x55555555u;
-                mask = (mask | (mask >> 1)) & 0x33333333u;
-                mask = (mask | (mask >> 2)) & 0x0F0F0F0Fu;
-                mask = (mask | (mask >> 4)) & 0x00FF00FFu;
-                mask = (mask | (mask >> 8)) & 0x0000FFFFu;
+                // Helper to extract 16-bit mask from ushort comparisons (compact byte-level mask to char-level)
+                static uint ExtractCharMask(uint byteMask)
+                {
+                    byteMask &= 0xAAAAAAAAu; // Keep only high bytes of each ushort
+                    byteMask = (byteMask | (byteMask >> 1)) & 0x55555555u;
+                    byteMask = (byteMask | (byteMask >> 1)) & 0x33333333u;
+                    byteMask = (byteMask | (byteMask >> 2)) & 0x0F0F0F0Fu;
+                    byteMask = (byteMask | (byteMask >> 4)) & 0x00FF00FFu;
+                    byteMask = (byteMask | (byteMask >> 8)) & 0x0000FFFFu;
+                    return byteMask;
+                }
+
+                uint mask = ExtractCharMask((uint)Avx2.MoveMask(specials.AsByte()));
 
                 // Fast paths when quotes are disabled
                 if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
                 {
-                    uint delimMaskFull = (uint)Avx2.MoveMask(delimMatch.AsByte()) & 0xAAAAAAAAu;
-                    uint delimMask = (delimMaskFull | (delimMaskFull >> 1)) & 0x55555555u;
-                    delimMask = (delimMask | (delimMask >> 1)) & 0x33333333u;
-                    delimMask = (delimMask | (delimMask >> 2)) & 0x0F0F0F0Fu;
-                    delimMask = (delimMask | (delimMask >> 4)) & 0x00FF00FFu;
-                    delimMask = (delimMask | (delimMask >> 8)) & 0x0000FFFFu;
-
-                    uint lineEndingMaskFull = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch).AsByte()) & 0xAAAAAAAAu;
-                    uint lineEndingMask = (lineEndingMaskFull | (lineEndingMaskFull >> 1)) & 0x55555555u;
-                    lineEndingMask = (lineEndingMask | (lineEndingMask >> 1)) & 0x33333333u;
-                    lineEndingMask = (lineEndingMask | (lineEndingMask >> 2)) & 0x0F0F0F0Fu;
-                    lineEndingMask = (lineEndingMask | (lineEndingMask >> 4)) & 0x00FF00FFu;
-                    lineEndingMask = (lineEndingMask | (lineEndingMask >> 8)) & 0x0000FFFFu;
+                    uint delimMask = ExtractCharMask((uint)Avx2.MoveMask(delimMatch.AsByte()));
+                    uint lineEndingMask = ExtractCharMask((uint)Avx2.MoveMask(lineEndMatch.AsByte()));
 
                     // FAST PATH 1: Only separators, no line endings
                     if (delimMask == mask)
@@ -915,42 +911,52 @@ internal static class CsvRowParser
                     // FAST PATH 2: Separators + line endings
                     if ((delimMask | lineEndingMask) == mask)
                     {
-                        int lineEndBit = lineEndingMask != 0 ? BitOperations.TrailingZeroCount(lineEndingMask) : CharsPerIteration16;
+                        int lineEndBit = BitOperations.TrailingZeroCount(lineEndingMask);
+                        int startColumnCount = columnCount;
 
-                        uint delimsToProcess = delimMask;
-                        while (delimsToProcess != 0)
+                        // Process delimiters that come BEFORE the first line ending
+                        // Mask out delimiters at or after the line ending
+                        uint delimsBeforeLineEnd = delimMask & ((1u << lineEndBit) - 1);
+                        while (delimsBeforeLineEnd != 0)
                         {
-                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
-                            if (bit >= lineEndBit) break;
-                            delimsToProcess &= delimsToProcess - 1;
+                            int bit = BitOperations.TrailingZeroCount(delimsBeforeLineEnd);
+                            delimsBeforeLineEnd &= delimsBeforeLineEnd - 1;
                             int absolute = position + bit;
-                            AppendColumn(absolute, ref columnCount, ref currentStart,
-                                columnEnds, maxColumns, maxFieldLength);
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                         }
 
-                        if (lineEndingMask != 0)
+                        // Validate once after processing all delimiters
+                        if (columnCount > maxColumns)
+                            ThrowTooManyColumns(maxColumns);
+
+                        if (maxFieldLength.HasValue)
                         {
-                            int absolute = position + lineEndBit;
-                            rowLength = absolute;
-                            charsConsumed = absolute + 1;
-                            if (Unsafe.Add(ref mutableRef, absolute) == cr &&
-                                absolute + 1 < dataLength &&
-                                Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                            for (int i = startColumnCount; i < columnCount; i++)
                             {
-                                charsConsumed++;
-                                if (typeof(TTrack) == typeof(TrackLineNumbers))
-                                    newlineCount++;
+                                int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                                if (fieldLength > maxFieldLength.Value)
+                                    ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
                             }
-                            else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                            {
-                                newlineCount++;
-                            }
-                            rowEnded = true;
-                            return true;
                         }
 
-                        position += CharsPerIteration16;
-                        continue;
+                        // Handle line ending
+                        int absolute2 = position + lineEndBit;
+                        rowLength = absolute2;
+                        charsConsumed = absolute2 + 1;
+                        if (Unsafe.Add(ref mutableRef, absolute2) == cr &&
+                            absolute2 + 1 < dataLength &&
+                            Unsafe.Add(ref mutableRef, absolute2 + 1) == lf)
+                        {
+                            charsConsumed++;
+                            if (typeof(TTrack) == typeof(TrackLineNumbers))
+                                newlineCount++;
+                        }
+                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                        {
+                            newlineCount++;
+                        }
+                        rowEnded = true;
+                        return true;
                     }
                 }
 
@@ -1620,36 +1626,33 @@ internal static class CsvRowParser
             var delimMatch = Vector512.Equals(chunk, delimiterVec);
             var lfMatch = Vector512.Equals(chunk, lfVec);
             var crMatch = Vector512.Equals(chunk, crVec);
+            var lineEndMatch = Vector512.BitwiseOr(lfMatch, crMatch);
+
+            // Extract all masks upfront - avoid redundant ExtractMostSignificantBits calls
+            uint delimMask = (uint)delimMatch.ExtractMostSignificantBits();
+            uint lineEndingMask = (uint)lineEndMatch.ExtractMostSignificantBits();
 
             // Always compute quote mask when quoted fields enabled
             uint quoteMask = 0;
-            Vector512<ushort> specials;
+            uint mask;
             // JIT eliminates the else branch when TQuotePolicy is QuotesEnabled
             // JIT eliminates the if branch when TQuotePolicy is QuotesDisabled
             if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
             {
                 var quoteMatch = Vector512.Equals(chunk, quoteVec);
                 quoteMask = (uint)quoteMatch.ExtractMostSignificantBits();
-                specials = Vector512.BitwiseOr(Vector512.BitwiseOr(delimMatch, quoteMatch), Vector512.BitwiseOr(lfMatch, crMatch));
+                mask = delimMask | quoteMask | lineEndingMask;
             }
             else
             {
-                specials = Vector512.BitwiseOr(delimMatch, Vector512.BitwiseOr(lfMatch, crMatch));
+                mask = delimMask | lineEndingMask;
             }
-
-            // Extract 32-bit mask directly from ushort comparison results
-            // For Vector512<ushort>, ExtractMostSignificantBits returns 32 bits (one per element)
-            // 0xFFFF (match) has MSB=1, 0x0000 (no match) has MSB=0
-            uint mask = (uint)specials.ExtractMostSignificantBits();
 
             // DYNAMIC FAST PATH: Use fast path when no quotes in this chunk AND not inside quotes
             // This is the key optimization - most CSV chunks have no quotes even when EnableQuotedFields is on
             // When TQuotePolicy is QuotesDisabled, quoteMask is always 0 and inQuotes is always false
             if (!inQuotes && quoteMask == 0)
             {
-                uint delimMask = (uint)delimMatch.ExtractMostSignificantBits();
-                var lineEndMatch = Vector512.BitwiseOr(lfMatch, crMatch);
-                uint lineEndingMask = (uint)lineEndMatch.ExtractMostSignificantBits();
 
                 // FAST PATH 1: Only separators, no line endings
                 if (delimMask == mask)
@@ -1688,45 +1691,53 @@ internal static class CsvRowParser
                 if ((delimMask | lineEndingMask) == mask)
                 {
                     // Find first line ending position - only process delimiters before it
-                    int lineEndBit = lineEndingMask != 0 ? BitOperations.TrailingZeroCount(lineEndingMask) : CharsPerIteration;
+                    int lineEndBit = BitOperations.TrailingZeroCount(lineEndingMask);
+                    int startColumnCount = columnCount;
 
                     // Process delimiters that come BEFORE the first line ending
-                    uint delimsToProcess = delimMask;
-                    while (delimsToProcess != 0)
+                    // Mask out delimiters at or after the line ending
+                    uint delimsBeforeLineEnd = delimMask & ((1u << lineEndBit) - 1);
+                    while (delimsBeforeLineEnd != 0)
                     {
-                        int bit = BitOperations.TrailingZeroCount(delimsToProcess);
-                        if (bit >= lineEndBit) break; // Stop at line ending
-                        delimsToProcess &= delimsToProcess - 1;
+                        int bit = BitOperations.TrailingZeroCount(delimsBeforeLineEnd);
+                        delimsBeforeLineEnd &= delimsBeforeLineEnd - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     }
 
-                    // Check if there's a line ending in this chunk
-                    if (lineEndingMask != 0)
+                    // Validate once after processing all delimiters
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
                     {
-                        int absolute = position + lineEndBit;
-                        rowLength = absolute;
-                        charsConsumed = absolute + 1;
-                        // Check for CRLF
-                        if (Unsafe.Add(ref mutableRef, absolute) == cr &&
-                            absolute + 1 < dataLength &&
-                            Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                        for (int i = startColumnCount; i < columnCount; i++)
                         {
-                            charsConsumed++;
-                            if (typeof(TTrack) == typeof(TrackLineNumbers))
-                                newlineCount++;
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
                         }
-                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                        {
-                            newlineCount++;
-                        }
-                        rowEnded = true;
-                        return true;
                     }
 
-                    position += CharsPerIteration;
-                    continue;
+                    // Handle line ending
+                    int absolute2 = position + lineEndBit;
+                    rowLength = absolute2;
+                    charsConsumed = absolute2 + 1;
+                    // Check for CRLF
+                    if (Unsafe.Add(ref mutableRef, absolute2) == cr &&
+                        absolute2 + 1 < dataLength &&
+                        Unsafe.Add(ref mutableRef, absolute2 + 1) == lf)
+                    {
+                        charsConsumed++;
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++;
+                    }
+                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        newlineCount++;
+                    }
+                    rowEnded = true;
+                    return true;
                 }
             }
 
@@ -1734,9 +1745,7 @@ internal static class CsvRowParser
             // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
             if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported && quoteMask != 0)
             {
-                uint delimMask = (uint)delimMatch.ExtractMostSignificantBits();
-                var lineEndMatch = Vector512.BitwiseOr(lfMatch, crMatch);
-                uint lineEndingMask = (uint)lineEndMatch.ExtractMostSignificantBits();
+                // delimMask and lineEndingMask already extracted above
 
                 // CLMUL FAST PATH: No doubled quotes in this chunk
                 bool hasDoubledQuotes = (quoteMask & (quoteMask >> 1)) != 0;

@@ -461,14 +461,32 @@ internal static class CsvRowParser
                 // FAST PATH 1: Only separators, no line endings
                 if (delimMask == mask)
                 {
-                    while (mask != 0)
+                    int startColumnCount = columnCount;
+
+                    while (delimMask != 0)
                     {
-                        int bit = BitOperations.TrailingZeroCount(mask);
-                        mask &= mask - 1;
+                        int bit = BitOperations.TrailingZeroCount(delimMask);
+                        delimMask &= delimMask - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     }
+
+                    // Validate once per chunk instead of per delimiter
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        // Check all fields added in this chunk
+                        // Ends-only format: fieldLength = end - previousEnd - 1
+                        for (int i = startColumnCount; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
+                    }
+
                     position += Vector256<byte>.Count;
                     continue;
                 }
@@ -801,9 +819,151 @@ internal static class CsvRowParser
     {
         ref ushort ushortRef = ref Unsafe.As<char, ushort>(ref mutableRef);
 
-        // SIMD optimization: NARROW chars to bytes FIRST, then compare
-        // This allows byte-sized comparisons which are faster and don't need packing
-        // All CSV special characters (comma, quote, CR, LF) have values < 128, so narrowing is safe
+        // Check if all delimiters are ASCII - if so, use faster direct 16-bit comparisons
+        // Almost all CSV files use ASCII delimiters (comma, tab, etc.)
+        bool useDirectComparison = delimiter < 128 && quote < 128 && lf < 128 && cr < 128;
+
+        if (useDirectComparison)
+        {
+            // FAST PATH: Direct 16-bit comparisons (16 chars per iteration)
+            // This avoids the 6-operation narrowing pipeline: 2 loads + 2 clamps + 1 pack + 1 permute
+            // Trade-off: Process 16 chars/iter instead of 32, but much simpler pipeline
+
+            var delimiterVec16 = Vector256.Create((ushort)delimiter);
+            var quoteVec16 = Vector256.Create((ushort)quote);
+            var lfVec16 = Vector256.Create((ushort)lf);
+            var crVec16 = Vector256.Create((ushort)cr);
+
+            const int CharsPerIteration16 = 16;
+
+            while (position + CharsPerIteration16 <= dataLength)
+            {
+                var chunk = Vector256.LoadUnsafe(ref Unsafe.Add(ref ushortRef, position));
+
+                // Direct 16-bit comparisons - no narrowing needed
+                var delimMatch = Avx2.CompareEqual(chunk, delimiterVec16);
+                var lfMatch = Avx2.CompareEqual(chunk, lfVec16);
+                var crMatch = Avx2.CompareEqual(chunk, crVec16);
+
+                Vector256<ushort> specials;
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
+                {
+                    var quoteMatch = Avx2.CompareEqual(chunk, quoteVec16);
+                    specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), Avx2.Or(lfMatch, crMatch));
+                }
+                else
+                {
+                    specials = Avx2.Or(delimMatch, Avx2.Or(lfMatch, crMatch));
+                }
+
+                // Extract 16-bit mask from ushort comparisons
+                uint mask = (uint)Avx2.MoveMask(specials.AsByte()) & 0xAAAAAAAAu;
+                mask = (mask | (mask >> 1)) & 0x55555555u;
+                mask = (mask | (mask >> 1)) & 0x33333333u;
+                mask = (mask | (mask >> 2)) & 0x0F0F0F0Fu;
+                mask = (mask | (mask >> 4)) & 0x00FF00FFu;
+                mask = (mask | (mask >> 8)) & 0x0000FFFFu;
+
+                // Fast paths when quotes are disabled
+                if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
+                {
+                    uint delimMaskFull = (uint)Avx2.MoveMask(delimMatch.AsByte()) & 0xAAAAAAAAu;
+                    uint delimMask = (delimMaskFull | (delimMaskFull >> 1)) & 0x55555555u;
+                    delimMask = (delimMask | (delimMask >> 1)) & 0x33333333u;
+                    delimMask = (delimMask | (delimMask >> 2)) & 0x0F0F0F0Fu;
+                    delimMask = (delimMask | (delimMask >> 4)) & 0x00FF00FFu;
+                    delimMask = (delimMask | (delimMask >> 8)) & 0x0000FFFFu;
+
+                    uint lineEndingMaskFull = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch).AsByte()) & 0xAAAAAAAAu;
+                    uint lineEndingMask = (lineEndingMaskFull | (lineEndingMaskFull >> 1)) & 0x55555555u;
+                    lineEndingMask = (lineEndingMask | (lineEndingMask >> 1)) & 0x33333333u;
+                    lineEndingMask = (lineEndingMask | (lineEndingMask >> 2)) & 0x0F0F0F0Fu;
+                    lineEndingMask = (lineEndingMask | (lineEndingMask >> 4)) & 0x00FF00FFu;
+                    lineEndingMask = (lineEndingMask | (lineEndingMask >> 8)) & 0x0000FFFFu;
+
+                    // FAST PATH 1: Only separators, no line endings
+                    if (delimMask == mask)
+                    {
+                        int startColumnCount = columnCount;
+
+                        while (delimMask != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimMask);
+                            delimMask &= delimMask - 1;
+                            int absolute = position + bit;
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
+
+                        // Validate once per chunk
+                        if (columnCount > maxColumns)
+                            ThrowTooManyColumns(maxColumns);
+
+                        if (maxFieldLength.HasValue)
+                        {
+                            for (int i = startColumnCount; i < columnCount; i++)
+                            {
+                                int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                                if (fieldLength > maxFieldLength.Value)
+                                    ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                            }
+                        }
+
+                        position += CharsPerIteration16;
+                        continue;
+                    }
+
+                    // FAST PATH 2: Separators + line endings
+                    if ((delimMask | lineEndingMask) == mask)
+                    {
+                        int lineEndBit = lineEndingMask != 0 ? BitOperations.TrailingZeroCount(lineEndingMask) : CharsPerIteration16;
+
+                        uint delimsToProcess = delimMask;
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            if (bit >= lineEndBit) break;
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumn(absolute, ref columnCount, ref currentStart,
+                                columnEnds, maxColumns, maxFieldLength);
+                        }
+
+                        if (lineEndingMask != 0)
+                        {
+                            int absolute = position + lineEndBit;
+                            rowLength = absolute;
+                            charsConsumed = absolute + 1;
+                            if (Unsafe.Add(ref mutableRef, absolute) == cr &&
+                                absolute + 1 < dataLength &&
+                                Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                            {
+                                charsConsumed++;
+                                if (typeof(TTrack) == typeof(TrackLineNumbers))
+                                    newlineCount++;
+                            }
+                            else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            {
+                                newlineCount++;
+                            }
+                            rowEnded = true;
+                            return true;
+                        }
+
+                        position += CharsPerIteration16;
+                        continue;
+                    }
+                }
+
+                // Fallback to sequential processing for this chunk (quotes present)
+                break;
+            }
+
+            // Continue with sequential processing for remaining characters
+            return false;
+        }
+
+        // FALLBACK: NARROW chars to bytes FIRST, then compare (32 chars per iteration)
+        // Used for non-ASCII delimiters (rare cases like Unicode delimiters)
         var delimiterByteVec = Vector256.Create((byte)delimiter);
         var quoteByteVec = Vector256.Create((byte)quote);
         var lfByteVec = Vector256.Create((byte)lf);
@@ -869,14 +1029,32 @@ internal static class CsvRowParser
                 // FAST PATH 1: Only separators, no line endings
                 if (delimMask == mask)
                 {
-                    while (mask != 0)
+                    int startColumnCount = columnCount;
+
+                    while (delimMask != 0)
                     {
-                        int bit = BitOperations.TrailingZeroCount(mask);
-                        mask &= mask - 1;
+                        int bit = BitOperations.TrailingZeroCount(delimMask);
+                        delimMask &= delimMask - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     }
+
+                    // Validate once per chunk instead of per delimiter
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        // Check all fields added in this chunk
+                        // Ends-only format: fieldLength = end - previousEnd - 1
+                        for (int i = startColumnCount; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
+                    }
+
                     position += CharsPerIteration;
                     continue;
                 }
@@ -1476,14 +1654,32 @@ internal static class CsvRowParser
                 // FAST PATH 1: Only separators, no line endings
                 if (delimMask == mask)
                 {
-                    while (mask != 0)
+                    int startColumnCount = columnCount;
+
+                    while (delimMask != 0)
                     {
-                        int bit = BitOperations.TrailingZeroCount(mask);
-                        mask &= mask - 1;
+                        int bit = BitOperations.TrailingZeroCount(delimMask);
+                        delimMask &= delimMask - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     }
+
+                    // Validate once per chunk instead of per delimiter
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        // Check all fields added in this chunk
+                        // Ends-only format: fieldLength = end - previousEnd - 1
+                        for (int i = startColumnCount; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
+                    }
+
                     position += CharsPerIteration;
                     continue;
                 }
@@ -1776,6 +1972,22 @@ internal static class CsvRowParser
         // store only the end position (delimiter index)
         // Column start = columnEnds[columnCount] + 1
         // Column length = columnEnds[columnCount + 1] - columnEnds[columnCount] - 1
+        columnEnds[columnCount + 1] = delimiterIndex;
+        columnCount++;
+        currentStart = delimiterIndex + 1;
+    }
+
+    /// <summary>
+    /// Appends a column end position without validation (for SIMD fast paths).
+    /// Validation must be performed separately after chunk processing.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void AppendColumnUnchecked(
+        int delimiterIndex,
+        ref int columnCount,
+        ref int currentStart,
+        Span<int> columnEnds)
+    {
         columnEnds[columnCount + 1] = delimiterIndex;
         columnCount++;
         currentStart = delimiterIndex + 1;

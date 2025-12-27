@@ -13,12 +13,10 @@ public class VsSepReadingBenchmarks
     private string csv = null!;
     private byte[] utf8 = null!;
 
-    [Params(10_000)]
-    // [Params(100, 1_000, 10_000, 100_000)]
+    [Params(100, 1_000, 10_000, 100_000)]
     public int Rows { get; set; }
 
-    [Params(25)]
-    // [Params(10, 25, 50, 100)]
+    [Params(10, 25, 50, 100)]
     public int Columns { get; set; }
 
     [Params(false, true)]

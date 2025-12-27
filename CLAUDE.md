@@ -1,6 +1,6 @@
 # HeroParser Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2025-11-29
+Auto-generated from all feature plans. Last updated: 2025-12-27
 
 ## Active Technologies
 - C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Zero external dependencies for core library (001-aim-to-be)
@@ -82,7 +82,7 @@ foreach (var record in Csv.Read()
 
 ### What Works
 
-- **CLMUL-based quote handling**: The PCLMULQDQ instruction for branchless prefix XOR enables ~6% faster quoted CSV parsing than Sep
+- **CLMUL-based quote handling**: The PCLMULQDQ instruction for branchless prefix XOR provides efficient quote-aware SIMD parsing
 - **Compile-time specialization**: Generic type parameters (`TQuotePolicy`, `TTrack`) allow JIT to eliminate dead code paths
 - **`AppendColumn` method**: The JIT already optimizes this well - don't try to "improve" it
 
@@ -100,14 +100,16 @@ Attempted optimizations that caused regressions:
 
 ### Benchmark Baseline (vs Sep)
 
-**Latest Results (.NET 10, AVX-512, 10k rows × 25 cols):**
+**Latest Results (.NET 9, AVX-512, 10k rows × 25 cols):**
 
 | Encoding | Scenario | HeroParser | Sep | Ratio | Winner |
 |----------|----------|------------|-----|-------|--------|
-| UTF-16 | Unquoted | 404.6 μs | 333.9 μs | 1.21x slower | Sep |
-| UTF-16 | Quoted | 732.9 μs | 630.9 μs | 1.16x slower | Sep |
-| UTF-8 | Unquoted | 345.6 μs | 333.9 μs | 1.03x slower | Sep |
-| UTF-8 | Quoted | 594.9 μs | 630.9 μs | **0.94x (6% faster!)** | **HeroParser** ✅ |
+| UTF-16 | Unquoted | 440.7 μs | 336.4 μs | 1.31x slower | Sep |
+| UTF-16 | Quoted | 857.5 μs | 656.8 μs | 1.31x slower | Sep |
+| UTF-8 | Unquoted | 364.1 μs | 336.4 μs | 1.08x slower | Sep |
+| UTF-8 | Quoted | 693.2 μs | 656.8 μs | 1.06x slower | Sep |
+
+**Note:** Performance varies based on data characteristics. The CLMUL-based quote handling provides efficiency gains for complex quoted data patterns, though Sep's optimized architecture maintains an edge in general benchmarks.
 
 **UTF-16 Pack-Saturate Research (Dec 2024):**
 
@@ -143,7 +145,7 @@ Attempted full implementation of Sep's pack-saturate approach to match their UTF
 - UTF-16's 1.23x gap vs Sep is acceptable given fundamental 2x memory bandwidth overhead
 - Micro-benchmark gains (delimiter detection only) don't translate to full parsing workload
 
-**Recommendation**: Focus on UTF-8 performance (already 6% faster than Sep for quoted data) rather than UTF-16 optimization.
+**Recommendation**: Focus on UTF-8 performance where HeroParser is closest to Sep (within 6-8%) rather than UTF-16 optimization.
 
 ### Unicode Handling
 

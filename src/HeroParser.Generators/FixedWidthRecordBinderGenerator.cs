@@ -133,17 +133,12 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         }
         builder.AppendLine();
 
-        // Emit static descriptor instance using lazy initialization for thread safety
-        builder.AppendLine($"private static {DESCRIPTOR_TYPE}<{fullyQualifiedName}>? _instance;");
+        // Emit static descriptor instance using Lazy<T> for thread-safe initialization
+        builder.AppendLine($"private static readonly global::System.Lazy<{DESCRIPTOR_TYPE}<{fullyQualifiedName}>> _instance = new(CreateDescriptor);");
         builder.AppendLine();
 
         // Emit GetDescriptor method that returns the cached descriptor
-        builder.AppendLine($"public static {DESCRIPTOR_TYPE}<{fullyQualifiedName}> GetDescriptor()");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("return _instance ??= CreateDescriptor();");
-        builder.Unindent();
-        builder.AppendLine("}");
+        builder.AppendLine($"public static {DESCRIPTOR_TYPE}<{fullyQualifiedName}> GetDescriptor() => _instance.Value;");
         builder.AppendLine();
 
         // Emit CreateDescriptor method that builds the descriptor

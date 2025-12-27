@@ -102,7 +102,10 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : class
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool BindInto(T instance, CsvRow<char> row, int rowNumber)
     {
-        var props = resolvedProperties!;
+        if (resolvedProperties is null)
+            throw new InvalidOperationException("BindHeader must be called before BindInto when NeedsHeaderResolution is true.");
+
+        var props = resolvedProperties;
         var columnCount = row.ColumnCount;
         var cultureLocal = culture;
         var nullVals = nullValues;

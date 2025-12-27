@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -1999,6 +2000,7 @@ internal static class CsvRowParser
         ref int currentStart,
         Span<int> columnEnds)
     {
+        Debug.Assert((uint)(columnCount + 1) < (uint)columnEnds.Length, "Column count exceeds buffer capacity");
         columnEnds[columnCount + 1] = delimiterIndex;
         columnCount++;
         currentStart = delimiterIndex + 1;

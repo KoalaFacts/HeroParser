@@ -39,7 +39,11 @@ public static class CsvRecordBinderFactory
     {
         // First try inline binder (highest performance)
         if (charBinderFactories.TryGetValue(typeof(T), out var binderFactory))
-            return ((Func<CsvRecordOptions?, ICsvBinder<char, T>>)binderFactory)(options);
+        {
+            if (binderFactory is not Func<CsvRecordOptions?, ICsvBinder<char, T>> typedFactory)
+                throw new InvalidOperationException($"Binder factory for type {typeof(T).Name} was registered with incorrect delegate type.");
+            return typedFactory(options);
+        }
 
         // Fall back to descriptor-based binder
         if (TryGetDescriptor<T>(out var descriptor) && descriptor is not null)
@@ -72,7 +76,11 @@ public static class CsvRecordBinderFactory
         where T : class, new()
     {
         if (byteBinderFactories.TryGetValue(typeof(T), out var binderFactory))
-            return ((Func<CsvRecordOptions?, ICsvBinder<byte, T>>)binderFactory)(options);
+        {
+            if (binderFactory is not Func<CsvRecordOptions?, ICsvBinder<byte, T>> typedFactory)
+                throw new InvalidOperationException($"Byte binder factory for type {typeof(T).Name} was registered with incorrect delegate type.");
+            return typedFactory(options);
+        }
 
         throw new InvalidOperationException(
             $"No byte binder found for type {typeof(T).Name}. Add [CsvGenerateBinder] attribute to the type.");
@@ -103,7 +111,9 @@ public static class CsvRecordBinderFactory
     {
         if (descriptorFactories.TryGetValue(typeof(T), out var factory))
         {
-            descriptor = ((Func<CsvRecordDescriptor<T>>)factory)();
+            if (factory is not Func<CsvRecordDescriptor<T>> typedFactory)
+                throw new InvalidOperationException($"Descriptor factory for type {typeof(T).Name} was registered with incorrect delegate type.");
+            descriptor = typedFactory();
             return true;
         }
 

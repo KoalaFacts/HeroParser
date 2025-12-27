@@ -8,6 +8,10 @@
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
     <IsPackable>false</IsPackable>
+    <!-- Disable lock file for AOT tests: PublishAot adds implicit package references
+         (Microsoft.DotNet.ILCompiler, Microsoft.NET.ILLink.Tasks) that change with SDK patches,
+         causing lock file drift that breaks CI when new patch versions are released -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>

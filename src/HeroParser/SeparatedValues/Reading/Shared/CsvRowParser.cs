@@ -96,6 +96,8 @@ internal static class CsvRowParser
             return new CsvRowParseResult(0, 0, 0, 0);
 
         ref readonly T dataRef = ref MemoryMarshal.GetReference(data);
+        // Safety: Unsafe.Add requires ref T, not ref readonly T. This reference is only used
+        // for reading via Unsafe.Add - no writes occur through mutableRef.
         ref T mutableRef = ref Unsafe.AsRef(in dataRef);
 
         T delimiter = CastFromChar<T>(options.Delimiter);

@@ -2,6 +2,7 @@ using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Reading.Records.MultiSchema;
+using HeroParser.SeparatedValues.Reading.Rows;
 using HeroParser.SeparatedValues.Reading.Shared;
 using System.Text;
 
@@ -229,11 +230,11 @@ public class MultiSchemaBenchmarks
 public partial class BankingDispatcher
 {
     [CsvDiscriminator("H")]
-    public static partial MultiSchemaBenchmarks.HeaderRecord? BindHeader(SeparatedValues.Reading.Rows.CsvRow<char> row, int rowNumber);
+    public static partial MultiSchemaBenchmarks.HeaderRecord? BindHeader(CsvRow<char> row, int rowNumber);
 
     [CsvDiscriminator("D")]
-    public static partial MultiSchemaBenchmarks.DetailRecord? BindDetail(SeparatedValues.Reading.Rows.CsvRow<char> row, int rowNumber);
+    public static partial MultiSchemaBenchmarks.DetailRecord? BindDetail(CsvRow<char> row, int rowNumber);
 
     [CsvDiscriminator("T")]
-    public static partial MultiSchemaBenchmarks.TrailerRecord? BindTrailer(SeparatedValues.Reading.Rows.CsvRow<char> row, int rowNumber);
+    public static partial MultiSchemaBenchmarks.TrailerRecord? BindTrailer(CsvRow<char> row, int rowNumber);
 }

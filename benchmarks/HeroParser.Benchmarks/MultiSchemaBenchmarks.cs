@@ -227,7 +227,7 @@ public class MultiSchemaBenchmarks
 /// Uses switch expressions compiled to jump tables - no dictionary lookups.
 /// All methods are auto-generated from [CsvSchemaMapping] attributes.
 /// </summary>
-[CsvMultiSchemaDispatcher(DiscriminatorIndex = 0)]
+[CsvGenerateDispatcher(DiscriminatorIndex = 0)]
 [CsvSchemaMapping("H", typeof(MultiSchemaBenchmarks.HeaderRecord))]
 [CsvSchemaMapping("D", typeof(MultiSchemaBenchmarks.DetailRecord))]
 [CsvSchemaMapping("T", typeof(MultiSchemaBenchmarks.TrailerRecord))]

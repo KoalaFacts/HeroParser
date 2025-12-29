@@ -20,7 +20,7 @@ namespace HeroParser.Generators;
 [Generator(LanguageNames.CSharp)]
 public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
 {
-    private const string DISPATCHER_ATTRIBUTE = "HeroParser.SeparatedValues.Reading.Shared.CsvMultiSchemaDispatcherAttribute";
+    private const string DISPATCHER_ATTRIBUTE = "HeroParser.SeparatedValues.Reading.Shared.CsvGenerateDispatcherAttribute";
     private const string SCHEMA_MAPPING_ATTRIBUTE = "HeroParser.SeparatedValues.Reading.Shared.CsvSchemaMappingAttribute";
     private const string BINDER_NAMESPACE = "HeroParser.SeparatedValues.Reading.Binding";
     private const string ROW_TYPE = "global::HeroParser.SeparatedValues.Reading.Rows.CsvRow<char>";

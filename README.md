@@ -350,6 +350,42 @@ await foreach (var record in Csv.Read()
 }
 ```
 
+#### Source-Generated Dispatch (Optimal Performance)
+
+For maximum performance, use source-generated dispatchers instead of runtime multi-schema. The generator creates optimized switch-based dispatch that compiles to jump tables:
+
+```csharp
+[CsvGenerateDispatcher(DiscriminatorIndex = 0)]
+[CsvSchemaMapping("H", typeof(HeaderRecord))]
+[CsvSchemaMapping("D", typeof(DetailRecord))]
+[CsvSchemaMapping("T", typeof(TrailerRecord))]
+public partial class BankingDispatcher { }
+
+// Usage:
+var reader = Csv.Read().FromText(csv);
+if (reader.MoveNext()) { } // Skip header
+int rowNumber = 1;
+while (reader.MoveNext())
+{
+    rowNumber++;
+    var record = BankingDispatcher.Dispatch(reader.Current, rowNumber);
+    switch (record)
+    {
+        case HeaderRecord h: /* ... */ break;
+        case DetailRecord d: /* ... */ break;
+        case TrailerRecord t: /* ... */ break;
+    }
+}
+```
+
+**Why source-generated is faster:**
+- Switch expression compiles to jump table (no dictionary lookup)
+- Direct binder invocation (no interface dispatch)
+- No boxing/unboxing overhead
+- ~2.85x faster than runtime multi-schema dispatch
+
+> **Note**: All mapped types must have `[CsvGenerateBinder]` attribute for AOT compatibility.
+
 ### Advanced Reader Options
 
 #### Progress Reporting

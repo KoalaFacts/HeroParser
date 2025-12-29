@@ -71,7 +71,7 @@ foreach (var record in Csv.Read()
 For maximum performance, use source-generated dispatchers instead of runtime multi-schema:
 
 ```csharp
-[CsvMultiSchemaDispatcher(DiscriminatorIndex = 0)]
+[CsvGenerateDispatcher(DiscriminatorIndex = 0)]
 [CsvSchemaMapping("H", typeof(HeaderRecord))]
 [CsvSchemaMapping("D", typeof(DetailRecord))]
 [CsvSchemaMapping("T", typeof(TrailerRecord))]

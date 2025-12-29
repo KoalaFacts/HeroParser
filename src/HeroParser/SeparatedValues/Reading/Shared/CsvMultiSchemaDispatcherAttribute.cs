@@ -12,7 +12,7 @@ namespace HeroParser.SeparatedValues.Reading.Shared;
 /// </para>
 /// <example>
 /// <code>
-/// [CsvMultiSchemaDispatcher(DiscriminatorIndex = 0)]
+/// [CsvGenerateDispatcher(DiscriminatorIndex = 0)]
 /// [CsvSchemaMapping("H", typeof(HeaderRecord))]
 /// [CsvSchemaMapping("D", typeof(DetailRecord))]
 /// [CsvSchemaMapping("T", typeof(TrailerRecord))]
@@ -32,7 +32,7 @@ namespace HeroParser.SeparatedValues.Reading.Shared;
 /// </example>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class CsvMultiSchemaDispatcherAttribute : Attribute
+public sealed class CsvGenerateDispatcherAttribute : Attribute
 {
     /// <summary>
     /// Gets or sets the zero-based column index containing the discriminator value.
@@ -54,7 +54,7 @@ public sealed class CsvMultiSchemaDispatcherAttribute : Attribute
 
 /// <summary>
 /// Maps a discriminator value to a record type for source-generated multi-schema dispatch.
-/// Apply multiple instances of this attribute to a class with <see cref="CsvMultiSchemaDispatcherAttribute"/>.
+/// Apply multiple instances of this attribute to a class with <see cref="CsvGenerateDispatcherAttribute"/>.
 /// </summary>
 /// <remarks>
 /// The generator will automatically create binding methods for each mapped type.

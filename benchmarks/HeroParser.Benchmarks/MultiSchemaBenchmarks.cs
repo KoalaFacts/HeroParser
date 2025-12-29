@@ -225,16 +225,10 @@ public class MultiSchemaBenchmarks
 /// <summary>
 /// Source-generated multi-schema dispatcher for optimal performance.
 /// Uses switch expressions compiled to jump tables - no dictionary lookups.
+/// All methods are auto-generated from [CsvSchemaMapping] attributes.
 /// </summary>
 [CsvMultiSchemaDispatcher(DiscriminatorIndex = 0)]
-public partial class BankingDispatcher
-{
-    [CsvDiscriminator("H")]
-    public static partial MultiSchemaBenchmarks.HeaderRecord? BindHeader(CsvRow<char> row, int rowNumber);
-
-    [CsvDiscriminator("D")]
-    public static partial MultiSchemaBenchmarks.DetailRecord? BindDetail(CsvRow<char> row, int rowNumber);
-
-    [CsvDiscriminator("T")]
-    public static partial MultiSchemaBenchmarks.TrailerRecord? BindTrailer(CsvRow<char> row, int rowNumber);
-}
+[CsvSchemaMapping("H", typeof(MultiSchemaBenchmarks.HeaderRecord))]
+[CsvSchemaMapping("D", typeof(MultiSchemaBenchmarks.DetailRecord))]
+[CsvSchemaMapping("T", typeof(MultiSchemaBenchmarks.TrailerRecord))]
+public partial class BankingDispatcher { }

@@ -21,7 +21,7 @@ namespace HeroParser.Generators;
 public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
 {
     private const string DISPATCHER_ATTRIBUTE = "HeroParser.SeparatedValues.Reading.Shared.CsvMultiSchemaDispatcherAttribute";
-    private const string DISCRIMINATOR_ATTRIBUTE = "HeroParser.SeparatedValues.Reading.Shared.CsvDiscriminatorAttribute";
+    private const string SCHEMA_MAPPING_ATTRIBUTE = "HeroParser.SeparatedValues.Reading.Shared.CsvSchemaMappingAttribute";
     private const string BINDER_NAMESPACE = "HeroParser.SeparatedValues.Reading.Binding";
     private const string ROW_TYPE = "global::HeroParser.SeparatedValues.Reading.Rows.CsvRow<char>";
     private const string BYTE_ROW_TYPE = "global::HeroParser.SeparatedValues.Reading.Rows.CsvRow<byte>";
@@ -86,62 +86,38 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         }
 #pragma warning restore IDE0010
 
-        // Find all methods with [CsvDiscriminator]
+        // Find [CsvSchemaMapping] attributes on the class
         var mappings = new List<DiscriminatorMapping>();
-        foreach (var member in classSymbol.GetMembers())
+        var classLocation = classSymbol.Locations.FirstOrDefault();
+
+        foreach (var attr in classSymbol.GetAttributes()
+            .Where(a => a.AttributeClass?.ToDisplayString() == SCHEMA_MAPPING_ATTRIBUTE))
         {
             ct.ThrowIfCancellationRequested();
 
-            if (member is not IMethodSymbol method)
+            if (attr.ConstructorArguments.Length < 2)
                 continue;
 
-            var discAttr = method.GetAttributes()
-                .FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == DISCRIMINATOR_ATTRIBUTE);
-
-            if (discAttr is null)
+            var discriminatorValue = attr.ConstructorArguments[0].Value?.ToString();
+            if (string.IsNullOrEmpty(discriminatorValue) ||
+                attr.ConstructorArguments[1].Value is not INamedTypeSymbol recordTypeSymbol)
                 continue;
 
-            // Get discriminator value
-            string? discriminatorValue = null;
-            if (discAttr.ConstructorArguments.Length > 0)
-            {
-                discriminatorValue = discAttr.ConstructorArguments[0].Value?.ToString();
-            }
+            var returnTypeName = recordTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var safeTypeName = CreateSafeClassName(recordTypeSymbol);
 
-            if (string.IsNullOrEmpty(discriminatorValue))
-                continue;
-
-            // Get return type
-            var returnType = method.ReturnType;
-            if (returnType is INamedTypeSymbol { IsGenericType: true, Name: "Nullable" } nullable)
-            {
-                returnType = nullable.TypeArguments[0];
-            }
-
-            // Handle nullable reference types
-            if (returnType.NullableAnnotation == NullableAnnotation.Annotated)
-            {
-                returnType = returnType.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
-            }
-
-            var returnTypeName = returnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var safeTypeName = CreateSafeClassName((INamedTypeSymbol)returnType);
-
-            // Check if return type has [CsvGenerateBinder] attribute (required for AOT)
-            bool hasGenerateBinderAttribute = returnType.GetAttributes()
+            // Check if record type has [CsvGenerateBinder] attribute (required for AOT)
+            bool hasGenerateBinderAttribute = recordTypeSymbol.GetAttributes()
                 .Any(a => a.AttributeClass != null &&
                           generateBinderAttributeNames.Contains(a.AttributeClass.ToDisplayString()));
 
-            // Get location for diagnostic
-            var location = method.Locations.FirstOrDefault();
-
             mappings.Add(new DiscriminatorMapping(
-                discriminatorValue!,
-                method.Name,
-                returnTypeName,
-                safeTypeName,
-                hasGenerateBinderAttribute,
-                location));
+                DiscriminatorValue: discriminatorValue!,
+                MethodName: $"Bind{recordTypeSymbol.Name}",
+                ReturnTypeName: returnTypeName,
+                SafeTypeName: safeTypeName,
+                HasGenerateBinderAttribute: hasGenerateBinderAttribute,
+                Location: classLocation));
         }
 
         if (mappings.Count == 0)
@@ -199,10 +175,10 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         }
         builder.AppendLine();
 
-        // Emit partial method implementations
+        // Emit binding methods
         foreach (var mapping in descriptor.Mappings)
         {
-            builder.AppendLine($"public static partial {mapping.ReturnTypeName}? {mapping.MethodName}({ROW_TYPE} row, int rowNumber)");
+            builder.AppendLine($"public static {mapping.ReturnTypeName}? {mapping.MethodName}({ROW_TYPE} row, int rowNumber)");
             builder.AppendLine($"    => _binder_{mapping.SafeTypeName}.Bind(row, rowNumber);");
             builder.AppendLine();
         }

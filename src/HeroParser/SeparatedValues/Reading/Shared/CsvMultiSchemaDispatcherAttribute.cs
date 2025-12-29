@@ -7,28 +7,25 @@ namespace HeroParser.SeparatedValues.Reading.Shared;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Use this attribute with <see cref="CsvDiscriminatorAttribute"/> on partial methods
-/// to define type mappings. The generator will create an optimized Dispatch method.
+/// Use this attribute with <see cref="CsvSchemaMappingAttribute"/> to define type mappings.
+/// The generator will create an optimized Dispatch method and all binding methods automatically.
 /// </para>
 /// <example>
 /// <code>
 /// [CsvMultiSchemaDispatcher(DiscriminatorIndex = 0)]
+/// [CsvSchemaMapping("H", typeof(HeaderRecord))]
+/// [CsvSchemaMapping("D", typeof(DetailRecord))]
+/// [CsvSchemaMapping("T", typeof(TrailerRecord))]
 /// public partial class BankingFileDispatcher
 /// {
-///     [CsvDiscriminator("H")]
-///     public static partial HeaderRecord? BindHeader(CsvRow&lt;char&gt; row, int rowNumber);
-///
-///     [CsvDiscriminator("D")]
-///     public static partial DetailRecord? BindDetail(CsvRow&lt;char&gt; row, int rowNumber);
-///
-///     [CsvDiscriminator("T")]
-///     public static partial TrailerRecord? BindTrailer(CsvRow&lt;char&gt; row, int rowNumber);
+///     // Everything is auto-generated!
 /// }
 ///
 /// // Usage:
-/// foreach (var row in Csv.Read().Rows().FromText(csv))
+/// var reader = Csv.Read().FromText(csv);
+/// while (reader.MoveNext())
 /// {
-///     var record = BankingFileDispatcher.Dispatch(row, rowNumber);
+///     var record = BankingFileDispatcher.Dispatch(reader.Current, rowNumber);
 ///     // record is typed based on discriminator
 /// }
 /// </code>
@@ -56,31 +53,45 @@ public sealed class CsvMultiSchemaDispatcherAttribute : Attribute
 }
 
 /// <summary>
-/// Maps a discriminator value to a partial method that binds the corresponding record type.
+/// Maps a discriminator value to a record type for source-generated multi-schema dispatch.
+/// Apply multiple instances of this attribute to a class with <see cref="CsvMultiSchemaDispatcherAttribute"/>.
 /// </summary>
-[AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-public sealed class CsvDiscriminatorAttribute : Attribute
+/// <remarks>
+/// The generator will automatically create binding methods for each mapped type.
+/// All mapped types must have the <c>[CsvGenerateBinder]</c> attribute for AOT compatibility.
+/// </remarks>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public sealed class CsvSchemaMappingAttribute : Attribute
 {
     /// <summary>
-    /// Initializes a new instance with the discriminator value.
+    /// Initializes a new instance with a discriminator value and record type.
     /// </summary>
-    /// <param name="value">The discriminator value that identifies this record type.</param>
-    public CsvDiscriminatorAttribute(string value)
+    /// <param name="discriminator">The discriminator value that identifies this record type.</param>
+    /// <param name="recordType">The record type to bind when this discriminator is matched.</param>
+    public CsvSchemaMappingAttribute(string discriminator, Type recordType)
     {
-        Value = value;
+        Discriminator = discriminator;
+        RecordType = recordType;
     }
 
     /// <summary>
-    /// Initializes a new instance with an integer discriminator value.
+    /// Initializes a new instance with an integer discriminator value and record type.
     /// </summary>
-    /// <param name="value">The integer discriminator value.</param>
-    public CsvDiscriminatorAttribute(int value)
+    /// <param name="discriminator">The integer discriminator value.</param>
+    /// <param name="recordType">The record type to bind when this discriminator is matched.</param>
+    public CsvSchemaMappingAttribute(int discriminator, Type recordType)
     {
-        Value = value.ToString();
+        Discriminator = discriminator.ToString();
+        RecordType = recordType;
     }
 
     /// <summary>
     /// Gets the discriminator value.
     /// </summary>
-    public string Value { get; }
+    public string Discriminator { get; }
+
+    /// <summary>
+    /// Gets the record type to bind.
+    /// </summary>
+    public Type RecordType { get; }
 }

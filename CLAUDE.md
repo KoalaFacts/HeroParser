@@ -72,17 +72,10 @@ For maximum performance, use source-generated dispatchers instead of runtime mul
 
 ```csharp
 [CsvMultiSchemaDispatcher(DiscriminatorIndex = 0)]
-public partial class BankingDispatcher
-{
-    [CsvDiscriminator("H")]
-    public static partial HeaderRecord? BindHeader(CsvRow<char> row, int rowNumber);
-
-    [CsvDiscriminator("D")]
-    public static partial DetailRecord? BindDetail(CsvRow<char> row, int rowNumber);
-
-    [CsvDiscriminator("T")]
-    public static partial TrailerRecord? BindTrailer(CsvRow<char> row, int rowNumber);
-}
+[CsvSchemaMapping("H", typeof(HeaderRecord))]
+[CsvSchemaMapping("D", typeof(DetailRecord))]
+[CsvSchemaMapping("T", typeof(TrailerRecord))]
+public partial class BankingDispatcher { }
 
 // Usage:
 var reader = Csv.Read().FromText(csv);

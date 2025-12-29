@@ -145,6 +145,31 @@ public class MultiSchemaBenchmarks
     }
 
     // ============================================================
+    // Source-Generated Dispatcher (Optimal)
+    // ============================================================
+
+    [Benchmark]
+    public int MultiSchema_SourceGenerated()
+    {
+        int total = 0;
+        int rowNumber = 0;
+
+        // Skip header row
+        var reader = Csv.Read().FromText(multiTypeCsv);
+        if (reader.MoveNext())
+            rowNumber++; // header
+
+        while (reader.MoveNext())
+        {
+            rowNumber++;
+            var record = BankingDispatcher.Dispatch(reader.Current, rowNumber);
+            if (record is DetailRecord d)
+                total += (int)d.Amount;
+        }
+        return total;
+    }
+
+    // ============================================================
     // Record Types
     // ============================================================
 
@@ -189,4 +214,26 @@ public class MultiSchemaBenchmarks
         [CsvColumn(Name = "Data2")]
         public decimal TotalAmount { get; set; }
     }
+
+}
+
+// ============================================================
+// Source-Generated Dispatcher
+// ============================================================
+
+/// <summary>
+/// Source-generated multi-schema dispatcher for optimal performance.
+/// Uses switch expressions compiled to jump tables - no dictionary lookups.
+/// </summary>
+[CsvMultiSchemaDispatcher(DiscriminatorIndex = 0)]
+public partial class BankingDispatcher
+{
+    [CsvDiscriminator("H")]
+    public static partial MultiSchemaBenchmarks.HeaderRecord? BindHeader(SeparatedValues.Reading.Rows.CsvRow<char> row, int rowNumber);
+
+    [CsvDiscriminator("D")]
+    public static partial MultiSchemaBenchmarks.DetailRecord? BindDetail(SeparatedValues.Reading.Rows.CsvRow<char> row, int rowNumber);
+
+    [CsvDiscriminator("T")]
+    public static partial MultiSchemaBenchmarks.TrailerRecord? BindTrailer(SeparatedValues.Reading.Rows.CsvRow<char> row, int rowNumber);
 }

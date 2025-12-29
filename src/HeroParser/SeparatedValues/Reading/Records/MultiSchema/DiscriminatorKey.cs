@@ -37,6 +37,23 @@ internal readonly struct DiscriminatorKey : IEquatable<DiscriminatorKey>
     public int Length => length;
 
     /// <summary>
+    /// Extracts the raw packed value and length for caching.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void GetRawValues(out long packed, out byte len)
+    {
+        packed = packedValue;
+        len = length;
+    }
+
+    /// <summary>
+    /// Compares the key against cached raw values for fast sticky binding.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool MatchesRaw(long cachedPacked, byte cachedLength)
+        => length == cachedLength && packedValue == cachedPacked;
+
+    /// <summary>
     /// Attempts to create a packed key from a char span.
     /// </summary>
     /// <param name="value">The discriminator value to pack.</param>

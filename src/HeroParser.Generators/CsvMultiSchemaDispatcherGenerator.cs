@@ -1,0 +1,390 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using static HeroParser.Generators.GeneratorHelpers;
+
+namespace HeroParser.Generators;
+
+/// <summary>
+/// Source generator for multi-schema CSV dispatchers.
+/// Generates optimized switch-based dispatch code that eliminates interface dispatch,
+/// dictionary lookups, and boxing overhead.
+/// </summary>
+/// <remarks>
+/// This generator produces AOT-compatible code. It requires that all record types
+/// used in the dispatcher have the [CsvGenerateBinder] attribute to ensure the
+/// corresponding binder classes are generated at compile-time.
+/// </remarks>
+[Generator(LanguageNames.CSharp)]
+public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
+{
+    private const string DISPATCHER_ATTRIBUTE = "HeroParser.SeparatedValues.Reading.Shared.CsvMultiSchemaDispatcherAttribute";
+    private const string DISCRIMINATOR_ATTRIBUTE = "HeroParser.SeparatedValues.Reading.Shared.CsvDiscriminatorAttribute";
+    private const string BINDER_NAMESPACE = "HeroParser.SeparatedValues.Reading.Binding";
+    private const string ROW_TYPE = "global::HeroParser.SeparatedValues.Reading.Rows.CsvRow<char>";
+    private const string BYTE_ROW_TYPE = "global::HeroParser.SeparatedValues.Reading.Rows.CsvRow<byte>";
+
+    private static readonly string[] generateBinderAttributeNames =
+    [
+        "HeroParser.SeparatedValues.Reading.Shared.CsvGenerateBinderAttribute",
+        "HeroParser.CsvGenerateBinderAttribute"
+    ];
+
+#pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
+    private static readonly DiagnosticDescriptor missingBinderAttributeDiagnostic = new(
+        "HERO003",
+        "Record type missing [CsvGenerateBinder] attribute",
+        "Record type '{0}' used in multi-schema dispatcher does not have [CsvGenerateBinder] attribute. This is required for AOT compatibility.",
+        "HeroParser.Generators",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+#pragma warning restore RS2008
+
+    public void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        var provider = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                DISPATCHER_ATTRIBUTE,
+                predicate: static (node, _) => node is ClassDeclarationSyntax,
+                transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
+            .Where(static x => x is not null);
+
+        context.RegisterSourceOutput(provider, static (spc, descriptor) => EmitDispatcher(spc, descriptor!));
+    }
+
+    private static DispatcherDescriptor? TransformToDescriptor(GeneratorAttributeSyntaxContext ctx, CancellationToken ct)
+    {
+        if (ctx.TargetSymbol is not INamedTypeSymbol classSymbol)
+            return null;
+
+        // Get dispatcher attribute data
+        var dispatcherAttr = ctx.Attributes.FirstOrDefault();
+        if (dispatcherAttr is null)
+            return null;
+
+        int discriminatorIndex = -1;
+        string? discriminatorColumn = null;
+        bool caseInsensitive = false;
+
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+        foreach (var arg in dispatcherAttr.NamedArguments)
+        {
+            switch (arg.Key)
+            {
+                case "DiscriminatorIndex" when arg.Value.Value is int i:
+                    discriminatorIndex = i;
+                    break;
+                case "DiscriminatorColumn" when arg.Value.Value is string s:
+                    discriminatorColumn = s;
+                    break;
+                case "CaseInsensitive" when arg.Value.Value is bool b:
+                    caseInsensitive = b;
+                    break;
+            }
+        }
+#pragma warning restore IDE0010
+
+        // Find all methods with [CsvDiscriminator]
+        var mappings = new List<DiscriminatorMapping>();
+        foreach (var member in classSymbol.GetMembers())
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (member is not IMethodSymbol method)
+                continue;
+
+            var discAttr = method.GetAttributes()
+                .FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == DISCRIMINATOR_ATTRIBUTE);
+
+            if (discAttr is null)
+                continue;
+
+            // Get discriminator value
+            string? discriminatorValue = null;
+            if (discAttr.ConstructorArguments.Length > 0)
+            {
+                discriminatorValue = discAttr.ConstructorArguments[0].Value?.ToString();
+            }
+
+            if (string.IsNullOrEmpty(discriminatorValue))
+                continue;
+
+            // Get return type
+            var returnType = method.ReturnType;
+            if (returnType is INamedTypeSymbol { IsGenericType: true, Name: "Nullable" } nullable)
+            {
+                returnType = nullable.TypeArguments[0];
+            }
+
+            // Handle nullable reference types
+            if (returnType.NullableAnnotation == NullableAnnotation.Annotated)
+            {
+                returnType = returnType.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
+            }
+
+            var returnTypeName = returnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var safeTypeName = CreateSafeClassName((INamedTypeSymbol)returnType);
+
+            // Check if return type has [CsvGenerateBinder] attribute (required for AOT)
+            bool hasGenerateBinderAttribute = returnType.GetAttributes()
+                .Any(a => a.AttributeClass != null &&
+                          generateBinderAttributeNames.Contains(a.AttributeClass.ToDisplayString()));
+
+            // Get location for diagnostic
+            var location = method.Locations.FirstOrDefault();
+
+            mappings.Add(new DiscriminatorMapping(
+                discriminatorValue!,
+                method.Name,
+                returnTypeName,
+                safeTypeName,
+                hasGenerateBinderAttribute,
+                location));
+        }
+
+        if (mappings.Count == 0)
+            return null;
+
+        var className = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var namespaceName = classSymbol.ContainingNamespace?.ToDisplayString() ?? "";
+        var simpleClassName = classSymbol.Name;
+
+        return new DispatcherDescriptor(
+            className,
+            namespaceName,
+            simpleClassName,
+            discriminatorIndex,
+            discriminatorColumn,
+            caseInsensitive,
+            mappings);
+    }
+
+    private static void EmitDispatcher(SourceProductionContext context, DispatcherDescriptor descriptor)
+    {
+        // Report diagnostics for missing [CsvGenerateBinder] attributes
+        foreach (var mapping in descriptor.Mappings.Where(m => !m.HasGenerateBinderAttribute))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                missingBinderAttributeDiagnostic,
+                mapping.Location,
+                mapping.ReturnTypeName));
+        }
+
+        var builder = new SourceBuilder(8192);
+        builder.AppendLine("// <auto-generated/>");
+        builder.AppendLine("// AOT-compatible multi-schema dispatcher - uses compile-time generated binders");
+        builder.AppendLine("// All record types must have [CsvGenerateBinder] attribute for AOT support");
+        builder.AppendLine("#nullable enable");
+        builder.AppendLine("using System;");
+        builder.AppendLine("using System.Runtime.CompilerServices;");
+        builder.AppendLine();
+
+        if (!string.IsNullOrEmpty(descriptor.Namespace))
+        {
+            builder.AppendLine($"namespace {descriptor.Namespace};");
+            builder.AppendLine();
+        }
+
+        builder.AppendLine($"partial class {descriptor.SimpleClassName}");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        // Emit binder fields (cached for performance)
+        foreach (var mapping in descriptor.Mappings)
+        {
+            var binderClass = $"global::{BINDER_NAMESPACE}.CsvInlineBinder_{mapping.SafeTypeName}";
+            builder.AppendLine($"private static readonly {binderClass} _binder_{mapping.SafeTypeName} = new(null);");
+        }
+        builder.AppendLine();
+
+        // Emit partial method implementations
+        foreach (var mapping in descriptor.Mappings)
+        {
+            builder.AppendLine($"public static partial {mapping.ReturnTypeName}? {mapping.MethodName}({ROW_TYPE} row, int rowNumber)");
+            builder.AppendLine($"    => _binder_{mapping.SafeTypeName}.Bind(row, rowNumber);");
+            builder.AppendLine();
+        }
+
+        // Emit optimized Dispatch method (char-based only for now)
+        EmitDispatchMethod(builder, descriptor, isBytes: false);
+
+        // Note: byte-based dispatch requires separate byte binders
+        // TODO: Add EmitDispatchMethod(builder, descriptor, isBytes: true) when byte binder fields are generated
+
+        builder.Unindent();
+        builder.AppendLine("}");
+
+        context.AddSource($"CsvMultiSchemaDispatcher.{descriptor.SimpleClassName}.g.cs", builder.ToString());
+    }
+
+    private static void EmitDispatchMethod(SourceBuilder builder, DispatcherDescriptor descriptor, bool isBytes)
+    {
+        var rowType = isBytes ? BYTE_ROW_TYPE : ROW_TYPE;
+        var methodName = isBytes ? "DispatchBytes" : "Dispatch";
+        var binderSuffix = isBytes ? "Byte" : "";
+
+        builder.AppendLine("/// <summary>");
+        builder.AppendLine("/// Dispatches a row to the appropriate binder based on the discriminator value.");
+        builder.AppendLine("/// This method uses switch expressions for optimal performance (JIT compiles to jump table).");
+        builder.AppendLine("/// </summary>");
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine($"public static object? {methodName}({rowType} row, int rowNumber)");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        // Check if all discriminators are single ASCII chars
+        bool allSingleChar = descriptor.Mappings.All(m => m.DiscriminatorValue.Length == 1 && m.DiscriminatorValue[0] < 128);
+
+        if (allSingleChar && descriptor.DiscriminatorIndex >= 0)
+        {
+            // Ultra-fast path: single char dispatch with TryGetColumnFirstChar
+            builder.AppendLine($"if (!row.TryGetColumnFirstChar({descriptor.DiscriminatorIndex}, out int charCode, out int length))");
+            builder.AppendLine("    return null;");
+            builder.AppendLine();
+            builder.AppendLine("if (length != 1)");
+            builder.AppendLine("    return null;");
+            builder.AppendLine();
+
+            if (descriptor.CaseInsensitive)
+            {
+                builder.AppendLine("// Case-insensitive: normalize to lowercase");
+                builder.AppendLine("if ((uint)(charCode - 'A') <= 'Z' - 'A')");
+                builder.AppendLine("    charCode += 32;");
+                builder.AppendLine();
+            }
+
+            builder.AppendLine("return charCode switch");
+            builder.AppendLine("{");
+            builder.Indent();
+
+            foreach (var mapping in descriptor.Mappings)
+            {
+                var charValue = descriptor.CaseInsensitive
+                    ? char.ToLowerInvariant(mapping.DiscriminatorValue[0])
+                    : mapping.DiscriminatorValue[0];
+
+                var binderClass = $"global::{BINDER_NAMESPACE}.CsvInline{binderSuffix}Binder_{mapping.SafeTypeName}";
+                builder.AppendLine($"'{charValue}' => _binder_{mapping.SafeTypeName}.Bind(row, rowNumber),");
+            }
+
+            builder.AppendLine("_ => null");
+            builder.Unindent();
+            builder.AppendLine("};");
+        }
+        else
+        {
+            // Multi-char path: use TryGetColumnSpan and string comparison
+            builder.AppendLine($"if (!row.TryGetColumnSpan({descriptor.DiscriminatorIndex}, out var span))");
+            builder.AppendLine("    return null;");
+            builder.AppendLine();
+
+            // Group mappings by length for efficient comparison
+            var byLength = descriptor.Mappings.GroupBy(m => m.DiscriminatorValue.Length).OrderBy(g => g.Key).ToList();
+
+            builder.AppendLine("return span.Length switch");
+            builder.AppendLine("{");
+            builder.Indent();
+
+            foreach (var group in byLength)
+            {
+                var length = group.Key;
+                var mappings = group.ToList();
+
+                if (mappings.Count == 1)
+                {
+                    var mapping = mappings[0];
+                    var binderClass = $"global::{BINDER_NAMESPACE}.CsvInline{binderSuffix}Binder_{mapping.SafeTypeName}";
+                    builder.AppendLine($"{length} when SpanEquals(span, \"{EscapeString(mapping.DiscriminatorValue)}\") => _binder_{mapping.SafeTypeName}.Bind(row, rowNumber),");
+                }
+                else
+                {
+                    // Multiple mappings with same length - need nested checks
+                    builder.AppendLine($"{length} => Dispatch{length}Char(span, row, rowNumber),");
+                }
+            }
+
+            builder.AppendLine("_ => null");
+            builder.Unindent();
+            builder.AppendLine("};");
+
+            // Emit helper methods for same-length groups
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine();
+
+            foreach (var group in byLength.Where(g => g.Count() > 1))
+            {
+                EmitSameLengthDispatcher(builder, group.Key, [.. group], rowType);
+            }
+
+            // Emit SpanEquals helper
+            EmitSpanEqualsHelper(builder, descriptor.CaseInsensitive);
+
+            // Re-open class for proper formatting
+            return;
+        }
+
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private static void EmitSameLengthDispatcher(SourceBuilder builder, int length, List<DiscriminatorMapping> mappings, string rowType)
+    {
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine($"private static object? Dispatch{length}Char(ReadOnlySpan<char> span, {rowType} row, int rowNumber)");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        foreach (var mapping in mappings)
+        {
+            builder.AppendLine($"if (SpanEquals(span, \"{EscapeString(mapping.DiscriminatorValue)}\"))");
+            builder.AppendLine($"    return _binder_{mapping.SafeTypeName}.Bind(row, rowNumber);");
+        }
+
+        builder.AppendLine("return null;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private static void EmitSpanEqualsHelper(SourceBuilder builder, bool caseInsensitive)
+    {
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine("private static bool SpanEquals(ReadOnlySpan<char> span, string value)");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        if (caseInsensitive)
+        {
+            builder.AppendLine("return span.Equals(value.AsSpan(), StringComparison.OrdinalIgnoreCase);");
+        }
+        else
+        {
+            builder.AppendLine("return span.SequenceEqual(value.AsSpan());");
+        }
+
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private sealed record DispatcherDescriptor(
+        string ClassName,
+        string Namespace,
+        string SimpleClassName,
+        int DiscriminatorIndex,
+        string? DiscriminatorColumn,
+        bool CaseInsensitive,
+        List<DiscriminatorMapping> Mappings);
+
+    private sealed record DiscriminatorMapping(
+        string DiscriminatorValue,
+        string MethodName,
+        string ReturnTypeName,
+        string SafeTypeName,
+        bool HasGenerateBinderAttribute,
+        Location? Location);
+}

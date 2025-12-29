@@ -66,6 +66,48 @@ foreach (var record in Csv.Read()
 - Streaming from files, streams, and async variants
 - Works with source-generated binders (`[CsvGenerateBinder]`)
 
+### Source-Generated Multi-Schema Dispatch (Optimal Performance)
+
+For maximum performance, use source-generated dispatchers instead of runtime multi-schema:
+
+```csharp
+[CsvMultiSchemaDispatcher(DiscriminatorIndex = 0)]
+public partial class BankingDispatcher
+{
+    [CsvDiscriminator("H")]
+    public static partial HeaderRecord? BindHeader(CsvRow<char> row, int rowNumber);
+
+    [CsvDiscriminator("D")]
+    public static partial DetailRecord? BindDetail(CsvRow<char> row, int rowNumber);
+
+    [CsvDiscriminator("T")]
+    public static partial TrailerRecord? BindTrailer(CsvRow<char> row, int rowNumber);
+}
+
+// Usage:
+var reader = Csv.Read().FromText(csv);
+if (reader.MoveNext()) { } // Skip header
+while (reader.MoveNext())
+{
+    var record = BankingDispatcher.Dispatch(reader.Current, rowNumber);
+    // Handle record...
+}
+```
+
+**Multi-Schema Performance Results (.NET 9, 1000 rows):**
+
+| Method | Mean | vs Baseline |
+|--------|------|-------------|
+| SingleSchema_TypedBinder (baseline) | 101.6 μs | 1.00x |
+| MultiSchema_Runtime (dictionary lookup) | 150.7 μs | 1.48x slower |
+| **MultiSchema_SourceGenerated** | **52.8 μs** | **1.92x faster** |
+
+**Why source-generated is faster:**
+- Switch expression compiles to jump table (no dictionary lookup)
+- Direct binder invocation (no interface dispatch)
+- No boxing/unboxing overhead
+- 2.85x faster than runtime multi-schema dispatch
+
 ## Code Quality Rules
 
 ### Never Suppress Warnings to Bypass Issues

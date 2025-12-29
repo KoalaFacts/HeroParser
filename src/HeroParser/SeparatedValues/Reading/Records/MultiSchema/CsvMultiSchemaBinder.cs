@@ -75,10 +75,13 @@ internal sealed class CsvMultiSchemaBinder<TElement>
 
     // Sticky binding: cache last wrapper to skip lookup for consecutive same-type rows
     // This is critical for banking formats where 95%+ rows are detail records
-    // We pack lastCharCode into high bits to avoid a second memory read on cache miss
     private IMultiSchemaBinderWrapper<TElement>? lastWrapper;
     private int lastCharCode = -1;
-    private DiscriminatorKey lastPackedKey;
+
+    // For packed key sticky binding, store raw values for faster comparison
+    // This avoids creating DiscriminatorKey on cache hit
+    private long lastPackedValue;
+    private byte lastPackedLength;
 
     /// <summary>
     /// Represents a registered binder with its wrapper.
@@ -260,6 +263,8 @@ internal sealed class CsvMultiSchemaBinder<TElement>
                         // Cache for next row
                         lastCharCode = charCode;
                         lastWrapper = wrapper;
+                        // Invalidate packed cache to prevent false positives with empty discriminators
+                        lastPackedLength = 255; // Invalid length that won't match any span
                         return wrapper.Bind(row, rowNumber);
                     }
                 }
@@ -270,39 +275,81 @@ internal sealed class CsvMultiSchemaBinder<TElement>
             }
         }
 
-        // Standard path: get column for multi-char or non-ASCII discriminators
-        if ((uint)resolvedDiscriminatorIndex >= (uint)row.ColumnCount)
+        // Fast path for multi-char discriminators: use TryGetColumnSpan to avoid CsvColumn creation
+        if (row.TryGetColumnSpan(resolvedDiscriminatorIndex, out var span))
         {
-            return HandleUnmatchedRow(rowNumber, "Discriminator column index out of range");
-        }
-
-        var discriminatorColumn = row[resolvedDiscriminatorIndex];
-
-        // Fast path: packed key lookup
-        if (TryBindWithPackedKey(discriminatorColumn, row, rowNumber, out var result))
-        {
-            return result;
-        }
-
-        // Fallback to string lookup if needed
-        if (stringLookup is not null)
-        {
-            if (TryBindWithStringKey(discriminatorColumn, row, rowNumber, out result))
+            // Fast path: packed key lookup
+            if (TryBindWithPackedKeySpan(span, row, rowNumber, out var result))
             {
                 return result;
             }
+
+            // Fallback to string lookup if needed
+            if (stringLookup is not null)
+            {
+                // Create column only when string lookup is needed
+                var discriminatorColumn = row[resolvedDiscriminatorIndex];
+                if (TryBindWithStringKey(discriminatorColumn, row, rowNumber, out result))
+                {
+                    return result;
+                }
+
+                // No match found
+                return HandleUnmatchedRow(rowNumber, GetDiscriminatorString(discriminatorColumn));
+            }
+
+            // No match found - need to create string for error message
+            return HandleUnmatchedRow(rowNumber, SpanToString(span));
         }
 
-        // No match found
-        return HandleUnmatchedRow(rowNumber, GetDiscriminatorString(discriminatorColumn));
+        return HandleUnmatchedRow(rowNumber, "Discriminator column index out of range");
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryBindWithPackedKey(CsvColumn<TElement> column, CsvRow<TElement> row, int rowNumber, out object? result)
+    private static string SpanToString(ReadOnlySpan<TElement> span)
     {
-        var span = column.Span;
-        DiscriminatorKey key;
+        if (typeof(TElement) == typeof(char))
+        {
+            var charSpan = System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<TElement, char>(ref Unsafe.AsRef(in span.GetPinnableReference())),
+                span.Length);
+            return new string(charSpan);
+        }
+        else if (typeof(TElement) == typeof(byte))
+        {
+            var byteSpan = System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<TElement, byte>(ref Unsafe.AsRef(in span.GetPinnableReference())),
+                span.Length);
+            return Encoding.UTF8.GetString(byteSpan);
+        }
+        return string.Empty;
+    }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryBindWithPackedKeySpan(ReadOnlySpan<TElement> span, CsvRow<TElement> row, int rowNumber, out object? result)
+    {
+        // Quick length check first - most cache misses fail here
+        if (span.Length > DiscriminatorKey.MAX_PACKED_LENGTH)
+        {
+            result = null;
+            return false;
+        }
+
+        // Sticky binding fast path: pack value inline and compare raw values
+        // This avoids DiscriminatorKey creation on cache hit
+        var cached = lastWrapper;
+        if (cached is not null && span.Length == lastPackedLength)
+        {
+            // Try to match cached packed value directly
+            if (TryMatchPackedValue(span, out bool matched) && matched)
+            {
+                result = cached.Bind(row, rowNumber);
+                return true;
+            }
+        }
+
+        // Standard path: create key and lookup
+        DiscriminatorKey key;
         if (typeof(TElement) == typeof(char))
         {
             var charSpan = System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(
@@ -341,18 +388,10 @@ internal sealed class CsvMultiSchemaBinder<TElement>
             return false;
         }
 
-        // Sticky binding: reuse last wrapper if same discriminator key
-        var cached = lastWrapper;
-        if (cached is not null && key.Equals(lastPackedKey))
-        {
-            result = cached.Bind(row, rowNumber);
-            return true;
-        }
-
         if (packedLookup.TryGetValue(key, out var entry))
         {
-            // Cache for next row
-            lastPackedKey = key;
+            // Cache raw values for next row's sticky binding
+            key.GetRawValues(out lastPackedValue, out lastPackedLength);
             lastWrapper = entry.Wrapper;
             result = entry.Wrapper.Bind(row, rowNumber);
             return true;
@@ -360,6 +399,66 @@ internal sealed class CsvMultiSchemaBinder<TElement>
 
         result = null;
         return false;
+    }
+
+    /// <summary>
+    /// Attempts to match the span against the cached packed value without creating a DiscriminatorKey.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool TryMatchPackedValue(ReadOnlySpan<TElement> span, out bool matched)
+    {
+        long packed = 0;
+
+        if (typeof(TElement) == typeof(char))
+        {
+            var charSpan = System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<TElement, char>(ref Unsafe.AsRef(in span.GetPinnableReference())),
+                span.Length);
+
+            for (int i = 0; i < charSpan.Length; i++)
+            {
+                char c = charSpan[i];
+                if (c > 127)
+                {
+                    matched = false;
+                    return false; // Non-ASCII, can't pack
+                }
+                if (caseInsensitive && (uint)(c - 'A') <= 'Z' - 'A')
+                {
+                    c = (char)(c + 32);
+                }
+                packed |= ((long)c) << (i * 8);
+            }
+        }
+        else if (typeof(TElement) == typeof(byte))
+        {
+            var byteSpan = System.Runtime.InteropServices.MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<TElement, byte>(ref Unsafe.AsRef(in span.GetPinnableReference())),
+                span.Length);
+
+            for (int i = 0; i < byteSpan.Length; i++)
+            {
+                byte b = byteSpan[i];
+                if (b > 127)
+                {
+                    matched = false;
+                    return false; // Non-ASCII, can't pack
+                }
+                if (caseInsensitive && (uint)(b - 'A') <= 'Z' - 'A')
+                {
+                    b = (byte)(b + 32);
+                }
+                packed |= ((long)b) << (i * 8);
+            }
+        }
+        else
+        {
+            matched = false;
+            return false;
+        }
+
+        matched = packed == lastPackedValue;
+        return true;
     }
 
     private bool TryBindWithStringKey(CsvColumn<TElement> column, CsvRow<TElement> row, int rowNumber, out object? result)

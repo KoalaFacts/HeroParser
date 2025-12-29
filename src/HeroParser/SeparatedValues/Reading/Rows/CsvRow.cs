@@ -139,6 +139,31 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         return true;
     }
 
+    /// <summary>
+    /// Fast path for multi-char discriminator lookup. Gets the column span directly
+    /// without creating a CsvColumn struct. Returns false if index is out of bounds.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryGetColumnSpan(int index, out ReadOnlySpan<T> span)
+    {
+        if ((uint)index >= (uint)columnCount)
+        {
+            span = default;
+            return false;
+        }
+
+        var start = columnEnds[index] + 1;
+        var end = columnEnds[index + 1];
+
+        if (trimFields)
+        {
+            (start, end) = TrimBounds(start, end);
+        }
+
+        span = line[start..end];
+        return true;
+    }
+
     /// <summary>Materializes the row into a string array by copying the underlying data.</summary>
     public string[] ToStringArray()
     {

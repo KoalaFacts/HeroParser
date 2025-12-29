@@ -99,6 +99,46 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         }
     }
 
+    /// <summary>
+    /// Fast path for single-char discriminator lookup. Gets the first character and length of a column
+    /// without creating a CsvColumn struct. Returns false if index is out of bounds.
+    /// </summary>
+    /// <remarks>
+    /// Internal method optimized for multi-schema parsing where we need to quickly check
+    /// single-character discriminators (like H/D/T in banking formats).
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryGetColumnFirstChar(int index, out int firstChar, out int length)
+    {
+        if ((uint)index >= (uint)columnCount)
+        {
+            firstChar = 0;
+            length = 0;
+            return false;
+        }
+
+        var start = columnEnds[index] + 1;
+        var end = columnEnds[index + 1];
+
+        if (trimFields)
+        {
+            (start, end) = TrimBounds(start, end);
+        }
+
+        length = end - start;
+        if (length == 0)
+        {
+            firstChar = 0;
+            return true;
+        }
+
+        // Get first character directly - JIT eliminates dead branch
+        firstChar = typeof(T) == typeof(char)
+            ? Unsafe.As<T, char>(ref Unsafe.AsRef(in line[start]))
+            : Unsafe.As<T, byte>(ref Unsafe.AsRef(in line[start]));
+        return true;
+    }
+
     /// <summary>Materializes the row into a string array by copying the underlying data.</summary>
     public string[] ToStringArray()
     {

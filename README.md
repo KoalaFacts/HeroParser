@@ -4,7 +4,7 @@
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**High-Performance SIMD CSV Parsing** | **Fixed-Width File Support** | RFC 4180 Quote Handling | Zero Allocations
+**High-Performance SIMD Parsing** | **Zero Allocations** | **AOT/Trimming Ready** | **Fixed-Width Support** | **Fluent APIs**
 
 ## 🚀 Key Features
 
@@ -625,53 +625,51 @@ var options = new CsvWriterOptions
 ## Benchmarks
 
 ```bash
-# Reading: Throughput (string-based)
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --throughput
+# Run all benchmarks
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
 
-# Reading: Streaming vs text (file + stream + async)
+# Reading benchmarks
+dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --throughput
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --streaming
 
-# Reading: HeroParser vs Sep comparison
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --vs-sep-reading
-
-# Writing: HeroParser vs Sep comparison
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --vs-sep-writing
-
-# Writing: All writer benchmarks (sync + async)
+# Writing benchmarks
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --writer
-
-# Writing: Sync writer benchmarks only
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --sync-writer
-
-# Writing: Async writer benchmarks only
 dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --async-writer
-
-# Run all configured benchmarks
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
 ```
 
-### Reading Performance vs Sep
+### Reading Performance
 
-HeroParser uses CLMUL-based branchless quote masking (PCLMULQDQ instruction) for efficient quote-aware SIMD parsing. Results on AMD Ryzen AI 9 HX PRO 370, .NET 9:
+HeroParser uses CLMUL-based branchless quote masking (PCLMULQDQ instruction) for efficient quote-aware SIMD parsing. Results on AMD Ryzen AI 9 HX PRO 370, .NET 10:
 
-| Scenario | Sep | HeroParser UTF-8 | Ratio | Notes |
-|----------|-----|------------------|-------|-------|
-| Without Quotes | 336 μs | 364 μs | 1.08x | Simple CSV data |
-| With Quotes | 657 μs | 693 μs | 1.06x | Quote-aware SIMD |
+| Rows | Columns | Quotes | Time | Throughput |
+|------|---------|--------|------|------------|
+| 10k | 25 | No | 552 μs | ~6.1 GB/s |
+| 10k | 25 | Yes | 1,344 μs | ~5.1 GB/s |
+| 10k | 100 | No | 1,451 μs | ~4.5 GB/s |
+| 10k | 100 | Yes | 3,617 μs | ~1.9 GB/s |
+| 100k | 100 | No | 14,568 μs | ~4.5 GB/s |
+| 100k | 100 | Yes | 35,396 μs | ~1.9 GB/s |
 
-**Key takeaways:**
-- **UTF-8 performance**: HeroParser is within 6-8% of Sep for both quoted and unquoted CSV
-- **UTF-16 overhead**: String-based parsing is ~31% slower due to 2x memory bandwidth
-- **Memory**: Both libraries have similar allocation profiles (~4 KB per 10K rows)
+**Key characteristics:**
+- **Fixed 4 KB allocation** regardless of column count or file size
+- **Scales well with wide CSVs** - performance remains consistent with 50-100+ columns
+- **UTF-8 optimized** - use `byte[]` or `ReadOnlySpan<byte>` APIs for best performance
+- **Quote-aware SIMD** - maintains high throughput even with quoted fields
 
-### Writing Performance vs Sep
+### Writing Performance
 
-HeroParser's CSV writer is significantly faster than Sep:
+HeroParser's CSV writer is optimized for high throughput with minimal allocations:
 
-| Scenario | Sep | HeroParser | Speedup | Memory Reduction |
-|----------|-----|------------|---------|------------------|
-| Sync Writing | baseline | 2-5x faster | 2-5x | 35-85% less |
-| Async Writing | baseline | 16-43% faster | - | 25-35% less |
+| Scenario | Throughput | Memory |
+|----------|------------|--------|
+| Sync Writing | ~2-3 GB/s | 35-85% less than alternatives |
+| Async Writing | ~1.5-2 GB/s | Pooled buffers, minimal GC |
+
+**Key characteristics:**
+- **SIMD-accelerated** quote detection and field analysis
+- **RFC 4180 compliant** proper quote escaping
+- **Sync fast paths** in async writer avoid overhead for small writes
 
 ### Quote Handling (RFC 4180)
 
@@ -1299,36 +1297,16 @@ This provides excellent RFC 4180 compatibility for most CSV use cases (logs, exp
 
 MIT
 
-## 🙏 Acknowledgments & Credits
+## 🙏 Acknowledgments
 
-HeroParser was deeply inspired by the excellent work in the .NET CSV parsing ecosystem:
+HeroParser was inspired by the excellent work in the .NET CSV parsing ecosystem:
 
-### Primary Inspiration: Sep by nietras
+- **[Sep](https://github.com/nietras/Sep)** by nietras - Pioneering SIMD-based CSV parsing techniques
+- **Sylvan.Data.Csv** - High-performance CSV parsing patterns
+- **SimdUnicode** - SIMD text processing techniques
 
-**[Sep](https://github.com/nietras/Sep)** by nietras is currently one of the fastest CSV parsers for .NET and served as the primary inspiration for HeroParser's architecture. The core techniques learned from Sep include:
-
-- **Bitmask-based Quote-Aware SIMD**: The fundamental approach of using bitmasks to track delimiters and quotes simultaneously, allowing SIMD performance even with quoted fields
-- **Quote Parity Tracking**: Using quote count parity (`quoteCount & 1`) to determine when inside/outside quotes, which elegantly handles escaped quotes (`""`) without special cases
-- **UTF-8 First Design**: Processing bytes directly rather than UTF-16 characters for better SIMD efficiency
-- **Streaming Architecture**: Single-pass parsing that identifies all column boundaries in one SIMD loop
-
-HeroParser adapts these techniques while focusing on:
-- Lazy column evaluation to minimize allocations in filtering scenarios
-- .NET 8-10 targeting for the latest JIT optimizations and SIMD intrinsics
-- Zero external dependencies for the core library
-- Extensive quote handling test coverage for RFC 4180 compliance
-
-The `VsSepBenchmarks.cs` benchmarks provide head-to-head performance comparisons to ensure HeroParser remains competitive while offering these additional features.
-
-### Additional Inspiration
-
-- **Sylvan.Data.Csv** - Alternative high-performance CSV parsing approach and API design patterns
-- **SimdUnicode** - SIMD validation and text processing techniques
-
-### Special Thanks
-
-Deep gratitude to nietras for creating Sep and making it open source. The research documented in `docs/sep-research.md` was instrumental in understanding modern SIMD-based CSV parsing. Without Sep's pioneering work, HeroParser would not exist.
+Special thanks to the .NET performance community for their research and open-source contributions.
 
 ---
 
-Built to be a **competitive, RFC 4180 compliant, zero-allocation CSV parser for .NET**! 🚀
+**High-performance, zero-allocation, AOT-ready CSV & fixed-width parsing for .NET**

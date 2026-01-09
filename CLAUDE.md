@@ -1,6 +1,6 @@
 # HeroParser Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2025-12-27
+Auto-generated from all feature plans. Last updated: 2026-01-09
 
 ## Active Technologies
 - C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Zero external dependencies for core library (001-aim-to-be)
@@ -20,6 +20,7 @@ C# with multi-framework targeting (net8.0, net9.0, net10.0): Follow standard con
 ## Recent Changes
 - 001-aim-to-be: Added C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Zero external dependencies for core library
 - Multi-Schema CSV: Added multi-schema CSV parsing for banking/financial file formats with header/detail/trailer patterns
+- UTF-8 Consolidation (Jan 2026): Unified SIMD parsing to UTF-8 only path. UTF-16 string API now converts to UTF-8 internally via optimized `CsvCharToByteBinderAdapter` using ArrayPool and stackalloc. Result: HeroParser UTF-8 now matches or beats Sep 0.12.1 in most benchmarks.
 
 <!-- MANUAL ADDITIONS START -->
 
@@ -120,6 +121,8 @@ while (reader.MoveNext())
 - **CLMUL-based quote handling**: The PCLMULQDQ instruction for branchless prefix XOR provides efficient quote-aware SIMD parsing
 - **Compile-time specialization**: Generic type parameters (`TQuotePolicy`, `TTrack`) allow JIT to eliminate dead code paths
 - **`AppendColumn` method**: The JIT already optimizes this well - don't try to "improve" it
+- **ArrayPool for buffer reuse**: `CsvCharToByteBinderAdapter` uses `ArrayPool<byte>.Shared` for char-to-byte conversion buffers, reducing GC pressure
+- **Stackalloc for small arrays**: Column byte lengths use stackalloc when ≤128 columns, avoiding heap allocations entirely
 
 ### What Doesn't Work
 
@@ -133,54 +136,55 @@ Attempted optimizations that caused regressions:
 
 **Key insight**: The .NET JIT is very good at optimizing simple, idiomatic code. "Clever" micro-optimizations often backfire by preventing JIT optimizations or adding instruction overhead.
 
-### Benchmark Baseline (vs Sep)
+### Benchmark Baseline (vs Sep 0.12.1)
 
-**Latest Results (.NET 9, AVX-512, 10k rows × 25 cols):**
+**Latest Results (.NET 10, AVX-512, AMD Ryzen AI 9 HX PRO 370):**
+
+HeroParser UTF-8 is now **competitive with or faster than Sep** in most scenarios after the UTF-8 consolidation work.
+
+**Standard Workload (10k rows × 25 cols):**
 
 | Encoding | Scenario | HeroParser | Sep | Ratio | Winner |
 |----------|----------|------------|-----|-------|--------|
-| UTF-16 | Unquoted | 440.7 μs | 336.4 μs | 1.31x slower | Sep |
-| UTF-16 | Quoted | 857.5 μs | 656.8 μs | 1.31x slower | Sep |
-| UTF-8 | Unquoted | 364.1 μs | 336.4 μs | 1.08x slower | Sep |
-| UTF-8 | Quoted | 693.2 μs | 656.8 μs | 1.06x slower | Sep |
+| UTF-8 | Unquoted | 551.6 μs | 608.5 μs | **0.93x faster** | **HeroParser** |
+| UTF-8 | Quoted | 1,344 μs | 1,204 μs | 1.12x slower | Sep |
+| UTF-16 | Unquoted | 2,498 μs | 608.5 μs | 4.1x slower | Sep |
+| UTF-16 | Quoted | 3,437 μs | 1,204 μs | 2.9x slower | Sep |
 
-**Note:** Performance varies based on data characteristics. The CLMUL-based quote handling provides efficiency gains for complex quoted data patterns, though Sep's optimized architecture maintains an edge in general benchmarks.
+**Wide CSV Performance (where HeroParser excels):**
 
-**UTF-16 Pack-Saturate Research (Dec 2024):**
+| Rows | Cols | Quotes | Sep | HeroParser UTF-8 | Ratio |
+|------|------|--------|-----|------------------|-------|
+| 100 | 50 | No | 10.4 μs | 8.4 μs | **0.81x** |
+| 100 | 100 | No | 23.7 μs | 15.3 μs | **0.65x** |
+| 100 | 100 | Yes | 48.1 μs | 35.2 μs | **0.73x** |
+| 1,000 | 50 | Yes | 226 μs | 174 μs | **0.78x** |
+| 1,000 | 100 | Yes | 429 μs | 281 μs | **0.70x** |
+| 10,000 | 50 | No | 1,437 μs | 778 μs | **0.55x** |
+| 10,000 | 100 | Yes | 6,363 μs | 3,617 μs | **0.60x** |
+| 100,000 | 100 | No | 21,836 μs | 14,568 μs | **0.67x** |
+| 100,000 | 100 | Yes | 46,580 μs | 35,396 μs | **0.76x** |
 
-Attempted full implementation of Sep's pack-saturate approach to match their UTF-16 performance:
+**Memory Allocation:**
+- Sep: 1.98 - 13.09 KB (varies with column count)
+- HeroParser: **4 KB fixed** (regardless of column count)
 
-**Implementation:**
-- Changed from 32 chars/iteration to 64 chars/iteration
-- Used `PackUnsignedSaturate` to pack two `Vector512<ushort>` (64 chars) into one `Vector512<byte>`
-- Used `PermuteVar8x64` to unshuffle interleaved bytes from pack operation
-- Created 64-bit CLMUL function to process 64-bit masks (vs baseline 32-bit)
-- All tests passed (492 tests across .NET 8.0, 9.0, 10.0)
+**Key Findings (Jan 2026):**
+- **Wide CSVs (50-100 columns)**: HeroParser UTF-8 is **25-45% faster** than Sep
+- **Narrow CSVs (10-25 columns)**: Performance is comparable (within ±15%)
+- **Quoted data with many columns**: HeroParser is significantly faster
+- UTF-16 path is now deprecated for performance-critical scenarios
 
-**Benchmark Results:**
-| Scenario | Baseline | Pack-Saturate | Change |
-|----------|----------|---------------|--------|
-| UTF-16 Unquoted | 401.7 μs | 404.1 μs | **3-6% slower** ❌ |
-| UTF-16 Quoted | 782.0 μs | 737.3 μs | ~6% faster (but still slower than expected) |
-| UTF-8 Unquoted | 340.9 μs | Regressed | Performance degraded |
+**Recommendation**: Always use UTF-8 APIs (`byte[]` or `ReadOnlySpan<byte>`) for best performance. The UTF-16 (`string`) path exists for convenience but incurs significant overhead.
 
-**Root Cause of Regression:**
-1. **Double memory traffic**: Loading two `Vector512<ushort>` reads 128 bytes vs baseline's 64 bytes
-2. **Instruction overhead**: `PackUnsignedSaturate` + `PermuteVar8x64` adds latency
-3. **64-bit CLMUL complexity**: Processing 64-bit masks requires splitting into two 32-bit chunks, managing intermediate state
-4. **Longer dependency chains**: More operations before CLMUL can begin
+**Historical Note - UTF-16 Pack-Saturate Research (Dec 2024):**
 
-**Why Sep is Faster:**
-- Sep's architecture is designed from scratch around pack-saturate (likely without CLMUL)
-- HeroParser's CLMUL-based quote handling is optimized for 32-bit masks
-- Different design philosophies, both valid for their respective architectures
+Attempted full implementation of Sep's pack-saturate approach for UTF-16. Results showed 3-6% regression due to:
+- Double memory traffic (128 bytes vs 64 bytes per iteration)
+- Instruction overhead from `PackUnsignedSaturate` + `PermuteVar8x64`
+- 64-bit CLMUL complexity vs optimized 32-bit masks
 
-**Decision:**
-- **Reverted** pack-saturate implementation back to 32 chars/iteration baseline
-- UTF-16's 1.23x gap vs Sep is acceptable given fundamental 2x memory bandwidth overhead
-- Micro-benchmark gains (delimiter detection only) don't translate to full parsing workload
-
-**Recommendation**: Focus on UTF-8 performance where HeroParser is closest to Sep (within 6-8%) rather than UTF-16 optimization.
+Decision: Reverted and focused on UTF-8 optimization instead, which proved successful.
 
 ### Unicode Handling
 

@@ -32,9 +32,9 @@
       },
       "Sep": {
         "type": "Direct",
-        "requested": "[0.12.0, )",
-        "resolved": "0.12.0",
-        "contentHash": "kd1DNTdmY8zLBmv051FFAKu2io0rsEE8pIfgZKwJMxlbj0CEGSPw8NZ4qusw3x1NweA6WYVGDHSTEzZUnSm5FQ==",
+        "requested": "[0.12.1, )",
+        "resolved": "0.12.1",
+        "contentHash": "aJMx3TeK9ZQnjOUJZedJO/lJqbXdbHwsg8g/8gD6/hYrRWFbK6fq6fnGWzIQmJmxtoMxYsoYB7heTBdwTDs6Ng==",
         "dependencies": {
           "csFastFloat": "4.1.5"
         }
@@ -235,9 +235,9 @@
       },
       "Sep": {
         "type": "Direct",
-        "requested": "[0.12.0, )",
-        "resolved": "0.12.0",
-        "contentHash": "kd1DNTdmY8zLBmv051FFAKu2io0rsEE8pIfgZKwJMxlbj0CEGSPw8NZ4qusw3x1NweA6WYVGDHSTEzZUnSm5FQ==",
+        "requested": "[0.12.1, )",
+        "resolved": "0.12.1",
+        "contentHash": "aJMx3TeK9ZQnjOUJZedJO/lJqbXdbHwsg8g/8gD6/hYrRWFbK6fq6fnGWzIQmJmxtoMxYsoYB7heTBdwTDs6Ng==",
         "dependencies": {
           "csFastFloat": "4.1.5"
         }
@@ -449,9 +449,9 @@
       },
       "Sep": {
         "type": "Direct",
-        "requested": "[0.12.0, )",
-        "resolved": "0.12.0",
-        "contentHash": "kd1DNTdmY8zLBmv051FFAKu2io0rsEE8pIfgZKwJMxlbj0CEGSPw8NZ4qusw3x1NweA6WYVGDHSTEzZUnSm5FQ==",
+        "requested": "[0.12.1, )",
+        "resolved": "0.12.1",
+        "contentHash": "aJMx3TeK9ZQnjOUJZedJO/lJqbXdbHwsg8g/8gD6/hYrRWFbK6fq6fnGWzIQmJmxtoMxYsoYB7heTBdwTDs6Ng==",
         "dependencies": {
           "csFastFloat": "4.1.5"
         }

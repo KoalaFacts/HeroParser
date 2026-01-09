@@ -314,11 +314,21 @@ internal static class CsvRowParser
 
     /// <summary>
     /// Computes the "inside quotes" mask using CLMUL (carry-less multiplication).
-    /// CLMUL with all-ones computes prefix XOR, which toggles at each quote position.
     /// </summary>
-    /// <param name="quoteMask">Bitmask of quote positions in the chunk</param>
-    /// <param name="prevInQuotes">Whether we were inside quotes at the start of this chunk</param>
-    /// <returns>Bitmask where 1 = inside quotes, 0 = outside quotes</returns>
+    /// <remarks>
+    /// <para>
+    /// This method uses the PCLMULQDQ instruction to compute prefix XOR in O(1),
+    /// avoiding per-quote iteration. The carry-less multiplication with all-ones
+    /// produces a running XOR that toggles at each quote position.
+    /// </para>
+    /// <para>
+    /// Example: quoteMask = 0b01010000 (quotes at positions 4 and 6)
+    /// Result after CLMUL and shift: 0b00111100 (inside quotes at positions 4,5,6)
+    /// </para>
+    /// </remarks>
+    /// <param name="quoteMask">Bitmask where 1 indicates a quote character at that position in the chunk.</param>
+    /// <param name="prevInQuotes">Whether parsing was inside a quoted field at the start of this chunk.</param>
+    /// <returns>Bitmask where 1 = position is inside quotes, 0 = position is outside quotes.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint ComputeInQuotesMaskClmul(uint quoteMask, bool prevInQuotes)
     {
@@ -400,6 +410,28 @@ internal static class CsvRowParser
         return false;
     }
 
+    /// <summary>
+    /// SIMD-accelerated UTF-8 CSV row parser using AVX2 instructions.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Processes 32 bytes per iteration using AVX2 vector operations. Uses bitmask-based
+    /// detection of delimiters, quotes, and line endings. When quotes are enabled and
+    /// PCLMULQDQ is available, uses carry-less multiplication for O(1) quote state tracking.
+    /// </para>
+    /// <para>
+    /// Fast paths:
+    /// <list type="bullet">
+    /// <item>Unquoted rows with only delimiters: batch delimiter processing</item>
+    /// <item>Rows with delimiters + line endings: process up to line ending</item>
+    /// <item>Quoted rows without doubled quotes: CLMUL-based quote masking</item>
+    /// </list>
+    /// Falls back to sequential processing for doubled quotes (escaped quotes).
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TTrack">TrackLineNumbers or NoTrackLineNumbers for compile-time specialization.</typeparam>
+    /// <typeparam name="TQuotePolicy">QuotesEnabled or QuotesDisabled for compile-time specialization.</typeparam>
+    /// <returns>True if SIMD processing was attempted, false if AVX2 is not supported.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool TrySimdParseUtf8<TTrack, TQuotePolicy>(
         ref byte mutableRef,
@@ -747,6 +779,19 @@ internal static class CsvRowParser
         return true;
     }
 
+    /// <summary>
+    /// SIMD-accelerated UTF-16 CSV row parser dispatcher.
+    /// </summary>
+    /// <remarks>
+    /// Routes to the best available SIMD implementation:
+    /// <list type="bullet">
+    /// <item>AVX-512BW (.NET 8+): 32 chars per iteration with native 16-bit operations</item>
+    /// <item>AVX2: 16 chars per iteration with direct 16-bit comparisons</item>
+    /// </list>
+    /// </remarks>
+    /// <typeparam name="TTrack">TrackLineNumbers or NoTrackLineNumbers for compile-time specialization.</typeparam>
+    /// <typeparam name="TQuotePolicy">QuotesEnabled or QuotesDisabled for compile-time specialization.</typeparam>
+    /// <returns>True if SIMD processing was attempted, false if no SIMD support is available.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool TrySimdParseUtf16<TTrack, TQuotePolicy>(
         ref char mutableRef,
@@ -795,6 +840,23 @@ internal static class CsvRowParser
             columnEnds, maxColumns, allowNewlinesInsideQuotes, maxFieldLength);
     }
 
+    /// <summary>
+    /// SIMD-accelerated UTF-16 CSV row parser using AVX2 instructions.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Processes 16 chars per iteration using direct 16-bit AVX2 comparisons.
+    /// For ASCII delimiters (the common case), uses a fast path that avoids
+    /// the narrowing pipeline overhead of pack-saturate approaches.
+    /// </para>
+    /// <para>
+    /// The 16-bit mask extraction uses bit manipulation to compact the byte-level
+    /// MoveMask result into char-level positions.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TTrack">TrackLineNumbers or NoTrackLineNumbers for compile-time specialization.</typeparam>
+    /// <typeparam name="TQuotePolicy">QuotesEnabled or QuotesDisabled for compile-time specialization.</typeparam>
+    /// <returns>True if processing was attempted, false if AVX2 is not supported.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool TrySimdParseUtf16Avx2<TTrack, TQuotePolicy>(
         ref char mutableRef,
@@ -1583,6 +1645,23 @@ internal static class CsvRowParser
     }
 
 #if NET8_0_OR_GREATER
+    /// <summary>
+    /// SIMD-accelerated UTF-16 CSV row parser using AVX-512BW instructions.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Processes 32 chars per iteration using native 16-bit AVX-512 operations.
+    /// Unlike AVX2, AVX-512BW supports direct 16-bit element comparisons with
+    /// opmask results, eliminating the need for narrowing or pack operations.
+    /// </para>
+    /// <para>
+    /// Uses dynamic fast path detection: even when quotes are enabled, chunks
+    /// without quotes bypass the quote handling logic entirely for improved throughput.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TTrack">TrackLineNumbers or NoTrackLineNumbers for compile-time specialization.</typeparam>
+    /// <typeparam name="TQuotePolicy">QuotesEnabled or QuotesDisabled for compile-time specialization.</typeparam>
+    /// <returns>True if processing was attempted, false if AVX-512BW is not supported.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool TrySimdParseUtf16Avx512<TTrack, TQuotePolicy>(
         ref char mutableRef,

@@ -53,6 +53,12 @@ internal sealed class MultiSchemaBinderWrapper<TElement, T> : IMultiSchemaBinder
 internal sealed class CsvMultiSchemaBinder<TElement>
     where TElement : unmanaged, IEquatable<TElement>
 {
+    /// <summary>
+    /// Invalid cached length value used to invalidate sticky binding cache.
+    /// Set to 255 which exceeds MAX_PACKED_LENGTH (8) and won't match any valid span.
+    /// </summary>
+    private const byte INVALID_CACHED_LENGTH = 255;
+
     private readonly string? discriminatorColumnName;
     private readonly bool caseInsensitive;
     private readonly UnmatchedRowBehavior unmatchedBehavior;
@@ -264,7 +270,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
                         lastCharCode = charCode;
                         lastWrapper = wrapper;
                         // Invalidate packed cache to prevent false positives with empty discriminators
-                        lastPackedLength = 255; // Invalid length that won't match any span
+                        lastPackedLength = INVALID_CACHED_LENGTH;
                         return wrapper.Bind(row, rowNumber);
                     }
                 }

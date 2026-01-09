@@ -13,9 +13,20 @@ namespace HeroParser.Generators;
 /// dictionary lookups, and boxing overhead.
 /// </summary>
 /// <remarks>
+/// <para>
 /// This generator produces AOT-compatible code. It requires that all record types
 /// used in the dispatcher have the [CsvGenerateBinder] attribute to ensure the
 /// corresponding binder classes are generated at compile-time.
+/// </para>
+/// <para>
+/// Generated methods:
+/// <list type="bullet">
+/// <item><c>Dispatch(CsvRow&lt;char&gt;, int)</c> - UTF-16 dispatch</item>
+/// <item><c>DispatchBytes(CsvRow&lt;byte&gt;, int)</c> - UTF-8 dispatch</item>
+/// <item><c>Bind{RecordName}(CsvRow&lt;char&gt;, int)</c> - Direct char binding per record type</item>
+/// <item><c>Bind{RecordName}Bytes(CsvRow&lt;byte&gt;, int)</c> - Direct byte binding per record type</item>
+/// </list>
+/// </para>
 /// </remarks>
 [Generator(LanguageNames.CSharp)]
 public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
@@ -167,7 +178,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         builder.AppendLine("{");
         builder.Indent();
 
-        // Emit binder fields (cached for performance)
+        // Emit char binder fields (cached for performance)
         foreach (var mapping in descriptor.Mappings)
         {
             var binderClass = $"global::{BINDER_NAMESPACE}.CsvInlineBinder_{mapping.SafeTypeName}";
@@ -175,7 +186,15 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         }
         builder.AppendLine();
 
-        // Emit binding methods
+        // Emit byte binder fields (cached for performance)
+        foreach (var mapping in descriptor.Mappings)
+        {
+            var binderClass = $"global::{BINDER_NAMESPACE}.CsvInlineByteBinder_{mapping.SafeTypeName}";
+            builder.AppendLine($"private static readonly {binderClass} _byteBinder_{mapping.SafeTypeName} = new(null);");
+        }
+        builder.AppendLine();
+
+        // Emit char binding methods
         foreach (var mapping in descriptor.Mappings)
         {
             builder.AppendLine($"public static {mapping.ReturnTypeName}? {mapping.MethodName}({ROW_TYPE} row, int rowNumber)");
@@ -183,11 +202,17 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
             builder.AppendLine();
         }
 
-        // Emit optimized Dispatch method (char-based only for now)
-        EmitDispatchMethod(builder, descriptor, isBytes: false);
+        // Emit byte binding methods
+        foreach (var mapping in descriptor.Mappings)
+        {
+            builder.AppendLine($"public static {mapping.ReturnTypeName}? {mapping.MethodName}Bytes({BYTE_ROW_TYPE} row, int rowNumber)");
+            builder.AppendLine($"    => _byteBinder_{mapping.SafeTypeName}.Bind(row, rowNumber);");
+            builder.AppendLine();
+        }
 
-        // Note: byte-based dispatch requires separate byte binders
-        // TODO: Add EmitDispatchMethod(builder, descriptor, isBytes: true) when byte binder fields are generated
+        // Emit optimized Dispatch methods for both char and byte
+        EmitDispatchMethod(builder, descriptor, isBytes: false);
+        EmitDispatchMethod(builder, descriptor, isBytes: true);
 
         builder.Unindent();
         builder.AppendLine("}");
@@ -199,7 +224,8 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
     {
         var rowType = isBytes ? BYTE_ROW_TYPE : ROW_TYPE;
         var methodName = isBytes ? "DispatchBytes" : "Dispatch";
-        var binderSuffix = isBytes ? "Byte" : "";
+        var binderFieldPrefix = isBytes ? "_byteBinder_" : "_binder_";
+        var elementType = isBytes ? "byte" : "char";
 
         builder.AppendLine("/// <summary>");
         builder.AppendLine("/// Dispatches a row to the appropriate binder based on the discriminator value.");
@@ -241,8 +267,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
                     ? char.ToLowerInvariant(mapping.DiscriminatorValue[0])
                     : mapping.DiscriminatorValue[0];
 
-                var binderClass = $"global::{BINDER_NAMESPACE}.CsvInline{binderSuffix}Binder_{mapping.SafeTypeName}";
-                builder.AppendLine($"'{charValue}' => _binder_{mapping.SafeTypeName}.Bind(row, rowNumber),");
+                builder.AppendLine($"'{charValue}' => {binderFieldPrefix}{mapping.SafeTypeName}.Bind(row, rowNumber),");
             }
 
             builder.AppendLine("_ => null");
@@ -271,13 +296,13 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
                 if (mappings.Count == 1)
                 {
                     var mapping = mappings[0];
-                    var binderClass = $"global::{BINDER_NAMESPACE}.CsvInline{binderSuffix}Binder_{mapping.SafeTypeName}";
-                    builder.AppendLine($"{length} when SpanEquals(span, \"{EscapeString(mapping.DiscriminatorValue)}\") => _binder_{mapping.SafeTypeName}.Bind(row, rowNumber),");
+                    var stringSuffix = isBytes ? "u8" : "";
+                    builder.AppendLine($"{length} when SpanEquals{elementType.ToUpperInvariant()}(span, \"{EscapeString(mapping.DiscriminatorValue)}\"{stringSuffix}) => {binderFieldPrefix}{mapping.SafeTypeName}.Bind(row, rowNumber),");
                 }
                 else
                 {
                     // Multiple mappings with same length - need nested checks
-                    builder.AppendLine($"{length} => Dispatch{length}Char(span, row, rowNumber),");
+                    builder.AppendLine($"{length} => Dispatch{length}{elementType.ToUpperInvariant()}(span, row, rowNumber),");
                 }
             }
 
@@ -292,11 +317,11 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
 
             foreach (var group in byLength.Where(g => g.Count() > 1))
             {
-                EmitSameLengthDispatcher(builder, group.Key, [.. group], rowType);
+                EmitSameLengthDispatcher(builder, group.Key, [.. group], rowType, binderFieldPrefix, elementType, isBytes);
             }
 
             // Emit SpanEquals helper
-            EmitSpanEqualsHelper(builder, descriptor.CaseInsensitive);
+            EmitSpanEqualsHelper(builder, descriptor.CaseInsensitive, elementType);
 
             // Re-open class for proper formatting
             return;
@@ -307,17 +332,19 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    private static void EmitSameLengthDispatcher(SourceBuilder builder, int length, List<DiscriminatorMapping> mappings, string rowType)
+    private static void EmitSameLengthDispatcher(SourceBuilder builder, int length, List<DiscriminatorMapping> mappings, string rowType, string binderFieldPrefix, string elementType, bool isBytes)
     {
+        var elementTypeUpper = elementType.ToUpperInvariant();
+        var stringSuffix = isBytes ? "u8" : "";
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine($"private static object? Dispatch{length}Char(ReadOnlySpan<char> span, {rowType} row, int rowNumber)");
+        builder.AppendLine($"private static object? Dispatch{length}{elementTypeUpper}(ReadOnlySpan<{elementType}> span, {rowType} row, int rowNumber)");
         builder.AppendLine("{");
         builder.Indent();
 
         foreach (var mapping in mappings)
         {
-            builder.AppendLine($"if (SpanEquals(span, \"{EscapeString(mapping.DiscriminatorValue)}\"))");
-            builder.AppendLine($"    return _binder_{mapping.SafeTypeName}.Bind(row, rowNumber);");
+            builder.AppendLine($"if (SpanEquals{elementTypeUpper}(span, \"{EscapeString(mapping.DiscriminatorValue)}\"{stringSuffix}))");
+            builder.AppendLine($"    return {binderFieldPrefix}{mapping.SafeTypeName}.Bind(row, rowNumber);");
         }
 
         builder.AppendLine("return null;");
@@ -326,24 +353,58 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    private static void EmitSpanEqualsHelper(SourceBuilder builder, bool caseInsensitive)
+    private static void EmitSpanEqualsHelper(SourceBuilder builder, bool caseInsensitive, string elementType)
     {
+        var elementTypeUpper = elementType.ToUpperInvariant();
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine("private static bool SpanEquals(ReadOnlySpan<char> span, string value)");
-        builder.AppendLine("{");
-        builder.Indent();
 
-        if (caseInsensitive)
+        if (elementType == "char")
         {
-            builder.AppendLine("return span.Equals(value.AsSpan(), StringComparison.OrdinalIgnoreCase);");
+            builder.AppendLine($"private static bool SpanEquals{elementTypeUpper}(ReadOnlySpan<{elementType}> span, string value)");
+            builder.AppendLine("{");
+            builder.Indent();
+
+            if (caseInsensitive)
+            {
+                builder.AppendLine("return span.Equals(value.AsSpan(), StringComparison.OrdinalIgnoreCase);");
+            }
+            else
+            {
+                builder.AppendLine("return span.SequenceEqual(value.AsSpan());");
+            }
+
+            builder.Unindent();
+            builder.AppendLine("}");
         }
         else
         {
-            builder.AppendLine("return span.SequenceEqual(value.AsSpan());");
-        }
+            // For bytes, use ReadOnlySpan<byte> and u8 string literals for zero-allocation comparison
+            builder.AppendLine($"private static bool SpanEquals{elementTypeUpper}(ReadOnlySpan<{elementType}> span, ReadOnlySpan<byte> value)");
+            builder.AppendLine("{");
+            builder.Indent();
 
-        builder.Unindent();
-        builder.AppendLine("}");
+            if (caseInsensitive)
+            {
+                // Case-insensitive byte comparison requires manual ASCII lowercasing
+                builder.AppendLine("if (span.Length != value.Length) return false;");
+                builder.AppendLine("for (int i = 0; i < span.Length; i++)");
+                builder.AppendLine("{");
+                builder.AppendLine("    byte a = span[i];");
+                builder.AppendLine("    byte b = value[i];");
+                builder.AppendLine("    if ((uint)(a - 'A') <= 'Z' - 'A') a = (byte)(a + 32);");
+                builder.AppendLine("    if ((uint)(b - 'A') <= 'Z' - 'A') b = (byte)(b + 32);");
+                builder.AppendLine("    if (a != b) return false;");
+                builder.AppendLine("}");
+                builder.AppendLine("return true;");
+            }
+            else
+            {
+                builder.AppendLine("return span.SequenceEqual(value);");
+            }
+
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
         builder.AppendLine();
     }
 

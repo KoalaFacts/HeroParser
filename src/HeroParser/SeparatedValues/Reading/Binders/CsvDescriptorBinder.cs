@@ -151,6 +151,12 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : class
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsNullValue(ReadOnlySpan<char> value, HashSet<string> nullValues)
     {
-        return nullValues.Contains(new string(value));
+        // Use span-based comparison to avoid string allocation per-field
+        foreach (var nullValue in nullValues)
+        {
+            if (value.SequenceEqual(nullValue.AsSpan()))
+                return true;
+        }
+        return false;
     }
 }

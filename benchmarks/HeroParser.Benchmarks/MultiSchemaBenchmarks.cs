@@ -155,15 +155,15 @@ public class MultiSchemaBenchmarks
         int total = 0;
         int rowNumber = 0;
 
-        // Skip header row
-        var reader = Csv.Read().FromText(multiTypeCsv);
+        // Skip header row - use byte-based reader for SIMD acceleration
+        var reader = Csv.Read().FromText(multiTypeCsv, out byte[] _);
         if (reader.MoveNext())
             rowNumber++; // header
 
         while (reader.MoveNext())
         {
             rowNumber++;
-            var record = BankingDispatcher.Dispatch(reader.Current, rowNumber);
+            var record = BankingDispatcher.DispatchBytes(reader.Current, rowNumber);
             if (record is DetailRecord d)
                 total += (int)d.Amount;
         }

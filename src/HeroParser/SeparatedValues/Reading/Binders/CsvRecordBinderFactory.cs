@@ -6,51 +6,37 @@ namespace HeroParser.SeparatedValues.Reading.Binders;
 
 /// <summary>
 /// Resolves record binders from generated code.
-/// Supports both char (UTF-16) and byte (UTF-8) binders with inline or descriptor-based binding.
+/// Supports byte (UTF-8) binders with inline binding for SIMD-accelerated parsing.
+/// Char binders use an adapter over byte binders for backward compatibility.
 /// </summary>
 /// <remarks>
 /// Thread-Safety: All operations are thread-safe. Uses ConcurrentDictionary for lock-free reads.
 /// </remarks>
 public static class CsvRecordBinderFactory
 {
-    private static readonly ConcurrentDictionary<Type, object> charBinderFactories = new();
     private static readonly ConcurrentDictionary<Type, object> byteBinderFactories = new();
     private static readonly ConcurrentDictionary<Type, object> descriptorFactories = new();
 
-    #region Char Binder Registration
+    #region Char Binder (Adapter over Byte Binder)
 
     /// <summary>
-    /// Registers a char binder factory for maximum performance inline binding.
+    /// Gets a char binder for the specified type by adapting the byte binder.
+    /// This provides backward compatibility for char-based APIs while using the optimized byte binder internally.
     /// </summary>
-    /// <typeparam name="T">The record type the binder handles.</typeparam>
-    /// <param name="factory">Factory that creates binder instances.</param>
-    public static void RegisterCharBinder<T>(Func<CsvRecordOptions?, ICsvBinder<char, T>> factory)
-        where T : class, new()
-    {
-        ArgumentNullException.ThrowIfNull(factory);
-        charBinderFactories[typeof(T)] = factory;
-    }
-
-    /// <summary>
-    /// Gets a char binder for the specified type, or throws if not found.
-    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Performance Warning:</strong> The char binder allocates multiple arrays per row
+    /// for the char-to-byte conversion. For high-performance scenarios, use <see cref="GetByteBinder{T}"/>
+    /// directly with UTF-8 byte-based APIs (<c>FromFile</c>, <c>FromStream</c>, or <c>FromText</c>
+    /// with the <c>out byte[]</c> overload).
+    /// </para>
+    /// </remarks>
     public static ICsvBinder<char, T> GetCharBinder<T>(CsvRecordOptions? options = null)
         where T : class, new()
     {
-        // First try inline binder (highest performance)
-        if (charBinderFactories.TryGetValue(typeof(T), out var binderFactory))
-        {
-            if (binderFactory is not Func<CsvRecordOptions?, ICsvBinder<char, T>> typedFactory)
-                throw new InvalidOperationException($"Binder factory for type {typeof(T).Name} was registered with incorrect delegate type.");
-            return typedFactory(options);
-        }
-
-        // Fall back to descriptor-based binder
-        if (TryGetDescriptor<T>(out var descriptor) && descriptor is not null)
-            return new CsvDescriptorBinder<T>(descriptor, options);
-
-        throw new InvalidOperationException(
-            $"No binder found for type {typeof(T).Name}. Add [CsvGenerateBinder] attribute to the type.");
+        // Get the byte binder and wrap it in an adapter
+        var byteBinder = GetByteBinder<T>(options);
+        return new CsvCharToByteBinderAdapter<T>(byteBinder);
     }
 
     #endregion

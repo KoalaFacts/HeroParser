@@ -109,11 +109,11 @@ public static partial class Csv
 
     /// <summary>
     /// Deserializes CSV data from text into strongly typed records.
-    /// Uses scalar parsing only (no SIMD acceleration).
+    /// Uses scalar parsing (no SIMD). For best performance, use the byte-based overload.
     /// </summary>
     /// <remarks>
-    /// For optimal performance with SIMD acceleration, use the overload with the out parameter
-    /// or use file/stream-based APIs.
+    /// This method uses descriptor-based binding for backward compatibility.
+    /// For optimal performance with SIMD acceleration, use <see cref="DeserializeRecords{T}(string, out byte[], CsvRecordOptions?, CsvParserOptions?)"/>.
     /// </remarks>
     public static CsvRecordReader<char, T> DeserializeRecords<T>(
         string data,

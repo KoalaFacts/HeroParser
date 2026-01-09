@@ -164,6 +164,57 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         return true;
     }
 
+    /// <summary>
+    /// Gets the string value of a column at the specified index.
+    /// </summary>
+    /// <param name="index">Zero-based column index.</param>
+    /// <returns>The string value of the column.</returns>
+    /// <exception cref="IndexOutOfRangeException">Thrown when <paramref name="index"/> falls outside <see cref="ColumnCount"/>.</exception>
+    /// <remarks>
+    /// For UTF-8 data (<typeparamref name="T"/> = <see cref="byte"/>), this method decodes the bytes
+    /// to a string using UTF-8 encoding. For UTF-16 data (<typeparamref name="T"/> = <see cref="char"/>),
+    /// this creates a new string from the character span.
+    ///
+    /// This method is designed for lazy string materialization - call it only when you need
+    /// the string value, rather than converting all columns upfront.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public string GetString(int index)
+    {
+        if ((uint)index >= (uint)columnCount)
+        {
+            throw new IndexOutOfRangeException(
+                $"Column index {index} is out of range. Column count is {columnCount}.");
+        }
+
+        var start = columnEnds[index] + 1;
+        var end = columnEnds[index + 1];
+
+        if (trimFields)
+        {
+            (start, end) = TrimBounds(start, end);
+        }
+
+        var length = end - start;
+        var slice = line.Slice(start, length);
+
+        if (typeof(T) == typeof(char))
+        {
+            var chars = MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<T, char>(ref MemoryMarshal.GetReference(slice)), length);
+            return new string(chars);
+        }
+
+        if (typeof(T) == typeof(byte))
+        {
+            var bytes = MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<T, byte>(ref MemoryMarshal.GetReference(slice)), length);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
+    }
+
     /// <summary>Materializes the row into a string array by copying the underlying data.</summary>
     public string[] ToStringArray()
     {

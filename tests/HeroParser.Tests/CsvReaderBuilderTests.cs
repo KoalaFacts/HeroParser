@@ -599,4 +599,215 @@ public class CsvReaderBuilderTests
     }
 
     #endregion
+
+    #region UTF-8 File Reading Tests
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_FromFile_ReadsUtf8Bytes()
+    {
+        // Create a temporary CSV file
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var csvContent = "Name,Age,City\r\nAlice,30,NYC\r\nBob,25,LA\r\n";
+            File.WriteAllBytes(tempFile, System.Text.Encoding.UTF8.GetBytes(csvContent));
+
+            var reader = Csv.Read().FromFile(tempFile, out var fileBytes);
+
+            Assert.NotNull(fileBytes);
+            Assert.True(fileBytes.Length > 0);
+
+            var rows = new List<string>();
+            foreach (var row in reader)
+            {
+                rows.Add(row.GetString(0));
+            }
+
+            Assert.Equal(3, rows.Count);  // Header + 2 data rows
+            Assert.Equal("Name", rows[0]);
+            Assert.Equal("Alice", rows[1]);
+            Assert.Equal("Bob", rows[2]);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void NonGenericBuilder_FromStream_ReadsUtf8Bytes()
+    {
+        var csvContent = "Name,Age,City\r\nAlice,30,NYC\r\nBob,25,LA\r\n";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csvContent));
+
+        var reader = Csv.Read().FromStream(stream, out var streamBytes);
+
+        Assert.NotNull(streamBytes);
+        Assert.True(streamBytes.Length > 0);
+
+        var rows = new List<string>();
+        foreach (var row in reader)
+        {
+            rows.Add(row.GetString(0));
+        }
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal("Name", rows[0]);
+        Assert.Equal("Alice", rows[1]);
+        Assert.Equal("Bob", rows[2]);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_FromFile_ReadsUtf8Bytes()
+    {
+        // Create a temporary CSV file
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var csvContent = "Name,Age,City\r\nAlice,30,NYC\r\nBob,25,LA\r\n";
+            File.WriteAllBytes(tempFile, System.Text.Encoding.UTF8.GetBytes(csvContent));
+
+            var reader = Csv.Read<TestPerson>().FromFile(tempFile, out var fileBytes);
+
+            Assert.NotNull(fileBytes);
+            Assert.True(fileBytes.Length > 0);
+
+            var records = new List<TestPerson>();
+            foreach (var record in reader)
+            {
+                records.Add(record);
+            }
+
+            Assert.Equal(2, records.Count);
+            Assert.Equal("Alice", records[0].Name);
+            Assert.Equal(30, records[0].Age);
+            Assert.Equal("NYC", records[0].City);
+            Assert.Equal("Bob", records[1].Name);
+            Assert.Equal(25, records[1].Age);
+            Assert.Equal("LA", records[1].City);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GenericBuilder_FromStream_ReadsUtf8Bytes()
+    {
+        var csvContent = "Name,Age,City\r\nAlice,30,NYC\r\nBob,25,LA\r\n";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csvContent));
+
+        var reader = Csv.Read<TestPerson>().FromStream(stream, out var streamBytes);
+
+        Assert.NotNull(streamBytes);
+        Assert.True(streamBytes.Length > 0);
+
+        var records = new List<TestPerson>();
+        foreach (var record in reader)
+        {
+            records.Add(record);
+        }
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice", records[0].Name);
+        Assert.Equal("Bob", records[1].Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GetString_DecodesUtf8Correctly()
+    {
+        // Test with Unicode characters
+        var csvContent = "Name,City\r\n北京,上海\r\nПривет,Мир\r\n";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csvContent);
+
+        var reader = Csv.ReadFromByteSpan(bytes);
+        var rows = new List<(string, string)>();
+
+        foreach (var row in reader)
+        {
+            rows.Add((row.GetString(0), row.GetString(1)));
+        }
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal("Name", rows[0].Item1);
+        Assert.Equal("City", rows[0].Item2);
+        Assert.Equal("北京", rows[1].Item1);  // Chinese
+        Assert.Equal("上海", rows[1].Item2);
+        Assert.Equal("Привет", rows[2].Item1);  // Russian
+        Assert.Equal("Мир", rows[2].Item2);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void FromFile_HandlesUtf8Bom()
+    {
+        // Create a temporary CSV file with UTF-8 BOM
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var csvContent = "Name,Age\r\nAlice,30\r\n";
+            var bom = new byte[] { 0xEF, 0xBB, 0xBF };
+            var contentBytes = System.Text.Encoding.UTF8.GetBytes(csvContent);
+            var fullBytes = new byte[bom.Length + contentBytes.Length];
+            bom.CopyTo(fullBytes, 0);
+            contentBytes.CopyTo(fullBytes, bom.Length);
+            File.WriteAllBytes(tempFile, fullBytes);
+
+            var reader = Csv.Read().FromFile(tempFile, out _);
+
+            var firstRow = true;
+            foreach (var row in reader)
+            {
+                if (firstRow)
+                {
+                    // BOM should be stripped, so "Name" should start cleanly
+                    Assert.Equal("Name", row.GetString(0));
+                    firstRow = false;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void FromStream_LeavesStreamOpen_WhenRequested()
+    {
+        var csvContent = "Name,Age\r\nAlice,30\r\n";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csvContent));
+
+        var reader = Csv.Read().FromStream(stream, out _, leaveOpen: true);
+
+        foreach (var _ in reader) { }  // Consume the reader
+
+        // Stream should still be accessible
+        Assert.True(stream.CanRead);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void FromStream_ClosesStream_WhenRequested()
+    {
+        var csvContent = "Name,Age\r\nAlice,30\r\n";
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csvContent));
+
+        var reader = Csv.Read().FromStream(stream, out _, leaveOpen: false);
+
+        foreach (var _ in reader) { }  // Consume the reader
+
+        // Stream should be closed
+        Assert.False(stream.CanRead);
+    }
+
+    #endregion
 }

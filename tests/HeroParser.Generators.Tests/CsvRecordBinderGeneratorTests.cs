@@ -35,7 +35,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("TestNamespace.Person", allGeneratedCode);
     }
@@ -63,7 +64,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("product_name", allGeneratedCode);
@@ -117,7 +119,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("NullableRecord", allGeneratedCode);
@@ -155,7 +158,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("Int32Value", allGeneratedCode);
@@ -185,7 +189,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("Name", allGeneratedCode);
@@ -209,7 +214,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("PersonRecord", allGeneratedCode);
@@ -239,7 +245,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("yyyy-MM-dd", allGeneratedCode);
@@ -291,8 +298,9 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        // Multiple annotated types generate: 2 files per type (descriptor + binder/writer) + 1 shared registration
-        Assert.Equal(5, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        // For 2 types: 2 binder files + 1 registration = 3 files
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("TestNamespace.Person", allGeneratedCode);
@@ -347,7 +355,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("Outer.Inner", allGeneratedCode);
@@ -437,7 +446,8 @@ public class CsvRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Equal(3, result.GeneratedSources.Length);
+        // Generator produces: 1 binder file per type + 1 shared registration file
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("GlobalRecord", allGeneratedCode);

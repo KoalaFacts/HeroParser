@@ -32,7 +32,7 @@ public sealed class CsvWriterBuilder<T>
     private int? maxColumnCount;
 
     // Cached options - invalidated when any setting changes
-    private CsvWriterOptions? cachedOptions;
+    private CsvWriteOptions? cachedOptions;
 
     internal CsvWriterBuilder() { }
 
@@ -217,12 +217,12 @@ public sealed class CsvWriterBuilder<T>
     /// <param name="encoding">The encoding to use.</param>
     /// <returns>This builder for method chaining.</returns>
     /// <remarks>
-    /// Encoding is used only for file/stream output and is not part of <see cref="CsvWriterOptions"/>.
+    /// Encoding is used only for file/stream output and is not part of <see cref="CsvWriteOptions"/>.
     /// </remarks>
     public CsvWriterBuilder<T> WithEncoding(Encoding encoding)
     {
         this.encoding = encoding ?? Encoding.UTF8;
-        // Note: encoding is not part of CsvWriterOptions, so no need to invalidate cachedOptions
+        // Note: encoding is not part of CsvWriteOptions, so no need to invalidate cachedOptions
         return this;
     }
 
@@ -508,9 +508,9 @@ public sealed class CsvWriterBuilder<T>
 
     #region Private Helpers
 
-    private CsvWriterOptions GetOptions()
+    private CsvWriteOptions GetOptions()
     {
-        return cachedOptions ??= new CsvWriterOptions
+        return cachedOptions ??= new CsvWriteOptions
         {
             Delimiter = delimiter,
             Quote = quote,
@@ -561,7 +561,7 @@ public sealed class CsvWriterBuilder
     private int? maxColumnCount;
 
     // Cached options - invalidated when any setting changes
-    private CsvWriterOptions? cachedOptions;
+    private CsvWriteOptions? cachedOptions;
 
     internal CsvWriterBuilder() { }
 
@@ -708,12 +708,12 @@ public sealed class CsvWriterBuilder
     /// Sets the encoding for file output.
     /// </summary>
     /// <remarks>
-    /// Encoding is used only for file/stream output and is not part of <see cref="CsvWriterOptions"/>.
+    /// Encoding is used only for file/stream output and is not part of <see cref="CsvWriteOptions"/>.
     /// </remarks>
     public CsvWriterBuilder WithEncoding(Encoding encoding)
     {
         this.encoding = encoding ?? Encoding.UTF8;
-        // Note: encoding is not part of CsvWriterOptions, so no need to invalidate cachedOptions
+        // Note: encoding is not part of CsvWriteOptions, so no need to invalidate cachedOptions
         return this;
     }
 
@@ -817,9 +817,9 @@ public sealed class CsvWriterBuilder
         return new CsvStreamWriter(streamWriter, GetOptions(), leaveOpen: false);
     }
 
-    private CsvWriterOptions GetOptions()
+    private CsvWriteOptions GetOptions()
     {
-        return cachedOptions ??= new CsvWriterOptions
+        return cachedOptions ??= new CsvWriteOptions
         {
             Delimiter = delimiter,
             Quote = quote,
@@ -840,3 +840,4 @@ public sealed class CsvWriterBuilder
         };
     }
 }
+

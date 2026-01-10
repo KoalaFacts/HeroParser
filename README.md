@@ -52,7 +52,7 @@
 var reader = Csv.ReadFromText(csvData);
 
 // Custom options (delimiter, quote character, max columns)
-var options = new CsvParserOptions
+var options = new CsvReadOptions
 {
     Delimiter = ',',  // Default
     Quote = '"',      // Default - RFC 4180 compliant
@@ -526,7 +526,7 @@ The async writer uses sync fast paths when data fits in the buffer, avoiding asy
 ### Writer Options
 
 ```csharp
-var options = new CsvWriterOptions
+var options = new CsvWriteOptions
 {
     Delimiter = ',',           // Field delimiter (default: comma)
     Quote = '"',               // Quote character (default: double quote)
@@ -612,7 +612,7 @@ writer.Flush();
 ### Error Handling
 
 ```csharp
-var options = new CsvWriterOptions
+var options = new CsvWriteOptions
 {
     OnSerializeError = ctx =>
     {
@@ -731,7 +731,7 @@ foreach (var row in Csv.ReadFromText(csv))
 Skip comment lines in CSV files:
 
 ```csharp
-var options = new CsvParserOptions
+var options = new CsvReadOptions
 {
     CommentCharacter = '#'  // Lines starting with # are ignored
 };
@@ -753,7 +753,7 @@ foreach (var row in Csv.ReadFromText(csv, options))
 Remove leading and trailing whitespace from unquoted fields:
 
 ```csharp
-var options = new CsvParserOptions
+var options = new CsvReadOptions
 {
     TrimFields = true  // Trim whitespace from unquoted fields
 };
@@ -788,7 +788,7 @@ foreach (var record in Csv.ParseRecords<MyRecord>(csv, recordOptions))
 Protect against DoS attacks with oversized fields:
 
 ```csharp
-var options = new CsvParserOptions
+var options = new CsvReadOptions
 {
     MaxFieldSize = 10_000  // Throw exception if any field exceeds 10KB
 };
@@ -1310,3 +1310,5 @@ Special thanks to the .NET performance community for their research and open-sou
 ---
 
 **High-performance, zero-allocation, AOT-ready CSV & fixed-width parsing for .NET**
+
+

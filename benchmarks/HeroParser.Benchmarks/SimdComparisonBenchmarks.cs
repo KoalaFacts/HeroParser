@@ -14,8 +14,8 @@ namespace HeroParser.Benchmarks;
 public class SimdComparisonBenchmarks
 {
     private string csv = null!;
-    private CsvParserOptions simdOptions = null!;
-    private CsvParserOptions scalarOptions = null!;
+    private CsvReadOptions simdOptions = null!;
+    private CsvReadOptions scalarOptions = null!;
 
     [Params(1_000, 10_000, 100_000)]
     public int Rows { get; set; }
@@ -27,8 +27,8 @@ public class SimdComparisonBenchmarks
     public void Setup()
     {
         csv = GenerateCsv(Rows, Columns);
-        simdOptions = new CsvParserOptions { UseSimdIfAvailable = true };
-        scalarOptions = new CsvParserOptions { UseSimdIfAvailable = false };
+        simdOptions = new CsvReadOptions { UseSimdIfAvailable = true };
+        scalarOptions = new CsvReadOptions { UseSimdIfAvailable = false };
 
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
         Console.WriteLine($"CSV Size: {csv.Length:N0} chars ({csv.Length * 2:N0} bytes)");
@@ -73,3 +73,4 @@ public class SimdComparisonBenchmarks
         return total;
     }
 }
+

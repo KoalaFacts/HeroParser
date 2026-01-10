@@ -98,7 +98,7 @@ public class NewFeaturesBenchmark
     [Benchmark]
     public int Parse_WithoutCommentSupport()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4,
             MaxRowCount = Rows + 100,
@@ -120,7 +120,7 @@ public class NewFeaturesBenchmark
     [Benchmark]
     public int Parse_WithCommentSupport_NoComments()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4,
             MaxRowCount = Rows + 100,
@@ -142,7 +142,7 @@ public class NewFeaturesBenchmark
     [Benchmark]
     public int Parse_WithCommentSupport_WithComments()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4,
             MaxRowCount = Rows + 100,
@@ -168,7 +168,7 @@ public class NewFeaturesBenchmark
     [Benchmark]
     public int Parse_WithoutTrimFields()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4,
             MaxRowCount = Rows + 100,
@@ -190,7 +190,7 @@ public class NewFeaturesBenchmark
     [Benchmark]
     public int Parse_WithTrimFields()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4,
             MaxRowCount = Rows + 100,
@@ -216,7 +216,7 @@ public class NewFeaturesBenchmark
     [Benchmark]
     public int Parse_WithoutMaxFieldSize()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4,
             MaxRowCount = Rows + 100,
@@ -238,7 +238,7 @@ public class NewFeaturesBenchmark
     [Benchmark]
     public int Parse_WithMaxFieldSize()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4,
             MaxRowCount = Rows + 100,
@@ -260,7 +260,7 @@ public class NewFeaturesBenchmark
     [Benchmark]
     public int Parse_WithStrictMaxFieldSize()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4,
             MaxRowCount = Rows + 100,
@@ -276,3 +276,4 @@ public class NewFeaturesBenchmark
         return total;
     }
 }
+

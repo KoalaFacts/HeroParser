@@ -64,7 +64,7 @@ public class WriterBenchmarks
     public string WriteRawRows()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         for (int r = 0; r < Rows; r++)
         {
@@ -84,13 +84,13 @@ public class WriterBenchmarks
     [Benchmark]
     public string WriteRecordsNoHeader()
     {
-        return Csv.WriteToText(records, new CsvWriterOptions { WriteHeader = false });
+        return Csv.WriteToText(records, new CsvWriteOptions { WriteHeader = false });
     }
 
     [Benchmark]
     public string WriteAlwaysQuoted()
     {
-        return Csv.WriteToText(records, new CsvWriterOptions { QuoteStyle = QuoteStyle.Always });
+        return Csv.WriteToText(records, new CsvWriteOptions { QuoteStyle = QuoteStyle.Always });
     }
 
     [Benchmark]
@@ -109,3 +109,4 @@ public class WriterBenchmarks
         public DateTime Created { get; set; }
     }
 }
+

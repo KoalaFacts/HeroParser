@@ -10,7 +10,7 @@ public class CsvLineNumberTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void TrackSourceLineNumbers_WithCarriageReturnLineEndings()
     {
-        var options = new CsvParserOptions { TrackSourceLineNumbers = true };
+        var options = new CsvReadOptions { TrackSourceLineNumbers = true };
         var csv = "a,b\r1,2\r3,4\r";
         var reader = Csv.ReadFromText(csv, options);
 
@@ -30,7 +30,7 @@ public class CsvLineNumberTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void TrackSourceLineNumbers_WithCarriageReturnsInsideQuotes()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             TrackSourceLineNumbers = true,
             AllowNewlinesInsideQuotes = true
@@ -45,3 +45,4 @@ public class CsvLineNumberTests
         Assert.Equal(3, reader.Current.SourceLineNumber);
     }
 }
+

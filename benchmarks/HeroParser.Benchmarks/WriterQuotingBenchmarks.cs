@@ -27,7 +27,7 @@ public class WriterQuotingBenchmarks
     [Benchmark(Baseline = true)]
     public string WriteNormalValues_WhenNeeded()
     {
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.WhenNeeded };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.WhenNeeded };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -42,7 +42,7 @@ public class WriterQuotingBenchmarks
     [Benchmark]
     public string WriteNormalValues_Always()
     {
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.Always };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.Always };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -57,7 +57,7 @@ public class WriterQuotingBenchmarks
     [Benchmark]
     public string WriteQuotableValues_WhenNeeded()
     {
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.WhenNeeded };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.WhenNeeded };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -72,7 +72,7 @@ public class WriterQuotingBenchmarks
     [Benchmark]
     public string WriteQuotableValues_Always()
     {
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.Always };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.Always };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -84,3 +84,4 @@ public class WriterQuotingBenchmarks
         return sw.ToString();
     }
 }
+

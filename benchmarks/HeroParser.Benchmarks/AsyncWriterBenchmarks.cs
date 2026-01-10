@@ -82,7 +82,7 @@ public class AsyncWriterBenchmarks
     {
         using var ms = new MemoryStream();
         using var sw = new StreamWriter(ms, Encoding.UTF8, bufferSize: 16 * 1024, leaveOpen: true);
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         for (int r = 0; r < Rows; r++)
         {
@@ -95,7 +95,7 @@ public class AsyncWriterBenchmarks
     public async Task AsyncWriter_RawRows_MemoryStream()
     {
         using var ms = new MemoryStream();
-        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         for (int r = 0; r < Rows; r++)
         {
@@ -229,7 +229,7 @@ public class AsyncWriterBenchmarks
     public async Task AsyncWriter_AlwaysQuoted()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.Always };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.Always };
         await using var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         for (int r = 0; r < Rows; r++)
@@ -243,7 +243,7 @@ public class AsyncWriterBenchmarks
     public async Task AsyncWriter_InjectionProtection()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { InjectionProtection = CsvInjectionProtection.EscapeWithQuote };
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.EscapeWithQuote };
         await using var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         for (int r = 0; r < Rows; r++)
@@ -277,3 +277,4 @@ public class AsyncWriterBenchmarks
         public DateTime Created { get; set; }
     }
 }
+

@@ -34,7 +34,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     private static readonly ConcurrentDictionary<Type, PropertyAccessor[]> propertyCache = new();
 
     private readonly PropertyAccessor[] accessors;
-    private readonly CsvWriterOptions writerOptions;
+    private readonly CsvWriteOptions writerOptions;
 
     // Reusable arrays to eliminate per-record allocations
     private readonly object?[] valuesBuffer;
@@ -47,9 +47,9 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// <param name="options">Writer options, or null for defaults.</param>
     [RequiresUnreferencedCode("Reflection-based writing may not work with trimming. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
     [RequiresDynamicCode("Reflection-based writing requires dynamic code. Use [CsvGenerateBinder] attribute for AOT support.")]
-    public CsvRecordWriter(CsvWriterOptions? options = null)
+    public CsvRecordWriter(CsvWriteOptions? options = null)
     {
-        writerOptions = options ?? CsvWriterOptions.Default;
+        writerOptions = options ?? CsvWriteOptions.Default;
         accessors = propertyCache.GetOrAdd(typeof(T), BuildAccessors);
 
         // Pre-allocate buffers based on accessor count
@@ -69,7 +69,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// <summary>
     /// Constructor for source-generated writers using templates.
     /// </summary>
-    private CsvRecordWriter(CsvWriterOptions options, IReadOnlyList<WriterTemplate> templates)
+    private CsvRecordWriter(CsvWriteOptions options, IReadOnlyList<WriterTemplate> templates)
     {
         writerOptions = options;
         accessors = InstantiateAccessors(templates);
@@ -95,10 +95,10 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// <param name="templates">The generated templates.</param>
     /// <returns>A new record writer.</returns>
     public static CsvRecordWriter<T> CreateFromTemplates(
-        CsvWriterOptions? options,
+        CsvWriteOptions? options,
         IReadOnlyList<WriterTemplate> templates)
     {
-        var resolvedOptions = options ?? CsvWriterOptions.Default;
+        var resolvedOptions = options ?? CsvWriteOptions.Default;
         return new CsvRecordWriter<T>(resolvedOptions, templates);
     }
 
@@ -474,7 +474,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
 /// </remarks>
 public static partial class CsvRecordWriterFactory
 {
-    private static readonly ConcurrentDictionary<Type, Func<CsvWriterOptions?, object>> generatedFactories = new();
+    private static readonly ConcurrentDictionary<Type, Func<CsvWriteOptions?, object>> generatedFactories = new();
 
     static CsvRecordWriterFactory()
     {
@@ -485,9 +485,9 @@ public static partial class CsvRecordWriterFactory
     /// Creates a new record writer for the specified type and options.
     /// Prefers generated writers when available, falling back to reflection-based writers.
     /// </summary>
-    public static CsvRecordWriter<T> GetWriter<T>(CsvWriterOptions? options = null)
+    public static CsvRecordWriter<T> GetWriter<T>(CsvWriteOptions? options = null)
     {
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
 
         // Try generated writer first
         if (generatedFactories.TryGetValue(typeof(T), out var factory))
@@ -506,11 +506,11 @@ public static partial class CsvRecordWriterFactory
     /// <param name="options">Writer options.</param>
     /// <param name="writer">The generated writer, if available.</param>
     /// <returns>True if a generated writer was found; otherwise, false.</returns>
-    public static bool TryGetWriter<T>(CsvWriterOptions? options, out CsvRecordWriter<T>? writer)
+    public static bool TryGetWriter<T>(CsvWriteOptions? options, out CsvRecordWriter<T>? writer)
     {
         if (generatedFactories.TryGetValue(typeof(T), out var factory))
         {
-            options ??= CsvWriterOptions.Default;
+            options ??= CsvWriteOptions.Default;
             writer = (CsvRecordWriter<T>)factory(options);
             return true;
         }
@@ -524,7 +524,7 @@ public static partial class CsvRecordWriterFactory
     /// </summary>
     /// <param name="type">The record type the writer handles.</param>
     /// <param name="factory">Factory for creating the writer with options.</param>
-    public static void RegisterGeneratedWriter(Type type, Func<CsvWriterOptions?, object> factory)
+    public static void RegisterGeneratedWriter(Type type, Func<CsvWriteOptions?, object> factory)
     {
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(factory);
@@ -536,5 +536,6 @@ public static partial class CsvRecordWriterFactory
     /// Populated by the source generator; becomes a no-op when no generators run.
     /// </summary>
     /// <param name="factories">Cache to register writer factories into.</param>
-    static partial void RegisterGeneratedWriters(ConcurrentDictionary<Type, Func<CsvWriterOptions?, object>> factories);
+    static partial void RegisterGeneratedWriters(ConcurrentDictionary<Type, Func<CsvWriteOptions?, object>> factories);
 }
+

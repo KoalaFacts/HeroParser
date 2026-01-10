@@ -108,7 +108,7 @@ public class BasicTests
     public void CustomDelimiter_Tab()
     {
         var csv = "a\tb\tc\n1\t2\t3";
-        var options = new CsvParserOptions { Delimiter = '\t' };
+        var options = new CsvReadOptions { Delimiter = '\t' };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
@@ -124,7 +124,7 @@ public class BasicTests
     public void CustomDelimiter_Pipe()
     {
         var csv = "a|b|c";
-        var options = new CsvParserOptions { Delimiter = '|' };
+        var options = new CsvReadOptions { Delimiter = '|' };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
@@ -303,7 +303,7 @@ public class BasicTests
     public void TypeParsing_DateOnly_TimeOnly_TimeZone_CultureAware()
     {
         var csv = "31.12.2024 13:45;31.12.2024;13:45;UTC;31.12.2024 13:45 +01:00";
-        var options = new CsvParserOptions { Delimiter = ';' };
+        var options = new CsvReadOptions { Delimiter = ';' };
         var culture = CultureInfo.GetCultureInfo("de-DE");
 
         var reader = Csv.ReadFromText(csv, options);
@@ -343,7 +343,7 @@ public class BasicTests
     public void TypeParsing_DateOnly_TimeOnly_TimeZone_CultureAware_Utf8()
     {
         var csv = "31.12.2024 13:45;31.12.2024;13:45;UTC;31.12.2024 13:45 +01:00";
-        var options = new CsvParserOptions { Delimiter = ';' };
+        var options = new CsvReadOptions { Delimiter = ';' };
         var culture = CultureInfo.GetCultureInfo("de-DE");
 
         using var reader = Csv.ReadFromByteSpan(Encoding.UTF8.GetBytes(csv), options);
@@ -381,7 +381,7 @@ public class BasicTests
     public void TooManyColumns_ThrowsException()
     {
         var csv = "a,b,c,d,e";
-        var options = new CsvParserOptions { MaxColumnCount = 3 };
+        var options = new CsvReadOptions { MaxColumnCount = 3 };
 
         CsvException? ex = null;
         try
@@ -405,7 +405,7 @@ public class BasicTests
     public void TooManyRows_ThrowsException()
     {
         var csv = "a\nb\nc\nd";
-        var options = new CsvParserOptions { MaxRowCount = 2 };
+        var options = new CsvReadOptions { MaxRowCount = 2 };
 
         CsvException? ex = null;
         try
@@ -428,7 +428,7 @@ public class BasicTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void InvalidDelimiter_ThrowsException()
     {
-        var options = new CsvParserOptions { Delimiter = '€' }; // Non-ASCII
+        var options = new CsvReadOptions { Delimiter = '€' }; // Non-ASCII
         var ex = Assert.Throws<CsvException>(() => Csv.ReadFromText("test", options));
         Assert.Equal(CsvErrorCode.InvalidDelimiter, ex.ErrorCode);
     }
@@ -488,3 +488,4 @@ public class BasicTests
         Assert.Contains("Column count is 3", ex2.Message);
     }
 }
+

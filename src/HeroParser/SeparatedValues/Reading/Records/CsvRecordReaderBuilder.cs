@@ -36,9 +36,9 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : class, new()
 
     internal CsvRecordReaderBuilder() { }
 
-    private (CsvParserOptions parser, CsvRecordOptions record) GetOptions()
+    private (CsvReadOptions parser, CsvRecordOptions record) GetOptions()
     {
-        var parser = new CsvParserOptions
+        var parser = new CsvReadOptions
         {
             Delimiter = delimiter,
             Quote = quote,
@@ -85,3 +85,4 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : class, new()
         return options;
     }
 }
+

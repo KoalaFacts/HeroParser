@@ -67,7 +67,7 @@ public class AsyncEnumerableWriterTests
             new Person("Bob", 25, "London")
         );
 
-        var options = new CsvWriterOptions { WriteHeader = false };
+        var options = new CsvWriteOptions { WriteHeader = false };
 
         // Act
         var csv = await Csv.WriteToTextAsync(records, options, cancellationToken: TestContext.Current.CancellationToken);
@@ -107,7 +107,7 @@ public class AsyncEnumerableWriterTests
             new Person("Bob", 25, "London")
         );
 
-        var options = new CsvWriterOptions { Delimiter = ';' };
+        var options = new CsvWriteOptions { Delimiter = ';' };
 
         // Act
         var csv = await Csv.WriteToTextAsync(records, options, cancellationToken: TestContext.Current.CancellationToken);
@@ -554,3 +554,4 @@ public class AsyncEnumerableWriterTests
 
     #endregion
 }
+

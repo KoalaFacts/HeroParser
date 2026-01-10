@@ -21,7 +21,7 @@ public class WriterTests
     public void WriteRow_SimpleStrings_WritesCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a", "b", "c");
         writer.Flush();
@@ -34,7 +34,7 @@ public class WriterTests
     public void WriteRow_MultipleRows_WritesCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a", "b", "c");
         writer.WriteRow("1", "2", "3");
@@ -48,7 +48,7 @@ public class WriterTests
     public void WriteField_IndividualFields_WritesCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteField("a");
         writer.WriteField("b");
@@ -64,7 +64,7 @@ public class WriterTests
     public void WriteRow_EmptyFields_WritesCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a", "", "c");
         writer.Flush();
@@ -77,7 +77,7 @@ public class WriterTests
     public void WriteRow_NullFields_WritesEmptyString()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a", null, "c");
         writer.Flush();
@@ -94,7 +94,7 @@ public class WriterTests
     public void WriteRow_FieldContainsComma_QuotesField()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a,b", "c");
         writer.Flush();
@@ -107,7 +107,7 @@ public class WriterTests
     public void WriteRow_FieldContainsQuote_EscapesQuote()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a\"b", "c");
         writer.Flush();
@@ -120,7 +120,7 @@ public class WriterTests
     public void WriteRow_FieldContainsNewline_QuotesField()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a\nb", "c");
         writer.Flush();
@@ -133,7 +133,7 @@ public class WriterTests
     public void WriteRow_FieldContainsCRLF_QuotesField()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a\r\nb", "c");
         writer.Flush();
@@ -145,7 +145,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void QuoteStyle_Always_QuotesAllFields()
     {
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.Always };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.Always };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -159,7 +159,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void QuoteStyle_Never_DoesNotQuote()
     {
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.Never };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.Never };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -173,7 +173,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void QuoteStyle_WhenNeeded_OnlyQuotesSpecialFields()
     {
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.WhenNeeded };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.WhenNeeded };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -191,7 +191,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CustomDelimiter_Tab_WritesCorrectly()
     {
-        var options = new CsvWriterOptions { Delimiter = '\t' };
+        var options = new CsvWriteOptions { Delimiter = '\t' };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -205,7 +205,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CustomDelimiter_Semicolon_WritesCorrectly()
     {
-        var options = new CsvWriterOptions { Delimiter = ';' };
+        var options = new CsvWriteOptions { Delimiter = ';' };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -219,7 +219,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CustomDelimiter_Pipe_WritesCorrectly()
     {
-        var options = new CsvWriterOptions { Delimiter = '|' };
+        var options = new CsvWriteOptions { Delimiter = '|' };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -237,7 +237,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CustomNewLine_LF_WritesCorrectly()
     {
-        var options = new CsvWriterOptions { NewLine = "\n" };
+        var options = new CsvWriteOptions { NewLine = "\n" };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -256,7 +256,7 @@ public class WriterTests
     public void WriteRow_IntegerValues_FormatsCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow(1, 2, 3);
         writer.Flush();
@@ -269,7 +269,7 @@ public class WriterTests
     public void WriteRow_DoubleValues_FormatsCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow(3.14, 2.71);
         writer.Flush();
@@ -281,7 +281,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void WriteRow_DateTimeWithFormat_FormatsCorrectly()
     {
-        var options = new CsvWriterOptions { DateTimeFormat = "yyyy-MM-dd" };
+        var options = new CsvWriteOptions { DateTimeFormat = "yyyy-MM-dd" };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -295,7 +295,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void WriteRow_NullValue_WritesConfiguredNullString()
     {
-        var options = new CsvWriterOptions { NullValue = "NULL" };
+        var options = new CsvWriteOptions { NullValue = "NULL" };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -310,7 +310,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void WriteRow_CultureAware_FormatsNumbers()
     {
-        var options = new CsvWriterOptions
+        var options = new CsvWriteOptions
         {
             Delimiter = ';',
             Culture = CultureInfo.GetCultureInfo("de-DE")
@@ -365,7 +365,7 @@ public class WriterTests
             new TestPerson { Name = "Alice", Age = 30, City = "New York" }
         };
 
-        var options = new CsvWriterOptions { WriteHeader = false };
+        var options = new CsvWriteOptions { WriteHeader = false };
         var csv = Csv.WriteToText(records, options);
 
         Assert.DoesNotContain("Name", csv);
@@ -491,7 +491,7 @@ public class WriterTests
     public void RoundTrip_SpecialCharacters_Preserves()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         // Test without newlines in fields (simpler case)
         writer.WriteRow("hello", "world");
@@ -517,7 +517,7 @@ public class WriterTests
     public void RoundTrip_EmptyFields_Preserves()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a", "", "c");
         writer.WriteRow("", "b", "");
@@ -607,7 +607,7 @@ public class WriterTests
     public void RoundTrip_NewlinesInFields_Preserves()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("line1\nline2", "normal");
         writer.WriteRow("a\r\nb\r\nc", "d");
@@ -616,7 +616,7 @@ public class WriterTests
         var csv = sw.ToString();
 
         // Must enable AllowNewlinesInsideQuotes to parse multi-line fields
-        var parserOptions = new CsvParserOptions { AllowNewlinesInsideQuotes = true };
+        var parserOptions = new CsvReadOptions { AllowNewlinesInsideQuotes = true };
         var reader = Csv.ReadFromText(csv, parserOptions);
 
         Assert.True(reader.MoveNext());
@@ -664,10 +664,10 @@ public class WriterTests
             new TestPerson { Name = "Bob,Jr", Age = 25, City = "London" }
         };
 
-        var options = new CsvWriterOptions { Delimiter = ';' };
+        var options = new CsvWriteOptions { Delimiter = ';' };
         var csv = Csv.WriteToText(original, options);
 
-        var parserOptions = new CsvParserOptions { Delimiter = ';' };
+        var parserOptions = new CsvReadOptions { Delimiter = ';' };
         var parsed = Csv.DeserializeRecords<TestPerson>(csv, parserOptions: parserOptions).ToList();
 
         Assert.Equal(2, parsed.Count);
@@ -685,10 +685,10 @@ public class WriterTests
             new TestPerson { Name = "Bob", Age = 25, City = "London" }
         };
 
-        var options = new CsvWriterOptions { Delimiter = '\t' };
+        var options = new CsvWriteOptions { Delimiter = '\t' };
         var csv = Csv.WriteToText(original, options);
 
-        var parserOptions = new CsvParserOptions { Delimiter = '\t' };
+        var parserOptions = new CsvReadOptions { Delimiter = '\t' };
         var parsed = Csv.DeserializeRecords<TestPerson>(csv, parserOptions: parserOptions).ToList();
 
         Assert.Equal(2, parsed.Count);
@@ -704,7 +704,7 @@ public class WriterTests
     {
         // Test that a field containing the delimiter is properly quoted and round-trips
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, new CsvWriterOptions { Delimiter = '\t' }, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, new CsvWriteOptions { Delimiter = '\t' }, leaveOpen: true);
 
         writer.WriteRow("header1", "header2");
         writer.WriteRow("normal", "value\twith\ttabs");
@@ -716,7 +716,7 @@ public class WriterTests
         Assert.Contains("\"value\twith\ttabs\"", csv);
 
         // Read back with tab delimiter
-        var parserOptions = new CsvParserOptions { Delimiter = '\t' };
+        var parserOptions = new CsvReadOptions { Delimiter = '\t' };
         var reader = Csv.ReadFromText(csv, parserOptions);
 
         Assert.True(reader.MoveNext()); // header
@@ -732,7 +732,7 @@ public class WriterTests
         // Use low-level writer/reader to test quoting since DeserializeRecords
         // expects unquoted header names for binding
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, new CsvWriterOptions { QuoteStyle = QuoteStyle.Always }, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, new CsvWriteOptions { QuoteStyle = QuoteStyle.Always }, leaveOpen: true);
 
         writer.WriteRow("Alice", "30", "NYC");
         writer.WriteRow("Bob", "25", "LA");
@@ -768,7 +768,7 @@ public class WriterTests
     public void WriteRow_EmptyRow_WritesNewline()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.EndRow();
         writer.Flush();
@@ -781,7 +781,7 @@ public class WriterTests
     public void WriteRow_SingleField_WritesCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("single");
         writer.Flush();
@@ -794,7 +794,7 @@ public class WriterTests
     public void WriteRow_VeryLongField_WritesCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         var longValue = new string('x', 100000);
         writer.WriteRow(longValue);
@@ -809,7 +809,7 @@ public class WriterTests
     public void WriteRow_UnicodeCharacters_WritesCorrectly()
     {
         using var sw = new StringWriter();
-        using var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("日本語", "中文", "한국어");
         writer.Flush();
@@ -825,7 +825,7 @@ public class WriterTests
     public void WriteRow_EmptyCollection_WritesNothing()
     {
         var records = Array.Empty<TestPerson>();
-        var options = new CsvWriterOptions { WriteHeader = false };
+        var options = new CsvWriteOptions { WriteHeader = false };
         var csv = Csv.WriteToText(records, options);
 
         Assert.Equal("", csv);
@@ -853,7 +853,7 @@ public class WriterTests
     public void Dispose_FlushesBuffer()
     {
         var sw = new StringWriter();
-        var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a", "b", "c");
         writer.Dispose();
@@ -866,7 +866,7 @@ public class WriterTests
     public void Dispose_LeaveOpenTrue_DoesNotDisposeUnderlying()
     {
         var sw = new StringWriter();
-        using (var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true))
+        using (var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true))
         {
             writer.WriteRow("test");
         }
@@ -881,7 +881,7 @@ public class WriterTests
     public void WriteAfterDispose_Throws()
     {
         var sw = new StringWriter();
-        var writer = new CsvStreamWriter(sw, CsvWriterOptions.Default, leaveOpen: true);
+        var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
         writer.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => writer.WriteRow("test"));
@@ -895,7 +895,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void InvalidDelimiter_ThrowsException()
     {
-        var options = new CsvWriterOptions { Delimiter = '€' }; // Non-ASCII
+        var options = new CsvWriteOptions { Delimiter = '€' }; // Non-ASCII
 
         using var sw = new StringWriter();
         Assert.Throws<CsvException>(() => new CsvStreamWriter(sw, options));
@@ -905,7 +905,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void DelimiterEqualsQuote_ThrowsException()
     {
-        var options = new CsvWriterOptions { Delimiter = '"', Quote = '"' };
+        var options = new CsvWriteOptions { Delimiter = '"', Quote = '"' };
 
         using var sw = new StringWriter();
         Assert.Throws<CsvException>(() => new CsvStreamWriter(sw, options));
@@ -913,3 +913,5 @@ public class WriterTests
 
     #endregion
 }
+
+

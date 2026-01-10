@@ -27,7 +27,7 @@ public sealed partial class CsvRowReaderBuilder
 
     internal CsvRowReaderBuilder() { }
 
-    private CsvParserOptions GetOptions() => new()
+    private CsvReadOptions GetOptions() => new()
     {
         Delimiter = delimiter,
         Quote = quote,
@@ -44,3 +44,4 @@ public sealed partial class CsvRowReaderBuilder
         TrackSourceLineNumbers = trackSourceLineNumbers
     };
 }
+

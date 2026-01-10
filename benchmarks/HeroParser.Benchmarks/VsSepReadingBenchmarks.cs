@@ -72,7 +72,7 @@ public class VsSepReadingBenchmarks
     [Benchmark(Description = "HeroParser UTF-16 (string)")]
     public int HeroParser_ParseString()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = 1_000,
             MaxRowCount = 1_000_000,
@@ -100,7 +100,7 @@ public class VsSepReadingBenchmarks
     [Benchmark(Description = "HeroParser UTF-8 (byte[])")]
     public int HeroParser_ParseBytes()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = 1_000,
             MaxRowCount = 1_000_000,
@@ -136,3 +136,4 @@ public class VsSepReadingBenchmarks
         Console.WriteLine();
     }
 }
+

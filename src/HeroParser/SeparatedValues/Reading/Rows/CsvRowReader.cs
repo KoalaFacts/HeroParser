@@ -19,14 +19,14 @@ namespace HeroParser.SeparatedValues.Reading.Rows;
 public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
 {
     private readonly ReadOnlySpan<T> data;
-    private readonly CsvParserOptions options;
+    private readonly CsvReadOptions options;
     private readonly PooledColumnEnds columnEndsBuffer;
     private readonly bool trackLineNumbers;
     private int position;
     private int rowCount;
     private int sourceLineNumber; // Track source line number (1-based), only when TrackSourceLineNumbers enabled
 
-    internal CsvRowReader(ReadOnlySpan<T> data, CsvParserOptions options)
+    internal CsvRowReader(ReadOnlySpan<T> data, CsvReadOptions options)
     {
         this.data = data;
         this.options = options;
@@ -51,7 +51,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     /// Advances to the next row in the input span.
     /// </summary>
     /// <returns><see langword="true"/> when another row was parsed; otherwise, <see langword="false"/>.</returns>
-    /// <exception cref="CsvException">Thrown when the input violates <see cref="CsvParserOptions"/>.</exception>
+    /// <exception cref="CsvException">Thrown when the input violates <see cref="CsvReadOptions"/>.</exception>
     public bool MoveNext()
     {
         while (true)
@@ -109,3 +109,4 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         columnEndsBuffer.Return();
     }
 }
+

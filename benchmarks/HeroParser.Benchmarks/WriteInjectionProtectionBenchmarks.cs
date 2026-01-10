@@ -35,7 +35,7 @@ public class WriteInjectionProtectionBenchmarks
     [Benchmark(Baseline = true)]
     public string Write_NoProtection()
     {
-        var options = new CsvWriterOptions { InjectionProtection = CsvInjectionProtection.None };
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.None };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -50,7 +50,7 @@ public class WriteInjectionProtectionBenchmarks
     [Benchmark]
     public string Write_WithSanitize_NormalValues()
     {
-        var options = new CsvWriterOptions { InjectionProtection = CsvInjectionProtection.Sanitize };
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.Sanitize };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -65,7 +65,7 @@ public class WriteInjectionProtectionBenchmarks
     [Benchmark]
     public string Write_WithReject_NormalValues()
     {
-        var options = new CsvWriterOptions { InjectionProtection = CsvInjectionProtection.Reject };
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.Reject };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -81,7 +81,7 @@ public class WriteInjectionProtectionBenchmarks
     public string Write_WithReject_NumbersWithSign()
     {
         // Tests smart detection: -100, +200 should pass (digit after sign)
-        var options = new CsvWriterOptions { InjectionProtection = CsvInjectionProtection.Reject };
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.Reject };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -97,7 +97,7 @@ public class WriteInjectionProtectionBenchmarks
     public string Write_WithReject_PhoneNumbers()
     {
         // Tests smart detection: +1-555-1234 should pass (digit after +)
-        var options = new CsvWriterOptions { InjectionProtection = CsvInjectionProtection.Reject };
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.Reject };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -112,7 +112,7 @@ public class WriteInjectionProtectionBenchmarks
     [Benchmark]
     public string Write_WithEscapeQuote_NormalValues()
     {
-        var options = new CsvWriterOptions { InjectionProtection = CsvInjectionProtection.EscapeWithQuote };
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.EscapeWithQuote };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -124,3 +124,4 @@ public class WriteInjectionProtectionBenchmarks
         return sw.ToString();
     }
 }
+

@@ -27,7 +27,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
     private readonly ArrayPool<char> charPool;
     private readonly StreamReader reader;
-    private readonly CsvParserOptions parserOptions;
+    private readonly CsvReadOptions parserOptions;
     private readonly CsvMultiSchemaBinder<char> binder;
     private readonly int skipRows;
     private readonly IProgress<CsvProgress>? progress;
@@ -59,7 +59,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
     internal CsvMultiSchemaStreamingRecordReader(
         Stream stream,
-        CsvParserOptions csvParserOptions,
+        CsvReadOptions CsvReadOptions,
         CsvMultiSchemaBinder<char> schemaBinder,
         Encoding encoding,
         bool leaveOpen,
@@ -67,7 +67,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         IProgress<CsvProgress>? progressReporter,
         int progressIntervalRows)
     {
-        parserOptions = csvParserOptions;
+        parserOptions = CsvReadOptions;
         binder = schemaBinder;
         skipRows = skipRowCount;
         progress = progressReporter;
@@ -303,3 +303,4 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         return maxRowSize + MAX_LINE_ENDING_LENGTH;
     }
 }
+

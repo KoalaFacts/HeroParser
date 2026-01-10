@@ -1,3 +1,4 @@
+using System.Buffers;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Records;
@@ -8,6 +9,9 @@ namespace HeroParser;
 
 public static partial class Csv
 {
+    private const int DEFAULT_MAX_BUFFERED_STREAM_BYTES = 128 * 1024 * 1024;
+    private const int DEFAULT_STREAM_COPY_BUFFER_SIZE = 16 * 1024;
+
     /// <summary>
     /// Creates a fluent builder for reading and deserializing CSV records of type <typeparamref name="T"/>.
     /// </summary>
@@ -26,7 +30,7 @@ public static partial class Csv
     /// <param name="textBytes">The UTF-8 encoded bytes. Must be kept alive for the duration of parsing.</param>
     /// <param name="options">Optional parser options.</param>
     /// <returns>A row reader over the UTF-8 encoded text.</returns>
-    public static CsvRowReader<byte> ReadFromText(string data, out byte[] textBytes, CsvParserOptions? options = null)
+    public static CsvRowReader<byte> ReadFromText(string data, out byte[] textBytes, CsvReadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(data);
         textBytes = System.Text.Encoding.UTF8.GetBytes(data);
@@ -39,9 +43,10 @@ public static partial class Csv
     /// </summary>
     /// <remarks>
     /// For optimal performance with SIMD acceleration, use the overload with the out parameter
-    /// or use <see cref="ReadFromFile"/> / <see cref="ReadFromStream"/>.
+    /// or use <see cref="ReadFromFile"/> /
+    /// <see cref="ReadFromStream(Stream, out byte[], CsvReadOptions?, bool)"/>.
     /// </remarks>
-    public static CsvRowReader<char> ReadFromText(string data, CsvParserOptions? options = null)
+    public static CsvRowReader<char> ReadFromText(string data, CsvReadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(data);
         return ReadFromCharSpan(data.AsSpan(), options);
@@ -50,9 +55,9 @@ public static partial class Csv
     /// <summary>
     /// Creates a reader over a UTF-16 span.
     /// </summary>
-    public static CsvRowReader<char> ReadFromCharSpan(ReadOnlySpan<char> data, CsvParserOptions? options = null)
+    public static CsvRowReader<char> ReadFromCharSpan(ReadOnlySpan<char> data, CsvReadOptions? options = null)
     {
-        options ??= CsvParserOptions.Default;
+        options ??= CsvReadOptions.Default;
         options.Validate();
         return new CsvRowReader<char>(data, options);
     }
@@ -60,9 +65,9 @@ public static partial class Csv
     /// <summary>
     /// Creates a reader over UTF-8 encoded CSV data.
     /// </summary>
-    public static CsvRowReader<byte> ReadFromByteSpan(ReadOnlySpan<byte> data, CsvParserOptions? options = null)
+    public static CsvRowReader<byte> ReadFromByteSpan(ReadOnlySpan<byte> data, CsvReadOptions? options = null)
     {
-        options ??= CsvParserOptions.Default;
+        options ??= CsvReadOptions.Default;
         options.Validate();
 
         // Detect UTF-16 BOMs
@@ -94,11 +99,11 @@ public static partial class Csv
         string data,
         out byte[] textBytes,
         CsvRecordOptions? recordOptions = null,
-        CsvParserOptions? parserOptions = null)
+        CsvReadOptions? parserOptions = null)
         where T : class, new()
     {
         ArgumentNullException.ThrowIfNull(data);
-        parserOptions ??= CsvParserOptions.Default;
+        parserOptions ??= CsvReadOptions.Default;
         recordOptions ??= CsvRecordOptions.Default;
 
         textBytes = System.Text.Encoding.UTF8.GetBytes(data);
@@ -114,16 +119,16 @@ public static partial class Csv
     /// </summary>
     /// <remarks>
     /// This method uses descriptor-based binding for backward compatibility.
-    /// For optimal performance with SIMD acceleration, use <see cref="DeserializeRecords{T}(string, out byte[], CsvRecordOptions?, CsvParserOptions?)"/>.
+    /// For optimal performance with SIMD acceleration, use <see cref="DeserializeRecords{T}(string, out byte[], CsvRecordOptions?, CsvReadOptions?)"/>.
     /// </remarks>
     public static CsvRecordReader<char, T> DeserializeRecords<T>(
         string data,
         CsvRecordOptions? recordOptions = null,
-        CsvParserOptions? parserOptions = null)
+        CsvReadOptions? parserOptions = null)
         where T : class, new()
     {
         ArgumentNullException.ThrowIfNull(data);
-        parserOptions ??= CsvParserOptions.Default;
+        parserOptions ??= CsvReadOptions.Default;
         recordOptions ??= CsvRecordOptions.Default;
 
         var reader = ReadFromCharSpan(data.AsSpan(), parserOptions);
@@ -138,10 +143,10 @@ public static partial class Csv
     public static CsvRecordReader<byte, T> DeserializeRecordsFromBytes<T>(
         ReadOnlySpan<byte> data,
         CsvRecordOptions? recordOptions = null,
-        CsvParserOptions? parserOptions = null)
+        CsvReadOptions? parserOptions = null)
         where T : class, new()
     {
-        parserOptions ??= CsvParserOptions.Default;
+        parserOptions ??= CsvReadOptions.Default;
         recordOptions ??= CsvRecordOptions.Default;
 
         var reader = ReadFromByteSpan(data, parserOptions);
@@ -167,7 +172,7 @@ public static partial class Csv
     public static CsvRowReader<byte> ReadFromFile(
         string path,
         out byte[] fileBytes,
-        CsvParserOptions? options = null)
+        CsvReadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(path);
 
@@ -185,50 +190,150 @@ public static partial class Csv
     /// <returns>A row reader over the stream bytes.</returns>
     /// <remarks>
     /// This method reads the entire stream into memory as UTF-8 bytes.
-    /// For very large streams that don't fit in memory, use streaming APIs instead.
+    /// Streams larger than 128 MB will throw to avoid excessive buffering; use streaming APIs instead.
     /// </remarks>
     public static CsvRowReader<byte> ReadFromStream(
         Stream stream,
         out byte[] streamBytes,
-        CsvParserOptions? options = null,
+        CsvReadOptions? options = null,
         bool leaveOpen = true)
     {
-        ArgumentNullException.ThrowIfNull(stream);
+        return ReadFromStream(stream, out streamBytes, options, leaveOpen, DEFAULT_MAX_BUFFERED_STREAM_BYTES);
+    }
 
-        if (stream is MemoryStream ms && ms.TryGetBuffer(out var buffer))
+    /// <summary>
+    /// Reads a stream as UTF-8 bytes for efficient CSV parsing.
+    /// </summary>
+    /// <param name="stream">The stream containing UTF-8 CSV data.</param>
+    /// <param name="streamBytes">The stream bytes. Must be kept alive for the duration of parsing.</param>
+    /// <param name="options">Optional parser options.</param>
+    /// <param name="leaveOpen">Whether to leave the stream open after reading.</param>
+    /// <param name="maxBytesToBuffer">Maximum bytes to buffer into memory before throwing.</param>
+    /// <returns>A row reader over the stream bytes.</returns>
+    /// <remarks>
+    /// This method reads the entire stream into memory as UTF-8 bytes.
+    /// For large streams, prefer <see cref="CreateAsyncStreamReader(Stream, CsvReadOptions?, bool, int)"/>.
+    /// </remarks>
+    public static CsvRowReader<byte> ReadFromStream(
+        Stream stream,
+        out byte[] streamBytes,
+        CsvReadOptions? options,
+        bool leaveOpen,
+        int maxBytesToBuffer)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (maxBytesToBuffer <= 0)
         {
-            // Fast path for MemoryStream - avoid copy if possible
-            streamBytes = buffer.Array ?? ms.ToArray();
+            throw new ArgumentOutOfRangeException(
+                nameof(maxBytesToBuffer),
+                maxBytesToBuffer,
+                "Max bytes to buffer must be positive.");
         }
-        else
+
+        if (stream is MemoryStream ms)
         {
-            using var memoryStream = new MemoryStream();
-            stream.CopyTo(memoryStream);
-            streamBytes = memoryStream.ToArray();
+            long remaining = ms.Length - ms.Position;
+            if (remaining > maxBytesToBuffer)
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. " +
+                    "Use Csv.CreateAsyncStreamReader for large inputs.");
+            }
+
+            if (ms.Position == 0)
+            {
+                if (ms.TryGetBuffer(out var buffer) &&
+                    buffer.Array is not null &&
+                    buffer.Offset == 0 &&
+                    buffer.Count == ms.Length &&
+                    buffer.Array.Length == buffer.Count)
+                {
+                    streamBytes = buffer.Array;
+                    if (!leaveOpen)
+                        stream.Dispose();
+                    return ReadFromByteSpan(streamBytes, options);
+                }
+
+                streamBytes = ms.ToArray();
+                if (!leaveOpen)
+                    stream.Dispose();
+                return ReadFromByteSpan(streamBytes, options);
+            }
         }
+        else if (stream.CanSeek)
+        {
+            long remaining = stream.Length - stream.Position;
+            if (remaining > maxBytesToBuffer)
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. " +
+                    "Use Csv.CreateAsyncStreamReader for large inputs.");
+            }
+        }
+
+        streamBytes = ReadAllBytes(stream, maxBytesToBuffer);
 
         if (!leaveOpen)
-        {
             stream.Dispose();
-        }
 
         return ReadFromByteSpan(streamBytes, options);
+    }
+
+    private static byte[] ReadAllBytes(Stream stream, int maxBytesToBuffer)
+    {
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(DEFAULT_STREAM_COPY_BUFFER_SIZE);
+        try
+        {
+            int initialCapacity = 0;
+            if (stream.CanSeek)
+            {
+                long remaining = stream.Length - stream.Position;
+                if (remaining > 0)
+                    initialCapacity = (int)Math.Min(remaining, maxBytesToBuffer);
+            }
+
+            using var memoryStream = initialCapacity > 0
+                ? new MemoryStream(initialCapacity)
+                : new MemoryStream();
+            long total = 0;
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                total += read;
+                if (total > maxBytesToBuffer)
+                {
+                    throw new CsvException(
+                        CsvErrorCode.ParseError,
+                        $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. " +
+                        "Use Csv.CreateAsyncStreamReader for large inputs.");
+                }
+                memoryStream.Write(buffer, 0, read);
+            }
+
+            return memoryStream.ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: false);
+        }
     }
 
     /// <summary>
     /// Creates an async streaming reader from a CSV file without loading the entire payload into memory.
     /// </summary>
     /// <param name="path">Filesystem path to the CSV file.</param>
-    /// <param name="options">Parser configuration; defaults to <see cref="CsvParserOptions.Default"/>.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="CsvReadOptions.Default"/>.</param>
     /// <param name="bufferSize">Initial pooled buffer size in bytes.</param>
     /// <returns>A <see cref="CsvAsyncStreamReader"/> for asynchronous streaming.</returns>
     public static CsvAsyncStreamReader CreateAsyncStreamReader(
         string path,
-        CsvParserOptions? options = null,
+        CsvReadOptions? options = null,
         int bufferSize = 16 * 1024)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        options ??= CsvParserOptions.Default;
+        options ??= CsvReadOptions.Default;
         options.Validate();
 
         var stream = new FileStream(
@@ -246,20 +351,21 @@ public static partial class Csv
     /// Creates an async streaming reader from a <see cref="Stream"/> without loading the entire payload into memory.
     /// </summary>
     /// <param name="stream">Readable stream containing UTF-8 CSV data.</param>
-    /// <param name="options">Parser configuration; defaults to <see cref="CsvParserOptions.Default"/>.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="CsvReadOptions.Default"/>.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the provided <paramref name="stream"/> remains open after parsing.</param>
     /// <param name="bufferSize">Initial pooled buffer size in bytes.</param>
     /// <returns>A <see cref="CsvAsyncStreamReader"/> for asynchronous streaming.</returns>
     public static CsvAsyncStreamReader CreateAsyncStreamReader(
         Stream stream,
-        CsvParserOptions? options = null,
+        CsvReadOptions? options = null,
         bool leaveOpen = true,
         int bufferSize = 16 * 1024)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        options ??= CsvParserOptions.Default;
+        options ??= CsvReadOptions.Default;
         options.Validate();
 
         return new CsvAsyncStreamReader(stream, options, leaveOpen, bufferSize);
     }
 }
+

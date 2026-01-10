@@ -17,13 +17,13 @@ namespace HeroParser.Benchmarks;
 public class BinderOverheadBenchmarks
 {
     private string csv = null!;
-    private CsvParserOptions options = null!;
+    private CsvReadOptions options = null!;
 
     [Params(1000)]
     public int Rows { get; set; }
 
     // Pre-created options for typed binder comparison
-    private CsvParserOptions typedParserOptions = null!;
+    private CsvReadOptions typedParserOptions = null!;
     private CsvRecordOptions typedRecordOptions = null!;
 
     [GlobalSetup]
@@ -38,10 +38,10 @@ public class BinderOverheadBenchmarks
         }
 
         csv = sb.ToString();
-        options = new CsvParserOptions { MaxColumnCount = 10, MaxRowCount = Rows + 10 };
+        options = new CsvReadOptions { MaxColumnCount = 10, MaxRowCount = Rows + 10 };
 
         // Pre-create the options so we can measure binding overhead without builder allocation
-        typedParserOptions = new CsvParserOptions { MaxColumnCount = 10, MaxRowCount = Rows + 10 };
+        typedParserOptions = new CsvReadOptions { MaxColumnCount = 10, MaxRowCount = Rows + 10 };
         typedRecordOptions = new CsvRecordOptions { HasHeaderRow = true };
     }
 
@@ -252,3 +252,4 @@ public class BinderOverheadBenchmarks
         public string Category { get; set; } = "";
     }
 }
+

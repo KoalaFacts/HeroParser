@@ -73,7 +73,7 @@ public delegate SerializeErrorAction CsvSerializeErrorHandler(CsvSerializeErrorC
 /// <remarks>
 /// The defaults follow RFC 4180. Use <see cref="Validate"/> to catch invalid configurations before writing.
 /// </remarks>
-public sealed record CsvWriterOptions
+public sealed record CsvWriteOptions
 {
     /// <summary>
     /// Gets or sets the field delimiter character (comma by default).
@@ -176,7 +176,7 @@ public sealed record CsvWriterOptions
     /// <example>
     /// <code>
     /// var errors = new List&lt;string&gt;();
-    /// var options = new CsvWriterOptions
+    /// var options = new CsvWriteOptions
     /// {
     ///     OnSerializeError = ctx =>
     ///     {
@@ -241,10 +241,10 @@ public sealed record CsvWriterOptions
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>
-    /// Equivalent to <c>new CsvWriterOptions()</c>.
+    /// Equivalent to <c>new CsvWriteOptions()</c>.
     /// Thread-Safety: This is an immutable singleton and is safe to access from multiple threads.
     /// </remarks>
-    public static CsvWriterOptions Default { get; } = new();
+    public static CsvWriteOptions Default { get; } = new();
 
     /// <summary>
     /// Validates the option set and throws when an invalid value is detected.
@@ -320,3 +320,4 @@ public sealed record CsvWriterOptions
         }
     }
 }
+

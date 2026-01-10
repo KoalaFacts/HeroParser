@@ -117,7 +117,7 @@ public class ReadmeExamplesTests
         // Example from README: Custom options
         var csvData = "a,b,c\n1,2,3";
 
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             Delimiter = ',',  // Default
             Quote = '"',      // Default - RFC 4180 compliant
@@ -135,3 +135,4 @@ public class ReadmeExamplesTests
         Assert.Equal(2, rowCount);
     }
 }
+

@@ -14,7 +14,7 @@ public class CriticalFeaturesTests
     public void CommentLines_SkippedCorrectly()
     {
         var csv = "# This is a comment\na,b,c\n1,2,3\n# Another comment\n4,5,6";
-        var options = new CsvParserOptions { CommentCharacter = '#' };
+        var options = new CsvReadOptions { CommentCharacter = '#' };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
@@ -37,7 +37,7 @@ public class CriticalFeaturesTests
     public void CommentLines_WithLeadingWhitespace_SkippedCorrectly()
     {
         var csv = "  # Comment with leading spaces\na,b,c\n\t# Comment with leading tab\n1,2,3";
-        var options = new CsvParserOptions { CommentCharacter = '#' };
+        var options = new CsvReadOptions { CommentCharacter = '#' };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
@@ -56,7 +56,7 @@ public class CriticalFeaturesTests
     public void CommentCharacter_NotAtLineStart_NotTreatedAsComment()
     {
         var csv = "a,#b,c\n1,#2,3";
-        var options = new CsvParserOptions { CommentCharacter = '#' };
+        var options = new CsvReadOptions { CommentCharacter = '#' };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
@@ -78,7 +78,7 @@ public class CriticalFeaturesTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CommentCharacter_SameAsDelimiter_ThrowsException()
     {
-        var options = new CsvParserOptions { CommentCharacter = ',' };
+        var options = new CsvReadOptions { CommentCharacter = ',' };
         var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
@@ -87,7 +87,7 @@ public class CriticalFeaturesTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CommentCharacter_SameAsQuote_ThrowsException()
     {
-        var options = new CsvParserOptions { CommentCharacter = '"' };
+        var options = new CsvReadOptions { CommentCharacter = '"' };
         var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
@@ -96,7 +96,7 @@ public class CriticalFeaturesTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CommentCharacter_NonAscii_ThrowsException()
     {
-        var options = new CsvParserOptions { CommentCharacter = '€' };
+        var options = new CsvReadOptions { CommentCharacter = '€' };
         var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
@@ -110,7 +110,7 @@ public class CriticalFeaturesTests
     public void TrimFields_RemovesWhitespace()
     {
         var csv = " a , b , c \n 1 , 2 , 3 ";
-        var options = new CsvParserOptions { TrimFields = true };
+        var options = new CsvReadOptions { TrimFields = true };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
@@ -133,7 +133,7 @@ public class CriticalFeaturesTests
     public void TrimFields_WithTabs_RemovesWhitespace()
     {
         var csv = "\ta\t,\tb\t,\tc\t\n\t1\t,\t2\t,\t3\t";
-        var options = new CsvParserOptions { TrimFields = true };
+        var options = new CsvReadOptions { TrimFields = true };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
@@ -156,7 +156,7 @@ public class CriticalFeaturesTests
     public void TrimFields_DoesNotAffectQuotedFields()
     {
         var csv = " \" a \" , b , c ";
-        var options = new CsvParserOptions { TrimFields = true };
+        var options = new CsvReadOptions { TrimFields = true };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext());
@@ -370,7 +370,7 @@ public class CriticalFeaturesTests
     public void EscapeCharacter_BackslashEscapesQuote()
     {
         var csv = "Name,Value\nAlice,\"Hello \\\"World\\\"\"";
-        var options = new CsvParserOptions { EscapeCharacter = '\\' };
+        var options = new CsvReadOptions { EscapeCharacter = '\\' };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext()); // Header
@@ -385,7 +385,7 @@ public class CriticalFeaturesTests
     public void EscapeCharacter_BackslashEscapesDelimiter()
     {
         var csv = "Name,Value\nAlice,Hello\\,World";
-        var options = new CsvParserOptions { EscapeCharacter = '\\' };
+        var options = new CsvReadOptions { EscapeCharacter = '\\' };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext()); // Header
@@ -400,7 +400,7 @@ public class CriticalFeaturesTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void EscapeCharacter_SameAsDelimiter_ThrowsException()
     {
-        var options = new CsvParserOptions { EscapeCharacter = ',' };
+        var options = new CsvReadOptions { EscapeCharacter = ',' };
         var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
@@ -409,7 +409,7 @@ public class CriticalFeaturesTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void EscapeCharacter_SameAsQuote_ThrowsException()
     {
-        var options = new CsvParserOptions { EscapeCharacter = '"' };
+        var options = new CsvReadOptions { EscapeCharacter = '"' };
         var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
@@ -418,7 +418,7 @@ public class CriticalFeaturesTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void EscapeCharacter_NonAscii_ThrowsException()
     {
-        var options = new CsvParserOptions { EscapeCharacter = '€' };
+        var options = new CsvReadOptions { EscapeCharacter = '€' };
         var ex = Assert.Throws<CsvException>(options.Validate);
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
@@ -428,7 +428,7 @@ public class CriticalFeaturesTests
     public void UnquoteToString_HandlesEscapeCharacter()
     {
         var csv = "Name,Value\nAlice,\"Hello \\\"World\\\"\"";
-        var options = new CsvParserOptions { EscapeCharacter = '\\' };
+        var options = new CsvReadOptions { EscapeCharacter = '\\' };
         var reader = Csv.ReadFromText(csv, options);
 
         Assert.True(reader.MoveNext()); // Header
@@ -542,3 +542,4 @@ public class CriticalFeaturesTests
 
     #endregion
 }
+

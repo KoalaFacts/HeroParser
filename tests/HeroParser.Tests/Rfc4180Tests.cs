@@ -161,7 +161,7 @@ public class Rfc4180Tests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CustomQuoteCharacter()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             Delimiter = ',',
             Quote = '\''
@@ -259,7 +259,7 @@ public class Rfc4180Tests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void NewlinesInQuotes_AllowedWhenOptedIn()
     {
-        var options = new CsvParserOptions { AllowNewlinesInsideQuotes = true };
+        var options = new CsvReadOptions { AllowNewlinesInsideQuotes = true };
         var csv = "a,\"b\nc\",d\n1,2,3";
 
         var reader = Csv.ReadFromText(csv, options);
@@ -279,7 +279,7 @@ public class Rfc4180Tests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void DisableQuotes_TreatsQuoteCharacterAsData()
     {
-        var options = new CsvParserOptions { EnableQuotedFields = false };
+        var options = new CsvReadOptions { EnableQuotedFields = false };
         var csv = "a,\"b,c\",d";
 
         var reader = Csv.ReadFromText(csv, options);
@@ -294,7 +294,7 @@ public class Rfc4180Tests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void DisablingQuotes_CannotEnableNewlinesInQuotes()
     {
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             EnableQuotedFields = false,
             AllowNewlinesInsideQuotes = true
@@ -332,7 +332,7 @@ public class Rfc4180Tests
         var csv = sb.ToString();
         var utf8 = System.Text.Encoding.UTF8.GetBytes(csv);
 
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxColumnCount = 1_000,
             MaxRowCount = 1_000_000,
@@ -362,3 +362,4 @@ public class Rfc4180Tests
         Assert.Equal(rows * columns, totalColumns);
     }
 }
+

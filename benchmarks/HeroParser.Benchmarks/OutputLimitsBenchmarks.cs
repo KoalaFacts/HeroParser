@@ -25,7 +25,7 @@ public class OutputLimitsBenchmarks
     [Benchmark(Baseline = true)]
     public string Write_NoLimits()
     {
-        var options = new CsvWriterOptions();
+        var options = new CsvWriteOptions();
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -41,7 +41,7 @@ public class OutputLimitsBenchmarks
     public string Write_WithMaxOutputSize()
     {
         // Set a high limit that won't be hit
-        var options = new CsvWriterOptions { MaxOutputSize = 100_000_000 };
+        var options = new CsvWriteOptions { MaxOutputSize = 100_000_000 };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -56,7 +56,7 @@ public class OutputLimitsBenchmarks
     [Benchmark]
     public string Write_WithMaxFieldSize()
     {
-        var options = new CsvWriterOptions { MaxFieldSize = 1000 };
+        var options = new CsvWriteOptions { MaxFieldSize = 1000 };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -71,7 +71,7 @@ public class OutputLimitsBenchmarks
     [Benchmark]
     public string Write_WithMaxColumnCount()
     {
-        var options = new CsvWriterOptions { MaxColumnCount = 100 };
+        var options = new CsvWriteOptions { MaxColumnCount = 100 };
         using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, options, leaveOpen: true);
 
@@ -86,7 +86,7 @@ public class OutputLimitsBenchmarks
     [Benchmark]
     public string Write_WithAllLimits()
     {
-        var options = new CsvWriterOptions
+        var options = new CsvWriteOptions
         {
             MaxOutputSize = 100_000_000,
             MaxFieldSize = 1000,
@@ -103,3 +103,4 @@ public class OutputLimitsBenchmarks
         return sw.ToString();
     }
 }
+

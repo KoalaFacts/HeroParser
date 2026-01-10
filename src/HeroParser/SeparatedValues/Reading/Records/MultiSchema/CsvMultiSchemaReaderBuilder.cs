@@ -103,7 +103,7 @@ public sealed class CsvMultiSchemaReaderBuilder
 
     internal CsvMultiSchemaReaderBuilder() { }
 
-    internal CsvMultiSchemaReaderBuilder(CsvParserOptions parserOptions)
+    internal CsvMultiSchemaReaderBuilder(CsvReadOptions parserOptions)
     {
         delimiter = parserOptions.Delimiter;
         quote = parserOptions.Quote;
@@ -538,7 +538,7 @@ public sealed class CsvMultiSchemaReaderBuilder
         }
     }
 
-    private CsvParserOptions GetParserOptions() => new()
+    private CsvReadOptions GetParserOptions() => new()
     {
         Delimiter = delimiter,
         Quote = quote,
@@ -652,3 +652,4 @@ public sealed class CsvMultiSchemaReaderBuilder
 
     #endregion
 }
+

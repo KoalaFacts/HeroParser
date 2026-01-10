@@ -61,7 +61,7 @@ public class ProductionReadinessTests
     public void MaxFieldSizeThrowsWhenExceeded()
     {
         var csv = "short,veryverylongfieldthatexceedsthelimit\n1,2";
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxFieldSize = 10
         };
@@ -87,7 +87,7 @@ public class ProductionReadinessTests
     public void MaxFieldSizeAllowsFieldsWithinLimit()
     {
         var csv = "short,ok\n1,2";
-        var options = new CsvParserOptions
+        var options = new CsvReadOptions
         {
             MaxFieldSize = 10
         };
@@ -318,3 +318,4 @@ public class ProductionReadinessTests
         public int Age { get; set; }
     }
 }
+

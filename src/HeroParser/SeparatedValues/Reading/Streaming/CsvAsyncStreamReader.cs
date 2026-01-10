@@ -16,7 +16,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
     private readonly ArrayPool<byte> bytePool;
     private readonly Stream stream;
-    private readonly CsvParserOptions options;
+    private readonly CsvReadOptions options;
     private readonly bool leaveOpen;
     private readonly bool trackLineNumbers;
     private readonly int maxRowSize;
@@ -52,7 +52,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     /// <summary>Gets the approximate number of bytes read from the underlying stream.</summary>
     public long BytesRead { get; private set; }
 
-    internal CsvAsyncStreamReader(Stream stream, CsvParserOptions options, bool leaveOpen, int initialBufferSize, int skipRows = 0)
+    internal CsvAsyncStreamReader(Stream stream, CsvReadOptions options, bool leaveOpen, int initialBufferSize, int skipRows = 0)
     {
         this.stream = stream;
         this.options = options;
@@ -290,3 +290,4 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         return maxRowSize + MAX_LINE_ENDING_LENGTH;
     }
 }
+

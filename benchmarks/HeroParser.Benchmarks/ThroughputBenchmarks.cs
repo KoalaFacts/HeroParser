@@ -15,7 +15,7 @@ namespace HeroParser.Benchmarks;
 public class ThroughputBenchmarks
 {
     private string csv = null!;
-    private CsvParserOptions options = null!;
+    private CsvReadOptions options = null!;
 
     [Params(1_000, 10_000, 100_000)]
     public int Rows { get; set; }
@@ -27,7 +27,7 @@ public class ThroughputBenchmarks
     public void Setup()
     {
         csv = GenerateCsv(Rows, Columns);
-        options = new CsvParserOptions
+        options = new CsvReadOptions
         {
             MaxColumnCount = Columns + 4, // small headroom beyond generated data
             MaxRowCount = Rows + 100      // allow end-of-file without tripping the limit
@@ -63,3 +63,4 @@ public class ThroughputBenchmarks
         return total;
     }
 }
+

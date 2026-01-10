@@ -45,7 +45,7 @@ public static partial class Csv
     /// <param name="options">Optional writer configuration.</param>
     /// <param name="leaveOpen">When true, the writer is not disposed when the CsvStreamWriter is disposed.</param>
     /// <returns>A <see cref="CsvStreamWriter"/> for writing CSV content.</returns>
-    public static CsvStreamWriter CreateWriter(TextWriter writer, CsvWriterOptions? options = null, bool leaveOpen = false)
+    public static CsvStreamWriter CreateWriter(TextWriter writer, CsvWriteOptions? options = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(writer);
         return new CsvStreamWriter(writer, options, leaveOpen);
@@ -58,7 +58,7 @@ public static partial class Csv
     /// <param name="options">Optional writer configuration.</param>
     /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
     /// <returns>A <see cref="CsvStreamWriter"/> for writing CSV content.</returns>
-    public static CsvStreamWriter CreateFileWriter(string path, CsvWriterOptions? options = null, Encoding? encoding = null)
+    public static CsvStreamWriter CreateFileWriter(string path, CsvWriteOptions? options = null, Encoding? encoding = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
@@ -76,7 +76,7 @@ public static partial class Csv
     /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
     /// <param name="leaveOpen">When true, the stream remains open after the writer is disposed.</param>
     /// <returns>A <see cref="CsvStreamWriter"/> for writing CSV content.</returns>
-    public static CsvStreamWriter CreateStreamWriter(Stream stream, CsvWriterOptions? options = null, Encoding? encoding = null, bool leaveOpen = true)
+    public static CsvStreamWriter CreateStreamWriter(Stream stream, CsvWriteOptions? options = null, Encoding? encoding = null, bool leaveOpen = true)
     {
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
@@ -93,10 +93,10 @@ public static partial class Csv
     /// <param name="records">The records to write.</param>
     /// <param name="options">Optional writer configuration.</param>
     /// <returns>The CSV content as a string.</returns>
-    public static string WriteToText<T>(IEnumerable<T> records, CsvWriterOptions? options = null)
+    public static string WriteToText<T>(IEnumerable<T> records, CsvWriteOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
 
         options.Validate();
 
@@ -117,9 +117,9 @@ public static partial class Csv
     /// <param name="options">Optional writer configuration.</param>
     /// <returns>The CSV content as a string.</returns>
     /// <remarks>
-    /// This is the symmetric counterpart to <see cref="DeserializeRecords{T}(string, HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions?, SeparatedValues.Core.CsvParserOptions?)"/>.
+    /// This is the symmetric counterpart to <see cref="DeserializeRecords{T}(string, HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions?, SeparatedValues.Core.CsvReadOptions?)"/>.
     /// </remarks>
-    public static string SerializeRecords<T>(IEnumerable<T> records, CsvWriterOptions? options = null)
+    public static string SerializeRecords<T>(IEnumerable<T> records, CsvWriteOptions? options = null)
         => WriteToText(records, options);
 
     /// <summary>
@@ -135,14 +135,14 @@ public static partial class Csv
     public static async ValueTask WriteToStreamAsync<T>(
         Stream stream,
         IAsyncEnumerable<T> records,
-        CsvWriterOptions? options = null,
+        CsvWriteOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -166,14 +166,14 @@ public static partial class Csv
     public static async ValueTask WriteToStreamAsync<T>(
         Stream stream,
         IEnumerable<T> records,
-        CsvWriterOptions? options = null,
+        CsvWriteOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -194,11 +194,11 @@ public static partial class Csv
     /// <returns>The CSV content as a string.</returns>
     public static async ValueTask<string> WriteToTextAsync<T>(
         IAsyncEnumerable<T> records,
-        CsvWriterOptions? options = null,
+        CsvWriteOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
 
         options.Validate();
 
@@ -219,11 +219,11 @@ public static partial class Csv
     /// <param name="records">The records to write.</param>
     /// <param name="options">Optional writer configuration.</param>
     /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
-    public static void WriteToFile<T>(string path, IEnumerable<T> records, CsvWriterOptions? options = null, Encoding? encoding = null)
+    public static void WriteToFile<T>(string path, IEnumerable<T> records, CsvWriteOptions? options = null, Encoding? encoding = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -247,13 +247,13 @@ public static partial class Csv
     public static async ValueTask WriteToFileAsync<T>(
         string path,
         IAsyncEnumerable<T> records,
-        CsvWriterOptions? options = null,
+        CsvWriteOptions? options = null,
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -283,13 +283,13 @@ public static partial class Csv
     public static async ValueTask WriteToFileAsync<T>(
         string path,
         IEnumerable<T> records,
-        CsvWriterOptions? options = null,
+        CsvWriteOptions? options = null,
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -317,7 +317,7 @@ public static partial class Csv
     /// <returns>A <see cref="CsvAsyncStreamWriter"/> for async CSV writing.</returns>
     public static CsvAsyncStreamWriter CreateAsyncStreamWriter(
         Stream stream,
-        CsvWriterOptions? options = null,
+        CsvWriteOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true)
     {
@@ -334,11 +334,11 @@ public static partial class Csv
     /// <param name="options">Optional writer configuration.</param>
     /// <param name="encoding">Optional encoding; defaults to UTF-8.</param>
     /// <param name="leaveOpen">When true, the stream remains open after writing.</param>
-    public static void WriteToStream<T>(Stream stream, IEnumerable<T> records, CsvWriterOptions? options = null, Encoding? encoding = null, bool leaveOpen = true)
+    public static void WriteToStream<T>(Stream stream, IEnumerable<T> records, CsvWriteOptions? options = null, Encoding? encoding = null, bool leaveOpen = true)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= CsvWriterOptions.Default;
+        options ??= CsvWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -349,3 +349,5 @@ public static partial class Csv
         recordWriter.WriteRecords(writer, records, options.WriteHeader);
     }
 }
+
+

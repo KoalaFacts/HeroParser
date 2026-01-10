@@ -39,7 +39,7 @@ internal static class CsvRowParser
     /// </remarks>
     public static CsvRowParseResult ParseRow<T>(
         ReadOnlySpan<T> data,
-        CsvParserOptions options,
+        CsvReadOptions options,
         Span<int> columnEnds,
         bool trackLineNumbers)
         where T : unmanaged, IEquatable<T>
@@ -59,7 +59,7 @@ internal static class CsvRowParser
     /// </remarks>
     public static CsvRowParseResult ParseRow<T, TTrack>(
         ReadOnlySpan<T> data,
-        CsvParserOptions options,
+        CsvReadOptions options,
         Span<int> columnEnds)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
@@ -87,7 +87,7 @@ internal static class CsvRowParser
     /// </remarks>
     public static CsvRowParseResult ParseRow<T, TTrack, TQuotePolicy>(
         ReadOnlySpan<T> data,
-        CsvParserOptions options,
+        CsvReadOptions options,
         Span<int> columnEnds)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
@@ -262,25 +262,7 @@ internal static class CsvRowParser
                 // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
                 if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
-                    if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        if (pendingCrInQuotes)
-                        {
-                            pendingCrInQuotes = false;
-                            if (c.Equals(lf))
-                                continue;
-                        }
-
-                        if (c.Equals(cr))
-                        {
-                            newlineCount++;
-                            pendingCrInQuotes = true;
-                        }
-                        else if (c.Equals(lf))
-                        {
-                            newlineCount++;
-                        }
-                    }
+                    UpdateNewlineCountInQuotes<T, TTrack>(c, lf, cr, ref pendingCrInQuotes, ref newlineCount);
                     continue;
                 }
 
@@ -291,19 +273,17 @@ internal static class CsvRowParser
                 }
                 else if (c.Equals(lf) || c.Equals(cr))
                 {
-                    rowLength = i;
-                    charsConsumed = i + 1;
-                    if (c.Equals(cr) && i + 1 < data.Length && Unsafe.Add(ref mutableRef, i + 1).Equals(lf))
-                    {
-                        charsConsumed++;
-                        if (typeof(TTrack) == typeof(TrackLineNumbers))
-                            newlineCount++;
-                    }
-                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        newlineCount++;
-                    }
-                    rowEnded = true;
+                    CompleteRowAtLineEnding<T, TTrack>(
+                        ref mutableRef,
+                        data.Length,
+                        i,
+                        lf,
+                        cr,
+                        c,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
                     break;
                 }
             }
@@ -394,6 +374,67 @@ internal static class CsvRowParser
 
         pendingCrInQuotes = (crInsideQuotes & lastBitMask) != 0;
         return count;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void UpdateNewlineCountInQuotes<T, TTrack>(
+        T current,
+        T lf,
+        T cr,
+        ref bool pendingCrInQuotes,
+        ref int newlineCount)
+        where T : unmanaged, IEquatable<T>
+        where TTrack : struct
+    {
+        if (typeof(TTrack) != typeof(TrackLineNumbers))
+            return;
+
+        if (pendingCrInQuotes)
+        {
+            pendingCrInQuotes = false;
+            if (current.Equals(lf))
+                return;
+        }
+
+        if (current.Equals(cr))
+        {
+            newlineCount++;
+            pendingCrInQuotes = true;
+        }
+        else if (current.Equals(lf))
+        {
+            newlineCount++;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CompleteRowAtLineEnding<T, TTrack>(
+        ref T mutableRef,
+        int dataLength,
+        int absolute,
+        T lf,
+        T cr,
+        T lineEndChar,
+        ref int rowLength,
+        ref int charsConsumed,
+        ref int newlineCount,
+        ref bool rowEnded)
+        where T : unmanaged, IEquatable<T>
+        where TTrack : struct
+    {
+        rowLength = absolute;
+        charsConsumed = absolute + 1;
+        if (lineEndChar.Equals(cr) && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1).Equals(lf))
+        {
+            charsConsumed++;
+            if (typeof(TTrack) == typeof(TrackLineNumbers))
+                newlineCount++;
+        }
+        else if (typeof(TTrack) == typeof(TrackLineNumbers))
+        {
+            newlineCount++;
+        }
+        rowEnded = true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -593,21 +634,18 @@ internal static class CsvRowParser
                     if (lineEndingMask != 0)
                     {
                         int absolute = position + lineEndBit;
-                        rowLength = absolute;
-                        charsConsumed = absolute + 1;
                         byte c = Unsafe.Add(ref mutableRef, absolute);
-                        // Check for CRLF
-                        if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
-                        {
-                            charsConsumed++;
-                            if (typeof(TTrack) == typeof(TrackLineNumbers))
-                                newlineCount++;
-                        }
-                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                        {
-                            newlineCount++;
-                        }
-                        rowEnded = true;
+                        CompleteRowAtLineEnding<byte, TTrack>(
+                            ref mutableRef,
+                            dataLength,
+                            absolute,
+                            lf,
+                            cr,
+                            c,
+                            ref rowLength,
+                            ref charsConsumed,
+                            ref newlineCount,
+                            ref rowEnded);
                         return true;
                     }
 
@@ -728,20 +766,18 @@ internal static class CsvRowParser
 
                     // Handle line ending
                     int lineEndAbsolute = position + lineEndBit;
-                    rowLength = lineEndAbsolute;
-                    charsConsumed = lineEndAbsolute + 1;
                     byte lineEndChar = Unsafe.Add(ref mutableRef, lineEndAbsolute);
-                    if (lineEndChar == cr && lineEndAbsolute + 1 < dataLength && Unsafe.Add(ref mutableRef, lineEndAbsolute + 1) == lf)
-                    {
-                        charsConsumed++;
-                        if (typeof(TTrack) == typeof(TrackLineNumbers))
-                            newlineCount++;
-                    }
-                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        newlineCount++;
-                    }
-                    rowEnded = true;
+                    CompleteRowAtLineEnding<byte, TTrack>(
+                        ref mutableRef,
+                        dataLength,
+                        lineEndAbsolute,
+                        lf,
+                        cr,
+                        lineEndChar,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
                     return true;
                 }
             }
@@ -791,25 +827,7 @@ internal static class CsvRowParser
                 // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
                 if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
-                    if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        if (pendingCrInQuotes)
-                        {
-                            pendingCrInQuotes = false;
-                            if (c == lf)
-                                continue;
-                        }
-
-                        if (c == cr)
-                        {
-                            newlineCount++;
-                            pendingCrInQuotes = true;
-                        }
-                        else if (c == lf)
-                        {
-                            newlineCount++;
-                        }
-                    }
+                    UpdateNewlineCountInQuotes<byte, TTrack>(c, lf, cr, ref pendingCrInQuotes, ref newlineCount);
                     continue;
                 }
 
@@ -822,19 +840,17 @@ internal static class CsvRowParser
 
                 if (c == lf || c == cr)
                 {
-                    rowLength = absolute;
-                    charsConsumed = absolute + 1;
-                    if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
-                    {
-                        charsConsumed++;
-                        if (typeof(TTrack) == typeof(TrackLineNumbers))
-                            newlineCount++;
-                    }
-                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        newlineCount++;
-                    }
-                    rowEnded = true;
+                    CompleteRowAtLineEnding<byte, TTrack>(
+                        ref mutableRef,
+                        dataLength,
+                        absolute,
+                        lf,
+                        cr,
+                        c,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
                     return true;
                 }
             }
@@ -962,20 +978,18 @@ internal static class CsvRowParser
                     if (lineEndingMask != 0)
                     {
                         int absolute = position + lineEndBit;
-                        rowLength = absolute;
-                        charsConsumed = absolute + 1;
                         char c = Unsafe.Add(ref mutableRef, absolute);
-                        if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
-                        {
-                            charsConsumed++;
-                            if (typeof(TTrack) == typeof(TrackLineNumbers))
-                                newlineCount++;
-                        }
-                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                        {
-                            newlineCount++;
-                        }
-                        rowEnded = true;
+                        CompleteRowAtLineEnding<char, TTrack>(
+                            ref mutableRef,
+                            dataLength,
+                            absolute,
+                            lf,
+                            cr,
+                            c,
+                            ref rowLength,
+                            ref charsConsumed,
+                            ref newlineCount,
+                            ref rowEnded);
                         return true;
                     }
 
@@ -1075,20 +1089,18 @@ internal static class CsvRowParser
                     }
 
                     int lineEndAbsolute = position + lineEndBit;
-                    rowLength = lineEndAbsolute;
-                    charsConsumed = lineEndAbsolute + 1;
                     char lineEndChar = Unsafe.Add(ref mutableRef, lineEndAbsolute);
-                    if (lineEndChar == cr && lineEndAbsolute + 1 < dataLength && Unsafe.Add(ref mutableRef, lineEndAbsolute + 1) == lf)
-                    {
-                        charsConsumed++;
-                        if (typeof(TTrack) == typeof(TrackLineNumbers))
-                            newlineCount++;
-                    }
-                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        newlineCount++;
-                    }
-                    rowEnded = true;
+                    CompleteRowAtLineEnding<char, TTrack>(
+                        ref mutableRef,
+                        dataLength,
+                        lineEndAbsolute,
+                        lf,
+                        cr,
+                        lineEndChar,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
                     return true;
                 }
             }
@@ -1134,25 +1146,7 @@ internal static class CsvRowParser
 
                 if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
-                    if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        if (pendingCrInQuotes)
-                        {
-                            pendingCrInQuotes = false;
-                            if (c == lf)
-                                continue;
-                        }
-
-                        if (c == cr)
-                        {
-                            newlineCount++;
-                            pendingCrInQuotes = true;
-                        }
-                        else if (c == lf)
-                        {
-                            newlineCount++;
-                        }
-                    }
+                    UpdateNewlineCountInQuotes<char, TTrack>(c, lf, cr, ref pendingCrInQuotes, ref newlineCount);
                     continue;
                 }
 
@@ -1165,19 +1159,17 @@ internal static class CsvRowParser
 
                 if (c == lf || c == cr)
                 {
-                    rowLength = absolute;
-                    charsConsumed = absolute + 1;
-                    if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
-                    {
-                        charsConsumed++;
-                        if (typeof(TTrack) == typeof(TrackLineNumbers))
-                            newlineCount++;
-                    }
-                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        newlineCount++;
-                    }
-                    rowEnded = true;
+                    CompleteRowAtLineEnding<char, TTrack>(
+                        ref mutableRef,
+                        dataLength,
+                        absolute,
+                        lf,
+                        cr,
+                        c,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
                     return true;
                 }
             }
@@ -1334,20 +1326,18 @@ internal static class CsvRowParser
                     if (lineEndingMask != 0)
                     {
                         int absolute = position + lineEndBit;
-                        rowLength = absolute;
-                        charsConsumed = absolute + 1;
                         char c = Unsafe.Add(ref mutableRef, absolute);
-                        if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
-                        {
-                            charsConsumed++;
-                            if (typeof(TTrack) == typeof(TrackLineNumbers))
-                                newlineCount++;
-                        }
-                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                        {
-                            newlineCount++;
-                        }
-                        rowEnded = true;
+                        CompleteRowAtLineEnding<char, TTrack>(
+                            ref mutableRef,
+                            dataLength,
+                            absolute,
+                            lf,
+                            cr,
+                            c,
+                            ref rowLength,
+                            ref charsConsumed,
+                            ref newlineCount,
+                            ref rowEnded);
                         return true;
                     }
 
@@ -1448,20 +1438,18 @@ internal static class CsvRowParser
                     }
 
                     int lineEndAbsolute = position + lineEndBit;
-                    rowLength = lineEndAbsolute;
-                    charsConsumed = lineEndAbsolute + 1;
                     char lineEndChar = Unsafe.Add(ref mutableRef, lineEndAbsolute);
-                    if (lineEndChar == cr && lineEndAbsolute + 1 < dataLength && Unsafe.Add(ref mutableRef, lineEndAbsolute + 1) == lf)
-                    {
-                        charsConsumed++;
-                        if (typeof(TTrack) == typeof(TrackLineNumbers))
-                            newlineCount++;
-                    }
-                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        newlineCount++;
-                    }
-                    rowEnded = true;
+                    CompleteRowAtLineEnding<char, TTrack>(
+                        ref mutableRef,
+                        dataLength,
+                        lineEndAbsolute,
+                        lf,
+                        cr,
+                        lineEndChar,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
                     return true;
                 }
             }
@@ -1507,25 +1495,7 @@ internal static class CsvRowParser
 
                 if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
-                    if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        if (pendingCrInQuotes)
-                        {
-                            pendingCrInQuotes = false;
-                            if (c == lf)
-                                continue;
-                        }
-
-                        if (c == cr)
-                        {
-                            newlineCount++;
-                            pendingCrInQuotes = true;
-                        }
-                        else if (c == lf)
-                        {
-                            newlineCount++;
-                        }
-                    }
+                    UpdateNewlineCountInQuotes<char, TTrack>(c, lf, cr, ref pendingCrInQuotes, ref newlineCount);
                     continue;
                 }
 
@@ -1538,19 +1508,17 @@ internal static class CsvRowParser
 
                 if (c == lf || c == cr)
                 {
-                    rowLength = absolute;
-                    charsConsumed = absolute + 1;
-                    if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
-                    {
-                        charsConsumed++;
-                        if (typeof(TTrack) == typeof(TrackLineNumbers))
-                            newlineCount++;
-                    }
-                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    {
-                        newlineCount++;
-                    }
-                    rowEnded = true;
+                    CompleteRowAtLineEnding<char, TTrack>(
+                        ref mutableRef,
+                        dataLength,
+                        absolute,
+                        lf,
+                        cr,
+                        c,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
                     return true;
                 }
             }
@@ -1657,3 +1625,4 @@ internal static class CsvRowParser
             $"Field length {actualLength} exceeds maximum allowed length of {maxFieldLength}");
     }
 }
+

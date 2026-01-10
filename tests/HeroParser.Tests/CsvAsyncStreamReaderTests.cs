@@ -34,7 +34,7 @@ public class CsvAsyncStreamReaderTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task AsyncStreamReader_AllowsNewlinesInsideQuotes()
     {
-        var options = new CsvParserOptions { AllowNewlinesInsideQuotes = true };
+        var options = new CsvReadOptions { AllowNewlinesInsideQuotes = true };
         var csv = "a,\"b\nc\",d\n1,2,3";
 
         await using var reader = CreateReader(csv, options, bufferSize: 6);
@@ -59,7 +59,7 @@ public class CsvAsyncStreamReaderTests
             sb.Append("a,b,c\n");
         }
 
-        var options = new CsvParserOptions { MaxRowSize = 16 };
+        var options = new CsvReadOptions { MaxRowSize = 16 };
         await using var reader = CreateReader(sb.ToString(), options, bufferSize: 8);
         var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -78,7 +78,7 @@ public class CsvAsyncStreamReaderTests
     {
         var row = "12345678";
         var csv = $"{row}\nnext\n";
-        var options = new CsvParserOptions { MaxRowSize = row.Length };
+        var options = new CsvReadOptions { MaxRowSize = row.Length };
         await using var reader = CreateReader(csv, options, bufferSize: 4);
         var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -94,7 +94,7 @@ public class CsvAsyncStreamReaderTests
     public async Task AsyncStreamReader_UsesBytesForMaxRowSize()
     {
         var csv = "\u20AC\n";
-        var options = new CsvParserOptions { MaxRowSize = 2 };
+        var options = new CsvReadOptions { MaxRowSize = 2 };
         await using var reader = CreateReader(csv, options, bufferSize: 4);
         var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -105,7 +105,7 @@ public class CsvAsyncStreamReaderTests
 
     private static SeparatedValues.Reading.Streaming.CsvAsyncStreamReader CreateReader(
         string csv,
-        CsvParserOptions? options = null,
+        CsvReadOptions? options = null,
         int bufferSize = 16 * 1024)
     {
         var bytes = Encoding.UTF8.GetBytes(csv);
@@ -113,3 +113,4 @@ public class CsvAsyncStreamReaderTests
         return Csv.CreateAsyncStreamReader(stream, options, leaveOpen: false, bufferSize: bufferSize);
     }
 }
+

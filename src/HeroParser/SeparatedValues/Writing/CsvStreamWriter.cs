@@ -17,7 +17,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 {
     private readonly ArrayPool<char> charPool;
     private readonly TextWriter writer;
-    private readonly CsvWriterOptions options;
+    private readonly CsvWriteOptions options;
     private readonly bool leaveOpen;
 
     // Cached options for hot path access
@@ -60,14 +60,14 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// Creates a new CSV writer that writes to the specified <see cref="TextWriter"/>.
     /// </summary>
     /// <param name="writer">The underlying writer to write CSV output to.</param>
-    /// <param name="options">Writer options; defaults to <see cref="CsvWriterOptions.Default"/>.</param>
+    /// <param name="options">Writer options; defaults to <see cref="CsvWriteOptions.Default"/>.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the <paramref name="writer"/> is not disposed.</param>
-    public CsvStreamWriter(TextWriter writer, CsvWriterOptions? options = null, bool leaveOpen = false)
+    public CsvStreamWriter(TextWriter writer, CsvWriteOptions? options = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(writer);
 
         this.writer = writer;
-        this.options = options ?? CsvWriterOptions.Default;
+        this.options = options ?? CsvWriteOptions.Default;
         this.options.Validate();
         this.leaveOpen = leaveOpen;
 
@@ -867,3 +867,4 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
     #endregion
 }
+

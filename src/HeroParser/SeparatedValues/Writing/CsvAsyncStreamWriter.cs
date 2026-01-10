@@ -15,7 +15,7 @@ namespace HeroParser.SeparatedValues.Writing;
 /// <remarks>
 /// <para>
 /// Uses per-instance pools for buffer management to minimize allocations and isolate pooled buffers.
-/// Supports all <see cref="CsvWriterOptions"/> including quote styles, injection protection,
+/// Supports all <see cref="CsvWriteOptions"/> including quote styles, injection protection,
 /// and DoS protection limits.
 /// </para>
 /// <para>
@@ -25,7 +25,7 @@ namespace HeroParser.SeparatedValues.Writing;
 public sealed class CsvAsyncStreamWriter : IAsyncDisposable
 {
     private readonly Stream stream;
-    private readonly CsvWriterOptions options;
+    private readonly CsvWriteOptions options;
     private readonly bool leaveOpen;
     private readonly Encoding encoding;
 
@@ -73,15 +73,15 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     /// Creates a new async CSV writer that writes to the specified stream.
     /// </summary>
     /// <param name="stream">The underlying stream to write CSV output to.</param>
-    /// <param name="options">Writer options; defaults to <see cref="CsvWriterOptions.Default"/>.</param>
+    /// <param name="options">Writer options; defaults to <see cref="CsvWriteOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the <paramref name="stream"/> is not disposed.</param>
-    public CsvAsyncStreamWriter(Stream stream, CsvWriterOptions? options = null, Encoding? encoding = null, bool leaveOpen = false)
+    public CsvAsyncStreamWriter(Stream stream, CsvWriteOptions? options = null, Encoding? encoding = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(stream);
 
         this.stream = stream;
-        this.options = options ?? CsvWriterOptions.Default;
+        this.options = options ?? CsvWriteOptions.Default;
         this.options.Validate();
         this.encoding = encoding ?? Encoding.UTF8;
         this.leaveOpen = leaveOpen;
@@ -1465,3 +1465,4 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
 
     #endregion
 }
+

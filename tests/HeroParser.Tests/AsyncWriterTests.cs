@@ -31,7 +31,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_WriteRowAsync_WritesCorrectly()
     {
         using var ms = new MemoryStream();
-        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["Alice", "30", "NYC"], TestContext.Current.CancellationToken);
         await writer.WriteRowAsync(["Bob", "25", "LA"], TestContext.Current.CancellationToken);
@@ -52,7 +52,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_WriteFieldAsync_WritesCorrectly()
     {
         using var ms = new MemoryStream();
-        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteFieldAsync("Header1", TestContext.Current.CancellationToken);
         await writer.WriteFieldAsync("Header2", TestContext.Current.CancellationToken);
@@ -137,7 +137,7 @@ public class AsyncWriterTests
     {
         using var cts = new CancellationTokenSource();
         using var ms = new MemoryStream();
-        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         // Cancel immediately
         cts.Cancel();
@@ -186,7 +186,7 @@ public class AsyncWriterTests
         var records = GenerateLargeAsyncDataset(recordCount);
 
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { WriteHeader = true };
+        var options = new CsvWriteOptions { WriteHeader = true };
 
         await Csv.WriteToStreamAsync(
             ms,
@@ -236,7 +236,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_DisposeAsync_FlushesAndReleases()
     {
         var ms = new MemoryStream();
-        var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["test", "data"], TestContext.Current.CancellationToken);
         await writer.DisposeAsync();
@@ -258,7 +258,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_LeaveOpenFalse_DisposesStream()
     {
         var ms = new MemoryStream();
-        await using (var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: false))
+        await using (var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: false))
         {
             await writer.WriteRowAsync(["test"], TestContext.Current.CancellationToken);
         }
@@ -277,7 +277,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_CustomDelimiter_WritesCorrectly()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { Delimiter = ';' };
+        var options = new CsvWriteOptions { Delimiter = ';' };
         await using var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["a", "b", "c"], TestContext.Current.CancellationToken);
@@ -295,7 +295,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_QuoteStyle_Always_QuotesAllFields()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.Always };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.Always };
         await using var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["simple", "text"], TestContext.Current.CancellationToken);
@@ -313,7 +313,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_InjectionProtection_EscapesFormulas()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { InjectionProtection = CsvInjectionProtection.EscapeWithQuote };
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.EscapeWithQuote };
         await using var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["=SUM(A1:A10)", "normal"], TestContext.Current.CancellationToken);
@@ -333,7 +333,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_MaxOutputSize_ThrowsWhenExceeded()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { MaxOutputSize = 100 };
+        var options = new CsvWriteOptions { MaxOutputSize = 100 };
         var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         var exception = await Assert.ThrowsAsync<CsvException>(async () =>
@@ -354,7 +354,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_MaxColumnCount_ThrowsWhenExceeded()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { MaxColumnCount = 3 };
+        var options = new CsvWriteOptions { MaxColumnCount = 3 };
         await using var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         await Assert.ThrowsAsync<CsvException>(async () =>
@@ -368,7 +368,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_MaxFieldSize_ThrowsWhenExceeded()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { MaxFieldSize = 10 };
+        var options = new CsvWriteOptions { MaxFieldSize = 10 };
         await using var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         await Assert.ThrowsAsync<CsvException>(async () =>
@@ -419,7 +419,7 @@ public class AsyncWriterTests
     public async Task DirectAsyncStreamWriter_WritesManually()
     {
         using var ms = new MemoryStream();
-        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["Header1", "Header2"], TestContext.Current.CancellationToken);
         await writer.WriteRowAsync(["Value1", "Value2"], TestContext.Current.CancellationToken);
@@ -442,7 +442,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_EmptyRow_WritesNewline()
     {
         using var ms = new MemoryStream();
-        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         await writer.EndRowAsync(TestContext.Current.CancellationToken);
         await writer.FlushAsync(TestContext.Current.CancellationToken);
@@ -459,7 +459,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_UnicodeCharacters_WritesCorrectly()
     {
         using var ms = new MemoryStream();
-        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["日本語", "中文", "한국어", "Emoji 😀"], TestContext.Current.CancellationToken);
         await writer.FlushAsync(TestContext.Current.CancellationToken);
@@ -479,7 +479,7 @@ public class AsyncWriterTests
     public async Task CsvAsyncStreamWriter_FieldsWithQuotesAndDelimiters_EscapesCorrectly()
     {
         using var ms = new MemoryStream();
-        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["a,b", "c\"d", "e\r\nf"], TestContext.Current.CancellationToken);
         await writer.FlushAsync(TestContext.Current.CancellationToken);
@@ -520,7 +520,7 @@ public class AsyncWriterTests
     public void CreateStreamWriter_Stream_WithOptions_AppliesOptions()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { Delimiter = ';' };
+        var options = new CsvWriteOptions { Delimiter = ';' };
         using var writer = Csv.CreateStreamWriter(ms, options, leaveOpen: true);
 
         writer.WriteRow(["A", "B", "C"]);
@@ -605,7 +605,7 @@ public class AsyncWriterTests
     public async Task CreateAsyncStreamWriter_WithOptions_AppliesOptions()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { Delimiter = ';' };
+        var options = new CsvWriteOptions { Delimiter = ';' };
         await using var writer = Csv.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
 
         await writer.WriteRowAsync(["A", "B", "C"], TestContext.Current.CancellationToken);
@@ -690,7 +690,7 @@ public class AsyncWriterTests
     public async Task CreateAsyncStreamWriter_QuoteStyleAlways_QuotesAllFields()
     {
         using var ms = new MemoryStream();
-        var options = new CsvWriterOptions { QuoteStyle = QuoteStyle.Always };
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.Always };
         await using var writer = Csv.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
 
         await writer.WriteRowAsync(["simple", "text"], TestContext.Current.CancellationToken);
@@ -814,3 +814,4 @@ public class AsyncWriterTests
 
     #endregion
 }
+

@@ -6,7 +6,7 @@ namespace HeroParser.SeparatedValues.Core;
 /// <remarks>
 /// The defaults follow RFC 4180. Use <see cref="Validate"/> to catch invalid configurations before parsing.
 /// </remarks>
-public sealed record CsvParserOptions
+public sealed record CsvReadOptions
 {
     /// <summary>
     /// Gets or sets the field delimiter character (comma by default).
@@ -116,10 +116,10 @@ public sealed record CsvParserOptions
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>
-    /// Equivalent to <c>new CsvParserOptions()</c>.
+    /// Equivalent to <c>new CsvReadOptions()</c>.
     /// Thread-Safety: This is an immutable singleton and is safe to access from multiple threads.
     /// </remarks>
-    public static CsvParserOptions Default { get; } = new();
+    public static CsvReadOptions Default { get; } = new();
 
     /// <summary>
     /// Validates the option set and throws when an invalid value is detected.
@@ -248,3 +248,4 @@ public sealed record CsvParserOptions
         }
     }
 }
+

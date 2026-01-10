@@ -72,6 +72,37 @@ public class CsvAsyncStreamReaderTests
         Assert.Equal(1000, count);
     }
 
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task AsyncStreamReader_AllowsRowAtMaxRowSize()
+    {
+        var row = "12345678";
+        var csv = $"{row}\nnext\n";
+        var options = new CsvParserOptions { MaxRowSize = row.Length };
+        await using var reader = CreateReader(csv, options, bufferSize: 4);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        Assert.True(await reader.MoveNextAsync(cancellationToken));
+        Assert.Equal(row, reader.Current.GetString(0));
+
+        Assert.True(await reader.MoveNextAsync(cancellationToken));
+        Assert.Equal("next", reader.Current.GetString(0));
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task AsyncStreamReader_UsesBytesForMaxRowSize()
+    {
+        var csv = "\u20AC\n";
+        var options = new CsvParserOptions { MaxRowSize = 2 };
+        await using var reader = CreateReader(csv, options, bufferSize: 4);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        var ex = await Assert.ThrowsAsync<CsvException>(async () =>
+            await reader.MoveNextAsync(cancellationToken));
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
+    }
+
     private static SeparatedValues.Reading.Streaming.CsvAsyncStreamReader CreateReader(
         string csv,
         CsvParserOptions? options = null,

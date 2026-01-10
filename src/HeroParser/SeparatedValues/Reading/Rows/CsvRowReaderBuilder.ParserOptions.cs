@@ -124,7 +124,7 @@ public sealed partial class CsvRowReaderBuilder
     /// <summary>
     /// Sets the maximum row size for streaming readers (DoS protection).
     /// </summary>
-    /// <param name="maxSize">The maximum row size in characters, or null to disable.</param>
+    /// <param name="maxSize">The maximum row size in characters (UTF-16) or bytes (UTF-8), or null to disable.</param>
     /// <returns>This builder for method chaining.</returns>
     public CsvRowReaderBuilder WithMaxRowSize(int? maxSize)
     {

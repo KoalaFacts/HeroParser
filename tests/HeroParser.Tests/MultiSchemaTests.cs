@@ -3,6 +3,7 @@ using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records.MultiSchema;
 using HeroParser.SeparatedValues.Reading.Rows;
 using HeroParser.SeparatedValues.Reading.Shared;
+using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -379,7 +380,7 @@ public class MultiSchemaTests
             T,Trailer1
             """;
 
-        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
 
         var results = new List<object>();
         await foreach (var record in Csv.Read()
@@ -397,6 +398,48 @@ public class MultiSchemaTests
         Assert.IsType<SimpleHeader>(results[0]);
         Assert.Equal(2, results.OfType<SimpleDetail>().Count());
         Assert.IsType<SimpleTrailer>(results[3]);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task FromStream_MaxRowSize_ThrowsForOversizeRow()
+    {
+        const int maxRowSize = 20;
+        var data = new string('x', maxRowSize + 5);
+        var csv = $"Type,Data\nH,{data}\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        await using var reader = Csv.Read()
+            .WithMultiSchema()
+            .WithDiscriminator("Type")
+            .MapRecord<SimpleHeader>("H")
+            .WithMaxRowSize(maxRowSize)
+            .FromStream(stream);
+
+        var ex = await Assert.ThrowsAsync<CsvException>(async () =>
+            await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task FromStream_BytesRead_TracksBytes()
+    {
+        var csv = "Type,Data\nH,Header1\n";
+        var bytes = Encoding.UTF8.GetBytes(csv);
+        using var stream = new MemoryStream(bytes);
+
+        await using var reader = Csv.Read()
+            .WithMultiSchema()
+            .WithDiscriminator("Type")
+            .MapRecord<SimpleHeader>("H")
+            .FromStream(stream);
+
+        while (await reader.MoveNextAsync(TestContext.Current.CancellationToken))
+        {
+        }
+
+        Assert.Equal(bytes.Length, reader.BytesRead);
     }
 
     #endregion

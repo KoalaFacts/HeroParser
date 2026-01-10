@@ -12,6 +12,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 {
     // Absolute maximum buffer size (128 MB) to prevent unbounded memory growth.
     private const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
+    private const int MAX_LINE_ENDING_LENGTH = 2;
 
     private readonly ArrayPool<byte> bytePool;
     private readonly Stream stream;
@@ -19,6 +20,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private readonly bool leaveOpen;
     private readonly bool trackLineNumbers;
     private readonly int maxRowSize;
+    private readonly int maxBufferSize;
     private readonly PooledColumnEnds columnEndsBuffer;
     private readonly int skipRows;
 
@@ -57,6 +59,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         this.leaveOpen = leaveOpen;
         trackLineNumbers = options.TrackSourceLineNumbers;
         maxRowSize = options.MaxRowSize ?? ABSOLUTE_MAX_BUFFER_SIZE;
+        maxBufferSize = CalculateMaxBufferSize(maxRowSize);
         this.skipRows = skipRows;
 
         bytePool = ArrayPool<byte>.Shared;
@@ -134,6 +137,13 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             if (result.CharsConsumed == 0)
                 return false;
 
+            if (result.RowLength > maxRowSize)
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Row exceeds maximum size of {maxRowSize:N0} bytes. Ensure rows have proper line endings.");
+            }
+
             if (result.RowLength == span.Length && !endOfStream)
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
@@ -208,14 +218,14 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         if (length == buffer.Length)
         {
-            if (buffer.Length >= maxRowSize)
+            if (buffer.Length >= maxBufferSize)
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
                     $"Row exceeds maximum size of {maxRowSize:N0} bytes. Ensure rows have proper line endings.");
             }
 
-            int newSize = Math.Min(buffer.Length * 2, maxRowSize);
+            int newSize = Math.Min(buffer.Length * 2, maxBufferSize);
             var newBuffer = RentBuffer(newSize);
             buffer.AsSpan(0, length).CopyTo(newBuffer);
             ReturnBuffer(buffer);
@@ -263,13 +273,20 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private byte[] RentBuffer(int minimumLength)
     {
         int bufferSize = minimumLength;
-        if (bufferSize > maxRowSize)
-            bufferSize = maxRowSize;
+        if (bufferSize > maxBufferSize)
+            bufferSize = maxBufferSize;
         return bytePool.Rent(bufferSize);
     }
 
     private void ReturnBuffer(byte[] toReturn)
     {
         bytePool.Return(toReturn, clearArray: false);
+    }
+
+    private static int CalculateMaxBufferSize(int maxRowSize)
+    {
+        if (maxRowSize >= int.MaxValue - MAX_LINE_ENDING_LENGTH)
+            return int.MaxValue;
+        return maxRowSize + MAX_LINE_ENDING_LENGTH;
     }
 }

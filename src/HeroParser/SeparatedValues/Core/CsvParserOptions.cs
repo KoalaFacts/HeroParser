@@ -92,14 +92,15 @@ public sealed record CsvParserOptions
     public char? EscapeCharacter { get; init; } = null;
 
     /// <summary>
-    /// Gets or sets the maximum row size in characters for streaming readers (defaults to 1MB worth of chars).
+    /// Gets or sets the maximum row size for streaming readers (defaults to 512K units).
     /// </summary>
     /// <remarks>
     /// This limit prevents unbounded buffer growth when parsing rows without line breaks (DoS protection).
+    /// For UTF-16 readers, the limit is measured in characters. For UTF-8 streaming readers, it is measured in bytes.
     /// Only applies to streaming readers.
-    /// Set to <see langword="null"/> to disable this protection (not recommended for untrusted input).
+    /// Set to <see langword="null"/> to disable this protection (not recommended for untrusted input); an absolute cap may still apply.
     /// </remarks>
-    public int? MaxRowSize { get; init; } = 512 * 1024; // 512K chars = ~1MB
+    public int? MaxRowSize { get; init; } = 512 * 1024; // 512K units (~1MB UTF-16 or 512KB UTF-8)
 
     /// <summary>
     /// Gets or sets a value indicating whether source line numbers should be tracked during parsing.

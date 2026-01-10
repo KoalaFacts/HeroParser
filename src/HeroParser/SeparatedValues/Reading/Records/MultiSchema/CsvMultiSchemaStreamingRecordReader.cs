@@ -23,6 +23,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 {
     // Absolute maximum buffer size (128 MB) to prevent unbounded memory growth
     private const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
+    private const int MAX_LINE_ENDING_LENGTH = 2;
 
     private readonly ArrayPool<char> charPool;
     private readonly StreamReader reader;
@@ -33,6 +34,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
     private readonly int progressInterval;
     private readonly bool trackLineNumbers;
     private readonly int maxRowSize;
+    private readonly int maxBufferSize;
     private readonly PooledColumnEnds columnEndsBuffer;
 
     private char[] buffer;
@@ -72,6 +74,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         progressInterval = progressIntervalRows > 0 ? progressIntervalRows : 1000;
         trackLineNumbers = parserOptions.TrackSourceLineNumbers;
         maxRowSize = parserOptions.MaxRowSize ?? ABSOLUTE_MAX_BUFFER_SIZE;
+        maxBufferSize = CalculateMaxBufferSize(maxRowSize);
 
         charPool = ArrayPool<char>.Shared;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: leaveOpen);
@@ -130,6 +133,13 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             {
                 ReportFinalProgress();
                 return false;
+            }
+
+            if (result.RowLength > maxRowSize)
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Row exceeds maximum size of {maxRowSize:N0} characters. Ensure rows have proper line endings.");
             }
 
             if (result.RowLength == span.Length && !endOfStream)
@@ -202,7 +212,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         // Grow buffer if full
         if (length == buffer.Length)
         {
-            if (buffer.Length >= maxRowSize)
+            if (buffer.Length >= maxBufferSize)
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
@@ -210,13 +220,14 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
                     "Ensure rows have proper line endings.");
             }
 
-            var newBuffer = RentBuffer(Math.Min(buffer.Length * 2, maxRowSize));
+            var newBuffer = RentBuffer(Math.Min(buffer.Length * 2, maxBufferSize));
             buffer.AsSpan(0, length).CopyTo(newBuffer);
             ReturnBuffer(buffer);
             buffer = newBuffer;
         }
 
         // Read more data
+        int start = length;
         var read = await reader.ReadAsync(buffer.AsMemory(length, buffer.Length - length), cancellationToken).ConfigureAwait(false);
         if (read == 0)
         {
@@ -224,8 +235,8 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             return;
         }
 
+        BytesRead += reader.CurrentEncoding.GetByteCount(buffer.AsSpan(start, read));
         length += read;
-        BytesRead += read;
     }
 
     private void ReportProgress()
@@ -257,8 +268,8 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
     private char[] RentBuffer(int minimumLength)
     {
         int bufferSize = minimumLength;
-        if (bufferSize > maxRowSize)
-            bufferSize = maxRowSize;
+        if (bufferSize > maxBufferSize)
+            bufferSize = maxBufferSize;
         var rented = charPool.Rent(bufferSize);
         Array.Clear(rented);
         return rented;
@@ -283,5 +294,12 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         buffer = null!;
         reader.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private static int CalculateMaxBufferSize(int maxRowSize)
+    {
+        if (maxRowSize >= int.MaxValue - MAX_LINE_ENDING_LENGTH)
+            return int.MaxValue;
+        return maxRowSize + MAX_LINE_ENDING_LENGTH;
     }
 }

@@ -199,7 +199,7 @@ public sealed class CsvMultiSchemaReaderBuilder
         return this;
     }
 
-    /// <summary>Sets the maximum row size for streaming readers.</summary>
+    /// <summary>Sets the maximum row size for streaming readers (characters for UTF-16, bytes for UTF-8).</summary>
     public CsvMultiSchemaReaderBuilder WithMaxRowSize(int? maxSize)
     {
         maxRowSize = maxSize;

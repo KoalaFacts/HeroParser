@@ -1,9 +1,6 @@
 using System.Buffers;
 using System.Globalization;
-using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
 using System.Text;
 #if NET6_0_OR_GREATER
 using System.Threading.Tasks.Sources;
@@ -289,7 +286,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         {
             case QuoteStyle.Always:
                 {
-                    int alwaysQuoteCount = CountQuotes(value);
+                    int alwaysQuoteCount = CsvWriterQuoting.CountQuotes(value, quote);
                     int requiredSize = 2 + value.Length + alwaysQuoteCount;
                     if (charBufferPosition + requiredSize > charBuffer.Length) return false;
                     WriteQuotedFieldSync(value);
@@ -302,7 +299,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 break;
             case QuoteStyle.WhenNeeded:
             default:
-                var (needsQuoting, quoteCount) = AnalyzeFieldForQuoting(value);
+                var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(value, delimiter, quote);
                 if (needsQuoting)
                 {
                     int requiredSize = 2 + value.Length + quoteCount;
@@ -327,7 +324,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteQuotedFieldSync(ReadOnlySpan<char> value)
     {
-        int quoteCount = CountQuotes(value);
+        int quoteCount = CsvWriterQuoting.CountQuotes(value, quote);
         WriteQuotedFieldWithKnownQuoteCountSync(value, quoteCount);
     }
 
@@ -557,7 +554,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         {
             // Need to quote - shift content and add quotes
             var valueSpan = charBuffer.AsSpan(charBufferPosition, charsWritten);
-            int quoteCount = CountQuotes(valueSpan);
+            int quoteCount = CsvWriterQuoting.CountQuotes(valueSpan, quote);
             int totalSize = 2 + charsWritten + quoteCount;
 
             if (charBufferPosition + totalSize > charBuffer.Length)
@@ -574,7 +571,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         {
             // Check if quoting is needed
             var valueSpan = charBuffer.AsSpan(charBufferPosition, charsWritten);
-            var (needsQuoting, quoteCount) = AnalyzeFieldForQuoting(valueSpan);
+            var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(valueSpan, delimiter, quote);
 
             if (needsQuoting)
             {
@@ -746,7 +743,10 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         switch (quoteStyle)
         {
             case QuoteStyle.Always:
-                await WriteQuotedFieldWithKnownQuoteCountInternalAsync(value, CountQuotes(valueSpan), cancellationToken).ConfigureAwait(false);
+                await WriteQuotedFieldWithKnownQuoteCountInternalAsync(
+                    value,
+                    CsvWriterQuoting.CountQuotes(valueSpan, quote),
+                    cancellationToken).ConfigureAwait(false);
                 break;
             case QuoteStyle.Never:
                 await WriteUnquotedFieldInternalAsync(value, cancellationToken).ConfigureAwait(false);
@@ -754,7 +754,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
             case QuoteStyle.WhenNeeded:
             default:
                 // Single pass to check if quoting needed AND count quotes
-                var (needsQuoting, quoteCount) = AnalyzeFieldForQuoting(valueSpan);
+                var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(valueSpan, delimiter, quote);
                 if (needsQuoting)
                 {
                     await WriteQuotedFieldWithKnownQuoteCountInternalAsync(value, quoteCount, cancellationToken).ConfigureAwait(false);
@@ -875,14 +875,17 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         switch (quoteStyle)
         {
             case QuoteStyle.Always:
-                await WriteQuotedFieldWithKnownQuoteCountInternalAsync(value, CountQuotes(valueSpan), cancellationToken).ConfigureAwait(false);
+                await WriteQuotedFieldWithKnownQuoteCountInternalAsync(
+                    value,
+                    CsvWriterQuoting.CountQuotes(valueSpan, quote),
+                    cancellationToken).ConfigureAwait(false);
                 break;
             case QuoteStyle.Never:
                 await WriteUnquotedFieldInternalAsync(value, cancellationToken).ConfigureAwait(false);
                 break;
             case QuoteStyle.WhenNeeded:
             default:
-                var (needsQuoting, quoteCount) = AnalyzeFieldForQuoting(valueSpan);
+                var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(valueSpan, delimiter, quote);
                 if (needsQuoting)
                 {
                     await WriteQuotedFieldWithKnownQuoteCountInternalAsync(value, quoteCount, cancellationToken).ConfigureAwait(false);
@@ -903,7 +906,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     private ValueTask WriteQuotedFieldWithPrefixInternalAsync(char prefix, ReadOnlyMemory<char> value, CancellationToken cancellationToken)
     {
         var valueLen = value.Length;
-        int quoteCount = CountQuotes(value.Span);
+        int quoteCount = CsvWriterQuoting.CountQuotes(value.Span, quote);
         // Total size: opening quote + prefix + value + escaped quotes + closing quote
         int requiredSize = 3 + valueLen + quoteCount;
 
@@ -1087,178 +1090,6 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         }
 
         charBuffer[charBufferPosition++] = quote;
-    }
-
-    /// <summary>
-    /// Single-pass analysis: determines if quoting is needed AND counts quotes simultaneously.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private (bool needsQuoting, int quoteCount) AnalyzeFieldForQuoting(ReadOnlySpan<char> value)
-    {
-        // Use SIMD for larger spans
-        if (Avx2.IsSupported && value.Length >= Vector256<ushort>.Count)
-        {
-            return AnalyzeFieldSimd256(value);
-        }
-        else if (Sse2.IsSupported && value.Length >= Vector128<ushort>.Count)
-        {
-            return AnalyzeFieldSimd128(value);
-        }
-
-        return AnalyzeFieldScalar(value);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private (bool needsQuoting, int quoteCount) AnalyzeFieldScalar(ReadOnlySpan<char> value)
-    {
-        bool needsQuoting = false;
-        int quoteCount = 0;
-        char d = delimiter;
-        char q = quote;
-
-        foreach (char c in value)
-        {
-            if (c == q)
-            {
-                needsQuoting = true;
-                quoteCount++;
-            }
-            else if (c == d || c == '\r' || c == '\n')
-            {
-                needsQuoting = true;
-            }
-        }
-
-        return (needsQuoting, quoteCount);
-    }
-
-    private (bool needsQuoting, int quoteCount) AnalyzeFieldSimd256(ReadOnlySpan<char> value)
-    {
-        var delimiterVec = Vector256.Create((ushort)delimiter);
-        var quoteVec = Vector256.Create((ushort)quote);
-        var crVec = Vector256.Create((ushort)'\r');
-        var lfVec = Vector256.Create((ushort)'\n');
-
-        bool needsQuoting = false;
-        int quoteCount = 0;
-        int i = 0;
-        int vectorLength = Vector256<ushort>.Count;
-        int lastVectorStart = value.Length - vectorLength;
-
-        while (i <= lastVectorStart)
-        {
-            var chars = Vector256.LoadUnsafe(ref Unsafe.As<char, ushort>(ref Unsafe.AsRef(in value[i])));
-
-            var matchDelimiter = Vector256.Equals(chars, delimiterVec);
-            var matchQuote = Vector256.Equals(chars, quoteVec);
-            var matchCr = Vector256.Equals(chars, crVec);
-            var matchLf = Vector256.Equals(chars, lfVec);
-
-            // Check if any special char found
-            var combined = Vector256.BitwiseOr(
-                Vector256.BitwiseOr(matchDelimiter, matchQuote),
-                Vector256.BitwiseOr(matchCr, matchLf));
-
-            if (combined != Vector256<ushort>.Zero)
-            {
-                needsQuoting = true;
-                // Count quotes in this vector using population count
-                if (matchQuote != Vector256<ushort>.Zero)
-                {
-                    quoteCount += BitOperations.PopCount(matchQuote.ExtractMostSignificantBits());
-                }
-            }
-
-            i += vectorLength;
-        }
-
-        // Handle remaining elements with scalar
-        for (; i < value.Length; i++)
-        {
-            char c = value[i];
-            if (c == quote)
-            {
-                needsQuoting = true;
-                quoteCount++;
-            }
-            else if (c == delimiter || c == '\r' || c == '\n')
-            {
-                needsQuoting = true;
-            }
-        }
-
-        return (needsQuoting, quoteCount);
-    }
-
-    private (bool needsQuoting, int quoteCount) AnalyzeFieldSimd128(ReadOnlySpan<char> value)
-    {
-        var delimiterVec = Vector128.Create((ushort)delimiter);
-        var quoteVec = Vector128.Create((ushort)quote);
-        var crVec = Vector128.Create((ushort)'\r');
-        var lfVec = Vector128.Create((ushort)'\n');
-
-        bool needsQuoting = false;
-        int quoteCount = 0;
-        int i = 0;
-        int vectorLength = Vector128<ushort>.Count;
-        int lastVectorStart = value.Length - vectorLength;
-
-        while (i <= lastVectorStart)
-        {
-            var chars = Vector128.LoadUnsafe(ref Unsafe.As<char, ushort>(ref Unsafe.AsRef(in value[i])));
-
-            var matchDelimiter = Vector128.Equals(chars, delimiterVec);
-            var matchQuote = Vector128.Equals(chars, quoteVec);
-            var matchCr = Vector128.Equals(chars, crVec);
-            var matchLf = Vector128.Equals(chars, lfVec);
-
-            var combined = Vector128.BitwiseOr(
-                Vector128.BitwiseOr(matchDelimiter, matchQuote),
-                Vector128.BitwiseOr(matchCr, matchLf));
-
-            if (combined != Vector128<ushort>.Zero)
-            {
-                needsQuoting = true;
-                if (matchQuote != Vector128<ushort>.Zero)
-                {
-                    quoteCount += BitOperations.PopCount(matchQuote.ExtractMostSignificantBits());
-                }
-            }
-
-            i += vectorLength;
-        }
-
-        // Handle remaining elements with scalar
-        for (; i < value.Length; i++)
-        {
-            char c = value[i];
-            if (c == quote)
-            {
-                needsQuoting = true;
-                quoteCount++;
-            }
-            else if (c == delimiter || c == '\r' || c == '\n')
-            {
-                needsQuoting = true;
-            }
-        }
-
-        return (needsQuoting, quoteCount);
-    }
-
-    /// <summary>
-    /// Counts quotes in a span (for AlwaysQuote mode).
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int CountQuotes(ReadOnlySpan<char> value)
-    {
-        int count = 0;
-        char q = quote;
-        foreach (char c in value)
-        {
-            if (c == q) count++;
-        }
-        return count;
     }
 
     /// <summary>
@@ -1456,11 +1287,14 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         if (quoteStyle == QuoteStyle.Always)
         {
             var temp = valueSpan.ToArray();
-            await WriteQuotedFieldWithKnownQuoteCountInternalAsync(temp.AsMemory(), CountQuotes(valueSpan), cancellationToken).ConfigureAwait(false);
+            await WriteQuotedFieldWithKnownQuoteCountInternalAsync(
+                temp.AsMemory(),
+                CsvWriterQuoting.CountQuotes(valueSpan, quote),
+                cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            var (needsQuoting, quoteCount) = AnalyzeFieldForQuoting(valueSpan);
+            var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(valueSpan, delimiter, quote);
             if (needsQuoting)
             {
                 var temp = valueSpan.ToArray();

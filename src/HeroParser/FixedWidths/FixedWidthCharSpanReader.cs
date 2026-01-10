@@ -49,7 +49,7 @@ public ref struct FixedWidthCharSpanReader
         while (skipped < rowsToSkip && position < chars.Length)
         {
             var remaining = chars[position..];
-            var lineEnd = FindLineEnd(remaining);
+            var lineEnd = FixedWidthLineScanner.FindLineEnd(remaining);
 
             if (lineEnd == -1)
             {
@@ -151,7 +151,7 @@ public ref struct FixedWidthCharSpanReader
         // Track newlines within the record for source line tracking
         if (options.TrackSourceLineNumbers)
         {
-            sourceLineNumber += CountNewlines(recordSpan);
+            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan);
         }
 
         return true;
@@ -162,7 +162,7 @@ public ref struct FixedWidthCharSpanReader
         while (position < chars.Length)
         {
             var remaining = chars[position..];
-            var lineEnd = FindLineEnd(remaining);
+            var lineEnd = FixedWidthLineScanner.FindLineEnd(remaining);
 
             ReadOnlySpan<char> line;
             int consumed;
@@ -212,30 +212,6 @@ public ref struct FixedWidthCharSpanReader
         }
 
         return false;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int FindLineEnd(ReadOnlySpan<char> span)
-        => span.IndexOfAny('\r', '\n');
-
-    private static int CountNewlines(ReadOnlySpan<char> span)
-    {
-        int count = 0;
-        for (int i = 0; i < span.Length; i++)
-        {
-            if (span[i] == '\n')
-            {
-                count++;
-            }
-            else if (span[i] == '\r')
-            {
-                count++;
-                // Skip \n if it follows \r
-                if (i + 1 < span.Length && span[i + 1] == '\n')
-                    i++;
-            }
-        }
-        return count;
     }
 
     /// <summary>Disposes the reader.</summary>

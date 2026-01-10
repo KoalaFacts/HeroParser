@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Text;
+using HeroParser.FixedWidths;
 
 namespace HeroParser.FixedWidths.Streaming;
 
@@ -93,13 +94,13 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         while (skipped < rowsToSkip)
         {
             var span = buffer.AsSpan(offset, length - offset);
-            if (!endOfStream && !ContainsLineBreak(span))
+            if (!endOfStream && !FixedWidthLineScanner.ContainsLineBreak(span))
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            var lineEnd = FindLineEnd(span);
+            var lineEnd = FixedWidthLineScanner.FindLineEnd(span);
             if (lineEnd == -1)
             {
                 if (endOfStream)
@@ -152,7 +153,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                 // Count newlines in the record for source line tracking
                 if (trackLineNumbers)
                 {
-                    sourceLineNumber += CountNewlines(buffer.AsSpan(offset, recordLength));
+                    sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength));
                 }
 
                 offset += recordLength;
@@ -183,7 +184,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             var span = buffer.AsSpan(offset, length - offset);
 
             // Ensure we have a complete line or reached end of stream
-            if (!endOfStream && !ContainsLineBreak(span))
+            if (!endOfStream && !FixedWidthLineScanner.ContainsLineBreak(span))
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
@@ -194,7 +195,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                 return false;
             }
 
-            var lineEnd = FindLineEnd(span);
+            var lineEnd = FixedWidthLineScanner.FindLineEnd(span);
             ReadOnlySpan<char> line;
             int consumed;
 
@@ -295,31 +296,6 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
 
         length += read;
         bytesRead += read;
-    }
-
-    private static bool ContainsLineBreak(ReadOnlySpan<char> span)
-        => span.IndexOfAny('\r', '\n') >= 0;
-
-    private static int FindLineEnd(ReadOnlySpan<char> span)
-        => span.IndexOfAny('\r', '\n');
-
-    private static int CountNewlines(ReadOnlySpan<char> span)
-    {
-        int count = 0;
-        for (int i = 0; i < span.Length; i++)
-        {
-            if (span[i] == '\n')
-            {
-                count++;
-            }
-            else if (span[i] == '\r')
-            {
-                count++;
-                if (i + 1 < span.Length && span[i + 1] == '\n')
-                    i++;
-            }
-        }
-        return count;
     }
 
     /// <summary>

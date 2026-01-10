@@ -60,7 +60,7 @@ public ref struct FixedWidthByteSpanReader
         while (skipped < rowsToSkip && position < bytes.Length)
         {
             var remaining = bytes[position..];
-            var lineEnd = FindLineEnd(remaining);
+            var lineEnd = FixedWidthLineScanner.FindLineEnd(remaining);
 
             if (lineEnd == -1)
             {
@@ -160,7 +160,7 @@ public ref struct FixedWidthByteSpanReader
         // Track newlines within the record for source line tracking
         if (options.TrackSourceLineNumbers)
         {
-            sourceLineNumber += CountNewlines(recordSpan);
+            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan);
         }
 
         return true;
@@ -174,7 +174,7 @@ public ref struct FixedWidthByteSpanReader
         while (position < bytes.Length)
         {
             var remaining = bytes[position..];
-            var lineEnd = FindLineEnd(remaining);
+            var lineEnd = FixedWidthLineScanner.FindLineEnd(remaining);
 
             ReadOnlySpan<byte> line;
             int consumed;
@@ -224,38 +224,6 @@ public ref struct FixedWidthByteSpanReader
         }
 
         return false;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int FindLineEnd(ReadOnlySpan<byte> span)
-    {
-        // Find the first occurrence of CR or LF
-        for (int i = 0; i < span.Length; i++)
-        {
-            if (span[i] == CR || span[i] == LF)
-                return i;
-        }
-        return -1;
-    }
-
-    private static int CountNewlines(ReadOnlySpan<byte> span)
-    {
-        int count = 0;
-        for (int i = 0; i < span.Length; i++)
-        {
-            if (span[i] == LF)
-            {
-                count++;
-            }
-            else if (span[i] == CR)
-            {
-                count++;
-                // Skip LF if it follows CR
-                if (i + 1 < span.Length && span[i + 1] == LF)
-                    i++;
-            }
-        }
-        return count;
     }
 
     /// <summary>Disposes the reader.</summary>

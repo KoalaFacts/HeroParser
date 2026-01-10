@@ -11,8 +11,8 @@ namespace HeroParser.SeparatedValues.Reading.Rows;
 /// <remarks>
 /// <para>Rows are parsed lazily as <see cref="MoveNext"/> advances.</para>
 /// <para>
-/// This reader uses dedicated arrays (not pooled) to ensure thread-safety when multiple
-/// readers are used concurrently or when <see cref="GetEnumerator"/> creates a copy.
+/// This reader uses a pooled column buffer per instance to reduce allocations. The buffer
+/// is returned to the pool when <see cref="Dispose"/> is called (including by <c>foreach</c>).
 /// </para>
 /// <para>Uses Ends-only column indexing to minimize memory writes during parsing.</para>
 /// </remarks>
@@ -20,7 +20,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
 {
     private readonly ReadOnlySpan<T> data;
     private readonly CsvParserOptions options;
-    private readonly int[] columnEndsBuffer;
+    private readonly PooledColumnEnds columnEndsBuffer;
     private readonly bool trackLineNumbers;
     private int position;
     private int rowCount;
@@ -36,7 +36,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         sourceLineNumber = 1; // Start at line 1
         Current = default;
         // Ends-only storage: need maxColumns + 1 entries
-        columnEndsBuffer = new int[options.MaxColumnCount + 1];
+        columnEndsBuffer = new PooledColumnEnds(options.MaxColumnCount + 1);
     }
 
     /// <summary>Gets the current row.</summary>
@@ -64,7 +64,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
             var result = CsvRowParser.ParseRow(
                 remaining,
                 options,
-                columnEndsBuffer.AsSpan(0, options.MaxColumnCount + 1),
+                columnEndsBuffer.Span,
                 trackLineNumbers);
 
             if (result.CharsConsumed == 0)
@@ -84,7 +84,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
             rowCount++;
             Current = new CsvRow<T>(
                 rowData,
-                columnEndsBuffer,
+                columnEndsBuffer.Buffer,
                 result.ColumnCount,
                 rowCount,
                 trackLineNumbers ? rowStartLine : rowCount, // Use rowCount as fallback when tracking disabled
@@ -102,10 +102,10 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     }
 
     /// <summary>
-    /// No-op for compatibility; dedicated arrays are used instead of pooled buffers.
+    /// Returns pooled buffers for column tracking.
     /// </summary>
     public readonly void Dispose()
     {
-        // No-op: dedicated arrays don't need to be returned to a pool
+        columnEndsBuffer.Return();
     }
 }

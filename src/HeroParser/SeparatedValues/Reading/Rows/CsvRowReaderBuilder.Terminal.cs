@@ -1,3 +1,5 @@
+using HeroParser.SeparatedValues.Reading.Streaming;
+
 namespace HeroParser.SeparatedValues.Reading.Rows;
 
 public sealed partial class CsvRowReaderBuilder
@@ -75,6 +77,50 @@ public sealed partial class CsvRowReaderBuilder
         var reader = Csv.ReadFromStream(stream, out streamBytes, GetOptions(), leaveOpen);
         SkipInitialRows(ref reader);
         return reader;
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a CSV file without loading the entire payload into memory.
+    /// </summary>
+    /// <param name="path">Filesystem path to the CSV file.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in bytes.</param>
+    /// <returns>A <see cref="CsvAsyncStreamReader"/> for asynchronous streaming.</returns>
+    /// <remarks>
+    /// Unlike <see cref="FromFile"/>, this method does not load the entire file into memory.
+    /// Use this for large files that need to be processed row-by-row.
+    /// </remarks>
+    public CsvAsyncStreamReader FromFileAsync(string path, int bufferSize = 16 * 1024)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        var options = GetOptions();
+        options.Validate();
+        var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return new CsvAsyncStreamReader(stream, options, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a stream without loading the entire payload into memory.
+    /// </summary>
+    /// <param name="stream">The stream to read from.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, the stream remains open after the reader is disposed.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in bytes.</param>
+    /// <returns>A <see cref="CsvAsyncStreamReader"/> for asynchronous streaming.</returns>
+    /// <remarks>
+    /// Unlike <see cref="FromStream"/>, this method does not load the entire stream into memory.
+    /// Use this for large streams that need to be processed row-by-row.
+    /// </remarks>
+    public CsvAsyncStreamReader FromStreamAsync(Stream stream, bool leaveOpen = true, int bufferSize = 16 * 1024)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        var options = GetOptions();
+        options.Validate();
+        return new CsvAsyncStreamReader(stream, options, leaveOpen, bufferSize, skipRows);
     }
 
     private void SkipInitialRows(ref CsvRowReader<char> reader)

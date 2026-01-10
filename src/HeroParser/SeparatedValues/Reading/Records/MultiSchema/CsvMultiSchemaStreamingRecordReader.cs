@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
+using HeroParser.SeparatedValues.Reading.Shared;
 
 namespace HeroParser.SeparatedValues.Reading.Records.MultiSchema;
 
@@ -30,6 +31,9 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
     private readonly int skipRows;
     private readonly IProgress<CsvProgress>? progress;
     private readonly int progressInterval;
+    private readonly bool trackLineNumbers;
+    private readonly int maxRowSize;
+    private readonly PooledColumnEnds columnEndsBuffer;
 
     private char[] buffer;
     private int offset;
@@ -37,6 +41,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
     private int rowNumber;
     private int skippedCount;
     private int dataRowCount;
+    private int sourceLineNumber;
     private bool endOfStream;
     private bool disposed;
 
@@ -65,15 +70,19 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         skipRows = skipRowCount;
         progress = progressReporter;
         progressInterval = progressIntervalRows > 0 ? progressIntervalRows : 1000;
+        trackLineNumbers = parserOptions.TrackSourceLineNumbers;
+        maxRowSize = parserOptions.MaxRowSize ?? ABSOLUTE_MAX_BUFFER_SIZE;
 
         charPool = ArrayPool<char>.Shared;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: leaveOpen);
         buffer = RentBuffer(Math.Max(4096, parserOptions.MaxRowSize ?? 4096));
+        columnEndsBuffer = new PooledColumnEnds(parserOptions.MaxColumnCount + 1);
         offset = 0;
         length = 0;
         rowNumber = 0;
         skippedCount = 0;
         dataRowCount = 0;
+        sourceLineNumber = 1;
         endOfStream = false;
         disposed = false;
     }
@@ -89,244 +98,94 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
         while (true)
         {
-            // Ensure we have data in the buffer
             if (!endOfStream && offset >= length)
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            // Try to find a complete line
             var span = buffer.AsSpan(offset, length - offset);
-            var lineEnd = FindLineEnd(span);
-
-            if (lineEnd == -1)
+            if (span.IsEmpty && endOfStream)
             {
-                if (endOfStream)
-                {
-                    // Process remaining data as last line
-                    if (span.Length > 0)
-                    {
-                        var result = ProcessLine(span);
-                        offset = length;
-                        if (result is not null)
-                        {
-                            Current = result;
-                            return true;
-                        }
-                    }
-                    ReportFinalProgress();
-                    return false;
-                }
+                ReportFinalProgress();
+                return false;
+            }
 
-                // Need more data
+            int rowStartOffset = offset;
+            int rowStartLine = trackLineNumbers ? sourceLineNumber : 0;
+
+            CsvRowParseResult result;
+            try
+            {
+                result = trackLineNumbers
+                    ? CsvRowParser.ParseRow<char, TrackLineNumbers>(span, parserOptions, columnEndsBuffer.Span)
+                    : CsvRowParser.ParseRow<char, NoTrackLineNumbers>(span, parserOptions, columnEndsBuffer.Span);
+            }
+            catch (CsvException ex) when (!endOfStream && ex.QuoteStartPosition.HasValue)
+            {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            // Handle quoted fields that may contain newlines
-            if (parserOptions.AllowNewlinesInsideQuotes)
+            if (result.CharsConsumed == 0)
             {
-                var quoteResult = HandleQuotedNewlines(span, lineEnd);
-                if (quoteResult == -1)
-                {
-                    // Need more data
-                    if (endOfStream)
-                    {
-                        throw new CsvException(
-                            CsvErrorCode.ParseError,
-                            "Unterminated quoted field at end of file.",
-                            rowNumber + 1, 0);
-                    }
-                    await FillBufferAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-                lineEnd = quoteResult;
+                ReportFinalProgress();
+                return false;
             }
 
-            // Calculate consumed bytes (including line ending)
-            var line = span[..lineEnd];
-            int consumed = lineEnd + 1;
-            if (lineEnd < span.Length - 1 && span[lineEnd] == '\r' && span[lineEnd + 1] == '\n')
+            if (result.RowLength == span.Length && !endOfStream)
             {
-                consumed++;
+                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                continue;
             }
 
-            offset += consumed;
+            offset = rowStartOffset + result.CharsConsumed;
+            if (trackLineNumbers)
+                sourceLineNumber += result.NewlineCount;
 
-            var processResult = ProcessLine(line);
-            if (processResult is not null)
+            if (result.RowLength == 0)
+                continue;
+
+            rowNumber++;
+
+            if (skippedCount < skipRows)
             {
-                Current = processResult;
-                return true;
-            }
-            // Continue to next line (this row was skipped or was header)
-        }
-    }
-
-    private object? ProcessLine(ReadOnlySpan<char> line)
-    {
-        rowNumber++;
-
-        // Skip initial rows if requested
-        if (skippedCount < skipRows)
-        {
-            skippedCount++;
-            return null;
-        }
-
-        // Skip empty lines if comment character is set (common pattern)
-        if (line.IsEmpty && parserOptions.CommentCharacter.HasValue)
-        {
-            return null;
-        }
-
-        // Skip comment lines
-        if (parserOptions.CommentCharacter.HasValue && line.Length > 0 && line[0] == parserOptions.CommentCharacter.Value)
-        {
-            return null;
-        }
-
-        // Parse the line into a row
-        var row = ParseRow(line);
-
-        // Handle header resolution
-        if (binder.NeedsHeaderResolution)
-        {
-            binder.BindHeader(row, rowNumber);
-            return null;
-        }
-
-        // Check row limit
-        if (dataRowCount >= parserOptions.MaxRowCount)
-        {
-            throw new CsvException(
-                CsvErrorCode.TooManyRows,
-                $"Maximum row count of {parserOptions.MaxRowCount} exceeded.",
-                rowNumber, 0);
-        }
-
-        // Bind the row
-        var result = binder.Bind(row, rowNumber);
-        if (result is null)
-        {
-            return null;
-        }
-
-        dataRowCount++;
-        ReportProgress();
-        return result;
-    }
-
-    private CsvRow<char> ParseRow(ReadOnlySpan<char> line)
-    {
-        // Use a simple inline parser for streaming
-        // This is a simplified version - for production, should use the full parser
-        var columnEnds = ArrayPool<int>.Shared.Rent(parserOptions.MaxColumnCount + 1);
-        try
-        {
-            int columnCount = 0;
-            columnEnds[0] = -1;
-
-            bool inQuotes = false;
-            char delimiter = parserOptions.Delimiter;
-            char quote = parserOptions.Quote;
-            bool enableQuotes = parserOptions.EnableQuotedFields;
-
-            for (int i = 0; i < line.Length; i++)
-            {
-                char c = line[i];
-
-                if (enableQuotes && c == quote)
-                {
-                    inQuotes = !inQuotes;
-                }
-                else if (!inQuotes && c == delimiter)
-                {
-                    columnCount++;
-                    if (columnCount >= parserOptions.MaxColumnCount)
-                    {
-                        throw new CsvException(
-                            CsvErrorCode.TooManyColumns,
-                            $"Row has more than {parserOptions.MaxColumnCount} columns.",
-                            rowNumber, columnCount);
-                    }
-                    columnEnds[columnCount] = i;
-                }
+                skippedCount++;
+                continue;
             }
 
-            // Final column
-            columnCount++;
-            columnEnds[columnCount] = line.Length;
-
-            return new CsvRow<char>(
-                line,
-                columnEnds.AsSpan(0, columnCount + 1),
-                columnCount,
+            var row = new CsvRow<char>(
+                buffer.AsSpan(rowStartOffset, result.RowLength),
+                columnEndsBuffer.Buffer,
+                result.ColumnCount,
                 rowNumber,
-                rowNumber,
+                trackLineNumbers ? rowStartLine : rowNumber,
                 parserOptions.TrimFields);
-        }
-        finally
-        {
-            ArrayPool<int>.Shared.Return(columnEnds);
-        }
-    }
 
-    private int HandleQuotedNewlines(ReadOnlySpan<char> span, int initialLineEnd)
-    {
-        // Count quotes before the line end
-        int quoteCount = 0;
-        char quote = parserOptions.Quote;
-
-        for (int i = 0; i < initialLineEnd; i++)
-        {
-            if (span[i] == quote)
+            if (binder.NeedsHeaderResolution)
             {
-                quoteCount++;
-            }
-        }
-
-        // If odd number of quotes, we're inside a quoted field
-        if (quoteCount % 2 == 1)
-        {
-            // Find the actual end of the line (after the closing quote)
-            int searchStart = initialLineEnd + 1;
-            while (searchStart < span.Length)
-            {
-                int nextLineEnd = FindLineEnd(span[searchStart..]);
-                if (nextLineEnd == -1)
-                {
-                    return -1; // Need more data
-                }
-
-                nextLineEnd += searchStart;
-
-                // Count quotes in this segment
-                for (int i = searchStart; i < nextLineEnd; i++)
-                {
-                    if (span[i] == quote)
-                    {
-                        quoteCount++;
-                    }
-                }
-
-                if (quoteCount % 2 == 0)
-                {
-                    return nextLineEnd;
-                }
-
-                searchStart = nextLineEnd + 1;
+                binder.BindHeader(row, rowNumber);
+                continue;
             }
 
-            return -1; // Need more data
+            if (dataRowCount >= parserOptions.MaxRowCount)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"Maximum row count of {parserOptions.MaxRowCount} exceeded.",
+                    rowNumber, 0);
+            }
+
+            var bound = binder.Bind(row, rowNumber);
+            if (bound is null)
+            {
+                continue;
+            }
+
+            dataRowCount++;
+            ReportProgress();
+            Current = bound;
+            return true;
         }
-
-        return initialLineEnd;
-    }
-
-    private static int FindLineEnd(ReadOnlySpan<char> span)
-    {
-        return span.IndexOfAny('\r', '\n');
     }
 
     private async ValueTask FillBufferAsync(CancellationToken cancellationToken)
@@ -343,15 +202,15 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         // Grow buffer if full
         if (length == buffer.Length)
         {
-            if (buffer.Length >= ABSOLUTE_MAX_BUFFER_SIZE)
+            if (buffer.Length >= maxRowSize)
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
-                    $"Row exceeds maximum size of {ABSOLUTE_MAX_BUFFER_SIZE:N0} characters. " +
+                    $"Row exceeds maximum size of {maxRowSize:N0} characters. " +
                     "Ensure rows have proper line endings.");
             }
 
-            var newBuffer = RentBuffer(buffer.Length * 2);
+            var newBuffer = RentBuffer(Math.Min(buffer.Length * 2, maxRowSize));
             buffer.AsSpan(0, length).CopyTo(newBuffer);
             ReturnBuffer(buffer);
             buffer = newBuffer;
@@ -397,7 +256,10 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
     private char[] RentBuffer(int minimumLength)
     {
-        var rented = charPool.Rent(minimumLength);
+        int bufferSize = minimumLength;
+        if (bufferSize > maxRowSize)
+            bufferSize = maxRowSize;
+        var rented = charPool.Rent(bufferSize);
         Array.Clear(rented);
         return rented;
     }
@@ -416,6 +278,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             return ValueTask.CompletedTask;
 
         disposed = true;
+        columnEndsBuffer.Return();
         ReturnBuffer(buffer);
         buffer = null!;
         reader.Dispose();

@@ -2,6 +2,7 @@ using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Records;
 using HeroParser.SeparatedValues.Reading.Rows;
+using HeroParser.SeparatedValues.Reading.Streaming;
 
 namespace HeroParser;
 
@@ -212,5 +213,53 @@ public static partial class Csv
         }
 
         return ReadFromByteSpan(streamBytes, options);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a CSV file without loading the entire payload into memory.
+    /// </summary>
+    /// <param name="path">Filesystem path to the CSV file.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="CsvParserOptions.Default"/>.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in bytes.</param>
+    /// <returns>A <see cref="CsvAsyncStreamReader"/> for asynchronous streaming.</returns>
+    public static CsvAsyncStreamReader CreateAsyncStreamReader(
+        string path,
+        CsvParserOptions? options = null,
+        int bufferSize = 16 * 1024)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        options ??= CsvParserOptions.Default;
+        options.Validate();
+
+        var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+        return new CsvAsyncStreamReader(stream, options, leaveOpen: false, initialBufferSize: bufferSize);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a <see cref="Stream"/> without loading the entire payload into memory.
+    /// </summary>
+    /// <param name="stream">Readable stream containing UTF-8 CSV data.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="CsvParserOptions.Default"/>.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, the provided <paramref name="stream"/> remains open after parsing.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in bytes.</param>
+    /// <returns>A <see cref="CsvAsyncStreamReader"/> for asynchronous streaming.</returns>
+    public static CsvAsyncStreamReader CreateAsyncStreamReader(
+        Stream stream,
+        CsvParserOptions? options = null,
+        bool leaveOpen = true,
+        int bufferSize = 16 * 1024)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        options ??= CsvParserOptions.Default;
+        options.Validate();
+
+        return new CsvAsyncStreamReader(stream, options, leaveOpen, bufferSize);
     }
 }

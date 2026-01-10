@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
+using System;
 using System.IO;
 using System.Text;
 using Xunit;
@@ -130,6 +131,18 @@ public class CsvAsyncStreamReaderTests
         var ex = await Assert.ThrowsAsync<CsvException>(async () =>
             await reader.MoveNextAsync(cancellationToken));
         Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task AsyncStreamReader_CurrentAfterDispose_ThrowsObjectDisposedException()
+    {
+        var csv = "a,b\n";
+        var reader = CreateReader(csv, bufferSize: 4);
+
+        await reader.DisposeAsync();
+
+        Assert.Throws<ObjectDisposedException>(() => _ = reader.Current);
     }
 
     private static SeparatedValues.Reading.Streaming.CsvAsyncStreamReader CreateReader(

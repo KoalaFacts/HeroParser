@@ -41,13 +41,20 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private int currentSourceLineNumber;
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
-    public CsvRow<byte> Current => new(
-        buffer.AsSpan(currentRowStart, currentRowLength),
-        columnEndsBuffer.Buffer,
-        currentColumnCount,
-        currentRowNumber,
-        currentSourceLineNumber,
-        options.TrimFields);
+    public CsvRow<byte> Current
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return new CsvRow<byte>(
+                buffer.AsSpan(currentRowStart, currentRowLength),
+                columnEndsBuffer.Buffer,
+                currentColumnCount,
+                currentRowNumber,
+                currentSourceLineNumber,
+                options.TrimFields);
+        }
+    }
 
     /// <summary>Gets the approximate number of bytes read from the underlying stream.</summary>
     public long BytesRead { get; private set; }

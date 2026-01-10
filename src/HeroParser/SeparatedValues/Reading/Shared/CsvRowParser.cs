@@ -514,18 +514,20 @@ internal static class CsvRowParser
             var delimMatch = Avx2.CompareEqual(chunk, delimiterVec);
             var lfMatch = Avx2.CompareEqual(chunk, lfVec);
             var crMatch = Avx2.CompareEqual(chunk, crVec);
+            var lineEndingMatch = Avx2.Or(lfMatch, crMatch);
 
             Vector256<byte> specials;
+            Vector256<byte> quoteMatch = default;
             // JIT eliminates the else branch when TQuotePolicy is QuotesEnabled
             // JIT eliminates the if branch when TQuotePolicy is QuotesDisabled
             if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
             {
-                var quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
-                specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), Avx2.Or(lfMatch, crMatch));
+                quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
+                specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), lineEndingMatch);
             }
             else
             {
-                specials = Avx2.Or(delimMatch, Avx2.Or(lfMatch, crMatch));
+                specials = Avx2.Or(delimMatch, lineEndingMatch);
             }
 
             uint mask = (uint)Avx2.MoveMask(specials);
@@ -534,7 +536,7 @@ internal static class CsvRowParser
             if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
             {
                 uint delimMask = (uint)Avx2.MoveMask(delimMatch);
-                uint lineEndingMask = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch));
+                uint lineEndingMask = (uint)Avx2.MoveMask(lineEndingMatch);
 
                 // FAST PATH 1: Only separators, no line endings
                 if (delimMask == mask)
@@ -618,10 +620,9 @@ internal static class CsvRowParser
             // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
             if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported)
             {
-                var quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
                 uint quoteMask = (uint)Avx2.MoveMask(quoteMatch);
                 uint delimMask = (uint)Avx2.MoveMask(delimMatch);
-                uint lineEndingMask = (uint)Avx2.MoveMask(Avx2.Or(lfMatch, crMatch));
+                uint lineEndingMask = (uint)Avx2.MoveMask(lineEndingMatch);
 
                 // CLMUL FAST PATH: No doubled quotes in this chunk
                 // Doubled quotes (escaped) require sequential processing, but are rare
@@ -845,6 +846,349 @@ internal static class CsvRowParser
     }
 
     /// <summary>
+    /// SIMD-accelerated UTF-16 CSV row parser using AVX-512 instructions.
+    /// </summary>
+    /// <remarks>
+    /// Processes 32 chars per iteration using AVX-512 vector operations. Mirrors the AVX2 SIMD
+    /// state machine but operates on 512-bit vectors.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TrySimdParseUtf16Avx512<TTrack, TQuotePolicy>(
+        ref char mutableRef,
+        int dataLength,
+        char delimiter,
+        char quote,
+        char lf,
+        char cr,
+        ref int position,
+        ref bool inQuotes,
+        ref bool skipNextQuote,
+        ref int columnCount,
+        ref int currentStart,
+        ref int rowLength,
+        ref int charsConsumed,
+        ref int newlineCount,
+        ref bool pendingCrInQuotes,
+        ref bool rowEnded,
+        ref int quoteStartPosition,
+        Span<int> columnEnds,
+        int maxColumns,
+        bool allowNewlinesInsideQuotes,
+        int? maxFieldLength)
+        where TTrack : struct
+        where TQuotePolicy : struct
+    {
+        if (!Avx512BW.IsSupported)
+            return false;
+
+        var delimiterVec = Vector512.Create((ushort)delimiter);
+        var quoteVec = Vector512.Create((ushort)quote);
+        var lfVec = Vector512.Create((ushort)lf);
+        var crVec = Vector512.Create((ushort)cr);
+
+        while (position + Vector512<ushort>.Count <= dataLength)
+        {
+            var chunk = Vector512.LoadUnsafe(ref Unsafe.As<char, ushort>(ref Unsafe.Add(ref mutableRef, position)));
+            var delimMatch = Avx512BW.CompareEqual(chunk, delimiterVec);
+            var lfMatch = Avx512BW.CompareEqual(chunk, lfVec);
+            var crMatch = Avx512BW.CompareEqual(chunk, crVec);
+            var lineEndingMatch = Avx512F.Or(lfMatch, crMatch);
+
+            Vector512<ushort> specials;
+            Vector512<ushort> quoteMatch = default;
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
+            {
+                quoteMatch = Avx512BW.CompareEqual(chunk, quoteVec);
+                specials = Avx512F.Or(Avx512F.Or(delimMatch, quoteMatch), lineEndingMatch);
+            }
+            else
+            {
+                specials = Avx512F.Or(delimMatch, lineEndingMatch);
+            }
+
+            uint mask = (uint)specials.ExtractMostSignificantBits();
+
+            if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
+            {
+                uint delimMask = (uint)delimMatch.ExtractMostSignificantBits();
+                uint lineEndingMask = (uint)lineEndingMatch.ExtractMostSignificantBits();
+
+                if (delimMask == mask)
+                {
+                    int startColumnCount = columnCount;
+
+                    while (delimMask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(delimMask);
+                        delimMask &= delimMask - 1;
+                        int absolute = position + bit;
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                    }
+
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        for (int i = startColumnCount; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
+                    }
+
+                    position += Vector512<ushort>.Count;
+                    continue;
+                }
+
+                if ((delimMask | lineEndingMask) == mask)
+                {
+                    int lineEndBit = lineEndingMask != 0
+                        ? BitOperations.TrailingZeroCount(lineEndingMask)
+                        : Vector512<ushort>.Count;
+
+                    uint delimsToProcess = delimMask;
+                    while (delimsToProcess != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                        if (bit >= lineEndBit) break;
+                        delimsToProcess &= delimsToProcess - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+
+                    if (lineEndingMask != 0)
+                    {
+                        int absolute = position + lineEndBit;
+                        rowLength = absolute;
+                        charsConsumed = absolute + 1;
+                        char c = Unsafe.Add(ref mutableRef, absolute);
+                        if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                        {
+                            charsConsumed++;
+                            if (typeof(TTrack) == typeof(TrackLineNumbers))
+                                newlineCount++;
+                        }
+                        else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                        {
+                            newlineCount++;
+                        }
+                        rowEnded = true;
+                        return true;
+                    }
+
+                    position += Vector512<ushort>.Count;
+                    continue;
+                }
+            }
+
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported)
+            {
+                uint quoteMask = (uint)quoteMatch.ExtractMostSignificantBits();
+                uint delimMask = (uint)delimMatch.ExtractMostSignificantBits();
+                uint lineEndingMask = (uint)lineEndingMatch.ExtractMostSignificantBits();
+
+                bool hasDoubledQuotes = (quoteMask & (quoteMask >> 1)) != 0;
+                if (!hasDoubledQuotes && quoteMask != 0 && (quoteMask & 0x80000000u) != 0)
+                {
+                    int nextPos = position + Vector512<ushort>.Count;
+                    if (nextPos < dataLength && Unsafe.Add(ref mutableRef, nextPos) == quote)
+                    {
+                        hasDoubledQuotes = true;
+                    }
+                }
+
+                if (!hasDoubledQuotes && !skipNextQuote)
+                {
+                    uint inQuotesMask = quoteMask != 0
+                        ? ComputeInQuotesMaskClmul(quoteMask, inQuotes)
+                        : (inQuotes ? 0xFFFFFFFFu : 0u);
+
+                    uint filteredDelimMask = delimMask & ~inQuotesMask;
+                    uint filteredLineEndMask = lineEndingMask & ~inQuotesMask;
+
+                    if (!allowNewlinesInsideQuotes && (lineEndingMask & inQuotesMask) != 0)
+                    {
+                        throw new CsvException(
+                            CsvErrorCode.ParseError,
+                            "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                    }
+
+                    if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        uint lfMask = (uint)lfMatch.ExtractMostSignificantBits();
+                        uint crMask = (uint)crMatch.ExtractMostSignificantBits();
+                        uint lfInsideQuotes = lfMask & inQuotesMask;
+                        uint crInsideQuotes = crMask & inQuotesMask;
+                        newlineCount += CountLineEndingsInQuotes(
+                            lfInsideQuotes,
+                            crInsideQuotes,
+                            ref pendingCrInQuotes,
+                            1u << (Vector512<ushort>.Count - 1));
+                    }
+
+                    if (filteredLineEndMask == 0)
+                    {
+                        if (quoteMask != 0 && !inQuotes)
+                        {
+                            int firstQuoteBit = BitOperations.TrailingZeroCount(quoteMask);
+                            quoteStartPosition = position + firstQuoteBit;
+                        }
+
+                        if ((BitOperations.PopCount(quoteMask) & 1) != 0)
+                            inQuotes = !inQuotes;
+
+                        while (filteredDelimMask != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
+                            filteredDelimMask &= filteredDelimMask - 1;
+                            int absolute = position + bit;
+                            AppendColumn(absolute, ref columnCount, ref currentStart,
+                                columnEnds, maxColumns, maxFieldLength);
+                        }
+                        position += Vector512<ushort>.Count;
+                        continue;
+                    }
+
+                    int lineEndBit = BitOperations.TrailingZeroCount(filteredLineEndMask);
+                    uint quotesInThisRow = quoteMask & ((1u << lineEndBit) - 1);
+
+                    if (quotesInThisRow != 0 && !inQuotes)
+                    {
+                        int firstQuoteBit = BitOperations.TrailingZeroCount(quotesInThisRow);
+                        quoteStartPosition = position + firstQuoteBit;
+                    }
+
+                    if ((BitOperations.PopCount(quotesInThisRow) & 1) != 0)
+                        inQuotes = !inQuotes;
+
+                    while (filteredDelimMask != 0)
+                    {
+                        int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
+                        if (bit >= lineEndBit) break;
+                        filteredDelimMask &= filteredDelimMask - 1;
+                        int absolute = position + bit;
+                        AppendColumn(absolute, ref columnCount, ref currentStart,
+                            columnEnds, maxColumns, maxFieldLength);
+                    }
+
+                    int lineEndAbsolute = position + lineEndBit;
+                    rowLength = lineEndAbsolute;
+                    charsConsumed = lineEndAbsolute + 1;
+                    char lineEndChar = Unsafe.Add(ref mutableRef, lineEndAbsolute);
+                    if (lineEndChar == cr && lineEndAbsolute + 1 < dataLength && Unsafe.Add(ref mutableRef, lineEndAbsolute + 1) == lf)
+                    {
+                        charsConsumed++;
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++;
+                    }
+                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        newlineCount++;
+                    }
+                    rowEnded = true;
+                    return true;
+                }
+            }
+
+            while (mask != 0)
+            {
+                int bit = BitOperations.TrailingZeroCount(mask);
+                mask &= mask - 1;
+
+                int absolute = position + bit;
+                char c = Unsafe.Add(ref mutableRef, absolute);
+
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c == quote)
+                {
+                    if (skipNextQuote)
+                    {
+                        skipNextQuote = false;
+                        continue;
+                    }
+
+                    if (inQuotes && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == quote)
+                    {
+                        skipNextQuote = true;
+                        continue;
+                    }
+
+                    if (!inQuotes)
+                    {
+                        quoteStartPosition = absolute;
+                    }
+                    inQuotes = !inQuotes;
+                    if (typeof(TTrack) == typeof(TrackLineNumbers))
+                        pendingCrInQuotes = false;
+                    continue;
+                }
+
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
+                {
+                    throw new CsvException(
+                        CsvErrorCode.ParseError,
+                        "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                }
+
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
+                {
+                    if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        if (pendingCrInQuotes)
+                        {
+                            pendingCrInQuotes = false;
+                            if (c == lf)
+                                continue;
+                        }
+
+                        if (c == cr)
+                        {
+                            newlineCount++;
+                            pendingCrInQuotes = true;
+                        }
+                        else if (c == lf)
+                        {
+                            newlineCount++;
+                        }
+                    }
+                    continue;
+                }
+
+                if (c == delimiter)
+                {
+                    AppendColumn(absolute, ref columnCount, ref currentStart,
+                        columnEnds, maxColumns, maxFieldLength);
+                    continue;
+                }
+
+                if (c == lf || c == cr)
+                {
+                    rowLength = absolute;
+                    charsConsumed = absolute + 1;
+                    if (c == cr && absolute + 1 < dataLength && Unsafe.Add(ref mutableRef, absolute + 1) == lf)
+                    {
+                        charsConsumed++;
+                        if (typeof(TTrack) == typeof(TrackLineNumbers))
+                            newlineCount++;
+                    }
+                    else if (typeof(TTrack) == typeof(TrackLineNumbers))
+                    {
+                        newlineCount++;
+                    }
+                    rowEnded = true;
+                    return true;
+                }
+            }
+
+            position += Vector512<ushort>.Count;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// SIMD-accelerated UTF-16 CSV row parser using AVX2 instructions.
     /// </summary>
     /// <remarks>
@@ -877,6 +1221,32 @@ internal static class CsvRowParser
         where TTrack : struct
         where TQuotePolicy : struct
     {
+        if (Avx512BW.IsSupported)
+        {
+            return TrySimdParseUtf16Avx512<TTrack, TQuotePolicy>(
+                ref mutableRef,
+                dataLength,
+                delimiter,
+                quote,
+                lf,
+                cr,
+                ref position,
+                ref inQuotes,
+                ref skipNextQuote,
+                ref columnCount,
+                ref currentStart,
+                ref rowLength,
+                ref charsConsumed,
+                ref newlineCount,
+                ref pendingCrInQuotes,
+                ref rowEnded,
+                ref quoteStartPosition,
+                columnEnds,
+                maxColumns,
+                allowNewlinesInsideQuotes,
+                maxFieldLength);
+        }
+
         if (!Avx2.IsSupported)
             return false;
 
@@ -891,16 +1261,18 @@ internal static class CsvRowParser
             var delimMatch = Avx2.CompareEqual(chunk, delimiterVec);
             var lfMatch = Avx2.CompareEqual(chunk, lfVec);
             var crMatch = Avx2.CompareEqual(chunk, crVec);
+            var lineEndingMatch = Avx2.Or(lfMatch, crMatch);
 
             Vector256<ushort> specials;
+            Vector256<ushort> quoteMatch = default;
             if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
             {
-                var quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
-                specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), Avx2.Or(lfMatch, crMatch));
+                quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
+                specials = Avx2.Or(Avx2.Or(delimMatch, quoteMatch), lineEndingMatch);
             }
             else
             {
-                specials = Avx2.Or(delimMatch, Avx2.Or(lfMatch, crMatch));
+                specials = Avx2.Or(delimMatch, lineEndingMatch);
             }
 
             uint mask = specials.ExtractMostSignificantBits();
@@ -909,7 +1281,7 @@ internal static class CsvRowParser
             if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
             {
                 uint delimMask = delimMatch.ExtractMostSignificantBits();
-                uint lineEndingMask = Avx2.Or(lfMatch, crMatch).ExtractMostSignificantBits();
+                uint lineEndingMask = lineEndingMatch.ExtractMostSignificantBits();
 
                 // FAST PATH 1: Only separators, no line endings
                 if (delimMask == mask)
@@ -987,10 +1359,9 @@ internal static class CsvRowParser
             // CLMUL fast path for quoted fields (when PCLMULQDQ is available)
             if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported)
             {
-                var quoteMatch = Avx2.CompareEqual(chunk, quoteVec);
                 uint quoteMask = quoteMatch.ExtractMostSignificantBits();
                 uint delimMask = delimMatch.ExtractMostSignificantBits();
-                uint lineEndingMask = Avx2.Or(lfMatch, crMatch).ExtractMostSignificantBits();
+                uint lineEndingMask = lineEndingMatch.ExtractMostSignificantBits();
 
                 bool hasDoubledQuotes = (quoteMask & (quoteMask >> 1)) != 0;
                 if (!hasDoubledQuotes && quoteMask != 0 && (quoteMask & 0x8000u) != 0)

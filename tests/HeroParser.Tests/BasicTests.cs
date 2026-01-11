@@ -1,6 +1,7 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using System.Globalization;
+using System.Runtime.Intrinsics.X86;
 using System.Text;
 using Xunit;
 
@@ -402,6 +403,37 @@ public class BasicTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void TooManyColumns_ThrowsException_WithSimd()
+    {
+        if (!Avx2.IsSupported)
+            return;
+
+        var csv = BuildRow(40);
+        var options = new CsvReadOptions
+        {
+            MaxColumnCount = 3,
+            EnableQuotedFields = false,
+            UseSimdIfAvailable = true
+        };
+
+        CsvException? ex = null;
+        try
+        {
+            var reader = Csv.ReadFromText(csv, options);
+            reader.MoveNext();
+            _ = reader.Current.ColumnCount;
+        }
+        catch (CsvException e)
+        {
+            ex = e;
+        }
+
+        Assert.NotNull(ex);
+        Assert.Equal(CsvErrorCode.TooManyColumns, ex.ErrorCode);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void TooManyRows_ThrowsException()
     {
         var csv = "a\nb\nc\nd";
@@ -486,6 +518,18 @@ public class BasicTests
         Assert.NotNull(ex2);
         Assert.Contains("out of range", ex2.Message);
         Assert.Contains("Column count is 3", ex2.Message);
+    }
+
+    private static string BuildRow(int columnCount)
+    {
+        var builder = new StringBuilder(columnCount * 2);
+        for (int i = 0; i < columnCount; i++)
+        {
+            if (i > 0)
+                builder.Append(',');
+            builder.Append('a');
+        }
+        return builder.ToString();
     }
 }
 

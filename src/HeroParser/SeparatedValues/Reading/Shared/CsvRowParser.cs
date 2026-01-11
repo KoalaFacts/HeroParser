@@ -582,7 +582,7 @@ internal static class CsvRowParser
                 // FAST PATH 1: Only separators, no line endings
                 if (delimMask == mask)
                 {
-                    int startColumnCount = columnCount;
+                    int startColCountFast = columnCount;
 
                     while (delimMask != 0)
                     {
@@ -600,7 +600,7 @@ internal static class CsvRowParser
                     {
                         // Check all fields added in this chunk
                         // Ends-only format: fieldLength = end - previousEnd - 1
-                        for (int i = startColumnCount; i < columnCount; i++)
+                        for (int i = startColCountFast; i < columnCount; i++)
                         {
                             int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
                             if (fieldLength > maxFieldLength.Value)
@@ -618,6 +618,8 @@ internal static class CsvRowParser
                     // Find first line ending position - only process delimiters before it
                     int lineEndBit = lineEndingMask != 0 ? BitOperations.TrailingZeroCount(lineEndingMask) : Vector256<byte>.Count;
 
+                    int startColCountFast = columnCount;
+
                     // Process delimiters that come BEFORE the first line ending
                     uint delimsToProcess = delimMask;
                     while (delimsToProcess != 0)
@@ -626,8 +628,22 @@ internal static class CsvRowParser
                         if (bit >= lineEndBit) break; // Stop at line ending
                         delimsToProcess &= delimsToProcess - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                    }
+
+                    // Validate once per chunk/segment instead of per delimiter
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        // Check all fields added in this segment
+                        for (int i = startColCountFast; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
                     }
 
                     // Check if there's a line ending in this chunk
@@ -783,6 +799,7 @@ internal static class CsvRowParser
             }
 
             // Slow path: handle quotes, line endings, and other special cases
+            int startColCountSlow = columnCount;
             while (mask != 0)
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
@@ -833,13 +850,26 @@ internal static class CsvRowParser
 
                 if (c == delimiter)
                 {
-                    AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnEnds, maxColumns, maxFieldLength);
+                    AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     continue;
                 }
 
                 if (c == lf || c == cr)
                 {
+                    // Validate columns before returning
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        for (int i = startColCountSlow; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
+                    }
+
                     CompleteRowAtLineEnding<byte, TTrack>(
                         ref mutableRef,
                         dataLength,
@@ -852,6 +882,20 @@ internal static class CsvRowParser
                         ref newlineCount,
                         ref rowEnded);
                     return true;
+                }
+            }
+
+            // Validate columns after loop
+            if (columnCount > maxColumns)
+                ThrowTooManyColumns(maxColumns);
+
+            if (maxFieldLength.HasValue)
+            {
+                for (int i = startColCountSlow; i < columnCount; i++)
+                {
+                    int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                    if (fieldLength > maxFieldLength.Value)
+                        ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
                 }
             }
 
@@ -931,7 +975,7 @@ internal static class CsvRowParser
 
                 if (delimMask == mask)
                 {
-                    int startColumnCount = columnCount;
+                    int startColCountFast = columnCount;
 
                     while (delimMask != 0)
                     {
@@ -946,7 +990,7 @@ internal static class CsvRowParser
 
                     if (maxFieldLength.HasValue)
                     {
-                        for (int i = startColumnCount; i < columnCount; i++)
+                        for (int i = startColCountFast; i < columnCount; i++)
                         {
                             int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
                             if (fieldLength > maxFieldLength.Value)
@@ -964,6 +1008,8 @@ internal static class CsvRowParser
                         ? BitOperations.TrailingZeroCount(lineEndingMask)
                         : Vector512<ushort>.Count;
 
+                    int startColCountFast = columnCount;
+
                     uint delimsToProcess = delimMask;
                     while (delimsToProcess != 0)
                     {
@@ -971,8 +1017,20 @@ internal static class CsvRowParser
                         if (bit >= lineEndBit) break;
                         delimsToProcess &= delimsToProcess - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                    }
+
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        for (int i = startColCountFast; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
                     }
 
                     if (lineEndingMask != 0)
@@ -1054,14 +1112,29 @@ internal static class CsvRowParser
                         if ((BitOperations.PopCount(quoteMask) & 1) != 0)
                             inQuotes = !inQuotes;
 
+                        int startColumnCount = columnCount;
+
                         while (filteredDelimMask != 0)
                         {
                             int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
                             filteredDelimMask &= filteredDelimMask - 1;
                             int absolute = position + bit;
-                            AppendColumn(absolute, ref columnCount, ref currentStart,
-                                columnEnds, maxColumns, maxFieldLength);
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                         }
+
+                        if (columnCount > maxColumns)
+                            ThrowTooManyColumns(maxColumns);
+
+                        if (maxFieldLength.HasValue)
+                        {
+                            for (int i = startColumnCount; i < columnCount; i++)
+                            {
+                                int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                                if (fieldLength > maxFieldLength.Value)
+                                    ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                            }
+                        }
+
                         position += Vector512<ushort>.Count;
                         continue;
                     }
@@ -1078,14 +1151,28 @@ internal static class CsvRowParser
                     if ((BitOperations.PopCount(quotesInThisRow) & 1) != 0)
                         inQuotes = !inQuotes;
 
+                    int startColCountClmul = columnCount;
+
                     while (filteredDelimMask != 0)
                     {
                         int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
                         if (bit >= lineEndBit) break;
                         filteredDelimMask &= filteredDelimMask - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                    }
+
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        for (int i = startColCountClmul; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
                     }
 
                     int lineEndAbsolute = position + lineEndBit;
@@ -1105,6 +1192,7 @@ internal static class CsvRowParser
                 }
             }
 
+            int startColCountSlow = columnCount;
             while (mask != 0)
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
@@ -1152,13 +1240,25 @@ internal static class CsvRowParser
 
                 if (c == delimiter)
                 {
-                    AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnEnds, maxColumns, maxFieldLength);
+                    AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     continue;
                 }
 
                 if (c == lf || c == cr)
                 {
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        for (int i = startColCountSlow; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
+                    }
+
                     CompleteRowAtLineEnding<char, TTrack>(
                         ref mutableRef,
                         dataLength,
@@ -1171,6 +1271,19 @@ internal static class CsvRowParser
                         ref newlineCount,
                         ref rowEnded);
                     return true;
+                }
+            }
+
+            if (columnCount > maxColumns)
+                ThrowTooManyColumns(maxColumns);
+
+            if (maxFieldLength.HasValue)
+            {
+                for (int i = startColCountSlow; i < columnCount; i++)
+                {
+                    int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                    if (fieldLength > maxFieldLength.Value)
+                        ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
                 }
             }
 
@@ -1278,7 +1391,7 @@ internal static class CsvRowParser
                 // FAST PATH 1: Only separators, no line endings
                 if (delimMask == mask)
                 {
-                    int startColumnCount = columnCount;
+                    int startColCountFast = columnCount;
 
                     while (delimMask != 0)
                     {
@@ -1288,12 +1401,13 @@ internal static class CsvRowParser
                         AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     }
 
+                    // Validate once per chunk instead of per delimiter
                     if (columnCount > maxColumns)
                         ThrowTooManyColumns(maxColumns);
 
                     if (maxFieldLength.HasValue)
                     {
-                        for (int i = startColumnCount; i < columnCount; i++)
+                        for (int i = startColCountFast; i < columnCount; i++)
                         {
                             int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
                             if (fieldLength > maxFieldLength.Value)
@@ -1312,6 +1426,8 @@ internal static class CsvRowParser
                         ? BitOperations.TrailingZeroCount(lineEndingMask)
                         : Vector256<ushort>.Count;
 
+                    int startColCountFast = columnCount;
+
                     uint delimsToProcess = delimMask;
                     while (delimsToProcess != 0)
                     {
@@ -1319,8 +1435,20 @@ internal static class CsvRowParser
                         if (bit >= lineEndBit) break;
                         delimsToProcess &= delimsToProcess - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                    }
+
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        for (int i = startColCountFast; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
                     }
 
                     if (lineEndingMask != 0)
@@ -1403,14 +1531,29 @@ internal static class CsvRowParser
                         if ((BitOperations.PopCount(quoteMask) & 1) != 0)
                             inQuotes = !inQuotes;
 
+                        int startColumnCount = columnCount;
+
                         while (filteredDelimMask != 0)
                         {
                             int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
                             filteredDelimMask &= filteredDelimMask - 1;
                             int absolute = position + bit;
-                            AppendColumn(absolute, ref columnCount, ref currentStart,
-                                columnEnds, maxColumns, maxFieldLength);
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                         }
+
+                        if (columnCount > maxColumns)
+                            ThrowTooManyColumns(maxColumns);
+
+                        if (maxFieldLength.HasValue)
+                        {
+                            for (int i = startColumnCount; i < columnCount; i++)
+                            {
+                                int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                                if (fieldLength > maxFieldLength.Value)
+                                    ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                            }
+                        }
+
                         position += Vector256<ushort>.Count;
                         continue;
                     }
@@ -1427,14 +1570,28 @@ internal static class CsvRowParser
                     if ((BitOperations.PopCount(quotesInThisRow) & 1) != 0)
                         inQuotes = !inQuotes;
 
+                    int startColCountClmul = columnCount;
+
                     while (filteredDelimMask != 0)
                     {
                         int bit = BitOperations.TrailingZeroCount(filteredDelimMask);
                         if (bit >= lineEndBit) break;
                         filteredDelimMask &= filteredDelimMask - 1;
                         int absolute = position + bit;
-                        AppendColumn(absolute, ref columnCount, ref currentStart,
-                            columnEnds, maxColumns, maxFieldLength);
+                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                    }
+
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        for (int i = startColCountClmul; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
                     }
 
                     int lineEndAbsolute = position + lineEndBit;
@@ -1454,6 +1611,7 @@ internal static class CsvRowParser
                 }
             }
 
+            int startColCountSlow = columnCount;
             while (mask != 0)
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
@@ -1501,13 +1659,25 @@ internal static class CsvRowParser
 
                 if (c == delimiter)
                 {
-                    AppendColumn(absolute, ref columnCount, ref currentStart,
-                        columnEnds, maxColumns, maxFieldLength);
+                    AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     continue;
                 }
 
                 if (c == lf || c == cr)
                 {
+                    if (columnCount > maxColumns)
+                        ThrowTooManyColumns(maxColumns);
+
+                    if (maxFieldLength.HasValue)
+                    {
+                        for (int i = startColCountSlow; i < columnCount; i++)
+                        {
+                            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                            if (fieldLength > maxFieldLength.Value)
+                                ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
+                        }
+                    }
+
                     CompleteRowAtLineEnding<char, TTrack>(
                         ref mutableRef,
                         dataLength,
@@ -1520,6 +1690,19 @@ internal static class CsvRowParser
                         ref newlineCount,
                         ref rowEnded);
                     return true;
+                }
+            }
+
+            if (columnCount > maxColumns)
+                ThrowTooManyColumns(maxColumns);
+
+            if (maxFieldLength.HasValue)
+            {
+                for (int i = startColCountSlow; i < columnCount; i++)
+                {
+                    int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+                    if (fieldLength > maxFieldLength.Value)
+                        ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
                 }
             }
 
@@ -1568,8 +1751,8 @@ internal static class CsvRowParser
     }
 
     /// <summary>
-    /// Appends a column end position without validation (for SIMD fast paths).
-    /// Validation must be performed separately after chunk processing.
+    /// Appends a column end position without field-length validation (for SIMD fast paths).
+    /// Column count is still bounded to avoid buffer overruns.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void AppendColumnUnchecked(
@@ -1578,6 +1761,8 @@ internal static class CsvRowParser
         ref int currentStart,
         Span<int> columnEnds)
     {
+        if (columnCount + 1 >= columnEnds.Length)
+            ThrowTooManyColumns(columnEnds.Length - 1);
         Debug.Assert((uint)(columnCount + 1) < (uint)columnEnds.Length, "Column count exceeds buffer capacity");
         columnEnds[columnCount + 1] = delimiterIndex;
         columnCount++;
@@ -1625,4 +1810,3 @@ internal static class CsvRowParser
             $"Field length {actualLength} exceeds maximum allowed length of {maxFieldLength}");
     }
 }
-

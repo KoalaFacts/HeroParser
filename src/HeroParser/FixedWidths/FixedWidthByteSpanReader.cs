@@ -6,13 +6,13 @@ namespace HeroParser.FixedWidths;
 /// A ref struct reader that iterates over fixed-width records in a UTF-8 byte span.
 /// </summary>
 /// <remarks>
-/// By default, records are delimited by newlines. When <see cref="FixedWidthParserOptions.RecordLength"/>
+/// By default, records are delimited by newlines. When <see cref="FixedWidthReadOptions.RecordLength"/>
 /// is specified, records are read as fixed-length blocks instead.
 /// </remarks>
 public ref struct FixedWidthByteSpanReader
 {
     private readonly ReadOnlySpan<byte> bytes;
-    private readonly FixedWidthParserOptions options;
+    private readonly FixedWidthReadOptions options;
     private int position;
     private int recordCount;
     private int sourceLineNumber;
@@ -29,7 +29,7 @@ public ref struct FixedWidthByteSpanReader
     /// This constructor is internal to ensure proper initialization through factory methods.
     /// Use <see cref="FixedWidth.ReadFromUtf8ByteSpan"/> to create instances.
     /// </remarks>
-    internal FixedWidthByteSpanReader(ReadOnlySpan<byte> bytes, FixedWidthParserOptions options)
+    internal FixedWidthByteSpanReader(ReadOnlySpan<byte> bytes, FixedWidthReadOptions options)
     {
         this.bytes = bytes;
         this.options = options;
@@ -232,3 +232,4 @@ public ref struct FixedWidthByteSpanReader
         // No-op for span-based reader
     }
 }
+

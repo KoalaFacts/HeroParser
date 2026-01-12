@@ -25,7 +25,7 @@ public sealed class FixedWidthWriterBuilder<T>
     private long? maxOutputSize;
 
     // Cached options - invalidated when any setting changes
-    private FixedWidthWriterOptions? cachedOptions;
+    private FixedWidthWriteOptions? cachedOptions;
 
     internal FixedWidthWriterBuilder() { }
 
@@ -492,9 +492,9 @@ public sealed class FixedWidthWriterBuilder<T>
 
     #region Private Helpers
 
-    private FixedWidthWriterOptions GetOptions()
+    private FixedWidthWriteOptions GetOptions()
     {
-        return cachedOptions ??= new FixedWidthWriterOptions
+        return cachedOptions ??= new FixedWidthWriteOptions
         {
             NewLine = newLine,
             DefaultPadChar = defaultPadChar,
@@ -534,7 +534,7 @@ public sealed class FixedWidthWriterBuilder
     private long? maxOutputSize;
 
     // Cached options - invalidated when any setting changes
-    private FixedWidthWriterOptions? cachedOptions;
+    private FixedWidthWriteOptions? cachedOptions;
 
     internal FixedWidthWriterBuilder() { }
 
@@ -745,9 +745,9 @@ public sealed class FixedWidthWriterBuilder
         return new FixedWidthStreamWriter(streamWriter, GetOptions(), leaveOpen: false);
     }
 
-    private FixedWidthWriterOptions GetOptions()
+    private FixedWidthWriteOptions GetOptions()
     {
-        return cachedOptions ??= new FixedWidthWriterOptions
+        return cachedOptions ??= new FixedWidthWriteOptions
         {
             NewLine = newLine,
             DefaultPadChar = defaultPadChar,
@@ -763,3 +763,4 @@ public sealed class FixedWidthWriterBuilder
         };
     }
 }
+

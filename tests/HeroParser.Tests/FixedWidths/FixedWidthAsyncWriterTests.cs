@@ -232,7 +232,7 @@ public class FixedWidthAsyncWriterTests
             new TestRecord { Name = "Test2", Age = 2, City = "B" }
         };
 
-        var options = new FixedWidthWriterOptions { NewLine = "\n" };
+        var options = new FixedWidthWriteOptions { NewLine = "\n" };
 
         using var ms = new MemoryStream();
         await FixedWidth.WriteToStreamAsync(ms, records, options, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
@@ -253,7 +253,7 @@ public class FixedWidthAsyncWriterTests
         var records = ToAsyncEnumerable(Enumerable.Range(1, 100).Select(i =>
             new TestRecord { Name = $"Name{i}", Age = i, City = $"City{i}" }));
 
-        var options = new FixedWidthWriterOptions { MaxRowCount = 10 };
+        var options = new FixedWidthWriteOptions { MaxRowCount = 10 };
 
         using var ms = new MemoryStream();
 
@@ -434,7 +434,7 @@ public class FixedWidthAsyncWriterTests
             new TestRecord { Name = "Test", Age = 1, City = "City" }
         ]);
 
-        var options = new FixedWidthWriterOptions { NewLine = "\n" };
+        var options = new FixedWidthWriteOptions { NewLine = "\n" };
         var result = await FixedWidth.WriteToTextAsync(records, options, TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("\r\n", result);
@@ -554,7 +554,7 @@ public class FixedWidthAsyncWriterTests
     public void CreateWriter_WithOptions_AppliesOptions()
     {
         using var sw = new StringWriter();
-        var options = new FixedWidthWriterOptions
+        var options = new FixedWidthWriteOptions
         {
             DefaultPadChar = '*',
             DefaultAlignment = FieldAlignment.Right
@@ -612,7 +612,7 @@ public class FixedWidthAsyncWriterTests
     public void CreateStreamWriter_Stream_WithOptions_AppliesOptions()
     {
         using var ms = new MemoryStream();
-        var options = new FixedWidthWriterOptions
+        var options = new FixedWidthWriteOptions
         {
             DefaultPadChar = '-',
             DefaultAlignment = FieldAlignment.Center
@@ -723,7 +723,7 @@ public class FixedWidthAsyncWriterTests
     public async Task CreateAsyncStreamWriter_WithOptions_AppliesOptions()
     {
         using var ms = new MemoryStream();
-        var options = new FixedWidthWriterOptions
+        var options = new FixedWidthWriteOptions
         {
             DefaultPadChar = '*',
             DefaultAlignment = FieldAlignment.Right
@@ -823,7 +823,7 @@ public class FixedWidthAsyncWriterTests
     public async Task CreateAsyncStreamWriter_NullValue_WritesNullValue()
     {
         using var ms = new MemoryStream();
-        var options = new FixedWidthWriterOptions { NullValue = "NULL" };
+        var options = new FixedWidthWriteOptions { NullValue = "NULL" };
         await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
 
         await writer.WriteFieldAsync((object?)null, 10, cancellationToken: TestContext.Current.CancellationToken);
@@ -842,7 +842,7 @@ public class FixedWidthAsyncWriterTests
     public async Task CreateAsyncStreamWriter_OverflowBehavior_Throws()
     {
         using var ms = new MemoryStream();
-        var options = new FixedWidthWriterOptions { OverflowBehavior = OverflowBehavior.Throw };
+        var options = new FixedWidthWriteOptions { OverflowBehavior = OverflowBehavior.Throw };
         await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
 
         await Assert.ThrowsAsync<FixedWidthException>(async () =>
@@ -856,7 +856,7 @@ public class FixedWidthAsyncWriterTests
     public async Task CreateAsyncStreamWriter_OverflowBehavior_Truncates()
     {
         using var ms = new MemoryStream();
-        var options = new FixedWidthWriterOptions { OverflowBehavior = OverflowBehavior.Truncate };
+        var options = new FixedWidthWriteOptions { OverflowBehavior = OverflowBehavior.Truncate };
         await using var writer = FixedWidth.CreateAsyncStreamWriter(ms, options, leaveOpen: true);
 
         await writer.WriteFieldAsync("Hello World", 5, TestContext.Current.CancellationToken);
@@ -1234,3 +1234,4 @@ public class FixedWidthAsyncWriterTests
 
     #endregion
 }
+

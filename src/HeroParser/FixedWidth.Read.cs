@@ -14,12 +14,12 @@ public static partial class FixedWidth
     /// </summary>
     /// <param name="data">Complete fixed-width payload encoded as UTF-16.</param>
     /// <param name="options">
-    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthReadOptions.Default"/> is used.
     /// </param>
     /// <returns>A <see cref="FixedWidthCharSpanReader"/> that enumerates the parsed records.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="data"/> is <see langword="null"/>.</exception>
     /// <exception cref="FixedWidthException">Thrown when the payload violates the supplied <paramref name="options"/>.</exception>
-    public static FixedWidthCharSpanReader ReadFromText(string data, FixedWidthParserOptions? options = null)
+    public static FixedWidthCharSpanReader ReadFromText(string data, FixedWidthReadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(data);
         return ReadFromCharSpan(data.AsSpan(), options);
@@ -30,13 +30,13 @@ public static partial class FixedWidth
     /// </summary>
     /// <param name="data">Span containing the fixed-width content.</param>
     /// <param name="options">
-    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthReadOptions.Default"/> is used.
     /// </param>
     /// <returns>A streaming reader that exposes each record as a <see cref="FixedWidthCharSpanRow"/>.</returns>
     /// <exception cref="FixedWidthException">Thrown when the input violates the supplied <paramref name="options"/>.</exception>
-    public static FixedWidthCharSpanReader ReadFromCharSpan(ReadOnlySpan<char> data, FixedWidthParserOptions? options = null)
+    public static FixedWidthCharSpanReader ReadFromCharSpan(ReadOnlySpan<char> data, FixedWidthReadOptions? options = null)
     {
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
         return new FixedWidthCharSpanReader(data, options);
     }
@@ -46,7 +46,7 @@ public static partial class FixedWidth
     /// </summary>
     /// <param name="data">Span containing the fixed-width content encoded as UTF-8.</param>
     /// <param name="options">
-    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthReadOptions.Default"/> is used.
     /// </param>
     /// <returns>A streaming reader that exposes each record as a <see cref="FixedWidthCharSpanRow"/>.</returns>
     /// <remarks>
@@ -54,9 +54,9 @@ public static partial class FixedWidth
     /// For large files, consider using <see cref="ReadFromStream"/> or <see cref="ReadFromFile"/> instead.
     /// </remarks>
     /// <exception cref="FixedWidthException">Thrown when the input violates the supplied <paramref name="options"/>.</exception>
-    public static FixedWidthCharSpanReader ReadFromByteSpan(ReadOnlySpan<byte> data, FixedWidthParserOptions? options = null)
+    public static FixedWidthCharSpanReader ReadFromByteSpan(ReadOnlySpan<byte> data, FixedWidthReadOptions? options = null)
     {
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
         // Decode UTF-8 to UTF-16
@@ -69,7 +69,7 @@ public static partial class FixedWidth
     /// </summary>
     /// <param name="data">Span containing the fixed-width content encoded as UTF-8.</param>
     /// <param name="options">
-    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthReadOptions.Default"/> is used.
     /// </param>
     /// <returns>A streaming reader that exposes each record as a <see cref="FixedWidthByteSpanRow"/>.</returns>
     /// <remarks>
@@ -78,9 +78,9 @@ public static partial class FixedWidth
     /// the overhead of UTF-8 to UTF-16 conversion.
     /// </remarks>
     /// <exception cref="FixedWidthException">Thrown when the input violates the supplied <paramref name="options"/>.</exception>
-    public static FixedWidthByteSpanReader ReadFromUtf8ByteSpan(ReadOnlySpan<byte> data, FixedWidthParserOptions? options = null)
+    public static FixedWidthByteSpanReader ReadFromUtf8ByteSpan(ReadOnlySpan<byte> data, FixedWidthReadOptions? options = null)
     {
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
         return new FixedWidthByteSpanReader(data, options);
     }
@@ -90,17 +90,17 @@ public static partial class FixedWidth
     /// </summary>
     /// <param name="path">Filesystem path to the fixed-width file.</param>
     /// <param name="options">
-    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthReadOptions.Default"/> is used.
     /// </param>
     /// <param name="encoding">Optional text encoding; defaults to UTF-8.</param>
     /// <returns>A <see cref="FixedWidthCharSpanReader"/> that reads the file contents.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="path"/> is <see langword="null"/> or empty.</exception>
     /// <exception cref="IOException">Propagates file system errors encountered while reading.</exception>
-    public static FixedWidthCharSpanReader ReadFromFile(string path, FixedWidthParserOptions? options = null, Encoding? encoding = null)
+    public static FixedWidthCharSpanReader ReadFromFile(string path, FixedWidthReadOptions? options = null, Encoding? encoding = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
 
         // Check file size before reading
         var fileInfo = new FileInfo(path);
@@ -115,17 +115,17 @@ public static partial class FixedWidth
     /// </summary>
     /// <param name="stream">Readable stream containing fixed-width data.</param>
     /// <param name="options">
-    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthReadOptions.Default"/> is used.
     /// </param>
     /// <param name="encoding">Optional text encoding; defaults to UTF-8.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the provided <paramref name="stream"/> remains open after reading.</param>
     /// <returns>A <see cref="FixedWidthCharSpanReader"/> that reads the stream contents.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is <see langword="null"/>.</exception>
-    public static FixedWidthCharSpanReader ReadFromStream(Stream stream, FixedWidthParserOptions? options = null, Encoding? encoding = null, bool leaveOpen = true)
+    public static FixedWidthCharSpanReader ReadFromStream(Stream stream, FixedWidthReadOptions? options = null, Encoding? encoding = null, bool leaveOpen = true)
     {
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
 
         // Check stream size before reading (if seekable)
         if (stream.CanSeek)
@@ -143,20 +143,20 @@ public static partial class FixedWidth
     /// </summary>
     /// <param name="path">Filesystem path to the fixed-width file.</param>
     /// <param name="options">
-    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthReadOptions.Default"/> is used.
     /// </param>
     /// <param name="encoding">Optional text encoding; defaults to UTF-8.</param>
     /// <param name="cancellationToken">Token to cancel I/O.</param>
     /// <returns>A <see cref="FixedWidthTextSource"/> that can produce a <see cref="FixedWidthCharSpanReader"/>.</returns>
     public static async Task<FixedWidthTextSource> ReadFromFileAsync(
         string path,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
         // Check file size before reading
@@ -172,7 +172,7 @@ public static partial class FixedWidth
     /// </summary>
     /// <param name="stream">Readable stream containing fixed-width data.</param>
     /// <param name="options">
-    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthParserOptions.Default"/> is used.
+    /// Optional parser configuration. When <see langword="null"/>, <see cref="FixedWidthReadOptions.Default"/> is used.
     /// </param>
     /// <param name="encoding">Optional text encoding; defaults to UTF-8.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the provided <paramref name="stream"/> remains open after reading.</param>
@@ -181,14 +181,14 @@ public static partial class FixedWidth
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is <see langword="null"/>.</exception>
     public static async Task<FixedWidthTextSource> ReadFromStreamAsync(
         Stream stream,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
         // Check stream size before reading (if seekable)
@@ -206,19 +206,19 @@ public static partial class FixedWidth
     /// Creates an async streaming reader from a fixed-width file without loading the entire payload into memory.
     /// </summary>
     /// <param name="path">Filesystem path to the fixed-width file.</param>
-    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthParserOptions.Default"/>.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthReadOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
     /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
     /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
     public static FixedWidthAsyncStreamReader CreateAsyncStreamReader(
         string path,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         Encoding? encoding = null,
         int bufferSize = 16 * 1024)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
         var stream = new FileStream(
@@ -236,21 +236,21 @@ public static partial class FixedWidth
     /// Creates an async streaming reader from a <see cref="Stream"/> without loading the entire payload into memory.
     /// </summary>
     /// <param name="stream">Readable stream containing fixed-width data.</param>
-    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthParserOptions.Default"/>.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthReadOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the provided <paramref name="stream"/> remains open after parsing.</param>
     /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
     /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
     public static FixedWidthAsyncStreamReader CreateAsyncStreamReader(
         Stream stream,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true,
         int bufferSize = 16 * 1024)
     {
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
         return new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen, initialBufferSize: bufferSize);
@@ -267,13 +267,13 @@ public static partial class FixedWidth
     /// <returns>A list of deserialized records.</returns>
     public static List<T> DeserializeRecords<T>(
         string data,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         CultureInfo? culture = null,
         FixedWidthDeserializeErrorHandler? onError = null)
         where T : new()
     {
         ArgumentNullException.ThrowIfNull(data);
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         culture ??= CultureInfo.InvariantCulture;
 
         // Validate input size for DoS protection (string length * 2 bytes per char)
@@ -295,7 +295,7 @@ public static partial class FixedWidth
     /// <returns>A list of deserialized records.</returns>
     public static List<T> DeserializeRecords<T>(
         string path,
-        FixedWidthParserOptions? options,
+        FixedWidthReadOptions? options,
         Encoding? encoding,
         CultureInfo? culture = null,
         FixedWidthDeserializeErrorHandler? onError = null)
@@ -322,7 +322,7 @@ public static partial class FixedWidth
     /// <returns>An async enumerable of deserialized records.</returns>
     public static async IAsyncEnumerable<T> DeserializeRecordsAsync<T>(
         string path,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         Encoding? encoding = null,
         CultureInfo? culture = null,
         FixedWidthDeserializeErrorHandler? onError = null,
@@ -357,7 +357,7 @@ public static partial class FixedWidth
     /// <returns>An async enumerable of deserialized records.</returns>
     public static async IAsyncEnumerable<T> DeserializeRecordsAsync<T>(
         Stream stream,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         Encoding? encoding = null,
         CultureInfo? culture = null,
         FixedWidthDeserializeErrorHandler? onError = null,
@@ -394,9 +394,9 @@ public sealed class FixedWidthTextSource
     /// <summary>
     /// Gets the parser options.
     /// </summary>
-    public FixedWidthParserOptions Options { get; }
+    public FixedWidthReadOptions Options { get; }
 
-    internal FixedWidthTextSource(string text, FixedWidthParserOptions options)
+    internal FixedWidthTextSource(string text, FixedWidthReadOptions options)
     {
         Text = text;
         Options = options;
@@ -409,3 +409,4 @@ public sealed class FixedWidthTextSource
     public FixedWidthCharSpanReader CreateReader()
         => FixedWidth.ReadFromCharSpan(Text.AsSpan(), Options);
 }
+

@@ -15,7 +15,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
 {
     private readonly ArrayPool<char> charPool;
     private readonly TextWriter writer;
-    private readonly FixedWidthWriterOptions options;
+    private readonly FixedWidthWriteOptions options;
     private readonly bool leaveOpen;
 
     // Cached options for hot path access
@@ -48,14 +48,14 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
     /// Creates a new fixed-width writer that writes to the specified <see cref="TextWriter"/>.
     /// </summary>
     /// <param name="writer">The underlying writer to write fixed-width output to.</param>
-    /// <param name="options">Writer options; defaults to <see cref="FixedWidthWriterOptions.Default"/>.</param>
+    /// <param name="options">Writer options; defaults to <see cref="FixedWidthWriteOptions.Default"/>.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the <paramref name="writer"/> is not disposed.</param>
-    public FixedWidthStreamWriter(TextWriter writer, FixedWidthWriterOptions? options = null, bool leaveOpen = false)
+    public FixedWidthStreamWriter(TextWriter writer, FixedWidthWriteOptions? options = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(writer);
 
         this.writer = writer;
-        this.options = options ?? FixedWidthWriterOptions.Default;
+        this.options = options ?? FixedWidthWriteOptions.Default;
         this.options.Validate();
         this.leaveOpen = leaveOpen;
 
@@ -525,3 +525,4 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
 
     #endregion
 }
+

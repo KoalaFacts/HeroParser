@@ -82,7 +82,7 @@ public class FixedWidthReaderTests
         // Arrange - No newlines, fixed 40-character records
         var data = "0000000001John Doe            00000123450000000002Jane Smith          0000067890";
 
-        var options = new FixedWidthParserOptions { RecordLength = 40 };
+        var options = new FixedWidthReadOptions { RecordLength = 40 };
 
         // Act
         var records = new List<string>();
@@ -128,7 +128,7 @@ public class FixedWidthReaderTests
             Record3
             """;
 
-        var options = new FixedWidthParserOptions { TrackSourceLineNumbers = true };
+        var options = new FixedWidthReadOptions { TrackSourceLineNumbers = true };
 
         // Act
         var lineNumbers = new List<int>();
@@ -146,7 +146,7 @@ public class FixedWidthReaderTests
     {
         // Arrange
         var data = "Short";
-        var options = new FixedWidthParserOptions { AllowShortRows = true };
+        var options = new FixedWidthReadOptions { AllowShortRows = true };
 
         // Act
         FixedWidthCharSpanColumn field = default;
@@ -184,7 +184,7 @@ public class FixedWidthReaderTests
     {
         // Arrange
         var data = "Short";
-        var options = new FixedWidthParserOptions { AllowShortRows = true };
+        var options = new FixedWidthReadOptions { AllowShortRows = true };
 
         // Act
         string fieldValue = "";
@@ -308,7 +308,7 @@ public class FixedWidthReaderTests
             Record3
             """;
 
-        var options = new FixedWidthParserOptions { MaxRecordCount = 2 };
+        var options = new FixedWidthReadOptions { MaxRecordCount = 2 };
 
         // Act & Assert
         var ex = Assert.Throws<FixedWidthException>(() =>
@@ -334,7 +334,7 @@ public class FixedWidthReaderTests
             Record3
             """;
 
-        var options = new FixedWidthParserOptions { CommentCharacter = '#' };
+        var options = new FixedWidthReadOptions { CommentCharacter = '#' };
 
         // Act
         var records = new List<string>();
@@ -361,7 +361,7 @@ public class FixedWidthReaderTests
             Record2
             """;
 
-        var options = new FixedWidthParserOptions
+        var options = new FixedWidthReadOptions
         {
             CommentCharacter = '#',
             TrackSourceLineNumbers = true
@@ -390,7 +390,7 @@ public class FixedWidthReaderTests
             Record3
             """;
 
-        var options = new FixedWidthParserOptions { SkipRows = 2 };
+        var options = new FixedWidthReadOptions { SkipRows = 2 };
 
         // Act
         var records = new List<string>();
@@ -417,7 +417,7 @@ public class FixedWidthReaderTests
             Record2
             """;
 
-        var options = new FixedWidthParserOptions
+        var options = new FixedWidthReadOptions
         {
             SkipRows = 2,
             TrackSourceLineNumbers = true
@@ -446,7 +446,7 @@ public class FixedWidthReaderTests
             Record2
             """;
 
-        var options = new FixedWidthParserOptions
+        var options = new FixedWidthReadOptions
         {
             SkipRows = 2,
             CommentCharacter = '#'
@@ -515,3 +515,4 @@ public class FixedWidthReaderTests
         Assert.Equal("Record2", records[1]);
     }
 }
+

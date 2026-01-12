@@ -25,7 +25,7 @@ public static class FixedWidthAotTests
         // Each record is 30 chars: Name (20 chars) + Age (10 chars, right-aligned)
         // Fixed-width files often concatenate records without newlines
         var data = "Alice                       30Bob                         25";
-        var options = new FixedWidthParserOptions { RecordLength = 30 };
+        var options = new FixedWidthReadOptions { RecordLength = 30 };
         var records = FixedWidth.DeserializeRecords<FixedWidthPerson>(data, options).ToList();
 
         if (records.Count != 2)
@@ -68,7 +68,7 @@ public static class FixedWidthAotTests
 
         // Remove newlines for parsing since RecordLength doesn't include them
         var dataWithoutNewlines = string.Concat(lines);
-        var options = new FixedWidthParserOptions { RecordLength = recordLength };
+        var options = new FixedWidthReadOptions { RecordLength = recordLength };
         var parsed = FixedWidth.DeserializeRecords<FixedWidthPerson>(dataWithoutNewlines, options).ToList();
 
         if (parsed.Count != 2)
@@ -82,7 +82,7 @@ public static class FixedWidthAotTests
     private static void BasicParsing()
     {
         var data = "ABCDEFGHIJ1234567890";
-        var options = new FixedWidthParserOptions { RecordLength = 20 };
+        var options = new FixedWidthReadOptions { RecordLength = 20 };
         var reader = FixedWidth.ReadFromText(data, options);
 
         int rowCount = 0;
@@ -107,7 +107,7 @@ public static class FixedWidthAotTests
     {
         // Right-aligned ID (5 chars, padded with spaces), Left-aligned Name (15 chars)
         var data = "   42Test Name      ";
-        var options = new FixedWidthParserOptions { RecordLength = 20 };
+        var options = new FixedWidthReadOptions { RecordLength = 20 };
         var records = FixedWidth.DeserializeRecords<FixedWidthAligned>(data, options).ToList();
 
         if (records.Count != 1)
@@ -132,3 +132,4 @@ public static class FixedWidthAotTests
             throw new Exception("Aligned output missing name");
     }
 }
+

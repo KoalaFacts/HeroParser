@@ -16,8 +16,9 @@ namespace HeroParser.FixedWidths.Reading.Data;
 public sealed class FixedWidthDataReader : DbDataReader
 {
     private readonly FixedWidthAsyncStreamReader reader;
-    private readonly FixedWidthParserOptions parserOptions;
+    private readonly FixedWidthReadOptions parserOptions;
     private readonly FixedWidthDataReaderOptions options;
+    private readonly Encoding encoding;
     private readonly string[]? nullValues;
     private readonly StringComparer headerComparer;
     private readonly int[] columnStarts;
@@ -27,6 +28,7 @@ public sealed class FixedWidthDataReader : DbDataReader
     private readonly int requiredRecordLength;
 
     private readonly string[] columnNames;
+    private readonly bool hasExplicitColumnNames;
     private Dictionary<string, int>? ordinals;
     private readonly int fieldCount;
     private bool initialized;
@@ -37,12 +39,14 @@ public sealed class FixedWidthDataReader : DbDataReader
 
     internal FixedWidthDataReader(
         FixedWidthAsyncStreamReader reader,
-        FixedWidthParserOptions parserOptions,
-        FixedWidthDataReaderOptions options)
+        FixedWidthReadOptions parserOptions,
+        FixedWidthDataReaderOptions options,
+        Encoding encoding)
     {
         this.reader = reader ?? throw new ArgumentNullException(nameof(reader));
-        this.parserOptions = parserOptions ?? FixedWidthParserOptions.Default;
+        this.parserOptions = parserOptions ?? FixedWidthReadOptions.Default;
         this.options = options ?? FixedWidthDataReaderOptions.Default;
+        this.encoding = encoding ?? Encoding.UTF8;
         headerComparer = this.options.HeaderComparer;
         nullValues = PrepareNullValues(this.options.NullValues);
 
@@ -54,6 +58,15 @@ public sealed class FixedWidthDataReader : DbDataReader
         }
 
         var columnCount = this.options.Columns.Count;
+        var columnNameOverrides = this.options.ColumnNames;
+        hasExplicitColumnNames = columnNameOverrides is { Count: > 0 };
+        if (hasExplicitColumnNames && columnNameOverrides!.Count != columnCount)
+        {
+            throw new FixedWidthException(
+                FixedWidthErrorCode.InvalidOptions,
+                $"ColumnNames defines {columnNameOverrides.Count} columns but {columnCount} definitions were provided.");
+        }
+
         columnNames = new string[columnCount];
         columnStarts = new int[columnCount];
         columnLengths = new int[columnCount];
@@ -98,8 +111,16 @@ public sealed class FixedWidthDataReader : DbDataReader
             columnPadChars[i] = column.PadChar ?? this.parserOptions.DefaultPadChar;
             columnAlignments[i] = column.Alignment ?? this.parserOptions.DefaultAlignment;
 
-            var name = column.Name;
-            columnNames[i] = string.IsNullOrWhiteSpace(name) ? string.Empty : name;
+            var name = hasExplicitColumnNames ? columnNameOverrides![i] : column.Name;
+            if (hasExplicitColumnNames && name is null)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.InvalidOptions,
+                    "ColumnNames cannot contain null entries.");
+            }
+            columnNames[i] = hasExplicitColumnNames
+                ? name!
+                : string.IsNullOrWhiteSpace(name) ? string.Empty : name;
         }
 
         requiredRecordLength = maxEnd;
@@ -291,7 +312,7 @@ public sealed class FixedWidthDataReader : DbDataReader
     /// <inheritdoc />
     public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
     {
-        var bytes = Encoding.UTF8.GetBytes(GetString(ordinal));
+        var bytes = encoding.GetBytes(GetString(ordinal));
         if (buffer is null)
             return bytes.Length;
 
@@ -454,25 +475,31 @@ public sealed class FixedWidthDataReader : DbDataReader
         {
             if (!Advance())
             {
-                FillDefaultNames();
+                if (!hasExplicitColumnNames)
+                    FillDefaultNames();
                 BuildOrdinalMap();
                 return;
             }
 
             var headerRow = reader.Current;
-            for (int i = 0; i < fieldCount; i++)
+            ValidateRow(headerRow);
+            if (!hasExplicitColumnNames)
             {
-                if (!string.IsNullOrEmpty(columnNames[i]))
-                    continue;
+                for (int i = 0; i < fieldCount; i++)
+                {
+                    if (!string.IsNullOrEmpty(columnNames[i]))
+                        continue;
 
-                columnNames[i] = TryGetColumnSpan(headerRow, i, out var span) && !span.IsEmpty
-                    ? new string(span)
-                    : $"Column{i + 1}";
+                    columnNames[i] = TryGetColumnSpan(headerRow, i, out var span) && !span.IsEmpty
+                        ? new string(span)
+                        : $"Column{i + 1}";
+                }
             }
         }
         else
         {
-            FillDefaultNames();
+            if (!hasExplicitColumnNames)
+                FillDefaultNames();
         }
 
         if (Advance())
@@ -515,7 +542,7 @@ public sealed class FixedWidthDataReader : DbDataReader
 
     private void ValidateRow(FixedWidthCharSpanRow row)
     {
-        if (options.AllowMissingColumns || parserOptions.AllowShortRows)
+        if (options.AllowMissingColumns)
             return;
 
         if (row.RawRecord.Length < requiredRecordLength)
@@ -564,21 +591,11 @@ public sealed class FixedWidthDataReader : DbDataReader
                 return false;
             }
 
-            if (parserOptions.AllowShortRows)
-            {
-                if (start >= record.Length)
-                {
-                    span = [];
-                    return true;
-                }
-
-                span = record[start..];
-                span = ApplyTrim(span, columnPadChars[ordinal], columnAlignments[ordinal]);
-                return true;
-            }
-
-            span = GetColumnSpan(row, ordinal);
-            return true;
+            throw new FixedWidthException(
+                FixedWidthErrorCode.FieldOutOfBounds,
+                $"Row has length {record.Length} but schema expects at least {requiredRecordLength} characters.",
+                row.RecordNumber,
+                row.SourceLineNumber);
         }
 
         span = GetColumnSpan(row, ordinal);
@@ -591,15 +608,6 @@ public sealed class FixedWidthDataReader : DbDataReader
             columnLengths[ordinal],
             columnPadChars[ordinal],
             columnAlignments[ordinal]).CharSpan;
-
-    private static ReadOnlySpan<char> ApplyTrim(ReadOnlySpan<char> span, char padChar, FieldAlignment alignment)
-        => alignment switch
-        {
-            FieldAlignment.Left => span.TrimEnd(padChar),
-            FieldAlignment.Right => span.TrimStart(padChar),
-            FieldAlignment.None => span,
-            _ => span
-        };
 
     private bool IsNullValue(ReadOnlySpan<char> span)
     {
@@ -622,3 +630,4 @@ public sealed class FixedWidthDataReader : DbDataReader
         return [.. nullValues];
     }
 }
+

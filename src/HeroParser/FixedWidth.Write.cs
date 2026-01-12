@@ -46,10 +46,10 @@ public static partial class FixedWidth
     /// <param name="records">The records to write.</param>
     /// <param name="options">Optional writer options.</param>
     /// <returns>The fixed-width content as a string.</returns>
-    public static string WriteToText<T>(IEnumerable<T> records, FixedWidthWriterOptions? options = null)
+    public static string WriteToText<T>(IEnumerable<T> records, FixedWidthWriteOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(records);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
 
         options.Validate();
 
@@ -73,12 +73,12 @@ public static partial class FixedWidth
     public static void WriteToFile<T>(
         string path,
         IEnumerable<T> records,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -102,13 +102,13 @@ public static partial class FixedWidth
     public static void WriteToStream<T>(
         Stream stream,
         IEnumerable<T> records,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -131,13 +131,13 @@ public static partial class FixedWidth
     public static async ValueTask WriteToFileAsync<T>(
         string path,
         IEnumerable<T> records,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -169,13 +169,13 @@ public static partial class FixedWidth
     public static async ValueTask WriteToFileAsync<T>(
         string path,
         IAsyncEnumerable<T> records,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -208,14 +208,14 @@ public static partial class FixedWidth
     public static async ValueTask WriteToStreamAsync<T>(
         Stream stream,
         IEnumerable<T> records,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -240,14 +240,14 @@ public static partial class FixedWidth
     public static async ValueTask WriteToStreamAsync<T>(
         Stream stream,
         IAsyncEnumerable<T> records,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -266,7 +266,7 @@ public static partial class FixedWidth
     /// <param name="records">The records to serialize.</param>
     /// <param name="options">Optional writer options.</param>
     /// <returns>The fixed-width content as a string.</returns>
-    public static string SerializeRecords<T>(IEnumerable<T> records, FixedWidthWriterOptions? options = null)
+    public static string SerializeRecords<T>(IEnumerable<T> records, FixedWidthWriteOptions? options = null)
         => WriteToText(records, options);
 
     /// <summary>
@@ -279,11 +279,11 @@ public static partial class FixedWidth
     /// <returns>The fixed-width content as a string.</returns>
     public static async ValueTask<string> WriteToTextAsync<T>(
         IAsyncEnumerable<T> records,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(records);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
 
         options.Validate();
 
@@ -303,10 +303,10 @@ public static partial class FixedWidth
     /// <param name="options">Optional writer options.</param>
     /// <param name="leaveOpen">When true, leaves the text writer open on dispose.</param>
     /// <returns>A configured FixedWidthStreamWriter.</returns>
-    /// <remarks>This method is an alias for <see cref="CreateStreamWriter(TextWriter, FixedWidthWriterOptions?, bool)"/> to match CSV API naming.</remarks>
+    /// <remarks>This method is an alias for <see cref="CreateStreamWriter(TextWriter, FixedWidthWriteOptions?, bool)"/> to match CSV API naming.</remarks>
     public static FixedWidthStreamWriter CreateWriter(
         TextWriter textWriter,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         bool leaveOpen = false)
         => CreateStreamWriter(textWriter, options, leaveOpen);
 
@@ -319,11 +319,11 @@ public static partial class FixedWidth
     /// <returns>A configured FixedWidthStreamWriter.</returns>
     public static FixedWidthStreamWriter CreateStreamWriter(
         TextWriter textWriter,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(textWriter);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         options.Validate();
 
         return new FixedWidthStreamWriter(textWriter, options, leaveOpen);
@@ -339,12 +339,12 @@ public static partial class FixedWidth
     /// <returns>A configured FixedWidthStreamWriter.</returns>
     public static FixedWidthStreamWriter CreateStreamWriter(
         Stream stream,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         options.Validate();
         encoding ??= Encoding.UTF8;
 
@@ -361,11 +361,11 @@ public static partial class FixedWidth
     /// <returns>A configured FixedWidthStreamWriter.</returns>
     public static FixedWidthStreamWriter CreateFileWriter(
         string path,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -385,12 +385,12 @@ public static partial class FixedWidth
     /// <returns>A configured FixedWidthAsyncStreamWriter.</returns>
     public static FixedWidthAsyncStreamWriter CreateAsyncStreamWriter(
         Stream stream,
-        FixedWidthWriterOptions? options = null,
+        FixedWidthWriteOptions? options = null,
         Encoding? encoding = null,
         bool leaveOpen = true)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        options ??= FixedWidthWriterOptions.Default;
+        options ??= FixedWidthWriteOptions.Default;
         encoding ??= Encoding.UTF8;
 
         options.Validate();
@@ -398,3 +398,4 @@ public static partial class FixedWidth
         return new FixedWidthAsyncStreamWriter(stream, options, encoding, leaveOpen);
     }
 }
+

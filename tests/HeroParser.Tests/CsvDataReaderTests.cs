@@ -37,6 +37,51 @@ public class CsvDataReaderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DataReader_QuotedFields_AreUnquoted()
+    {
+        var csv = "Name,Note\r\n\"Alice\",\"Hello, world\"\r\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        using var reader = Csv.CreateDataReader(stream);
+
+        Assert.True(reader.Read());
+        Assert.Equal("Alice", reader.GetString(0));
+        Assert.Equal("Hello, world", reader.GetString(1));
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DataReader_DoubledQuotes_AreCollapsed()
+    {
+        var csv = "Value\r\n\"He said \"\"Hi\"\"\"\r\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        using var reader = Csv.CreateDataReader(stream);
+
+        Assert.True(reader.Read());
+        Assert.Equal("He said \"Hi\"", reader.GetString(0));
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DataReader_EscapeCharacter_UnescapesValues()
+    {
+        var csv = "Value\r\n\"Hello\\\"World\"\r\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        var readOptions = new CsvReadOptions
+        {
+            EscapeCharacter = '\\'
+        };
+
+        using var reader = Csv.CreateDataReader(stream, readOptions);
+
+        Assert.True(reader.Read());
+        Assert.Equal("Hello\"World", reader.GetString(0));
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void DataReader_NoHeader_UsesProvidedColumnNames()
     {
         var csv = "1,2\r\n3,4\r\n";
@@ -77,6 +122,25 @@ public class CsvDataReaderTests
         Assert.False(reader.IsDBNull(0));
         Assert.True(reader.IsDBNull(1));
         Assert.Equal(DBNull.Value, reader.GetValue(1));
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DataReader_QuotedNullValues_ReturnsDbNull()
+    {
+        var csv = "Value\r\n\"NULL\"\r\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        var options = new CsvDataReaderOptions
+        {
+            NullValues = ["NULL"]
+        };
+
+        using var reader = Csv.CreateDataReader(stream, readerOptions: options);
+
+        Assert.True(reader.Read());
+        Assert.True(reader.IsDBNull(0));
+        Assert.Equal(DBNull.Value, reader.GetValue(0));
     }
 
     [Fact]

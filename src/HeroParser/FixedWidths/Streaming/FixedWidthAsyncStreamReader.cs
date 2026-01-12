@@ -14,7 +14,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
 
     private readonly ArrayPool<char> charPool;
     private readonly StreamReader reader;
-    private readonly FixedWidthParserOptions options;
+    private readonly FixedWidthReadOptions options;
     private readonly bool trackLineNumbers;
     private char[] buffer;
     private int offset;
@@ -45,7 +45,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     /// </remarks>
     public long BytesRead => bytesRead;
 
-    internal FixedWidthAsyncStreamReader(Stream stream, FixedWidthParserOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
+    internal FixedWidthAsyncStreamReader(Stream stream, FixedWidthReadOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
         this.options = options;
         trackLineNumbers = options.TrackSourceLineNumbers;
@@ -329,3 +329,4 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         charPool.Return(toReturn, clearArray: true);
     }
 }
+

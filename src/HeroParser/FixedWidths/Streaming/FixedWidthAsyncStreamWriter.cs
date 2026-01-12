@@ -12,7 +12,7 @@ namespace HeroParser.FixedWidths.Streaming;
 /// <remarks>
 /// <para>
 /// Uses per-instance pools for buffer management to minimize allocations and isolate pooled buffers.
-/// Supports all <see cref="FixedWidthWriterOptions"/> including padding, alignment,
+/// Supports all <see cref="FixedWidthWriteOptions"/> including padding, alignment,
 /// and overflow behavior.
 /// </para>
 /// <para>
@@ -22,7 +22,7 @@ namespace HeroParser.FixedWidths.Streaming;
 public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
 {
     private readonly Stream stream;
-    private readonly FixedWidthWriterOptions options;
+    private readonly FixedWidthWriteOptions options;
     private readonly bool leaveOpen;
     private readonly Encoding encoding;
 
@@ -60,15 +60,15 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
     /// Creates a new async fixed-width writer that writes to the specified stream.
     /// </summary>
     /// <param name="stream">The underlying stream to write fixed-width output to.</param>
-    /// <param name="options">Writer options; defaults to <see cref="FixedWidthWriterOptions.Default"/>.</param>
+    /// <param name="options">Writer options; defaults to <see cref="FixedWidthWriteOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the <paramref name="stream"/> is not disposed.</param>
-    public FixedWidthAsyncStreamWriter(Stream stream, FixedWidthWriterOptions? options = null, Encoding? encoding = null, bool leaveOpen = false)
+    public FixedWidthAsyncStreamWriter(Stream stream, FixedWidthWriteOptions? options = null, Encoding? encoding = null, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(stream);
 
         this.stream = stream;
-        this.options = options ?? FixedWidthWriterOptions.Default;
+        this.options = options ?? FixedWidthWriteOptions.Default;
         this.options.Validate();
         this.encoding = encoding ?? Encoding.UTF8;
         this.leaveOpen = leaveOpen;
@@ -589,3 +589,4 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
 
     #endregion
 }
+

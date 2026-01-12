@@ -58,10 +58,11 @@ public class FixedWidthDataReaderTests
 
         var options = new FixedWidthDataReaderOptions
         {
+            ColumnNames = ["A", "B"],
             Columns =
             [
-                new FixedWidthDataReaderColumn { Start = 0, Length = 3, Name = "A" },
-                new FixedWidthDataReaderColumn { Start = 3, Length = 3, Name = "B" }
+                new FixedWidthDataReaderColumn { Start = 0, Length = 3 },
+                new FixedWidthDataReaderColumn { Start = 3, Length = 3 }
             ]
         };
 
@@ -108,6 +109,11 @@ public class FixedWidthDataReaderTests
         var data = "ABC\r\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
 
+        var parserOptions = new FixedWidthReadOptions
+        {
+            AllowShortRows = true
+        };
+
         var options = new FixedWidthDataReaderOptions
         {
             AllowMissingColumns = true,
@@ -118,7 +124,7 @@ public class FixedWidthDataReaderTests
             ]
         };
 
-        using var reader = FixedWidth.CreateDataReader(stream, readerOptions: options);
+        using var reader = FixedWidth.CreateDataReader(stream, parserOptions, options);
 
         Assert.True(reader.Read());
         Assert.Equal("ABC", reader.GetValue(0));
@@ -270,7 +276,7 @@ public class FixedWidthDataReaderTests
         var data = "Alice00030Bob  00025";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
 
-        var parserOptions = new FixedWidthParserOptions
+        var parserOptions = new FixedWidthReadOptions
         {
             RecordLength = 10
         };
@@ -299,12 +305,12 @@ public class FixedWidthDataReaderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void DataReader_AllowShortRows_ReturnsEmptyStringForMissing()
+    public void DataReader_AllowShortRows_DoesNotOverrideMissingColumns()
     {
         var data = "AB\r\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
 
-        var parserOptions = new FixedWidthParserOptions
+        var parserOptions = new FixedWidthReadOptions
         {
             AllowShortRows = true
         };
@@ -320,9 +326,7 @@ public class FixedWidthDataReaderTests
 
         using var reader = FixedWidth.CreateDataReader(stream, parserOptions, options);
 
-        Assert.True(reader.Read());
-        Assert.Equal("AB", reader.GetValue(0));
-        Assert.Equal(string.Empty, reader.GetValue(1));
-        Assert.False(reader.IsDBNull(1));
+        Assert.Throws<FixedWidthException>(() => reader.Read());
     }
 }
+

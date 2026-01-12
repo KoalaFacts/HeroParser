@@ -618,10 +618,11 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         {
             return UnquoteToStringCharWithEscape((char)(object)quote, escape is null ? null : (char)(object)escape);
         }
-        // For byte, we don't support escape sequences directly - fall back to basic unquote
         if (typeof(T) == typeof(byte))
         {
-            return UnquoteToStringByte((byte)(object)quote);
+            var byteQuote = (byte)(object)quote;
+            var byteEscape = escape is null ? (byte?)null : (byte)(object)escape;
+            return UnquoteToStringByteWithEscape(byteQuote, byteEscape);
         }
         throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
     }
@@ -671,6 +672,47 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
             return Encoding.UTF8.GetString(inner);
         }
         return Encoding.UTF8.GetString(span);
+    }
+
+    private string UnquoteToStringByteWithEscape(byte quote, byte? escape)
+    {
+        if (escape is null)
+            return UnquoteToStringByte(quote);
+
+        var text = Encoding.UTF8.GetString(GetByteSpan());
+        var span = text.AsSpan();
+        var quoteChar = (char)quote;
+        var escapeChar = (char)escape.Value;
+
+        if (span.Length >= 2 && span[0] == quoteChar && span[^1] == quoteChar)
+        {
+            span = span[1..^1];
+        }
+
+        bool needsUnescape = span.Contains(escapeChar);
+        if (!needsUnescape && !span.Contains(quoteChar))
+            return span.ToString();
+
+        var result = new StringBuilder(span.Length);
+        for (int i = 0; i < span.Length; i++)
+        {
+            char c = span[i];
+            if (c == escapeChar && i + 1 < span.Length)
+            {
+                i++;
+                result.Append(span[i]);
+            }
+            else if (c == quoteChar && i + 1 < span.Length && span[i + 1] == quoteChar)
+            {
+                result.Append(quoteChar);
+                i++;
+            }
+            else
+            {
+                result.Append(c);
+            }
+        }
+        return result.ToString();
     }
 
     private string UnquoteToStringCharWithEscape(char quote, char? escape)

@@ -11,14 +11,14 @@ public static partial class FixedWidth
     /// Creates an <see cref="System.Data.IDataReader"/> over a fixed-width stream.
     /// </summary>
     /// <param name="stream">Readable stream containing fixed-width data.</param>
-    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthParserOptions.Default"/>.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthReadOptions.Default"/>.</param>
     /// <param name="readerOptions">DataReader configuration; defaults to <see cref="FixedWidthDataReaderOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the stream remains open after the reader is disposed.</param>
     /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
     public static FixedWidthDataReader CreateDataReader(
         Stream stream,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         FixedWidthDataReaderOptions? readerOptions = null,
         Encoding? encoding = null,
         bool leaveOpen = true,
@@ -27,26 +27,30 @@ public static partial class FixedWidth
         ArgumentNullException.ThrowIfNull(stream);
 
         encoding ??= Encoding.UTF8;
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
         var dataOptions = readerOptions ?? FixedWidthDataReaderOptions.Default;
+        if (stream.CanSeek)
+        {
+            options.ValidateInputSize(stream.Length);
+        }
         var asyncReader = new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen, initialBufferSize: bufferSize);
 
-        return new FixedWidthDataReader(asyncReader, options, dataOptions);
+        return new FixedWidthDataReader(asyncReader, options, dataOptions, encoding);
     }
 
     /// <summary>
     /// Creates an <see cref="System.Data.IDataReader"/> over a fixed-width file on disk.
     /// </summary>
     /// <param name="path">Filesystem path to the fixed-width file.</param>
-    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthParserOptions.Default"/>.</param>
+    /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthReadOptions.Default"/>.</param>
     /// <param name="readerOptions">DataReader configuration; defaults to <see cref="FixedWidthDataReaderOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
     /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
     public static FixedWidthDataReader CreateDataReader(
         string path,
-        FixedWidthParserOptions? options = null,
+        FixedWidthReadOptions? options = null,
         FixedWidthDataReaderOptions? readerOptions = null,
         Encoding? encoding = null,
         int bufferSize = 16 * 1024)
@@ -54,7 +58,7 @@ public static partial class FixedWidth
         ArgumentException.ThrowIfNullOrEmpty(path);
 
         encoding ??= Encoding.UTF8;
-        options ??= FixedWidthParserOptions.Default;
+        options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
         var stream = new FileStream(
@@ -68,3 +72,4 @@ public static partial class FixedWidth
         return CreateDataReader(stream, options, readerOptions, encoding, leaveOpen: false, bufferSize: bufferSize);
     }
 }
+

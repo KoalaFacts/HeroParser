@@ -29,7 +29,7 @@ public static partial class Csv
         var dataOptions = readerOptions ?? CsvDataReaderOptions.Default;
         var asyncReader = new CsvAsyncStreamReader(stream, options, leaveOpen, bufferSize, dataOptions.SkipRows);
 
-        return new CsvDataReader(asyncReader, dataOptions);
+        return new CsvDataReader(asyncReader, options, dataOptions);
     }
 
     /// <summary>

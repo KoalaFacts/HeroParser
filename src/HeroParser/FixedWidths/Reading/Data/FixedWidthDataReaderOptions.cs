@@ -31,6 +31,15 @@ public sealed record FixedWidthDataReaderOptions
     public IReadOnlyList<string>? NullValues { get; init; } = null;
 
     /// <summary>
+    /// Gets or sets explicit column names to use instead of headers or column definitions.
+    /// </summary>
+    /// <remarks>
+    /// When provided, these names override header values (if present) and column definition names.
+    /// The count must match <see cref="Columns"/>.
+    /// </remarks>
+    public IReadOnlyList<string>? ColumnNames { get; init; } = null;
+
+    /// <summary>
     /// Gets or sets the fixed-width column definitions. At least one column is required.
     /// </summary>
     public IReadOnlyList<FixedWidthDataReaderColumn> Columns { get; init; } = [];

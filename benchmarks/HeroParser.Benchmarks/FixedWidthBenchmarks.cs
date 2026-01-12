@@ -18,8 +18,8 @@ public class FixedWidthBenchmarks
     private string lineDelimitedData = null!;
     private string fixedLengthData = null!;
     private string typedRecordData = null!;
-    private FixedWidthParserOptions defaultOptions = null!;
-    private FixedWidthParserOptions fixedLengthOptions = null!;
+    private FixedWidthReadOptions defaultOptions = null!;
+    private FixedWidthReadOptions fixedLengthOptions = null!;
 
     [Params(1_000, 10_000, 100_000)]
     public int Rows { get; set; }
@@ -31,8 +31,8 @@ public class FixedWidthBenchmarks
         fixedLengthData = GenerateFixedLengthData(Rows);
         typedRecordData = GenerateTypedRecordData(Rows);
 
-        defaultOptions = new FixedWidthParserOptions();
-        fixedLengthOptions = new FixedWidthParserOptions { RecordLength = 50 }; // 50 chars per record
+        defaultOptions = new FixedWidthReadOptions();
+        fixedLengthOptions = new FixedWidthReadOptions { RecordLength = 50 }; // 50 chars per record
 
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
         Console.WriteLine($"Line-delimited size: {lineDelimitedData.Length:N0} chars");
@@ -193,14 +193,14 @@ public class FixedWidthBenchmarks
 public class FixedWidthMicroBenchmarks
 {
     private string singleRecord = null!;
-    private FixedWidthParserOptions options = null!;
+    private FixedWidthReadOptions options = null!;
 
     [GlobalSetup]
     public void Setup()
     {
         // Single 50-char record
         singleRecord = "0000000001John Doe            0000012345";
-        options = new FixedWidthParserOptions();
+        options = new FixedWidthReadOptions();
     }
 
     [Benchmark]
@@ -375,7 +375,7 @@ public class FixedWidthStreamingBenchmarks
 public class FixedWidthFieldParseBenchmarks
 {
     private string singleRecord = null!;
-    private FixedWidthParserOptions options = null!;
+    private FixedWidthReadOptions options = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -383,7 +383,7 @@ public class FixedWidthFieldParseBenchmarks
         // Format: ID(10) + UInt(10) + DateTime(20) + Bool(5) + Double(10) = 55 chars
         // Values: "0000000123" + "4294967295" + "2025-11-20T12:34:56Z" + "TRUE " + "     3.14"
         singleRecord = "00000001234294967295  2025-11-20T12:34:56TRUE      3.14";
-        options = new FixedWidthParserOptions();
+        options = new FixedWidthReadOptions();
     }
 
     [Benchmark(Baseline = true)]
@@ -458,3 +458,4 @@ public class FixedWidthFieldParseBenchmarks
         return 0;
     }
 }
+

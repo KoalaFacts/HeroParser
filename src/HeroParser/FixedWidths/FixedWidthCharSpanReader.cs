@@ -6,13 +6,13 @@ namespace HeroParser.FixedWidths;
 /// A ref struct reader that iterates over fixed-width records in a character span.
 /// </summary>
 /// <remarks>
-/// By default, records are delimited by newlines. When <see cref="FixedWidthParserOptions.RecordLength"/>
+/// By default, records are delimited by newlines. When <see cref="FixedWidthReadOptions.RecordLength"/>
 /// is specified, records are read as fixed-length blocks instead.
 /// </remarks>
 public ref struct FixedWidthCharSpanReader
 {
     private readonly ReadOnlySpan<char> chars;
-    private readonly FixedWidthParserOptions options;
+    private readonly FixedWidthReadOptions options;
     private int position;
     private int recordCount;
     private int sourceLineNumber;
@@ -27,7 +27,7 @@ public ref struct FixedWidthCharSpanReader
     /// Use <see cref="FixedWidth.ReadFromText"/>, <see cref="FixedWidth.ReadFromCharSpan"/>,
     /// <see cref="FixedWidth.ReadFromFile"/>, or <see cref="FixedWidth.ReadFromStream"/> to create instances.
     /// </remarks>
-    internal FixedWidthCharSpanReader(ReadOnlySpan<char> chars, FixedWidthParserOptions options)
+    internal FixedWidthCharSpanReader(ReadOnlySpan<char> chars, FixedWidthReadOptions options)
     {
         this.chars = chars;
         this.options = options;
@@ -220,3 +220,4 @@ public ref struct FixedWidthCharSpanReader
         // No-op for span-based reader
     }
 }
+

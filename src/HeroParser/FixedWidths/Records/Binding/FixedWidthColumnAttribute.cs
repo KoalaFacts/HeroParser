@@ -60,13 +60,13 @@ public sealed class FixedWidthColumnAttribute : Attribute
 
     /// <summary>
     /// Gets or sets the padding character to trim from the field.
-    /// When not specified, uses <see cref="FixedWidthParserOptions.DefaultPadChar"/>.
+    /// When not specified, uses <see cref="FixedWidthReadOptions.DefaultPadChar"/>.
     /// </summary>
     public char PadChar { get; init; } = '\0'; // '\0' means "use default"
 
     /// <summary>
     /// Gets or sets the field alignment, which determines how trimming is applied.
-    /// When not specified, uses <see cref="FixedWidthParserOptions.DefaultAlignment"/>.
+    /// When not specified, uses <see cref="FixedWidthReadOptions.DefaultAlignment"/>.
     /// </summary>
     public FieldAlignment Alignment { get; init; } = FieldAlignment.Left;
 
@@ -80,3 +80,4 @@ public sealed class FixedWidthColumnAttribute : Attribute
     /// </remarks>
     public string? Format { get; init; }
 }
+

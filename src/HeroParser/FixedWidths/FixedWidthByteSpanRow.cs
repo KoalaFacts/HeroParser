@@ -15,14 +15,14 @@ public readonly ref struct FixedWidthByteSpanRow
     private readonly ReadOnlySpan<byte> line;
     private readonly int recordNumber;
     private readonly int sourceLineNumber;
-    private readonly FixedWidthParserOptions options;
+    private readonly FixedWidthReadOptions options;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal FixedWidthByteSpanRow(
         ReadOnlySpan<byte> line,
         int recordNumber,
         int sourceLineNumber,
-        FixedWidthParserOptions options)
+        FixedWidthReadOptions options)
     {
         this.line = line;
         this.recordNumber = recordNumber;
@@ -35,7 +35,7 @@ public readonly ref struct FixedWidthByteSpanRow
 
     /// <summary>
     /// Gets the 1-based source line number where this record started.
-    /// Only populated when <see cref="FixedWidthParserOptions.TrackSourceLineNumbers"/> is <see langword="true"/>.
+    /// Only populated when <see cref="FixedWidthReadOptions.TrackSourceLineNumbers"/> is <see langword="true"/>.
     /// </summary>
     public int SourceLineNumber => sourceLineNumber;
 
@@ -154,9 +154,9 @@ public readonly ref struct FixedWidthByteSpanRow
 public sealed class ImmutableFixedWidthByteRow
 {
     private readonly byte[] data;
-    private readonly FixedWidthParserOptions options;
+    private readonly FixedWidthReadOptions options;
 
-    internal ImmutableFixedWidthByteRow(byte[] data, int recordNumber, int sourceLineNumber, FixedWidthParserOptions options)
+    internal ImmutableFixedWidthByteRow(byte[] data, int recordNumber, int sourceLineNumber, FixedWidthReadOptions options)
     {
         this.data = data;
         RecordNumber = recordNumber;
@@ -228,3 +228,4 @@ public sealed class ImmutableFixedWidthByteRow
     private static ReadOnlySpan<byte> Trim(ReadOnlySpan<byte> span, byte padByte)
         => TrimEnd(TrimStart(span, padByte), padByte);
 }
+

@@ -14,14 +14,14 @@ public readonly ref struct FixedWidthCharSpanRow
     private readonly ReadOnlySpan<char> line;
     private readonly int recordNumber;
     private readonly int sourceLineNumber;
-    private readonly FixedWidthParserOptions options;
+    private readonly FixedWidthReadOptions options;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal FixedWidthCharSpanRow(
         ReadOnlySpan<char> line,
         int recordNumber,
         int sourceLineNumber,
-        FixedWidthParserOptions options)
+        FixedWidthReadOptions options)
     {
         this.line = line;
         this.recordNumber = recordNumber;
@@ -34,7 +34,7 @@ public readonly ref struct FixedWidthCharSpanRow
 
     /// <summary>
     /// Gets the 1-based source line number where this record started.
-    /// Only populated when <see cref="FixedWidthParserOptions.TrackSourceLineNumbers"/> is <see langword="true"/>.
+    /// Only populated when <see cref="FixedWidthReadOptions.TrackSourceLineNumbers"/> is <see langword="true"/>.
     /// </summary>
     public int SourceLineNumber => sourceLineNumber;
 
@@ -131,9 +131,9 @@ public readonly ref struct FixedWidthCharSpanRow
 public sealed class ImmutableFixedWidthRow
 {
     private readonly char[] data;
-    private readonly FixedWidthParserOptions options;
+    private readonly FixedWidthReadOptions options;
 
-    internal ImmutableFixedWidthRow(char[] data, int recordNumber, int sourceLineNumber, FixedWidthParserOptions options)
+    internal ImmutableFixedWidthRow(char[] data, int recordNumber, int sourceLineNumber, FixedWidthReadOptions options)
     {
         this.data = data;
         RecordNumber = recordNumber;
@@ -202,3 +202,4 @@ public sealed class ImmutableFixedWidthRow
         return new string(span);
     }
 }
+

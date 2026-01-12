@@ -1,10 +1,12 @@
 namespace HeroParser.FixedWidths;
 
 /// <summary>
-/// Configuration options for parsing fixed-width files.
+/// Configuration options for reading fixed-width files.
 /// </summary>
-public sealed record FixedWidthParserOptions
+public sealed record FixedWidthReadOptions
 {
+    private bool allowShortRows;
+
     /// <summary>
     /// Gets or sets the fixed record length in characters.
     /// When <see langword="null"/>, each line (terminated by newline) is treated as one record.
@@ -51,7 +53,21 @@ public sealed record FixedWidthParserOptions
     /// This is useful when parsing files where the last few fields may be omitted if empty,
     /// similar to how CSV parsers handle missing columns at the end of rows.
     /// </remarks>
-    public bool AllowShortRows { get; init; } = false;
+    public bool AllowShortRows
+    {
+        get => allowShortRows;
+        init => allowShortRows = value;
+    }
+
+    /// <summary>
+    /// Gets or sets whether to allow rows that are shorter than the expected record length.
+    /// This is an alias for <see cref="AllowShortRows"/> to mirror CSV naming conventions.
+    /// </summary>
+    public bool AllowMissingColumns
+    {
+        get => allowShortRows;
+        init => allowShortRows = value;
+    }
 
     /// <summary>
     /// Gets or sets the comment character. Lines starting with this character are skipped.
@@ -73,9 +89,9 @@ public sealed record FixedWidthParserOptions
     public long? MaxInputSize { get; init; } = 100 * 1024 * 1024; // 100 MB
 
     /// <summary>
-    /// Gets the default parser options instance.
+    /// Gets the default read options instance.
     /// </summary>
-    public static FixedWidthParserOptions Default { get; } = new();
+    public static FixedWidthReadOptions Default { get; } = new();
 
     /// <summary>
     /// Validates the options and throws if invalid.
@@ -128,3 +144,4 @@ public sealed record FixedWidthParserOptions
         }
     }
 }
+

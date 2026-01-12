@@ -12,13 +12,13 @@ namespace HeroParser.FixedWidths.Writing;
 public sealed class FixedWidthRecordWriter<T>
 {
     private readonly FieldDefinition[] fields;
-    private readonly FixedWidthWriterOptions options;
+    private readonly FixedWidthWriteOptions options;
 
     /// <summary>
     /// Creates a new record writer with reflection-based field discovery.
     /// </summary>
     /// <param name="options">The writer options.</param>
-    public FixedWidthRecordWriter(FixedWidthWriterOptions options)
+    public FixedWidthRecordWriter(FixedWidthWriteOptions options)
     {
         this.options = options;
         fields = BuildFieldDefinitions();
@@ -32,7 +32,7 @@ public sealed class FixedWidthRecordWriter<T>
     /// <summary>
     /// Constructor for source-generated writers using templates.
     /// </summary>
-    private FixedWidthRecordWriter(FixedWidthWriterOptions options, IReadOnlyList<WriterTemplate> templates)
+    private FixedWidthRecordWriter(FixedWidthWriteOptions options, IReadOnlyList<WriterTemplate> templates)
     {
         this.options = options;
         fields = InstantiateFieldDefinitions(templates);
@@ -50,7 +50,7 @@ public sealed class FixedWidthRecordWriter<T>
     /// <param name="templates">The generated templates.</param>
     /// <returns>A new record writer.</returns>
     public static FixedWidthRecordWriter<T> CreateFromTemplates(
-        FixedWidthWriterOptions options,
+        FixedWidthWriteOptions options,
         IReadOnlyList<WriterTemplate> templates)
     {
         return new FixedWidthRecordWriter<T>(options, templates);
@@ -468,8 +468,8 @@ public sealed class FixedWidthRecordWriter<T>
 /// </summary>
 public static partial class FixedWidthRecordWriterFactory
 {
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<FixedWidthWriterOptions, object>> generatedFactories = new();
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, FixedWidthWriterOptions), object> reflectionCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<FixedWidthWriteOptions, object>> generatedFactories = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, FixedWidthWriteOptions), object> reflectionCache = new();
 
     static FixedWidthRecordWriterFactory()
     {
@@ -480,7 +480,7 @@ public static partial class FixedWidthRecordWriterFactory
     /// Creates a new record writer for the specified type and options.
     /// Prefers generated writers when available, falling back to reflection-based writers.
     /// </summary>
-    public static FixedWidthRecordWriter<T> GetWriter<T>(FixedWidthWriterOptions options)
+    public static FixedWidthRecordWriter<T> GetWriter<T>(FixedWidthWriteOptions options)
     {
         // Try generated writer first (not cached - each call creates new instance with options)
         if (generatedFactories.TryGetValue(typeof(T), out var factory))
@@ -498,7 +498,7 @@ public static partial class FixedWidthRecordWriterFactory
     /// </summary>
     /// <param name="type">The record type the writer handles.</param>
     /// <param name="factory">Factory for creating the writer with options.</param>
-    public static void RegisterGeneratedWriter(Type type, Func<FixedWidthWriterOptions, object> factory)
+    public static void RegisterGeneratedWriter(Type type, Func<FixedWidthWriteOptions, object> factory)
     {
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(factory);
@@ -510,5 +510,6 @@ public static partial class FixedWidthRecordWriterFactory
     /// Populated by the source generator; becomes a no-op when no generators run.
     /// </summary>
     /// <param name="factories">Cache to register writer factories into.</param>
-    static partial void RegisterGeneratedWriters(System.Collections.Concurrent.ConcurrentDictionary<Type, Func<FixedWidthWriterOptions, object>> factories);
+    static partial void RegisterGeneratedWriters(System.Collections.Concurrent.ConcurrentDictionary<Type, Func<FixedWidthWriteOptions, object>> factories);
 }
+

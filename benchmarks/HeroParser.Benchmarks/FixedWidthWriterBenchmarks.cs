@@ -73,7 +73,7 @@ public class FixedWidthWriterBenchmarks
     {
         var sb = new StringBuilder();
         using var sw = new StringWriter(sb);
-        using var writer = new FixedWidthStreamWriter(sw, FixedWidthWriterOptions.Default, leaveOpen: true);
+        using var writer = new FixedWidthStreamWriter(sw, FixedWidthWriteOptions.Default, leaveOpen: true);
 
         foreach (var record in records)
         {
@@ -425,7 +425,7 @@ public class FixedWidthAsyncWriterBenchmarks
     {
         using var ms = new MemoryStream();
         using var sw = new StreamWriter(ms, Encoding.UTF8, bufferSize: 16 * 1024, leaveOpen: true);
-        using var writer = new FixedWidthStreamWriter(sw, FixedWidthWriterOptions.Default, leaveOpen: true);
+        using var writer = new FixedWidthStreamWriter(sw, FixedWidthWriteOptions.Default, leaveOpen: true);
 
         foreach (var record in records)
         {
@@ -442,7 +442,7 @@ public class FixedWidthAsyncWriterBenchmarks
     public async Task AsyncWriter_RawRows_MemoryStream()
     {
         using var ms = new MemoryStream();
-        await using var writer = new FixedWidthAsyncStreamWriter(ms, FixedWidthWriterOptions.Default, Encoding.UTF8, leaveOpen: true);
+        await using var writer = new FixedWidthAsyncStreamWriter(ms, FixedWidthWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         foreach (var record in records)
         {
@@ -585,7 +585,7 @@ public class FixedWidthAsyncWriterBenchmarks
     public async Task AsyncWriter_RightAligned()
     {
         using var ms = new MemoryStream();
-        var options = new FixedWidthWriterOptions { DefaultAlignment = FieldAlignment.Right };
+        var options = new FixedWidthWriteOptions { DefaultAlignment = FieldAlignment.Right };
         await using var writer = new FixedWidthAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         foreach (var record in records)
@@ -603,7 +603,7 @@ public class FixedWidthAsyncWriterBenchmarks
     public async Task AsyncWriter_TruncateOverflow()
     {
         using var ms = new MemoryStream();
-        var options = new FixedWidthWriterOptions { OverflowBehavior = OverflowBehavior.Truncate };
+        var options = new FixedWidthWriteOptions { OverflowBehavior = OverflowBehavior.Truncate };
         await using var writer = new FixedWidthAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
 
         foreach (var record in records)
@@ -632,3 +632,4 @@ public class FixedWidthAsyncWriterBenchmarks
 
     #endregion
 }
+

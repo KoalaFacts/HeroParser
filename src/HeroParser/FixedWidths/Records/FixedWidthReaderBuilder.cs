@@ -55,7 +55,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     private Dictionary<Type, InternalFixedWidthConverter>? customConverters;
 
     // Cached options - invalidated when any setting changes
-    private FixedWidthParserOptions? cachedOptions;
+    private FixedWidthReadOptions? cachedOptions;
 
     internal FixedWidthReaderBuilder() { }
 
@@ -171,6 +171,13 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         InvalidateCache();
         return this;
     }
+
+    /// <summary>
+    /// Sets whether to allow rows that are shorter than expected.
+    /// This is an alias for <see cref="AllowShortRows(bool)"/> to mirror CSV naming conventions.
+    /// </summary>
+    public FixedWidthReaderBuilder<T> AllowMissingColumns(bool allow = true)
+        => AllowShortRows(allow);
 
     /// <summary>
     /// Sets the comment character. Lines starting with this character are skipped.
@@ -506,9 +513,9 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         cachedOptions = null;
     }
 
-    private FixedWidthParserOptions GetOptions()
+    private FixedWidthReadOptions GetOptions()
     {
-        return cachedOptions ??= new FixedWidthParserOptions
+        return cachedOptions ??= new FixedWidthReadOptions
         {
             RecordLength = recordLength,
             DefaultPadChar = defaultPadChar,
@@ -548,7 +555,7 @@ public sealed class FixedWidthReaderBuilder
     private Encoding encoding = Encoding.UTF8;
 
     // Cached options - invalidated when any setting changes
-    private FixedWidthParserOptions? cachedOptions;
+    private FixedWidthReadOptions? cachedOptions;
 
     internal FixedWidthReaderBuilder() { }
 
@@ -663,6 +670,13 @@ public sealed class FixedWidthReaderBuilder
         InvalidateCache();
         return this;
     }
+
+    /// <summary>
+    /// Sets whether to allow rows that are shorter than expected.
+    /// This is an alias for <see cref="AllowShortRows(bool)"/> to mirror CSV naming conventions.
+    /// </summary>
+    public FixedWidthReaderBuilder AllowMissingColumns(bool allow = true)
+        => AllowShortRows(allow);
 
     /// <summary>
     /// Sets the comment character. Lines starting with this character are skipped.
@@ -815,9 +829,9 @@ public sealed class FixedWidthReaderBuilder
         cachedOptions = null;
     }
 
-    private FixedWidthParserOptions GetOptions()
+    private FixedWidthReadOptions GetOptions()
     {
-        return cachedOptions ??= new FixedWidthParserOptions
+        return cachedOptions ??= new FixedWidthReadOptions
         {
             RecordLength = recordLength,
             DefaultPadChar = defaultPadChar,
@@ -885,3 +899,4 @@ public readonly record struct FixedWidthErrorContext
     /// <summary>Gets the target property type.</summary>
     public Type? TargetType { get; init; }
 }
+

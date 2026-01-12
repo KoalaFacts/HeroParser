@@ -1112,7 +1112,7 @@ FixedWidth.WriteToStream(stream, employees);
 await FixedWidth.WriteToFileAsync("output.dat", employees);
 
 // With options
-await FixedWidth.WriteToFileAsync("output.dat", employees, new FixedWidthWriterOptions
+await FixedWidth.WriteToFileAsync("output.dat", employees, new FixedWidthWriteOptions
 {
     NewLine = "\r\n",
     DefaultPadChar = ' '

@@ -85,7 +85,7 @@ public enum OverflowBehavior
 /// <summary>
 /// Configures how HeroParser writes fixed-width data.
 /// </summary>
-public sealed record FixedWidthWriterOptions
+public sealed record FixedWidthWriteOptions
 {
     /// <summary>
     /// Gets or sets the newline sequence to use between rows (CRLF by default).
@@ -183,7 +183,7 @@ public sealed record FixedWidthWriterOptions
     /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
-    public static FixedWidthWriterOptions Default { get; } = new();
+    public static FixedWidthWriteOptions Default { get; } = new();
 
     /// <summary>
     /// Validates the option set and throws when an invalid value is detected.
@@ -224,3 +224,4 @@ public sealed record FixedWidthWriterOptions
         }
     }
 }
+

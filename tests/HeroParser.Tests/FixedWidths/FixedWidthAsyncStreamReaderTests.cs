@@ -108,7 +108,7 @@ public class FixedWidthAsyncStreamReaderTests
                    "RECORD2             " +
                    "RECORD3             ";
 
-        var options = new FixedWidthParserOptions { RecordLength = 20 };
+        var options = new FixedWidthReadOptions { RecordLength = 20 };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -132,7 +132,7 @@ public class FixedWidthAsyncStreamReaderTests
                    "RECORD2             " +
                    "PARTIAL   ";
 
-        var options = new FixedWidthParserOptions { RecordLength = 20 };
+        var options = new FixedWidthReadOptions { RecordLength = 20 };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -161,7 +161,7 @@ public class FixedWidthAsyncStreamReaderTests
                    "\r\n" +
                    "LINE3               ";
 
-        var options = new FixedWidthParserOptions { SkipEmptyLines = true };
+        var options = new FixedWidthReadOptions { SkipEmptyLines = true };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -182,7 +182,7 @@ public class FixedWidthAsyncStreamReaderTests
     {
         var data = "LINE1\r\n\r\nLINE2";
 
-        var options = new FixedWidthParserOptions { SkipEmptyLines = false };
+        var options = new FixedWidthReadOptions { SkipEmptyLines = false };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -207,7 +207,7 @@ public class FixedWidthAsyncStreamReaderTests
                    "# Another comment\r\n" +
                    "DATA LINE 2         ";
 
-        var options = new FixedWidthParserOptions { CommentCharacter = '#' };
+        var options = new FixedWidthReadOptions { CommentCharacter = '#' };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -234,7 +234,7 @@ public class FixedWidthAsyncStreamReaderTests
                    "DATA ROW 1          \r\n" +
                    "DATA ROW 2          ";
 
-        var options = new FixedWidthParserOptions { SkipRows = 2 };
+        var options = new FixedWidthReadOptions { SkipRows = 2 };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -254,7 +254,7 @@ public class FixedWidthAsyncStreamReaderTests
     {
         var data = "ROW1\r\nROW2\r\nROW3";
 
-        var options = new FixedWidthParserOptions { SkipRows = 10 };
+        var options = new FixedWidthReadOptions { SkipRows = 10 };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -270,7 +270,7 @@ public class FixedWidthAsyncStreamReaderTests
     {
         var data = "ROW1\r\nROW2\r\nROW3\r\nROW4\r\nROW5";
 
-        var options = new FixedWidthParserOptions { MaxRecordCount = 3 };
+        var options = new FixedWidthReadOptions { MaxRecordCount = 3 };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -316,7 +316,7 @@ public class FixedWidthAsyncStreamReaderTests
     {
         var data = "LINE1\r\nLINE2\r\nLINE3";
 
-        var options = new FixedWidthParserOptions { TrackSourceLineNumbers = true };
+        var options = new FixedWidthReadOptions { TrackSourceLineNumbers = true };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -335,7 +335,7 @@ public class FixedWidthAsyncStreamReaderTests
     {
         var data = "HEADER\r\nDATA1\r\nDATA2";
 
-        var options = new FixedWidthParserOptions
+        var options = new FixedWidthReadOptions
         {
             TrackSourceLineNumbers = true,
             SkipRows = 1
@@ -587,7 +587,7 @@ public class FixedWidthAsyncStreamReaderTests
     public async Task MoveNextAsync_OnlyNewlines_WithSkipEmpty_ReturnsFalse()
     {
         var data = "\r\n\r\n\r\n";
-        var options = new FixedWidthParserOptions { SkipEmptyLines = true };
+        var options = new FixedWidthReadOptions { SkipEmptyLines = true };
         await using var stream = CreateStream(data);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
 
@@ -690,3 +690,4 @@ public class FixedWidthAsyncStreamReaderTests
 
     #endregion
 }
+

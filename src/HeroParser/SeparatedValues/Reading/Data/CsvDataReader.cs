@@ -16,8 +16,9 @@ namespace HeroParser.SeparatedValues.Reading.Data;
 public sealed class CsvDataReader : DbDataReader
 {
     private readonly CsvAsyncStreamReader reader;
+    private readonly CsvReadOptions parserOptions;
     private readonly CsvDataReaderOptions options;
-    private readonly byte[][]? nullValueBytes;
+    private readonly string[]? nullValues;
     private readonly StringComparer headerComparer;
 
     private string[] columnNames = [];
@@ -29,16 +30,23 @@ public sealed class CsvDataReader : DbDataReader
     private bool hasCurrentRow;
     private bool hasAnyRow;
 
-    internal CsvDataReader(CsvAsyncStreamReader reader, CsvDataReaderOptions options)
+    internal CsvDataReader(CsvAsyncStreamReader reader, CsvReadOptions parserOptions, CsvDataReaderOptions options)
     {
         this.reader = reader ?? throw new ArgumentNullException(nameof(reader));
+        this.parserOptions = parserOptions ?? CsvReadOptions.Default;
         this.options = options ?? CsvDataReaderOptions.Default;
         headerComparer = this.options.HeaderComparer;
-        nullValueBytes = PrepareNullValues(this.options.NullValues);
+        nullValues = PrepareNullValues(this.options.NullValues);
 
         if (this.options.ColumnNames is { Count: > 0 })
         {
-            columnNames = [.. this.options.ColumnNames];
+            columnNames = new string[this.options.ColumnNames.Count];
+            for (int i = 0; i < columnNames.Length; i++)
+            {
+                var name = this.options.ColumnNames[i]
+                    ?? throw new CsvException(CsvErrorCode.InvalidOptions, "ColumnNames cannot contain null entries.");
+                columnNames[i] = name;
+            }
         }
     }
 
@@ -143,7 +151,7 @@ public sealed class CsvDataReader : DbDataReader
         ValidateOrdinal(ordinal);
 
         var row = reader.Current;
-        if (!row.TryGetColumnSpan(ordinal, out var span))
+        if (!row.TryGetColumnSpan(ordinal, out _))
         {
             if (options.AllowMissingColumns)
                 return DBNull.Value;
@@ -155,10 +163,11 @@ public sealed class CsvDataReader : DbDataReader
                 ordinal + 1);
         }
 
-        if (IsNullValue(span))
+        var value = GetColumnString(row, ordinal);
+        if (IsNullValue(value))
             return DBNull.Value;
 
-        return row.GetString(ordinal);
+        return value;
     }
 
     /// <inheritdoc />
@@ -291,7 +300,7 @@ public sealed class CsvDataReader : DbDataReader
         ValidateOrdinal(ordinal);
 
         var row = reader.Current;
-        if (!row.TryGetColumnSpan(ordinal, out var span))
+        if (!row.TryGetColumnSpan(ordinal, out _))
         {
             if (options.AllowMissingColumns)
                 return true;
@@ -303,7 +312,8 @@ public sealed class CsvDataReader : DbDataReader
                 ordinal + 1);
         }
 
-        return IsNullValue(span);
+        var value = GetColumnString(row, ordinal);
+        return IsNullValue(value);
     }
 
     /// <inheritdoc />
@@ -532,6 +542,18 @@ public sealed class CsvDataReader : DbDataReader
         }
     }
 
+    private string GetColumnString(CsvRow<byte> row, int ordinal)
+    {
+        var column = row[ordinal];
+        if (!parserOptions.EnableQuotedFields)
+            return column.ToString();
+
+        if (parserOptions.EscapeCharacter.HasValue)
+            return column.UnquoteToString((byte)parserOptions.Quote, (byte)parserOptions.EscapeCharacter.Value);
+
+        return column.UnquoteToString((byte)parserOptions.Quote);
+    }
+
     private static string[] CreateDefaultNames(int count)
     {
         var names = new string[count];
@@ -542,28 +564,29 @@ public sealed class CsvDataReader : DbDataReader
         return names;
     }
 
-    private bool IsNullValue(ReadOnlySpan<byte> span)
+    private bool IsNullValue(string value)
     {
-        if (nullValueBytes is null)
+        if (nullValues is null)
             return false;
 
-        foreach (var nullValue in nullValueBytes)
+        foreach (var nullValue in nullValues)
         {
-            if (span.SequenceEqual(nullValue))
+            if (string.Equals(value, nullValue, StringComparison.Ordinal))
                 return true;
         }
         return false;
     }
 
-    private static byte[][]? PrepareNullValues(IReadOnlyList<string>? nullValues)
+    private static string[]? PrepareNullValues(IReadOnlyList<string>? nullValues)
     {
         if (nullValues is not { Count: > 0 })
             return null;
 
-        var result = new byte[nullValues.Count][];
+        var result = new string[nullValues.Count];
         for (int i = 0; i < nullValues.Count; i++)
         {
-            result[i] = Encoding.UTF8.GetBytes(nullValues[i]);
+            result[i] = nullValues[i]
+                ?? throw new CsvException(CsvErrorCode.InvalidOptions, "NullValues cannot contain null entries.");
         }
         return result;
     }

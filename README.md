@@ -1015,19 +1015,19 @@ public class Record
 
 The `End` property specifies the exclusive ending position of the field. When both `Length` and `End` are specified, `Length` takes precedence.
 
-### Handling Short Rows
+### Handling Missing Columns
 
-When parsing files where trailing fields may be omitted or rows vary in length, use `AllowShortRows()`:
+When parsing files where trailing fields may be omitted or rows vary in length, use `AllowMissingColumns()`:
 
 ```csharp
 // Handle short rows gracefully - missing fields return empty values
 var records = FixedWidth.Read<Employee>()
-    .AllowShortRows()
+    .AllowMissingColumns()
     .FromFile("variable-length.dat")
     .ToList();
 
 // By default, accessing fields beyond row length throws FixedWidthException
-// Use AllowShortRows() when:
+// Use AllowMissingColumns() when:
 // - Trailing fields are optional
 // - Records may have variable lengths
 // - Legacy files have inconsistent formatting

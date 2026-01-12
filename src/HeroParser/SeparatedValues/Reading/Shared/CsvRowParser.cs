@@ -544,6 +544,7 @@ internal static class CsvRowParser
         if (!Avx2.IsSupported)
             return false;
 
+        int columnCapacity = columnEnds.Length - 1;
         var delimiterVec = Vector256.Create(delimiter);
         var quoteVec = Vector256.Create(quote);
         var lfVec = Vector256.Create(lf);
@@ -583,13 +584,28 @@ internal static class CsvRowParser
                 if (delimMask == mask)
                 {
                     int startColCountFast = columnCount;
+                    uint delimsToProcess = delimMask;
+                    int delimCount = BitOperations.PopCount(delimsToProcess);
 
-                    while (delimMask != 0)
+                    if (columnCount + delimCount <= columnCapacity)
                     {
-                        int bit = BitOperations.TrailingZeroCount(delimMask);
-                        delimMask &= delimMask - 1;
-                        int absolute = position + bit;
-                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUncheckedUnsafe(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
+                    }
+                    else
+                    {
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
                     }
 
                     // Validate once per chunk instead of per delimiter
@@ -617,18 +633,34 @@ internal static class CsvRowParser
                 {
                     // Find first line ending position - only process delimiters before it
                     int lineEndBit = lineEndingMask != 0 ? BitOperations.TrailingZeroCount(lineEndingMask) : Vector256<byte>.Count;
+                    uint delimsBeforeLineEnd = lineEndBit >= Vector256<byte>.Count
+                        ? delimMask
+                        : delimMask & ((1u << lineEndBit) - 1);
 
                     int startColCountFast = columnCount;
 
                     // Process delimiters that come BEFORE the first line ending
-                    uint delimsToProcess = delimMask;
-                    while (delimsToProcess != 0)
+                    uint delimsToProcess = delimsBeforeLineEnd;
+                    int delimCount = BitOperations.PopCount(delimsToProcess);
+                    if (columnCount + delimCount <= columnCapacity)
                     {
-                        int bit = BitOperations.TrailingZeroCount(delimsToProcess);
-                        if (bit >= lineEndBit) break; // Stop at line ending
-                        delimsToProcess &= delimsToProcess - 1;
-                        int absolute = position + bit;
-                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUncheckedUnsafe(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
+                    }
+                    else
+                    {
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
                     }
 
                     // Validate once per chunk/segment instead of per delimiter
@@ -941,6 +973,7 @@ internal static class CsvRowParser
         if (!Avx512BW.IsSupported)
             return false;
 
+        int columnCapacity = columnEnds.Length - 1;
         var delimiterVec = Vector512.Create((ushort)delimiter);
         var quoteVec = Vector512.Create((ushort)quote);
         var lfVec = Vector512.Create((ushort)lf);
@@ -976,13 +1009,28 @@ internal static class CsvRowParser
                 if (delimMask == mask)
                 {
                     int startColCountFast = columnCount;
+                    uint delimsToProcess = delimMask;
+                    int delimCount = BitOperations.PopCount(delimsToProcess);
 
-                    while (delimMask != 0)
+                    if (columnCount + delimCount <= columnCapacity)
                     {
-                        int bit = BitOperations.TrailingZeroCount(delimMask);
-                        delimMask &= delimMask - 1;
-                        int absolute = position + bit;
-                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUncheckedUnsafe(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
+                    }
+                    else
+                    {
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
                     }
 
                     if (columnCount > maxColumns)
@@ -1007,17 +1055,33 @@ internal static class CsvRowParser
                     int lineEndBit = lineEndingMask != 0
                         ? BitOperations.TrailingZeroCount(lineEndingMask)
                         : Vector512<ushort>.Count;
+                    uint delimsBeforeLineEnd = lineEndBit >= Vector512<ushort>.Count
+                        ? delimMask
+                        : delimMask & ((1u << lineEndBit) - 1);
 
                     int startColCountFast = columnCount;
 
-                    uint delimsToProcess = delimMask;
-                    while (delimsToProcess != 0)
+                    uint delimsToProcess = delimsBeforeLineEnd;
+                    int delimCount = BitOperations.PopCount(delimsToProcess);
+                    if (columnCount + delimCount <= columnCapacity)
                     {
-                        int bit = BitOperations.TrailingZeroCount(delimsToProcess);
-                        if (bit >= lineEndBit) break;
-                        delimsToProcess &= delimsToProcess - 1;
-                        int absolute = position + bit;
-                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUncheckedUnsafe(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
+                    }
+                    else
+                    {
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
                     }
 
                     if (columnCount > maxColumns)
@@ -1355,6 +1419,7 @@ internal static class CsvRowParser
         if (!Avx2.IsSupported)
             return false;
 
+        int columnCapacity = columnEnds.Length - 1;
         var delimiterVec = Vector256.Create((ushort)delimiter);
         var quoteVec = Vector256.Create((ushort)quote);
         var lfVec = Vector256.Create((ushort)lf);
@@ -1392,13 +1457,28 @@ internal static class CsvRowParser
                 if (delimMask == mask)
                 {
                     int startColCountFast = columnCount;
+                    uint delimsToProcess = delimMask;
+                    int delimCount = BitOperations.PopCount(delimsToProcess);
 
-                    while (delimMask != 0)
+                    if (columnCount + delimCount <= columnCapacity)
                     {
-                        int bit = BitOperations.TrailingZeroCount(delimMask);
-                        delimMask &= delimMask - 1;
-                        int absolute = position + bit;
-                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUncheckedUnsafe(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
+                    }
+                    else
+                    {
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
                     }
 
                     // Validate once per chunk instead of per delimiter
@@ -1425,17 +1505,33 @@ internal static class CsvRowParser
                     int lineEndBit = lineEndingMask != 0
                         ? BitOperations.TrailingZeroCount(lineEndingMask)
                         : Vector256<ushort>.Count;
+                    uint delimsBeforeLineEnd = lineEndBit >= Vector256<ushort>.Count
+                        ? delimMask
+                        : delimMask & ((1u << lineEndBit) - 1);
 
                     int startColCountFast = columnCount;
 
-                    uint delimsToProcess = delimMask;
-                    while (delimsToProcess != 0)
+                    uint delimsToProcess = delimsBeforeLineEnd;
+                    int delimCount = BitOperations.PopCount(delimsToProcess);
+                    if (columnCount + delimCount <= columnCapacity)
                     {
-                        int bit = BitOperations.TrailingZeroCount(delimsToProcess);
-                        if (bit >= lineEndBit) break;
-                        delimsToProcess &= delimsToProcess - 1;
-                        int absolute = position + bit;
-                        AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUncheckedUnsafe(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
+                    }
+                    else
+                    {
+                        while (delimsToProcess != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(delimsToProcess);
+                            delimsToProcess &= delimsToProcess - 1;
+                            int absolute = position + bit;
+                            AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
+                        }
                     }
 
                     if (columnCount > maxColumns)
@@ -1763,6 +1859,22 @@ internal static class CsvRowParser
     {
         if (columnCount + 1 >= columnEnds.Length)
             ThrowTooManyColumns(columnEnds.Length - 1);
+        Debug.Assert((uint)(columnCount + 1) < (uint)columnEnds.Length, "Column count exceeds buffer capacity");
+        columnEnds[columnCount + 1] = delimiterIndex;
+        columnCount++;
+        currentStart = delimiterIndex + 1;
+    }
+
+    /// <summary>
+    /// Appends a column end position without bounds checks (caller must ensure capacity).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void AppendColumnUncheckedUnsafe(
+        int delimiterIndex,
+        ref int columnCount,
+        ref int currentStart,
+        Span<int> columnEnds)
+    {
         Debug.Assert((uint)(columnCount + 1) < (uint)columnEnds.Length, "Column count exceeds buffer capacity");
         columnEnds[columnCount + 1] = delimiterIndex;
         columnCount++;

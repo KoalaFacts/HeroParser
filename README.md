@@ -622,6 +622,126 @@ var options = new CsvWriteOptions
 };
 ```
 
+## 🔒 Security Considerations
+
+HeroParser includes built-in protections against common CSV security vulnerabilities.
+
+### DoS Protection
+
+Protect against malicious or malformed CSV files with configurable limits:
+
+```csharp
+var options = new CsvReadOptions
+{
+    MaxColumnCount = 100,       // Prevent column explosion attacks
+    MaxRowCount = 1_000_000,    // Limit total rows processed
+    MaxFieldSize = 10_000,      // Prevent huge field allocations
+    MaxRowSize = 512 * 1024     // 512KB row limit for streaming
+};
+
+var reader = Csv.Read().WithOptions(options).FromFile("untrusted.csv");
+```
+
+**Recommended Limits for Untrusted Input:**
+- `MaxColumnCount`: 100-1000 (based on expected schema)
+- `MaxRowCount`: 1,000,000 (based on available memory)
+- `MaxFieldSize`: 10,000-100,000 bytes
+- `MaxRowSize`: 512KB-1MB (for streaming readers)
+
+### CSV Injection Prevention
+
+When exporting user data to CSV, enable injection protection to prevent formula injection attacks:
+
+```csharp
+Csv.Write<T>()
+    .WithInjectionProtection(CsvInjectionProtection.Sanitize)
+    .ToFile("export.csv");
+```
+
+**Injection Protection Modes:**
+- **`None`** (default): No protection - use for trusted data only
+- **`Sanitize`**: Removes dangerous characters (`=`, `@`, `+`, `-`, `\t`, `\r`)
+- **`EscapeWithQuote`**: Wraps dangerous values in quotes and escapes internal quotes
+- **`EscapeWithTab`**: Prefixes dangerous characters with tab
+
+**Example:**
+```csharp
+var writeOptions = new CsvWriteOptions
+{
+    InjectionProtection = CsvInjectionProtection.Sanitize
+};
+
+// Dangerous value: "=1+1" becomes "'=1+1" (prefixed with single quote)
+Csv.WriteToText(records, writeOptions);
+```
+
+### Secure File Handling
+
+**For production applications processing untrusted files:**
+
+1. **Validate before processing:**
+   ```csharp
+   var options = new CsvReadOptions { MaxColumnCount = 50, MaxRowCount = 100_000 };
+   options.Validate(); // Throws if configuration is invalid
+   ```
+
+2. **Use streaming for large files:**
+   ```csharp
+   // Avoid loading entire file into memory
+   await using var reader = Csv.CreateAsyncStreamReader(File.OpenRead("large.csv"));
+   while (await reader.MoveNextAsync())
+   {
+       var row = reader.Current;
+       // Process row...
+   }
+   ```
+
+3. **Catch and handle exceptions:**
+   ```csharp
+   try
+   {
+       var records = Csv.Read<T>().FromFile("untrusted.csv").ToList();
+   }
+   catch (CsvException ex)
+   {
+       Console.WriteLine($"CSV error at row {ex.Row}, col {ex.Column}: {ex.Message}");
+       // Log and handle appropriately
+   }
+   ```
+
+4. **Implement timeouts for async operations:**
+   ```csharp
+   using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+   await foreach (var record in Csv.Read<T>()
+       .FromFileAsync("untrusted.csv")
+       .WithCancellation(cts.Token))
+   {
+       // Process record...
+   }
+   ```
+
+### Thread-Safety
+
+**Note:** HeroParser readers and writers are **not thread-safe** by design for performance:
+
+- **Readers**: Use separate reader instances per thread
+- **Writers**: Use separate writer instances per thread
+- **Options**: `CsvReadOptions` and `CsvWriteOptions` are immutable and safe to share after validation
+
+**Multi-threaded Processing:**
+```csharp
+// ✅ Good: Each thread gets its own reader
+Parallel.ForEach(files, file =>
+{
+    var reader = Csv.Read<T>().FromFile(file);
+    // Process...
+});
+
+// ❌ Bad: Sharing reader across threads
+var reader = Csv.Read<T>().FromFile("data.csv");
+Parallel.ForEach(reader, record => { /* ... */ }); // NOT SAFE!
+```
+
 ## Benchmarks
 
 ```bash

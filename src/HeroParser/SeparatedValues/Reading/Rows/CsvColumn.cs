@@ -11,8 +11,14 @@ namespace HeroParser.SeparatedValues.Reading.Rows;
 /// </summary>
 /// <typeparam name="T">The element type: <see cref="char"/> for UTF-16 or <see cref="byte"/> for UTF-8.</typeparam>
 /// <remarks>
+/// <para>
 /// Operations avoid allocations unless explicitly noted (e.g., <see cref="ToString"/>).
 /// Uses typeof(T) specialization for optimal performance - JIT eliminates dead branches.
+/// </para>
+/// <para>
+/// Thread-Safety: This is a ref struct that wraps stack-allocated or pooled memory and cannot be
+/// shared across threads by design. Each instance is valid only within its original scope.
+/// </para>
 /// </remarks>
 public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
 {

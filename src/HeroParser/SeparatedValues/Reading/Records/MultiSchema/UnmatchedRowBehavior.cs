@@ -18,5 +18,9 @@ public enum UnmatchedRowBehavior
     /// <summary>
     /// Use a custom factory function to create records for unmatched rows.
     /// </summary>
+    /// <remarks>
+    /// NOTE: This option is not yet implemented and will throw NotSupportedException if used.
+    /// Use Skip or Throw instead.
+    /// </remarks>
     CustomFactory = 2
 }

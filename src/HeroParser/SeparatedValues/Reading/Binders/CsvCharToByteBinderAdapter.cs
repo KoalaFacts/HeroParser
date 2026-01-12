@@ -31,10 +31,17 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     private const int MAX_STACK_ALLOC_COLUMNS = 128;
 
     private readonly ICsvBinder<byte, T> byteBinder;
+    private readonly byte delimiterByte;
 
-    public CsvCharToByteBinderAdapter(ICsvBinder<byte, T> byteBinder)
+    public CsvCharToByteBinderAdapter(ICsvBinder<byte, T> byteBinder, char delimiter)
     {
         this.byteBinder = byteBinder ?? throw new ArgumentNullException(nameof(byteBinder));
+
+        // Delimiter must be ASCII for proper byte conversion
+        if (delimiter > 127)
+            throw new ArgumentException($"Delimiter '{delimiter}' is not ASCII", nameof(delimiter));
+
+        this.delimiterByte = (byte)delimiter;
     }
 
     /// <inheritdoc/>
@@ -43,21 +50,21 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     /// <inheritdoc/>
     public void BindHeader(CsvRow<char> headerRow, int rowNumber)
     {
-        using var conversion = ConvertToByteRow(headerRow);
+        using var conversion = ConvertToByteRow(headerRow, delimiterByte);
         byteBinder.BindHeader(conversion.Row, rowNumber);
     }
 
     /// <inheritdoc/>
     public bool TryBind(CsvRow<char> row, int rowNumber, out T result)
     {
-        using var conversion = ConvertToByteRow(row);
+        using var conversion = ConvertToByteRow(row, delimiterByte);
         return byteBinder.TryBind(conversion.Row, rowNumber, out result);
     }
 
     /// <inheritdoc/>
     public bool BindInto(ref T instance, CsvRow<char> row, int rowNumber)
     {
-        using var conversion = ConvertToByteRow(row);
+        using var conversion = ConvertToByteRow(row, delimiterByte);
         return byteBinder.BindInto(ref instance, conversion.Row, rowNumber);
     }
 
@@ -65,6 +72,8 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     /// Converts a char row to a byte row by encoding to UTF-8.
     /// Uses ArrayPool for the byte buffer to reduce allocations.
     /// </summary>
+    /// <param name="charRow">The character-based CSV row to convert.</param>
+    /// <param name="delimiter">The delimiter byte to insert between columns.</param>
     /// <remarks>
     /// <para>
     /// CsvRow uses "Ends-only" storage format where:
@@ -77,7 +86,7 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     /// </para>
     /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static PooledByteRowConversion ConvertToByteRow(CsvRow<char> charRow)
+    private static PooledByteRowConversion ConvertToByteRow(CsvRow<char> charRow, byte delimiter)
     {
         var columnCount = charRow.ColumnCount;
 
@@ -132,7 +141,7 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
             // Write delimiter (except after last column)
             if (i < columnCount - 1)
             {
-                buffer[offset] = (byte)',';
+                buffer[offset] = delimiter;
                 columnEnds[i + 1] = offset; // Position of delimiter
                 offset++;
             }

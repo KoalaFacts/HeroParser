@@ -59,6 +59,11 @@ internal sealed class MultiSchemaBinderWrapper<TElement, T> : IMultiSchemaBinder
 /// Internal binder that dispatches to type-specific binders based on a discriminator column value.
 /// </summary>
 /// <typeparam name="TElement">The element type: <see cref="char"/> for UTF-16 or <see cref="byte"/> for UTF-8.</typeparam>
+/// <remarks>
+/// Thread-Safety: This class is NOT thread-safe due to mutable sticky binding cache fields
+/// (lastWrapper, lastCharCode, lastPackedValue, lastPackedLength). Each binder instance should be
+/// used on a single thread. For multi-threaded scenarios, create separate binder instances per thread.
+/// </remarks>
 internal sealed class CsvMultiSchemaBinder<TElement>
     where TElement : unmanaged, IEquatable<TElement>
 {

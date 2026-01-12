@@ -132,7 +132,7 @@ public static partial class Csv
         recordOptions ??= CsvRecordOptions.Default;
 
         var reader = ReadFromCharSpan(data.AsSpan(), parserOptions);
-        var binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions);
+        var binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions, parserOptions.Delimiter);
         return new CsvRecordReader<char, T>(reader, binder, recordOptions.SkipRows,
             recordOptions.Progress, recordOptions.ProgressIntervalRows);
     }

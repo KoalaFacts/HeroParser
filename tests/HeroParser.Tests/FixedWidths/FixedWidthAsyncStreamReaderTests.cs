@@ -125,6 +125,29 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    public async Task MoveNextAsync_FixedLength_SkipRows_SkipsRecords()
+    {
+        // Three 20-char records with no newlines
+        var data = "RECORD1             " +
+                   "RECORD2             " +
+                   "RECORD3             ";
+
+        var options = new FixedWidthReadOptions { RecordLength = 20, SkipRows = 1 };
+        await using var stream = CreateStream(data);
+        await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
+
+        var records = new List<string>();
+        while (await reader.MoveNextAsync(TestContext.Current.CancellationToken))
+        {
+            records.Add(new string(reader.Current.RawRecord).Trim());
+        }
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal("RECORD2", records[0]);
+        Assert.Equal("RECORD3", records[1]);
+    }
+
+    [Fact]
     public async Task MoveNextAsync_FixedLength_ThrowsOnPartialRecord()
     {
         // Two full records + partial record (only 10 chars)

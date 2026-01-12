@@ -90,6 +90,12 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
 
     private async ValueTask SkipInitialRowsAsync(int rowsToSkip, CancellationToken cancellationToken)
     {
+        if (options.RecordLength is { } fixedLength)
+        {
+            await SkipInitialFixedLengthRowsAsync(rowsToSkip, fixedLength, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         int skipped = 0;
         while (skipped < rowsToSkip)
         {
@@ -123,6 +129,35 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             if (trackLineNumbers)
                 sourceLineNumber++;
 
+            skipped++;
+        }
+    }
+
+    private async ValueTask SkipInitialFixedLengthRowsAsync(int rowsToSkip, int recordLength, CancellationToken cancellationToken)
+    {
+        int skipped = 0;
+        while (skipped < rowsToSkip)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var available = length - offset;
+            if (available < recordLength)
+            {
+                if (endOfStream)
+                {
+                    offset = length;
+                    return;
+                }
+                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (trackLineNumbers)
+            {
+                sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength));
+            }
+
+            offset += recordLength;
             skipped++;
         }
     }

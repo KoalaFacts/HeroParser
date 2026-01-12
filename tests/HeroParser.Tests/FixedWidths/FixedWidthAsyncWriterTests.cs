@@ -263,6 +263,29 @@ public class FixedWidthAsyncWriterTests
         });
     }
 
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void WriteToText_OnSerializeErrorSkipRow_DoesNotWriteBlankLine()
+    {
+        var records = new[]
+        {
+            new TestRecord { Name = "Alice", Age = 30, City = "NYC" },
+            new TestRecord { Name = new string('X', 25), Age = 40, City = "LA" },
+            new TestRecord { Name = "Carol", Age = 22, City = "SF" }
+        };
+
+        var output = FixedWidth.Write<TestRecord>()
+            .WithOverflowBehavior(OverflowBehavior.Throw)
+            .OnError(_ => FixedWidthSerializeErrorAction.SkipRow)
+            .ToText(records);
+
+        var lines = output.Split(["\r\n"], StringSplitOptions.None);
+        Assert.Equal(3, lines.Length);
+        Assert.All(lines[..^1], line => Assert.False(string.IsNullOrEmpty(line)));
+        Assert.Contains("Alice", output);
+        Assert.Contains("Carol", output);
+    }
+
     #endregion
 
     #region Builder Pattern Async Tests

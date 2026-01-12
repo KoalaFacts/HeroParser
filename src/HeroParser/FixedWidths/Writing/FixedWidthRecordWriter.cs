@@ -79,6 +79,14 @@ public sealed class FixedWidthRecordWriter<T>
 
     private static FieldDefinition[] InstantiateFieldDefinitions(IReadOnlyList<WriterTemplate> templates)
     {
+        var layouts = new FixedWidthFieldLayout[templates.Count];
+        for (int i = 0; i < templates.Count; i++)
+        {
+            var template = templates[i];
+            layouts[i] = new FixedWidthFieldLayout(template.MemberName, template.Start, template.Length);
+        }
+        FixedWidthFieldLayoutValidator.Validate(layouts);
+
         var result = new FieldDefinition[templates.Count];
         for (int i = 0; i < templates.Count; i++)
         {
@@ -123,8 +131,10 @@ public sealed class FixedWidthRecordWriter<T>
                     $"Maximum row count of {options.MaxRowCount.Value} exceeded");
             }
 
-            WriteRecord(writer, record, rowCount + 1);
-            writer.EndRow();
+            if (WriteRecord(writer, record, rowCount + 1))
+            {
+                writer.EndRow();
+            }
             rowCount++;
         }
     }
@@ -152,8 +162,10 @@ public sealed class FixedWidthRecordWriter<T>
                     $"Maximum row count of {options.MaxRowCount.Value} exceeded");
             }
 
-            WriteRecord(writer, record, rowCount + 1);
-            writer.EndRow();
+            if (WriteRecord(writer, record, rowCount + 1))
+            {
+                writer.EndRow();
+            }
             rowCount++;
         }
     }
@@ -183,15 +195,17 @@ public sealed class FixedWidthRecordWriter<T>
                     $"Maximum row count of {options.MaxRowCount.Value} exceeded");
             }
 
-            WriteRecord(writer, record, rowCount + 1);
-            writer.EndRow();
+            if (WriteRecord(writer, record, rowCount + 1))
+            {
+                writer.EndRow();
+            }
             rowCount++;
         }
 
         return ValueTask.CompletedTask;
     }
 
-    private void WriteRecord(FixedWidthStreamWriter writer, T record, int rowNumber)
+    private bool WriteRecord(FixedWidthStreamWriter writer, T record, int rowNumber)
     {
         // Pre-allocate buffer for the entire record
         Span<char> recordBuffer = RecordLength <= 256
@@ -227,13 +241,14 @@ public sealed class FixedWidthRecordWriter<T>
                 if (action == FixedWidthSerializeErrorAction.Throw)
                     throw;
                 if (action == FixedWidthSerializeErrorAction.SkipRow)
-                    return; // Don't write this row
+                    return false; // Don't write this row
                 // FixedWidthSerializeErrorAction.WriteEmpty: Already filled with pad chars
             }
         }
 
         // Write the complete record buffer
         writer.WriteField(recordBuffer, RecordLength);
+        return true;
     }
 
     private void WriteFieldToBuffer(Span<char> recordBuffer, FieldDefinition field, object? value)
@@ -417,6 +432,14 @@ public sealed class FixedWidthRecordWriter<T>
             .Where(x => x.Attr is not null)
             .OrderBy(x => x.Attr!.Start)
             .ToArray();
+
+        var layouts = new FixedWidthFieldLayout[props.Length];
+        for (int i = 0; i < props.Length; i++)
+        {
+            var (prop, attr) = props[i];
+            layouts[i] = new FixedWidthFieldLayout(prop.Name, attr!.Start, attr.Length);
+        }
+        FixedWidthFieldLayoutValidator.Validate(layouts);
 
         var fields = new FieldDefinition[props.Length];
         for (int i = 0; i < props.Length; i++)

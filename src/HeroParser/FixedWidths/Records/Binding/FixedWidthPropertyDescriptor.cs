@@ -1,4 +1,5 @@
 using System.Globalization;
+using HeroParser.FixedWidths;
 
 namespace HeroParser.FixedWidths.Records.Binding;
 
@@ -61,8 +62,23 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
 public sealed class FixedWidthRecordDescriptor<T>(FixedWidthPropertyDescriptor<T>[] properties, Func<T>? factory = null) where T : new()
 {
     /// <summary>Gets the property descriptors.</summary>
-    public FixedWidthPropertyDescriptor<T>[] Properties { get; } = properties;
+    public FixedWidthPropertyDescriptor<T>[] Properties { get; } = ValidateProperties(properties);
 
     /// <summary>Gets the factory function to create instances.</summary>
     public Func<T> Factory { get; } = factory ?? (() => new T());
+
+    private static FixedWidthPropertyDescriptor<T>[] ValidateProperties(FixedWidthPropertyDescriptor<T>[] properties)
+    {
+        ArgumentNullException.ThrowIfNull(properties);
+
+        var layouts = new FixedWidthFieldLayout[properties.Length];
+        for (int i = 0; i < properties.Length; i++)
+        {
+            var prop = properties[i];
+            layouts[i] = new FixedWidthFieldLayout(prop.Name, prop.Start, prop.Length);
+        }
+        FixedWidthFieldLayoutValidator.Validate(layouts);
+
+        return properties;
+    }
 }

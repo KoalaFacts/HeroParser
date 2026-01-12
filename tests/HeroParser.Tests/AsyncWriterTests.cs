@@ -330,6 +330,24 @@ public class AsyncWriterTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task CsvAsyncStreamWriter_InjectionProtection_FallbackDoesNotCorruptRow()
+    {
+        using var ms = new MemoryStream();
+        var options = new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.EscapeWithQuote };
+        await using var writer = new CsvAsyncStreamWriter(ms, options, Encoding.UTF8, leaveOpen: true);
+
+        await writer.WriteRowAsync(["ok", "=SUM(A1:A10)"], TestContext.Current.CancellationToken);
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var csv = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("ok,\"'=SUM(A1:A10)\"\r\n", csv);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task CsvAsyncStreamWriter_MaxOutputSize_ThrowsWhenExceeded()
     {
         using var ms = new MemoryStream();

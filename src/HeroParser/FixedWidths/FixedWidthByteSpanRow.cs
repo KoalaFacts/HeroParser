@@ -73,9 +73,24 @@ public readonly ref struct FixedWidthByteSpanRow
         if (length < 0)
             throw new ArgumentOutOfRangeException(nameof(length), length, "Field length cannot be negative.");
 
-        // Handle case where start is beyond the record
-        if (start >= line.Length)
-            return new FixedWidthByteSpanColumn([]);
+        // Check if field extends beyond the row
+        var fieldEnd = start + length;
+        if (fieldEnd > line.Length)
+        {
+            if (!options.AllowShortRows)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.FieldOutOfBounds,
+                    $"Field at position {start} with length {length} extends beyond the record length ({line.Length}). " +
+                    $"Enable AllowShortRows to handle short records gracefully.",
+                    recordNumber,
+                    sourceLineNumber);
+            }
+
+            // AllowShortRows is true - handle gracefully
+            if (start >= line.Length)
+                return new FixedWidthByteSpanColumn([]);
+        }
 
         // Calculate actual length available
         var actualLength = Math.Min(length, line.Length - start);
@@ -187,8 +202,28 @@ public sealed class ImmutableFixedWidthByteRow
     /// </summary>
     public string GetField(int start, int length, byte padByte, FieldAlignment alignment)
     {
-        if (start < 0 || start >= data.Length)
-            return string.Empty;
+        if (start < 0)
+            throw new ArgumentOutOfRangeException(nameof(start), start, "Start position cannot be negative.");
+
+        if (length < 0)
+            throw new ArgumentOutOfRangeException(nameof(length), length, "Field length cannot be negative.");
+
+        var fieldEnd = start + length;
+        if (fieldEnd > data.Length)
+        {
+            if (!options.AllowShortRows)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.FieldOutOfBounds,
+                    $"Field at position {start} with length {length} extends beyond the record length ({data.Length}). " +
+                    $"Enable AllowShortRows to handle short records gracefully.",
+                    RecordNumber,
+                    SourceLineNumber);
+            }
+
+            if (start >= data.Length)
+                return string.Empty;
+        }
 
         var actualLength = Math.Min(length, data.Length - start);
         ReadOnlySpan<byte> span = data.AsSpan(start, actualLength);

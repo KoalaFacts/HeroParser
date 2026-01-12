@@ -1,4 +1,5 @@
 using HeroParser.FixedWidths;
+using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests.FixedWidths;
@@ -98,6 +99,47 @@ public class FixedWidthReaderTests
     }
 
     [Fact]
+    public void ReadFromText_FixedRecordLength_SkipRows_SkipsRecords()
+    {
+        // Arrange - Three 5-character records with no newlines
+        var data = "AAAAABBBBBCCCCC";
+        var options = new FixedWidthReadOptions { RecordLength = 5, SkipRows = 1 };
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.ReadFromText(data, options))
+        {
+            records.Add(row.RawRecord.ToString());
+        }
+
+        // Assert
+        Assert.Equal(2, records.Count);
+        Assert.Equal("BBBBB", records[0]);
+        Assert.Equal("CCCCC", records[1]);
+    }
+
+    [Fact]
+    public void ReadFromUtf8ByteSpan_FixedRecordLength_SkipRows_SkipsRecords()
+    {
+        // Arrange - Three 5-character records with no newlines
+        var data = "AAAAABBBBBCCCCC";
+        var options = new FixedWidthReadOptions { RecordLength = 5, SkipRows = 1 };
+        var bytes = Encoding.UTF8.GetBytes(data);
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.ReadFromUtf8ByteSpan(bytes, options))
+        {
+            records.Add(row.ToDecodedString());
+        }
+
+        // Assert
+        Assert.Equal(2, records.Count);
+        Assert.Equal("BBBBB", records[0]);
+        Assert.Equal("CCCCC", records[1]);
+    }
+
+    [Fact]
     public void ReadFromText_EmptyLines_SkippedByDefault()
     {
         // Arrange
@@ -116,6 +158,42 @@ public class FixedWidthReaderTests
 
         // Assert
         Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public void ReadFromUtf8ByteSpan_ShortRow_ThrowsWhenNotAllowed()
+    {
+        var data = "ABC";
+        var options = new FixedWidthReadOptions { AllowShortRows = false };
+        var bytes = Encoding.UTF8.GetBytes(data);
+
+        foreach (var row in FixedWidth.ReadFromUtf8ByteSpan(bytes, options))
+        {
+            try
+            {
+                _ = row.GetField(0, 5);
+                Assert.Fail("Expected FixedWidthException for out-of-bounds field.");
+            }
+            catch (FixedWidthException ex)
+            {
+                Assert.Equal(FixedWidthErrorCode.FieldOutOfBounds, ex.ErrorCode);
+            }
+            break;
+        }
+    }
+
+    [Fact]
+    public void ReadFromUtf8ByteSpan_ShortRow_AllowsPartialField()
+    {
+        var data = "ABC";
+        var options = new FixedWidthReadOptions { AllowShortRows = true };
+        var bytes = Encoding.UTF8.GetBytes(data);
+
+        foreach (var row in FixedWidth.ReadFromUtf8ByteSpan(bytes, options))
+        {
+            Assert.Equal("ABC", row.GetField(0, 5).ToString());
+            break;
+        }
     }
 
     [Fact]

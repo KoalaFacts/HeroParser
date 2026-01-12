@@ -59,6 +59,14 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         IReadOnlyList<string>? nullValues = null,
         CustomConverterDictionary? customConverters = null)
     {
+        var layouts = new FixedWidthFieldLayout[templates.Count];
+        for (int i = 0; i < templates.Count; i++)
+        {
+            var template = templates[i];
+            layouts[i] = new FixedWidthFieldLayout(template.MemberName, template.Start, template.Length);
+        }
+        FixedWidthFieldLayoutValidator.Validate(layouts);
+
         return new FixedWidthRecordBinder<T>(
             culture ?? CultureInfo.InvariantCulture,
             errorHandler,

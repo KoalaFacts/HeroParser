@@ -45,6 +45,12 @@ public ref struct FixedWidthCharSpanReader
 
     private void SkipInitialRows(int rowsToSkip)
     {
+        if (options.RecordLength is { } fixedLength)
+        {
+            SkipInitialFixedLengthRows(rowsToSkip, fixedLength);
+            return;
+        }
+
         int skipped = 0;
         while (skipped < rowsToSkip && position < chars.Length)
         {
@@ -69,6 +75,27 @@ public ref struct FixedWidthCharSpanReader
             if (options.TrackSourceLineNumbers)
                 sourceLineNumber++;
 
+            skipped++;
+        }
+    }
+
+    private void SkipInitialFixedLengthRows(int rowsToSkip, int recordLength)
+    {
+        int skipped = 0;
+        while (skipped < rowsToSkip && position < chars.Length)
+        {
+            if (position + recordLength > chars.Length)
+            {
+                position = chars.Length;
+                return;
+            }
+
+            if (options.TrackSourceLineNumbers)
+            {
+                sourceLineNumber += FixedWidthLineScanner.CountNewlines(chars.Slice(position, recordLength));
+            }
+
+            position += recordLength;
             skipped++;
         }
     }

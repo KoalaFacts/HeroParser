@@ -200,6 +200,9 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool TryWriteRowSync(string?[] values)
     {
+        // Save position so we can restore on failure
+        int savedPosition = charBufferPosition;
+
         // Calculate maximum possible size for this row:
         // For each field: max is 2*length (if all quotes doubled) + 2 (surrounding quotes)
         // Plus delimiters: values.Length - 1
@@ -238,6 +241,7 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
             if (!WriteFieldValueSync(value.AsSpan()))
             {
                 // This shouldn't happen if our estimate was correct, but handle gracefully
+                charBufferPosition = savedPosition;
                 return false;
             }
         }

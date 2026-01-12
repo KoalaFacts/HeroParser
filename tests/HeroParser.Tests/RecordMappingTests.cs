@@ -339,4 +339,101 @@ public class RecordMappingTests
     }
 
     #endregion
+
+    #region Delimiter Tests (Char API Bug Fix)
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CharApi_WithSemicolonDelimiter_BindsCorrectly()
+    {
+        // Tests fix for CsvCharToByteBinderAdapter delimiter bug
+        var csv = "Name;Age\nJane;42\nBob;25";
+
+        var reader = Csv.Read<Person>()
+            .WithDelimiter(';')
+            .FromText(csv);
+
+        var results = reader.ToList();
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("Jane", results[0].Name);
+        Assert.Equal(42, results[0].Age);
+        Assert.Equal("Bob", results[1].Name);
+        Assert.Equal(25, results[1].Age);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CharApi_WithPipeDelimiter_BindsCorrectly()
+    {
+        // Tests fix for CsvCharToByteBinderAdapter delimiter bug
+        var csv = "Name|Age\nJane|42\nBob|25";
+
+        var reader = Csv.Read<Person>()
+            .WithDelimiter('|')
+            .FromText(csv);
+
+        var results = reader.ToList();
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("Jane", results[0].Name);
+        Assert.Equal(42, results[0].Age);
+        Assert.Equal("Bob", results[1].Name);
+        Assert.Equal(25, results[1].Age);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CharApi_WithTabDelimiter_BindsCorrectly()
+    {
+        // Tests fix for CsvCharToByteBinderAdapter delimiter bug
+        var csv = "Name\tAge\nJane\t42\nBob\t25";
+
+        var reader = Csv.Read<Person>()
+            .WithDelimiter('\t')
+            .FromText(csv);
+
+        var results = reader.ToList();
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("Jane", results[0].Name);
+        Assert.Equal(42, results[0].Age);
+        Assert.Equal("Bob", results[1].Name);
+        Assert.Equal(25, results[1].Age);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CharApi_WithSemicolonDelimiter_MultipleColumns_BindsCorrectly()
+    {
+        // Tests fix with more columns to ensure all delimiters are correct
+        var csv = "Id;Name;Age;City\n1;Jane;42;NYC\n2;Bob;25;LA";
+
+        var reader = Csv.Read<DetailedPerson>()
+            .WithDelimiter(';')
+            .FromText(csv);
+
+        var results = reader.ToList();
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(1, results[0].Id);
+        Assert.Equal("Jane", results[0].Name);
+        Assert.Equal(42, results[0].Age);
+        Assert.Equal("NYC", results[0].City);
+        Assert.Equal(2, results[1].Id);
+        Assert.Equal("Bob", results[1].Name);
+        Assert.Equal(25, results[1].Age);
+        Assert.Equal("LA", results[1].City);
+    }
+
+    [CsvGenerateBinder]
+    internal sealed class DetailedPerson
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int Age { get; set; }
+        public string City { get; set; } = string.Empty;
+    }
+
+    #endregion
 }

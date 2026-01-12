@@ -338,11 +338,13 @@ public sealed class CsvMultiSchemaReaderBuilder
             packedKey = key;
         }
 
+        // Capture current delimiter for char binder factory
+        var currentDelimiter = delimiter;
         mappings.Add(new DiscriminatorMapping(
             normalizedValue,
             packedKey,
             typeof(T),
-            CsvRecordBinderFactory.GetCharBinder<T>,
+            options => CsvRecordBinderFactory.GetCharBinder<T>(options, currentDelimiter),
             CsvRecordBinderFactory.GetByteBinder<T>));
 
         return this;
@@ -535,6 +537,13 @@ public sealed class CsvMultiSchemaReaderBuilder
             throw new InvalidOperationException(
                 "Cannot use discriminator column name without a header row. " +
                 "Either use WithDiscriminator(columnIndex) or enable HasHeaderRow().");
+        }
+
+        if (unmatchedBehavior == UnmatchedRowBehavior.CustomFactory)
+        {
+            throw new NotSupportedException(
+                "UnmatchedRowBehavior.CustomFactory is not yet implemented. " +
+                "Use UnmatchedRowBehavior.Skip or UnmatchedRowBehavior.Throw instead.");
         }
     }
 

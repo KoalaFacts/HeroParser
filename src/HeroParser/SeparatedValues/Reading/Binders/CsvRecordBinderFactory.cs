@@ -23,6 +23,8 @@ public static class CsvRecordBinderFactory
     /// Gets a char binder for the specified type by adapting the byte binder.
     /// This provides backward compatibility for char-based APIs while using the optimized byte binder internally.
     /// </summary>
+    /// <param name="options">Optional record deserialization options.</param>
+    /// <param name="delimiter">The delimiter character used in the CSV. Defaults to comma.</param>
     /// <remarks>
     /// <para>
     /// <strong>Performance Warning:</strong> The char binder allocates multiple arrays per row
@@ -31,12 +33,12 @@ public static class CsvRecordBinderFactory
     /// with the <c>out byte[]</c> overload).
     /// </para>
     /// </remarks>
-    public static ICsvBinder<char, T> GetCharBinder<T>(CsvRecordOptions? options = null)
+    public static ICsvBinder<char, T> GetCharBinder<T>(CsvRecordOptions? options = null, char delimiter = ',')
         where T : new()
     {
         // Get the byte binder and wrap it in an adapter
         var byteBinder = GetByteBinder<T>(options);
-        return new CsvCharToByteBinderAdapter<T>(byteBinder);
+        return new CsvCharToByteBinderAdapter<T>(byteBinder, delimiter);
     }
 
     #endregion

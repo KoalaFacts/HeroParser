@@ -4,7 +4,13 @@ namespace HeroParser.SeparatedValues.Core;
 /// Configures how HeroParser interprets CSV data.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The defaults follow RFC 4180. Use <see cref="Validate"/> to catch invalid configurations before parsing.
+/// </para>
+/// <para>
+/// Thread-Safety: This is an immutable record type and is safe to share across threads after construction.
+/// Call <see cref="Validate"/> once before sharing to ensure configuration validity.
+/// </para>
 /// </remarks>
 public sealed record CsvReadOptions
 {

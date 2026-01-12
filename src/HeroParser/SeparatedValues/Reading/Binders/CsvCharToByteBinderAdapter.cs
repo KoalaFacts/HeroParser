@@ -41,7 +41,7 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
         if (delimiter > 127)
             throw new ArgumentException($"Delimiter '{delimiter}' is not ASCII", nameof(delimiter));
 
-        this.delimiterByte = (byte)delimiter;
+        delimiterByte = (byte)delimiter;
     }
 
     /// <inheritdoc/>

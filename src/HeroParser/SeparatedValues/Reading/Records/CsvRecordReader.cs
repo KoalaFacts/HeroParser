@@ -10,7 +10,7 @@ namespace HeroParser.SeparatedValues.Reading.Records;
 /// <typeparam name="T">The record type to deserialize.</typeparam>
 public ref struct CsvRecordReader<TElement, T>
     where TElement : unmanaged, IEquatable<TElement>
-    where T : class, new()
+    where T : new()
 {
     private CsvRowReader<TElement> reader;
     private readonly ICsvBinder<TElement, T> binder;
@@ -64,8 +64,7 @@ public ref struct CsvRecordReader<TElement, T>
                 continue;
             }
 
-            var result = binder.Bind(row, rowNumber);
-            if (result is null)
+            if (!binder.TryBind(row, rowNumber, out var result))
             {
                 // Row was skipped due to error handling
                 continue;

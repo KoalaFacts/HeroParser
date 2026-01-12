@@ -39,7 +39,7 @@ public class GeneratorIntegrationTests
                 continue;
             }
 
-            var person = binder.Bind(current, row);
+            Assert.True(binder.TryBind(current, row, out var person));
             Assert.NotNull(person);
             if (row == 2)
             {
@@ -69,7 +69,7 @@ public class GeneratorIntegrationTests
         while (reader.MoveNext())
         {
             row++;
-            var entity = binder.Bind(reader.Current, row);
+            Assert.True(binder.TryBind(reader.Current, row, out var entity));
             Assert.NotNull(entity);
             if (row == 1)
             {

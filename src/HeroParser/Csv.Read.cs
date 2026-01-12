@@ -15,7 +15,7 @@ public static partial class Csv
     /// <summary>
     /// Creates a fluent builder for reading and deserializing CSV records of type <typeparamref name="T"/>.
     /// </summary>
-    public static CsvRecordReaderBuilder<T> Read<T>() where T : class, new() => new();
+    public static CsvRecordReaderBuilder<T> Read<T>() where T : new() => new();
 
     /// <summary>
     /// Creates a fluent builder for manual row-by-row CSV reading.
@@ -100,7 +100,7 @@ public static partial class Csv
         out byte[] textBytes,
         CsvRecordOptions? recordOptions = null,
         CsvReadOptions? parserOptions = null)
-        where T : class, new()
+        where T : new()
     {
         ArgumentNullException.ThrowIfNull(data);
         parserOptions ??= CsvReadOptions.Default;
@@ -125,7 +125,7 @@ public static partial class Csv
         string data,
         CsvRecordOptions? recordOptions = null,
         CsvReadOptions? parserOptions = null)
-        where T : class, new()
+        where T : new()
     {
         ArgumentNullException.ThrowIfNull(data);
         parserOptions ??= CsvReadOptions.Default;
@@ -144,7 +144,7 @@ public static partial class Csv
         ReadOnlySpan<byte> data,
         CsvRecordOptions? recordOptions = null,
         CsvReadOptions? parserOptions = null)
-        where T : class, new()
+        where T : new()
     {
         parserOptions ??= CsvReadOptions.Default;
         recordOptions ??= CsvRecordOptions.Default;

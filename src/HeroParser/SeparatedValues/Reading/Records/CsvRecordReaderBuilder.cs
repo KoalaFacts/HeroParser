@@ -7,7 +7,7 @@ namespace HeroParser.SeparatedValues.Reading.Records;
 /// Fluent builder for configuring and executing CSV reading operations with record deserialization.
 /// </summary>
 /// <typeparam name="T">The record type to deserialize.</typeparam>
-public sealed partial class CsvRecordReaderBuilder<T> where T : class, new()
+public sealed partial class CsvRecordReaderBuilder<T> where T : new()
 {
     // Parser options
     private char delimiter = ',';

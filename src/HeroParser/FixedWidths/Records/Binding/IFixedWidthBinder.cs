@@ -5,14 +5,15 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// Implemented by both reflection-based and descriptor-based binders.
 /// </summary>
 /// <typeparam name="T">The record type to bind to.</typeparam>
-public interface IFixedWidthBinder<T> where T : class, new()
+public interface IFixedWidthBinder<T> where T : new()
 {
     /// <summary>
-    /// Binds a fixed-width row to a record instance without boxing.
+    /// Binds a fixed-width row to a new record instance without boxing.
     /// </summary>
     /// <param name="row">The row to bind.</param>
-    /// <returns>The bound record, or null if the row should be skipped.</returns>
-    T? Bind(FixedWidthCharSpanRow row);
+    /// <param name="result">The bound record when successful.</param>
+    /// <returns>True if binding succeeded; otherwise false if the row should be skipped.</returns>
+    bool TryBind(FixedWidthCharSpanRow row, out T result);
 
     /// <summary>
     /// Binds a fixed-width row into an existing record instance.
@@ -25,5 +26,5 @@ public interface IFixedWidthBinder<T> where T : class, new()
     /// Note: String properties still allocate new strings for each call.
     /// For true zero-allocation, use the span-based row API directly.
     /// </remarks>
-    bool BindInto(T instance, FixedWidthCharSpanRow row);
+    bool BindInto(ref T instance, FixedWidthCharSpanRow row);
 }

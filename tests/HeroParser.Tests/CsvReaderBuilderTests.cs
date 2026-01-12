@@ -26,6 +26,13 @@ public class CsvReaderBuilderTests
     }
 
     [CsvGenerateBinder]
+    public struct StructRecord
+    {
+        public string? Name { get; set; }
+        public int Age { get; set; }
+    }
+
+    [CsvGenerateBinder]
     public class NullableRecord
     {
         public int? Value { get; set; }
@@ -51,6 +58,20 @@ public class CsvReaderBuilderTests
         Assert.Equal("Bob", records[1].Name);
         Assert.Equal(25, records[1].Age);
         Assert.Equal("LA", records[1].City);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Builder_WithStructRecord_Works()
+    {
+        var csv = "Name,Age\r\nAlice,30\r\n";
+
+        using var reader = Csv.Read<StructRecord>().FromText(csv);
+        var records = reader.ToList();
+
+        Assert.Single(records);
+        Assert.Equal("Alice", records[0].Name);
+        Assert.Equal(30, records[0].Age);
     }
 
     [Fact]

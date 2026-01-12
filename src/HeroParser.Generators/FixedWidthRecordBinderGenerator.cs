@@ -52,14 +52,14 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         var provider1 = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 generateAttributeNames[0],
-                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax,
                 transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
             .Where(static x => x is not null);
 
         var provider2 = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 generateAttributeNames[1],
-                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax,
                 transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
             .Where(static x => x is not null);
 
@@ -175,7 +175,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
     private static void EmitPropertySetterMethod(SourceBuilder builder, string fullyQualifiedName, MemberDescriptor member)
     {
-        builder.AppendLine($"private static void Set_{member.MemberName}({fullyQualifiedName} instance, ReadOnlySpan<char> span, CultureInfo culture)");
+        builder.AppendLine($"private static void Set_{member.MemberName}(ref {fullyQualifiedName} instance, ReadOnlySpan<char> span, CultureInfo culture)");
         builder.AppendLine("{");
         builder.Indent();
 

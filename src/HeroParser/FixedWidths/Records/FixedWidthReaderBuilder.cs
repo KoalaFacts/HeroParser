@@ -27,7 +27,7 @@ internal delegate bool InternalFixedWidthConverter(ReadOnlySpan<char> value, Cul
 /// Fluent builder for configuring and executing fixed-width file reading operations.
 /// </summary>
 /// <typeparam name="T">The record type to deserialize.</typeparam>
-public sealed class FixedWidthReaderBuilder<T> where T : class, new()
+public sealed class FixedWidthReaderBuilder<T> where T : new()
 {
     // Parser options
     private int? recordLength = null;

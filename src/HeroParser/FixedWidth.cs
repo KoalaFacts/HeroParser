@@ -35,7 +35,7 @@ public static partial class FixedWidth
     /// }
     /// </code>
     /// </example>
-    public static FixedWidthReaderBuilder<T> Read<T>() where T : class, new()
+    public static FixedWidthReaderBuilder<T> Read<T>() where T : new()
         => new();
 
     /// <summary>

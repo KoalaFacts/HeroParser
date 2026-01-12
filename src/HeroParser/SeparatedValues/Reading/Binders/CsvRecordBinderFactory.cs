@@ -32,7 +32,7 @@ public static class CsvRecordBinderFactory
     /// </para>
     /// </remarks>
     public static ICsvBinder<char, T> GetCharBinder<T>(CsvRecordOptions? options = null)
-        where T : class, new()
+        where T : new()
     {
         // Get the byte binder and wrap it in an adapter
         var byteBinder = GetByteBinder<T>(options);
@@ -49,7 +49,7 @@ public static class CsvRecordBinderFactory
     /// <typeparam name="T">The record type the binder handles.</typeparam>
     /// <param name="factory">Factory that creates binder instances.</param>
     public static void RegisterByteBinder<T>(Func<CsvRecordOptions?, ICsvBinder<byte, T>> factory)
-        where T : class, new()
+        where T : new()
     {
         ArgumentNullException.ThrowIfNull(factory);
         byteBinderFactories[typeof(T)] = factory;
@@ -59,7 +59,7 @@ public static class CsvRecordBinderFactory
     /// Gets a byte binder for the specified type, or throws if not found.
     /// </summary>
     public static ICsvBinder<byte, T> GetByteBinder<T>(CsvRecordOptions? options = null)
-        where T : class, new()
+        where T : new()
     {
         if (byteBinderFactories.TryGetValue(typeof(T), out var binderFactory))
         {
@@ -83,7 +83,7 @@ public static class CsvRecordBinderFactory
     /// <typeparam name="T">The record type the descriptor handles.</typeparam>
     /// <param name="factory">Factory for getting the cached descriptor.</param>
     public static void RegisterDescriptor<T>(Func<CsvRecordDescriptor<T>> factory)
-        where T : class, new()
+        where T : new()
     {
         ArgumentNullException.ThrowIfNull(factory);
         descriptorFactories[typeof(T)] = factory;
@@ -93,7 +93,7 @@ public static class CsvRecordBinderFactory
     /// Tries to get a cached descriptor for the specified type.
     /// </summary>
     internal static bool TryGetDescriptor<T>(out CsvRecordDescriptor<T>? descriptor)
-        where T : class, new()
+        where T : new()
     {
         if (descriptorFactories.TryGetValue(typeof(T), out var factory))
         {

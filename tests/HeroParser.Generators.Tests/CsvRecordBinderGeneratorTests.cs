@@ -43,6 +43,31 @@ public class CsvRecordBinderGeneratorTests
 
     [Fact]
     [Trait("Category", "Unit")]
+    public void Generator_WithStruct_GeneratesBinderAndWriter()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+
+            namespace TestNamespace;
+
+            [CsvGenerateBinder]
+            public struct PersonStruct
+            {
+                public string Name { get; set; }
+                public int Age { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Equal(2, result.GeneratedSources.Length);
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("TestNamespace.PersonStruct", allGeneratedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
     public void Generator_WithCsvColumnAttribute_UsesCustomHeaderName()
     {
         var source = """

@@ -9,7 +9,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// <param name="instance">The record instance to modify.</param>
 /// <param name="value">The parsed character span value.</param>
 /// <param name="culture">The culture for parsing.</param>
-public delegate void FixedWidthPropertySetter<T>(T instance, ReadOnlySpan<char> value, CultureInfo culture) where T : class;
+public delegate void FixedWidthPropertySetter<T>(ref T instance, ReadOnlySpan<char> value, CultureInfo culture);
 
 /// <summary>
 /// Describes a single property for fixed-width binding.
@@ -25,7 +25,7 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
     char padChar,
     FieldAlignment alignment,
     FixedWidthPropertySetter<T> setter,
-    bool isRequired = false) where T : class
+    bool isRequired = false)
 {
     /// <summary>Gets the property/field name.</summary>
     public string Name { get; } = name;
@@ -58,7 +58,7 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
 /// </remarks>
 /// <param name="properties">The property descriptors.</param>
 /// <param name="factory">Optional custom factory; defaults to parameterless constructor.</param>
-public sealed class FixedWidthRecordDescriptor<T>(FixedWidthPropertyDescriptor<T>[] properties, Func<T>? factory = null) where T : class, new()
+public sealed class FixedWidthRecordDescriptor<T>(FixedWidthPropertyDescriptor<T>[] properties, Func<T>? factory = null) where T : new()
 {
     /// <summary>Gets the property descriptors.</summary>
     public FixedWidthPropertyDescriptor<T>[] Properties { get; } = properties;

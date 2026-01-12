@@ -11,7 +11,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// Binds fixed-width row data to typed record instances.
 /// </summary>
 /// <typeparam name="T">The record type to bind to.</typeparam>
-internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T : class, new()
+internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T : new()
 {
     private static readonly ConcurrentDictionary<Type, List<BindingTemplate>> bindingCache = new();
 
@@ -68,72 +68,22 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     }
 
     /// <summary>
-    /// Binds a fixed-width row to a record instance.
+    /// Binds a fixed-width row to a new record instance.
     /// </summary>
     /// <param name="row">The row to bind.</param>
-    /// <returns>The bound record, or null if the row should be skipped.</returns>
-    public T? Bind(FixedWidthCharSpanRow row)
+    /// <param name="result">The bound record when successful.</param>
+    /// <returns>True if binding succeeded; otherwise false if the row should be skipped.</returns>
+    public bool TryBind(FixedWidthCharSpanRow row, out T result)
     {
         var instance = new T();
-
-        foreach (var binding in bindings)
+        if (!BindInto(ref instance, row))
         {
-            var column = row.GetField(
-                binding.Start,
-                binding.Length,
-                binding.PadChar,
-                binding.Alignment);
-
-            // Check if value matches null values list (only allocate string when nullValues is configured)
-            if (nullValues is not null)
-            {
-                if (IsNullValue(column.CharSpan))
-                {
-                    binding.SetValue(instance, null);
-                    continue;
-                }
-            }
-
-            if (!binding.TryConvert(column, out var value))
-            {
-                // Only allocate string in error path (rare case)
-                var rawValue = column.ToString();
-
-                if (errorHandler is not null)
-                {
-                    var context = new FixedWidthErrorContext
-                    {
-                        RecordNumber = row.RecordNumber,
-                        SourceLineNumber = row.SourceLineNumber,
-                        FieldName = binding.MemberName,
-                        RawValue = rawValue,
-                        TargetType = binding.TargetType
-                    };
-
-                    var action = errorHandler(context, new FormatException(
-                        $"Failed to convert field '{binding.MemberName}' value '{rawValue}' to {binding.TargetType.Name}."));
-
-                    switch (action)
-                    {
-                        case FixedWidthDeserializeErrorAction.SkipRecord:
-                            return null;
-                        case FixedWidthDeserializeErrorAction.Throw:
-                        default:
-                            break;
-                    }
-                }
-
-                throw new FixedWidthException(
-                    FixedWidthErrorCode.ParseError,
-                    $"Failed to convert field '{binding.MemberName}' value '{rawValue}' to {binding.TargetType.Name}.",
-                    row.RecordNumber,
-                    row.SourceLineNumber);
-            }
-
-            binding.SetValue(instance, value);
+            result = default!;
+            return false;
         }
 
-        return instance;
+        result = instance;
+        return true;
     }
 
     /// <summary>
@@ -142,7 +92,28 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// <param name="instance">The existing instance to bind into.</param>
     /// <param name="row">The row to bind.</param>
     /// <returns>True if binding succeeded, false if the row should be skipped.</returns>
-    public bool BindInto(T instance, FixedWidthCharSpanRow row)
+    public bool BindInto(ref T instance, FixedWidthCharSpanRow row)
+    {
+        if (typeof(T).IsValueType)
+        {
+            object boxed = instance!;
+            var success = BindIntoObject(boxed, row);
+            if (success)
+            {
+                instance = (T)boxed;
+            }
+            return success;
+        }
+
+        if (instance is null)
+        {
+            throw new ArgumentNullException(nameof(instance));
+        }
+
+        return BindIntoObject(instance!, row);
+    }
+
+    private bool BindIntoObject(object instance, FixedWidthCharSpanRow row)
     {
         foreach (var binding in bindings)
         {
@@ -244,8 +215,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
 
         foreach (var row in reader)
         {
-            var record = binder.Bind(row);
-            if (record is not null)
+            if (binder.TryBind(row, out var record))
             {
                 results.Add(record);
             }
@@ -283,8 +253,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
 
         foreach (var row in reader)
         {
-            var record = binder.Bind(row);
-            if (record is not null)
+            if (binder.TryBind(row, out var record))
             {
                 results.Add(record);
             }
@@ -343,36 +312,10 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
 
         foreach (var row in reader)
         {
-            // Re-bind into the same instance
-            foreach (var binding in binder.bindings)
+            if (binder.BindInto(ref instance, row))
             {
-                var column = row.GetField(
-                    binding.Start,
-                    binding.Length,
-                    binding.PadChar,
-                    binding.Alignment);
-
-                // Check if value matches null values list
-                if (binder.nullValues is not null && binder.IsNullValue(column.CharSpan))
-                {
-                    binding.SetValue(instance, null);
-                    continue;
-                }
-
-                if (!binding.TryConvert(column, out var value))
-                {
-                    var rawValue = column.ToString();
-                    throw new FixedWidthException(
-                        FixedWidthErrorCode.ParseError,
-                        $"Failed to convert field '{binding.MemberName}' value '{rawValue}' to {binding.TargetType.Name}.",
-                        row.RecordNumber,
-                        row.SourceLineNumber);
-                }
-
-                binding.SetValue(instance, value);
+                callback(instance);
             }
-
-            callback(instance);
         }
     }
 
@@ -385,7 +328,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
 
         foreach (var row in reader)
         {
-            if (binder.BindInto(instance, row))
+            if (binder.BindInto(ref instance, row))
             {
                 callback(instance);
             }
@@ -403,9 +346,6 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
                 culture,
                 template.Format,
                 customConverters);
-            // Wrap typed setter in untyped delegate
-            var setter = new SetterWrapper<T>(template.Setter);
-
             list.Add(new FieldBinding(
                 template.MemberName,
                 template.TargetType,
@@ -414,7 +354,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
                 template.PadChar,
                 template.Alignment,
                 converter,
-                setter.Set));
+                template.Setter));
         }
 
         return list;
@@ -463,7 +403,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         char PadChar,
         FieldAlignment Alignment,
         string? Format,
-        Action<T, object?> Setter);
+        Action<object, object?> Setter);
 }
 
 /// <summary>
@@ -506,14 +446,6 @@ internal delegate bool ColumnConverter(ReadOnlySpan<char> span, out object? valu
 internal static class SetterFactory
 {
     public static Action<object, object?> CreateSetter(PropertyInfo property) => property.SetValue;
-}
-
-/// <summary>
-/// Wraps a typed setter to provide an untyped interface.
-/// </summary>
-internal sealed class SetterWrapper<T>(Action<T, object?> typedSetter) where T : class
-{
-    public void Set(object obj, object? value) => typedSetter((T)obj, value);
 }
 
 /// <summary>

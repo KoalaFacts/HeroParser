@@ -54,14 +54,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         var provider1 = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 generateAttributeNames[0],
-                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax,
                 transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
             .Where(static x => x is not null);
 
         var provider2 = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 generateAttributeNames[1],
-                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax,
                 transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
             .Where(static x => x is not null);
 
@@ -236,12 +236,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static void EmitByteBindMethod(SourceBuilder builder, string fullyQualifiedName)
     {
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine($"public {fullyQualifiedName}? Bind({BYTE_ROW_TYPE} row, int rowNumber)");
+        builder.AppendLine($"public bool TryBind({BYTE_ROW_TYPE} row, int rowNumber, out {fullyQualifiedName} result)");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine($"var instance = new {fullyQualifiedName}();");
-        builder.AppendLine("BindInto(instance, row, rowNumber);");
-        builder.AppendLine("return instance;");
+        builder.AppendLine($"result = new {fullyQualifiedName}();");
+        builder.AppendLine("return BindInto(ref result, row, rowNumber);");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -250,7 +249,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static void EmitByteBindIntoMethod(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
     {
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine($"public bool BindInto({fullyQualifiedName} instance, {BYTE_ROW_TYPE} row, int rowNumber)");
+        builder.AppendLine($"public bool BindInto(ref {fullyQualifiedName} instance, {BYTE_ROW_TYPE} row, int rowNumber)");
         builder.AppendLine("{");
         builder.Indent();
         builder.AppendLine("var columnCount = row.ColumnCount;");

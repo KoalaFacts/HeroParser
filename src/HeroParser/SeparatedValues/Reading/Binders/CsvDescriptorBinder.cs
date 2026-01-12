@@ -11,7 +11,7 @@ namespace HeroParser.SeparatedValues.Reading.Binders;
 /// High-performance binder that uses pre-compiled property descriptors.
 /// </summary>
 /// <typeparam name="T">The record type.</typeparam>
-public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : class, new()
+public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
 {
     private readonly CsvRecordDescriptor<T> descriptor;
     private readonly CultureInfo culture;
@@ -91,16 +91,15 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : class
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public T? Bind(CsvRow<char> row, int rowNumber)
+    public bool TryBind(CsvRow<char> row, int rowNumber, out T result)
     {
-        var instance = descriptor.Factory();
-        BindInto(instance, row, rowNumber);
-        return instance;
+        result = descriptor.Factory();
+        return BindInto(ref result, row, rowNumber);
     }
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool BindInto(T instance, CsvRow<char> row, int rowNumber)
+    public bool BindInto(ref T instance, CsvRow<char> row, int rowNumber)
     {
         if (resolvedProperties is null)
             throw new InvalidOperationException("BindHeader must be called before BindInto when NeedsHeaderResolution is true.");
@@ -122,7 +121,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : class
                 {
                     try
                     {
-                        prop.Setter(instance, span, cultureLocal);
+                        prop.Setter(ref instance, span, cultureLocal);
                     }
                     catch (Exception ex) when (ex is not CsvException)
                     {

@@ -22,7 +22,7 @@ namespace HeroParser.SeparatedValues.Reading.Binders;
 /// New code should prefer the UTF-8 byte APIs for SIMD-accelerated parsing.
 /// </para>
 /// </remarks>
-internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where T : class, new()
+internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where T : new()
 {
     /// <summary>
     /// Maximum columns to use stackalloc for column byte lengths.
@@ -48,17 +48,17 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     }
 
     /// <inheritdoc/>
-    public T? Bind(CsvRow<char> row, int rowNumber)
+    public bool TryBind(CsvRow<char> row, int rowNumber, out T result)
     {
         using var conversion = ConvertToByteRow(row);
-        return byteBinder.Bind(conversion.Row, rowNumber);
+        return byteBinder.TryBind(conversion.Row, rowNumber, out result);
     }
 
     /// <inheritdoc/>
-    public bool BindInto(T instance, CsvRow<char> row, int rowNumber)
+    public bool BindInto(ref T instance, CsvRow<char> row, int rowNumber)
     {
         using var conversion = ConvertToByteRow(row);
-        return byteBinder.BindInto(instance, conversion.Row, rowNumber);
+        return byteBinder.BindInto(ref instance, conversion.Row, rowNumber);
     }
 
     /// <summary>

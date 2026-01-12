@@ -187,7 +187,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         foreach (var mapping in descriptor.Mappings)
         {
             builder.AppendLine($"public static {mapping.ReturnTypeName}? {mapping.MethodName}Bytes({BYTE_ROW_TYPE} row, int rowNumber)");
-            builder.AppendLine($"    => _byteBinder_{mapping.SafeTypeName}.Bind(row, rowNumber);");
+            builder.AppendLine($"    => _byteBinder_{mapping.SafeTypeName}.TryBind(row, rowNumber, out var result) ? result : default;");
             builder.AppendLine();
         }
 
@@ -243,7 +243,8 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
                     ? char.ToLowerInvariant(mapping.DiscriminatorValue[0])
                     : mapping.DiscriminatorValue[0];
 
-                builder.AppendLine($"'{charValue}' => _byteBinder_{mapping.SafeTypeName}.Bind(row, rowNumber),");
+                var resultVar = $"result_{mapping.SafeTypeName}";
+                builder.AppendLine($"'{charValue}' => _byteBinder_{mapping.SafeTypeName}.TryBind(row, rowNumber, out var {resultVar}) ? {resultVar} : null,");
             }
 
             builder.AppendLine("_ => null");
@@ -272,7 +273,8 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
                 if (mappings.Count == 1)
                 {
                     var mapping = mappings[0];
-                    builder.AppendLine($"{length} when SpanEqualsBYTE(span, \"{EscapeString(mapping.DiscriminatorValue)}\"u8) => _byteBinder_{mapping.SafeTypeName}.Bind(row, rowNumber),");
+                    var resultVar = $"result_{mapping.SafeTypeName}";
+                    builder.AppendLine($"{length} when SpanEqualsBYTE(span, \"{EscapeString(mapping.DiscriminatorValue)}\"u8) => _byteBinder_{mapping.SafeTypeName}.TryBind(row, rowNumber, out var {resultVar}) ? {resultVar} : null,");
                 }
                 else
                 {
@@ -317,7 +319,8 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         foreach (var mapping in mappings)
         {
             builder.AppendLine($"if (SpanEqualsBYTE(span, \"{EscapeString(mapping.DiscriminatorValue)}\"u8))");
-            builder.AppendLine($"    return _byteBinder_{mapping.SafeTypeName}.Bind(row, rowNumber);");
+            var resultVar = $"result_{mapping.SafeTypeName}";
+            builder.AppendLine($"    return _byteBinder_{mapping.SafeTypeName}.TryBind(row, rowNumber, out var {resultVar}) ? {resultVar} : null;");
         }
 
         builder.AppendLine("return null;");

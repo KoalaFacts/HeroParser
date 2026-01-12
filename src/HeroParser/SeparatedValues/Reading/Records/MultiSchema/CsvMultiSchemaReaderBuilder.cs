@@ -323,7 +323,7 @@ public sealed class CsvMultiSchemaReaderBuilder
     /// <typeparam name="T">The record type to create for rows with this discriminator value.</typeparam>
     /// <param name="discriminatorValue">The discriminator value that identifies this record type.</param>
     /// <returns>This builder for method chaining.</returns>
-    public CsvMultiSchemaReaderBuilder MapRecord<T>(string discriminatorValue) where T : class, new()
+    public CsvMultiSchemaReaderBuilder MapRecord<T>(string discriminatorValue) where T : new()
     {
         ArgumentNullException.ThrowIfNull(discriminatorValue);
 
@@ -358,7 +358,7 @@ public sealed class CsvMultiSchemaReaderBuilder
     /// This is a convenience overload for numeric discriminators common in formats like NACHA.
     /// The integer is converted to its string representation for matching.
     /// </remarks>
-    public CsvMultiSchemaReaderBuilder MapRecord<T>(int discriminatorValue) where T : class, new()
+    public CsvMultiSchemaReaderBuilder MapRecord<T>(int discriminatorValue) where T : new()
     {
         return MapRecord<T>(discriminatorValue.ToString());
     }

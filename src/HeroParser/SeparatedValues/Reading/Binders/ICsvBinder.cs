@@ -12,7 +12,7 @@ namespace HeroParser.SeparatedValues.Reading.Binders;
 /// </remarks>
 public interface ICsvBinder<TElement, T>
     where TElement : unmanaged, IEquatable<TElement>
-    where T : class, new()
+    where T : new()
 {
     /// <summary>
     /// Gets whether the binder needs header resolution before binding data rows.
@@ -31,8 +31,9 @@ public interface ICsvBinder<TElement, T>
     /// </summary>
     /// <param name="row">The row to bind.</param>
     /// <param name="rowNumber">The 1-based row number for error reporting.</param>
-    /// <returns>The bound record, or null if the row should be skipped.</returns>
-    T? Bind(CsvRow<TElement> row, int rowNumber);
+    /// <param name="result">The bound record when successful.</param>
+    /// <returns>True if binding succeeded; otherwise false if the row should be skipped.</returns>
+    bool TryBind(CsvRow<TElement> row, int rowNumber, out T result);
 
     /// <summary>
     /// Binds a CSV row into an existing record instance.
@@ -46,5 +47,5 @@ public interface ICsvBinder<TElement, T>
     /// Note: String properties still allocate new strings for each call.
     /// For true zero-allocation, use the span-based row API directly.
     /// </remarks>
-    bool BindInto(T instance, CsvRow<TElement> row, int rowNumber);
+    bool BindInto(ref T instance, CsvRow<TElement> row, int rowNumber);
 }

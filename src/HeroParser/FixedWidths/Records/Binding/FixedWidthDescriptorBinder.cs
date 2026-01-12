@@ -7,7 +7,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// High-performance binder that uses pre-compiled property descriptors.
 /// </summary>
 /// <typeparam name="T">The record type.</typeparam>
-public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T : class, new()
+public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T : new()
 {
     private readonly FixedWidthRecordDescriptor<T> descriptor;
     private readonly CultureInfo culture;
@@ -30,16 +30,22 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public T? Bind(FixedWidthCharSpanRow row)
+    public bool TryBind(FixedWidthCharSpanRow row, out T result)
     {
         var instance = descriptor.Factory();
-        BindInto(instance, row);
-        return instance;
+        if (!BindInto(ref instance, row))
+        {
+            result = default!;
+            return false;
+        }
+
+        result = instance;
+        return true;
     }
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool BindInto(T instance, FixedWidthCharSpanRow row)
+    public bool BindInto(ref T instance, FixedWidthCharSpanRow row)
     {
         var props = descriptor.Properties;
         var cultureLocal = culture;
@@ -55,7 +61,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
             {
                 try
                 {
-                    prop.Setter(instance, span, cultureLocal);
+                    prop.Setter(ref instance, span, cultureLocal);
                 }
                 catch (Exception ex) when (ex is not FixedWidthException)
                 {

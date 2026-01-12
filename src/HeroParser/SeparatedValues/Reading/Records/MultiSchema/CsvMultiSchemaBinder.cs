@@ -14,7 +14,7 @@ internal interface IMultiSchemaBinderWrapper<TElement>
 {
     bool NeedsHeaderResolution { get; }
     void BindHeader(CsvRow<TElement> headerRow, int rowNumber);
-    object? Bind(CsvRow<TElement> row, int rowNumber);
+    bool TryBind(CsvRow<TElement> row, int rowNumber, out object? result);
 }
 
 /// <summary>
@@ -22,7 +22,7 @@ internal interface IMultiSchemaBinderWrapper<TElement>
 /// </summary>
 internal sealed class MultiSchemaBinderWrapper<TElement, T> : IMultiSchemaBinderWrapper<TElement>
     where TElement : unmanaged, IEquatable<TElement>
-    where T : class, new()
+    where T : new()
 {
     private readonly ICsvBinder<TElement, T> binder;
 
@@ -42,8 +42,17 @@ internal sealed class MultiSchemaBinderWrapper<TElement, T> : IMultiSchemaBinder
         => binder.BindHeader(headerRow, rowNumber);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public object? Bind(CsvRow<TElement> row, int rowNumber)
-        => binder.Bind(row, rowNumber);
+    public bool TryBind(CsvRow<TElement> row, int rowNumber, out object? result)
+    {
+        if (binder.TryBind(row, rowNumber, out var typed))
+        {
+            result = typed;
+            return true;
+        }
+
+        result = null;
+        return false;
+    }
 }
 
 /// <summary>
@@ -260,7 +269,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
                     var cached = lastWrapper;
                     if (cached is not null && charCode == lastCharCode)
                     {
-                        return cached.Bind(row, rowNumber);
+                        return TryBindWithWrapper(cached, row, rowNumber);
                     }
 
                     var wrapper = singleCharLookup[charCode];
@@ -271,7 +280,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
                         lastWrapper = wrapper;
                         // Invalidate packed cache to prevent false positives with empty discriminators
                         lastPackedLength = INVALID_CACHED_LENGTH;
-                        return wrapper.Bind(row, rowNumber);
+                        return TryBindWithWrapper(wrapper, row, rowNumber);
                     }
                 }
             }
@@ -349,7 +358,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
             // Try to match cached packed value directly
             if (TryMatchPackedValue(span, out bool matched) && matched)
             {
-                result = cached.Bind(row, rowNumber);
+                result = TryBindWithWrapper(cached, row, rowNumber);
                 return true;
             }
         }
@@ -399,7 +408,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
             // Cache raw values for next row's sticky binding
             key.GetRawValues(out lastPackedValue, out lastPackedLength);
             lastWrapper = entry.Wrapper;
-            result = entry.Wrapper.Bind(row, rowNumber);
+            result = TryBindWithWrapper(entry.Wrapper, row, rowNumber);
             return true;
         }
 
@@ -476,7 +485,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
         {
             if (comparer.Equals(kvp.Key, discriminatorString))
             {
-                result = kvp.Value.Wrapper.Bind(row, rowNumber);
+                result = TryBindWithWrapper(kvp.Value.Wrapper, row, rowNumber);
                 return true;
             }
         }
@@ -543,10 +552,16 @@ internal sealed class CsvMultiSchemaBinder<TElement>
     /// Creates a binder entry for a typed binder.
     /// </summary>
     public static BinderEntry CreateEntry<T>(ICsvBinder<TElement, T> binder)
-        where T : class, new()
+        where T : new()
     {
         return new BinderEntry(
             new MultiSchemaBinderWrapper<TElement, T>(binder),
             typeof(T));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static object? TryBindWithWrapper(IMultiSchemaBinderWrapper<TElement> wrapper, CsvRow<TElement> row, int rowNumber)
+    {
+        return wrapper.TryBind(row, rowNumber, out var result) ? result : null;
     }
 }

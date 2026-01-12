@@ -270,7 +270,7 @@ public static partial class FixedWidth
         FixedWidthParserOptions? options = null,
         CultureInfo? culture = null,
         FixedWidthDeserializeErrorHandler? onError = null)
-        where T : class, new()
+        where T : new()
     {
         ArgumentNullException.ThrowIfNull(data);
         options ??= FixedWidthParserOptions.Default;
@@ -299,7 +299,7 @@ public static partial class FixedWidth
         Encoding? encoding,
         CultureInfo? culture = null,
         FixedWidthDeserializeErrorHandler? onError = null)
-        where T : class, new()
+        where T : new()
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
@@ -327,7 +327,7 @@ public static partial class FixedWidth
         CultureInfo? culture = null,
         FixedWidthDeserializeErrorHandler? onError = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        where T : class, new()
+        where T : new()
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
@@ -363,7 +363,7 @@ public static partial class FixedWidth
         FixedWidthDeserializeErrorHandler? onError = null,
         bool leaveOpen = true,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        where T : class, new()
+        where T : new()
     {
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;

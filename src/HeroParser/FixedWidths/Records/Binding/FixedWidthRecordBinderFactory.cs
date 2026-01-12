@@ -21,7 +21,7 @@ public static class FixedWidthRecordBinderFactory
     /// <typeparam name="T">The record type the descriptor handles.</typeparam>
     /// <param name="factory">Factory for getting the cached descriptor.</param>
     public static void RegisterDescriptor<T>(Func<FixedWidthRecordDescriptor<T>> factory)
-        where T : class, new()
+        where T : new()
     {
         ArgumentNullException.ThrowIfNull(factory);
         descriptorFactories[typeof(T)] = factory;
@@ -35,7 +35,7 @@ public static class FixedWidthRecordBinderFactory
     /// <param name="descriptor">The descriptor if found.</param>
     /// <returns>True if a descriptor was found, false otherwise.</returns>
     public static bool TryGetDescriptor<T>(out FixedWidthRecordDescriptor<T>? descriptor)
-        where T : class, new()
+        where T : new()
     {
         if (descriptorFactories.TryGetValue(typeof(T), out var factory))
         {
@@ -60,7 +60,7 @@ public static class FixedWidthRecordBinderFactory
         CultureInfo? culture,
         IReadOnlyList<string>? nullValues,
         out IFixedWidthBinder<T>? binder)
-        where T : class, new()
+        where T : new()
     {
         if (TryGetDescriptor<T>(out var descriptor) && descriptor is not null)
         {

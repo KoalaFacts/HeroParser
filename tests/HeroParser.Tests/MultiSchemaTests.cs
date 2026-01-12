@@ -63,6 +63,37 @@ public class MultiSchemaTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void StringDiscriminator_ParsesStructRecordTypes()
+    {
+        var csv = """
+            Type,Value
+            H,HeaderValue
+            D,DetailValue
+            """;
+
+        var results = new List<object>();
+        foreach (var record in Csv.Read()
+            .WithMultiSchema()
+            .WithDiscriminator("Type")
+            .MapRecord<StructHeader>("H")
+            .MapRecord<StructDetail>("D")
+            .AllowMissingColumns()
+            .FromText(csv))
+        {
+            results.Add(record);
+        }
+
+        Assert.Equal(2, results.Count);
+
+        var header = Assert.IsType<StructHeader>(results[0]);
+        Assert.Equal("HeaderValue", header.Value);
+
+        var detail = Assert.IsType<StructDetail>(results[1]);
+        Assert.Equal("DetailValue", detail.Value);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void IntegerDiscriminator_ParsesRecordTypes()
     {
         var csv = """
@@ -546,6 +577,18 @@ public class MultiSchemaTests
     public class SimpleTrailer
     {
         public string Data { get; set; } = string.Empty;
+    }
+
+    [CsvGenerateBinder]
+    public struct StructHeader
+    {
+        public string? Value { get; set; }
+    }
+
+    [CsvGenerateBinder]
+    public struct StructDetail
+    {
+        public string? Value { get; set; }
     }
 
     #endregion

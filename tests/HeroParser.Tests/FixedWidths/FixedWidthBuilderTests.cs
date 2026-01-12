@@ -181,6 +181,15 @@ public class FixedWidthRecordBindingTests
         public string? Name { get; set; }
     }
 
+    public struct ReflectionStructEmployee
+    {
+        [FixedWidthColumn(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        public int Id { get; set; }
+
+        [FixedWidthColumn(Start = 5, Length = 10)]
+        public string? Name { get; set; }
+    }
+
     [Fact]
     public void GenericBuilder_FromText_BindsToRecords()
     {
@@ -221,6 +230,45 @@ public class FixedWidthRecordBindingTests
         Assert.Equal("Alice", records[0].Name);
         Assert.Equal(2, records[1].Id);
         Assert.Equal("Bob", records[1].Name);
+    }
+
+    [Fact]
+    public void ReflectionBinder_FromText_BindsToStructRecords()
+    {
+        // Arrange
+        var data =
+            "00001Alice     \n" +
+            "00002Bob       ";
+
+        // Act
+        var records = FixedWidth.Read<ReflectionStructEmployee>().FromText(data).ToList();
+
+        // Assert
+        Assert.Equal(2, records.Count);
+        Assert.Equal(1, records[0].Id);
+        Assert.Equal("Alice", records[0].Name);
+        Assert.Equal(2, records[1].Id);
+        Assert.Equal("Bob", records[1].Name);
+    }
+
+    [Fact]
+    public void ReflectionBinder_WithErrorHandler_SkipsInvalidStructRecords()
+    {
+        // Arrange
+        var data =
+            "00001Alice     \n" +
+            "ABCDEBob       ";
+
+        // Act
+        var records = FixedWidth.Read<ReflectionStructEmployee>()
+            .OnError((_, _) => FixedWidthDeserializeErrorAction.SkipRecord)
+            .FromText(data)
+            .ToList();
+
+        // Assert
+        Assert.Single(records);
+        Assert.Equal(1, records[0].Id);
+        Assert.Equal("Alice", records[0].Name);
     }
 
     [FixedWidthGenerateBinder]

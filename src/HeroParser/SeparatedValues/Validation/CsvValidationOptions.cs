@@ -62,8 +62,8 @@ public sealed record CsvValidationOptions
         return new CsvReadOptions
         {
             Delimiter = Delimiter ?? ',',
-            MaxRowCount = MaxRows,
-            // Use permissive settings for validation
+            // Don't set MaxRowCount - let the validator handle row limits
+            // so it can report TooManyRows instead of ParseError
             EnableQuotedFields = true,
             AllowNewlinesInsideQuotes = true
         };

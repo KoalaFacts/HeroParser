@@ -153,7 +153,7 @@ public class DelimiterDetectionTests
         Assert.NotEmpty(result.CandidateCounts);
         Assert.True(result.CandidateCounts.ContainsKey(','));
         Assert.True(result.CandidateCounts.ContainsKey(';'));
-        Assert.Equal(4, result.CandidateCounts[',']); // 2 per data row
+        Assert.Equal(3, result.CandidateCounts[',']); // 1 per row (header + 2 data)
         Assert.Equal(3, result.CandidateCounts[';']); // 1 per row (header + 2 data)
     }
 

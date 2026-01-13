@@ -245,8 +245,8 @@ public static class CsvValidator
             {
                 ErrorType = CsvValidationErrorType.ParseError,
                 Message = $"Parse error: {ex.Message}",
-                RowNumber = ex.Row,
-                ColumnNumber = ex.Column
+                RowNumber = ex.Row ?? 0,
+                ColumnNumber = ex.Column ?? 0
             });
         }
 

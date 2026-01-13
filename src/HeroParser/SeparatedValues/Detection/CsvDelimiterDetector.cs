@@ -104,7 +104,7 @@ public static class CsvDelimiterDetector
     /// <example>
     /// <code>
     /// var result = CsvDelimiterDetector.Detect(csvData);
-    /// if (result.Confidence < 50)
+    /// if (result.Confidence &lt; 50)
     /// {
     ///     Console.WriteLine($"Low confidence ({result.Confidence}%), manual verification recommended");
     /// }

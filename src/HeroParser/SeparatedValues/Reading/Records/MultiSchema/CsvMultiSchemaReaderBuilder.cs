@@ -362,7 +362,49 @@ public sealed class CsvMultiSchemaReaderBuilder
     /// </remarks>
     public CsvMultiSchemaReaderBuilder MapRecord<T>(int discriminatorValue) where T : new()
     {
-        return MapRecord<T>(discriminatorValue.ToString());
+        // Format int to string without allocating via ToString()
+        // Use stack buffer for common case (integers fit in 16 chars)
+        Span<char> buffer = stackalloc char[16];
+        if (!discriminatorValue.TryFormat(buffer, out int charsWritten))
+        {
+            // Should never happen for int32
+            throw new InvalidOperationException("Failed to format integer discriminator.");
+        }
+
+        var formattedValue = buffer[..charsWritten];
+
+        // Try to create packed key for fast lookup
+        DiscriminatorKey? packedKey = null;
+        string normalizedValue;
+
+        if (caseInsensitiveDiscriminator)
+        {
+            // For case-insensitive, normalize to lowercase
+            if (DiscriminatorKey.TryCreateLowercase(formattedValue, out var key))
+            {
+                packedKey = key;
+            }
+            normalizedValue = new string(formattedValue).ToLowerInvariant();
+        }
+        else
+        {
+            if (DiscriminatorKey.TryCreate(formattedValue, out var key))
+            {
+                packedKey = key;
+            }
+            normalizedValue = new string(formattedValue);
+        }
+
+        // Capture current delimiter for char binder factory
+        var currentDelimiter = delimiter;
+        mappings.Add(new DiscriminatorMapping(
+            normalizedValue,
+            packedKey,
+            typeof(T),
+            options => CsvRecordBinderFactory.GetCharBinder<T>(options, currentDelimiter),
+            CsvRecordBinderFactory.GetByteBinder<T>));
+
+        return this;
     }
 
     /// <summary>

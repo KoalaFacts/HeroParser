@@ -26,7 +26,7 @@ public static class CsvDelimiterDetector
     /// <summary>
     /// Common delimiter characters to test during detection.
     /// </summary>
-    private static readonly char[] s_candidateDelimiters = [',', ';', '|', '\t'];
+    private static readonly char[] candidateDelimiters = [',', ';', '|', '\t'];
 
     /// <summary>
     /// Default number of rows to sample for delimiter detection.
@@ -186,7 +186,7 @@ public static class CsvDelimiterDetector
         var stats = new Dictionary<char, DelimiterStats>();
 
         // Initialize stats for each candidate
-        foreach (var delimiter in s_candidateDelimiters)
+        foreach (var delimiter in candidateDelimiters)
         {
             stats[delimiter] = new DelimiterStats();
         }
@@ -223,7 +223,7 @@ public static class CsvDelimiterDetector
                     var row = data.Slice(rowStart, rowLength);
 
                     // Count each candidate delimiter in this row
-                    foreach (var delimiter in s_candidateDelimiters)
+                    foreach (var delimiter in candidateDelimiters)
                     {
                         int count = CountOccurrences(row, delimiter);
                         stats[delimiter].CountsPerRow.Add(count);
@@ -245,7 +245,7 @@ public static class CsvDelimiterDetector
             {
                 var row = data.Slice(rowStart, rowLength);
 
-                foreach (var delimiter in s_candidateDelimiters)
+                foreach (var delimiter in candidateDelimiters)
                 {
                     int count = CountOccurrences(row, delimiter);
                     stats[delimiter].CountsPerRow.Add(count);

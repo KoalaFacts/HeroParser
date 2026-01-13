@@ -62,7 +62,7 @@ public static class CsvValidator
         var errors = new List<CsvValidationError>();
 
         // Check for empty data
-        if (data.IsEmpty || data.Trim().IsEmpty)
+        if (data.IsEmpty || IsWhiteSpaceOnly(data))
         {
             if (!options.AllowEmptyFile)
             {
@@ -150,7 +150,7 @@ public static class CsvValidator
 
         try
         {
-            var reader = new CsvRowReader<char>(data, parseOptions);
+            using var reader = new CsvRowReader<char>(data, parseOptions);
 
             // Validate header row if expected
             if (validationOptions.HasHeaderRow && reader.MoveNext())
@@ -238,8 +238,6 @@ public static class CsvValidator
                     break; // Stop validating after limit
                 }
             }
-
-            reader.Dispose();
         }
         catch (CsvException ex)
         {
@@ -273,5 +271,15 @@ public static class CsvValidator
             Delimiter = parseOptions.Delimiter,
             Headers = headers
         };
+    }
+
+    private static bool IsWhiteSpaceOnly(ReadOnlySpan<char> data)
+    {
+        for (int i = 0; i < data.Length; i++)
+        {
+            if (!char.IsWhiteSpace(data[i]))
+                return false;
+        }
+        return true;
     }
 }

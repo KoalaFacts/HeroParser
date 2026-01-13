@@ -185,7 +185,9 @@ public static class CsvDelimiterDetector
     private static List<ReadOnlyMemory<char>> ExtractSampleRows(ReadOnlySpan<char> data, int maxRows)
     {
         var rows = new List<ReadOnlyMemory<char>>(maxRows);
-        var dataAsMemory = data.ToString().AsMemory(); // Convert to Memory for storage
+        // Convert span to string once for Memory storage
+        var dataAsString = data.ToString();
+        var dataAsMemory = dataAsString.AsMemory();
 
         int start = 0;
         int rowCount = 0;

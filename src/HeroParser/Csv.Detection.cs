@@ -19,7 +19,7 @@ public static partial class Csv
     /// (comma, semicolon, pipe, tab) to determine which is most consistent across rows.
     /// </para>
     /// <para>
-    /// For more detailed results including confidence scores, use <see cref="DetectDelimiterWithDetails"/>.
+    /// For more detailed results including confidence scores, use <see cref="DetectDelimiterWithDetails(string, int)"/>.
     /// </para>
     /// </remarks>
     /// <example>
@@ -31,7 +31,7 @@ public static partial class Csv
     ///     .FromText(csvData);
     /// </code>
     /// </example>
-    public static char DetectDelimiter(string data, int sampleRows = CsvDelimiterDetector.DefaultSampleRows)
+    public static char DetectDelimiter(string data, int sampleRows = CsvDelimiterDetector.DEFAULT_SAMPLE_ROWS)
     {
         return CsvDelimiterDetector.DetectDelimiter(data, sampleRows);
     }
@@ -45,7 +45,7 @@ public static partial class Csv
     /// <exception cref="InvalidOperationException">
     /// Thrown when no suitable delimiter could be detected.
     /// </exception>
-    public static char DetectDelimiter(ReadOnlySpan<char> data, int sampleRows = CsvDelimiterDetector.DefaultSampleRows)
+    public static char DetectDelimiter(ReadOnlySpan<char> data, int sampleRows = CsvDelimiterDetector.DEFAULT_SAMPLE_ROWS)
     {
         return CsvDelimiterDetector.DetectDelimiter(data, sampleRows);
     }
@@ -59,7 +59,7 @@ public static partial class Csv
     /// <exception cref="InvalidOperationException">
     /// Thrown when no suitable delimiter could be detected.
     /// </exception>
-    public static char DetectDelimiter(ReadOnlySpan<byte> data, int sampleRows = CsvDelimiterDetector.DefaultSampleRows)
+    public static char DetectDelimiter(ReadOnlySpan<byte> data, int sampleRows = CsvDelimiterDetector.DEFAULT_SAMPLE_ROWS)
     {
         return CsvDelimiterDetector.DetectDelimiter(data, sampleRows);
     }
@@ -90,7 +90,7 @@ public static partial class Csv
     ///     .FromText(csvData);
     /// </code>
     /// </example>
-    public static CsvDelimiterDetectionResult DetectDelimiterWithDetails(string data, int sampleRows = CsvDelimiterDetector.DefaultSampleRows)
+    public static CsvDelimiterDetectionResult DetectDelimiterWithDetails(string data, int sampleRows = CsvDelimiterDetector.DEFAULT_SAMPLE_ROWS)
     {
         return CsvDelimiterDetector.Detect(data, sampleRows);
     }
@@ -104,7 +104,7 @@ public static partial class Csv
     /// <exception cref="InvalidOperationException">
     /// Thrown when no suitable delimiter could be detected.
     /// </exception>
-    public static CsvDelimiterDetectionResult DetectDelimiterWithDetails(ReadOnlySpan<char> data, int sampleRows = CsvDelimiterDetector.DefaultSampleRows)
+    public static CsvDelimiterDetectionResult DetectDelimiterWithDetails(ReadOnlySpan<char> data, int sampleRows = CsvDelimiterDetector.DEFAULT_SAMPLE_ROWS)
     {
         return CsvDelimiterDetector.Detect(data, sampleRows);
     }

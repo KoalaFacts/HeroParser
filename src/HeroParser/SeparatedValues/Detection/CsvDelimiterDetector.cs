@@ -26,12 +26,12 @@ public static class CsvDelimiterDetector
     /// <summary>
     /// Common delimiter characters to test during detection.
     /// </summary>
-    private static readonly char[] CandidateDelimiters = [',', ';', '|', '\t'];
+    private static readonly char[] s_candidateDelimiters = [',', ';', '|', '\t'];
 
     /// <summary>
     /// Default number of rows to sample for delimiter detection.
     /// </summary>
-    public const int DefaultSampleRows = 10;
+    public const int DEFAULT_SAMPLE_ROWS = 10;
 
     /// <summary>
     /// Detects the most likely delimiter character in the CSV data.
@@ -49,7 +49,7 @@ public static class CsvDelimiterDetector
     /// // Returns ';'
     /// </code>
     /// </example>
-    public static char DetectDelimiter(string data, int sampleRows = DefaultSampleRows)
+    public static char DetectDelimiter(string data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
         ArgumentNullException.ThrowIfNull(data);
         return DetectDelimiter(data.AsSpan(), sampleRows);
@@ -64,7 +64,7 @@ public static class CsvDelimiterDetector
     /// <exception cref="InvalidOperationException">
     /// Thrown when no suitable delimiter could be detected.
     /// </exception>
-    public static char DetectDelimiter(ReadOnlySpan<char> data, int sampleRows = DefaultSampleRows)
+    public static char DetectDelimiter(ReadOnlySpan<char> data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
         var result = Detect(data, sampleRows);
         return result.DetectedDelimiter;
@@ -79,7 +79,7 @@ public static class CsvDelimiterDetector
     /// <exception cref="InvalidOperationException">
     /// Thrown when no suitable delimiter could be detected.
     /// </exception>
-    public static char DetectDelimiter(ReadOnlySpan<byte> data, int sampleRows = DefaultSampleRows)
+    public static char DetectDelimiter(ReadOnlySpan<byte> data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
         // Decode UTF-8 to UTF-16 for analysis
         // For delimiter detection, we only need to decode a small sample
@@ -110,7 +110,7 @@ public static class CsvDelimiterDetector
     /// }
     /// </code>
     /// </example>
-    public static CsvDelimiterDetectionResult Detect(string data, int sampleRows = DefaultSampleRows)
+    public static CsvDelimiterDetectionResult Detect(string data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
         ArgumentNullException.ThrowIfNull(data);
         return Detect(data.AsSpan(), sampleRows);
@@ -125,7 +125,7 @@ public static class CsvDelimiterDetector
     /// <exception cref="InvalidOperationException">
     /// Thrown when no suitable delimiter could be detected.
     /// </exception>
-    public static CsvDelimiterDetectionResult Detect(ReadOnlySpan<char> data, int sampleRows = DefaultSampleRows)
+    public static CsvDelimiterDetectionResult Detect(ReadOnlySpan<char> data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
         if (sampleRows < 1)
             throw new ArgumentOutOfRangeException(nameof(sampleRows), "Sample rows must be at least 1");
@@ -186,7 +186,7 @@ public static class CsvDelimiterDetector
         var stats = new Dictionary<char, DelimiterStats>();
 
         // Initialize stats for each candidate
-        foreach (var delimiter in CandidateDelimiters)
+        foreach (var delimiter in s_candidateDelimiters)
         {
             stats[delimiter] = new DelimiterStats();
         }
@@ -223,7 +223,7 @@ public static class CsvDelimiterDetector
                     var row = data.Slice(rowStart, rowLength);
 
                     // Count each candidate delimiter in this row
-                    foreach (var delimiter in CandidateDelimiters)
+                    foreach (var delimiter in s_candidateDelimiters)
                     {
                         int count = CountOccurrences(row, delimiter);
                         stats[delimiter].CountsPerRow.Add(count);
@@ -245,7 +245,7 @@ public static class CsvDelimiterDetector
             {
                 var row = data.Slice(rowStart, rowLength);
 
-                foreach (var delimiter in CandidateDelimiters)
+                foreach (var delimiter in s_candidateDelimiters)
                 {
                     int count = CountOccurrences(row, delimiter);
                     stats[delimiter].CountsPerRow.Add(count);

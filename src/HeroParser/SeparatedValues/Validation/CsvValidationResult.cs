@@ -16,7 +16,7 @@ public sealed record CsvValidationResult
     /// <summary>
     /// Gets the list of validation errors found. Empty if validation passed.
     /// </summary>
-    public IReadOnlyList<CsvValidationError> Errors { get; init; } = Array.Empty<CsvValidationError>();
+    public IReadOnlyList<CsvValidationError> Errors { get; init; } = [];
 
     /// <summary>
     /// Gets the total number of rows validated (including header if present).
@@ -36,5 +36,5 @@ public sealed record CsvValidationResult
     /// <summary>
     /// Gets the list of header names if headers were validated.
     /// </summary>
-    public IReadOnlyList<string> Headers { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> Headers { get; init; } = [];
 }

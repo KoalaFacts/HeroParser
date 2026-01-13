@@ -206,6 +206,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      pull-requests: write   # needed for comment-summary-in-pr
 
     steps:
     - name: Checkout code

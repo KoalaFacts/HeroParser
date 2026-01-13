@@ -136,20 +136,17 @@ public static class CsvDelimiterDetector
                 "Cannot detect delimiter from empty data");
         }
 
-        // Extract sample rows (up to sampleRows or until end of data)
-        var rows = ExtractSampleRows(data, sampleRows);
+        // Analyze delimiters in a single pass without allocating row storage
+        var (delimiterStats, rowCount) = AnalyzeDelimitersInSinglePass(data, sampleRows);
 
-        if (rows.Count == 0)
+        if (rowCount == 0)
         {
             throw new InvalidOperationException(
                 "Cannot detect delimiter: no rows found in data");
         }
 
-        // Count occurrences of each candidate delimiter per row
-        var delimiterStats = AnalyzeDelimiters(rows);
-
         // Select the best delimiter based on consistency
-        var bestDelimiter = SelectBestDelimiter(delimiterStats, rows.Count);
+        var bestDelimiter = SelectBestDelimiter(delimiterStats, rowCount);
 
         if (!bestDelimiter.HasValue)
         {
@@ -177,67 +174,14 @@ public static class CsvDelimiterDetector
             DetectedDelimiter = bestDelimiter.Value,
             Confidence = confidence,
             AverageDelimiterCount = avgCount,
-            SampledRows = rows.Count,
+            SampledRows = rowCount,
             CandidateCounts = candidateCounts
         };
     }
 
-    private static List<ReadOnlyMemory<char>> ExtractSampleRows(ReadOnlySpan<char> data, int maxRows)
-    {
-        var rows = new List<ReadOnlyMemory<char>>(maxRows);
-        // Convert span to string once for Memory storage
-        var dataAsString = data.ToString();
-        var dataAsMemory = dataAsString.AsMemory();
-
-        int start = 0;
-        int rowCount = 0;
-
-        for (int i = 0; i < data.Length && rowCount < maxRows; i++)
-        {
-            // Check for line ending (LF, CR, or CRLF)
-            if (data[i] == '\n')
-            {
-                var length = i - start;
-                // Trim trailing CR if present (CRLF case)
-                if (length > 0 && data[start + length - 1] == '\r')
-                    length--;
-
-                if (length > 0) // Skip empty lines
-                {
-                    rows.Add(dataAsMemory.Slice(start, length));
-                    rowCount++;
-                }
-
-                start = i + 1;
-            }
-            else if (data[i] == '\r' && (i + 1 >= data.Length || data[i + 1] != '\n'))
-            {
-                // CR without LF (old Mac format)
-                var length = i - start;
-                if (length > 0)
-                {
-                    rows.Add(dataAsMemory.Slice(start, length));
-                    rowCount++;
-                }
-
-                start = i + 1;
-            }
-        }
-
-        // Add last row if data doesn't end with newline
-        if (start < data.Length && rowCount < maxRows)
-        {
-            var length = data.Length - start;
-            if (length > 0)
-            {
-                rows.Add(dataAsMemory.Slice(start, length));
-            }
-        }
-
-        return rows;
-    }
-
-    private static Dictionary<char, DelimiterStats> AnalyzeDelimiters(List<ReadOnlyMemory<char>> rows)
+    private static (Dictionary<char, DelimiterStats> stats, int rowCount) AnalyzeDelimitersInSinglePass(
+        ReadOnlySpan<char> data,
+        int maxRows)
     {
         var stats = new Dictionary<char, DelimiterStats>();
 
@@ -247,20 +191,72 @@ public static class CsvDelimiterDetector
             stats[delimiter] = new DelimiterStats();
         }
 
-        // Count delimiter occurrences in each row
-        foreach (var rowMemory in rows)
-        {
-            var row = rowMemory.Span;
+        int rowStart = 0;
+        int rowCount = 0;
 
-            foreach (var delimiter in CandidateDelimiters)
+        for (int i = 0; i < data.Length && rowCount < maxRows; i++)
+        {
+            bool isLineEnd = false;
+            int rowEnd = i;
+
+            // Check for line ending (LF, CR, or CRLF)
+            if (data[i] == '\n')
             {
-                int count = CountOccurrences(row, delimiter);
-                stats[delimiter].CountsPerRow.Add(count);
-                stats[delimiter].TotalCount += count;
+                rowEnd = i;
+                // Trim trailing CR if present (CRLF case)
+                if (rowEnd > rowStart && data[rowEnd - 1] == '\r')
+                    rowEnd--;
+                isLineEnd = true;
+            }
+            else if (data[i] == '\r' && (i + 1 >= data.Length || data[i + 1] != '\n'))
+            {
+                // CR without LF (old Mac format)
+                rowEnd = i;
+                isLineEnd = true;
+            }
+
+            if (isLineEnd)
+            {
+                var rowLength = rowEnd - rowStart;
+                if (rowLength > 0) // Skip empty lines
+                {
+                    var row = data.Slice(rowStart, rowLength);
+
+                    // Count each candidate delimiter in this row
+                    foreach (var delimiter in CandidateDelimiters)
+                    {
+                        int count = CountOccurrences(row, delimiter);
+                        stats[delimiter].CountsPerRow.Add(count);
+                        stats[delimiter].TotalCount += count;
+                    }
+
+                    rowCount++;
+                }
+
+                rowStart = i + 1;
             }
         }
 
-        return stats;
+        // Process last row if data doesn't end with newline
+        if (rowStart < data.Length && rowCount < maxRows)
+        {
+            var rowLength = data.Length - rowStart;
+            if (rowLength > 0)
+            {
+                var row = data.Slice(rowStart, rowLength);
+
+                foreach (var delimiter in CandidateDelimiters)
+                {
+                    int count = CountOccurrences(row, delimiter);
+                    stats[delimiter].CountsPerRow.Add(count);
+                    stats[delimiter].TotalCount += count;
+                }
+
+                rowCount++;
+            }
+        }
+
+        return (stats, rowCount);
     }
 
     private static int CountOccurrences(ReadOnlySpan<char> data, char character)

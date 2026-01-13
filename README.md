@@ -11,6 +11,8 @@
 ### Reading
 - **RFC 4180 Quote Handling**: Supports quoted fields with escaped quotes (`""`), commas in quotes, per spec
 - **Quote-Aware SIMD**: Maintains SIMD performance even with quoted fields
+- **Automatic Delimiter Detection**: Detect delimiter from CSV data (comma, semicolon, pipe, tab)
+- **CSV Validation**: Pre-flight validation with detailed error reporting
 - **Zero Allocations**: Stack-only parsing with ArrayPool for column metadata
 - **Lazy Evaluation**: Columns parsed only when accessed
 - **Configurable RFC vs Speed**: Toggle quote parsing and opt-in newlines-in-quotes; defaults favor speed
@@ -385,6 +387,157 @@ while (reader.MoveNext())
 - ~2.85x faster than runtime multi-schema dispatch
 
 > **Note**: All mapped types must have `[CsvGenerateBinder]` attribute for AOT compatibility.
+
+### Automatic Delimiter Detection
+
+HeroParser can automatically detect the delimiter character used in CSV data:
+
+```csharp
+// Auto-detect delimiter
+char delimiter = Csv.DetectDelimiter(csvData);
+
+// Use detected delimiter
+var records = Csv.Read<Person>()
+    .WithDelimiter(delimiter)
+    .FromText(csvData)
+    .ToList();
+```
+
+**Supported delimiters**: comma (`,`), semicolon (`;`), pipe (`|`), tab (`\t`)
+
+#### Detailed Detection Results
+
+Get confidence scores and candidate delimiter counts:
+
+```csharp
+var result = Csv.DetectDelimiterWithDetails(csvData);
+
+Console.WriteLine($"Detected: '{result.DetectedDelimiter}'");
+Console.WriteLine($"Confidence: {result.Confidence}%");
+Console.WriteLine($"Average count per row: {result.AverageDelimiterCount}");
+
+if (result.Confidence < 50)
+{
+    Console.WriteLine("Low confidence - manual verification recommended");
+    foreach (var candidate in result.CandidateCounts)
+    {
+        Console.WriteLine($"  {candidate.Key}: {candidate.Value} occurrences");
+    }
+}
+
+// Use detected delimiter
+var records = Csv.Read<Person>()
+    .WithDelimiter(result.DetectedDelimiter)
+    .FromText(csvData)
+    .ToList();
+```
+
+**Detection Algorithm**:
+- Samples first N rows (default 10, configurable)
+- Counts occurrences of candidate delimiters
+- Selects delimiter with most consistent count across rows
+- Calculates confidence based on consistency (100% = perfect consistency)
+
+**Use Cases**:
+- User-uploaded CSV files with unknown format
+- Processing CSVs from multiple sources with varying delimiters
+- European CSVs (semicolon-delimited)
+- Log files (pipe or tab-delimited)
+
+### CSV Validation
+
+Validate CSV structure and content before processing:
+
+```csharp
+var options = new CsvValidationOptions
+{
+    RequiredHeaders = new[] { "Name", "Email", "Age" },
+    ExpectedColumnCount = 3,
+    MaxRows = 10000
+};
+
+var result = Csv.Validate(csvData, options);
+
+if (!result.IsValid)
+{
+    Console.WriteLine($"Validation failed with {result.Errors.Count} errors:");
+    foreach (var error in result.Errors)
+    {
+        Console.WriteLine($"  Row {error.RowNumber}: {error.Message}");
+    }
+    return;
+}
+
+// Validation passed - proceed with processing
+var records = Csv.Read<Person>().FromText(csvData).ToList();
+```
+
+#### Validation Checks
+
+**Automatic checks**:
+- Parse errors (malformed CSV structure)
+- Empty files
+- Inconsistent column counts across rows
+- Row count limits (DoS protection)
+
+**Configurable checks**:
+- Required headers presence
+- Expected column count
+- Delimiter auto-detection
+
+**Validation Options**:
+
+```csharp
+var options = new CsvValidationOptions
+{
+    Delimiter = null,                    // Auto-detect delimiter
+    HasHeaderRow = true,                 // Expect header row
+    RequiredHeaders = new[] { "Id", "Name" },  // Required columns
+    ExpectedColumnCount = 5,             // Exact column count
+    MaxRows = 1_000_000,                 // Maximum rows allowed
+    CheckConsistentColumnCount = true,   // All rows must have same column count
+    AllowEmptyFile = false               // Reject empty files
+};
+```
+
+**Validation Result**:
+
+```csharp
+var result = Csv.Validate(csvData, options);
+
+// Check overall validity
+if (result.IsValid)
+{
+    Console.WriteLine($"Valid CSV: {result.TotalRows} rows, {result.ColumnCount} columns");
+    Console.WriteLine($"Delimiter: '{result.Delimiter}'");
+    Console.WriteLine($"Headers: {string.Join(", ", result.Headers)}");
+}
+
+// Inspect errors
+foreach (var error in result.Errors)
+{
+    Console.WriteLine($"[{error.ErrorType}] Row {error.RowNumber}, Col {error.ColumnNumber}");
+    Console.WriteLine($"  Message: {error.Message}");
+    if (error.Expected != null)
+        Console.WriteLine($"  Expected: {error.Expected}, Actual: {error.Actual}");
+}
+```
+
+**Error Types**:
+- `ParseError` - CSV structure could not be parsed
+- `MissingHeader` - Required header is missing
+- `ColumnCountMismatch` - Column count doesn't match expected
+- `TooManyRows` - Row count exceeds maximum
+- `EmptyFile` - File contains no data
+- `InconsistentColumnCount` - Rows have different column counts
+- `DelimiterDetectionFailed` - Could not auto-detect delimiter
+
+**Use Cases**:
+- Pre-flight validation for ETL pipelines
+- User-uploaded file validation
+- API request validation
+- Data quality checks before processing
+- Fail-fast error detection for large files
 
 ### Advanced Reader Options
 

@@ -260,6 +260,7 @@ Bob,Johnson,bob@example.com,555-9012";
         var csv = "Name,Age\nJohn,30,Extra\nJane"; // Multiple issues
         var options = new CsvValidationOptions
         {
+            Delimiter = ',', // Must specify delimiter since inconsistent column counts confuse auto-detection
             RequiredHeaders = ["Name", "Age", "Email"], // Missing Email
             CheckConsistentColumnCount = true
         };
@@ -310,6 +311,6 @@ Bob,Johnson,bob@example.com,555-9012";
         Assert.False(result.IsValid);
         var error = result.Errors.First(e => e.ErrorType == CsvValidationErrorType.InconsistentColumnCount);
         Assert.Equal(3, error.RowNumber);
-        Assert.Contains("3", error.Actual); // Actual column count
+        Assert.Contains("2", error.Actual); // Actual column count (Jane,25 has 2 columns)
     }
 }

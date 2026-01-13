@@ -26,7 +26,7 @@ public class CsvValidationTests
         var csv = "Name,Age,City\nJohn,30,NYC";
         var options = new CsvValidationOptions
         {
-            RequiredHeaders = [ "Name", "Age", "Email" ] // Email is missing
+            RequiredHeaders = ["Name", "Age", "Email"] // Email is missing
         };
 
         var result = Csv.Validate(csv, options);
@@ -208,7 +208,7 @@ public class CsvValidationTests
         var csv = "name,AGE,city\nJohn,30,NYC";
         var options = new CsvValidationOptions
         {
-            RequiredHeaders = [ "Name", "Age", "City" ] // Different case
+            RequiredHeaders = ["Name", "Age", "City"] // Different case
         };
 
         var result = Csv.Validate(csv, options);
@@ -240,7 +240,7 @@ Bob,Johnson,bob@example.com,555-9012";
 
         var options = new CsvValidationOptions
         {
-            RequiredHeaders = [ "First Name", "Last Name", "Email" ],
+            RequiredHeaders = ["First Name", "Last Name", "Email"],
             ExpectedColumnCount = 4,
             MaxRows = 10000
         };
@@ -260,7 +260,7 @@ Bob,Johnson,bob@example.com,555-9012";
         var csv = "Name,Age\nJohn,30,Extra\nJane"; // Multiple issues
         var options = new CsvValidationOptions
         {
-            RequiredHeaders = [ "Name", "Age", "Email" ], // Missing Email
+            RequiredHeaders = ["Name", "Age", "Email"], // Missing Email
             CheckConsistentColumnCount = true
         };
 

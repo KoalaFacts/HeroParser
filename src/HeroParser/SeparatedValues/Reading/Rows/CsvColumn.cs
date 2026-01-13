@@ -658,7 +658,22 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
             var inner = span[1..^1];
             if (inner.Contains(quote))
             {
-                return inner.ToString().Replace(new string(quote, 2), new string(quote, 1));
+                // Unescape doubled quotes efficiently without intermediate allocations
+                var result = new StringBuilder(inner.Length);
+                for (int i = 0; i < inner.Length; i++)
+                {
+                    char c = inner[i];
+                    if (c == quote && i + 1 < inner.Length && inner[i + 1] == quote)
+                    {
+                        result.Append(quote);
+                        i++; // Skip the second quote
+                    }
+                    else
+                    {
+                        result.Append(c);
+                    }
+                }
+                return result.ToString();
             }
             return inner.ToString();
         }
@@ -673,7 +688,24 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
             var inner = span[1..^1];
             if (inner.Contains(quote))
             {
-                return Encoding.UTF8.GetString(inner).Replace(new string((char)quote, 2), new string((char)quote, 1));
+                // Decode UTF-8 then unescape doubled quotes efficiently
+                var decoded = Encoding.UTF8.GetString(inner);
+                var quoteChar = (char)quote;
+                var result = new StringBuilder(decoded.Length);
+                for (int i = 0; i < decoded.Length; i++)
+                {
+                    char c = decoded[i];
+                    if (c == quoteChar && i + 1 < decoded.Length && decoded[i + 1] == quoteChar)
+                    {
+                        result.Append(quoteChar);
+                        i++; // Skip the second quote
+                    }
+                    else
+                    {
+                        result.Append(c);
+                    }
+                }
+                return result.ToString();
             }
             return Encoding.UTF8.GetString(inner);
         }

@@ -190,7 +190,10 @@ internal sealed class CsvMultiSchemaBinder<TElement>
         var lookup = new IMultiSchemaBinderWrapper<TElement>?[128];
         foreach (var (key, entry) in packedLookup)
         {
-            int charCode = key.ToString()[0];
+            // Extract first character directly from packed value without allocating string
+            key.GetRawValues(out long packed, out _);
+            int charCode = (int)(packed & 0xFF);
+
             if (charCode < 128)
             {
                 lookup[charCode] = entry.Wrapper;

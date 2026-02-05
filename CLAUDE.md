@@ -25,82 +25,10 @@ C# with multi-framework targeting (net8.0, net9.0, net10.0): Follow standard con
 <!-- MANUAL ADDITIONS START -->
 
 ## Multi-Schema CSV Parsing
-
-HeroParser supports multi-schema CSV parsing where different rows map to different record types based on a discriminator column. This is common in banking/financial formats (NACHA, BAI, EDI).
-
-### API Overview
-
-```csharp
-// Fluent builder API
-foreach (var record in Csv.Read()
-    .WithMultiSchema()
-    .WithDiscriminator("Type")      // By column name or index
-    .MapRecord<HeaderRecord>("H")
-    .MapRecord<DetailRecord>("D")
-    .MapRecord<TrailerRecord>("T")
-    .AllowMissingColumns()
-    .FromText(csv))
-{
-    // Use pattern matching to handle different record types
-    switch (record)
-    {
-        case HeaderRecord h: // ...
-        case DetailRecord d: // ...
-        case TrailerRecord t: // ...
-    }
-}
-```
-
-### Key Files
-
-- `src/HeroParser/SeparatedValues/Records/MultiSchema/CsvMultiSchemaReaderBuilder.cs` - Fluent builder
-- `src/HeroParser/SeparatedValues/Records/MultiSchema/CsvMultiSchemaBinder.cs` - Type dispatching
-- `src/HeroParser/SeparatedValues/Records/MultiSchema/CsvMultiSchemaRecordReader.cs` - Span-based reader
-- `src/HeroParser/SeparatedValues/Records/MultiSchema/CsvMultiSchemaStreamingRecordReader.cs` - Stream-based reader
-- `src/HeroParser/SeparatedValues/Records/MultiSchema/UnmatchedRowBehavior.cs` - Enum for unmatched row handling
-
-### Features
-
-- Discriminator by column index or header name
-- Case-sensitive or case-insensitive discriminator matching
-- Skip, throw, or use custom factory for unmatched rows
-- Streaming from files, streams, and async variants
-- Works with source-generated binders (`[CsvGenerateBinder]`)
-
-### Source-Generated Multi-Schema Dispatch (Optimal Performance)
-
-For maximum performance, use source-generated dispatchers instead of runtime multi-schema:
-
-```csharp
-[CsvGenerateDispatcher(DiscriminatorIndex = 0)]
-[CsvSchemaMapping("H", typeof(HeaderRecord))]
-[CsvSchemaMapping("D", typeof(DetailRecord))]
-[CsvSchemaMapping("T", typeof(TrailerRecord))]
-public partial class BankingDispatcher { }
-
-// Usage:
-var reader = Csv.Read().FromText(csv);
-if (reader.MoveNext()) { } // Skip header
-while (reader.MoveNext())
-{
-    var record = BankingDispatcher.Dispatch(reader.Current, rowNumber);
-    // Handle record...
-}
-```
-
-**Multi-Schema Performance Results (.NET 9, 1000 rows):**
-
-| Method | Mean | vs Baseline |
-|--------|------|-------------|
-| SingleSchema_TypedBinder (baseline) | 101.6 μs | 1.00x |
-| MultiSchema_Runtime (dictionary lookup) | 150.7 μs | 1.48x slower |
-| **MultiSchema_SourceGenerated** | **52.8 μs** | **1.92x faster** |
-
-**Why source-generated is faster:**
-- Switch expression compiles to jump table (no dictionary lookup)
-- Direct binder invocation (no interface dispatch)
-- No boxing/unboxing overhead
-- 2.85x faster than runtime multi-schema dispatch
+Supports mapping rows to different record types via a discriminator column.
+- **Runtime**: Flexible, uses `WithMultiSchema().WithDiscriminator("Type")`.
+- **Source-Generated**: Optimal performance (`[CsvGenerateDispatcher]`). 2x faster than runtime.
+Key files in `src/HeroParser/SeparatedValues/Records/MultiSchema/`.
 
 ## Code Quality Rules
 
@@ -142,59 +70,13 @@ Attempted optimizations that caused regressions:
 
 HeroParser UTF-8 is now **faster than Sep** in all tested scenarios, including quoted data.
 
-**Standard Workload (10k rows × 25 cols):**
+**Performance Summary (Jan 2026)**:
+- **Standard (10k rows x 25 cols)**: HeroParser UTF-8 is **0.79x faster** (quoted) and **0.93x faster** (unquoted) than Sep.
+- **Wide CSVs**: **25-45% faster** than Sep.
+- **Allocations**: **4 KB fixed** (vs Sep's variable 2-13KB).
+- **Recommendation**: Always use UTF-8 APIs (`byte[]`). UTF-16 is deprecated for performance.
 
-| Encoding | Scenario | HeroParser | Sep | Ratio | Winner |
-|----------|----------|------------|-----|-------|--------|
-| UTF-8 | Unquoted | 551.6 μs | 608.5 μs | **0.93x faster** | **HeroParser** |
-| UTF-8 | Quoted | 1,705 μs | 2,165 μs | **0.79x faster** | **HeroParser** |
-| UTF-16 | Unquoted | 2,498 μs | 608.5 μs | 4.1x slower | Sep |
-| UTF-16 | Quoted | 3,437 μs | 1,204 μs | 2.9x slower | Sep |
-
-**Wide CSV Performance (where HeroParser excels):**
-
-| Rows | Cols | Quotes | Sep | HeroParser UTF-8 | Ratio |
-|------|------|--------|-----|------------------|-------|
-| 100 | 50 | No | 10.4 μs | 8.4 μs | **0.81x** |
-| 100 | 100 | No | 23.7 μs | 15.3 μs | **0.65x** |
-| 100 | 100 | Yes | 48.1 μs | 35.2 μs | **0.73x** |
-| 1,000 | 50 | Yes | 226 μs | 174 μs | **0.78x** |
-| 1,000 | 100 | Yes | 429 μs | 281 μs | **0.70x** |
-| 10,000 | 50 | No | 1,437 μs | 778 μs | **0.55x** |
-| 10,000 | 100 | Yes | 6,363 μs | 3,617 μs | **0.60x** |
-| 100,000 | 100 | No | 21,836 μs | 14,568 μs | **0.67x** |
-| 100,000 | 100 | Yes | 46,580 μs | 35,396 μs | **0.76x** |
-
-**Memory Allocation:**
-- Sep: 1.98 - 13.09 KB (varies with column count)
-- HeroParser: **4 KB fixed** (regardless of column count)
-
-**Key Findings (Jan 2026):**
-- **Wide CSVs (50-100 columns)**: HeroParser UTF-8 is **25-45% faster** than Sep
-- **Quoted UTF-8**: HeroParser UTF-8 is **21% faster** than Sep (Jan 2026 re-verification)
-- **Narrow CSVs (10-25 columns)**: Performance is comparable (within ±15%)
-- **Quoted data with many columns**: HeroParser is significantly faster
-- UTF-16 path is now deprecated for performance-critical scenarios
-
-**Recommendation**: Always use UTF-8 APIs (`byte[]` or `ReadOnlySpan<byte>`) for best performance. The UTF-16 (`string`) path exists for convenience but incurs significant overhead.
-
-**Historical Note - UTF-16 Pack-Saturate Research (Dec 2024):**
-
-Attempted full implementation of Sep's pack-saturate approach for UTF-16. Results showed 3-6% regression due to:
-- Double memory traffic (128 bytes vs 64 bytes per iteration)
-- Instruction overhead from `PackUnsignedSaturate` + `PermuteVar8x64`
-- 64-bit CLMUL complexity vs optimized 32-bit masks
-
-Decision: Reverted and focused on UTF-8 optimization instead, which proved successful.
-
-### Unicode Handling
-
-**Tested character sets** (Dec 2024):
-- ✅ Chinese: Both Sep and HeroParser handle correctly
-- ✅ Arabic: Both parsers handle correctly
-- ✅ Emoji: Both parsers handle correctly
-- ✅ Mixed Unicode: Full support in both parsers
-
-**Initial hypothesis about Sep's char→byte saturation causing Unicode issues was incorrect.** Both parsers handle full Unicode properly.
+**Historical Note**: UTF-16 Pack-Saturate approach was abandoned due to memory traffic overhead.
+**Unicode**: Verified correct handling for Chinese, Arabic, Emoji, and Mixed Unicode.
 
 <!-- MANUAL ADDITIONS END -->

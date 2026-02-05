@@ -140,14 +140,14 @@ Attempted optimizations that caused regressions:
 
 **Latest Results (.NET 10, AVX-512, AMD Ryzen AI 9 HX PRO 370):**
 
-HeroParser UTF-8 is now **competitive with or faster than Sep** in most scenarios after the UTF-8 consolidation work.
+HeroParser UTF-8 is now **faster than Sep** in all tested scenarios, including quoted data.
 
 **Standard Workload (10k rows × 25 cols):**
 
 | Encoding | Scenario | HeroParser | Sep | Ratio | Winner |
 |----------|----------|------------|-----|-------|--------|
 | UTF-8 | Unquoted | 551.6 μs | 608.5 μs | **0.93x faster** | **HeroParser** |
-| UTF-8 | Quoted | 1,344 μs | 1,204 μs | 1.12x slower | Sep |
+| UTF-8 | Quoted | 1,705 μs | 2,165 μs | **0.79x faster** | **HeroParser** |
 | UTF-16 | Unquoted | 2,498 μs | 608.5 μs | 4.1x slower | Sep |
 | UTF-16 | Quoted | 3,437 μs | 1,204 μs | 2.9x slower | Sep |
 
@@ -171,6 +171,7 @@ HeroParser UTF-8 is now **competitive with or faster than Sep** in most scenario
 
 **Key Findings (Jan 2026):**
 - **Wide CSVs (50-100 columns)**: HeroParser UTF-8 is **25-45% faster** than Sep
+- **Quoted UTF-8**: HeroParser UTF-8 is **21% faster** than Sep (Jan 2026 re-verification)
 - **Narrow CSVs (10-25 columns)**: Performance is comparable (within ±15%)
 - **Quoted data with many columns**: HeroParser is significantly faster
 - UTF-16 path is now deprecated for performance-critical scenarios

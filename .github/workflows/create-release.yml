@@ -131,7 +131,7 @@ jobs:
           ls -lh packages/HeroParser.${{ inputs.version }}.*
 
       - name: Generate package provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: 'packages/*.nupkg'
 

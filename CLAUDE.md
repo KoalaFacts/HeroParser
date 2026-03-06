@@ -14,6 +14,10 @@ tests/
   HeroParser.Tests/            # Unit and integration tests
   HeroParser.Generators.Tests/ # Source generator tests
   HeroParser.AotTests/         # AOT compatibility tests
+benchmarks/
+  HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.12.1)
+.github/
+  workflows/                   # CI, benchmarks, security scan, release, NuGet publish
 ```
 
 ## Commands
@@ -30,18 +34,26 @@ dotnet test --filter Category=Integration
 # Run all tests
 dotnet test
 
+# Run source generator tests only
+dotnet test tests/HeroParser.Generators.Tests
+
+# Run AOT compatibility tests (uses dotnet run, not dotnet test)
+dotnet run --project tests/HeroParser.AotTests -c Release
+
 # Check code formatting
 dotnet format --verify-no-changes
 
 # Run benchmarks
-dotnet run -c Release --project <benchmark-project>
+dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 ```
+
+**CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 3 frameworks (net8.0, net9.0, net10.0). Code coverage is collected on ubuntu/net10.0 only.
 
 ## Code Style
 - **Nullable reference types**: Enabled (`<Nullable>enable</Nullable>`)
 - **Language version**: Latest (`<LangVersion>latest</LangVersion>`)
 - **Implicit usings**: Enabled
-- **File-scoped namespaces**: Preferred (warning severity)
+- **File-scoped namespaces**: Preferred (suggestion severity — won't fail build, but used consistently throughout)
 - **Private fields**: `camelCase` (no `s_` prefix for static fields, no `_` prefix)
 - **Constants**: `UPPER_CASE_WITH_UNDERSCORES`
 - **Interfaces**: `IInterfaceName` (prefix `I`, PascalCase)
@@ -51,6 +63,9 @@ dotnet run -c Release --project <benchmark-project>
 - **Build enforces code style**: `EnforceCodeStyleInBuild = true`, `TreatWarningsAsErrors = true`
 - **Collection initialization**: Use modern syntax (IDE0300-0305 enforced as warnings)
 - **Formatting**: Must pass `dotnet format --verify-no-changes` in CI
+- **XML docs**: Required for public API members in `src/` (`CS1591` is warning-level; suppressed for test/benchmark projects)
+- **NuGet lock files**: `RestoreLockedMode` is enabled. When adding/updating packages, run `dotnet restore --force-evaluate` to regenerate lock files
+- **Dependency policy**: GPL-2.0, GPL-3.0, and AGPL-3.0 licenses are denied. High-severity vulnerabilities fail CI
 
 ## Recent Changes
 - 001-aim-to-be: Added C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Zero external dependencies for core library
@@ -126,7 +141,7 @@ Attempted optimizations that caused regressions:
 HeroParser UTF-8 is now **faster than Sep** in all tested scenarios, including quoted data.
 
 **Performance Summary (Jan 2026)**:
-- **Standard (10k rows x 25 cols)**: HeroParser UTF-8 is **0.79x faster** (quoted) and **0.93x faster** (unquoted) than Sep.
+- **Standard (10k rows x 25 cols)**: HeroParser UTF-8 takes **0.79x the time** of Sep (quoted) and **0.93x** (unquoted) — ~21% and ~7% faster respectively.
 - **Wide CSVs**: **25-45% faster** than Sep.
 - **Allocations**: **4 KB fixed** (vs Sep's variable 2-13KB).
 - **Recommendation**: Always use UTF-8 APIs (`byte[]`). UTF-16 is deprecated for performance.

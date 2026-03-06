@@ -149,4 +149,88 @@ HeroParser UTF-8 is now **faster than Sep** in all tested scenarios, including q
 **Historical Note**: UTF-16 Pack-Saturate approach was abandoned due to memory traffic overhead.
 **Unicode**: Verified correct handling for Chinese, Arabic, Emoji, and Mixed Unicode.
 
+## Architecture Overview
+
+### SIMD Parsing Pipeline (Read Path)
+```
+Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extraction → Binding → Records
+                                         │
+                                    ┌────┴─────┐
+                                    │ AVX-512  │  (64-byte chunks)
+                                    │ AVX2     │  (32-byte chunks)
+                                    │ NEON     │  (16-byte chunks, ARM)
+                                    │ Scalar   │  (fallback)
+                                    └──────────┘
+```
+- **Row Scanner**: Uses SIMD to find delimiters + newlines in parallel. PCLMULQDQ for branchless quote tracking.
+- **Column Extraction**: `AppendColumn` tracks column boundaries via `columnEnds[]` array.
+- **Binding**: `ICsvBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
+- **UTF-16 fallback**: `CsvCharToByteBinderAdapter` converts to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
+
+### Write Path
+```
+Records → PropertyAccessor (compiled expression trees) → CsvStreamWriter (buffered) → TextWriter
+                                                              │
+                                                         Quote analysis (SIMD AVX2/SSE2)
+```
+
+### Key Abstractions
+- `CsvRowReader<T>` — ref struct row iterator (T = byte or char)
+- `CsvRecordReader<TElement, T>` — ref struct that wraps row reader + binder
+- `CsvStreamWriter` — buffered writer with `ArrayPool<char>` management
+- `CsvAsyncStreamWriter` — async variant with `char[]` + `byte[]` dual buffers
+- `ICsvBinder<TElement, T>` — interface for source-generated and reflection binders
+
+## Troubleshooting
+
+### Lock file out of date
+```
+error NU1004: The packages lock file is inconsistent with the project dependencies
+```
+**Fix**: Run `dotnet restore --force-evaluate` to regenerate lock files, then commit the updated `packages.lock.json`.
+
+### AOT trim warnings
+If `dotnet publish -r linux-x64 --self-contained` produces trim warnings:
+- Ensure record types use `[CsvGenerateBinder]` or `[FixedWidthGenerateBinder]` attributes
+- Reflection-based binding is annotated with `[RequiresUnreferencedCode]` and will warn under trimming
+
+### SIMD fallback behavior
+HeroParser auto-detects CPU capabilities at runtime:
+- AVX-512 → 64-byte chunk processing (best throughput)
+- AVX2 → 32-byte chunks (common on modern x64)
+- NEON → 16-byte chunks (ARM64, e.g., Apple Silicon, AWS Graviton)
+- Scalar → byte-by-byte (always works)
+
+Set `CsvReadOptions.UseSimdIfAvailable = false` to force scalar mode for debugging.
+
+### Common CI failures
+- **Format check fails**: Run `dotnet format` locally and commit the changes
+- **CS1591 (missing XML docs)**: Add `<summary>` XML docs to new public members in `src/`
+- **IDE0300-0305 (collection init)**: Use `[1, 2, 3]` syntax instead of `new[] { 1, 2, 3 }`
+- **TreatWarningsAsErrors**: Any analyzer warning becomes a build error; fix rather than suppress
+
+### PipeReader integration
+For streaming from network sockets or HTTP:
+```csharp
+await foreach (var row in Csv.ReadFromPipeReaderAsync(pipeReader))
+{
+    // Process row as it arrives
+}
+```
+
+### Schema inference
+Auto-detect column types from CSV data:
+```csharp
+var schema = Csv.InferSchema(csvData);
+// Returns column names, types (Integer, Decimal, Boolean, DateTime, Guid, String), and nullability
+```
+
+### CSV/FixedWidth conversion
+```csharp
+// CSV → Fixed-Width
+var fixedWidth = CsvToFixedWidthConverter.Convert(csv, columns);
+// Fixed-Width → CSV
+var csv = FixedWidthToCsvConverter.Convert(fixedWidthData, columns);
+```
+
 <!-- MANUAL ADDITIONS END -->

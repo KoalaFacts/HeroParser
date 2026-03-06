@@ -154,6 +154,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         int rowNumber = 0;
         int dataRowCount = 0;
         var maxRows = writerOptions.MaxRowCount;
+        var progress = writerOptions.WriteProgress;
+        var progressInterval = writerOptions.WriteProgressIntervalRows;
 
         if (includeHeader && writerOptions.WriteHeader)
         {
@@ -175,6 +177,25 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             }
 
             WriteRecordInternal(writer, record, rowNumber);
+
+            if (progress is not null && dataRowCount % progressInterval == 0)
+            {
+                progress.Report(new CsvWriteProgress
+                {
+                    RowsWritten = dataRowCount,
+                    BytesWritten = writer.CharsWritten,
+                });
+            }
+        }
+
+        // Report final progress
+        if (progress is not null)
+        {
+            progress.Report(new CsvWriteProgress
+            {
+                RowsWritten = dataRowCount,
+                BytesWritten = writer.CharsWritten,
+            });
         }
     }
 

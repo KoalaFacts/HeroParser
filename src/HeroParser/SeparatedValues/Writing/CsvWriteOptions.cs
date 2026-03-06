@@ -244,6 +244,24 @@ public sealed record CsvWriteOptions
     public int? MaxColumnCount { get; init; }
 
     /// <summary>
+    /// Gets or sets the progress reporter for receiving writing progress updates.
+    /// </summary>
+    /// <remarks>
+    /// When set, progress updates are reported at intervals specified by <see cref="WriteProgressIntervalRows"/>.
+    /// Progress includes the number of rows written and approximate bytes written.
+    /// </remarks>
+    public IProgress<CsvWriteProgress>? WriteProgress { get; init; }
+
+    /// <summary>
+    /// Gets or sets the number of rows between write progress updates (default is 1000).
+    /// </summary>
+    /// <remarks>
+    /// Progress is reported every N rows to avoid the overhead of frequent notifications.
+    /// Only applies when <see cref="WriteProgress"/> is set.
+    /// </remarks>
+    public int WriteProgressIntervalRows { get; init; } = 1000;
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>

@@ -49,6 +49,11 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     private long totalCharsWritten;
     private int currentRowColumnCount;
 
+    /// <summary>
+    /// Gets the total number of characters written to the underlying writer.
+    /// </summary>
+    public long CharsWritten => totalCharsWritten + bufferPosition;
+
     // Default dangerous characters for CSV injection (always dangerous)
     // Note: '-' and '+' are handled separately with smart detection
     private static ReadOnlySpan<char> AlwaysDangerousChars => ['=', '@', '\t', '\r'];

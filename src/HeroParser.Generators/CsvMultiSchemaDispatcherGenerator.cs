@@ -50,6 +50,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         isEnabledByDefault: true);
 #pragma warning restore RS2008
 
+    /// <inheritdoc/>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var provider = context.SyntaxProvider

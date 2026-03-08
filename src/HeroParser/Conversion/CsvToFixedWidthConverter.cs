@@ -134,7 +134,7 @@ public static class CsvToFixedWidthConverter
         // Optional header
         if (options.IncludeHeader)
         {
-            WriteFixedWidthRow(sb, columns, columns.Select(c => c.Name).ToArray());
+            WriteFixedWidthRow(sb, columns, [.. columns.Select(c => c.Name)]);
             sb.Append(options.NewLine);
         }
 

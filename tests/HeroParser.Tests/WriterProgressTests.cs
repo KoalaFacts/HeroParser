@@ -62,7 +62,7 @@ public class WriterProgressTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvWriteToText_WithProgress_ReportsBytesWritten()
     {
-        var records = new[] { new SimpleRecord("Alice", 30) };
+        SimpleRecord[] records = [new SimpleRecord("Alice", 30)];
 
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
@@ -82,7 +82,7 @@ public class WriterProgressTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvWriteToText_NoProgress_NoError()
     {
-        var records = new[] { new SimpleRecord("Alice", 30) };
+        SimpleRecord[] records = [new SimpleRecord("Alice", 30)];
 
         // Should work fine without progress reporting
         var result = Csv.WriteToText(records);
@@ -162,7 +162,7 @@ public class WriterProgressTests
     public void CsvWriterBuilder_WithProgress_ConfiguresProgress()
     {
         var reports = new List<CsvWriteProgress>();
-        var records = new[] { new SimpleRecord("Alice", 30) };
+        SimpleRecord[] records = [new SimpleRecord("Alice", 30)];
 
         var result = Csv.Write<SimpleRecord>()
             .WithProgress(new Progress<CsvWriteProgress>(p => reports.Add(p)))

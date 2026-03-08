@@ -17,12 +17,12 @@ public class ConversionTests
     public void CsvToFixedWidth_SimpleData_ConvertsCorrectly()
     {
         var csv = "Name,Age,City\r\nAlice,30,NYC\r\nBob,25,LA\r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
             new FixedWidthFieldDefinition("City", 10),
-        };
+        ];
 
         var result = CsvToFixedWidthConverter.Convert(csv, columns);
 
@@ -37,11 +37,11 @@ public class ConversionTests
     public void CsvToFixedWidth_RightAligned_AlignsCorrectly()
     {
         var csv = "Name,Amount\r\nAlice,1500\r\nBob,250\r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10, FieldAlignment.Left),
             new FixedWidthFieldDefinition("Amount", 10, FieldAlignment.Right),
-        };
+        ];
 
         var result = CsvToFixedWidthConverter.Convert(csv, columns);
 
@@ -55,11 +55,11 @@ public class ConversionTests
     public void CsvToFixedWidth_CustomPadChar_UsesPadChar()
     {
         var csv = "Id,Name\r\n1,Alice\r\n2,Bob\r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Id", 5, FieldAlignment.Right, '0'),
             new FixedWidthFieldDefinition("Name", 10),
-        };
+        ];
 
         var result = CsvToFixedWidthConverter.Convert(csv, columns);
 
@@ -73,10 +73,10 @@ public class ConversionTests
     public void CsvToFixedWidth_Truncation_TruncatesLongValues()
     {
         var csv = "Name\r\nAlexander Hamilton\r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
-        };
+        ];
 
         var result = CsvToFixedWidthConverter.Convert(csv, columns);
 
@@ -89,11 +89,11 @@ public class ConversionTests
     public void CsvToFixedWidth_CustomDelimiter_ParsesCorrectly()
     {
         var csv = "Name;Age\r\nAlice;30\r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
-        };
+        ];
         var options = new CsvToFixedWidthOptions { Delimiter = ';' };
 
         var result = CsvToFixedWidthConverter.Convert(csv, columns, options);
@@ -107,11 +107,11 @@ public class ConversionTests
     public void CsvToFixedWidth_IncludeHeader_WritesHeader()
     {
         var csv = "Name,Age\r\nAlice,30\r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
-        };
+        ];
         var options = new CsvToFixedWidthOptions { IncludeHeader = true };
 
         var result = CsvToFixedWidthConverter.Convert(csv, columns, options);
@@ -127,11 +127,11 @@ public class ConversionTests
     public void CsvToFixedWidth_EmptyInput_ReturnsEmpty()
     {
         var csv = "Name,Age\r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
-        };
+        ];
 
         var result = CsvToFixedWidthConverter.Convert(csv, columns);
 
@@ -147,12 +147,12 @@ public class ConversionTests
     public void FixedWidthToCsv_SimpleData_ConvertsCorrectly()
     {
         var data = "Alice     30   NYC       \r\nBob       25   LA        \r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
             new FixedWidthFieldDefinition("City", 10),
-        };
+        ];
 
         var result = FixedWidthToCsvConverter.Convert(data, columns);
 
@@ -164,11 +164,11 @@ public class ConversionTests
     public void FixedWidthToCsv_RightAligned_TrimsCorrectly()
     {
         var data = "00001Alice     \r\n00002Bob       \r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Id", 5, FieldAlignment.Right, '0'),
             new FixedWidthFieldDefinition("Name", 10),
-        };
+        ];
 
         var result = FixedWidthToCsvConverter.Convert(data, columns);
 
@@ -180,11 +180,11 @@ public class ConversionTests
     public void FixedWidthToCsv_CustomDelimiter_UsesDelimiter()
     {
         var data = "Alice     30   \r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
-        };
+        ];
         var options = new FixedWidthToCsvOptions { Delimiter = ';' };
 
         var result = FixedWidthToCsvConverter.Convert(data, columns, options);
@@ -197,11 +197,11 @@ public class ConversionTests
     public void FixedWidthToCsv_WithoutHeader_OmitsHeader()
     {
         var data = "Alice     30   \r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
-        };
+        ];
         var options = new FixedWidthToCsvOptions { IncludeHeader = false };
 
         var result = FixedWidthToCsvConverter.Convert(data, columns, options);
@@ -214,11 +214,11 @@ public class ConversionTests
     public void FixedWidthToCsv_ValuesNeedingQuoting_QuotesCorrectly()
     {
         var data = "Has, comma30   \r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
-        };
+        ];
 
         var result = FixedWidthToCsvConverter.Convert(data, columns);
 
@@ -230,11 +230,11 @@ public class ConversionTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FixedWidthToCsv_EmptyInput_ReturnsHeaderOnly()
     {
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
-        };
+        ];
 
         var result = FixedWidthToCsvConverter.Convert("", columns);
 
@@ -250,12 +250,12 @@ public class ConversionTests
     public void RoundTrip_CsvToFixedWidthAndBack_PreservesData()
     {
         var originalCsv = "Name,Age,City\r\nAlice,30,NYC\r\nBob,25,LA\r\n";
-        var columns = new[]
-        {
+        FixedWidthFieldDefinition[] columns =
+        [
             new FixedWidthFieldDefinition("Name", 10),
             new FixedWidthFieldDefinition("Age", 5),
             new FixedWidthFieldDefinition("City", 10),
-        };
+        ];
 
         var fixedWidth = CsvToFixedWidthConverter.Convert(originalCsv, columns);
         var roundTripCsv = FixedWidthToCsvConverter.Convert(fixedWidth, columns);
@@ -271,7 +271,7 @@ public class ConversionTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvToFixedWidth_NullData_ThrowsArgumentNullException()
     {
-        var columns = new[] { new FixedWidthFieldDefinition("Name", 10) };
+        FixedWidthFieldDefinition[] columns = [new FixedWidthFieldDefinition("Name", 10)];
         Assert.Throws<ArgumentNullException>(() => CsvToFixedWidthConverter.Convert(null!, columns));
     }
 

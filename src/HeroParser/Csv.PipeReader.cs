@@ -57,7 +57,7 @@ public static partial class Csv
             ReadResult result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
             ReadOnlySequence<byte> buffer = result.Buffer;
 
-            while (TryReadRow(ref buffer, delimiter, quote, enableQuotes, result.IsCompleted, out var rowData))
+            while (TryReadRow(ref buffer, quote, enableQuotes, out var rowData))
             {
                 rowNumber++;
                 yield return ParsePipeRow(rowData.ToArray(), delimiter, quote, enableQuotes, rowNumber);
@@ -82,10 +82,8 @@ public static partial class Csv
 
     private static bool TryReadRow(
         ref ReadOnlySequence<byte> buffer,
-        byte delimiter,
         byte quote,
         bool enableQuotes,
-        bool isCompleted,
         out ReadOnlySequence<byte> rowData)
     {
         var reader = new SequenceReader<byte>(buffer);

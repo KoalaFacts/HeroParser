@@ -183,6 +183,11 @@
           "xunit.v3.runner.common": "[3.2.1]"
         }
       },
+      "System.IO.Pipelines": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "V+tqEehPQKSLV7HcV4agGqmFISK30VNjSQ2KEsmkWL+ZqN30wMAke+mFWcK0LnaaEL2ixamBdzVITZYNxlLrEg=="
+      },
       "heroparser": {
         "type": "Project"
       }
@@ -369,6 +374,11 @@
           "xunit.v3.runner.common": "[3.2.1]"
         }
       },
+      "System.IO.Pipelines": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "V+tqEehPQKSLV7HcV4agGqmFISK30VNjSQ2KEsmkWL+ZqN30wMAke+mFWcK0LnaaEL2ixamBdzVITZYNxlLrEg=="
+      },
       "heroparser": {
         "type": "Project"
       }
@@ -554,6 +564,11 @@
           "xunit.v3.extensibility.core": "[3.2.1]",
           "xunit.v3.runner.common": "[3.2.1]"
         }
+      },
+      "System.IO.Pipelines": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "V+tqEehPQKSLV7HcV4agGqmFISK30VNjSQ2KEsmkWL+ZqN30wMAke+mFWcK0LnaaEL2ixamBdzVITZYNxlLrEg=="
       },
       "heroparser": {
         "type": "Project"

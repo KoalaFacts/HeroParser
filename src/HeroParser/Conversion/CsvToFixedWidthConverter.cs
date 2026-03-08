@@ -184,7 +184,9 @@ public static class CsvToFixedWidthConverter
                     sb.Append(value);
                     sb.Append(new string(col.PadChar, rightPad));
                     break;
-                default: // Left or None
+                case FieldAlignment.Left:
+                case FieldAlignment.None:
+                default:
                     sb.Append(value);
                     sb.Append(new string(col.PadChar, col.Width - value.Length));
                     break;

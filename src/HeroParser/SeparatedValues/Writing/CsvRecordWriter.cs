@@ -189,14 +189,11 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         }
 
         // Report final progress
-        if (progress is not null)
+        progress?.Report(new CsvWriteProgress
         {
-            progress.Report(new CsvWriteProgress
-            {
-                RowsWritten = dataRowCount,
-                BytesWritten = writer.CharsWritten,
-            });
-        }
+            RowsWritten = dataRowCount,
+            BytesWritten = writer.CharsWritten,
+        });
     }
 
     /// <summary>

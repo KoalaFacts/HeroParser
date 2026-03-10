@@ -59,6 +59,7 @@ public static partial class Csv
 
             while (TryReadRow(ref buffer, quote, enableQuotes, out var rowData))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 rowNumber++;
                 yield return ParsePipeRow(rowData.ToArray(), delimiter, quote, enableQuotes, rowNumber);
             }

@@ -130,7 +130,7 @@ public class WriterProgressTests
         };
 
         using var stream = new MemoryStream();
-        await Csv.WriteToStreamAsync(stream, records, options);
+        await Csv.WriteToStreamAsync(stream, records, options, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(reports.Count >= 1);
     }

@@ -312,6 +312,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                 progress.Report(new CsvWriteProgress
                 {
                     RowsWritten = dataRowCount,
+                    BytesWritten = writer.CharsWritten,
                 });
             }
         }
@@ -320,6 +321,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         progress?.Report(new CsvWriteProgress
         {
             RowsWritten = dataRowCount,
+            BytesWritten = writer.CharsWritten,
         });
     }
 

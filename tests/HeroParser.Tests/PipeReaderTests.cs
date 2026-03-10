@@ -192,16 +192,17 @@ public class PipeReaderTests
         var bytes = Encoding.UTF8.GetBytes(csv);
 
         // Write in small chunks to simulate network I/O
+        var ct = TestContext.Current.CancellationToken;
         _ = Task.Run(async () =>
         {
             for (int i = 0; i < bytes.Length; i += 5)
             {
                 var chunk = bytes.AsMemory(i, Math.Min(5, bytes.Length - i));
-                await pipe.Writer.WriteAsync(chunk);
-                await Task.Delay(1);
+                await pipe.Writer.WriteAsync(chunk, ct);
+                await Task.Delay(1, ct);
             }
             await pipe.Writer.CompleteAsync();
-        });
+        }, ct);
 
         var rows = new List<string>();
         await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))

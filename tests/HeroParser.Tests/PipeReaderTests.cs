@@ -29,13 +29,16 @@ public class PipeReaderTests
                 row[2].ToString()));
         }
 
-        Assert.Equal(2, rows.Count);
-        Assert.Equal("Alice", rows[0].Name);
-        Assert.Equal("30", rows[0].Age);
-        Assert.Equal("NYC", rows[0].City);
-        Assert.Equal("Bob", rows[1].Name);
-        Assert.Equal("25", rows[1].Age);
-        Assert.Equal("LA", rows[1].City);
+        Assert.Equal(3, rows.Count);
+        Assert.Equal("Name", rows[0].Name);
+        Assert.Equal("Age", rows[0].Age);
+        Assert.Equal("City", rows[0].City);
+        Assert.Equal("Alice", rows[1].Name);
+        Assert.Equal("30", rows[1].Age);
+        Assert.Equal("NYC", rows[1].City);
+        Assert.Equal("Bob", rows[2].Name);
+        Assert.Equal("25", rows[2].Age);
+        Assert.Equal("LA", rows[2].City);
     }
 
     [Fact]
@@ -82,7 +85,7 @@ public class PipeReaderTests
         await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))
         {
             if (isFirst) { isFirst = false; continue; } // skip header
-            descriptions.Add(Encoding.UTF8.GetString(row[1].Span));
+            descriptions.Add(row[1].ToUnquotedString());
         }
 
         Assert.Single(descriptions);

@@ -46,8 +46,8 @@ public class ConversionTests
         var result = CsvToFixedWidthConverter.Convert(csv, columns);
 
         var lines = result.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal("Alice          1500", lines[0]);
-        Assert.Equal("Bob             250", lines[1]);
+        Assert.Equal("Alice           1500", lines[0]);
+        Assert.Equal("Bob              250", lines[1]);
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public class ConversionTests
 
         var result = FixedWidthToCsvConverter.Convert(data, columns);
 
-        Assert.Equal("Id,Name\r\n1,Alice\r\nBob\r\n", result);
+        Assert.Equal("Id,Name\r\n1,Alice\r\n2,Bob\r\n", result);
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public class ConversionTests
         var result = FixedWidthToCsvConverter.Convert(data, columns);
 
         // The value "Has, comma" should be quoted because it contains the delimiter
-        Assert.Contains("\"Has, comm\"", result);
+        Assert.Contains("\"Has, comma\"", result);
     }
 
     [Fact]

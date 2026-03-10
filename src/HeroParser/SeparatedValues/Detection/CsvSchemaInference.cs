@@ -152,7 +152,11 @@ public static class CsvSchemaInference
         }
         catch (FormatException)
         {
-            return ','; // default fallback
+            return ','; // default fallback for ambiguous data
+        }
+        catch (InvalidOperationException)
+        {
+            return ','; // default fallback for single-column data
         }
     }
 

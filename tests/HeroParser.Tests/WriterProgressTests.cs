@@ -24,7 +24,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(p => reports.Add(p)),
+            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 10,
         };
 
@@ -47,7 +47,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(p => reports.Add(p)),
+            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 25,
         };
 
@@ -67,7 +67,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(p => reports.Add(p)),
+            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 1,
         };
 
@@ -100,7 +100,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(p => reports.Add(p)),
+            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 1,
         };
 
@@ -125,7 +125,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(p => reports.Add(p)),
+            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 50,
         };
 
@@ -165,7 +165,7 @@ public class WriterProgressTests
         SimpleRecord[] records = [new SimpleRecord("Alice", 30)];
 
         var result = Csv.Write<SimpleRecord>()
-            .WithProgress(new Progress<CsvWriteProgress>(p => reports.Add(p)))
+            .WithProgress(new Progress<CsvWriteProgress>(reports.Add))
             .WithProgressInterval(1)
             .ToText(records);
 

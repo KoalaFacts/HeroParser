@@ -34,7 +34,7 @@ jobs:
           dotnet-version: ${{ steps.extract.outputs.versions }}
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore --force-evaluate
 
       - name: Audit dependencies for vulnerabilities
         run: |

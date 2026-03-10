@@ -63,7 +63,7 @@ jobs:
         dotnet-version: ${{ steps.extract.outputs.versions }}
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore --force-evaluate
 
     - name: Build
       run: dotnet build tests/HeroParser.Tests/HeroParser.Tests.csproj --configuration Release --no-restore --framework ${{ matrix.framework }}
@@ -132,7 +132,7 @@ jobs:
         dotnet-version: ${{ steps.extract.outputs.versions }}
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore --force-evaluate
 
     - name: Build AOT Tests
       run: dotnet build tests/HeroParser.AotTests --configuration Release --framework ${{ matrix.framework }}
@@ -158,7 +158,7 @@ jobs:
         dotnet-version: ${{ steps.extract.outputs.versions }}
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore --force-evaluate
 
     - name: Build Generator Tests
       run: dotnet build tests/HeroParser.Generators.Tests --configuration Release
@@ -186,7 +186,7 @@ jobs:
         dotnet-version: ${{ steps.extract.outputs.versions }}
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore --force-evaluate
 
     - name: Audit dependencies (deprecated/vulnerable)
       run: |

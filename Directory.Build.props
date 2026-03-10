@@ -9,9 +9,6 @@
     <!-- Format: Major.Minor.x (e.g., 8.0.x, 9.0.x, 10.0.x) -->
     <SupportedSdkVersions>8.0.x;9.0.x;10.0.x</SupportedSdkVersions>
 
-    <!-- Enable NuGet package lock files for reproducible builds -->
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-
     <!-- Enforce EditorConfig code style during build so style violations fail when TreatWarningsAsErrors=true -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>

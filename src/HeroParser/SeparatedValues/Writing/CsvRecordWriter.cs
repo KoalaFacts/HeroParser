@@ -282,6 +282,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         int rowNumber = 0;
         int dataRowCount = 0;
         var maxRows = writerOptions.MaxRowCount;
+        var progress = writerOptions.WriteProgress;
+        var progressInterval = writerOptions.WriteProgressIntervalRows;
 
         if (includeHeader && writerOptions.WriteHeader)
         {
@@ -304,7 +306,21 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             }
 
             await WriteRecordInternalAsync(writer, record, rowNumber, cancellationToken).ConfigureAwait(false);
+
+            if (progress is not null && dataRowCount % progressInterval == 0)
+            {
+                progress.Report(new CsvWriteProgress
+                {
+                    RowsWritten = dataRowCount,
+                });
+            }
         }
+
+        // Report final progress
+        progress?.Report(new CsvWriteProgress
+        {
+            RowsWritten = dataRowCount,
+        });
     }
 
     private void WriteRecordInternal(CsvStreamWriter writer, T record, int rowNumber)

@@ -150,7 +150,7 @@ public static class CsvSchemaInference
         {
             return CsvDelimiterDetector.DetectDelimiter(data);
         }
-        catch
+        catch (FormatException)
         {
             return ','; // default fallback
         }

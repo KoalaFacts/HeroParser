@@ -45,7 +45,7 @@ public class PipeReaderTests
         var pipe = CreatePipeFromString("");
 
         var count = 0;
-        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader))
+        await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader))
         {
             count++;
         }
@@ -173,7 +173,7 @@ public class PipeReaderTests
         var pipe = CreatePipeFromString(sb.ToString());
 
         var count = 0;
-        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader))
+        await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader))
         {
             count++;
         }
@@ -221,9 +221,9 @@ public class PipeReaderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void ReadFromPipeReader_NullReader_ThrowsArgumentNullException()
+    public async Task ReadFromPipeReader_NullReader_ThrowsArgumentNullException()
     {
-        Assert.ThrowsAsync<ArgumentNullException>(() =>
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
         {
             // Force enumeration to trigger the null check
             return Csv.ReadFromPipeReaderAsync(null!).GetAsyncEnumerator().MoveNextAsync().AsTask();

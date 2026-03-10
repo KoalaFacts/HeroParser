@@ -82,11 +82,8 @@ public static class FixedWidthToCsvConverter
         var lines = fixedWidthData.Split(["\r\n", "\n"], StringSplitOptions.None);
         int recordLength = columns.Sum(c => c.Width);
 
-        foreach (var line in lines)
+        foreach (var line in lines.Where(l => !string.IsNullOrEmpty(l)))
         {
-            if (string.IsNullOrEmpty(line))
-                continue;
-
             // Ensure line is long enough
             var paddedLine = line.Length >= recordLength
                 ? line

@@ -105,6 +105,7 @@ Both CSV and Fixed-Width support `DbDataReader` for streaming large files into d
   - Intentional API design decisions (e.g., `IDE0060` for API compatibility where parameter is intentionally unused)
   - Framework limitations that cannot be resolved (e.g., `IsExternalInit` for older frameworks)
 - For xUnit tests: Use `TestContext.Current.CancellationToken` instead of suppressing `xUnit1051`
+- For lambdas: Prefer method groups over trivial lambdas (e.g., `reports.Add` instead of `p => reports.Add(p)`) to satisfy `IDE0200`
 - Always include a justification comment explaining WHY the suppression is acceptable
 
 ### Avoid ToString() Allocations in Hot Paths

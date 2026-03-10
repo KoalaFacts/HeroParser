@@ -21,7 +21,7 @@ public class PipeReaderTests
         var pipe = CreatePipeFromString(csv);
 
         var rows = new List<(string Name, string Age, string City)>();
-        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader))
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))
         {
             rows.Add((
                 row[0].ToString(),
@@ -45,7 +45,7 @@ public class PipeReaderTests
         var pipe = CreatePipeFromString("");
 
         var count = 0;
-        await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader))
+        await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))
         {
             count++;
         }
@@ -61,7 +61,7 @@ public class PipeReaderTests
         var pipe = CreatePipeFromString(csv);
 
         var rows = new List<int>();
-        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader))
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))
         {
             rows.Add(row.ColumnCount);
         }
@@ -79,7 +79,7 @@ public class PipeReaderTests
 
         var descriptions = new List<string>();
         var isFirst = true;
-        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader))
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))
         {
             if (isFirst) { isFirst = false; continue; } // skip header
             descriptions.Add(Encoding.UTF8.GetString(row[1].Span));
@@ -102,7 +102,7 @@ public class PipeReaderTests
         var options = new CsvReadOptions { Delimiter = ';' };
 
         var rows = new List<int>();
-        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, options))
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, TestContext.Current.CancellationToken))
         {
             rows.Add(row.ColumnCount);
         }
@@ -120,7 +120,7 @@ public class PipeReaderTests
         var options = new CsvReadOptions { Delimiter = '\t' };
 
         var names = new List<string>();
-        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, options))
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, TestContext.Current.CancellationToken))
         {
             names.Add(Encoding.UTF8.GetString(row[0].Span));
         }
@@ -173,7 +173,7 @@ public class PipeReaderTests
         var pipe = CreatePipeFromString(sb.ToString());
 
         var count = 0;
-        await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader))
+        await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))
         {
             count++;
         }
@@ -204,7 +204,7 @@ public class PipeReaderTests
         });
 
         var rows = new List<string>();
-        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader))
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))
         {
             rows.Add(Encoding.UTF8.GetString(row[0].Span));
         }
@@ -226,7 +226,7 @@ public class PipeReaderTests
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
         {
             // Force enumeration to trigger the null check
-            return Csv.ReadFromPipeReaderAsync(null!).GetAsyncEnumerator().MoveNextAsync().AsTask();
+            return Csv.ReadFromPipeReaderAsync(null!, cancellationToken: TestContext.Current.CancellationToken).GetAsyncEnumerator(TestContext.Current.CancellationToken).MoveNextAsync().AsTask();
         });
     }
 

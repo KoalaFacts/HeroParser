@@ -208,7 +208,7 @@ public static class CsvSchemaInference
                 return;
             }
 
-            if (System.Guid.TryParse(value, out _))
+            if (Guid.TryParse(value, out _))
             {
                 hasGuids = true;
                 return;

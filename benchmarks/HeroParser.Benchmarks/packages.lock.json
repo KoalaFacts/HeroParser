@@ -200,6 +200,11 @@
         "resolved": "4.7.0",
         "contentHash": "VybpaOQQhqE6siHppMktjfGBw1GCwvCqiufqmP8F1nj7fTUNtW35LOEt3UZTEsECfo+ELAl/9o9nJx3U91i7vA=="
       },
+      "System.IO.Pipelines": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "V+tqEehPQKSLV7HcV4agGqmFISK30VNjSQ2KEsmkWL+ZqN30wMAke+mFWcK0LnaaEL2ixamBdzVITZYNxlLrEg=="
+      },
       "heroparser": {
         "type": "Project"
       }
@@ -414,6 +419,11 @@
           "System.Collections.Immutable": "9.0.0"
         }
       },
+      "System.IO.Pipelines": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "V+tqEehPQKSLV7HcV4agGqmFISK30VNjSQ2KEsmkWL+ZqN30wMAke+mFWcK0LnaaEL2ixamBdzVITZYNxlLrEg=="
+      },
       "heroparser": {
         "type": "Project"
       }
@@ -610,6 +620,11 @@
         "dependencies": {
           "System.CodeDom": "9.0.5"
         }
+      },
+      "System.IO.Pipelines": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "V+tqEehPQKSLV7HcV4agGqmFISK30VNjSQ2KEsmkWL+ZqN30wMAke+mFWcK0LnaaEL2ixamBdzVITZYNxlLrEg=="
       },
       "heroparser": {
         "type": "Project"

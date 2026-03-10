@@ -11,6 +11,15 @@ public class WriterProgressTests
 {
     public record SimpleRecord(string Name, int Age);
 
+    /// <summary>
+    /// Synchronous progress reporter that invokes the callback inline (unlike <see cref="Progress{T}"/>
+    /// which posts to the thread pool and can race with assertions).
+    /// </summary>
+    private sealed class SyncProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
+    }
+
     #region CSV Writer Progress
 
     [Fact]
@@ -24,7 +33,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
+            WriteProgress = new SyncProgress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 10,
         };
 
@@ -47,7 +56,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
+            WriteProgress = new SyncProgress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 25,
         };
 
@@ -67,7 +76,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
+            WriteProgress = new SyncProgress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 1,
         };
 
@@ -100,7 +109,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
+            WriteProgress = new SyncProgress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 1,
         };
 
@@ -125,7 +134,7 @@ public class WriterProgressTests
         var reports = new List<CsvWriteProgress>();
         var options = new CsvWriteOptions
         {
-            WriteProgress = new Progress<CsvWriteProgress>(reports.Add),
+            WriteProgress = new SyncProgress<CsvWriteProgress>(reports.Add),
             WriteProgressIntervalRows = 50,
         };
 
@@ -165,7 +174,7 @@ public class WriterProgressTests
         SimpleRecord[] records = [new SimpleRecord("Alice", 30)];
 
         var result = Csv.Write<SimpleRecord>()
-            .WithProgress(new Progress<CsvWriteProgress>(reports.Add))
+            .WithProgress(new SyncProgress<CsvWriteProgress>(reports.Add))
             .WithProgressInterval(1)
             .ToText(records);
 

@@ -136,6 +136,15 @@ public static class CsvSchemaInference
             }
         }
 
+        // Detect skipped empty rows by counting raw data lines after the header.
+        // The CSV reader silently skips empty lines, but those represent null values.
+        int rawDataLineCount = CountDataLines(data);
+        if (rawDataLineCount > sampledRows)
+        {
+            for (int i = 0; i < columnCount; i++)
+                candidates[i].HasNulls = true;
+        }
+
         // Build results
         var columns = new CsvInferredColumn[columnCount];
         for (int i = 0; i < columnCount; i++)
@@ -166,6 +175,35 @@ public static class CsvSchemaInference
         }
     }
 
+    private static int CountDataLines(string data)
+    {
+        // Count non-header lines (lines after the first line that would be data rows,
+        // including empty lines that the CSV reader skips).
+        int lineCount = 0;
+        bool pastHeader = false;
+        int i = 0;
+        while (i < data.Length)
+        {
+            // Find end of current line
+            int lineEnd = data.IndexOf('\n', i);
+            if (lineEnd < 0)
+            {
+                // Last line without trailing newline
+                if (pastHeader && i < data.Length)
+                    lineCount++;
+                break;
+            }
+
+            if (pastHeader)
+                lineCount++;
+            else
+                pastHeader = true;
+
+            i = lineEnd + 1;
+        }
+        return lineCount;
+    }
+
     private sealed class ColumnTypeTracker
     {
         private bool hasIntegers;
@@ -177,7 +215,7 @@ public static class CsvSchemaInference
         private bool hasStrings;
         private int nonEmptyCount;
 
-        public bool HasNulls { get; private set; }
+        public bool HasNulls { get; set; }
         public int MaxLength { get; private set; }
 
         public void Observe(string value)

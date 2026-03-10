@@ -11,7 +11,6 @@
 
     <!-- Enable NuGet package lock files for reproducible builds -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <RestoreLockedMode>true</RestoreLockedMode>
 
     <!-- Enforce EditorConfig code style during build so style violations fail when TreatWarningsAsErrors=true -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

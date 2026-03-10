@@ -128,6 +128,12 @@ public static class CsvSchemaInference
                 var value = row[i].ToString();
                 candidates[i].Observe(value);
             }
+
+            // Mark missing columns as null (e.g., empty rows with fewer columns)
+            for (int i = row.ColumnCount; i < columnCount; i++)
+            {
+                candidates[i].Observe("");
+            }
         }
 
         // Build results

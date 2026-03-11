@@ -565,6 +565,79 @@ public class CsvRecordBinderGeneratorTests
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "HERO008");
     }
 
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_NotEmptyOnInt_ReportsHERO004()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R { [CsvColumn(Index = 0, NotEmpty = true)] public int X { get; set; } }
+            """;
+        Assert.Contains(RunGenerator(source).Diagnostics, d => d.Id == "HERO004");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_MaxLengthOnDecimal_ReportsHERO005()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R { [CsvColumn(Index = 0, MaxLength = 10)] public decimal X { get; set; } }
+            """;
+        Assert.Contains(RunGenerator(source).Diagnostics, d => d.Id == "HERO005");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_RangeOnString_ReportsHERO006()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R { [CsvColumn(Name = "X", RangeMin = 0)] public string X { get; set; } = ""; }
+            """;
+        Assert.Contains(RunGenerator(source).Diagnostics, d => d.Id == "HERO006");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_PatternOnInt_ReportsHERO007()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R { [CsvColumn(Index = 0, Pattern = ".*")] public int X { get; set; } }
+            """;
+        Assert.Contains(RunGenerator(source).Diagnostics, d => d.Id == "HERO007");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_ValidValidationProperties_NoExtraDiagnostics()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R
+            {
+                [CsvColumn(Name = "X", Required = true, NotEmpty = true, MaxLength = 50)]
+                public string X { get; set; } = "";
+
+                [CsvColumn(Index = 1, Required = true, RangeMin = 0, RangeMax = 100)]
+                public decimal Y { get; set; }
+            }
+            """;
+        var result = RunGenerator(source);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+    }
+
     #region Test Infrastructure
 
     private static GeneratorRunResult RunGenerator(string source)

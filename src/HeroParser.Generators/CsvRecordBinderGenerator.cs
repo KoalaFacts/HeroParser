@@ -53,6 +53,26 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         "HeroParser.Generators",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor notEmptyOnNonStringDiagnostic = new(
+        "HERO004", "NotEmpty only applies to string properties",
+        "Property '{0}' has NotEmpty = true but is type '{1}'. NotEmpty only applies to string properties.",
+        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor lengthOnNonStringDiagnostic = new(
+        "HERO005", "MaxLength/MinLength only apply to string properties",
+        "Property '{0}' has MaxLength or MinLength but is type '{1}'. These only apply to string properties.",
+        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor rangeOnNonNumericDiagnostic = new(
+        "HERO006", "RangeMin/RangeMax only apply to numeric properties",
+        "Property '{0}' has RangeMin or RangeMax but is type '{1}'. These only apply to numeric properties.",
+        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor patternOnNonStringDiagnostic = new(
+        "HERO007", "Pattern only applies to string properties",
+        "Property '{0}' has Pattern but is type '{1}'. Pattern only applies to string properties.",
+        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
 #pragma warning restore RS2008
 
     /// <inheritdoc/>
@@ -694,6 +714,15 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
             bool hasExplicitName = false;
 
+            bool validationRequired = false;
+            bool validationNotEmpty = false;
+            int validationMaxLength = -1;
+            int validationMinLength = -1;
+            double validationRangeMin = double.NaN;
+            double validationRangeMax = double.NaN;
+            string? validationPattern = null;
+            int validationPatternTimeoutMs = 1000;
+
             if (mapAttribute is not null)
             {
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
@@ -711,6 +740,22 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                         case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
                             format = f;
                             break;
+                        case "Required" when arg.Value.Value is bool r:
+                            validationRequired = r; break;
+                        case "NotEmpty" when arg.Value.Value is bool ne:
+                            validationNotEmpty = ne; break;
+                        case "MaxLength" when arg.Value.Value is int ml && ml >= 0:
+                            validationMaxLength = ml; break;
+                        case "MinLength" when arg.Value.Value is int mnl && mnl >= 0:
+                            validationMinLength = mnl; break;
+                        case "RangeMin" when arg.Value.Value is double rmin && !double.IsNaN(rmin):
+                            validationRangeMin = rmin; break;
+                        case "RangeMax" when arg.Value.Value is double rmax && !double.IsNaN(rmax):
+                            validationRangeMax = rmax; break;
+                        case "Pattern" when arg.Value.Value is string p && !string.IsNullOrWhiteSpace(p):
+                            validationPattern = p; break;
+                        case "PatternTimeoutMs" when arg.Value.Value is int pt && pt > 0:
+                            validationPatternTimeoutMs = pt; break;
                     }
                 }
 #pragma warning restore IDE0010
@@ -740,6 +785,35 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
             var isReadOnlyMemoryChar = IsReadOnlyMemoryChar(property.Type);
 
+            bool isStringType = baseTypeName == "string";
+            bool isNumericType = baseTypeName is "int" or "System.Int32" or "long" or "System.Int64"
+                or "short" or "System.Int16" or "byte" or "System.Byte" or "uint" or "System.UInt32"
+                or "ulong" or "System.UInt64" or "ushort" or "System.UInt16" or "sbyte" or "System.SByte"
+                or "decimal" or "System.Decimal" or "double" or "System.Double" or "float" or "System.Single";
+
+            if (validationNotEmpty && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(notEmptyOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationNotEmpty = false;
+            }
+            if ((validationMaxLength >= 0 || validationMinLength >= 0) && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(lengthOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationMaxLength = -1;
+                validationMinLength = -1;
+            }
+            if ((!double.IsNaN(validationRangeMin) || !double.IsNaN(validationRangeMax)) && !isNumericType)
+            {
+                diagnostics.Add(Diagnostic.Create(rangeOnNonNumericDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationRangeMin = double.NaN;
+                validationRangeMax = double.NaN;
+            }
+            if (validationPattern != null && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(patternOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationPattern = null;
+            }
+
             var setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
             var getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
 
@@ -755,7 +829,15 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 baseTypeName,
                 isNullable,
                 isEnum,
-                isReadOnlyMemoryChar));
+                isReadOnlyMemoryChar,
+                validationRequired,
+                validationNotEmpty,
+                validationMaxLength,
+                validationMinLength,
+                validationRangeMin,
+                validationRangeMax,
+                validationPattern,
+                validationPatternTimeoutMs));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)
@@ -812,5 +894,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         string BaseTypeName,
         bool IsNullable,
         bool IsEnum,
-        bool IsReadOnlyMemoryChar);
+        bool IsReadOnlyMemoryChar,
+        // Validation fields:
+        bool ValidationRequired,
+        bool ValidationNotEmpty,
+        int ValidationMaxLength,       // -1 = unchecked
+        int ValidationMinLength,       // -1 = unchecked
+        double ValidationRangeMin,     // NaN = unchecked
+        double ValidationRangeMax,     // NaN = unchecked
+        string? ValidationPattern,
+        int ValidationPatternTimeoutMs);  // default 1000
 }

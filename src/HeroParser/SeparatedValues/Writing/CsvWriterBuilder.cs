@@ -1,5 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
+using HeroParser.SeparatedValues.Mapping;
 
 namespace HeroParser.SeparatedValues.Writing;
 
@@ -37,6 +39,9 @@ public sealed class CsvWriterBuilder<T>
 
     // Cached options - invalidated when any setting changes
     private CsvWriteOptions? cachedOptions;
+
+    // Map-based writing
+    private ICsvWriteMapSource<T>? writeMapSource;
 
     internal CsvWriterBuilder() { }
 
@@ -342,6 +347,20 @@ public sealed class CsvWriterBuilder<T>
         return this;
     }
 
+    /// <summary>
+    /// Configures a fluent map to control column layout and property extraction for writing.
+    /// </summary>
+    /// <param name="map">The map providing write templates.</param>
+    /// <returns>This builder for method chaining.</returns>
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    public CsvWriterBuilder<T> WithMap(ICsvWriteMapSource<T> map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        writeMapSource = map;
+        return this;
+    }
+
     #region Terminal Methods
 
     /// <summary>
@@ -356,7 +375,7 @@ public sealed class CsvWriterBuilder<T>
         var options = GetOptions();
         using var stringWriter = new StringWriter();
         using var writer = new CsvStreamWriter(stringWriter, options, leaveOpen: true);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         recordWriter.WriteRecords(writer, records, writeHeader);
         writer.Flush();
 
@@ -376,7 +395,7 @@ public sealed class CsvWriterBuilder<T>
         var options = GetOptions();
         await using var stringWriter = new StringWriter();
         await using var writer = new CsvStreamWriter(stringWriter, options, leaveOpen: true);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
 
@@ -397,7 +416,7 @@ public sealed class CsvWriterBuilder<T>
         using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         using var streamWriter = new StreamWriter(fileStream, encoding);
         using var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         recordWriter.WriteRecords(writer, records, writeHeader);
     }
 
@@ -415,7 +434,7 @@ public sealed class CsvWriterBuilder<T>
         var options = GetOptions();
         using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         using var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         recordWriter.WriteRecords(writer, records, writeHeader);
     }
 
@@ -432,7 +451,7 @@ public sealed class CsvWriterBuilder<T>
 
         var options = GetOptions();
         using var writer = new CsvStreamWriter(textWriter, options, leaveOpen);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         recordWriter.WriteRecords(writer, records, writeHeader);
     }
 
@@ -458,7 +477,7 @@ public sealed class CsvWriterBuilder<T>
 
         await using var streamWriter = new StreamWriter(fileStream, encoding);
         await using var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -478,7 +497,7 @@ public sealed class CsvWriterBuilder<T>
         var options = GetOptions();
         await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         await using var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -502,7 +521,7 @@ public sealed class CsvWriterBuilder<T>
 
         var options = GetOptions();
         await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
 
         // Use the proper async method with compiled accessors (no reflection)
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader && options.WriteHeader, cancellationToken).ConfigureAwait(false);
@@ -525,7 +544,7 @@ public sealed class CsvWriterBuilder<T>
 
         var options = GetOptions();
         await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
-        var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
 
         // Use the proper async method with compiled accessors (no reflection)
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader && options.WriteHeader, cancellationToken).ConfigureAwait(false);
@@ -535,6 +554,15 @@ public sealed class CsvWriterBuilder<T>
     #endregion
 
     #region Private Helpers
+
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    private CsvRecordWriter<T> GetRecordWriter(CsvWriteOptions options)
+    {
+        return writeMapSource is not null
+            ? CsvRecordWriter<T>.CreateFromTemplates(options, writeMapSource.BuildWriteTemplates())
+            : CsvRecordWriterFactory.GetWriter<T>(options);
+    }
 
     private CsvWriteOptions GetOptions()
     {

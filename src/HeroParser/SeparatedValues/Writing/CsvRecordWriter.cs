@@ -453,7 +453,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         {
             var property = properties[i];
             var attribute = property.GetCustomAttribute<CsvColumnAttribute>();
-            var headerName = !string.IsNullOrWhiteSpace(attribute?.Name) ? attribute!.Name! : property.Name;
+            var headerName = !string.IsNullOrWhiteSpace(attribute?.Name) ? attribute.Name : property.Name;
             var format = attribute?.Format;
 
             accessors[i] = new PropertyAccessor(

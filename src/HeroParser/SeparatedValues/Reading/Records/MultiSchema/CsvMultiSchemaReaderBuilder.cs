@@ -529,7 +529,7 @@ public sealed class CsvMultiSchemaReaderBuilder
         await using var reader = FromFile(filePath, encoding);
         while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return reader.Current;
+            yield return reader.Current!;
         }
     }
 
@@ -552,7 +552,7 @@ public sealed class CsvMultiSchemaReaderBuilder
         await using var reader = FromStream(stream, encoding, leaveOpen);
         while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return reader.Current;
+            yield return reader.Current!;
         }
     }
 

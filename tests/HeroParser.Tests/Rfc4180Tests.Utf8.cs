@@ -254,7 +254,7 @@ public class Rfc4180TestsUtf8
         }
 
         Assert.NotNull(ex);
-        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
     }
 
     [Fact]

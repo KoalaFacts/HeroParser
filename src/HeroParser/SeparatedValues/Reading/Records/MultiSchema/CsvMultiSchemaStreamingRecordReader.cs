@@ -50,7 +50,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
     /// <summary>
     /// Gets the current record. Valid after <see cref="MoveNextAsync"/> returns <see langword="true"/>.
     /// </summary>
-    public object Current { get; private set; } = null!;
+    public object? Current { get; private set; }
 
     /// <summary>
     /// Gets the approximate number of bytes read from the underlying stream.

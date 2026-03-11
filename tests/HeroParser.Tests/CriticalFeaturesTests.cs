@@ -273,7 +273,7 @@ public class CriticalFeaturesTests
         }
 
         Assert.NotNull(ex);
-        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
         Assert.Equal("not_a_number", ex.FieldValue);
         Assert.Contains("not_a_number", ex.Message);
     }
@@ -297,8 +297,8 @@ public class CriticalFeaturesTests
         }
 
         Assert.NotNull(ex);
-        Assert.NotNull(ex!.FieldValue);
-        Assert.Equal(103, ex.FieldValue!.Length); // 100 chars + "..."
+        Assert.NotNull(ex.FieldValue);
+        Assert.Equal(103, ex.FieldValue.Length); // 100 chars + "..."
         Assert.EndsWith("...", ex.FieldValue);
     }
 
@@ -332,7 +332,7 @@ public class CriticalFeaturesTests
         }
 
         Assert.NotNull(ex);
-        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
         Assert.NotNull(ex.QuoteStartPosition);
         Assert.Contains("quote started at position", ex.Message);
     }
@@ -356,8 +356,8 @@ public class CriticalFeaturesTests
         }
 
         Assert.NotNull(ex);
-        Assert.NotNull(ex!.QuoteStartPosition);
-        Assert.Equal(5, ex.QuoteStartPosition!.Value); // 0-based position of the quote
+        Assert.NotNull(ex.QuoteStartPosition);
+        Assert.Equal(5, ex.QuoteStartPosition.Value); // 0-based position of the quote
     }
 
     #endregion

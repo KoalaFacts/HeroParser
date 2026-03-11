@@ -4,6 +4,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests\HeroParser.Tests\HeroParser.Tests.csproj" />
+    <Project Path="tests\HeroParser.Generators.Tests\HeroParser.Generators.Tests.csproj" />
   </Folder>
   <Project Path="src\HeroParser.Generators\HeroParser.Generators.csproj" />
   <Project Path="src\HeroParser\HeroParser.csproj" />

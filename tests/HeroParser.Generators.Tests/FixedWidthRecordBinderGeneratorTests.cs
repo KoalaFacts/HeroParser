@@ -72,7 +72,7 @@ public class FixedWidthRecordBinderGeneratorTests
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(HeroParser.FixedWidth).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(FixedWidth).Assembly.Location),
         };
 
         // Add runtime assemblies

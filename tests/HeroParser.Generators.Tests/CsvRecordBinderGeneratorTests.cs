@@ -532,7 +532,7 @@ public class CsvRecordBinderGeneratorTests
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(HeroParser.Csv).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Csv).Assembly.Location),
         };
 
         // Add runtime assemblies

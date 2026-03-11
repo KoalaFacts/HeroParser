@@ -1,9 +1,7 @@
 # HeroParser Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-06
-
 ## Active Technologies
-- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Zero external dependencies for core library
+- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Minimal dependencies (only System.IO.Pipelines)
 
 ## Project Structure
 ```
@@ -66,17 +64,6 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 - **XML docs**: Required for public API members in `src/` (`CS1591` is warning-level; suppressed for test/benchmark projects)
 - **NuGet lock files**: `RestoreLockedMode` is enabled. When adding/updating packages, run `dotnet restore --force-evaluate` to regenerate lock files
 - **Dependency policy**: GPL-2.0, GPL-3.0, and AGPL-3.0 licenses are denied. High-severity vulnerabilities fail CI
-
-## Recent Changes
-- 001-aim-to-be: Added C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Zero external dependencies for core library
-- Multi-Schema CSV: Added multi-schema CSV parsing for banking/financial file formats with header/detail/trailer patterns
-- UTF-8 Consolidation (Jan 2026): Unified SIMD parsing to UTF-8 only path. UTF-16 string API now converts to UTF-8 internally via optimized `CsvCharToByteBinderAdapter` using ArrayPool and stackalloc.
-- Delimiter Detection & CSV Validation (Jan 2026): Added `CsvDelimiterDetector` for automatic delimiter detection and `Csv.Validate()` for structural CSV validation.
-- IDataReader Support (Jan 2026): Added `Csv.CreateDataReader()` and `FixedWidth.CreateDataReader()` for streaming database bulk-load scenarios via `DbDataReader`.
-- Fixed-Width Enhancements (Jan 2026): Added fixed-length row skipping/validation, `AllowMissingColumns`, comment line skipping, and field layout validation.
-- Performance Fixes (Jan-Mar 2026): Eliminated `ToString()` allocations in hot paths (delimiter detection, integer discriminator mapping). Fixed nullable Row/Column in `CsvException`.
-
-<!-- MANUAL ADDITIONS START -->
 
 ## Multi-Schema CSV Parsing
 Supports mapping rows to different record types via a discriminator column.
@@ -234,4 +221,3 @@ var fixedWidth = CsvToFixedWidthConverter.Convert(csv, columns);
 var csv = FixedWidthToCsvConverter.Convert(fixedWidthData, columns);
 ```
 
-<!-- MANUAL ADDITIONS END -->

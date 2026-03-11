@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using HeroParser.SeparatedValues.Reading.Rows;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Reading.Binders;
 
@@ -32,8 +34,9 @@ public interface ICsvBinder<TElement, T>
     /// <param name="row">The row to bind.</param>
     /// <param name="rowNumber">The 1-based row number for error reporting.</param>
     /// <param name="result">The bound record when successful.</param>
+    /// <param name="errors">Optional list to collect validation errors instead of throwing.</param>
     /// <returns>True if binding succeeded; otherwise false if the row should be skipped.</returns>
-    bool TryBind(CsvRow<TElement> row, int rowNumber, out T result);
+    bool TryBind(CsvRow<TElement> row, int rowNumber, out T result, List<ValidationError>? errors = null);
 
     /// <summary>
     /// Binds a CSV row into an existing record instance.
@@ -42,10 +45,11 @@ public interface ICsvBinder<TElement, T>
     /// <param name="instance">The existing instance to bind into.</param>
     /// <param name="row">The row to bind.</param>
     /// <param name="rowNumber">The 1-based row number for error reporting.</param>
+    /// <param name="errors">Optional list to collect validation errors instead of throwing.</param>
     /// <returns>True if binding succeeded, false if the row should be skipped.</returns>
     /// <remarks>
     /// Note: String properties still allocate new strings for each call.
     /// For true zero-allocation, use the span-based row API directly.
     /// </remarks>
-    bool BindInto(ref T instance, CsvRow<TElement> row, int rowNumber);
+    bool BindInto(ref T instance, CsvRow<TElement> row, int rowNumber, List<ValidationError>? errors = null);
 }

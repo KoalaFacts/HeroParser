@@ -114,6 +114,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         byteBuilder.AppendLine("using System.Globalization;");
         byteBuilder.AppendLine("using System.Runtime.CompilerServices;");
         byteBuilder.AppendLine("using System.Text;");
+        byteBuilder.AppendLine("using HeroParser.Validation;");
         byteBuilder.AppendLine();
         byteBuilder.AppendLine($"namespace {GENERATED_BYTE_NAMESPACE};");
         byteBuilder.AppendLine();
@@ -236,11 +237,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static void EmitByteBindMethod(SourceBuilder builder, string fullyQualifiedName)
     {
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine($"public bool TryBind({BYTE_ROW_TYPE} row, int rowNumber, out {fullyQualifiedName} result)");
+        builder.AppendLine($"public bool TryBind({BYTE_ROW_TYPE} row, int rowNumber, out {fullyQualifiedName} result, List<ValidationError>? errors = null)");
         builder.AppendLine("{");
         builder.Indent();
         builder.AppendLine($"result = new {fullyQualifiedName}();");
-        builder.AppendLine("return BindInto(ref result, row, rowNumber);");
+        builder.AppendLine("return BindInto(ref result, row, rowNumber, errors);");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -249,7 +250,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static void EmitByteBindIntoMethod(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
     {
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine($"public bool BindInto(ref {fullyQualifiedName} instance, {BYTE_ROW_TYPE} row, int rowNumber)");
+        builder.AppendLine($"public bool BindInto(ref {fullyQualifiedName} instance, {BYTE_ROW_TYPE} row, int rowNumber, List<ValidationError>? errors = null)");
         builder.AppendLine("{");
         builder.Indent();
         builder.AppendLine("var columnCount = row.ColumnCount;");

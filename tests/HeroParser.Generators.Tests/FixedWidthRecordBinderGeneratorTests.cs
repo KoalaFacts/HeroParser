@@ -295,7 +295,7 @@ public class FixedWidthRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         // Should emit diagnostic for NotEmpty on non-string
-        Assert.Contains(result.Diagnostics, d => d.Id == "HERO014");
+        Assert.Contains(result.Diagnostics, d => d.Id == "HERO004");
     }
 
     [Fact]
@@ -318,7 +318,7 @@ public class FixedWidthRecordBinderGeneratorTests
 
         var result = RunGenerator(source);
 
-        Assert.Contains(result.Diagnostics, d => d.Id == "HERO015");
+        Assert.Contains(result.Diagnostics, d => d.Id == "HERO005");
     }
 
     [Fact]
@@ -341,7 +341,7 @@ public class FixedWidthRecordBinderGeneratorTests
 
         var result = RunGenerator(source);
 
-        Assert.Contains(result.Diagnostics, d => d.Id == "HERO016");
+        Assert.Contains(result.Diagnostics, d => d.Id == "HERO006");
     }
 
     [Fact]
@@ -364,7 +364,7 @@ public class FixedWidthRecordBinderGeneratorTests
 
         var result = RunGenerator(source);
 
-        Assert.Contains(result.Diagnostics, d => d.Id == "HERO017");
+        Assert.Contains(result.Diagnostics, d => d.Id == "HERO007");
     }
 
     [Fact]

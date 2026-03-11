@@ -187,12 +187,31 @@ The map builds property accessors using compiled expression trees:
 
 These are the same types the existing `CsvRecordWriter<T>` and `FixedWidthRecordWriter<T>` already consume.
 
+## AOT / Trimming Annotations
+
+Fluent maps use expression tree compilation and reflection, making them incompatible with AOT and trimming. All public entry points on `CsvMap<T>` and `FixedWidthMap<T>` carry both annotations:
+
+```csharp
+[RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+[RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+public class CsvMap<T> { ... }
+```
+
+The `WithMap()` and inline `Map()` methods on the builders also carry these attributes so the warning propagates to callers.
+
+This matches the existing pattern — `CsvRecordWriter<T>` already uses `[RequiresUnreferencedCode]` for its reflection-based path. Users targeting AOT should use `[CsvGenerateBinder]` / `[FixedWidthGenerateBinder]` attributes instead of fluent maps.
+
 ## Builder Integration
 
 ### New Methods on CsvRecordReaderBuilder<T>
 
 ```csharp
+[RequiresUnreferencedCode("...")]
+[RequiresDynamicCode("...")]
 public CsvRecordReaderBuilder<T> WithMap(CsvMap<T> map);
+
+[RequiresUnreferencedCode("...")]
+[RequiresDynamicCode("...")]
 public CsvRecordReaderBuilder<T> Map<TProperty>(
     Expression<Func<T, TProperty>> property,
     Action<CsvColumnBuilder>? configure = null);
@@ -201,13 +220,20 @@ public CsvRecordReaderBuilder<T> Map<TProperty>(
 ### New Methods on CsvWriterBuilder<T>
 
 ```csharp
+[RequiresUnreferencedCode("...")]
+[RequiresDynamicCode("...")]
 public CsvWriterBuilder<T> WithMap(CsvMap<T> map);
 ```
 
 ### New Methods on FixedWidthReaderBuilder<T>
 
 ```csharp
+[RequiresUnreferencedCode("...")]
+[RequiresDynamicCode("...")]
 public FixedWidthReaderBuilder<T> WithMap(FixedWidthMap<T> map);
+
+[RequiresUnreferencedCode("...")]
+[RequiresDynamicCode("...")]
 public FixedWidthReaderBuilder<T> Map<TProperty>(
     Expression<Func<T, TProperty>> property,
     Action<FixedWidthColumnBuilder>? configure = null);
@@ -252,7 +278,7 @@ None. This is purely additive:
 
 ## Not In Scope
 
-- AOT support for fluent maps (expression tree compilation requires JIT)
+- AOT support for fluent maps (expression tree compilation requires JIT; annotated with `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`)
 - Fixing FixedWidth parse-error-throws-instead-of-collects gap (pre-existing issue)
 - `string?` nullable detection in source generators (pre-existing issue)
 - Multi-schema support for fluent maps

@@ -262,8 +262,6 @@ secrets.json
 
 # User-specific AI assistant files (Claude Code local settings)
 .specify/
-specs/
-CLAUDE.md
 
 # Windows null device files
 nul

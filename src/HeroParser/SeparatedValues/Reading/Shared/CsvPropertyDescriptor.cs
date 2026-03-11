@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using HeroParser.SeparatedValues.Mapping;
 
 namespace HeroParser.SeparatedValues.Reading.Shared;
 
@@ -23,7 +24,8 @@ public readonly struct CsvPropertyDescriptor<T>(
     string name,
     int columnIndex,
     CsvPropertySetter<T> setter,
-    bool isRequired = false)
+    bool isRequired = false,
+    CsvPropertyValidation? validation = null)
 {
     /// <summary>Gets the property/column name.</summary>
     public string Name { get; } = name;
@@ -37,6 +39,9 @@ public readonly struct CsvPropertyDescriptor<T>(
     /// <summary>Gets whether this property is required (non-nullable value type).</summary>
     public bool IsRequired { get; } = isRequired;
 
+    /// <summary>Gets the validation rules for this property, or null if none configured.</summary>
+    public CsvPropertyValidation? Validation { get; } = validation;
+
     /// <summary>
     /// Creates a new property descriptor for header-based binding.
     /// </summary>
@@ -44,7 +49,7 @@ public readonly struct CsvPropertyDescriptor<T>(
         string name,
         CsvPropertySetter<T> setter,
         bool isRequired = false)
-        : this(name, -1, setter, isRequired)
+        : this(name, -1, setter, isRequired, validation: null)
     {
     }
 }
@@ -82,7 +87,8 @@ public sealed class CsvRecordDescriptor<T>(CsvPropertyDescriptor<T>[] properties
                 prop.Name,
                 columnIndices[i],
                 prop.Setter,
-                prop.IsRequired);
+                prop.IsRequired,
+                prop.Validation);
         }
         return new CsvRecordDescriptor<T>(resolvedProperties, Factory);
     }

@@ -54,25 +54,6 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor notEmptyOnNonStringDiagnostic = new(
-        "HERO004", "NotEmpty only applies to string properties",
-        "Property '{0}' has NotEmpty = true but is type '{1}'. NotEmpty only applies to string properties.",
-        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
-
-    private static readonly DiagnosticDescriptor lengthOnNonStringDiagnostic = new(
-        "HERO005", "MaxLength/MinLength only apply to string properties",
-        "Property '{0}' has MaxLength or MinLength but is type '{1}'. These only apply to string properties.",
-        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
-
-    private static readonly DiagnosticDescriptor rangeOnNonNumericDiagnostic = new(
-        "HERO006", "RangeMin/RangeMax only apply to numeric properties",
-        "Property '{0}' has RangeMin or RangeMax but is type '{1}'. These only apply to numeric properties.",
-        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
-
-    private static readonly DiagnosticDescriptor patternOnNonStringDiagnostic = new(
-        "HERO007", "Pattern only applies to string properties",
-        "Property '{0}' has Pattern but is type '{1}'. Pattern only applies to string properties.",
-        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
 #pragma warning restore RS2008
 
     /// <inheritdoc/>
@@ -964,24 +945,24 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
             if (validationNotEmpty && !isStringType)
             {
-                diagnostics.Add(Diagnostic.Create(notEmptyOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                diagnostics.Add(Diagnostic.Create(NotEmptyOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
                 validationNotEmpty = false;
             }
             if ((validationMaxLength >= 0 || validationMinLength >= 0) && !isStringType)
             {
-                diagnostics.Add(Diagnostic.Create(lengthOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                diagnostics.Add(Diagnostic.Create(LengthOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
                 validationMaxLength = -1;
                 validationMinLength = -1;
             }
             if ((!double.IsNaN(validationRangeMin) || !double.IsNaN(validationRangeMax)) && !isNumericType)
             {
-                diagnostics.Add(Diagnostic.Create(rangeOnNonNumericDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                diagnostics.Add(Diagnostic.Create(RangeOnNonNumericDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
                 validationRangeMin = double.NaN;
                 validationRangeMax = double.NaN;
             }
             if (validationPattern != null && !isStringType)
             {
-                diagnostics.Add(Diagnostic.Create(patternOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                diagnostics.Add(Diagnostic.Create(PatternOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
                 validationPattern = null;
             }
 

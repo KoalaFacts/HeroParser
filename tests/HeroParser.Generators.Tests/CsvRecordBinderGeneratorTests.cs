@@ -638,6 +638,102 @@ public class CsvRecordBinderGeneratorTests
         Assert.DoesNotContain(result.Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
     }
 
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_WithRequiredValidation_EmitsValidationCode()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R { [CsvColumn(Name = "X", Required = true)] public string X { get; set; } = ""; }
+            """;
+        var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("ValidationError", code);
+        Assert.Contains("Required", code);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_WithNoValidation_NoValidationCode()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R { [CsvColumn(Name = "X")] public string X { get; set; } = ""; }
+            """;
+        var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
+        // "valid = false" is only emitted when validation is present; the method signature always contains ValidationError
+        Assert.DoesNotContain("valid = false", code);
+        Assert.DoesNotContain("Rule = ", code);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_WithPattern_EmitsStaticRegex()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R { [CsvColumn(Name = "X", Pattern = @"^\d+$")] public string X { get; set; } = ""; }
+            """;
+        var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("static readonly", code);
+        Assert.Contains("Regex", code);
+        Assert.Contains("TimeSpan", code);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_WithDecimalRange_EmitsDecimalLiteral()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R { [CsvColumn(Index = 0, RangeMin = 0, RangeMax = 999.99)] public decimal X { get; set; } }
+            """;
+        var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("999.99m", code);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_WithAllValidations_ProducesValidCSharp()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace T;
+            [CsvGenerateBinder]
+            public class R
+            {
+                [CsvColumn(Name = "Id", Required = true, NotEmpty = true)]
+                public string Id { get; set; } = "";
+
+                [CsvColumn(Name = "Amount", Required = true, RangeMin = 0, RangeMax = 100)]
+                public decimal Amount { get; set; }
+
+                [CsvColumn(Name = "Code", MinLength = 2, MaxLength = 5)]
+                public string Code { get; set; } = "";
+
+                [CsvColumn(Name = "Ref", Pattern = @"^[A-Z]+$")]
+                public string Ref { get; set; } = "";
+            }
+            """;
+        var result = RunGenerator(source);
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        // Verify generated code is valid C# syntax
+        foreach (var gs in result.GeneratedSources)
+        {
+            var tree = CSharpSyntaxTree.ParseText(gs.SourceText.ToString());
+            var diags = tree.GetDiagnostics().ToList();
+            Assert.DoesNotContain(diags, d => d.Severity == DiagnosticSeverity.Error);
+        }
+    }
+
     #region Test Infrastructure
 
     private static GeneratorRunResult RunGenerator(string source)

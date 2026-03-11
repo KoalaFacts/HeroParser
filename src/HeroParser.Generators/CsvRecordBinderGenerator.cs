@@ -45,6 +45,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         "HeroParser.Generators",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor missingNameOrIndexDiagnostic = new(
+        "HERO008",
+        "CsvColumn requires Name or Index",
+        "Property '{0}' has [CsvColumn] but neither Name nor Index is specified. Set Name or Index explicitly.",
+        "HeroParser.Generators",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 #pragma warning restore RS2008
 
     /// <inheritdoc/>
@@ -684,6 +692,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             int? attributeIndex = null;
             string? format = null;
 
+            bool hasExplicitName = false;
+
             if (mapAttribute is not null)
             {
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
@@ -693,6 +703,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                     {
                         case "Name" when arg.Value.Value is string s && !string.IsNullOrWhiteSpace(s):
                             headerName = s;
+                            hasExplicitName = true;
                             break;
                         case "Index" when arg.Value.Value is int i && i >= 0:
                             attributeIndex = i;
@@ -703,6 +714,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                     }
                 }
 #pragma warning restore IDE0010
+
+                if (!hasExplicitName && attributeIndex is null)
+                {
+                    diagnostics.Add(Diagnostic.Create(missingNameOrIndexDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name));
+                    continue;
+                }
             }
 
             if (!IsSupportedType(property.Type))

@@ -110,6 +110,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
         var columnCount = row.ColumnCount;
         var cultureLocal = culture;
         var nullVals = nullValues;
+        bool hasErrors = false;
 
         for (int i = 0; i < props.Length; i++)
         {
@@ -136,6 +137,18 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
                             fieldValue,
                             ex);
                     }
+
+                    if (prop.Validation is { } validation && errors is not null)
+                    {
+                        var fieldStr = new string(span);
+                        string? colName = !descriptor.UsesHeaderBinding ? null : prop.Name;
+                        hasErrors |= PropertyValidationRunner.Validate(
+                            fieldStr, prop.Name, rowNumber, idx,
+                            columnName: colName,
+                            validation.NotEmpty, validation.MinLength, validation.MaxLength,
+                            validation.RangeMin, validation.RangeMax, validation.Pattern,
+                            errors);
+                    }
                 }
             }
             else if (idx >= 0 && prop.IsRequired && !allowMissingColumns)
@@ -146,7 +159,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
                     rowNumber, idx + 1);
             }
         }
-        return true;
+        return !hasErrors;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -70,19 +70,19 @@ jobs:
 
     - name: Run Unit Tests (with coverage)
       if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
-      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-unit.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults/unit --filter "Category=Unit"
+      run: dotnet test tests/HeroParser.Tests --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-unit.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults/unit --filter "Category=Unit"
 
     - name: Run Unit Tests (no coverage)
       if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0') }}
-      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-unit.trx" --results-directory ./TestResults/unit --filter "Category=Unit"
+      run: dotnet test tests/HeroParser.Tests --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-unit.trx" --results-directory ./TestResults/unit --filter "Category=Unit"
 
     - name: Run Integration Tests (with coverage)
       if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
-      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-integration.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults/integration --filter "Category=Integration"
+      run: dotnet test tests/HeroParser.Tests --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-integration.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults/integration --filter "Category=Integration"
 
     - name: Run Integration Tests (no coverage)
       if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0') }}
-      run: dotnet test --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-integration.trx" --results-directory ./TestResults/integration --filter "Category=Integration"
+      run: dotnet test tests/HeroParser.Tests --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results-integration.trx" --results-directory ./TestResults/integration --filter "Category=Integration"
 
     - name: Publish test results
       uses: EnricoMi/publish-unit-test-result-action@v2

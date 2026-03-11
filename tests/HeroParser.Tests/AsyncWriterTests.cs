@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using System.Text;
 using Xunit;
@@ -20,6 +21,13 @@ public class AsyncWriterTests
         public string? Name { get; set; }
         public int Age { get; set; }
         public string? City { get; set; }
+    }
+
+    [CsvGenerateBinder]
+    public class FormattedAsyncRecord
+    {
+        [CsvColumn(Format = "yyyy-MM-dd")]
+        public DateTime CreatedOn { get; set; }
     }
 
     #endregion
@@ -125,6 +133,26 @@ public class AsyncWriterTests
         Assert.Contains("Charlie", csv);
         Assert.Contains("35", csv);
         Assert.Contains("SF", csv);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public async Task WriteToStreamAsync_WithCsvColumnFormat_UsesFormattedValue()
+    {
+        FormattedAsyncRecord[] records =
+        [
+            new FormattedAsyncRecord { CreatedOn = new DateTime(2026, 3, 11, 14, 30, 0, DateTimeKind.Utc) }
+        ];
+
+        using var ms = new MemoryStream();
+        await Csv.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: TestContext.Current.CancellationToken);
+
+        ms.Position = 0;
+        using var reader = new StreamReader(ms);
+        var csv = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains("2026-03-11", csv);
+        Assert.DoesNotContain("14:30", csv);
     }
 
     #endregion

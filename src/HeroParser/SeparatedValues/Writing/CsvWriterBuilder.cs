@@ -31,6 +31,10 @@ public sealed class CsvWriterBuilder<T>
     private int? maxFieldSize;
     private int? maxColumnCount;
 
+    // Progress reporting
+    private IProgress<CsvWriteProgress>? writeProgress;
+    private int writeProgressIntervalRows = 1000;
+
     // Cached options - invalidated when any setting changes
     private CsvWriteOptions? cachedOptions;
 
@@ -314,6 +318,30 @@ public sealed class CsvWriterBuilder<T>
         return this;
     }
 
+    /// <summary>
+    /// Sets the progress reporter for receiving write progress updates.
+    /// </summary>
+    /// <param name="progress">The progress reporter.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder<T> WithProgress(IProgress<CsvWriteProgress> progress)
+    {
+        writeProgress = progress;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the number of rows between progress updates.
+    /// </summary>
+    /// <param name="intervalRows">The interval in rows.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder<T> WithProgressInterval(int intervalRows)
+    {
+        writeProgressIntervalRows = intervalRows;
+        cachedOptions = null;
+        return this;
+    }
+
     #region Terminal Methods
 
     /// <summary>
@@ -529,7 +557,9 @@ public sealed class CsvWriterBuilder<T>
             AdditionalDangerousChars = additionalDangerousChars,
             MaxOutputSize = maxOutputSize,
             MaxFieldSize = maxFieldSize,
-            MaxColumnCount = maxColumnCount
+            MaxColumnCount = maxColumnCount,
+            WriteProgress = writeProgress,
+            WriteProgressIntervalRows = writeProgressIntervalRows
         };
     }
 

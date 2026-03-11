@@ -255,7 +255,7 @@ public class Rfc4180TestsStream
         }
 
         Assert.NotNull(ex);
-        Assert.Equal(CsvErrorCode.ParseError, ex!.ErrorCode);
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
     }
 
     [Fact]

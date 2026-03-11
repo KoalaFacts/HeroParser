@@ -56,7 +56,7 @@ jobs:
         dotnet-version: ${{ needs.setup.outputs.versions }}
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore --force-evaluate
 
     - name: Build
       run: dotnet build tests/HeroParser.Tests/HeroParser.Tests.csproj --configuration Release --no-restore --framework ${{ matrix.framework }}

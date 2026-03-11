@@ -74,7 +74,7 @@ public class LinqExtensionsTests
         var first = reader.FirstOrDefault();
 
         Assert.NotNull(first);
-        Assert.Equal("Alice", first!.Name);
+        Assert.Equal("Alice", first.Name);
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public class LinqExtensionsTests
         var first = reader.FirstOrDefault(p => p.Score > 90);
 
         Assert.NotNull(first);
-        Assert.Equal("Alice", first!.Name);
+        Assert.Equal("Alice", first.Name);
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public class LinqExtensionsTests
         var single = reader.SingleOrDefault();
 
         Assert.NotNull(single);
-        Assert.Equal("Alice", single!.Name);
+        Assert.Equal("Alice", single.Name);
     }
 
     [Fact]

@@ -98,7 +98,7 @@ jobs:
           dotnet-version: ${{ steps.extract.outputs.versions }}
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore --force-evaluate
 
       - name: Build Release
         run: dotnet build --configuration Release --no-restore

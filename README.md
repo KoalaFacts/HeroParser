@@ -1548,6 +1548,220 @@ The `[CsvGenerateBinder]` attribute instructs the source generator to emit a com
 
 > **Note**: Source generators require the `HeroParser.Generators` package and a compatible SDK.
 
+## 🔍 Schema Inference
+
+Automatically detect column types from CSV data without defining record classes:
+
+```csharp
+var schema = Csv.InferSchema(csvData);
+foreach (var col in schema.Columns)
+{
+    Console.WriteLine($"{col.Name}: {col.InferredType}{(col.IsNullable ? "?" : "")} (max length: {col.MaxLength})");
+}
+```
+
+**Inferred Types**: `Boolean`, `Integer`, `Long`, `Decimal`, `Guid`, `DateTime`, `String`
+
+The inference algorithm samples rows and tries to parse each value in order of specificity, falling back to the widest compatible type (e.g., `int` + `decimal` = `decimal`, `int` + `string` = `string`).
+
+```csharp
+// Configure inference
+var options = new CsvSchemaInferenceOptions
+{
+    Delimiter = ';',    // Auto-detects if null
+    SampleRows = 200    // Default: 100
+};
+
+var schema = Csv.InferSchema(csvData, options);
+Console.WriteLine($"Sampled {schema.SampledRowCount} rows, found {schema.Columns.Count} columns");
+```
+
+**Use Cases**:
+- Dynamic CSV import without pre-defined schemas
+- Generating CREATE TABLE statements from CSV files
+- Validating data types before processing
+
+## 🗄️ IDataReader Integration
+
+Stream CSV or fixed-width data through `System.Data.IDataReader` for database bulk loading with `SqlBulkCopy`, Dapper, or any ADO.NET consumer:
+
+### CSV DataReader
+
+```csharp
+// From a stream
+using var reader = Csv.CreateDataReader(File.OpenRead("data.csv"));
+
+// From a file
+using var reader = Csv.CreateDataReader("data.csv");
+
+// Bulk load into SQL Server
+using var bulkCopy = new SqlBulkCopy(connection);
+bulkCopy.DestinationTableName = "MyTable";
+await bulkCopy.WriteToServerAsync(reader);
+```
+
+**DataReader Options**:
+
+```csharp
+var readerOptions = new CsvDataReaderOptions
+{
+    HasHeaderRow = true,              // First row is header (default: true)
+    CaseSensitiveHeaders = false,     // Header name lookup (default: false)
+    AllowMissingColumns = false,      // Tolerate rows with fewer columns
+    SkipRows = 2,                     // Skip metadata rows before header
+    NullValues = ["NULL", "N/A"],     // Values treated as DBNull
+    ColumnNames = ["Id", "Name"]      // Override header names
+};
+
+using var reader = Csv.CreateDataReader(stream, readerOptions: readerOptions);
+```
+
+### Fixed-Width DataReader
+
+```csharp
+// From a stream
+using var reader = FixedWidth.CreateDataReader(File.OpenRead("data.dat"));
+
+// From a file
+using var reader = FixedWidth.CreateDataReader("data.dat");
+```
+
+## 🔌 PipeReader Support
+
+Parse CSV data from `System.IO.Pipelines` sources (network sockets, HTTP response bodies) without buffering the entire payload:
+
+```csharp
+var pipe = PipeReader.Create(networkStream);
+await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe))
+{
+    var id = row[0].ToString();
+    var name = row[1].ToString();
+    Console.WriteLine($"{id}: {name}");
+}
+```
+
+Each row is yielded as a `CsvPipeRow` with column access via UTF-8 byte spans. Supports all standard `CsvReadOptions`:
+
+```csharp
+var options = new CsvReadOptions { Delimiter = ';', EnableQuotedFields = true };
+await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe, options, cancellationToken))
+{
+    // row.RowNumber - 1-based row number
+    // row.ColumnCount - number of columns
+    // row[i].Span - raw UTF-8 bytes
+    // row[i].ToUnquotedString() - decoded string with quotes stripped
+}
+```
+
+**Use Cases**:
+- Parsing CSV from HTTP response streams
+- Processing CSV over network sockets
+- High-throughput pipeline architectures
+
+## 🔄 Format Converters
+
+Convert between CSV and fixed-width formats:
+
+### CSV to Fixed-Width
+
+```csharp
+using HeroParser.Conversion;
+
+var columns = new[]
+{
+    new FixedWidthFieldDefinition("Name", width: 20),
+    new FixedWidthFieldDefinition("Age", width: 5, FieldAlignment.Right),
+    new FixedWidthFieldDefinition("City", width: 15)
+};
+
+var fixedWidth = CsvToFixedWidthConverter.Convert(csvData, columns);
+```
+
+**Options**:
+
+```csharp
+var options = new CsvToFixedWidthOptions
+{
+    Delimiter = ';',          // CSV delimiter (default: comma)
+    IncludeHeader = true,     // Include header row in output (default: false)
+    NewLine = "\r\n"          // Line ending (default: CRLF)
+};
+
+var fixedWidth = CsvToFixedWidthConverter.Convert(csvData, columns, options);
+```
+
+### Fixed-Width to CSV
+
+```csharp
+var columns = new[]
+{
+    new FixedWidthFieldDefinition("Name", width: 20),
+    new FixedWidthFieldDefinition("Amount", width: 10, FieldAlignment.Right, padChar: '0')
+};
+
+var csv = FixedWidthToCsvConverter.Convert(fixedWidthData, columns);
+```
+
+**Options**:
+
+```csharp
+var options = new FixedWidthToCsvOptions
+{
+    Delimiter = ';',          // CSV delimiter (default: comma)
+    Quote = '"',              // Quote character (default: double quote)
+    IncludeHeader = true,     // Include header row (default: true)
+    NewLine = "\r\n"          // Line ending (default: CRLF)
+};
+
+var csv = FixedWidthToCsvConverter.Convert(fixedWidthData, columns, options);
+```
+
+## 📏 Span-Based Parsing
+
+For maximum performance when data is already in memory, use span-based overloads that avoid stream/string overhead:
+
+```csharp
+// Parse from char span
+ReadOnlySpan<char> charData = csvText.AsSpan();
+using var charReader = Csv.ReadFromCharSpan(charData);
+while (charReader.MoveNext())
+{
+    var value = charReader.Current[0].Parse<int>();
+}
+
+// Parse from UTF-8 byte span (fastest path)
+ReadOnlySpan<byte> utf8Data = File.ReadAllBytes("data.csv");
+using var byteReader = Csv.ReadFromByteSpan(utf8Data);
+while (byteReader.MoveNext())
+{
+    var value = byteReader.Current[0].Parse<int>();
+}
+```
+
+Fixed-width span-based parsing:
+
+```csharp
+// Parse fixed-width from char span
+using var reader = FixedWidth.ReadFromCharSpan(charData);
+
+// Parse fixed-width from UTF-8 byte span (with char conversion)
+using var reader = FixedWidth.ReadFromByteSpan(utf8Data);
+
+// Parse fixed-width directly from UTF-8 bytes (no conversion)
+using var reader = FixedWidth.ReadFromUtf8ByteSpan(utf8Data);
+```
+
+## 🖥️ Hardware Diagnostics
+
+Check which SIMD instruction sets are available at runtime:
+
+```csharp
+Console.WriteLine(Hardware.GetHardwareInfo());
+// Output: "SIMD: AVX-512F, AVX-512BW, AVX2, SSE2"
+```
+
+Useful for diagnostics, benchmark output, and verifying that the expected SIMD optimizations are active.
+
 ## ⚠️ RFC 4180 Compliance
 
 HeroParser implements **core RFC 4180 features**:

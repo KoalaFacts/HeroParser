@@ -473,6 +473,33 @@ public class MultiSchemaTests
         Assert.Equal(bytes.Length, reader.BytesRead);
     }
 
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task FromStream_MaxRowCount_CountsSkippedUnmatchedRows()
+    {
+        var csv = """
+            H,Header1
+            X,Unknown1
+            X,Unknown2
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        await using var reader = Csv.Read()
+            .WithMultiSchema()
+            .NoHeaderRow()
+            .WithDiscriminator(0)
+            .MapRecord<NoHeaderRecord>("H")
+            .OnUnmatchedRow(UnmatchedRowBehavior.Skip)
+            .WithMaxRowCount(2)
+            .FromStream(stream);
+
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+
+        var ex = await Assert.ThrowsAsync<CsvException>(async () =>
+            await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(CsvErrorCode.TooManyRows, ex.ErrorCode);
+    }
+
     #endregion
 
     #region Test Record Classes

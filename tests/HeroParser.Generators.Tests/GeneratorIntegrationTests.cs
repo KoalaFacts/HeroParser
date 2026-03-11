@@ -43,13 +43,13 @@ public class GeneratorIntegrationTests
             Assert.NotNull(person);
             if (row == 2)
             {
-                Assert.Equal("Jane", person!.Name);
+                Assert.Equal("Jane", person.Name);
                 Assert.Equal(42, person.Age);
             }
 
             if (row == 3)
             {
-                Assert.Equal("Bob", person!.Name);
+                Assert.Equal("Bob", person.Name);
                 Assert.Equal(25, person.Age);
             }
         }

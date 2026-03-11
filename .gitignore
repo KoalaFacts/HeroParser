@@ -258,9 +258,9 @@ secrets.json
 *.key
 *.pem
 *.p12
+*.local.json
 
 # User-specific AI assistant files (Claude Code local settings)
-.claude/
 .specify/
 specs/
 CLAUDE.md

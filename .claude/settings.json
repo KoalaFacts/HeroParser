@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "dotnet format --include \"$CLAUDE_FILE_PATH\" --verbosity quiet 2>/dev/null || true"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE '(packages\\.lock\\.json|\\.editorconfig|Directory\\.Build\\.props)$' && echo 'BLOCK: Protected file - requires explicit user approval' && exit 1 || exit 0"
+      }
+    ]
+  }
+}

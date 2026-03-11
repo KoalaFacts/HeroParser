@@ -27,7 +27,7 @@ namespace HeroParser.SeparatedValues.Mapping;
 /// </remarks>
 [RequiresUnreferencedCode("CsvMap uses expression trees and reflection for property binding. Use [CsvGenerateBinder] for AOT/trimming support.")]
 [RequiresDynamicCode("CsvMap uses expression trees and reflection. Use [CsvGenerateBinder] for AOT support.")]
-public class CsvMap<T> where T : class, new()
+public class CsvMap<T> : ICsvReadMapSource<T>, ICsvWriteMapSource<T> where T : class, new()
 {
     private readonly List<MappedProperty> mappedProperties = [];
 
@@ -131,7 +131,7 @@ public class CsvMap<T> where T : class, new()
         var compiled = Expression.Lambda<Action<T, TProperty>>(assign, instanceParam, valueParam).Compile();
 
         // Get the parser for this property type
-        var parse = GetParser<TProperty>();
+        var parse = SpanParserFactory.GetParser<TProperty>();
 
         void Setter(ref T instance, ReadOnlySpan<char> value, CultureInfo culture)
         {
@@ -140,74 +140,6 @@ public class CsvMap<T> where T : class, new()
         }
 
         return Setter;
-    }
-
-    private delegate TProperty SpanParser<out TProperty>(ReadOnlySpan<char> span, CultureInfo culture);
-
-    private static SpanParser<TProperty> GetParser<TProperty>()
-    {
-        var type = typeof(TProperty);
-        var underlyingType = Nullable.GetUnderlyingType(type);
-        var isNullable = underlyingType is not null;
-        var targetType = underlyingType ?? type;
-
-        object parser = targetType switch
-        {
-            _ when targetType == typeof(string) => (SpanParser<string>)((span, _) => span.ToString()),
-            _ when targetType == typeof(int) => CreateValueParser(isNullable, static (span, culture) => int.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(long) => CreateValueParser(isNullable, static (span, culture) => long.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(short) => CreateValueParser(isNullable, static (span, culture) => short.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(byte) => CreateValueParser(isNullable, static (span, culture) => byte.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(decimal) => CreateValueParser(isNullable, static (span, culture) => decimal.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(double) => CreateValueParser(isNullable, static (span, culture) => double.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(float) => CreateValueParser(isNullable, static (span, culture) => float.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(bool) => CreateValueParser(isNullable, static (span, _) => bool.Parse(span)),
-            _ when targetType == typeof(DateTime) => CreateValueParser(isNullable, static (span, culture) => DateTime.Parse(span, culture, DateTimeStyles.None)),
-            _ when targetType == typeof(DateOnly) => CreateValueParser(isNullable, static (span, culture) => DateOnly.Parse(span, culture)),
-            _ when targetType == typeof(TimeOnly) => CreateValueParser(isNullable, static (span, culture) => TimeOnly.Parse(span, culture)),
-            _ when targetType == typeof(Guid) => CreateValueParser(isNullable, static (span, _) => Guid.Parse(span)),
-            _ when targetType.IsEnum => CreateEnumParser(targetType, isNullable),
-            _ => throw new NotSupportedException($"Type '{type.FullName}' is not supported for CSV mapping.")
-        };
-
-        return (SpanParser<TProperty>)parser;
-    }
-
-    private static object CreateValueParser<TValue>(bool isNullable, SpanParser<TValue> parser) where TValue : struct
-    {
-        if (!isNullable)
-            return parser;
-
-        SpanParser<TValue?> nullableParser = (span, culture) =>
-        {
-            if (span.IsEmpty || span.IsWhiteSpace())
-                return null;
-            return parser(span, culture);
-        };
-        return nullableParser;
-    }
-
-    private static object CreateEnumParser(Type enumType, bool isNullable)
-    {
-        // Use reflection to invoke the generic method since we don't know the enum type at compile time
-        var method = typeof(CsvMap<T>).GetMethod(
-            nameof(CreateEnumParserGeneric),
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-
-        return isNullable
-            ? method.MakeGenericMethod(typeof(Nullable<>).MakeGenericType(enumType)).Invoke(null, [isNullable])!
-            : method.MakeGenericMethod(enumType).Invoke(null, [isNullable])!;
-    }
-
-    private static SpanParser<TEnum> CreateEnumParserGeneric<TEnum>(bool isNullable)
-    {
-        var underlyingType = Nullable.GetUnderlyingType(typeof(TEnum)) ?? typeof(TEnum);
-        return (span, _) =>
-        {
-            if (isNullable && (span.IsEmpty || span.IsWhiteSpace()))
-                return default!;
-            return (TEnum)Enum.Parse(underlyingType, span);
-        };
     }
 
     private static Func<T, object?> CreateGetter(PropertyInfo propertyInfo)

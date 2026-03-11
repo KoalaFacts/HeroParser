@@ -1,9 +1,11 @@
+using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records;
 using HeroParser.SeparatedValues.Reading.Rows;
 using HeroParser.SeparatedValues.Reading.Shared;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Reading.Binders;
 
@@ -91,15 +93,15 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryBind(CsvRow<char> row, int rowNumber, out T result)
+    public bool TryBind(CsvRow<char> row, int rowNumber, out T result, List<ValidationError>? errors = null)
     {
         result = descriptor.Factory();
-        return BindInto(ref result, row, rowNumber);
+        return BindInto(ref result, row, rowNumber, errors);
     }
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool BindInto(ref T instance, CsvRow<char> row, int rowNumber)
+    public bool BindInto(ref T instance, CsvRow<char> row, int rowNumber, List<ValidationError>? errors = null)
     {
         if (resolvedProperties is null)
             throw new InvalidOperationException("BindHeader must be called before BindInto when NeedsHeaderResolution is true.");

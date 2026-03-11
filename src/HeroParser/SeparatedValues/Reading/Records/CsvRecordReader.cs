@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Rows;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Reading.Records;
 
@@ -20,6 +22,7 @@ public ref struct CsvRecordReader<TElement, T>
     private int rowNumber;
     private int skippedCount;
     private int dataRowCount;
+    private readonly List<ValidationError> errors = [];
 
     internal CsvRecordReader(CsvRowReader<TElement> reader, ICsvBinder<TElement, T> binder, int skipRows = 0,
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000)
@@ -37,6 +40,9 @@ public ref struct CsvRecordReader<TElement, T>
 
     /// <summary>Gets the current mapped record.</summary>
     public T Current { get; private set; }
+
+    /// <summary>Gets the validation errors collected during iteration.</summary>
+    public readonly IReadOnlyList<ValidationError> Errors => errors;
 
     /// <summary>Returns this instance for <c>foreach</c> support.</summary>
     public readonly CsvRecordReader<TElement, T> GetEnumerator() => this;
@@ -64,7 +70,7 @@ public ref struct CsvRecordReader<TElement, T>
                 continue;
             }
 
-            if (!binder.TryBind(row, rowNumber, out var result))
+            if (!binder.TryBind(row, rowNumber, out var result, errors))
             {
                 // Row was skipped due to error handling
                 continue;

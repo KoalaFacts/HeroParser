@@ -1,7 +1,9 @@
 using System.Buffers;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.SeparatedValues.Reading.Rows;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Reading.Binders;
 
@@ -55,17 +57,17 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     }
 
     /// <inheritdoc/>
-    public bool TryBind(CsvRow<char> row, int rowNumber, out T result)
+    public bool TryBind(CsvRow<char> row, int rowNumber, out T result, List<ValidationError>? errors = null)
     {
         using var conversion = ConvertToByteRow(row, delimiterByte);
-        return byteBinder.TryBind(conversion.Row, rowNumber, out result);
+        return byteBinder.TryBind(conversion.Row, rowNumber, out result, errors);
     }
 
     /// <inheritdoc/>
-    public bool BindInto(ref T instance, CsvRow<char> row, int rowNumber)
+    public bool BindInto(ref T instance, CsvRow<char> row, int rowNumber, List<ValidationError>? errors = null)
     {
         using var conversion = ConvertToByteRow(row, delimiterByte);
-        return byteBinder.BindInto(ref instance, conversion.Row, rowNumber);
+        return byteBinder.BindInto(ref instance, conversion.Row, rowNumber, errors);
     }
 
     /// <summary>

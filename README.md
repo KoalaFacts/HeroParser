@@ -1346,28 +1346,27 @@ var records = FixedWidth.Read<Employee>()
 
 ### Validation Attributes
 
-```csharp
-using HeroParser.FixedWidths.Validation;
+Validation constraints are declared inline on `[FixedWidthColumn]` — no separate attribute types are required:
 
+```csharp
+[FixedWidthGenerateBinder]
 public class ValidatedRecord
 {
-    [FixedWidthColumn(Start = 0, Length = 10)]
-    [FixedWidthRequired]  // Field cannot be empty/whitespace
+    [FixedWidthColumn(Start = 0, Length = 10, Required = true, NotEmpty = true)]
     public string Id { get; set; } = "";
 
-    [FixedWidthColumn(Start = 10, Length = 20)]
-    [FixedWidthStringLength(MinLength = 2, MaxLength = 20)]
+    [FixedWidthColumn(Start = 10, Length = 20, MinLength = 2, MaxLength = 20)]
     public string Name { get; set; } = "";
 
-    [FixedWidthColumn(Start = 30, Length = 10)]
-    [FixedWidthRange(Minimum = 0, Maximum = 1000000)]
+    [FixedWidthColumn(Start = 30, Length = 10, RangeMin = 0, RangeMax = 1_000_000)]
     public decimal Amount { get; set; }
 
-    [FixedWidthColumn(Start = 40, Length = 15)]
-    [FixedWidthRegex(@"^\d{3}-\d{3}-\d{4}$", ErrorMessage = "Invalid phone format")]
+    [FixedWidthColumn(Start = 40, Length = 15, Pattern = @"^\d{3}-\d{3}-\d{4}$")]
     public string Phone { get; set; } = "";
 }
 ```
+
+> **Breaking change**: The legacy `FixedWidthRequiredAttribute`, `FixedWidthRangeAttribute`, `FixedWidthRegexAttribute`, and `FixedWidthStringLengthAttribute` types have been removed. Use the inline properties on `[FixedWidthColumn]` instead.
 
 ### Writing Fixed-Width Data
 
@@ -1547,6 +1546,105 @@ The `[CsvGenerateBinder]` attribute instructs the source generator to emit a com
 - **Trimming-safe** - Works with .NET trimming/linking
 
 > **Note**: Source generators require the `HeroParser.Generators` package and a compatible SDK.
+
+## ✅ Field Validation
+
+Declare validation constraints directly on column attributes. Errors are collected lazily during iteration — no exception is thrown mid-stream; instead, inspect `reader.Errors` (CSV) or `result.Errors` (Fixed-Width) after the loop.
+
+### CSV Validation
+
+```csharp
+[CsvGenerateBinder]
+public class Transaction
+{
+    [CsvColumn(Name = "Id", Required = true, NotEmpty = true)]
+    public string TransactionId { get; set; } = "";
+
+    [CsvColumn(Name = "Amount", Index = 1, Required = true, RangeMin = 0, RangeMax = 100_000)]
+    public decimal Amount { get; set; }
+
+    [CsvColumn(Name = "Currency", Index = 2, Required = true, MinLength = 3, MaxLength = 3)]
+    public string Currency { get; set; } = "";
+
+    [CsvColumn(Name = "Ref", Index = 3, Pattern = @"^[A-Z]{2}\d{4}$")]
+    public string Reference { get; set; } = "";
+}
+
+// Read and collect validation errors lazily
+var reader = Csv.DeserializeRecords<Transaction>(csvData);
+var records = new List<Transaction>();
+foreach (var record in reader)
+    records.Add(record);
+
+if (reader.Errors.Count > 0)
+{
+    foreach (var error in reader.Errors)
+        Console.WriteLine($"Row {error.RowNumber}: {error.Rule} - {error.Message}");
+}
+```
+
+### Fixed-Width Validation
+
+```csharp
+[FixedWidthGenerateBinder]
+public class Employee
+{
+    [FixedWidthColumn(Start = 0, Length = 5, Required = true)]
+    public int Id { get; set; }
+
+    [FixedWidthColumn(Start = 5, Length = 20, Required = true, NotEmpty = true)]
+    public string Name { get; set; } = "";
+
+    [FixedWidthColumn(Start = 25, Length = 10, RangeMin = 20_000, RangeMax = 500_000)]
+    public decimal Salary { get; set; }
+}
+
+// FromText/FromFile/FromStream return FixedWidthReadResult<T>
+var result = FixedWidth.Read<Employee>().FromText(data);
+var records = result.Records;  // or result.ToList()
+
+if (result.Errors.Count > 0)
+{
+    foreach (var error in result.Errors)
+        Console.WriteLine($"Row {error.RowNumber}: {error.Rule} - {error.Message}");
+}
+```
+
+### Validation Properties
+
+| Property | Type | Default | Applies To | Description |
+|---|---|---|---|---|
+| `Required` | `bool` | `false` | All types | Value must be present (column must exist and be non-null) |
+| `NotEmpty` | `bool` | `false` | `string` | Value must not be empty or whitespace |
+| `MaxLength` | `int` | `-1` (unchecked) | `string` | Maximum string length |
+| `MinLength` | `int` | `-1` (unchecked) | `string` | Minimum string length |
+| `RangeMin` | `double` | `NaN` (unchecked) | numeric | Minimum numeric value (inclusive) |
+| `RangeMax` | `double` | `NaN` (unchecked) | numeric | Maximum numeric value (inclusive) |
+| `Pattern` | `string?` | `null` | `string` | Regex pattern the value must match |
+| `PatternTimeoutMs` | `int` | `1000` | `string` | Regex evaluation timeout in milliseconds |
+
+### Compile-Time Diagnostics
+
+The source generator validates attribute usage at build time and reports errors for incorrect configurations:
+
+| Code | Severity | Description |
+|---|---|---|
+| HERO004 | Error | `NotEmpty` applied to a non-string property |
+| HERO005 | Error | `MaxLength` or `MinLength` applied to a non-string property |
+| HERO006 | Error | `RangeMin` or `RangeMax` applied to a non-numeric property |
+| HERO007 | Error | `Pattern` applied to a non-string property |
+| HERO008 | Error | `[CsvColumn]` used with `[CsvGenerateBinder]` but neither `Name` nor `Index` is specified |
+
+> **Breaking change**: `[CsvColumn]` now requires an explicit `Name` or `Index` when used with `[CsvGenerateBinder]`. Omitting both produces a HERO008 build error.
+
+### Pattern Timeout
+
+The default regex timeout for `Pattern` validation is 1000 ms. Override it per-column to prevent ReDoS on untrusted input:
+
+```csharp
+[CsvColumn(Name = "Code", Pattern = @"^[A-Z0-9]{1,20}$", PatternTimeoutMs = 500)]
+public string Code { get; set; } = "";
+```
 
 ## 🔍 Schema Inference
 

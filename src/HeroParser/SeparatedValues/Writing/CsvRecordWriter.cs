@@ -208,6 +208,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         int rowNumber = 0;
         int dataRowCount = 0;
         var maxRows = writerOptions.MaxRowCount;
+        var progress = writerOptions.WriteProgress;
+        var progressInterval = writerOptions.WriteProgressIntervalRows;
 
         if (includeHeader && writerOptions.WriteHeader)
         {
@@ -229,7 +231,22 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             }
 
             WriteRecordInternal(writer, record, rowNumber);
+
+            if (progress is not null && dataRowCount % progressInterval == 0)
+            {
+                progress.Report(new CsvWriteProgress
+                {
+                    RowsWritten = dataRowCount,
+                    BytesWritten = writer.CharsWritten,
+                });
+            }
         }
+
+        progress?.Report(new CsvWriteProgress
+        {
+            RowsWritten = dataRowCount,
+            BytesWritten = writer.CharsWritten,
+        });
     }
 
     /// <summary>
@@ -245,6 +262,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         int rowNumber = 0;
         int dataRowCount = 0;
         var maxRows = writerOptions.MaxRowCount;
+        var progress = writerOptions.WriteProgress;
+        var progressInterval = writerOptions.WriteProgressIntervalRows;
 
         if (includeHeader && writerOptions.WriteHeader)
         {
@@ -266,7 +285,22 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             }
 
             await WriteRecordInternalAsync(writer, record, rowNumber, cancellationToken).ConfigureAwait(false);
+
+            if (progress is not null && dataRowCount % progressInterval == 0)
+            {
+                progress.Report(new CsvWriteProgress
+                {
+                    RowsWritten = dataRowCount,
+                    BytesWritten = writer.CharsWritten,
+                });
+            }
         }
+
+        progress?.Report(new CsvWriteProgress
+        {
+            RowsWritten = dataRowCount,
+            BytesWritten = writer.CharsWritten,
+        });
     }
 
     /// <summary>
@@ -432,7 +466,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                     ex);
             }
         }
-        await writer.WriteRowAsync(valuesBuffer, cancellationToken).ConfigureAwait(false);
+        await writer.WriteRowWithFormatsAsync(valuesBuffer, formatsBuffer, cancellationToken).ConfigureAwait(false);
     }
 
     private void WriteHeaderRow(CsvStreamWriter writer)

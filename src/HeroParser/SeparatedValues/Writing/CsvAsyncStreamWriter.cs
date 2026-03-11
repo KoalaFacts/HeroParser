@@ -405,10 +405,38 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     }
 
     /// <summary>
+    /// Asynchronously writes a row with multiple values and per-column format strings.
+    /// </summary>
+    internal ValueTask WriteRowWithFormatsAsync(
+        object?[] values,
+        string?[] formats,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (maxColumnCount.HasValue && values.Length > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row has {values.Length} columns, exceeds maximum of {maxColumnCount.Value}");
+        }
+
+        if (TryWriteObjectRowSync(values, formats))
+        {
+            isFirstFieldInRow = true;
+            currentRowColumnCount = 0;
+            return default;
+        }
+
+        return WriteObjectRowSlowAsync(values, formats, cancellationToken);
+    }
+
+    /// <summary>
     /// Tries to write an entire object row synchronously. Returns true if successful.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryWriteObjectRowSync(object?[] values)
+    private bool TryWriteObjectRowSync(object?[] values, string?[]? formats = null)
     {
         // Save position so we can restore on failure
         int savedPosition = charBufferPosition;
@@ -426,7 +454,8 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 charBuffer[charBufferPosition++] = delimiter;
             }
 
-            if (!WriteFormattedValueSync(values[i]))
+            string? format = formats is not null && i < formats.Length ? formats[i] : null;
+            if (!WriteFormattedValueSync(values[i], format))
             {
                 // Value couldn't be written synchronously, fall back to async
                 charBufferPosition = savedPosition;
@@ -452,6 +481,14 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool WriteFormattedValueSync(object? value)
+        => WriteFormattedValueSync(value, format: null);
+
+    /// <summary>
+    /// Writes a formatted value synchronously with an optional format string.
+    /// Returns true if successful.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool WriteFormattedValueSync(object? value, string? format)
     {
         if (value is null)
         {
@@ -465,16 +502,16 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 return WriteFieldValueSync(s.AsSpan());
 
             case int i:
-                return WriteSpanFormattableSync(i, numberFormat);
+                return WriteSpanFormattableSync(i, format ?? numberFormat);
 
             case long l:
-                return WriteSpanFormattableSync(l, numberFormat);
+                return WriteSpanFormattableSync(l, format ?? numberFormat);
 
             case double d:
-                return WriteSpanFormattableSync(d, numberFormat);
+                return WriteSpanFormattableSync(d, format ?? numberFormat);
 
             case decimal dec:
-                return WriteSpanFormattableSync(dec, numberFormat);
+                return WriteSpanFormattableSync(dec, format ?? numberFormat);
 
             case bool b:
                 // Booleans never need quoting - write directly
@@ -485,36 +522,36 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 return true;
 
             case DateTime dt:
-                return WriteSpanFormattableSync(dt, dateTimeFormat);
+                return WriteSpanFormattableSync(dt, format ?? dateTimeFormat);
 
             case DateTimeOffset dto:
-                return WriteSpanFormattableSync(dto, dateTimeFormat);
+                return WriteSpanFormattableSync(dto, format ?? dateTimeFormat);
 
 #if NET6_0_OR_GREATER
             case DateOnly dateOnly:
-                return WriteSpanFormattableSync(dateOnly, dateOnlyFormat);
+                return WriteSpanFormattableSync(dateOnly, format ?? dateOnlyFormat);
 
             case TimeOnly timeOnly:
-                return WriteSpanFormattableSync(timeOnly, timeOnlyFormat);
+                return WriteSpanFormattableSync(timeOnly, format ?? timeOnlyFormat);
 #endif
 
             case float f:
-                return WriteSpanFormattableSync(f, numberFormat);
+                return WriteSpanFormattableSync(f, format ?? numberFormat);
 
             case byte by:
-                return WriteSpanFormattableSync(by, numberFormat);
+                return WriteSpanFormattableSync(by, format ?? numberFormat);
 
             case short sh:
-                return WriteSpanFormattableSync(sh, numberFormat);
+                return WriteSpanFormattableSync(sh, format ?? numberFormat);
 
             case uint ui:
-                return WriteSpanFormattableSync(ui, numberFormat);
+                return WriteSpanFormattableSync(ui, format ?? numberFormat);
 
             case ulong ul:
-                return WriteSpanFormattableSync(ul, numberFormat);
+                return WriteSpanFormattableSync(ul, format ?? numberFormat);
 
             case Guid g:
-                return WriteSpanFormattableSync(g, null);
+                return WriteSpanFormattableSync(g, format);
 
             default:
                 // For other types, fall back to async path
@@ -614,11 +651,18 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
 #endif
     private async ValueTask WriteObjectRowSlowAsync(object?[] values, CancellationToken cancellationToken)
+        => await WriteObjectRowSlowAsync(values, formats: null, cancellationToken).ConfigureAwait(false);
+
+#if NET6_0_OR_GREATER
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+#endif
+    private async ValueTask WriteObjectRowSlowAsync(object?[] values, string?[]? formats, CancellationToken cancellationToken)
     {
         for (int i = 0; i < values.Length; i++)
         {
             if (i > 0) await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
-            await WriteFormattedValueAsync(values[i], cancellationToken).ConfigureAwait(false);
+            string? format = formats is not null && i < formats.Length ? formats[i] : null;
+            await WriteFormattedValueAsync(values[i], format, cancellationToken).ConfigureAwait(false);
         }
         isFirstFieldInRow = true;
         currentRowColumnCount = 0;
@@ -1121,6 +1165,12 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
 #endif
     private async ValueTask WriteFormattedValueAsync(object? value, CancellationToken cancellationToken)
+        => await WriteFormattedValueAsync(value, format: null, cancellationToken).ConfigureAwait(false);
+
+#if NET6_0_OR_GREATER
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+#endif
+    private async ValueTask WriteFormattedValueAsync(object? value, string? format, CancellationToken cancellationToken)
     {
         if (value is null)
         {
@@ -1137,19 +1187,19 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 return;
 
             case int i:
-                await WriteSpanFormattableDirectlyAsync(i, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(i, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case long l:
-                await WriteSpanFormattableDirectlyAsync(l, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(l, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case double d:
-                await WriteSpanFormattableDirectlyAsync(d, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(d, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case decimal dec:
-                await WriteSpanFormattableDirectlyAsync(dec, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(dec, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case bool b:
@@ -1158,45 +1208,45 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 return;
 
             case DateTime dt:
-                await WriteSpanFormattableDirectlyAsync(dt, dateTimeFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(dt, format ?? dateTimeFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case DateTimeOffset dto:
-                await WriteSpanFormattableDirectlyAsync(dto, dateTimeFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(dto, format ?? dateTimeFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
 #if NET6_0_OR_GREATER
             case DateOnly dateOnly:
-                await WriteSpanFormattableDirectlyAsync(dateOnly, dateOnlyFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(dateOnly, format ?? dateOnlyFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case TimeOnly timeOnly:
-                await WriteSpanFormattableDirectlyAsync(timeOnly, timeOnlyFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(timeOnly, format ?? timeOnlyFormat, cancellationToken).ConfigureAwait(false);
                 return;
 #endif
 
             case float f:
-                await WriteSpanFormattableDirectlyAsync(f, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(f, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case byte by:
-                await WriteSpanFormattableDirectlyAsync(by, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(by, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case short sh:
-                await WriteSpanFormattableDirectlyAsync(sh, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(sh, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case uint ui:
-                await WriteSpanFormattableDirectlyAsync(ui, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(ui, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case ulong ul:
-                await WriteSpanFormattableDirectlyAsync(ul, numberFormat, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(ul, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
             case Guid g:
-                await WriteSpanFormattableDirectlyAsync(g, null, cancellationToken).ConfigureAwait(false);
+                await WriteSpanFormattableDirectlyAsync(g, format, cancellationToken).ConfigureAwait(false);
                 return;
 
             default:
@@ -1207,14 +1257,14 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         // Fallback for other ISpanFormattable types
         if (value is ISpanFormattable spanFormattable)
         {
-            await WriteSpanFormattableAsync(spanFormattable, null, cancellationToken).ConfigureAwait(false);
+            await WriteSpanFormattableAsync(spanFormattable, format, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         // Final fallback for IFormattable
         if (value is IFormattable formattable)
         {
-            await WriteFieldValueAsync(formattable.ToString(null, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
+            await WriteFieldValueAsync(formattable.ToString(format, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
             return;
         }
 

@@ -144,6 +144,47 @@ public class WriterProgressTests
         Assert.True(reports.Count >= 1);
     }
 
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task CsvWriteToTextAsync_WithProgress_IAsyncEnumerable_ReportsProgress()
+    {
+        var records = ToAsyncEnumerable(Enumerable.Range(1, 25)
+            .Select(i => new SimpleRecord($"Name{i}", i)));
+
+        var reports = new List<CsvWriteProgress>();
+        var options = new CsvWriteOptions
+        {
+            WriteProgress = new SyncProgress<CsvWriteProgress>(reports.Add),
+            WriteProgressIntervalRows = 10,
+        };
+
+        await Csv.WriteToTextAsync(records, options, TestContext.Current.CancellationToken);
+
+        Assert.True(reports.Count >= 1);
+        Assert.Equal(25, reports[^1].RowsWritten);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task CsvWriteToStreamAsync_WithProgress_IAsyncEnumerable_ReportsProgress()
+    {
+        var records = ToAsyncEnumerable(Enumerable.Range(1, 100)
+            .Select(i => new SimpleRecord($"Name{i}", i)));
+
+        var reports = new List<CsvWriteProgress>();
+        var options = new CsvWriteOptions
+        {
+            WriteProgress = new SyncProgress<CsvWriteProgress>(reports.Add),
+            WriteProgressIntervalRows = 40,
+        };
+
+        using var stream = new MemoryStream();
+        await Csv.WriteToStreamAsync(stream, records, options, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(reports.Count >= 1);
+        Assert.Equal(100, reports[^1].RowsWritten);
+    }
+
     #endregion
 
     #region Progress Struct
@@ -183,4 +224,13 @@ public class WriterProgressTests
     }
 
     #endregion
+
+    private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> records)
+    {
+        foreach (var record in records)
+        {
+            await Task.Yield();
+            yield return record;
+        }
+    }
 }

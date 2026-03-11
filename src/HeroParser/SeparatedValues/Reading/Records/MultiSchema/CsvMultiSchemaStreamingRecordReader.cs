@@ -156,6 +156,12 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
                 continue;
 
             rowNumber++;
+            if (rowNumber > parserOptions.MaxRowCount)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"CSV exceeds maximum row limit of {parserOptions.MaxRowCount}");
+            }
 
             if (skippedCount < skipRows)
             {
@@ -175,14 +181,6 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             {
                 binder.BindHeader(row, rowNumber);
                 continue;
-            }
-
-            if (dataRowCount >= parserOptions.MaxRowCount)
-            {
-                throw new CsvException(
-                    CsvErrorCode.TooManyRows,
-                    $"Maximum row count of {parserOptions.MaxRowCount} exceeded.",
-                    rowNumber, 0);
             }
 
             var bound = binder.Bind(row, rowNumber);
@@ -303,4 +301,3 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         return maxRowSize + MAX_LINE_ENDING_LENGTH;
     }
 }
-

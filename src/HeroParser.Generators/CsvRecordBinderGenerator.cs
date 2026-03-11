@@ -163,6 +163,16 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("{");
         builder.Indent();
 
+        // Emit static Regex fields for Pattern validation
+        foreach (var member in members)
+        {
+            if (member.ValidationPattern != null)
+            {
+                var escapedPattern = EscapeString(member.ValidationPattern);
+                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.Compiled, TimeSpan.FromMilliseconds({member.ValidationPatternTimeoutMs}));");
+            }
+        }
+
         // Emit fields
         builder.AppendLine("private readonly CultureInfo _culture;");
         builder.AppendLine("private readonly bool _caseSensitiveHeaders;");
@@ -277,6 +287,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
     private static void EmitByteBindIntoMethod(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
     {
+        bool anyValidation = HasAnyValidation(members);
+
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
         builder.AppendLine($"public bool BindInto(ref {fullyQualifiedName} instance, {BYTE_ROW_TYPE} row, int rowNumber, List<ValidationError>? errors = null)");
         builder.AppendLine("{");
@@ -284,12 +296,18 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("var columnCount = row.ColumnCount;");
         builder.AppendLine();
 
+        if (anyValidation)
+        {
+            builder.AppendLine("bool valid = true;");
+            builder.AppendLine();
+        }
+
         foreach (var member in members)
         {
             EmitByteInlinePropertyBinding(builder, member);
         }
 
-        builder.AppendLine("return true;");
+        builder.AppendLine(anyValidation ? "return valid;" : "return true;");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -313,6 +331,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         // Emit inline parsing logic
         EmitByteInlineParsingLogic(builder, member);
+
+        // Emit validation checks after parsing
+        if (HasAnyValidation(member))
+        {
+            EmitValidationChecks(builder, member);
+        }
 
         builder.Unindent();
         builder.AppendLine("}");
@@ -588,6 +612,153 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("}");
         builder.AppendLine();
     }
+
+    #region Validation Code Generation
+
+    private static bool HasAnyValidation(MemberDescriptor member)
+    {
+        return member.ValidationRequired || member.ValidationNotEmpty
+            || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
+            || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
+            || member.ValidationPattern != null;
+    }
+
+    private static bool HasAnyValidation(IReadOnlyList<MemberDescriptor> members)
+    {
+        foreach (var m in members) if (HasAnyValidation(m)) return true;
+        return false;
+    }
+
+    private static void EmitValidationChecks(SourceBuilder builder, MemberDescriptor member)
+    {
+        // Required validation
+        if (member.ValidationRequired)
+        {
+            builder.AppendLine($"if (utf8.IsEmpty)");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "Required", "Value is required");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // NotEmpty validation (string only)
+        if (member.ValidationNotEmpty)
+        {
+            builder.AppendLine($"if (!utf8.IsEmpty && string.IsNullOrWhiteSpace(instance.{member.MemberName}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "NotEmpty", "Value must not be empty or whitespace");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // MaxLength validation (string only)
+        if (member.ValidationMaxLength >= 0)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.ValidationMaxLength})");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.ValidationMaxLength}");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // MinLength validation (string only)
+        if (member.ValidationMinLength >= 0)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.ValidationMinLength})");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.ValidationMinLength}");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // Range validation (numeric only)
+        if (!double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax))
+        {
+            var valueExpr = $"instance.{member.MemberName}";
+            var conditions = new List<string>();
+            if (!double.IsNaN(member.ValidationRangeMin))
+                conditions.Add($"{valueExpr} < {FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
+            if (!double.IsNaN(member.ValidationRangeMax))
+                conditions.Add($"{valueExpr} > {FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
+
+            builder.AppendLine($"if (!utf8.IsEmpty && ({string.Join(" || ", conditions)}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            var rangeMsg = FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
+            EmitAddValidationError(builder, member, "Range", rangeMsg);
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // Pattern validation (string only)
+        if (member.ValidationPattern != null)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && !_pattern_{member.MemberName}.IsMatch(instance.{member.MemberName}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "Pattern", "Value does not match pattern");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+    }
+
+    private static void EmitAddValidationError(SourceBuilder builder, MemberDescriptor member, string rule, string message)
+    {
+        var columnName = member.AttributeIndex.HasValue ? "null" : $"\"{member.HeaderName}\"";
+        var indexField = $"_{member.MemberName}Index";
+        builder.AppendLine($"errors?.Add(new global::HeroParser.Validation.ValidationError");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"RowNumber = rowNumber,");
+        builder.AppendLine($"ColumnIndex = {indexField},");
+        builder.AppendLine($"ColumnName = {columnName},");
+        builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
+        builder.AppendLine($"Rule = \"{rule}\",");
+        builder.AppendLine($"Message = \"{EscapeString(message)}\",");
+        builder.AppendLine($"RawValue = Encoding.UTF8.GetString(utf8)");
+        builder.Unindent();
+        builder.AppendLine("});");
+    }
+
+    private static string FormatRangeLiteral(double value, string baseType)
+    {
+        return baseType switch
+        {
+            "decimal" or "System.Decimal" => $"{value}m",
+            "float" or "System.Single" => $"{value}f",
+            "double" or "System.Double" => $"{value}d",
+            "long" or "System.Int64" => $"{(long)value}L",
+            "ulong" or "System.UInt64" => $"{(ulong)value}UL",
+            "int" or "System.Int32" => $"{(int)value}",
+            "uint" or "System.UInt32" => $"{(uint)value}U",
+            "short" or "System.Int16" => $"(short){(short)value}",
+            "ushort" or "System.UInt16" => $"(ushort){(ushort)value}",
+            "byte" or "System.Byte" => $"(byte){(byte)value}",
+            "sbyte" or "System.SByte" => $"(sbyte){(sbyte)value}",
+            _ => $"{value}"
+        };
+    }
+
+    private static string FormatRangeMessage(double min, double max)
+    {
+        if (!double.IsNaN(min) && !double.IsNaN(max))
+            return $"Value must be between {min} and {max}";
+        if (!double.IsNaN(min))
+            return $"Value must be >= {min}";
+        return $"Value must be <= {max}";
+    }
+
+    #endregion
 
     #endregion
 

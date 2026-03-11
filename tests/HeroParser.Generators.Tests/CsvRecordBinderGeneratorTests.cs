@@ -259,10 +259,10 @@ public class CsvRecordBinderGeneratorTests
             [CsvGenerateBinder]
             public class FormattedRecord
             {
-                [CsvColumn(Format = "yyyy-MM-dd")]
+                [CsvColumn(Name = "Date", Format = "yyyy-MM-dd")]
                 public DateTime Date { get; set; }
 
-                [CsvColumn(Format = "N2")]
+                [CsvColumn(Name = "Amount", Format = "N2")]
                 public decimal Amount { get; set; }
             }
             """;
@@ -505,6 +505,64 @@ public class CsvRecordBinderGeneratorTests
             var diagnostics = generatedTree.GetDiagnostics().ToList();
             Assert.DoesNotContain(diagnostics, d => d.Severity == DiagnosticSeverity.Error);
         }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_CsvColumnWithoutNameOrIndex_ReportsHERO008()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace TestNamespace;
+            [CsvGenerateBinder]
+            public class Bad { [CsvColumn(Required = true)] public string Name { get; set; } = ""; }
+            """;
+        var result = RunGenerator(source);
+        var hero008 = result.Diagnostics.FirstOrDefault(d => d.Id == "HERO008");
+        Assert.NotNull(hero008);
+        Assert.Equal(DiagnosticSeverity.Error, hero008.Severity);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_CsvColumnWithName_DoesNotReportHERO008()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace TestNamespace;
+            [CsvGenerateBinder]
+            public class Good { [CsvColumn(Name = "name")] public string Name { get; set; } = ""; }
+            """;
+        var result = RunGenerator(source);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "HERO008");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_CsvColumnWithIndex_DoesNotReportHERO008()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace TestNamespace;
+            [CsvGenerateBinder]
+            public class Good { [CsvColumn(Index = 0)] public string Name { get; set; } = ""; }
+            """;
+        var result = RunGenerator(source);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "HERO008");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_PropertyWithoutCsvColumn_DoesNotReportHERO008()
+    {
+        var source = """
+            using HeroParser.SeparatedValues.Reading.Shared;
+            namespace TestNamespace;
+            [CsvGenerateBinder]
+            public class Ok { public string Name { get; set; } = ""; }
+            """;
+        var result = RunGenerator(source);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "HERO008");
     }
 
     #region Test Infrastructure

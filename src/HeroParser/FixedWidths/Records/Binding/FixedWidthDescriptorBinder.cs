@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Records.Binding;
 
@@ -30,10 +31,10 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryBind(FixedWidthCharSpanRow row, out T result)
+    public bool TryBind(FixedWidthCharSpanRow row, out T result, List<ValidationError>? errors = null)
     {
         var instance = descriptor.Factory();
-        if (!BindInto(ref instance, row))
+        if (!BindInto(ref instance, row, errors))
         {
             result = default!;
             return false;
@@ -45,7 +46,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool BindInto(ref T instance, FixedWidthCharSpanRow row)
+    public bool BindInto(ref T instance, FixedWidthCharSpanRow row, List<ValidationError>? errors = null)
     {
         var props = descriptor.Properties;
         var cultureLocal = culture;

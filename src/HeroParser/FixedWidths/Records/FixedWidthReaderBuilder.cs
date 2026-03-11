@@ -356,8 +356,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     /// Reads records from a fixed-width string.
     /// </summary>
     /// <param name="text">The fixed-width content to parse.</param>
-    /// <returns>An enumerable of deserialized records.</returns>
-    public IEnumerable<T> FromText(string text)
+    /// <returns>A <see cref="FixedWidthReadResult{T}"/> containing successfully parsed records and any validation errors.</returns>
+    public FixedWidthReadResult<T> FromText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
 
@@ -376,8 +376,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     /// Reads records from a fixed-width file.
     /// </summary>
     /// <param name="path">The file path to read from.</param>
-    /// <returns>An enumerable of deserialized records.</returns>
-    public IEnumerable<T> FromFile(string path)
+    /// <returns>A <see cref="FixedWidthReadResult{T}"/> containing successfully parsed records and any validation errors.</returns>
+    public FixedWidthReadResult<T> FromFile(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
@@ -393,8 +393,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     /// Reads records from a stream.
     /// </summary>
     /// <param name="stream">The stream to read from.</param>
-    /// <returns>An enumerable of deserialized records.</returns>
-    public IEnumerable<T> FromStream(Stream stream)
+    /// <returns>A <see cref="FixedWidthReadResult{T}"/> containing successfully parsed records and any validation errors.</returns>
+    public FixedWidthReadResult<T> FromStream(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
 

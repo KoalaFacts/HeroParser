@@ -13,6 +13,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 public static class FixedWidthRecordBinderFactory
 {
     private static readonly ConcurrentDictionary<Type, object> descriptorFactories = new();
+    private static readonly ConcurrentDictionary<Type, object> generatedBinderFactories = new();
 
     /// <summary>
     /// Registers a descriptor factory for high-performance binding.
@@ -65,6 +66,45 @@ public static class FixedWidthRecordBinderFactory
         if (TryGetDescriptor<T>(out var descriptor) && descriptor is not null)
         {
             binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
+            return true;
+        }
+
+        binder = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Registers a source-generated binder factory for a record type.
+    /// Generated binders support inline validation and are preferred over descriptor binders.
+    /// </summary>
+    /// <typeparam name="T">The record type the binder handles.</typeparam>
+    /// <param name="factory">Factory that creates a binder given culture and null values.</param>
+    public static void RegisterGeneratedBinder<T>(
+        Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthBinder<T>> factory)
+        where T : new()
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        generatedBinderFactories[typeof(T)] = factory;
+    }
+
+    /// <summary>
+    /// Tries to create a source-generated binder for the specified type.
+    /// Generated binders support inline validation and are preferred over descriptor binders.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="culture">Culture for parsing.</param>
+    /// <param name="nullValues">Values to treat as null.</param>
+    /// <param name="binder">The created binder.</param>
+    /// <returns>True if a generated binder was found and created, false otherwise.</returns>
+    public static bool TryCreateGeneratedBinder<T>(
+        CultureInfo? culture,
+        IReadOnlyList<string>? nullValues,
+        out IFixedWidthBinder<T>? binder)
+        where T : new()
+    {
+        if (generatedBinderFactories.TryGetValue(typeof(T), out var factory))
+        {
+            binder = ((Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthBinder<T>>)factory)(culture, nullValues);
             return true;
         }
 

@@ -264,8 +264,8 @@ public static partial class FixedWidth
     /// <param name="options">Optional parser configuration.</param>
     /// <param name="culture">Culture for parsing values; defaults to <see cref="CultureInfo.InvariantCulture"/>.</param>
     /// <param name="onError">Optional error handler for deserialization errors.</param>
-    /// <returns>A list of deserialized records.</returns>
-    public static List<T> DeserializeRecords<T>(
+    /// <returns>A <see cref="FixedWidthReadResult{T}"/> containing successfully parsed records and any validation errors.</returns>
+    public static FixedWidthReadResult<T> DeserializeRecords<T>(
         string data,
         FixedWidthReadOptions? options = null,
         CultureInfo? culture = null,
@@ -292,8 +292,8 @@ public static partial class FixedWidth
     /// <param name="encoding">Optional text encoding; defaults to UTF-8.</param>
     /// <param name="culture">Culture for parsing values; defaults to <see cref="CultureInfo.InvariantCulture"/>.</param>
     /// <param name="onError">Optional error handler for deserialization errors.</param>
-    /// <returns>A list of deserialized records.</returns>
-    public static List<T> DeserializeRecords<T>(
+    /// <returns>A <see cref="FixedWidthReadResult{T}"/> containing successfully parsed records and any validation errors.</returns>
+    public static FixedWidthReadResult<T> DeserializeRecords<T>(
         string path,
         FixedWidthReadOptions? options,
         Encoding? encoding,

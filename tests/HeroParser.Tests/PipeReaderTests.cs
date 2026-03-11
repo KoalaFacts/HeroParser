@@ -148,7 +148,7 @@ public class PipeReaderTests
         var count = 0;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: cts.Token))
+            await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: cts.Token))
             {
                 count++;
                 if (count == 1)

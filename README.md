@@ -33,7 +33,7 @@
 - **Progress Reporting**: Track parsing progress for large files with callbacks
 - **Custom Type Converters**: Register converters for domain-specific types
 - **Multi-Framework**: .NET 8, 9, and 10 support
-- **Zero Dependencies**: No external packages for core library
+- **Minimal Dependencies**: No third-party dependencies; only the Microsoft `System.IO.Pipelines` package is referenced
 
 ## 🎯 Design Philosophy
 
@@ -42,7 +42,7 @@
 - **Target Frameworks**: .NET 8, 9, 10 (modern JIT optimizations)
 - **Memory Safety**: No `unsafe` keyword - uses safe `Unsafe` class and `MemoryMarshal` APIs for performance
 - **Minimal API**: Simple, focused API surface
-- **Zero Dependencies**: No external packages for core library
+- **Minimal Dependencies**: No third-party dependencies; only the Microsoft `System.IO.Pipelines` package is referenced
 - **RFC 4180**: Quote handling, escaped quotes, delimiters in quotes; optional newlines-in-quotes (default off), no header detection
 - **SIMD First**: Quote-aware SIMD for AVX-512, AVX2, NEON
 - **Allocation Notes**: Char-span parsing remains allocation-free; UTF-8 parsing stays zero-allocation for invariant primitives. Culture/format-based parsing on UTF-8 columns decodes to UTF-16 and allocates by design.
@@ -1529,7 +1529,7 @@ This runs `dotnet format --verify-no-changes` before each commit. If formatting 
 For AOT (Ahead-of-Time) compilation scenarios, HeroParser supports source-generated binders that avoid reflection:
 
 ```csharp
-using HeroParser.SeparatedValues.Records.Binding;
+using HeroParser.SeparatedValues.Reading.Shared;
 
 [CsvGenerateBinder]
 public class Person
@@ -1545,11 +1545,11 @@ The `[CsvGenerateBinder]` attribute instructs the source generator to emit a com
 - **Faster startup** - Binders are pre-compiled
 - **Trimming-safe** - Works with .NET trimming/linking
 
-> **Note**: Source generators require the `HeroParser.Generators` package and a compatible SDK.
+> **Note**: Source generators ship inside the main `HeroParser` package. No separate `HeroParser.Generators` package is required; you only need a compatible SDK.
 
 ## ✅ Field Validation
 
-Declare validation constraints directly on column attributes. Errors are collected lazily during iteration — no exception is thrown mid-stream; instead, inspect `reader.Errors` (CSV) or `result.Errors` (Fixed-Width) after the loop.
+Declare validation constraints directly on column attributes. Validation failures are collected lazily during iteration; inspect `reader.Errors` (CSV) or `result.Errors` (Fixed-Width) after the loop. Parse and conversion failures can still throw unless you configure error handling separately.
 
 ### CSV Validation
 
@@ -1709,6 +1709,9 @@ map.Map(t => t.Symbol, c => c.Name("Symbol").NotEmpty().MaxLength(5))
    .Map(t => t.Quantity, c => c.Name("Qty"));
 
 var reader = Csv.Read<Trade>().WithMap(map).FromText(csv);
+foreach (var trade in reader)
+    Console.WriteLine($"{trade.Symbol}: {trade.Price}");
+
 foreach (var error in reader.Errors)
     Console.WriteLine($"Row {error.RowNumber}: {error.Message}");
 ```

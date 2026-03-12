@@ -40,6 +40,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     private bool skipEmptyLines = true;
     private bool allowShortRows = false;
     private char? commentCharacter = null;
+    private bool hasHeaderRow = false;
     private int skipRows = 0;
     private long? maxInputSize = 100 * 1024 * 1024; // 100 MB default
 
@@ -198,7 +199,31 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     }
 
     /// <summary>
+    /// Indicates that the first data row (after any skipped rows) is a header row that should be discarded.
+    /// Unlike CSV, fixed-width columns are positional, so the header is not used for column resolution.
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthReaderBuilder<T> WithHeader()
+    {
+        hasHeaderRow = true;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Indicates that the data does not include a header row (default).
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthReaderBuilder<T> WithoutHeader()
+    {
+        hasHeaderRow = false;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
     /// Skips the specified number of rows before parsing data.
+    /// The header row (if <see cref="WithHeader"/> was called) is expected after the skipped rows.
     /// </summary>
     /// <param name="rowCount">The number of rows to skip.</param>
     /// <returns>This builder for method chaining.</returns>
@@ -563,6 +588,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             SkipEmptyLines = skipEmptyLines,
             AllowShortRows = allowShortRows,
             CommentCharacter = commentCharacter,
+            HasHeaderRow = hasHeaderRow,
             SkipRows = skipRows,
             MaxInputSize = maxInputSize
         };
@@ -586,6 +612,7 @@ public sealed class FixedWidthReaderBuilder
     private bool skipEmptyLines = true;
     private bool allowShortRows = false;
     private char? commentCharacter = null;
+    private bool hasHeaderRow = false;
     private int skipRows = 0;
     private long? maxInputSize = 100 * 1024 * 1024; // 100 MB default
 
@@ -730,7 +757,31 @@ public sealed class FixedWidthReaderBuilder
     }
 
     /// <summary>
+    /// Indicates that the first data row (after any skipped rows) is a header row that should be discarded.
+    /// Unlike CSV, fixed-width columns are positional, so the header is not used for column resolution.
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthReaderBuilder WithHeader()
+    {
+        hasHeaderRow = true;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Indicates that the data does not include a header row (default).
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthReaderBuilder WithoutHeader()
+    {
+        hasHeaderRow = false;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
     /// Skips the specified number of rows before parsing data.
+    /// The header row (if <see cref="WithHeader"/> was called) is expected after the skipped rows.
     /// </summary>
     /// <param name="rowCount">The number of rows to skip.</param>
     /// <returns>This builder for method chaining.</returns>
@@ -879,6 +930,7 @@ public sealed class FixedWidthReaderBuilder
             SkipEmptyLines = skipEmptyLines,
             AllowShortRows = allowShortRows,
             CommentCharacter = commentCharacter,
+            HasHeaderRow = hasHeaderRow,
             SkipRows = skipRows,
             MaxInputSize = maxInputSize
         };

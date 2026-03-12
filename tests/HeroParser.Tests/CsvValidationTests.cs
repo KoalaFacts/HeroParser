@@ -255,6 +255,122 @@ Bob,Johnson,bob@example.com,555-9012";
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Validate_SkipRows_SkipsMetadataPreamble()
+    {
+        var csv = "# Report Title\n# Generated 2026-03-12\nName,Age,City\nJohn,30,NYC\nJane,25,LA";
+        var options = new CsvValidationOptions
+        {
+            Delimiter = ',',
+            SkipRows = 2,
+            RequiredHeaders = ["Name", "Age", "City"]
+        };
+
+        var result = Csv.Validate(csv, options);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(5, result.TotalRows); // 2 skipped + 1 header + 2 data
+        Assert.Equal(3, result.ColumnCount);
+        Assert.Contains("Name", result.Headers);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Validate_SkipRows_WithoutHeader_SkipsAndValidatesData()
+    {
+        var csv = "# metadata\nJohn,30,NYC\nJane,25,LA";
+        var options = new CsvValidationOptions
+        {
+            Delimiter = ',',
+            SkipRows = 1,
+            HasHeaderRow = false,
+            ExpectedColumnCount = 3
+        };
+
+        var result = Csv.Validate(csv, options);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(3, result.TotalRows); // 1 skipped + 2 data
+        Assert.Equal(3, result.ColumnCount);
+        Assert.Empty(result.Headers);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Validate_SkipRows_HeaderOnly_NoData_ReportsEmptyFile()
+    {
+        // 2 metadata rows + 1 header row = 3 rows, but zero data rows
+        var csv = "# metadata1\n# metadata2\nName,Age,City";
+        var options = new CsvValidationOptions
+        {
+            Delimiter = ',',
+            SkipRows = 2,
+            RequiredHeaders = ["Name", "Age", "City"]
+        };
+
+        var result = Csv.Validate(csv, options);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.ErrorType == CsvValidationErrorType.EmptyFile);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Validate_SkipRows_ExceedsAvailableRows_ReportsEmptyFile()
+    {
+        var csv = "row1\nrow2";
+        var options = new CsvValidationOptions
+        {
+            Delimiter = ',',
+            SkipRows = 10,
+            HasHeaderRow = false
+        };
+
+        var result = Csv.Validate(csv, options);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.ErrorType == CsvValidationErrorType.EmptyFile);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Validate_SkipRows_Utf8ByteInput_Works()
+    {
+        var csv = "# metadata\nName,Age\nJohn,30\nJane,25"u8;
+        var options = new CsvValidationOptions
+        {
+            Delimiter = ',',
+            SkipRows = 1,
+            RequiredHeaders = ["Name", "Age"]
+        };
+
+        var result = Csv.Validate(csv, options);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(4, result.TotalRows);
+        Assert.Contains("Name", result.Headers);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Validate_SkipRows_WithMaxRows_CountsFromStart()
+    {
+        // 1 skipped + 1 header + 5 data = 7 total. MaxRows = 7 allows all.
+        var csv = "# meta\nName,Age\n" + string.Join("\n", Enumerable.Range(1, 5).Select(i => $"Person{i},{i}"));
+        var options = new CsvValidationOptions
+        {
+            Delimiter = ',',
+            SkipRows = 1,
+            MaxRows = 7
+        };
+
+        var result = Csv.Validate(csv, options);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(7, result.TotalRows);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Validate_MultipleErrors_ReturnsAllErrors()
     {
         var csv = "Name,Age\nJohn,30,Extra\nJane"; // Multiple issues

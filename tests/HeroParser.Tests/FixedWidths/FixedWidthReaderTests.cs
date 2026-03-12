@@ -592,5 +592,197 @@ public class FixedWidthReaderTests
         Assert.Equal("Record1", records[0]);
         Assert.Equal("Record2", records[1]);
     }
+
+    [Fact]
+    public void ReadFromText_HasHeaderRow_SkipsFirstRow()
+    {
+        // Arrange
+        var data = """
+            Name      Value
+            Alice       100
+            Bob         200
+            """;
+
+        var options = new FixedWidthReadOptions { HasHeaderRow = true };
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.ReadFromText(data, options))
+        {
+            records.Add(row.RawRecord.ToString());
+        }
+
+        // Assert
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice       100", records[0]);
+        Assert.Equal("Bob         200", records[1]);
+    }
+
+    [Fact]
+    public void ReadFromText_HasHeaderRow_WithSkipRows_SkipsThenHeader()
+    {
+        // Arrange — 2 metadata rows, then header, then data
+        var data = """
+            Generated: 2026-01-01
+            Version: 2.0
+            Name      Value
+            Alice       100
+            Bob         200
+            """;
+
+        var options = new FixedWidthReadOptions { SkipRows = 2, HasHeaderRow = true };
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.ReadFromText(data, options))
+        {
+            records.Add(row.RawRecord.ToString());
+        }
+
+        // Assert — skip 2 metadata + 1 header = 3 rows skipped
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice       100", records[0]);
+        Assert.Equal("Bob         200", records[1]);
+    }
+
+    [Fact]
+    public void ReadFromText_HasHeaderRow_TracksLineNumbersCorrectly()
+    {
+        // Arrange
+        var data = """
+            Name      Value
+            Alice       100
+            Bob         200
+            """;
+
+        var options = new FixedWidthReadOptions
+        {
+            HasHeaderRow = true,
+            TrackSourceLineNumbers = true
+        };
+
+        // Act
+        var lineNumbers = new List<int>();
+        foreach (var row in FixedWidth.ReadFromText(data, options))
+        {
+            lineNumbers.Add(row.SourceLineNumber);
+        }
+
+        // Assert — header is line 1, data starts at line 2
+        Assert.Equal([2, 3], lineNumbers);
+    }
+
+    [Fact]
+    public void Builder_WithHeader_SkipsFirstRow()
+    {
+        // Arrange
+        var data = """
+            Name      Value
+            Alice       100
+            Bob         200
+            """;
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.Read()
+            .WithHeader()
+            .FromText(data))
+        {
+            records.Add(row.RawRecord.ToString());
+        }
+
+        // Assert
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice       100", records[0]);
+        Assert.Equal("Bob         200", records[1]);
+    }
+
+    [Fact]
+    public void Builder_WithHeader_CombinesWithSkipRows()
+    {
+        // Arrange — 1 metadata row, then header, then data
+        var data = """
+            # Metadata
+            Name      Value
+            Alice       100
+            """;
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.Read()
+            .SkipRows(1)
+            .WithHeader()
+            .FromText(data))
+        {
+            records.Add(row.RawRecord.ToString());
+        }
+
+        // Assert
+        Assert.Single(records);
+        Assert.Equal("Alice       100", records[0]);
+    }
+
+    [Fact]
+    public void ReadFromUtf8ByteSpan_HasHeaderRow_SkipsFirstRow()
+    {
+        // Arrange
+        var data = "Name      Value\nAlice       100\nBob         200\n";
+        var options = new FixedWidthReadOptions { HasHeaderRow = true };
+        var bytes = Encoding.UTF8.GetBytes(data);
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.ReadFromUtf8ByteSpan(bytes, options))
+        {
+            records.Add(row.ToDecodedString());
+        }
+
+        // Assert
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice       100", records[0]);
+        Assert.Equal("Bob         200", records[1]);
+    }
+
+    [Fact]
+    public void ReadFromUtf8ByteSpan_HasHeaderRow_WithSkipRows_SkipsThenHeader()
+    {
+        // Arrange — 1 metadata row, header, then data
+        var data = "# generated\nName      Value\nAlice       100\n";
+        var options = new FixedWidthReadOptions { SkipRows = 1, HasHeaderRow = true };
+        var bytes = Encoding.UTF8.GetBytes(data);
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.ReadFromUtf8ByteSpan(bytes, options))
+        {
+            records.Add(row.ToDecodedString());
+        }
+
+        // Assert
+        Assert.Single(records);
+        Assert.Equal("Alice       100", records[0]);
+    }
+
+    [Fact]
+    public void ReadFromText_HasHeaderRow_WithRecordLength_SkipsFirstRecord()
+    {
+        // Arrange — header + 2 data records, each 15 chars, no newlines
+        var data = "Name      Value" +
+                   "Alice       100" +
+                   "Bob         200";
+        var options = new FixedWidthReadOptions { RecordLength = 15, HasHeaderRow = true };
+
+        // Act
+        var records = new List<string>();
+        foreach (var row in FixedWidth.ReadFromText(data, options))
+        {
+            records.Add(row.RawRecord.ToString());
+        }
+
+        // Assert
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice       100", records[0]);
+        Assert.Equal("Bob         200", records[1]);
+    }
 }
 

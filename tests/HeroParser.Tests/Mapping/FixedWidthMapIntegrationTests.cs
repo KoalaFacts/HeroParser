@@ -175,6 +175,48 @@ public class FixedWidthMapIntegrationTests
     }
 
     [Fact]
+    public void WithMap_WithHeader_SkipsHeaderRow()
+    {
+        var map = new FixedWidthMap<Record>();
+        map.Map(r => r.Name, c => c.Start(0).Length(10))
+           .Map(r => r.Value, c => c.Start(10).Length(5).PadChar(' ').Alignment(FieldAlignment.Right))
+           .Map(r => r.Amount, c => c.Start(15).Length(10).PadChar(' ').Alignment(FieldAlignment.Right));
+
+        // First row is a header that should be skipped
+        const string text = "Name      ValueAmount    \nAlice       100     50.25\nBob         200    100.50\n";
+
+        var result = FixedWidth.Read<Record>().WithHeader().WithMap(map).FromText(text);
+
+        Assert.Equal(2, result.Records.Count);
+        Assert.Equal("Alice", result.Records[0].Name);
+        Assert.Equal(100, result.Records[0].Value);
+        Assert.Equal("Bob", result.Records[1].Name);
+    }
+
+    [Fact]
+    public void WithMap_WithHeader_AndSkipRows_SkipsMetadataThenHeader()
+    {
+        var map = new FixedWidthMap<Record>();
+        map.Map(r => r.Name, c => c.Start(0).Length(10))
+           .Map(r => r.Value, c => c.Start(10).Length(5).PadChar(' ').Alignment(FieldAlignment.Right))
+           .Map(r => r.Amount, c => c.Start(15).Length(10).PadChar(' ').Alignment(FieldAlignment.Right));
+
+        // 1 metadata row + 1 header row + 1 data row
+        const string text = "# generated file\nName      ValueAmount    \nAlice       100     50.25\n";
+
+        var result = FixedWidth.Read<Record>()
+            .SkipRows(1)
+            .WithHeader()
+            .WithMap(map)
+            .FromText(text);
+
+        Assert.Single(result.Records);
+        Assert.Equal("Alice", result.Records[0].Name);
+        Assert.Equal(100, result.Records[0].Value);
+        Assert.Equal(50.25m, result.Records[0].Amount);
+    }
+
+    [Fact]
     public void ForEachFromText_WithMap_ThrowsNotSupported()
     {
         var map = new FixedWidthMap<Record>();

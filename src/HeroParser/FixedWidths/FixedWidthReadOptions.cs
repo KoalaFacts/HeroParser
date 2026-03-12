@@ -76,8 +76,15 @@ public sealed record FixedWidthReadOptions
     public char? CommentCharacter { get; init; }
 
     /// <summary>
+    /// Gets or sets whether the first data row (after <see cref="SkipRows"/>) is a header row that should be skipped.
+    /// Unlike CSV, fixed-width columns are positional, so the header is not used for column resolution — it is simply discarded.
+    /// </summary>
+    public bool HasHeaderRow { get; init; } = false;
+
+    /// <summary>
     /// Gets or sets the number of rows to skip before parsing data.
-    /// Useful for skipping header rows or metadata at the start of the file.
+    /// Useful for skipping metadata at the start of the file.
+    /// The header row (if <see cref="HasHeaderRow"/> is true) is expected after the skipped rows.
     /// </summary>
     public int SkipRows { get; init; } = 0;
 

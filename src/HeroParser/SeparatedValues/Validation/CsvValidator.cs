@@ -152,6 +152,12 @@ public static class CsvValidator
         {
             using var reader = new CsvRowReader<char>(data, parseOptions);
 
+            // Skip initial rows if configured
+            for (int i = 0; i < validationOptions.SkipRows && reader.MoveNext(); i++)
+            {
+                totalRows++;
+            }
+
             // Validate header row if expected
             if (validationOptions.HasHeaderRow && reader.MoveNext())
             {
@@ -251,7 +257,8 @@ public static class CsvValidator
         }
 
         // Check for empty file if no data rows
-        if (totalRows == 0 || (totalRows == 1 && validationOptions.HasHeaderRow))
+        var nonDataRows = validationOptions.SkipRows + (validationOptions.HasHeaderRow ? 1 : 0);
+        if (totalRows <= nonDataRows)
         {
             if (!validationOptions.AllowEmptyFile)
             {

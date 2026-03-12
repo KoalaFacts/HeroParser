@@ -74,10 +74,14 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Handle initial row skipping
-        if (recordCount == 0 && options.SkipRows > 0)
+        // Handle initial row skipping (SkipRows + optional header row)
+        if (recordCount == 0)
         {
-            await SkipInitialRowsAsync(options.SkipRows, cancellationToken).ConfigureAwait(false);
+            var totalSkip = options.SkipRows + (options.HasHeaderRow ? 1 : 0);
+            if (totalSkip > 0)
+            {
+                await SkipInitialRowsAsync(totalSkip, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         if (options.RecordLength is { } fixedLength)

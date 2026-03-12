@@ -35,6 +35,13 @@ public static partial class FixedWidth
         {
             options.ValidateInputSize(stream.Length);
         }
+
+        // Merge DataReader-level SkipRows into parser options
+        if (dataOptions.SkipRows > 0)
+        {
+            options = options with { SkipRows = options.SkipRows + dataOptions.SkipRows };
+        }
+
         var asyncReader = new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen, initialBufferSize: bufferSize);
 
         return new FixedWidthDataReader(asyncReader, options, dataOptions, encoding);

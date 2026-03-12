@@ -284,6 +284,74 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.False(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task MoveNextAsync_HasHeaderRow_SkipsHeaderRow()
+    {
+        var data = "Name      Value\r\n" +
+                   "Alice       100\r\n" +
+                   "Bob         200";
+
+        var options = new FixedWidthReadOptions { HasHeaderRow = true };
+        await using var stream = CreateStream(data);
+        await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
+
+        var records = new List<string>();
+        while (await reader.MoveNextAsync(TestContext.Current.CancellationToken))
+        {
+            records.Add(new string(reader.Current.RawRecord).Trim());
+        }
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice       100", records[0]);
+        Assert.Equal("Bob         200", records[1]);
+    }
+
+    [Fact]
+    public async Task MoveNextAsync_HasHeaderRow_WithSkipRows_SkipsBoth()
+    {
+        var data = "# Metadata line\r\n" +
+                   "Name      Value\r\n" +
+                   "Alice       100\r\n" +
+                   "Bob         200";
+
+        var options = new FixedWidthReadOptions { SkipRows = 1, HasHeaderRow = true };
+        await using var stream = CreateStream(data);
+        await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
+
+        var records = new List<string>();
+        while (await reader.MoveNextAsync(TestContext.Current.CancellationToken))
+        {
+            records.Add(new string(reader.Current.RawRecord).Trim());
+        }
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice       100", records[0]);
+        Assert.Equal("Bob         200", records[1]);
+    }
+
+    [Fact]
+    public async Task MoveNextAsync_FixedLength_HasHeaderRow_SkipsHeaderRecord()
+    {
+        // Three 20-char records: header + 2 data
+        var data = "HEADER              " +
+                   "RECORD1             " +
+                   "RECORD2             ";
+
+        var options = new FixedWidthReadOptions { RecordLength = 20, HasHeaderRow = true };
+        await using var stream = CreateStream(data);
+        await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options);
+
+        var records = new List<string>();
+        while (await reader.MoveNextAsync(TestContext.Current.CancellationToken))
+        {
+            records.Add(new string(reader.Current.RawRecord).Trim());
+        }
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal("RECORD1", records[0]);
+        Assert.Equal("RECORD2", records[1]);
+    }
+
     #endregion
 
     #region MaxRecordCount Tests

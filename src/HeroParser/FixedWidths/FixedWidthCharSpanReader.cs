@@ -41,6 +41,12 @@ public ref struct FixedWidthCharSpanReader
         {
             SkipInitialRows(options.SkipRows);
         }
+
+        // Skip header row after any SkipRows (header is not used for binding in fixed-width)
+        if (options.HasHeaderRow)
+        {
+            SkipInitialRows(1);
+        }
     }
 
     private void SkipInitialRows(int rowsToSkip)

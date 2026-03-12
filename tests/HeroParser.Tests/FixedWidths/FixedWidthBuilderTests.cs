@@ -1084,4 +1084,98 @@ public class FixedWidthRecordBindingTests
     }
 
     #endregion
+
+    #region HasHeaderRow Tests
+
+    [Fact]
+    public void GenericBuilder_WithHeader_SkipsHeaderRow_SourceGeneratedBinder()
+    {
+        // Arrange — header row followed by data (Employee uses [FixedWidthGenerateBinder])
+        var data =
+            "ID        Name                Salary    \n" +
+            "0000000001John Doe            0000012345\n" +
+            "0000000002Jane Smith          0000067890";
+
+        // Act
+        var employees = FixedWidth.Read<Employee>()
+            .WithHeader()
+            .FromText(data)
+            .ToList();
+
+        // Assert — header row was skipped, only data rows bound
+        Assert.Equal(2, employees.Count);
+        Assert.Equal("0000000001", employees[0].Id);
+        Assert.Equal("John Doe", employees[0].Name);
+        Assert.Equal(12345m, employees[0].Salary);
+        Assert.Equal("0000000002", employees[1].Id);
+    }
+
+    [Fact]
+    public void GenericBuilder_WithHeader_AndSkipRows_SourceGeneratedBinder()
+    {
+        // Arrange — 1 metadata row + 1 header row + data
+        var data =
+            "# Report generated on 2026-01-01       \n" +
+            "ID        Name                Salary    \n" +
+            "0000000001John Doe            0000012345";
+
+        // Act
+        var employees = FixedWidth.Read<Employee>()
+            .SkipRows(1)
+            .WithHeader()
+            .FromText(data)
+            .ToList();
+
+        // Assert
+        Assert.Single(employees);
+        Assert.Equal("0000000001", employees[0].Id);
+        Assert.Equal("John Doe", employees[0].Name);
+        Assert.Equal(12345m, employees[0].Salary);
+    }
+
+    [Fact]
+    public void DeserializeRecords_WithHasHeaderRow_SkipsHeader()
+    {
+        // Arrange — test the static FixedWidth.DeserializeRecords<T> API
+        var data =
+            "ID        Name                Salary    \n" +
+            "0000000001John Doe            0000012345";
+
+        var options = new FixedWidthReadOptions { HasHeaderRow = true };
+
+        // Act
+        var result = FixedWidth.DeserializeRecords<Employee>(data, options);
+
+        // Assert
+        Assert.Single(result.Records);
+        Assert.Equal("0000000001", result.Records[0].Id);
+        Assert.Equal("John Doe", result.Records[0].Name);
+        Assert.Equal(12345m, result.Records[0].Salary);
+    }
+
+    [Fact]
+    public void ForEachFromText_WithHeader_SkipsHeaderRow()
+    {
+        // Arrange
+        var data =
+            "ID        Name                Salary    \n" +
+            "0000000001John Doe            0000012345\n" +
+            "0000000002Jane Smith          0000067890";
+
+        // Act
+        var employees = new List<(string Id, string Name, decimal Salary)>();
+        FixedWidth.Read<Employee>()
+            .WithHeader()
+            .ForEachFromText(data, record =>
+            {
+                employees.Add((record.Id, record.Name, record.Salary));
+            });
+
+        // Assert
+        Assert.Equal(2, employees.Count);
+        Assert.Equal("0000000001", employees[0].Id);
+        Assert.Equal("0000000002", employees[1].Id);
+    }
+
+    #endregion
 }

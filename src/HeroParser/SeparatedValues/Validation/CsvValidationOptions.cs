@@ -21,6 +21,13 @@ public sealed record CsvValidationOptions
     public bool HasHeaderRow { get; init; } = true;
 
     /// <summary>
+    /// Gets or sets the number of rows to skip before reading the header or data rows.
+    /// Use this to skip metadata rows or other non-data content at the beginning of the file.
+    /// The header row (if <see cref="HasHeaderRow"/> is true) is expected after the skipped rows.
+    /// </summary>
+    public int SkipRows { get; init; } = 0;
+
+    /// <summary>
     /// Gets or sets the list of required header names. Validation fails if any are missing.
     /// </summary>
     public IReadOnlyList<string>? RequiredHeaders { get; init; }

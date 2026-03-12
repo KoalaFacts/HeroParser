@@ -20,6 +20,11 @@ public sealed record FixedWidthDataReaderOptions
     public bool CaseSensitiveHeaders { get; init; } = false;
 
     /// <summary>
+    /// Gets or sets the number of rows to skip before reading the header or data rows.
+    /// </summary>
+    public int SkipRows { get; init; } = 0;
+
+    /// <summary>
     /// Gets or sets a value indicating whether columns that extend beyond the row length are tolerated.
     /// When <see langword="true"/>, missing columns return <see cref="DBNull.Value"/>.
     /// </summary>

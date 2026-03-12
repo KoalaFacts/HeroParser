@@ -305,6 +305,80 @@ public class FixedWidthDataReaderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DataReader_SkipRows_SkipsMetadataBeforeHeader()
+    {
+        var data =
+            "# generated report\r\n" +
+            "# 2026-03-12\r\n" +
+            "Name  AgeCity\r\n" +
+            "Alice 30 NYC \r\n" +
+            "Bob   25 LA  \r\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
+
+        var options = new FixedWidthDataReaderOptions
+        {
+            HasHeaderRow = true,
+            SkipRows = 2,
+            Columns =
+            [
+                new FixedWidthDataReaderColumn { Start = 0, Length = 6 },
+                new FixedWidthDataReaderColumn { Start = 6, Length = 3 },
+                new FixedWidthDataReaderColumn { Start = 9, Length = 4 }
+            ]
+        };
+
+        using var reader = FixedWidth.CreateDataReader(stream, readerOptions: options);
+
+        Assert.Equal(3, reader.FieldCount);
+        Assert.Equal("Name", reader.GetName(0));
+        Assert.Equal("Age", reader.GetName(1));
+        Assert.Equal("City", reader.GetName(2));
+
+        Assert.True(reader.Read());
+        Assert.Equal("Alice", reader.GetValue(0));
+        Assert.Equal("30", reader.GetValue(1));
+        Assert.Equal("NYC", reader.GetValue(2));
+
+        Assert.True(reader.Read());
+        Assert.Equal("Bob", reader.GetValue(0));
+
+        Assert.False(reader.Read());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DataReader_SkipRows_WithoutHeader_SkipsMetadataOnly()
+    {
+        var data =
+            "# metadata\r\n" +
+            "Alice 30 NYC \r\n" +
+            "Bob   25 LA  \r\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
+
+        var options = new FixedWidthDataReaderOptions
+        {
+            SkipRows = 1,
+            Columns =
+            [
+                new FixedWidthDataReaderColumn { Start = 0, Length = 6, Name = "Name" },
+                new FixedWidthDataReaderColumn { Start = 6, Length = 3, Name = "Age" },
+                new FixedWidthDataReaderColumn { Start = 9, Length = 4, Name = "City" }
+            ]
+        };
+
+        using var reader = FixedWidth.CreateDataReader(stream, readerOptions: options);
+
+        Assert.True(reader.Read());
+        Assert.Equal("Alice", reader.GetValue(0));
+
+        Assert.True(reader.Read());
+        Assert.Equal("Bob", reader.GetValue(0));
+
+        Assert.False(reader.Read());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void DataReader_AllowShortRows_DoesNotOverrideMissingColumns()
     {
         var data = "AB\r\n";
@@ -327,6 +401,46 @@ public class FixedWidthDataReaderTests
         using var reader = FixedWidth.CreateDataReader(stream, parserOptions, options);
 
         Assert.Throws<FixedWidthException>(() => reader.Read());
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DataReader_SkipRows_Additive_ReadOptionsAndDataReaderOptions()
+    {
+        // ReadOptions.SkipRows=1 skips first metadata row,
+        // DataReaderOptions.SkipRows=1 skips second metadata row,
+        // then header, then data.
+        var data =
+            "# line 1\r\n" +
+            "# line 2\r\n" +
+            "Name  AgeCity\r\n" +
+            "Alice 30 NYC \r\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
+
+        var parserOptions = new FixedWidthReadOptions
+        {
+            SkipRows = 1
+        };
+
+        var options = new FixedWidthDataReaderOptions
+        {
+            HasHeaderRow = true,
+            SkipRows = 1,
+            Columns =
+            [
+                new FixedWidthDataReaderColumn { Start = 0, Length = 6 },
+                new FixedWidthDataReaderColumn { Start = 6, Length = 3 },
+                new FixedWidthDataReaderColumn { Start = 9, Length = 4 }
+            ]
+        };
+
+        using var reader = FixedWidth.CreateDataReader(stream, parserOptions, options);
+
+        Assert.Equal("Name", reader.GetName(0));
+        Assert.True(reader.Read());
+        Assert.Equal("Alice", reader.GetValue(0));
+        Assert.Equal("30", reader.GetValue(1));
+        Assert.False(reader.Read());
     }
 }
 

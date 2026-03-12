@@ -200,9 +200,9 @@ public sealed record CsvWriteOptions
     /// <remarks>
     /// <para>CSV injection occurs when user-supplied data begins with characters like <c>=</c>, <c>+</c>, <c>-</c>, <c>@</c>,
     /// tab, or carriage return that spreadsheet applications interpret as formulas.</para>
-    /// <para>Default is <see cref="CsvInjectionProtection.None"/> for backward compatibility.</para>
+    /// <para>Default is <see cref="CsvInjectionProtection.EscapeWithQuote"/> to protect spreadsheet-bound exports.</para>
     /// </remarks>
-    public CsvInjectionProtection InjectionProtection { get; init; } = CsvInjectionProtection.None;
+    public CsvInjectionProtection InjectionProtection { get; init; } = CsvInjectionProtection.EscapeWithQuote;
 
     /// <summary>
     /// Gets or sets additional characters to treat as dangerous beyond the defaults.

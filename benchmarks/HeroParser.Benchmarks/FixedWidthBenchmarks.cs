@@ -249,8 +249,8 @@ public class FixedWidthMicroBenchmarks
 }
 
 /// <summary>
-/// Compares throughput across API shapes: string, memory stream, file streaming (sync), and file streaming (async).
-/// Similar to CSV's StreamingThroughputBenchmarks.
+/// Compares fixed-width parsing throughput across raw in-memory parsing, the true async streaming reader,
+/// and the buffered typed convenience APIs.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
@@ -305,11 +305,23 @@ public class FixedWidthStreamingBenchmarks
         {
             for (int f = 0; f < fields; f++)
             {
-                sb.Append($"{"Field" + f + "_" + r,-10}");
+                AppendFixedWidth(sb, $"F{f}_{r}", 10);
             }
             sb.AppendLine();
         }
         return sb.ToString();
+    }
+
+    private static void AppendFixedWidth(StringBuilder sb, string value, int width)
+    {
+        if (value.Length >= width)
+        {
+            sb.Append(value, 0, width);
+            return;
+        }
+
+        sb.Append(value);
+        sb.Append(' ', width - value.Length);
     }
 
     [Benchmark(Baseline = true)]
@@ -324,7 +336,34 @@ public class FixedWidthStreamingBenchmarks
     }
 
     [Benchmark]
-    public int ParseFromStreamMemory()
+    public async Task<int> ParseFromAsyncStreamReader_MemoryStream()
+    {
+        using var stream = new MemoryStream(fixedWidthUtf8, writable: false);
+        await using var reader = FixedWidth.CreateAsyncStreamReader(stream);
+
+        int total = 0;
+        while (await reader.MoveNextAsync().ConfigureAwait(false))
+        {
+            total += reader.Current.GetField(0, 10).CharSpan.Length;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public async Task<int> ParseFromAsyncStreamReader_File()
+    {
+        await using var reader = FixedWidth.CreateAsyncStreamReader(filePath);
+
+        int total = 0;
+        while (await reader.MoveNextAsync().ConfigureAwait(false))
+        {
+            total += reader.Current.GetField(0, 10).CharSpan.Length;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int ParseTypedFromBufferedStreamMemory()
     {
         using var stream = new MemoryStream(fixedWidthUtf8, writable: false);
         int total = 0;
@@ -336,7 +375,7 @@ public class FixedWidthStreamingBenchmarks
     }
 
     [Benchmark]
-    public int ParseFromFileStreaming()
+    public int ParseTypedFromBufferedFileStream()
     {
         using var fs = File.OpenRead(filePath);
         int total = 0;
@@ -348,7 +387,7 @@ public class FixedWidthStreamingBenchmarks
     }
 
     [Benchmark]
-    public async Task<int> ParseFromFileAsyncStreaming()
+    public async Task<int> ParseTypedFromBufferedFileAsyncEnumerable()
     {
         int total = 0;
         await foreach (var record in FixedWidth.Read<StreamingBenchmarkRecord>().FromFileAsync(filePath))

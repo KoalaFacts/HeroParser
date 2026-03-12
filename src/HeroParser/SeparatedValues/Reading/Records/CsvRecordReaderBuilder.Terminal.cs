@@ -1,4 +1,5 @@
 using HeroParser.SeparatedValues.Reading.Binders;
+using System.Text;
 
 namespace HeroParser.SeparatedValues.Reading.Records;
 
@@ -61,8 +62,9 @@ public sealed partial class CsvRecordReaderBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(path);
         ThrowIfMapNotConfigured();
-        var csvText = File.ReadAllText(path);
-        return FromTextWithMap(csvText);
+        var (parserOptions, _) = GetOptions();
+        _ = Csv.ReadFromFile(path, out var fileBytes, parserOptions);
+        return FromTextWithMap(DecodeBufferedCsvBytes(fileBytes));
     }
 
     /// <summary>
@@ -87,8 +89,10 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ThrowIfMapConfigured();
         var (parserOptions, recordOptions) = GetOptions();
 
-        fileBytes = File.ReadAllBytes(path);
-        return Csv.DeserializeRecordsFromBytes<T>(fileBytes, recordOptions, parserOptions);
+        var rowReader = Csv.ReadFromFile(path, out fileBytes, parserOptions);
+        var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
+        return new CsvRecordReader<byte, T>(rowReader, binder, recordOptions.SkipRows,
+            recordOptions.Progress, recordOptions.ProgressIntervalRows);
     }
 
     /// <summary>
@@ -105,10 +109,9 @@ public sealed partial class CsvRecordReaderBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(stream);
         ThrowIfMapNotConfigured();
-
-        using var reader = new StreamReader(stream, leaveOpen: leaveOpen);
-        var csvText = reader.ReadToEnd();
-        return FromTextWithMap(csvText);
+        var (parserOptions, _) = GetOptions();
+        _ = Csv.ReadFromStream(stream, out var streamBytes, parserOptions, leaveOpen);
+        return FromTextWithMap(DecodeBufferedCsvBytes(streamBytes));
     }
 
     /// <summary>
@@ -132,25 +135,10 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(stream);
         ThrowIfMapConfigured();
         var (parserOptions, recordOptions) = GetOptions();
-
-        if (stream is MemoryStream ms && ms.TryGetBuffer(out var buffer))
-        {
-            // Fast path for MemoryStream - avoid copy if possible
-            streamBytes = buffer.Array ?? ms.ToArray();
-        }
-        else
-        {
-            using var memoryStream = new MemoryStream();
-            stream.CopyTo(memoryStream);
-            streamBytes = memoryStream.ToArray();
-        }
-
-        if (!leaveOpen)
-        {
-            stream.Dispose();
-        }
-
-        return Csv.DeserializeRecordsFromBytes<T>(streamBytes, recordOptions, parserOptions);
+        var rowReader = Csv.ReadFromStream(stream, out streamBytes, parserOptions, leaveOpen);
+        var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
+        return new CsvRecordReader<byte, T>(rowReader, binder, recordOptions.SkipRows,
+            recordOptions.Progress, recordOptions.ProgressIntervalRows);
     }
 
     private CsvRecordReader<char, T> FromTextWithMap(string csvText)
@@ -182,5 +170,14 @@ public sealed partial class CsvRecordReaderBuilder<T>
                 "This overload requires a fluent map configured via WithMap() or Map(). " +
                 "Use the byte-based overloads (with out parameter) for standard reading without a map.");
         }
+    }
+
+    private static string DecodeBufferedCsvBytes(byte[] data)
+    {
+        ReadOnlySpan<byte> bytes = data;
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            bytes = bytes[3..];
+
+        return Encoding.UTF8.GetString(bytes);
     }
 }

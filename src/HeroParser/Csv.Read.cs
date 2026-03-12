@@ -175,6 +175,14 @@ public static partial class Csv
         CsvReadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(path);
+        long fileLength = new FileInfo(path).Length;
+        if (fileLength > DEFAULT_MAX_BUFFERED_STREAM_BYTES)
+        {
+            throw new CsvException(
+                CsvErrorCode.ParseError,
+                $"File length exceeds maximum buffered size of {DEFAULT_MAX_BUFFERED_STREAM_BYTES:N0} bytes. " +
+                "Use Csv.CreateAsyncStreamReader for large inputs.");
+        }
 
         fileBytes = File.ReadAllBytes(path);
         return ReadFromByteSpan(fileBytes, options);

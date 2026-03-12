@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Pipelines;
 using System.Text;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Records;
@@ -126,14 +127,15 @@ public static partial class FixedWidth
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
+        options.Validate();
 
         // Check stream size before reading (if seekable)
         if (stream.CanSeek)
         {
-            options.ValidateInputSize(stream.Length);
+            options.ValidateInputSize(stream.Length - stream.Position);
         }
 
-        using var reader = new StreamReader(stream, encoding, leaveOpen: leaveOpen);
+        using var reader = CreateBufferedTextReader(stream, options, encoding, leaveOpen);
         var text = reader.ReadToEnd();
         return ReadFromText(text, options);
     }
@@ -194,10 +196,10 @@ public static partial class FixedWidth
         // Check stream size before reading (if seekable)
         if (stream.CanSeek)
         {
-            options.ValidateInputSize(stream.Length);
+            options.ValidateInputSize(stream.Length - stream.Position);
         }
 
-        using var reader = new StreamReader(stream, encoding, leaveOpen: leaveOpen);
+        using var reader = CreateBufferedTextReader(stream, options, encoding, leaveOpen);
         var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         return new FixedWidthTextSource(text, options);
     }
@@ -220,6 +222,7 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
+        options.ValidateInputSize(new FileInfo(path).Length);
 
         var stream = new FileStream(
             path,
@@ -252,6 +255,10 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
+        if (stream.CanSeek)
+        {
+            options.ValidateInputSize(stream.Length - stream.Position);
+        }
 
         return new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen, initialBufferSize: bufferSize);
     }
@@ -303,6 +310,9 @@ public static partial class FixedWidth
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
+        options ??= FixedWidthReadOptions.Default;
+        options.Validate();
+        options.ValidateInputSize(new FileInfo(path).Length);
         culture ??= CultureInfo.InvariantCulture;
 
         var text = File.ReadAllText(path, encoding);
@@ -331,6 +341,9 @@ public static partial class FixedWidth
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
+        options ??= FixedWidthReadOptions.Default;
+        options.Validate();
+        options.ValidateInputSize(new FileInfo(path).Length);
         culture ??= CultureInfo.InvariantCulture;
 
         var text = await File.ReadAllTextAsync(path, encoding, cancellationToken).ConfigureAwait(false);
@@ -367,9 +380,15 @@ public static partial class FixedWidth
     {
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
+        options ??= FixedWidthReadOptions.Default;
+        options.Validate();
+        if (stream.CanSeek)
+        {
+            options.ValidateInputSize(stream.Length - stream.Position);
+        }
         culture ??= CultureInfo.InvariantCulture;
 
-        using var reader = new StreamReader(stream, encoding, leaveOpen: leaveOpen);
+        using var reader = CreateBufferedTextReader(stream, options, encoding, leaveOpen);
         var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         var records = DeserializeRecords<T>(text, options, culture, onError);
 
@@ -378,6 +397,58 @@ public static partial class FixedWidth
             cancellationToken.ThrowIfCancellationRequested();
             yield return record;
         }
+    }
+
+    /// <summary>
+    /// Asynchronously deserializes fixed-width data from a <see cref="PipeReader"/> into strongly typed records.
+    /// </summary>
+    /// <typeparam name="T">The record type to deserialize.</typeparam>
+    /// <param name="reader">The pipe reader containing fixed-width data.</param>
+    /// <param name="options">Optional parser configuration.</param>
+    /// <param name="encoding">Optional text encoding for decoding each record; defaults to UTF-8.</param>
+    /// <param name="culture">Culture for parsing values; defaults to <see cref="CultureInfo.InvariantCulture"/>.</param>
+    /// <param name="onError">Optional error handler for deserialization errors.</param>
+    /// <param name="cancellationToken">Token to cancel I/O.</param>
+    /// <returns>An async enumerable of deserialized records.</returns>
+    /// <remarks>
+    /// This method streams records directly from <see cref="System.IO.Pipelines"/> sources without buffering
+    /// the entire payload in memory. Record framing on this path follows <see cref="ReadFromPipeReaderAsync(System.IO.Pipelines.PipeReader, HeroParser.FixedWidths.FixedWidthReadOptions?, CancellationToken)"/>.
+    /// </remarks>
+    public static async IAsyncEnumerable<T> DeserializeRecordsAsync<T>(
+        PipeReader reader,
+        FixedWidthReadOptions? options = null,
+        Encoding? encoding = null,
+        CultureInfo? culture = null,
+        FixedWidthDeserializeErrorHandler? onError = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        where T : new()
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        options ??= FixedWidthReadOptions.Default;
+        encoding ??= Encoding.UTF8;
+        culture ??= CultureInfo.InvariantCulture;
+
+        await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+            ReadFromPipeReaderAsync(reader, options, cancellationToken),
+            options,
+            encoding,
+            culture,
+            onError,
+            cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            yield return record;
+        }
+    }
+
+    private static StreamReader CreateBufferedTextReader(
+        Stream stream,
+        FixedWidthReadOptions options,
+        Encoding encoding,
+        bool leaveOpen)
+    {
+        // Enforce MaxInputSize while buffering from non-seekable streams.
+        var countingStream = new CountingReadStream(stream, options, leaveOpen);
+        return new StreamReader(countingStream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: false);
     }
 }
 

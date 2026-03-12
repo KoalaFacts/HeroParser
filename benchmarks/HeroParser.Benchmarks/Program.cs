@@ -4,230 +4,175 @@ namespace HeroParser.Benchmarks;
 
 public class Program
 {
+    private static readonly Type[] allBenchmarks =
+    [
+        typeof(ThroughputBenchmarks),
+        typeof(CsvStreamingBenchmarks),
+        typeof(CsvPipeReaderBenchmarks),
+        typeof(VsSepReadingBenchmarks),
+        typeof(VsSepWritingBenchmarks),
+        typeof(QuotedVsUnquotedBenchmarks),
+        typeof(SimdComparisonBenchmarks),
+        typeof(NewFeaturesBenchmark),
+        typeof(ColumnParseBenchmarks),
+        typeof(WriteInjectionProtectionBenchmarks),
+        typeof(ReadInjectionProtectionBenchmarks),
+        typeof(OutputLimitsBenchmarks),
+        typeof(WriterBenchmarks),
+        typeof(AsyncWriterBenchmarks),
+        typeof(WriterDestinationBenchmarks),
+        typeof(WriterQuotingBenchmarks),
+        typeof(BinderOverheadBenchmarks),
+        typeof(MultiSchemaBenchmarks),
+        typeof(FixedWidthBenchmarks),
+        typeof(FixedWidthMicroBenchmarks),
+        typeof(FixedWidthStreamingBenchmarks),
+        typeof(FixedWidthFieldParseBenchmarks),
+        typeof(FixedWidthWriterBenchmarks),
+        typeof(FixedWidthAsyncWriterBenchmarks),
+        typeof(FixedWidthCustomConverterBenchmarks),
+        typeof(FixedWidthByteSpanBenchmarks),
+        typeof(FixedWidthAlignmentBenchmarks),
+        typeof(FixedWidthPipeReaderBenchmarks),
+        typeof(FixedWidthTypedPipeReaderBenchmarks)
+    ];
+
+    private static readonly Dictionary<string, Type[]> benchmarkGroups = new(StringComparer.Ordinal)
+    {
+        ["--throughput"] = [typeof(ThroughputBenchmarks)],
+        ["--csv-streaming"] = [typeof(CsvStreamingBenchmarks)],
+        ["--csv-pipe"] = [typeof(CsvPipeReaderBenchmarks)],
+        ["--vs-sep-reading"] = [typeof(VsSepReadingBenchmarks)],
+        ["--vs-sep-writing"] = [typeof(VsSepWritingBenchmarks)],
+        ["--writer"] =
+        [
+            typeof(WriterBenchmarks),
+            typeof(AsyncWriterBenchmarks),
+            typeof(WriterDestinationBenchmarks),
+            typeof(WriterQuotingBenchmarks)
+        ],
+        ["--sync-writer"] =
+        [
+            typeof(WriterBenchmarks),
+            typeof(WriterDestinationBenchmarks),
+            typeof(WriterQuotingBenchmarks)
+        ],
+        ["--async-writer"] = [typeof(AsyncWriterBenchmarks)],
+        ["--quotes"] = [typeof(QuotedVsUnquotedBenchmarks)],
+        ["--simd"] = [typeof(SimdComparisonBenchmarks)],
+        ["--features"] = [typeof(NewFeaturesBenchmark)],
+        ["--column-parse"] = [typeof(ColumnParseBenchmarks)],
+        ["--security"] =
+        [
+            typeof(WriteInjectionProtectionBenchmarks),
+            typeof(ReadInjectionProtectionBenchmarks),
+            typeof(OutputLimitsBenchmarks)
+        ],
+        ["--injection"] =
+        [
+            typeof(WriteInjectionProtectionBenchmarks),
+            typeof(ReadInjectionProtectionBenchmarks)
+        ],
+        ["--injection-write"] = [typeof(WriteInjectionProtectionBenchmarks)],
+        ["--injection-read"] = [typeof(ReadInjectionProtectionBenchmarks)],
+        ["--binder-overhead"] = [typeof(BinderOverheadBenchmarks)],
+        ["--multi-schema"] = [typeof(MultiSchemaBenchmarks)],
+        ["--fixed-width"] =
+        [
+            typeof(FixedWidthBenchmarks),
+            typeof(FixedWidthMicroBenchmarks),
+            typeof(FixedWidthStreamingBenchmarks),
+            typeof(FixedWidthFieldParseBenchmarks),
+            typeof(FixedWidthWriterBenchmarks),
+            typeof(FixedWidthAsyncWriterBenchmarks),
+            typeof(FixedWidthCustomConverterBenchmarks),
+            typeof(FixedWidthByteSpanBenchmarks),
+            typeof(FixedWidthAlignmentBenchmarks),
+            typeof(FixedWidthPipeReaderBenchmarks),
+            typeof(FixedWidthTypedPipeReaderBenchmarks)
+        ],
+        ["--fixed-width-streaming"] = [typeof(FixedWidthStreamingBenchmarks)],
+        ["--fixed-width-parsing"] = [typeof(FixedWidthFieldParseBenchmarks)],
+        ["--fixed-width-writer"] =
+        [
+            typeof(FixedWidthWriterBenchmarks),
+            typeof(FixedWidthAsyncWriterBenchmarks)
+        ],
+        ["--fixed-width-converters"] = [typeof(FixedWidthCustomConverterBenchmarks)],
+        ["--fixed-width-bytespan"] = [typeof(FixedWidthByteSpanBenchmarks)],
+        ["--fixed-width-alignment"] = [typeof(FixedWidthAlignmentBenchmarks)],
+        ["--fixed-width-pipe"] =
+        [
+            typeof(FixedWidthPipeReaderBenchmarks),
+            typeof(FixedWidthTypedPipeReaderBenchmarks)
+        ]
+    };
+
     public static void Main(string[] args)
     {
-        if (args.Length > 0 && args[0] == "--throughput")
+        if (args.Length == 0)
         {
-            // Run only throughput benchmarks
-            RunBenchmarks(args, typeof(ThroughputBenchmarks));
+            PrintHelp();
             return;
         }
 
-        if (args.Length > 0 && args[0] == "--vs-sep-reading")
+        if (args[0] == "--all")
         {
-            // Run reading comparison benchmarks
-            RunBenchmarks(args, typeof(VsSepReadingBenchmarks));
+            RunBenchmarks(args, allBenchmarks);
             return;
         }
 
-        if (args.Length > 0 && args[0] == "--vs-sep-writing")
+        if (benchmarkGroups.TryGetValue(args[0], out var benchmarks))
         {
-            // Run writing comparison benchmarks
-            RunBenchmarks(args, typeof(VsSepWritingBenchmarks));
+            RunBenchmarks(args, benchmarks);
             return;
         }
 
-        if (args.Length > 0 && args[0] == "--writer")
+        PrintHelp($"Unknown option: {args[0]}");
+    }
+
+    private static void PrintHelp(string? error = null)
+    {
+        if (!string.IsNullOrEmpty(error))
         {
-            // Run all writer benchmarks (both sync and async)
-            RunBenchmarks(args, typeof(WriterBenchmarks), typeof(AsyncWriterBenchmarks));
-            return;
+            Console.WriteLine(error);
+            Console.WriteLine();
         }
 
-        if (args.Length > 0 && args[0] == "--sync-writer")
-        {
-            // Run sync writer benchmarks only
-            RunBenchmarks(args, typeof(WriterBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--async-writer")
-        {
-            // Run async writer benchmarks only (sync vs async comparison)
-            RunBenchmarks(args, typeof(AsyncWriterBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--quotes")
-        {
-            // Run quoted vs unquoted benchmarks
-            RunBenchmarks(args, typeof(QuotedVsUnquotedBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--simd")
-        {
-            // Run SIMD comparison benchmarks
-            RunBenchmarks(args, typeof(SimdComparisonBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--features")
-        {
-            // Run new features overhead benchmarks
-            RunBenchmarks(args, typeof(NewFeaturesBenchmark));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--security")
-        {
-            // Run all security benchmarks
-            RunBenchmarks(args,
-                typeof(WriteInjectionProtectionBenchmarks),
-                typeof(ReadInjectionProtectionBenchmarks),
-                typeof(OutputLimitsBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--injection")
-        {
-            // Run all injection protection benchmarks (write and read)
-            RunBenchmarks(args,
-                typeof(WriteInjectionProtectionBenchmarks),
-                typeof(ReadInjectionProtectionBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--injection-write")
-        {
-            // Run write-side injection protection benchmarks
-            RunBenchmarks(args, typeof(WriteInjectionProtectionBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--injection-read")
-        {
-            // Run read-side injection protection benchmarks
-            RunBenchmarks(args, typeof(ReadInjectionProtectionBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--fixed-width")
-        {
-            // Run all fixed-width parsing benchmarks
-            RunBenchmarks(args,
-                typeof(FixedWidthBenchmarks),
-                typeof(FixedWidthMicroBenchmarks),
-                typeof(FixedWidthStreamingBenchmarks),
-                typeof(FixedWidthFieldParseBenchmarks),
-                typeof(FixedWidthWriterBenchmarks),
-                typeof(FixedWidthCustomConverterBenchmarks),
-                typeof(FixedWidthByteSpanBenchmarks),
-                typeof(FixedWidthAlignmentBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--fixed-width-writer")
-        {
-            // Run fixed-width writer benchmarks
-            RunBenchmarks(args, typeof(FixedWidthWriterBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--fixed-width-converters")
-        {
-            // Run custom converter benchmarks
-            RunBenchmarks(args, typeof(FixedWidthCustomConverterBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--fixed-width-bytespan")
-        {
-            // Run byte span benchmarks
-            RunBenchmarks(args, typeof(FixedWidthByteSpanBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--fixed-width-alignment")
-        {
-            // Run alignment benchmarks
-            RunBenchmarks(args, typeof(FixedWidthAlignmentBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--fixed-width-streaming")
-        {
-            // Run fixed-width streaming throughput benchmarks
-            RunBenchmarks(args, typeof(FixedWidthStreamingBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--binder-overhead")
-        {
-            // Run binder overhead profiling benchmarks
-            RunBenchmarks(args, typeof(BinderOverheadBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--multi-schema")
-        {
-            // Run multi-schema benchmarks
-            RunBenchmarks(args, typeof(MultiSchemaBenchmarks));
-            return;
-        }
-
-        if (args.Length > 0 && args[0] == "--fixed-width-parsing")
-        {
-            // Run fixed-width field parsing benchmarks
-            RunBenchmarks(args, typeof(FixedWidthFieldParseBenchmarks));
-            return;
-        }
-
-        // Default: show menu
         Console.WriteLine("=== HeroParser Benchmarks ===");
         Console.WriteLine();
         Console.WriteLine("Options:");
-        Console.WriteLine("  --throughput       Run throughput benchmarks");
-        Console.WriteLine("  --vs-sep-reading   Run HeroParser vs Sep reading comparison");
-        Console.WriteLine("  --vs-sep-writing   Run HeroParser vs Sep writing comparison");
-        Console.WriteLine("  --writer           Run all writer benchmarks (sync + async)");
-        Console.WriteLine("  --sync-writer      Run sync writer benchmarks only");
-        Console.WriteLine("  --async-writer     Run async writer benchmarks only");
-        Console.WriteLine("  --quotes           Run quoted vs unquoted comparison (VERIFY SIMD)");
-        Console.WriteLine("  --simd             Run SIMD vs Scalar comparison");
-        Console.WriteLine("  --features         Run new features overhead benchmarks (Comment/Trim/MaxFieldLength)");
-        Console.WriteLine("  --security         Run security and validation benchmarks (injection/limits/validation)");
-        Console.WriteLine("  --validation       Run only validation benchmarks");
-        Console.WriteLine("  --injection        Run all injection protection benchmarks");
-        Console.WriteLine("  --injection-write  Run write-side injection benchmarks");
-        Console.WriteLine("  --injection-read   Run read-side injection benchmarks");
-        Console.WriteLine("  --fixed-width      Run all fixed-width benchmarks (throughput + streaming + parsing + writer)");
-        Console.WriteLine("  --fixed-width-streaming  Run fixed-width streaming throughput benchmarks");
+        Console.WriteLine("  --throughput          Run raw CSV throughput benchmarks");
+        Console.WriteLine("  --csv-streaming       Run CSV async stream reader benchmarks");
+        Console.WriteLine("  --csv-pipe            Run CSV PipeReader benchmarks");
+        Console.WriteLine("  --vs-sep-reading      Run HeroParser vs Sep reading comparison");
+        Console.WriteLine("  --vs-sep-writing      Run HeroParser vs Sep writing comparison");
+        Console.WriteLine("  --writer              Run all CSV writer benchmarks");
+        Console.WriteLine("  --sync-writer         Run sync CSV writer benchmarks");
+        Console.WriteLine("  --async-writer        Run async CSV writer benchmarks");
+        Console.WriteLine("  --quotes              Run quoted vs unquoted parsing benchmarks");
+        Console.WriteLine("  --simd                Run SIMD vs scalar CSV parsing benchmarks");
+        Console.WriteLine("  --features            Run CSV feature overhead benchmarks");
+        Console.WriteLine("  --column-parse        Run CSV column parsing benchmarks");
+        Console.WriteLine("  --security            Run injection and output-limit benchmarks");
+        Console.WriteLine("  --injection           Run all injection protection benchmarks");
+        Console.WriteLine("  --injection-write     Run write-side injection benchmarks");
+        Console.WriteLine("  --injection-read      Run read-side injection benchmarks");
+        Console.WriteLine("  --binder-overhead     Run typed binder overhead benchmarks");
+        Console.WriteLine("  --multi-schema        Run multi-schema parsing benchmarks");
+        Console.WriteLine("  --fixed-width         Run all fixed-width benchmarks");
+        Console.WriteLine("  --fixed-width-streaming  Run fixed-width streaming benchmarks");
         Console.WriteLine("  --fixed-width-parsing    Run fixed-width field parsing benchmarks");
         Console.WriteLine("  --fixed-width-writer     Run fixed-width writer benchmarks");
         Console.WriteLine("  --fixed-width-converters Run fixed-width custom converter benchmarks");
-        Console.WriteLine("  --fixed-width-bytespan   Run fixed-width byte span vs char span benchmarks");
-        Console.WriteLine("  --fixed-width-alignment  Run fixed-width alignment operation benchmarks");
-        Console.WriteLine("  --memory           Run memory vs string binding benchmarks");
-        Console.WriteLine("  --multi-schema     Run multi-schema parsing benchmarks");
-        Console.WriteLine("  --all              Run all benchmarks");
+        Console.WriteLine("  --fixed-width-bytespan   Run fixed-width byte span benchmarks");
+        Console.WriteLine("  --fixed-width-alignment  Run fixed-width alignment benchmarks");
+        Console.WriteLine("  --fixed-width-pipe       Run fixed-width PipeReader benchmarks");
+        Console.WriteLine("  --all                 Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");
-
         Console.WriteLine($"  {Hardware.GetHardwareInfo()}");
         Console.WriteLine();
-
-        if (args.Length == 0)
-        {
-            Console.WriteLine("No arguments provided. Nothing to run...");
-            Console.WriteLine();
-        }
-        else if (args[0] == "--all")
-        {
-            BenchmarkRunner.Run<ThroughputBenchmarks>();
-            BenchmarkRunner.Run<VsSepReadingBenchmarks>();
-            BenchmarkRunner.Run<VsSepWritingBenchmarks>();
-            BenchmarkRunner.Run<QuotedVsUnquotedBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthMicroBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthStreamingBenchmarks>();
-            BenchmarkRunner.Run<FixedWidthFieldParseBenchmarks>();
-        }
-        else
-        {
-            Console.WriteLine($"Unknown option: {args[0]}");
-            Console.WriteLine("Use --help to see available options");
-        }
     }
 
     private static void RunBenchmarks(string[] args, params Type[] benchmarks)
@@ -237,13 +182,12 @@ public class Program
         if (extraArgs.Length > 0)
         {
             BenchmarkSwitcher.FromTypes(benchmarks).Run(extraArgs);
+            return;
         }
-        else
+
+        foreach (var benchmark in benchmarks)
         {
-            foreach (var benchmark in benchmarks)
-            {
-                BenchmarkRunner.Run(benchmark);
-            }
+            BenchmarkRunner.Run(benchmark);
         }
     }
 }

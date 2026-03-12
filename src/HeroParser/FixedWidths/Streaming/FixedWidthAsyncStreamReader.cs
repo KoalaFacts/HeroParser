@@ -13,6 +13,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     private const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
 
     private readonly ArrayPool<char> charPool;
+    private readonly CountingReadStream countingStream;
     private readonly StreamReader reader;
     private readonly FixedWidthReadOptions options;
     private readonly bool trackLineNumbers;
@@ -27,9 +28,6 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     private int currentRowLength;
     private int currentLineNumber;
     private int currentSourceLineNumber;
-#pragma warning disable IDE0032 // Use auto property - can't use auto property here as bytesRead is modified in FillBufferAsync
-    private long bytesRead;
-#pragma warning restore IDE0032
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
     public FixedWidthCharSpanRow Current => new(
@@ -38,12 +36,8 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         currentSourceLineNumber,
         options);
 
-    /// <summary>Gets the approximate number of bytes read from the underlying stream.</summary>
-    /// <remarks>
-    /// This value is estimated based on characters read assuming UTF-8 encoding (1 byte per ASCII character).
-    /// For non-ASCII content or other encodings, this may not be precisely accurate.
-    /// </remarks>
-    public long BytesRead => bytesRead;
+    /// <summary>Gets the number of raw bytes consumed from the underlying stream.</summary>
+    public long BytesRead => countingStream.BytesRead;
 
     internal FixedWidthAsyncStreamReader(Stream stream, FixedWidthReadOptions options, Encoding encoding, bool leaveOpen, int initialBufferSize)
     {
@@ -51,7 +45,8 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         trackLineNumbers = options.TrackSourceLineNumbers;
         // Use shared pool for better memory efficiency - arrays are always cleared on return
         charPool = ArrayPool<char>.Shared;
-        reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: leaveOpen);
+        countingStream = new CountingReadStream(stream, options, leaveOpen);
+        reader = new StreamReader(countingStream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: false);
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
         offset = 0;
         length = 0;
@@ -334,7 +329,6 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         }
 
         length += read;
-        bytesRead += read;
     }
 
     /// <summary>
@@ -368,4 +362,3 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         charPool.Return(toReturn, clearArray: true);
     }
 }
-

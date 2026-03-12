@@ -221,6 +221,34 @@ public class SecurityAndValidationTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void InjectionProtection_DefaultBuilder_ProtectsDangerousValues()
+    {
+        using var sw = new StringWriter();
+        using var writer = Csv.Write().CreateWriter(sw, leaveOpen: true);
+
+        writer.WriteRow("=SUM(A1:A10)", "Normal");
+        writer.Flush();
+
+        var csv = sw.ToString();
+        Assert.Contains("\"'=SUM(A1:A10)\"", csv);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void InjectionProtection_DefaultOptions_ProtectsDangerousValues()
+    {
+        using var sw = new StringWriter();
+        using var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
+
+        writer.WriteRow("=SUM(A1:A10)", "Normal");
+        writer.Flush();
+
+        var csv = sw.ToString();
+        Assert.Contains("\"'=SUM(A1:A10)\"", csv);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void HasDangerousFields_ReturnsFalse_ForSafeData()
     {
         var csv = "Name,Value,Amount\r\nAlice,Test,-100\r\nBob,Data,+200";

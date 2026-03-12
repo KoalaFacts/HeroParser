@@ -49,36 +49,65 @@ public static partial class Csv
         var quote = (byte)options.Quote;
         var enableQuotes = options.EnableQuotedFields;
         int rowNumber = 0;
+        int? maxRowSize = options.MaxRowSize;
 
-        while (true)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            ReadResult result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-            ReadOnlySequence<byte> buffer = result.Buffer;
-
-            while (TryReadRow(ref buffer, quote, enableQuotes, out var rowData))
+            while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                rowNumber++;
-                yield return ParsePipeRow(rowData.ToArray(), delimiter, quote, enableQuotes, rowNumber);
-            }
 
-            reader.AdvanceTo(buffer.Start, buffer.End);
+                ReadResult result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                ReadOnlySequence<byte> buffer = result.Buffer;
 
-            if (result.IsCompleted)
-            {
-                // Process any remaining data that doesn't end with a newline
-                if (buffer.Length > 0)
+                while (TryReadRow(ref buffer, quote, enableQuotes, out var rowData))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    EnsureRowSize(rowData.Length, maxRowSize);
                     rowNumber++;
-                    yield return ParsePipeRow(buffer.ToArray(), delimiter, quote, enableQuotes, rowNumber);
+                    EnsureRowCount(rowNumber, options.MaxRowCount);
+                    yield return ParsePipeRow(
+                        rowData.ToArray(),
+                        delimiter,
+                        quote,
+                        enableQuotes,
+                        rowNumber,
+                        options.MaxColumnCount,
+                        options.MaxFieldSize);
                 }
-                break;
+
+                if (!result.IsCompleted)
+                {
+                    EnsureRowSize(buffer.Length, maxRowSize);
+                }
+
+                reader.AdvanceTo(buffer.Start, buffer.End);
+
+                if (result.IsCompleted)
+                {
+                    // Process any remaining data that doesn't end with a newline
+                    if (buffer.Length > 0)
+                    {
+                        EnsureRowSize(buffer.Length, maxRowSize);
+                        rowNumber++;
+                        EnsureRowCount(rowNumber, options.MaxRowCount);
+                        yield return ParsePipeRow(
+                            buffer.ToArray(),
+                            delimiter,
+                            quote,
+                            enableQuotes,
+                            rowNumber,
+                            options.MaxColumnCount,
+                            options.MaxFieldSize);
+                    }
+                    break;
+                }
             }
         }
-
-        await reader.CompleteAsync().ConfigureAwait(false);
+        finally
+        {
+            await reader.CompleteAsync().ConfigureAwait(false);
+        }
     }
 
     private static bool TryReadRow(
@@ -123,13 +152,41 @@ public static partial class Csv
         return false;
     }
 
-    private static CsvPipeRow ParsePipeRow(byte[] rowBytes, byte delimiter, byte quote, bool enableQuotes, int rowNumber)
+    private static CsvPipeRow ParsePipeRow(
+        byte[] rowBytes,
+        byte delimiter,
+        byte quote,
+        bool enableQuotes,
+        int rowNumber,
+        int maxColumnCount,
+        int? maxFieldSize)
     {
         var columnStarts = new List<int>();
         var columnLengths = new List<int>();
 
         int start = 0;
         bool inQuotes = false;
+
+        void AddColumn(int endExclusive)
+        {
+            int fieldLength = endExclusive - start;
+            if (maxFieldSize.HasValue && fieldLength > maxFieldSize.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Field length {fieldLength} exceeds maximum allowed length of {maxFieldSize.Value}");
+            }
+
+            if (columnStarts.Count + 1 > maxColumnCount)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyColumns,
+                    $"Row has more than {maxColumnCount} columns");
+            }
+
+            columnStarts.Add(start);
+            columnLengths.Add(fieldLength);
+        }
 
         for (int i = 0; i < rowBytes.Length; i++)
         {
@@ -141,17 +198,35 @@ public static partial class Csv
 
             if (!inQuotes && rowBytes[i] == delimiter)
             {
-                columnStarts.Add(start);
-                columnLengths.Add(i - start);
+                AddColumn(i);
                 start = i + 1;
             }
         }
 
         // Last column
-        columnStarts.Add(start);
-        columnLengths.Add(rowBytes.Length - start);
+        AddColumn(rowBytes.Length);
 
         return new CsvPipeRow(rowBytes, [.. columnStarts], [.. columnLengths], rowNumber);
+    }
+
+    private static void EnsureRowCount(int rowNumber, int maxRowCount)
+    {
+        if (rowNumber > maxRowCount)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyRows,
+                $"CSV exceeds maximum row limit of {maxRowCount}");
+        }
+    }
+
+    private static void EnsureRowSize(long rowSize, int? maxRowSize)
+    {
+        if (maxRowSize.HasValue && rowSize > maxRowSize.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.ParseError,
+                $"Row exceeds maximum size of {maxRowSize.Value:N0} bytes. Ensure rows have proper line endings.");
+        }
     }
 }
 

@@ -812,9 +812,9 @@ Csv.Write<T>()
 ```
 
 **Injection Protection Modes:**
-- **`None`** (default): No protection - use for trusted data only
+- **`EscapeWithQuote`** (default): Prefixes dangerous values with a single quote inside the quoted field
+- **`None`**: No protection - use only for trusted data that will not be opened in spreadsheet tools
 - **`Sanitize`**: Removes dangerous characters (`=`, `@`, `+`, `-`, `\t`, `\r`)
-- **`EscapeWithQuote`**: Wraps dangerous values in quotes and escapes internal quotes
 - **`EscapeWithTab`**: Prefixes dangerous characters with tab
 
 **Example:**
@@ -824,7 +824,7 @@ var writeOptions = new CsvWriteOptions
     InjectionProtection = CsvInjectionProtection.Sanitize
 };
 
-// Dangerous value: "=1+1" becomes "'=1+1" (prefixed with single quote)
+// Dangerous value: "=1+1" becomes "1+1" (dangerous prefix removed)
 Csv.WriteToText(records, writeOptions);
 ```
 
@@ -1814,10 +1814,18 @@ await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe))
 }
 ```
 
-Each row is yielded as a `CsvPipeRow` with column access via UTF-8 byte spans. Supports all standard `CsvReadOptions`:
+Each row is yielded as a `CsvPipeRow` with column access via UTF-8 byte spans. The `PipeReader` path honors the same delimiter, quote, and size/shape limits as other streaming readers:
 
 ```csharp
-var options = new CsvReadOptions { Delimiter = ';', EnableQuotedFields = true };
+var options = new CsvReadOptions
+{
+    Delimiter = ';',
+    EnableQuotedFields = true,
+    MaxColumnCount = 100,
+    MaxFieldSize = 10_000,
+    MaxRowSize = 512 * 1024,
+    MaxRowCount = 100_000
+};
 await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe, options, cancellationToken))
 {
     // row.RowNumber - 1-based row number
@@ -1831,6 +1839,45 @@ await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe, options, cancellatio
 - Parsing CSV from HTTP response streams
 - Processing CSV over network sockets
 - High-throughput pipeline architectures
+
+Fixed-width parsing has the same direct `PipeReader` entry point:
+
+```csharp
+var pipe = PipeReader.Create(networkStream);
+var options = new FixedWidthReadOptions
+{
+    TrackSourceLineNumbers = true,
+    MaxRecordCount = 100_000,
+    MaxInputSize = 100 * 1024 * 1024
+};
+
+await foreach (var row in FixedWidth.ReadFromPipeReaderAsync(pipe, options, cancellationToken))
+{
+    var id = row.GetField(0, 4).ToString();
+    var name = row.GetField(4, 10).ToString();
+    Console.WriteLine($"{row.RecordNumber} @ line {row.SourceLineNumber}: {id} {name}");
+}
+```
+
+For fixed-length records without line breaks, set `RecordLength` just like the other fixed-width readers:
+
+```csharp
+var options = new FixedWidthReadOptions { RecordLength = 32 };
+await foreach (var row in FixedWidth.ReadFromPipeReaderAsync(pipe, options, cancellationToken))
+{
+    var field = row.GetField(0, 8);
+}
+```
+
+Typed fixed-width binding also works directly from a `PipeReader`:
+
+```csharp
+await foreach (var employee in FixedWidth.Read<Employee>()
+    .FromPipeReaderAsync(pipe, cancellationToken))
+{
+    Console.WriteLine(employee.Name);
+}
+```
 
 ## 🔄 Format Converters
 

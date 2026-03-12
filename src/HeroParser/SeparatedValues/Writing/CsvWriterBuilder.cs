@@ -27,7 +27,7 @@ public sealed class CsvWriterBuilder<T>
     private CsvSerializeErrorHandler? onSerializeError;
 
     // Security and DoS protection
-    private CsvInjectionProtection injectionProtection = CsvInjectionProtection.None;
+    private CsvInjectionProtection injectionProtection = CsvInjectionProtection.EscapeWithQuote;
     private IReadOnlySet<char>? additionalDangerousChars;
     private long? maxOutputSize;
     private int? maxFieldSize;
@@ -612,7 +612,7 @@ public sealed class CsvWriterBuilder
     private Encoding encoding = Encoding.UTF8;
 
     // Security and DoS protection
-    private CsvInjectionProtection injectionProtection = CsvInjectionProtection.None;
+    private CsvInjectionProtection injectionProtection = CsvInjectionProtection.EscapeWithQuote;
     private IReadOnlySet<char>? additionalDangerousChars;
     private long? maxOutputSize;
     private int? maxFieldSize;

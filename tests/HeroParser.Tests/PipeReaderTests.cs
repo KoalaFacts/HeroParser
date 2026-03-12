@@ -135,6 +135,81 @@ public class PipeReaderTests
 
     #endregion
 
+    #region Security Limits
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_MaxRowCount_ThrowsWhenExceeded()
+    {
+        var pipe = CreatePipeFromString("a\r\nb\r\n");
+        var options = new CsvReadOptions { MaxRowCount = 1 };
+
+        var count = 0;
+        var ex = await Assert.ThrowsAsync<CsvException>(async () =>
+        {
+            await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, TestContext.Current.CancellationToken))
+            {
+                count++;
+            }
+        });
+
+        Assert.Equal(1, count);
+        Assert.Equal(CsvErrorCode.TooManyRows, ex.ErrorCode);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_MaxFieldSize_ThrowsWhenExceeded()
+    {
+        var pipe = CreatePipeFromString("short,toolong\r\n");
+        var options = new CsvReadOptions { MaxFieldSize = 4 };
+
+        var ex = await Assert.ThrowsAsync<CsvException>(async () =>
+        {
+            await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, TestContext.Current.CancellationToken))
+            {
+            }
+        });
+
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_MaxColumnCount_ThrowsWhenExceeded()
+    {
+        var pipe = CreatePipeFromString("a,b,c\r\n");
+        var options = new CsvReadOptions { MaxColumnCount = 2 };
+
+        var ex = await Assert.ThrowsAsync<CsvException>(async () =>
+        {
+            await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, TestContext.Current.CancellationToken))
+            {
+            }
+        });
+
+        Assert.Equal(CsvErrorCode.TooManyColumns, ex.ErrorCode);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_MaxRowSize_ThrowsWhenExceeded()
+    {
+        var pipe = CreatePipeFromString("abcdef");
+        var options = new CsvReadOptions { MaxRowSize = 3 };
+
+        var ex = await Assert.ThrowsAsync<CsvException>(async () =>
+        {
+            await foreach (var _ in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, TestContext.Current.CancellationToken))
+            {
+            }
+        });
+
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
+    }
+
+    #endregion
+
     #region Cancellation
 
     [Fact]

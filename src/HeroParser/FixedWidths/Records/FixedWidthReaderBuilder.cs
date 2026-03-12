@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths.Mapping;
@@ -518,6 +519,57 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     }
 
     /// <summary>
+    /// Reads records from a <see cref="PipeReader"/> asynchronously.
+    /// </summary>
+    /// <param name="reader">The pipe reader to read from.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An async enumerable of deserialized records.</returns>
+    public async IAsyncEnumerable<T> FromPipeReaderAsync(
+        PipeReader reader,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        var options = GetOptions();
+        var rows = FixedWidthFactory.ReadFromPipeReaderAsync(reader, options, cancellationToken);
+
+        if (readMapSource is not null)
+        {
+            var descriptor = readMapSource.BuildReadDescriptor();
+            var binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
+
+            await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+                rows,
+                binder,
+                options,
+                encoding,
+                progress,
+                progressIntervalRows,
+                cancellationToken).ConfigureAwait(false))
+            {
+                yield return record;
+            }
+
+            yield break;
+        }
+
+        await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+            rows,
+            options,
+            encoding,
+            culture,
+            onDeserializeError,
+            nullValues,
+            customConverters,
+            progress,
+            progressIntervalRows,
+            cancellationToken).ConfigureAwait(false))
+        {
+            yield return record;
+        }
+    }
+
+    /// <summary>
     /// Iterates over records from fixed-width text using a callback, reusing a single instance for minimal allocation.
     /// </summary>
     /// <remarks>
@@ -906,6 +958,20 @@ public sealed class FixedWidthReaderBuilder
     {
         ArgumentNullException.ThrowIfNull(stream);
         return FixedWidthFactory.CreateAsyncStreamReader(stream, GetOptions(), encoding, leaveOpen, bufferSize);
+    }
+
+    /// <summary>
+    /// Creates an async row stream from a <see cref="PipeReader"/> without buffering the entire payload into memory.
+    /// </summary>
+    /// <param name="reader">The pipe reader to read from.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An async enumerable of fixed-width rows.</returns>
+    public IAsyncEnumerable<FixedWidthPipeRow> FromPipeReaderAsync(
+        PipeReader reader,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        return FixedWidthFactory.ReadFromPipeReaderAsync(reader, GetOptions(), cancellationToken);
     }
 
     #endregion

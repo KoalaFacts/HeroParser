@@ -140,11 +140,14 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     }
 
     /// <summary>
-    /// Fast path for multi-char discriminator lookup. Gets the column span directly
-    /// without creating a CsvColumn struct. Returns false if index is out of bounds.
+    /// Gets the raw column span at the specified index without creating a <see cref="CsvColumn{T}"/> struct.
+    /// Returns <see langword="false"/> if the index is out of bounds.
     /// </summary>
+    /// <param name="index">Zero-based column index.</param>
+    /// <param name="span">When this method returns <see langword="true"/>, contains the column data.</param>
+    /// <returns><see langword="true"/> if the column exists; otherwise <see langword="false"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool TryGetColumnSpan(int index, out ReadOnlySpan<T> span)
+    public bool TryGetColumnSpan(int index, out ReadOnlySpan<T> span)
     {
         if ((uint)index >= (uint)columnCount)
         {

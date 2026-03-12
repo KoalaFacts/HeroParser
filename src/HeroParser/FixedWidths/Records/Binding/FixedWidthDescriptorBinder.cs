@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using HeroParser.FixedWidths.Mapping;
 using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Records.Binding;
@@ -51,6 +52,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
         var props = descriptor.Properties;
         var cultureLocal = culture;
         var nullVals = nullValues;
+        bool hasErrors = false;
 
         for (int i = 0; i < props.Length; i++)
         {
@@ -73,9 +75,20 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
                         row.RecordNumber,
                         row.SourceLineNumber);
                 }
+
+                if (prop.Validation is { HasAnyRule: true } validation && errors is not null)
+                {
+                    var fieldStr = new string(span);
+                    hasErrors |= PropertyValidationRunner.Validate(
+                        fieldStr, prop.Name, row.RecordNumber, i,
+                        columnName: prop.Name,
+                        validation.NotEmpty, validation.MinLength, validation.MaxLength,
+                        validation.RangeMin, validation.RangeMax, validation.Pattern,
+                        errors);
+                }
             }
         }
-        return true;
+        return !hasErrors;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

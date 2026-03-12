@@ -1,5 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
+using HeroParser.FixedWidths.Mapping;
 
 namespace HeroParser.FixedWidths.Writing;
 
@@ -27,7 +29,24 @@ public sealed class FixedWidthWriterBuilder<T>
     // Cached options - invalidated when any setting changes
     private FixedWidthWriteOptions? cachedOptions;
 
+    // Fluent map source (bridges constraint gap with FixedWidthMap<T> which requires class, new())
+    private IFixedWidthWriteMapSource<T>? writeMapSource;
+
     internal FixedWidthWriterBuilder() { }
+
+    /// <summary>
+    /// Configures a fluent map to control field layout and property extraction for writing.
+    /// </summary>
+    /// <param name="map">The map providing write templates.</param>
+    /// <returns>This builder for method chaining.</returns>
+    [RequiresUnreferencedCode("Fluent mapping uses reflection.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation.")]
+    public FixedWidthWriterBuilder<T> WithMap(IFixedWidthWriteMapSource<T> map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        writeMapSource = map;
+        return this;
+    }
 
     /// <summary>
     /// Sets the newline sequence for row endings.
@@ -266,7 +285,7 @@ public sealed class FixedWidthWriterBuilder<T>
         var options = GetOptions();
         using var stringWriter = new StringWriter();
         using var writer = new FixedWidthStreamWriter(stringWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         recordWriter.WriteRecords(writer, records);
         writer.Flush();
 
@@ -286,7 +305,7 @@ public sealed class FixedWidthWriterBuilder<T>
         var options = GetOptions();
         await using var stringWriter = new StringWriter();
         await using var writer = new FixedWidthStreamWriter(stringWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
 
@@ -307,7 +326,7 @@ public sealed class FixedWidthWriterBuilder<T>
         using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         using var streamWriter = new StreamWriter(fileStream, encoding);
         using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         recordWriter.WriteRecords(writer, records);
     }
 
@@ -325,7 +344,7 @@ public sealed class FixedWidthWriterBuilder<T>
         var options = GetOptions();
         using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         recordWriter.WriteRecords(writer, records);
     }
 
@@ -342,7 +361,7 @@ public sealed class FixedWidthWriterBuilder<T>
 
         var options = GetOptions();
         using var writer = new FixedWidthStreamWriter(textWriter, options, leaveOpen);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         recordWriter.WriteRecords(writer, records);
     }
 
@@ -368,7 +387,7 @@ public sealed class FixedWidthWriterBuilder<T>
 
         await using var streamWriter = new StreamWriter(fileStream, encoding);
         await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -388,7 +407,7 @@ public sealed class FixedWidthWriterBuilder<T>
         var options = GetOptions();
         await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -415,7 +434,7 @@ public sealed class FixedWidthWriterBuilder<T>
 
         await using var streamWriter = new StreamWriter(fileStream, encoding);
         await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -435,7 +454,7 @@ public sealed class FixedWidthWriterBuilder<T>
         var options = GetOptions();
         await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -461,7 +480,7 @@ public sealed class FixedWidthWriterBuilder<T>
         var options = GetOptions();
         await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -483,7 +502,7 @@ public sealed class FixedWidthWriterBuilder<T>
         var options = GetOptions();
         await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
-        var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
+        var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -491,6 +510,13 @@ public sealed class FixedWidthWriterBuilder<T>
     #endregion
 
     #region Private Helpers
+
+    private FixedWidthRecordWriter<T> GetRecordWriter(FixedWidthWriteOptions options)
+    {
+        return writeMapSource is not null
+            ? FixedWidthRecordWriter<T>.CreateFromTemplates(options, writeMapSource.BuildWriteTemplates())
+            : FixedWidthRecordWriterFactory.GetWriter<T>(options);
+    }
 
     private FixedWidthWriteOptions GetOptions()
     {

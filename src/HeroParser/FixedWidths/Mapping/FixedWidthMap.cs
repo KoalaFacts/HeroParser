@@ -21,7 +21,7 @@ namespace HeroParser.FixedWidths.Mapping;
 /// </remarks>
 [RequiresUnreferencedCode("FixedWidthMap uses expression trees and reflection for property binding. Use [FixedWidthGenerateBinder] for AOT/trimming support.")]
 [RequiresDynamicCode("FixedWidthMap uses expression trees and reflection. Use [FixedWidthGenerateBinder] for AOT support.")]
-public class FixedWidthMap<T> where T : class, new()
+public class FixedWidthMap<T> : IFixedWidthReadMapSource<T>, IFixedWidthWriteMapSource<T> where T : class, new()
 {
     private readonly List<MappedProperty> mappedProperties = [];
 

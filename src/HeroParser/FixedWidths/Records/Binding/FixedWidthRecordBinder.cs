@@ -261,6 +261,21 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         return new FixedWidthReadResult<T>(resultList, []);
     }
 
+    /// <summary>
+    /// Binds records using an externally-provided binder (e.g., from a fluent map).
+    /// </summary>
+    public static FixedWidthReadResult<T> Bind(
+        FixedWidthCharSpanReader reader,
+        IFixedWidthBinder<T> binder,
+        IProgress<FixedWidthProgress>? progress = null,
+        int progressIntervalRows = 1000)
+    {
+        var errors = new List<ValidationError>();
+        var records = BindWithTypedBinder(reader, binder, reader.EstimateRowCount(),
+            progress, progressIntervalRows, errors);
+        return new FixedWidthReadResult<T>(records, errors);
+    }
+
     private static List<T> BindWithTypedBinder(
         FixedWidthCharSpanReader reader,
         IFixedWidthBinder<T> binder,

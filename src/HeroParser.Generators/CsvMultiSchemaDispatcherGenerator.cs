@@ -218,9 +218,12 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
 
         if (allSingleChar && descriptor.DiscriminatorIndex >= 0)
         {
-            // Ultra-fast path: single char dispatch with TryGetColumnFirstChar
-            builder.AppendLine($"if (!row.TryGetColumnFirstChar({descriptor.DiscriminatorIndex}, out int charCode, out int length))");
+            // Ultra-fast path: single char dispatch via column span
+            builder.AppendLine($"if ((uint){descriptor.DiscriminatorIndex} >= (uint)row.ColumnCount)");
             builder.AppendLine("    return null;");
+            builder.AppendLine($"var discSpan = row[{descriptor.DiscriminatorIndex}].Span;");
+            builder.AppendLine("int length = discSpan.Length;");
+            builder.AppendLine("int charCode = length > 0 ? discSpan[0] : 0;");
             builder.AppendLine();
             builder.AppendLine("if (length != 1)");
             builder.AppendLine("    return null;");
@@ -254,9 +257,10 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         }
         else
         {
-            // Multi-char path: use TryGetColumnSpan and string comparison
-            builder.AppendLine($"if (!row.TryGetColumnSpan({descriptor.DiscriminatorIndex}, out var span))");
+            // Multi-char path: get column span for string comparison
+            builder.AppendLine($"if ((uint){descriptor.DiscriminatorIndex} >= (uint)row.ColumnCount)");
             builder.AppendLine("    return null;");
+            builder.AppendLine($"var span = row[{descriptor.DiscriminatorIndex}].Span;");
             builder.AppendLine();
 
             // Group mappings by length for efficient comparison

@@ -412,7 +412,7 @@ public static partial class FixedWidth
     /// <returns>An async enumerable of deserialized records.</returns>
     /// <remarks>
     /// This method streams records directly from <see cref="System.IO.Pipelines"/> sources without buffering
-    /// the entire payload in memory. Record framing on this path follows <see cref="ReadFromPipeReaderAsync(System.IO.Pipelines.PipeReader, HeroParser.FixedWidths.FixedWidthReadOptions?, CancellationToken)"/>.
+    /// the entire payload in memory. Record framing on this path follows <see cref="ReadFromPipeReaderAsync(PipeReader, HeroParser.FixedWidths.FixedWidthReadOptions?, CancellationToken)"/>.
     /// </remarks>
     public static async IAsyncEnumerable<T> DeserializeRecordsAsync<T>(
         PipeReader reader,

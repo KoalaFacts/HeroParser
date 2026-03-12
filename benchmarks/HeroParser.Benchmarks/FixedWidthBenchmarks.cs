@@ -49,9 +49,10 @@ public class FixedWidthBenchmarks
         var sb = new StringBuilder();
         for (int i = 0; i < rows; i++)
         {
+            decimal amount = (i % 1_000_000) / 100m;
             sb.Append($"{i:D10}");                      // ID: 10 chars
             sb.Append($"{"Name" + i,-20}");             // Name: 20 chars left-aligned
-            sb.Append($"{(i * 100.5m):0000000.00}");    // Amount: 10 chars
+            sb.Append($"{amount:0000000.00}");          // Amount: 10 chars
             sb.Append($"{DateTime.Today:yyyy-MM-dd}");  // Date: 10 chars
             sb.AppendLine();
         }
@@ -67,9 +68,10 @@ public class FixedWidthBenchmarks
         var sb = new StringBuilder();
         for (int i = 0; i < rows; i++)
         {
+            decimal amount = (i % 1_000_000) / 100m;
             sb.Append($"{i:D10}");                      // ID: 10 chars
             sb.Append($"{"Name" + i,-20}");             // Name: 20 chars left-aligned
-            sb.Append($"{(i * 100.5m):0000000.00}");    // Amount: 10 chars
+            sb.Append($"{amount:0000000.00}");          // Amount: 10 chars
             sb.Append($"{DateTime.Today:yyyy-MM-dd}");  // Date: 10 chars
             // No newline - records are identified by fixed length
         }

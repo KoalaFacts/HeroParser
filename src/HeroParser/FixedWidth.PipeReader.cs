@@ -69,7 +69,7 @@ public static partial class FixedWidth
                         {
                             if (options.TrackSourceLineNumbers)
                             {
-                                sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData.ToArray());
+                                sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData);
                             }
 
                             remainingRowsToSkip--;
@@ -80,13 +80,12 @@ public static partial class FixedWidth
                         EnsureRecordCount(recordCount, options.MaxRecordCount);
 
                         int rowStartLine = options.TrackSourceLineNumbers ? sourceLineNumber : 0;
-                        var rowBytes = rowData.ToArray();
                         if (options.TrackSourceLineNumbers)
                         {
-                            sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowBytes);
+                            sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData);
                         }
 
-                        yield return new FixedWidthPipeRow(rowBytes, recordCount, rowStartLine, options);
+                        yield return CreatePipeRow(rowData, recordCount, rowStartLine, options);
                     }
 
                     if (result.IsCompleted && buffer.Length > 0 && remainingRowsToSkip <= 0)
@@ -112,9 +111,7 @@ public static partial class FixedWidth
                             continue;
                         }
 
-                        var rowBytes = rowData.ToArray();
-
-                        if (rowBytes.Length == 0 && options.SkipEmptyLines)
+                        if (rowData.Length == 0 && options.SkipEmptyLines)
                         {
                             if (options.TrackSourceLineNumbers)
                             {
@@ -124,7 +121,9 @@ public static partial class FixedWidth
                             continue;
                         }
 
-                        if (options.CommentCharacter is { } commentChar && rowBytes.Length > 0 && rowBytes[0] == (byte)commentChar)
+                        if (options.CommentCharacter is { } commentChar &&
+                            TryGetFirstByte(rowData, out byte firstByte) &&
+                            firstByte == (byte)commentChar)
                         {
                             if (options.TrackSourceLineNumbers)
                             {
@@ -136,7 +135,7 @@ public static partial class FixedWidth
 
                         recordCount++;
                         EnsureRecordCount(recordCount, options.MaxRecordCount);
-                        yield return new FixedWidthPipeRow(rowBytes, recordCount, rowStartLine, options);
+                        yield return CreatePipeRow(rowData, recordCount, rowStartLine, options);
 
                         if (options.TrackSourceLineNumbers)
                         {
@@ -285,6 +284,35 @@ public static partial class FixedWidth
             FixedWidthErrorCode.InvalidRecordLength,
             message,
             recordNumber);
+    }
+
+    private static FixedWidthPipeRow CreatePipeRow(
+        ReadOnlySequence<byte> rowData,
+        int recordNumber,
+        int sourceLineNumber,
+        FixedWidthReadOptions options)
+    {
+        int rowLength = checked((int)rowData.Length);
+        if (rowLength == 0)
+        {
+            return new FixedWidthPipeRow([], recordNumber, sourceLineNumber, options);
+        }
+
+        var rowBytes = GC.AllocateUninitializedArray<byte>(rowLength);
+        rowData.CopyTo(rowBytes);
+        return new FixedWidthPipeRow(rowBytes, recordNumber, sourceLineNumber, options);
+    }
+
+    private static bool TryGetFirstByte(ReadOnlySequence<byte> rowData, out byte value)
+    {
+        if (rowData.IsEmpty)
+        {
+            value = default;
+            return false;
+        }
+
+        value = rowData.First.Span[0];
+        return true;
     }
 }
 

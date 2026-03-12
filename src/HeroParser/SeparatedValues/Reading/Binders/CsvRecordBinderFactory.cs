@@ -74,6 +74,25 @@ public static class CsvRecordBinderFactory
             $"No byte binder found for type {typeof(T).Name}. Add [CsvGenerateBinder] attribute to the type.");
     }
 
+    internal static bool TryGetByteBinder<T>(CsvRecordOptions? options, out ICsvBinder<byte, T>? binder)
+        where T : new()
+    {
+        if (byteBinderFactories.TryGetValue(typeof(T), out var binderFactory))
+        {
+            if (binderFactory is not Func<CsvRecordOptions?, ICsvBinder<byte, T>> typedFactory)
+            {
+                throw new InvalidOperationException(
+                    $"Byte binder factory for type {typeof(T).Name} was registered with incorrect delegate type.");
+            }
+
+            binder = typedFactory(options);
+            return true;
+        }
+
+        binder = null;
+        return false;
+    }
+
     #endregion
 
     #region Descriptor Registration

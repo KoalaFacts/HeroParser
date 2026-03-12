@@ -4,6 +4,8 @@ using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Mapping;
 using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Records;
+using HeroParser.SeparatedValues.Reading.Shared;
 using System.IO.Pipelines;
 using System.Text;
 
@@ -60,6 +62,22 @@ public class CsvPipeReaderBenchmarks
         return total;
     }
 
+    [Benchmark]
+    public async Task<int> ParseFromPipeSequenceReader()
+    {
+        using var stream = new MemoryStream(csvUtf8, writable: false);
+        var pipeReader = PipeReader.Create(stream);
+        await using var reader = Csv.CreatePipeSequenceReader(pipeReader, options);
+
+        int total = 0;
+        while (await reader.MoveNextAsync())
+        {
+            total += reader.Current.ColumnCount;
+        }
+
+        return total;
+    }
+
     private static string GenerateCsv(int rows, int columns)
     {
         var sb = new StringBuilder();
@@ -79,6 +97,104 @@ public class CsvPipeReaderBenchmarks
         }
 
         return sb.ToString();
+    }
+}
+
+[MemoryDiagnoser]
+[SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
+public class CsvTypedPipeReaderBenchmarks
+{
+    private string csvData = null!;
+    private byte[] csvUtf8 = null!;
+    private CsvReadOptions parserOptions = null!;
+    private CsvRecordOptions recordOptions = null!;
+
+    [Params(10_000, 100_000)]
+    public int Rows { get; set; }
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        csvData = GenerateTypedCsv(Rows);
+        csvUtf8 = Encoding.UTF8.GetBytes(csvData);
+        parserOptions = new CsvReadOptions
+        {
+            MaxColumnCount = 4,
+            MaxRowCount = Rows + 100
+        };
+        recordOptions = new CsvRecordOptions
+        {
+            HasHeaderRow = true
+        };
+    }
+
+    [Benchmark(Baseline = true)]
+    public int BindFromText()
+    {
+        using var reader = Csv.DeserializeRecords<CsvTypedPipeRecord>(csvData, recordOptions, parserOptions);
+        int total = 0;
+        foreach (var record in reader)
+        {
+            total += record.Age + record.Name.Length;
+        }
+
+        return total;
+    }
+
+    [Benchmark]
+    public async Task<int> BindFromPipeReader_Static()
+    {
+        using var stream = new MemoryStream(csvUtf8, writable: false);
+        var reader = PipeReader.Create(stream);
+
+        int total = 0;
+        await foreach (var record in Csv.DeserializeRecordsAsync<CsvTypedPipeRecord>(reader, recordOptions, parserOptions))
+        {
+            total += record.Age + record.Name.Length;
+        }
+
+        return total;
+    }
+
+    [Benchmark]
+    public async Task<int> BindFromPipeReader_Builder()
+    {
+        using var stream = new MemoryStream(csvUtf8, writable: false);
+        var reader = PipeReader.Create(stream);
+
+        int total = 0;
+        await foreach (var record in Csv.Read<CsvTypedPipeRecord>()
+            .WithMaxRows(Rows + 100)
+            .FromPipeReaderAsync(reader))
+        {
+            total += record.Age + record.Name.Length;
+        }
+
+        return total;
+    }
+
+    private static string GenerateTypedCsv(int rows)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Name,Age");
+        for (int i = 1; i <= rows; i++)
+        {
+            sb.Append("Name");
+            sb.Append(i);
+            sb.Append(',');
+            sb.Append(i % 100);
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    [CsvGenerateBinder]
+    public sealed class CsvTypedPipeRecord
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public int Age { get; set; }
     }
 }
 

@@ -13,7 +13,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
 {
     private readonly FixedWidthRecordDescriptor<T> descriptor;
     private readonly CultureInfo culture;
-    private readonly HashSet<string>? nullValues;
+    private readonly string[]? nullValues;
 
     /// <summary>
     /// Creates a new descriptor-based binder.
@@ -26,7 +26,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
         this.descriptor = descriptor;
         this.culture = culture ?? CultureInfo.InvariantCulture;
         this.nullValues = nullValues is { Count: > 0 }
-            ? new HashSet<string>(nullValues, StringComparer.Ordinal)
+            ? [.. nullValues]
             : null;
     }
 
@@ -92,9 +92,8 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
 
                 if (prop.Validation is { HasAnyRule: true } validation)
                 {
-                    var fieldStr = new string(span);
                     hasErrors |= PropertyValidationRunner.Validate(
-                        fieldStr, prop.Name, row.RecordNumber, prop.Start,
+                        span, prop.Name, row.RecordNumber, prop.Start,
                         columnName: null,
                         validation.NotEmpty, validation.MinLength, validation.MaxLength,
                         validation.RangeMin, validation.RangeMax, validation.Pattern,
@@ -132,8 +131,14 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsNullValue(ReadOnlySpan<char> value, HashSet<string> nullValues)
+    private static bool IsNullValue(ReadOnlySpan<char> value, string[] nullValues)
     {
-        return nullValues.Contains(new string(value));
+        foreach (var nullValue in nullValues)
+        {
+            if (value.SequenceEqual(nullValue.AsSpan()))
+                return true;
+        }
+
+        return false;
     }
 }

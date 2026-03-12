@@ -31,6 +31,9 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     /// Beyond this, we allocate an array (rare case for very wide CSVs).
     /// </summary>
     private const int MAX_STACK_ALLOC_COLUMNS = 128;
+    private const int MAX_DIRECT_COLUMN_ENDS_COLUMNS = 32;
+    private static readonly byte[] emptyBuffer = [];
+    private static readonly int[] emptyColumnEnds = [-1];
 
     private readonly ICsvBinder<byte, T> byteBinder;
     private readonly byte delimiterByte;
@@ -96,12 +99,13 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
         {
             return new PooledByteRowConversion(
                 new CsvRow<byte>(
-                    [],
-                    [-1, 0],
+                    emptyBuffer,
+                    emptyColumnEnds,
                     0,
                     charRow.LineNumber,
                     charRow.SourceLineNumber,
                     trimFields: false),
+                null,
                 null);
         }
 
@@ -128,8 +132,11 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
         var rentedBuffer = ArrayPool<byte>.Shared.Rent(totalBytes);
         var buffer = rentedBuffer.AsSpan(0, totalBytes);
 
-        // columnEnds must be a regular array (CsvRow stores reference)
-        var columnEnds = new int[columnCount + 1];
+        int[]? rentedColumnEnds = null;
+        var columnEndsArray = columnCount <= MAX_DIRECT_COLUMN_ENDS_COLUMNS
+            ? new int[columnCount + 1]
+            : rentedColumnEnds = ArrayPool<int>.Shared.Rent(columnCount + 1);
+        var columnEnds = columnEndsArray.AsSpan(0, columnCount + 1);
         columnEnds[0] = -1; // Sentinel
 
         // Second pass: encode directly from char spans to buffer
@@ -163,7 +170,7 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
             charRow.SourceLineNumber,
             trimFields: false);
 
-        return new PooledByteRowConversion(byteRow, rentedBuffer);
+        return new PooledByteRowConversion(byteRow, rentedBuffer, rentedColumnEnds);
     }
 
     /// <summary>
@@ -174,12 +181,14 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     {
         public readonly CsvRow<byte> Row;
         private readonly byte[]? rentedBuffer;
+        private readonly int[]? rentedColumnEnds;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public PooledByteRowConversion(CsvRow<byte> row, byte[]? rentedBuffer)
+        public PooledByteRowConversion(CsvRow<byte> row, byte[]? rentedBuffer, int[]? rentedColumnEnds)
         {
             Row = row;
             this.rentedBuffer = rentedBuffer;
+            this.rentedColumnEnds = rentedColumnEnds;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -188,6 +197,11 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
             if (rentedBuffer != null)
             {
                 ArrayPool<byte>.Shared.Return(rentedBuffer);
+            }
+
+            if (rentedColumnEnds != null)
+            {
+                ArrayPool<int>.Shared.Return(rentedColumnEnds, clearArray: false);
             }
         }
     }

@@ -1,3 +1,4 @@
+using System.IO.Pipelines;
 using HeroParser.SeparatedValues.Reading.Streaming;
 
 namespace HeroParser.SeparatedValues.Reading.Rows;
@@ -121,6 +122,22 @@ public sealed partial class CsvRowReaderBuilder
         var options = GetOptions();
         options.Validate();
         return new CsvAsyncStreamReader(stream, options, leaveOpen, bufferSize, skipRows);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader from a <see cref="PipeReader"/> without copying each row.
+    /// </summary>
+    /// <param name="reader">The pipe reader to read from.</param>
+    /// <returns>
+    /// A <see cref="CsvPipeSequenceReader"/> whose current row is valid until the next
+    /// <see cref="CsvPipeSequenceReader.MoveNextAsync(CancellationToken)"/> call.
+    /// </returns>
+    public CsvPipeSequenceReader FromPipeReaderAsync(PipeReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        var options = GetOptions();
+        options.Validate();
+        return new CsvPipeSequenceReader(reader, options, skipRows);
     }
 
     private void SkipInitialRows(ref CsvRowReader<char> reader)

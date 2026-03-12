@@ -15,7 +15,12 @@ public ref struct CsvRecordReader<TElement, T>
     where T : new()
 {
     private CsvRowReader<TElement> reader;
-    private readonly ICsvBinder<TElement, T> binder;
+    private CsvRowReader<byte> byteReader;
+    private readonly ICsvBinder<TElement, T>? binder;
+    private readonly ICsvBinder<byte, T>? byteBinder;
+    // Keeps encoded text alive for byte-backed string readers.
+    private readonly byte[]? ownedBuffer;
+    private readonly bool useByteReader;
     private readonly int skipRows;
     private readonly IProgress<CsvProgress>? progress;
     private readonly int progressInterval;
@@ -28,7 +33,11 @@ public ref struct CsvRecordReader<TElement, T>
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000)
     {
         this.reader = reader;
+        byteReader = default;
         this.binder = binder;
+        byteBinder = null;
+        ownedBuffer = null;
+        useByteReader = false;
         this.skipRows = skipRows;
         this.progress = progress;
         this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
@@ -36,6 +45,46 @@ public ref struct CsvRecordReader<TElement, T>
         rowNumber = 0;
         skippedCount = 0;
         dataRowCount = 0;
+    }
+
+    private CsvRecordReader(
+        CsvRowReader<byte> byteReader,
+        ICsvBinder<byte, T> byteBinder,
+        byte[] ownedBuffer,
+        int skipRows = 0,
+        IProgress<CsvProgress>? progress = null,
+        int progressInterval = 1000)
+    {
+        reader = default;
+        this.byteReader = byteReader;
+        binder = default;
+        this.byteBinder = byteBinder;
+        this.ownedBuffer = ownedBuffer;
+        useByteReader = true;
+        this.skipRows = skipRows;
+        this.progress = progress;
+        this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
+        Current = default!;
+        rowNumber = 0;
+        skippedCount = 0;
+        dataRowCount = 0;
+    }
+
+    internal static CsvRecordReader<char, T> CreateByteBacked(
+        CsvRowReader<byte> byteReader,
+        ICsvBinder<byte, T> byteBinder,
+        byte[] ownedBuffer,
+        int skipRows = 0,
+        IProgress<CsvProgress>? progress = null,
+        int progressInterval = 1000)
+    {
+        return new CsvRecordReader<char, T>(
+            byteReader,
+            byteBinder,
+            ownedBuffer,
+            skipRows,
+            progress,
+            progressInterval);
     }
 
     /// <summary>Gets the current mapped record.</summary>
@@ -52,6 +101,16 @@ public ref struct CsvRecordReader<TElement, T>
     /// </summary>
     public bool MoveNext()
     {
+        if (useByteReader)
+        {
+            return MoveNextByteReader();
+        }
+
+        return MoveNextGenericReader();
+    }
+
+    private bool MoveNextGenericReader()
+    {
         while (reader.MoveNext())
         {
             rowNumber++;
@@ -64,15 +123,53 @@ public ref struct CsvRecordReader<TElement, T>
                 continue;
             }
 
-            if (binder.NeedsHeaderResolution)
+            if (binder!.NeedsHeaderResolution)
             {
                 binder.BindHeader(row, rowNumber);
                 continue;
             }
 
-            if (!binder.TryBind(row, rowNumber, out var result, errors))
+            if (!binder!.TryBind(row, rowNumber, out var result, errors))
             {
                 // Row was skipped due to error handling
+                continue;
+            }
+
+            dataRowCount++;
+            ReportProgress();
+
+            Current = result;
+            return true;
+        }
+
+        ReportFinalProgress();
+        Current = default!;
+        return false;
+    }
+
+    private bool MoveNextByteReader()
+    {
+        _ = ownedBuffer;
+
+        while (byteReader.MoveNext())
+        {
+            rowNumber++;
+            var row = byteReader.Current;
+
+            if (skippedCount < skipRows)
+            {
+                skippedCount++;
+                continue;
+            }
+
+            if (byteBinder!.NeedsHeaderResolution)
+            {
+                byteBinder.BindHeader(row, rowNumber);
+                continue;
+            }
+
+            if (!byteBinder.TryBind(row, rowNumber, out var result, errors))
+            {
                 continue;
             }
 
@@ -115,5 +212,15 @@ public ref struct CsvRecordReader<TElement, T>
     }
 
     /// <summary>Releases pooled buffers from the underlying CSV reader.</summary>
-    public readonly void Dispose() => reader.Dispose();
+    public readonly void Dispose()
+    {
+        if (useByteReader)
+        {
+            byteReader.Dispose();
+        }
+        else
+        {
+            reader.Dispose();
+        }
+    }
 }

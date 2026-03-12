@@ -3,6 +3,7 @@ using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Reading.Rows;
 
 namespace HeroParser;
@@ -45,11 +46,12 @@ public static partial class Csv
         options ??= CsvReadOptions.Default;
         options.Validate();
 
-        var delimiter = (byte)options.Delimiter;
         var quote = (byte)options.Quote;
+        var escape = options.EscapeCharacter is { } escapeChar ? (byte)escapeChar : (byte?)null;
         var enableQuotes = options.EnableQuotedFields;
         int rowNumber = 0;
         int? maxRowSize = options.MaxRowSize;
+        bool bomProcessed = false;
 
         try
         {
@@ -60,20 +62,19 @@ public static partial class Csv
                 ReadResult result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
                 ReadOnlySequence<byte> buffer = result.Buffer;
 
-                while (TryReadRow(ref buffer, quote, enableQuotes, out var rowData))
+                if (!TryProcessUtf8Bom(ref buffer, result.IsCompleted, ref bomProcessed))
+                {
+                    reader.AdvanceTo(buffer.Start, buffer.End);
+                    continue;
+                }
+
+                while (TryReadRow(ref buffer, quote, escape, enableQuotes, out var rowData))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     EnsureRowSize(rowData.Length, maxRowSize);
                     rowNumber++;
                     EnsureRowCount(rowNumber, options.MaxRowCount);
-                    yield return ParsePipeRow(
-                        rowData.ToArray(),
-                        delimiter,
-                        quote,
-                        enableQuotes,
-                        rowNumber,
-                        options.MaxColumnCount,
-                        options.MaxFieldSize);
+                    yield return ParsePipeRow(rowData, options, rowNumber, quote, escape);
                 }
 
                 if (!result.IsCompleted)
@@ -91,14 +92,7 @@ public static partial class Csv
                         EnsureRowSize(buffer.Length, maxRowSize);
                         rowNumber++;
                         EnsureRowCount(rowNumber, options.MaxRowCount);
-                        yield return ParsePipeRow(
-                            buffer.ToArray(),
-                            delimiter,
-                            quote,
-                            enableQuotes,
-                            rowNumber,
-                            options.MaxColumnCount,
-                            options.MaxFieldSize);
+                        yield return ParsePipeRow(buffer, options, rowNumber, quote, escape);
                     }
                     break;
                 }
@@ -110,38 +104,66 @@ public static partial class Csv
         }
     }
 
-    private static bool TryReadRow(
+    internal static bool TryReadRow(
         ref ReadOnlySequence<byte> buffer,
         byte quote,
+        byte? escape,
         bool enableQuotes,
         out ReadOnlySequence<byte> rowData)
     {
         var reader = new SequenceReader<byte>(buffer);
         bool inQuotes = false;
+        bool skipNext = false;
 
         while (reader.Remaining > 0)
         {
             if (!reader.TryRead(out byte current))
                 break;
 
+            if (skipNext)
+            {
+                skipNext = false;
+                continue;
+            }
+
+            if (escape.HasValue && current == escape.Value && reader.Remaining > 0)
+            {
+                skipNext = true;
+                continue;
+            }
+
             if (enableQuotes && current == quote)
             {
+                if (inQuotes && reader.TryPeek(out byte next) && next == quote)
+                {
+                    reader.Advance(1);
+                    continue;
+                }
+
                 inQuotes = !inQuotes;
                 continue;
+            }
+
+            if (!inQuotes && current == (byte)'\r')
+            {
+                long consumed = reader.Consumed;
+                bool hasLf = reader.TryPeek(out byte next) && next == (byte)'\n';
+                if (hasLf)
+                {
+                    reader.Advance(1);
+                    consumed++;
+                }
+
+                long rowEnd = consumed - (hasLf ? 2 : 1);
+                rowData = buffer.Slice(0, rowEnd);
+                buffer = buffer.Slice(consumed);
+                return true;
             }
 
             if (!inQuotes && current == (byte)'\n')
             {
                 long consumed = reader.Consumed;
-                // Determine row end (exclude the \n, and optionally \r before it)
-                long rowEnd = consumed - 1; // exclude \n
-                if (rowEnd > 0)
-                {
-                    var slice = buffer.Slice(0, rowEnd);
-                    if (slice.Length > 0 && slice.Slice(slice.Length - 1).First.Span[0] == (byte)'\r')
-                        rowEnd--;
-                }
-
+                long rowEnd = consumed - 1;
                 rowData = buffer.Slice(0, rowEnd);
                 buffer = buffer.Slice(consumed);
                 return true;
@@ -153,63 +175,65 @@ public static partial class Csv
     }
 
     private static CsvPipeRow ParsePipeRow(
-        byte[] rowBytes,
-        byte delimiter,
-        byte quote,
-        bool enableQuotes,
+        ReadOnlySequence<byte> rowData,
+        CsvReadOptions options,
         int rowNumber,
-        int maxColumnCount,
-        int? maxFieldSize)
+        byte quote,
+        byte? escape)
     {
-        var columnStarts = new List<int>();
-        var columnLengths = new List<int>();
-
-        int start = 0;
-        bool inQuotes = false;
-
-        void AddColumn(int endExclusive)
+        int rowLength = checked((int)rowData.Length);
+        if (rowLength == 0)
         {
-            int fieldLength = endExclusive - start;
-            if (maxFieldSize.HasValue && fieldLength > maxFieldSize.Value)
-            {
-                throw new CsvException(
-                    CsvErrorCode.ParseError,
-                    $"Field length {fieldLength} exceeds maximum allowed length of {maxFieldSize.Value}");
-            }
-
-            if (columnStarts.Count + 1 > maxColumnCount)
-            {
-                throw new CsvException(
-                    CsvErrorCode.TooManyColumns,
-                    $"Row has more than {maxColumnCount} columns");
-            }
-
-            columnStarts.Add(start);
-            columnLengths.Add(fieldLength);
+            return CreateEmptyPipeRow(rowNumber, options.TrimFields, quote, escape);
         }
 
-        for (int i = 0; i < rowBytes.Length; i++)
+        var rowBytes = GC.AllocateUninitializedArray<byte>(rowLength);
+        rowData.CopyTo(rowBytes);
+
+        int[] scratchColumnEnds = ArrayPool<int>.Shared.Rent(options.MaxColumnCount + 1);
+        try
         {
-            if (enableQuotes && rowBytes[i] == quote)
+            var parseResult = CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(
+                rowBytes,
+                options,
+                scratchColumnEnds.AsSpan(0, options.MaxColumnCount + 1));
+
+            if (parseResult.ColumnCount == 0)
             {
-                inQuotes = !inQuotes;
-                continue;
+                return CreateEmptyPipeRow(rowNumber, options.TrimFields, quote, escape);
             }
 
-            if (!inQuotes && rowBytes[i] == delimiter)
-            {
-                AddColumn(i);
-                start = i + 1;
-            }
+            var columnEnds = GC.AllocateUninitializedArray<int>(parseResult.ColumnCount + 1);
+            scratchColumnEnds.AsSpan(0, parseResult.ColumnCount + 1).CopyTo(columnEnds);
+
+            return new CsvPipeRow(
+                rowBytes,
+                columnEnds,
+                parseResult.ColumnCount,
+                rowNumber,
+                options.TrimFields,
+                quote,
+                escape);
         }
-
-        // Last column
-        AddColumn(rowBytes.Length);
-
-        return new CsvPipeRow(rowBytes, [.. columnStarts], [.. columnLengths], rowNumber);
+        finally
+        {
+            ArrayPool<int>.Shared.Return(scratchColumnEnds, clearArray: false);
+        }
     }
 
-    private static void EnsureRowCount(int rowNumber, int maxRowCount)
+    private static CsvPipeRow CreateEmptyPipeRow(int rowNumber, bool trimFields, byte quote, byte? escape)
+    {
+        return new CsvPipeRow(
+            [],
+            [-1, 0],
+            1,
+            rowNumber,
+            trimFields,
+            quote,
+            escape);
+    }
+
+    internal static void EnsureRowCount(int rowNumber, int maxRowCount)
     {
         if (rowNumber > maxRowCount)
         {
@@ -219,7 +243,7 @@ public static partial class Csv
         }
     }
 
-    private static void EnsureRowSize(long rowSize, int? maxRowSize)
+    internal static void EnsureRowSize(long rowSize, int? maxRowSize)
     {
         if (maxRowSize.HasValue && rowSize > maxRowSize.Value)
         {
@@ -240,8 +264,11 @@ public static partial class Csv
 public readonly struct CsvPipeRow
 {
     private readonly byte[] data;
-    private readonly int[] columnStarts;
-    private readonly int[] columnLengths;
+    private readonly int[] columnEnds;
+    private readonly int columnCount;
+    private readonly bool trimFields;
+    private readonly byte quote;
+    private readonly byte? escape;
 
     /// <summary>
     /// Gets the 1-based row number.
@@ -251,13 +278,23 @@ public readonly struct CsvPipeRow
     /// <summary>
     /// Gets the number of columns in this row.
     /// </summary>
-    public int ColumnCount => columnStarts.Length;
+    public int ColumnCount => columnCount;
 
-    internal CsvPipeRow(byte[] data, int[] columnStarts, int[] columnLengths, int rowNumber)
+    internal CsvPipeRow(
+        byte[] data,
+        int[] columnEnds,
+        int columnCount,
+        int rowNumber,
+        bool trimFields,
+        byte quote,
+        byte? escape)
     {
         this.data = data;
-        this.columnStarts = columnStarts;
-        this.columnLengths = columnLengths;
+        this.columnEnds = columnEnds;
+        this.columnCount = columnCount;
+        this.trimFields = trimFields;
+        this.quote = quote;
+        this.escape = escape;
         RowNumber = rowNumber;
     }
 
@@ -270,11 +307,42 @@ public readonly struct CsvPipeRow
     {
         get
         {
-            if ((uint)index >= (uint)columnStarts.Length)
-                throw new IndexOutOfRangeException($"Column index {index} is out of range. Row has {columnStarts.Length} columns.");
+            if ((uint)index >= (uint)columnCount)
+                throw new IndexOutOfRangeException($"Column index {index} is out of range. Row has {columnCount} columns.");
 
-            return new CsvPipeColumn(data, columnStarts[index], columnLengths[index]);
+            int start = columnEnds[index] + 1;
+            int end = columnEnds[index + 1];
+
+            if (trimFields)
+            {
+                (start, end) = TrimBounds(start, end);
+            }
+
+            return new CsvPipeColumn(data, start, end - start, quote, escape);
         }
+    }
+
+    private (int start, int end) TrimBounds(int start, int end)
+    {
+        const byte space = (byte)' ';
+        const byte tab = (byte)'\t';
+
+        if (end - start >= 2 && data[start] == quote && data[end - 1] == quote)
+        {
+            return (start, end);
+        }
+
+        while (start < end && (data[start] == space || data[start] == tab))
+        {
+            start++;
+        }
+
+        while (end > start && (data[end - 1] == space || data[end - 1] == tab))
+        {
+            end--;
+        }
+
+        return (start, end);
     }
 }
 
@@ -286,12 +354,16 @@ public readonly struct CsvPipeColumn
     private readonly byte[] data;
     private readonly int start;
     private readonly int length;
+    private readonly byte quote;
+    private readonly byte? escape;
 
-    internal CsvPipeColumn(byte[] data, int start, int length)
+    internal CsvPipeColumn(byte[] data, int start, int length, byte quote, byte? escape)
     {
         this.data = data;
         this.start = start;
         this.length = length;
+        this.quote = quote;
+        this.escape = escape;
     }
 
     /// <summary>
@@ -305,14 +377,65 @@ public readonly struct CsvPipeColumn
     public string ToUnquotedString()
     {
         var span = Span;
-        if (span.Length >= 2 && span[0] == (byte)'"' && span[^1] == (byte)'"')
+        if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
         {
             span = span[1..^1];
-            // Handle escaped quotes
-            var str = Encoding.UTF8.GetString(span);
-            return str.Replace("\"\"", "\"");
         }
-        return Encoding.UTF8.GetString(span);
+
+        if (span.IsEmpty)
+            return string.Empty;
+
+        var decoded = Encoding.UTF8.GetString(span);
+        char quoteChar = (char)quote;
+
+        if (escape is not null)
+        {
+            char escapeChar = (char)escape.Value;
+            if (!decoded.AsSpan().Contains(escapeChar) && !decoded.AsSpan().Contains(quoteChar))
+                return decoded;
+
+            var result = new StringBuilder(decoded.Length);
+            for (int i = 0; i < decoded.Length; i++)
+            {
+                char current = decoded[i];
+                if (current == escapeChar && i + 1 < decoded.Length)
+                {
+                    i++;
+                    result.Append(decoded[i]);
+                }
+                else if (current == quoteChar && i + 1 < decoded.Length && decoded[i + 1] == quoteChar)
+                {
+                    result.Append(quoteChar);
+                    i++;
+                }
+                else
+                {
+                    result.Append(current);
+                }
+            }
+
+            return result.ToString();
+        }
+
+        if (!decoded.AsSpan().Contains(quoteChar))
+            return decoded;
+
+        var unescaped = new StringBuilder(decoded.Length);
+        for (int i = 0; i < decoded.Length; i++)
+        {
+            char current = decoded[i];
+            if (current == quoteChar && i + 1 < decoded.Length && decoded[i + 1] == quoteChar)
+            {
+                unescaped.Append(quoteChar);
+                i++;
+            }
+            else
+            {
+                unescaped.Append(current);
+            }
+        }
+
+        return unescaped.ToString();
     }
 
     /// <summary>

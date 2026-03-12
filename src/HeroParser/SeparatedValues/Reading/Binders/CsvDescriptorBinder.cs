@@ -19,7 +19,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
     private readonly CultureInfo culture;
     private readonly bool caseSensitiveHeaders;
     private readonly bool allowMissingColumns;
-    private readonly HashSet<string>? nullValues;
+    private readonly string[]? nullValues;
 
     // Resolved state after header processing
     private CsvPropertyDescriptor<T>[]? resolvedProperties;
@@ -37,7 +37,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
         caseSensitiveHeaders = options?.CaseSensitiveHeaders ?? false;
         allowMissingColumns = options?.AllowMissingColumns ?? false;
         nullValues = options?.NullValues is { Count: > 0 }
-            ? new HashSet<string>(options.NullValues, StringComparer.Ordinal)
+            ? [.. options.NullValues]
             : null;
 
         // If not using header binding, resolve immediately
@@ -58,11 +58,11 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
 
         var properties = descriptor.Properties;
         var indices = new int[properties.Length];
-        var comparer = caseSensitiveHeaders ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+        var comparison = caseSensitiveHeaders ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
         for (int i = 0; i < properties.Length; i++)
         {
-            indices[i] = FindHeaderIndex(headerRow, properties[i].Name, comparer);
+            indices[i] = FindHeaderIndex(headerRow, properties[i].Name, comparison);
 
             if (indices[i] < 0 && properties[i].IsRequired && !allowMissingColumns)
             {
@@ -80,12 +80,13 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int FindHeaderIndex(CsvRow<char> headerRow, string name, StringComparer comparer)
+    private static int FindHeaderIndex(CsvRow<char> headerRow, string name, StringComparison comparison)
     {
+        var target = name.AsSpan();
         var count = headerRow.ColumnCount;
         for (int i = 0; i < count; i++)
         {
-            if (comparer.Equals(new string(headerRow[i].Span), name))
+            if (headerRow[i].Span.Equals(target, comparison))
                 return i;
         }
         return -1;
@@ -156,9 +157,8 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
 
                     if (prop.Validation is { HasAnyRule: true } validation)
                     {
-                        var fieldStr = new string(span);
                         hasErrors |= PropertyValidationRunner.Validate(
-                            fieldStr, prop.Name, rowNumber, idx,
+                            span, prop.Name, rowNumber, idx,
                             columnName: colName,
                             validation.NotEmpty, validation.MinLength, validation.MaxLength,
                             validation.RangeMin, validation.RangeMax, validation.Pattern,
@@ -204,9 +204,8 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsNullValue(ReadOnlySpan<char> value, HashSet<string> nullValues)
+    private static bool IsNullValue(ReadOnlySpan<char> value, string[] nullValues)
     {
-        // Use span-based comparison to avoid string allocation per-field
         foreach (var nullValue in nullValues)
         {
             if (value.SequenceEqual(nullValue.AsSpan()))

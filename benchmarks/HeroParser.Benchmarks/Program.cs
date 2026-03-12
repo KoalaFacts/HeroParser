@@ -9,6 +9,7 @@ public class Program
         typeof(ThroughputBenchmarks),
         typeof(CsvStreamingBenchmarks),
         typeof(CsvPipeReaderBenchmarks),
+        typeof(CsvTypedPipeReaderBenchmarks),
         typeof(VsSepReadingBenchmarks),
         typeof(VsSepWritingBenchmarks),
         typeof(QuotedVsUnquotedBenchmarks),
@@ -41,7 +42,11 @@ public class Program
     {
         ["--throughput"] = [typeof(ThroughputBenchmarks)],
         ["--csv-streaming"] = [typeof(CsvStreamingBenchmarks)],
-        ["--csv-pipe"] = [typeof(CsvPipeReaderBenchmarks)],
+        ["--csv-pipe"] =
+        [
+            typeof(CsvPipeReaderBenchmarks),
+            typeof(CsvTypedPipeReaderBenchmarks)
+        ],
         ["--vs-sep-reading"] = [typeof(VsSepReadingBenchmarks)],
         ["--vs-sep-writing"] = [typeof(VsSepWritingBenchmarks)],
         ["--writer"] =

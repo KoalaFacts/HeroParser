@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -37,21 +38,308 @@ public static partial class Csv
     /// }
     /// </code>
     /// </example>
-    public static async IAsyncEnumerable<CsvPipeRow> ReadFromPipeReaderAsync(
+    public static IAsyncEnumerable<CsvPipeRow> ReadFromPipeReaderAsync(
         PipeReader reader,
         CsvReadOptions? options = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reader);
         options ??= CsvReadOptions.Default;
         options.Validate();
+        return new CsvPipeRowAsyncEnumerable(reader, options, cancellationToken);
+    }
+}
 
-        await using var sequenceReader = new CsvPipeSequenceReader(reader, options);
-        while (await sequenceReader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
+{
+    private readonly PipeReader reader;
+    private readonly CsvReadOptions options;
+    private readonly CancellationToken cancellationToken;
+
+    public CsvPipeRowAsyncEnumerable(
+        PipeReader reader,
+        CsvReadOptions options,
+        CancellationToken cancellationToken)
+    {
+        this.reader = reader;
+        this.options = options;
+        this.cancellationToken = cancellationToken;
+    }
+
+    public IAsyncEnumerator<CsvPipeRow> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+        => new Enumerator(reader, options, this.cancellationToken, cancellationToken);
+
+    private sealed class Enumerator : IAsyncEnumerator<CsvPipeRow>
+    {
+        private readonly PipeReader reader;
+        private readonly CsvReadOptions options;
+        private readonly CancellationTokenSource? linkedCancellationSource;
+        private readonly CancellationToken cancellationToken;
+
+        private CsvPipeSequenceReader? sequenceReader;
+        private bool completed;
+
+        public Enumerator(
+            PipeReader reader,
+            CsvReadOptions options,
+            CancellationToken methodCancellationToken,
+            CancellationToken enumeratorCancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            yield return sequenceReader.Current.ToOwnedRow();
+            this.reader = reader;
+            this.options = options;
+
+            if (!methodCancellationToken.CanBeCanceled)
+            {
+                cancellationToken = enumeratorCancellationToken;
+            }
+            else if (!enumeratorCancellationToken.CanBeCanceled || enumeratorCancellationToken == methodCancellationToken)
+            {
+                cancellationToken = methodCancellationToken;
+            }
+            else
+            {
+                linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                    methodCancellationToken,
+                    enumeratorCancellationToken);
+                cancellationToken = linkedCancellationSource.Token;
+            }
         }
+
+        public CsvPipeRow Current { get; private set; }
+
+        public async ValueTask<bool> MoveNextAsync()
+        {
+            if (completed)
+            {
+                return false;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            sequenceReader ??= new CsvPipeSequenceReader(reader, options);
+
+            if (!await sequenceReader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                completed = true;
+                return false;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            Current = sequenceReader.Current.ToOwnedRow();
+            return true;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (sequenceReader is not null)
+            {
+                await sequenceReader.DisposeAsync().ConfigureAwait(false);
+                sequenceReader = null;
+            }
+
+            linkedCancellationSource?.Dispose();
+        }
+    }
+
+}
+
+public static partial class Csv
+{
+    internal static bool TryReadRow(
+        ref ReadOnlySequence<byte> buffer,
+        CsvReadOptions options,
+        byte quote,
+        byte? escape,
+        bool enableQuotes,
+        Span<int> columnEnds,
+        out ReadOnlySequence<byte> rowData,
+        out int columnCount,
+        out int newlineCount)
+    {
+        const byte lf = (byte)'\n';
+        const byte cr = (byte)'\r';
+        const byte space = (byte)' ';
+        const byte tab = (byte)'\t';
+
+        rowData = default;
+        columnCount = 0;
+        newlineCount = 0;
+
+        var reader = new SequenceReader<byte>(buffer);
+        byte delimiter = (byte)options.Delimiter;
+        bool inQuotes = false;
+        bool skipNext = false;
+        bool pendingCrInQuotes = false;
+        bool isCommentLine = false;
+        byte? commentCharacter = options.CommentCharacter is { } comment ? (byte)comment : null;
+        bool commentCandidate = commentCharacter.HasValue;
+        int currentStart = 0;
+
+        columnEnds[0] = -1;
+
+        while (reader.Remaining > 0)
+        {
+            if (!reader.TryRead(out byte current))
+                break;
+
+            int index = checked((int)(reader.Consumed - 1));
+
+            if (skipNext)
+            {
+                skipNext = false;
+                continue;
+            }
+
+            if (commentCandidate)
+            {
+                if (current == space || current == tab)
+                {
+                    // Still a comment candidate, but whitespace is also part of the raw row.
+                }
+                else if (commentCharacter.HasValue && current == commentCharacter.Value)
+                {
+                    isCommentLine = true;
+                    continue;
+                }
+                else
+                {
+                    commentCandidate = false;
+                }
+            }
+
+            if (escape.HasValue && current == escape.Value && reader.Remaining > 0)
+            {
+                skipNext = true;
+                continue;
+            }
+
+            if (isCommentLine)
+            {
+                if (current == cr)
+                {
+                    long consumed = reader.Consumed;
+                    bool hasLf = reader.TryPeek(out byte next) && next == lf;
+                    if (hasLf)
+                    {
+                        reader.Advance(1);
+                        consumed++;
+                    }
+
+                    rowData = buffer.Slice(0, consumed - (hasLf ? 2 : 1));
+                    buffer = buffer.Slice(consumed);
+                    columnCount = 0;
+                    newlineCount = 1;
+                    return true;
+                }
+
+                if (current == lf)
+                {
+                    long consumed = reader.Consumed;
+                    rowData = buffer.Slice(0, consumed - 1);
+                    buffer = buffer.Slice(consumed);
+                    columnCount = 0;
+                    newlineCount = 1;
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (enableQuotes && current == quote)
+            {
+                if (inQuotes && reader.TryPeek(out byte next) && next == quote)
+                {
+                    reader.Advance(1);
+                    continue;
+                }
+
+                inQuotes = !inQuotes;
+                pendingCrInQuotes = false;
+                continue;
+            }
+
+            if (enableQuotes && inQuotes && !options.AllowNewlinesInsideQuotes &&
+                (current == cr || current == lf))
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+            }
+
+            if (enableQuotes && inQuotes)
+            {
+                if (pendingCrInQuotes)
+                {
+                    pendingCrInQuotes = false;
+                    if (current == lf)
+                    {
+                        continue;
+                    }
+                }
+
+                if (current == cr)
+                {
+                    newlineCount++;
+                    pendingCrInQuotes = true;
+                }
+                else if (current == lf)
+                {
+                    newlineCount++;
+                }
+
+                continue;
+            }
+
+            if (current == delimiter)
+            {
+                AppendPipeColumn(index, ref columnCount, ref currentStart, columnEnds, options.MaxColumnCount, options.MaxFieldSize);
+                continue;
+            }
+
+            if (current == cr)
+            {
+                long consumed = reader.Consumed;
+                bool hasLf = reader.TryPeek(out byte next) && next == lf;
+                if (hasLf)
+                {
+                    reader.Advance(1);
+                    consumed++;
+                }
+
+                int rowLength = index;
+                rowData = buffer.Slice(0, rowLength);
+                buffer = buffer.Slice(consumed);
+                if (rowLength == 0)
+                {
+                    columnCount = 0;
+                    newlineCount++;
+                    return true;
+                }
+
+                AppendFinalPipeColumn(rowLength, ref columnCount, ref currentStart, columnEnds, options.MaxColumnCount, options.MaxFieldSize);
+                newlineCount++;
+                return true;
+            }
+
+            if (current == lf)
+            {
+                long consumed = reader.Consumed;
+                int rowLength = index;
+                rowData = buffer.Slice(0, rowLength);
+                buffer = buffer.Slice(consumed);
+                if (rowLength == 0)
+                {
+                    columnCount = 0;
+                    newlineCount++;
+                    return true;
+                }
+
+                AppendFinalPipeColumn(rowLength, ref columnCount, ref currentStart, columnEnds, options.MaxColumnCount, options.MaxFieldSize);
+                newlineCount++;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     internal static bool TryReadRow(
@@ -154,8 +442,12 @@ public static partial class Csv
 /// </remarks>
 public readonly struct CsvPipeRow
 {
-    private readonly byte[] data;
-    private readonly int[] columnEnds;
+    private const int BYTE_PACKED_ROW_LENGTH_MAX = byte.MaxValue - 1;
+    private const int UINT16_PACKED_ROW_LENGTH_MAX = ushort.MaxValue - 1;
+
+    private readonly byte[] storage;
+    private readonly int dataOffset;
+    private readonly byte headerElementSize;
     private readonly int columnCount;
     private readonly bool trimFields;
     private readonly byte quote;
@@ -172,20 +464,22 @@ public readonly struct CsvPipeRow
     public int ColumnCount => columnCount;
 
     internal CsvPipeRow(
-        byte[] data,
-        int[] columnEnds,
+        byte[] storage,
         int columnCount,
         int rowNumber,
         bool trimFields,
         byte quote,
-        byte? escape)
+        byte? escape,
+        int dataOffset,
+        int headerElementSize)
     {
-        this.data = data;
-        this.columnEnds = columnEnds;
+        this.storage = storage;
         this.columnCount = columnCount;
         this.trimFields = trimFields;
         this.quote = quote;
         this.escape = escape;
+        this.dataOffset = dataOffset;
+        this.headerElementSize = checked((byte)headerElementSize);
         RowNumber = rowNumber;
     }
 
@@ -201,15 +495,15 @@ public readonly struct CsvPipeRow
             if ((uint)index >= (uint)columnCount)
                 throw new IndexOutOfRangeException($"Column index {index} is out of range. Row has {columnCount} columns.");
 
-            int start = columnEnds[index] + 1;
-            int end = columnEnds[index + 1];
+            int start = ReadColumnEnd(index) + 1;
+            int end = ReadColumnEnd(index + 1);
 
             if (trimFields)
             {
                 (start, end) = TrimBounds(start, end);
             }
 
-            return new CsvPipeColumn(data, start, end - start, quote, escape);
+            return new CsvPipeColumn(storage, dataOffset + start, end - start, quote, escape);
         }
     }
 
@@ -217,23 +511,53 @@ public readonly struct CsvPipeRow
     {
         const byte space = (byte)' ';
         const byte tab = (byte)'\t';
+        int absoluteStart = dataOffset + start;
+        int absoluteEnd = dataOffset + end;
 
-        if (end - start >= 2 && data[start] == quote && data[end - 1] == quote)
+        if (end - start >= 2 && storage[absoluteStart] == quote && storage[absoluteEnd - 1] == quote)
         {
             return (start, end);
         }
 
-        while (start < end && (data[start] == space || data[start] == tab))
+        while (absoluteStart < absoluteEnd && (storage[absoluteStart] == space || storage[absoluteStart] == tab))
         {
-            start++;
+            absoluteStart++;
         }
 
-        while (end > start && (data[end - 1] == space || data[end - 1] == tab))
+        while (absoluteEnd > absoluteStart && (storage[absoluteEnd - 1] == space || storage[absoluteEnd - 1] == tab))
         {
-            end--;
+            absoluteEnd--;
         }
 
-        return (start, end);
+        return (absoluteStart - dataOffset, absoluteEnd - dataOffset);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int ReadColumnEnd(int index)
+    {
+        int offset = index * headerElementSize;
+        return headerElementSize switch
+        {
+            1 => storage[offset] - 1,
+            2 => BinaryPrimitives.ReadUInt16LittleEndian(storage.AsSpan(offset, sizeof(ushort))) - 1,
+            _ => BinaryPrimitives.ReadInt32LittleEndian(storage.AsSpan(offset, sizeof(int))) - 1
+        };
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static int GetHeaderElementSize(int rowLength)
+    {
+        if (rowLength <= BYTE_PACKED_ROW_LENGTH_MAX)
+        {
+            return 1;
+        }
+
+        if (rowLength <= UINT16_PACKED_ROW_LENGTH_MAX)
+        {
+            return 2;
+        }
+
+        return sizeof(int);
     }
 }
 

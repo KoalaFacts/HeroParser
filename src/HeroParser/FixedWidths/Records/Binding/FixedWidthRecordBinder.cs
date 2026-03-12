@@ -426,6 +426,21 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         ArgumentNullException.ThrowIfNull(binder);
         ArgumentNullException.ThrowIfNull(encoding);
 
+        if (FixedWidthUtf8BindingHelper.IsUtf8Encoding(encoding) && binder is IFixedWidthByteBinder<T> byteBinder)
+        {
+            await foreach (var record in BindAsync(
+                reader,
+                byteBinder,
+                progress,
+                progressIntervalRows,
+                cancellationToken).ConfigureAwait(false))
+            {
+                yield return record;
+            }
+
+            yield break;
+        }
+
         int recordsProcessed = 0;
         byte[]? contiguousRowBuffer = null;
         char[]? decodedBuffer = null;
@@ -626,6 +641,22 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(binder);
         ArgumentNullException.ThrowIfNull(encoding);
+
+        if (FixedWidthUtf8BindingHelper.IsUtf8Encoding(encoding) && binder is IFixedWidthByteBinder<T> byteBinder)
+        {
+            await foreach (var record in BindAsync(
+                rows,
+                byteBinder,
+                options,
+                progress,
+                progressIntervalRows,
+                cancellationToken).ConfigureAwait(false))
+            {
+                yield return record;
+            }
+
+            yield break;
+        }
 
         int recordsProcessed = 0;
         char[]? decodedBuffer = null;

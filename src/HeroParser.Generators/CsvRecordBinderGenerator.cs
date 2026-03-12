@@ -19,6 +19,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Reading.Binders.CsvRecordBinderFactory";
     private const string BYTE_BINDER_INTERFACE_TYPE = "global::HeroParser.SeparatedValues.Reading.Binders.ICsvBinder<byte, ";
     private const string BYTE_ROW_TYPE = "global::HeroParser.SeparatedValues.Reading.Rows.CsvRow<byte>";
+    private const string UTF8_BINDING_HELPER_TYPE = "global::HeroParser.SeparatedValues.Reading.Binders.CsvUtf8BindingHelper";
     private const string OPTIONS_TYPE = "global::HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions";
     private const string EXCEPTION_TYPE = "global::HeroParser.SeparatedValues.Core.CsvException";
     private const string ERROR_CODE_TYPE = "global::HeroParser.SeparatedValues.Core.CsvErrorCode";
@@ -158,7 +159,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("private readonly CultureInfo _culture;");
         builder.AppendLine("private readonly bool _caseSensitiveHeaders;");
         builder.AppendLine("private readonly bool _allowMissingColumns;");
-        builder.AppendLine("private readonly HashSet<string>? _nullValues;");
+        builder.AppendLine("private readonly byte[][]? _nullValuesUtf8;");
         builder.AppendLine();
 
         // Emit column index fields
@@ -177,8 +178,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("_culture = options?.Culture ?? CultureInfo.InvariantCulture;");
         builder.AppendLine("_caseSensitiveHeaders = options?.CaseSensitiveHeaders ?? false;");
         builder.AppendLine("_allowMissingColumns = options?.AllowMissingColumns ?? false;");
-        builder.AppendLine("_nullValues = options?.NullValues is { Count: > 0 }");
-        builder.AppendLine("    ? new HashSet<string>(options.NullValues, StringComparer.Ordinal)");
+        builder.AppendLine("_nullValuesUtf8 = options?.NullValues is { Count: > 0 }");
+        builder.AppendLine("    ? CreateNullValues(options.NullValues)");
         builder.AppendLine("    : null;");
         builder.Unindent();
         builder.AppendLine("}");
@@ -298,15 +299,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     {
         var indexField = $"_{member.MemberName}Index";
         var isRequired = !member.IsNullable && member.BaseTypeName != "string";
+        var utf8Local = $"utf8_{member.MemberName}";
 
-        builder.AppendLine($"if ((uint){indexField} < (uint)columnCount)");
+        builder.AppendLine($"if (row.TryGetColumnSpan({indexField}, out var {utf8Local}))");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine($"var column = row[{indexField}];");
-        builder.AppendLine("var utf8 = column.Span;");
-
+        builder.AppendLine($"var utf8 = {utf8Local};");
         // Check for null values if configured
-        builder.AppendLine("if (_nullValues is null || !IsNullValue(utf8, _nullValues))");
+        builder.AppendLine("if (_nullValuesUtf8 is null || !IsNullValue(utf8, _nullValuesUtf8))");
         builder.AppendLine("{");
         builder.Indent();
 
@@ -345,7 +345,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         switch (baseType)
         {
             case "string":
-                builder.AppendLine($"instance.{propertyName} = Encoding.UTF8.GetString(utf8);");
+                builder.AppendLine($"instance.{propertyName} = {UTF8_BINDING_HELPER_TYPE}.Decode(utf8);");
                 break;
 
             case "int":
@@ -435,7 +435,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    builder.AppendLine($"instance.{propertyName} = Encoding.UTF8.GetString(utf8);");
+                    builder.AppendLine($"instance.{propertyName} = {UTF8_BINDING_HELPER_TYPE}.Decode(utf8);");
                 }
                 break;
         }
@@ -446,31 +446,9 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         var propertyName = member.MemberName;
         var indexField = $"_{propertyName}Index";
         var isNullable = member.IsNullable;
-        var baseType = member.BaseTypeName;
 
-        // For floating-point types (decimal, double, float), use culture-aware parsing
-        // Utf8Parser only supports invariant culture, but users may need locale-specific decimal separators
-        if (baseType is "decimal" or "System.Decimal")
-        {
-            builder.AppendLine($"if (decimal.TryParse(column.ToString(), NumberStyles.Number, _culture, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else if (baseType is "double" or "System.Double")
-        {
-            builder.AppendLine($"if (double.TryParse(column.ToString(), NumberStyles.Float | NumberStyles.AllowThousands, _culture, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else if (baseType is "float" or "System.Single")
-        {
-            builder.AppendLine($"if (float.TryParse(column.ToString(), NumberStyles.Float | NumberStyles.AllowThousands, _culture, out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else
-        {
-            // For integer types, Utf8Parser is efficient and invariant culture is standard
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
+        builder.AppendLine($"if ({UTF8_BINDING_HELPER_TYPE}.{parseMethod}(utf8, _culture, out var parsed_{propertyName}))");
+        builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
             builder.AppendLine($"else if (!utf8.IsEmpty)");
@@ -484,7 +462,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         var indexField = $"_{propertyName}Index";
         var isNullable = member.IsNullable;
 
-        builder.AppendLine($"if (column.TryParseBoolean(out var parsed_{propertyName}))");
+        builder.AppendLine($"if ({UTF8_BINDING_HELPER_TYPE}.TryParseBoolean(utf8, out var parsed_{propertyName}))");
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
@@ -502,13 +480,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         if (format != null)
         {
-            // Use format string with culture
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, \"{EscapeString(format)}\", _culture))");
+            builder.AppendLine($"if ({UTF8_BINDING_HELPER_TYPE}.{parseMethod}(utf8, _culture, \"{EscapeString(format)}\", out var parsed_{propertyName}))");
         }
         else
         {
-            // Use culture for parsing
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, _culture))");
+            builder.AppendLine($"if ({UTF8_BINDING_HELPER_TYPE}.{parseMethod}(utf8, _culture, null, out var parsed_{propertyName}))");
         }
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
@@ -524,7 +500,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         var indexField = $"_{propertyName}Index";
         var isNullable = member.IsNullable;
 
-        builder.AppendLine($"if (column.TryParseGuid(out var parsed_{propertyName}))");
+        builder.AppendLine($"if ({UTF8_BINDING_HELPER_TYPE}.TryParseGuid(utf8, out var parsed_{propertyName}))");
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
@@ -540,7 +516,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         var enumType = member.TypeofTypeName;
         var isNullable = member.IsNullable;
 
-        builder.AppendLine($"if (column.TryParseEnum<{enumType}>(out var parsed_{propertyName}))");
+        builder.AppendLine($"if ({UTF8_BINDING_HELPER_TYPE}.TryParseEnum<{enumType}>(utf8, out var parsed_{propertyName}))");
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
@@ -572,10 +548,32 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static void EmitByteIsNullValueMethod(SourceBuilder builder)
     {
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine("private static bool IsNullValue(ReadOnlySpan<byte> value, HashSet<string> nullValues)");
+        builder.AppendLine("private static byte[][] CreateNullValues(IReadOnlyList<string> nullValues)");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine("return nullValues.Contains(Encoding.UTF8.GetString(value));");
+        builder.AppendLine("var encoded = new byte[nullValues.Count][];");
+        builder.AppendLine("for (int i = 0; i < nullValues.Count; i++)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("encoded[i] = Encoding.UTF8.GetBytes(nullValues[i]);");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine("return encoded;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine("private static bool IsNullValue(ReadOnlySpan<byte> value, byte[][] nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("for (int i = 0; i < nullValues.Length; i++)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("if (value.SequenceEqual(nullValues[i]))");
+        builder.AppendLine("    return true;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine("return false;");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -706,7 +704,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
         builder.AppendLine($"Rule = \"{rule}\",");
         builder.AppendLine($"Message = \"{EscapeString(message)}\",");
-        builder.AppendLine($"RawValue = Encoding.UTF8.GetString(utf8)");
+        builder.AppendLine($"RawValue = {UTF8_BINDING_HELPER_TYPE}.Decode(utf8)");
         builder.Unindent();
         builder.AppendLine("});");
     }

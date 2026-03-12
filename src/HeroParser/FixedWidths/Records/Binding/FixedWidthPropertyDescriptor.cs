@@ -14,6 +14,15 @@ namespace HeroParser.FixedWidths.Records.Binding;
 public delegate void FixedWidthPropertySetter<T>(ref T instance, ReadOnlySpan<char> value, CultureInfo culture);
 
 /// <summary>
+/// Delegate for setting a parsed UTF-8 value on a record instance.
+/// </summary>
+/// <typeparam name="T">The record type.</typeparam>
+/// <param name="instance">The record instance to modify.</param>
+/// <param name="value">The parsed UTF-8 field value.</param>
+/// <param name="culture">The culture for parsing.</param>
+public delegate void FixedWidthBytePropertySetter<T>(ref T instance, ReadOnlySpan<byte> value, CultureInfo culture);
+
+/// <summary>
 /// Describes a single property for fixed-width binding.
 /// </summary>
 /// <typeparam name="T">The record type.</typeparam>
@@ -28,7 +37,8 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
     FieldAlignment alignment,
     FixedWidthPropertySetter<T> setter,
     bool isRequired = false,
-    FixedWidthPropertyValidation? validation = null)
+    FixedWidthPropertyValidation? validation = null,
+    FixedWidthBytePropertySetter<T>? byteSetter = null)
 {
     /// <summary>Gets the property/field name.</summary>
     public string Name { get; } = name;
@@ -53,6 +63,9 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
 
     /// <summary>Gets the validation rules for this property, or null if none configured.</summary>
     public FixedWidthPropertyValidation? Validation { get; } = validation;
+
+    /// <summary>Gets the UTF-8 setter delegate for this property, or null when byte binding should fall back to char parsing.</summary>
+    public FixedWidthBytePropertySetter<T>? ByteSetter { get; } = byteSetter;
 }
 
 /// <summary>

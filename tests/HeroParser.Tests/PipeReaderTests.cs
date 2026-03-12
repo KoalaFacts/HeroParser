@@ -118,6 +118,37 @@ public class PipeReaderTests
         Assert.Equal(["Name", "Alice"], names);
     }
 
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_ChunkedCommentLines_AreSkipped()
+    {
+        var pipe = new Pipe();
+        var csv = "# ignore me\r\nName,Age\r\nAlice,30\r\n";
+        var bytes = Encoding.UTF8.GetBytes(csv);
+        var options = new CsvReadOptions { CommentCharacter = '#' };
+        var ct = TestContext.Current.CancellationToken;
+
+        _ = Task.Run(async () =>
+        {
+            for (int i = 0; i < bytes.Length; i += 2)
+            {
+                var chunk = bytes.AsMemory(i, Math.Min(2, bytes.Length - i));
+                await pipe.Writer.WriteAsync(chunk, ct);
+                await Task.Delay(1, ct);
+            }
+
+            await pipe.Writer.CompleteAsync();
+        }, ct);
+
+        var names = new List<string>();
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, ct))
+        {
+            names.Add(row[0].ToString());
+        }
+
+        Assert.Equal(["Name", "Alice"], names);
+    }
+
     #endregion
 
     #region Borrowed Reader
@@ -178,6 +209,43 @@ public class PipeReaderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task CreatePipeSequenceReader_TrackSourceLineNumbers_TracksChunkedQuotedRows()
+    {
+        var pipe = new Pipe();
+        var csv = "Id,Notes\r\n1,\"line1\r\nline2\"\r\n2,done\r\n";
+        var bytes = Encoding.UTF8.GetBytes(csv);
+        var options = new CsvReadOptions
+        {
+            AllowNewlinesInsideQuotes = true,
+            TrackSourceLineNumbers = true
+        };
+        var ct = TestContext.Current.CancellationToken;
+
+        _ = Task.Run(async () =>
+        {
+            for (int i = 0; i < bytes.Length; i += 2)
+            {
+                var chunk = bytes.AsMemory(i, Math.Min(2, bytes.Length - i));
+                await pipe.Writer.WriteAsync(chunk, ct);
+                await Task.Delay(1, ct);
+            }
+
+            await pipe.Writer.CompleteAsync();
+        }, ct);
+
+        var sourceLines = new List<int>();
+        await using var reader = Csv.CreatePipeSequenceReader(pipe.Reader, options);
+
+        while (await reader.MoveNextAsync(ct))
+        {
+            sourceLines.Add(reader.Current.SourceLineNumber);
+        }
+
+        Assert.Equal([1, 2, 4], sourceLines);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CreatePipeSequenceReader_CommentLines_AreSkipped()
     {
         var csv = "# ignore me\r\nName,Age\r\nAlice,30\r\n";
@@ -188,6 +256,39 @@ public class PipeReaderTests
         await using var reader = Csv.CreatePipeSequenceReader(pipe.Reader, options);
 
         while (await reader.MoveNextAsync(TestContext.Current.CancellationToken))
+        {
+            names.Add(reader.Current[0].ToString());
+        }
+
+        Assert.Equal(["Name", "Alice"], names);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task CreatePipeSequenceReader_ChunkedCommentLines_AreSkipped()
+    {
+        var pipe = new Pipe();
+        var csv = "# ignore me\r\nName,Age\r\nAlice,30\r\n";
+        var bytes = Encoding.UTF8.GetBytes(csv);
+        var options = new CsvReadOptions { CommentCharacter = '#' };
+        var ct = TestContext.Current.CancellationToken;
+
+        _ = Task.Run(async () =>
+        {
+            for (int i = 0; i < bytes.Length; i += 2)
+            {
+                var chunk = bytes.AsMemory(i, Math.Min(2, bytes.Length - i));
+                await pipe.Writer.WriteAsync(chunk, ct);
+                await Task.Delay(1, ct);
+            }
+
+            await pipe.Writer.CompleteAsync();
+        }, ct);
+
+        var names = new List<string>();
+        await using var reader = Csv.CreatePipeSequenceReader(pipe.Reader, options);
+
+        while (await reader.MoveNextAsync(ct))
         {
             names.Add(reader.Current[0].ToString());
         }
@@ -275,6 +376,44 @@ public class PipeReaderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task DeserializeRecordsAsync_FromPipeReader_SkipsChunkedCommentLines()
+    {
+        var pipe = new Pipe();
+        var csv = "# ignore me\r\nName,Age\r\nAlice,30\r\nBob,25\r\n";
+        var bytes = Encoding.UTF8.GetBytes(csv);
+        var options = new CsvReadOptions { CommentCharacter = '#' };
+        var ct = TestContext.Current.CancellationToken;
+
+        _ = Task.Run(async () =>
+        {
+            for (int i = 0; i < bytes.Length; i += 2)
+            {
+                var chunk = bytes.AsMemory(i, Math.Min(2, bytes.Length - i));
+                await pipe.Writer.WriteAsync(chunk, ct);
+                await Task.Delay(1, ct);
+            }
+
+            await pipe.Writer.CompleteAsync();
+        }, ct);
+
+        var records = new List<PipePersonRecord>();
+        await foreach (var record in Csv.DeserializeRecordsAsync<PipePersonRecord>(
+            pipe.Reader,
+            parserOptions: options,
+            cancellationToken: ct))
+        {
+            records.Add(record);
+        }
+
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Alice", records[0].Name);
+        Assert.Equal(30, records[0].Age);
+        Assert.Equal("Bob", records[1].Name);
+        Assert.Equal(25, records[1].Age);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task Builder_FromPipeReaderAsync_BindsGeneratedRecords()
     {
         var csv = "Name,Age\r\nAlice,30\r\nBob,25\r\n";
@@ -333,6 +472,45 @@ public class PipeReaderTests
         Assert.Equal(2, names.Count);
         Assert.Equal("Name", names[0]);
         Assert.Equal("Alice", names[1]);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_MediumRow_UsesPackedHeaderWithoutCorruptingColumns()
+    {
+        string largeValue = new('a', 300);
+        var csv = $"{largeValue},tail\r\n";
+        var pipe = CreatePipeFromString(csv);
+
+        var rows = new List<(int FirstLength, string SecondValue)>();
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, cancellationToken: TestContext.Current.CancellationToken))
+        {
+            rows.Add((row[0].Span.Length, row[1].ToString()));
+        }
+
+        Assert.Single(rows);
+        Assert.Equal(300, rows[0].FirstLength);
+        Assert.Equal("tail", rows[0].SecondValue);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_VeryLargeRow_FallsBackToIntHeaderWithoutCorruptingColumns()
+    {
+        string largeValue = new('b', 70_000);
+        var csv = $"{largeValue},tail\r\n";
+        var pipe = CreatePipeFromString(csv);
+        var options = new CsvReadOptions { MaxRowSize = 100_000 };
+
+        var rows = new List<(int FirstLength, string SecondValue)>();
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, TestContext.Current.CancellationToken))
+        {
+            rows.Add((row[0].Span.Length, row[1].ToString()));
+        }
+
+        Assert.Single(rows);
+        Assert.Equal(70_000, rows[0].FirstLength);
+        Assert.Equal("tail", rows[0].SecondValue);
     }
 
     [Fact]

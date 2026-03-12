@@ -46,7 +46,12 @@ public class FixedWidthMap<T> : IFixedWidthReadMapSource<T>, IFixedWidthWriteMap
         var builder = new FixedWidthColumnBuilder();
         configure(builder);
 
-        mappedProperties.Add(new MappedProperty(propertyInfo, typeof(TProperty), builder, CreateSetterForProperty<TProperty>(propertyInfo)));
+        mappedProperties.Add(new MappedProperty(
+            propertyInfo,
+            typeof(TProperty),
+            builder,
+            CreateSetterForProperty<TProperty>(propertyInfo),
+            CreateByteSetterForProperty<TProperty>(propertyInfo)));
         return this;
     }
 
@@ -80,7 +85,8 @@ public class FixedWidthMap<T> : IFixedWidthReadMapSource<T>, IFixedWidthWriteMap
                 alignment,
                 mapped.Setter,
                 b.IsRequired,
-                validation);
+                validation,
+                mapped.ByteSetter);
         }
 
         return new FixedWidthRecordDescriptor<T>(descriptors, static () => new T());
@@ -156,6 +162,25 @@ public class FixedWidthMap<T> : IFixedWidthReadMapSource<T>, IFixedWidthWriteMap
         return Setter;
     }
 
+    private static FixedWidthBytePropertySetter<T> CreateByteSetterForProperty<TProperty>(PropertyInfo propertyInfo)
+    {
+        var instanceParam = Expression.Parameter(typeof(T), "instance");
+        var valueParam = Expression.Parameter(typeof(TProperty), "value");
+        var propertyAccess = Expression.Property(instanceParam, propertyInfo);
+        var assign = Expression.Assign(propertyAccess, valueParam);
+        var compiled = Expression.Lambda<Action<T, TProperty>>(assign, instanceParam, valueParam).Compile();
+
+        var parse = Utf8SpanParserFactory.GetParser<TProperty>();
+
+        void Setter(ref T instance, ReadOnlySpan<byte> value, CultureInfo culture)
+        {
+            var parsed = parse(value, culture);
+            compiled(instance, parsed);
+        }
+
+        return Setter;
+    }
+
     private static Func<T, object?> CreateGetter(PropertyInfo propertyInfo)
     {
         var instanceParam = Expression.Parameter(typeof(T), "instance");
@@ -168,11 +193,17 @@ public class FixedWidthMap<T> : IFixedWidthReadMapSource<T>, IFixedWidthWriteMap
         return Expression.Lambda<Func<T, object?>>(body, instanceParam).Compile();
     }
 
-    private sealed class MappedProperty(PropertyInfo propertyInfo, Type propertyType, FixedWidthColumnBuilder builder, FixedWidthPropertySetter<T> setter)
+    private sealed class MappedProperty(
+        PropertyInfo propertyInfo,
+        Type propertyType,
+        FixedWidthColumnBuilder builder,
+        FixedWidthPropertySetter<T> setter,
+        FixedWidthBytePropertySetter<T> byteSetter)
     {
         public PropertyInfo PropertyInfo { get; } = propertyInfo;
         public Type PropertyType { get; } = propertyType;
         public FixedWidthColumnBuilder Builder { get; } = builder;
         public FixedWidthPropertySetter<T> Setter { get; } = setter;
+        public FixedWidthBytePropertySetter<T> ByteSetter { get; } = byteSetter;
     }
 }

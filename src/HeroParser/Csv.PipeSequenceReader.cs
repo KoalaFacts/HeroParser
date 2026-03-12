@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
@@ -99,6 +100,17 @@ public static partial class Csv
         }
 
         return count;
+    }
+
+    internal static bool IsLineTerminated(ReadOnlySpan<byte> span, int consumed)
+    {
+        if ((uint)(consumed - 1) >= (uint)span.Length)
+        {
+            return false;
+        }
+
+        byte last = span[consumed - 1];
+        return last is (byte)'\n' or (byte)'\r';
     }
 
     internal static int ParsePipeSequenceRow(
@@ -373,17 +385,139 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
             ReadOnlySequence<byte> buffer = bufferedData;
 
-            while (Csv.TryReadRow(ref buffer, quote, escape, enableQuotes, out var rowData))
+            if (buffer.IsSingleSegment)
             {
+                ReadOnlySpan<byte> span = buffer.FirstSpan;
+                if (span.IsEmpty)
+                {
+                    bool isCompleted = bufferedIsCompleted;
+                    ReleaseBufferedRead(buffer.Start);
+                    if (!isCompleted)
+                    {
+                        continue;
+                    }
+
+                    return false;
+                }
+
+                int rowSourceLineNumber = trackLineNumbers ? sourceLineNumber : 0;
+                CsvRowParseResult parseResult;
+                try
+                {
+                    parseResult = trackLineNumbers
+                        ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer.Span)
+                        : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer.Span);
+                }
+                catch (CsvException ex) when (!bufferedIsCompleted && ex.QuoteStartPosition.HasValue)
+                {
+                    Csv.EnsureRowSize(buffer.Length, maxRowSize);
+                    ReleaseBufferedRead(buffer.Start);
+                    continue;
+                }
+
+                if (parseResult.CharsConsumed == 0)
+                {
+                    bool isCompleted = bufferedIsCompleted;
+                    ReleaseBufferedRead(buffer.Start);
+                    if (!isCompleted)
+                    {
+                        continue;
+                    }
+
+                    return false;
+                }
+
+                Csv.EnsureRowSize(parseResult.RowLength, maxRowSize);
+                if (options.CommentCharacter is not null &&
+                    parseResult.RowLength == 0 &&
+                    parseResult.CharsConsumed > 0 &&
+                    !bufferedIsCompleted &&
+                    !Csv.IsLineTerminated(span, parseResult.CharsConsumed))
+                {
+                    ReleaseBufferedRead(buffer.Start);
+                    continue;
+                }
+
+                if (parseResult.RowLength == span.Length && !bufferedIsCompleted)
+                {
+                    ReleaseBufferedRead(buffer.Start);
+                    continue;
+                }
+
+                currentRowData = bufferedData.Slice(0, parseResult.RowLength);
+                bufferedData = buffer.Slice(parseResult.CharsConsumed);
+
+                if (trackLineNumbers)
+                {
+                    sourceLineNumber += Csv.CountNewlines(currentRowData);
+                    if (parseResult.CharsConsumed > parseResult.RowLength)
+                    {
+                        sourceLineNumber++;
+                    }
+                }
+
+                if (parseResult.RowLength == 0)
+                {
+                    continue;
+                }
+
+                rowNumber++;
+                Csv.EnsureRowCount(rowNumber, options.MaxRowCount);
+
+                if (skippedRows < skipRows)
+                {
+                    skippedRows++;
+                    continue;
+                }
+
+                currentColumnCount = parseResult.ColumnCount;
+                currentRowNumber = rowNumber;
+                currentSourceLineNumber = trackLineNumbers ? rowSourceLineNumber : rowNumber;
+                hasCurrent = true;
+                return true;
+            }
+
+            while (true)
+            {
+                ReadOnlySequence<byte> rowData;
+                int columnCount;
+                int newlineCount;
+
+                if (options.CommentCharacter is null)
+                {
+                    if (!Csv.TryReadRow(
+                        ref buffer,
+                        options,
+                        quote,
+                        escape,
+                        enableQuotes,
+                        columnEndsBuffer.Span,
+                        out rowData,
+                        out columnCount,
+                        out newlineCount))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    if (!Csv.TryReadRow(ref buffer, quote, escape, enableQuotes, out rowData))
+                    {
+                        break;
+                    }
+
+                    columnCount = Csv.ParsePipeSequenceRow(rowData, options, rowNumber + 1, quote, escape, columnEndsBuffer.Span);
+                    newlineCount = trackLineNumbers ? Csv.CountNewlines(rowData) + 1 : 0;
+                }
+
                 Csv.EnsureRowSize(rowData.Length, maxRowSize);
 
                 int rowSourceLineNumber = trackLineNumbers ? sourceLineNumber : 0;
                 if (trackLineNumbers)
                 {
-                    sourceLineNumber += Csv.CountNewlines(rowData) + 1;
+                    sourceLineNumber += newlineCount;
                 }
 
-                int columnCount = Csv.ParsePipeSequenceRow(rowData, options, rowNumber + 1, quote, escape, columnEndsBuffer.Span);
                 if (columnCount == 0)
                 {
                     continue;
@@ -589,20 +723,50 @@ public readonly ref struct CsvPipeSequenceRow
     internal CsvPipeRow ToOwnedRow()
     {
         int rowLength = checked((int)data.Length);
-        var rowBytes = GC.AllocateUninitializedArray<byte>(rowLength);
-        data.CopyTo(rowBytes);
+        int headerElementSize = CsvPipeRow.GetHeaderElementSize(rowLength);
+        int headerLength = checked((columnCount + 1) * headerElementSize);
+        var storage = GC.AllocateUninitializedArray<byte>(checked(headerLength + rowLength));
 
-        var ownedColumnEnds = GC.AllocateUninitializedArray<int>(columnCount + 1);
-        columnEnds.CopyTo(ownedColumnEnds);
+        var header = storage.AsSpan(0, headerLength);
+        switch (headerElementSize)
+        {
+            case 1:
+                for (int i = 0; i <= columnCount; i++)
+                {
+                    header[i] = checked((byte)(columnEnds[i] + 1));
+                }
+                break;
+
+            case 2:
+                for (int i = 0; i <= columnCount; i++)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        header.Slice(i * sizeof(ushort), sizeof(ushort)),
+                        checked((ushort)(columnEnds[i] + 1)));
+                }
+                break;
+
+            default:
+                for (int i = 0; i <= columnCount; i++)
+                {
+                    BinaryPrimitives.WriteInt32LittleEndian(
+                        header.Slice(i * sizeof(int), sizeof(int)),
+                        columnEnds[i] + 1);
+                }
+                break;
+        }
+
+        data.CopyTo(storage.AsSpan(headerLength));
 
         return new CsvPipeRow(
-            rowBytes,
-            ownedColumnEnds,
+            storage,
             columnCount,
             RowNumber,
             trimFields,
             quote,
-            escape);
+            escape,
+            headerLength,
+            headerElementSize);
     }
 
     private (long start, long end) TrimBounds(long start, long end)

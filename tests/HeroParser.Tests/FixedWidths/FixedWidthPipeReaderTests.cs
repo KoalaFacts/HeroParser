@@ -418,6 +418,67 @@ public class FixedWidthPipeReaderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task Builder_FromPipeReaderAsync_WithMap_BindsChunkedRecords()
+    {
+        var pipe = new Pipe();
+        var bytes = Encoding.UTF8.GetBytes("0001Alice \r\n0002Bob   \r\n");
+        var ct = TestContext.Current.CancellationToken;
+        var map = new PipeMappedRecordMap();
+
+        _ = Task.Run(async () =>
+        {
+            for (int i = 0; i < bytes.Length; i += 2)
+            {
+                var chunk = bytes.AsMemory(i, Math.Min(2, bytes.Length - i));
+                await pipe.Writer.WriteAsync(chunk, ct);
+                await Task.Delay(1, ct);
+            }
+
+            await pipe.Writer.CompleteAsync();
+        }, ct);
+
+        var records = new List<PipeMappedRecord>();
+        await foreach (var record in FixedWidth.Read<PipeMappedRecord>()
+            .WithMap(map)
+            .FromPipeReaderAsync(pipe.Reader, ct))
+        {
+            records.Add(record);
+        }
+
+        Assert.Collection(
+            records,
+            record =>
+            {
+                Assert.Equal(1, record.Id);
+                Assert.Equal("Alice", record.Name);
+            },
+            record =>
+            {
+                Assert.Equal(2, record.Id);
+                Assert.Equal("Bob", record.Name);
+            });
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DescriptorBinder_BindsUtf8RowDirectly()
+    {
+        var descriptor = new PipeMappedRecordMap().BuildReadDescriptor();
+        var binder = new FixedWidthDescriptorBinder<PipeMappedRecord>(descriptor);
+        var byteBinder = Assert.IsAssignableFrom<IFixedWidthByteBinder<PipeMappedRecord>>(binder);
+        var row = new FixedWidthByteSpanRow(
+            Encoding.UTF8.GetBytes("0001Alice "),
+            recordNumber: 1,
+            sourceLineNumber: 1,
+            new FixedWidthReadOptions());
+
+        Assert.True(byteBinder.TryBind(row, out var record));
+        Assert.Equal(1, record.Id);
+        Assert.Equal("Alice", record.Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ReadFromPipeReader_NullReader_ThrowsArgumentNullException()
     {
         await Assert.ThrowsAsync<ArgumentNullException>(() =>

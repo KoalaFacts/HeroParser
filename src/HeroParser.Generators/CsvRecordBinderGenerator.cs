@@ -19,7 +19,6 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Reading.Binders.CsvRecordBinderFactory";
     private const string BYTE_BINDER_INTERFACE_TYPE = "global::HeroParser.SeparatedValues.Reading.Binders.ICsvBinder<byte, ";
     private const string BYTE_ROW_TYPE = "global::HeroParser.SeparatedValues.Reading.Rows.CsvRow<byte>";
-    private const string UTF8_BINDING_HELPER_TYPE = "global::HeroParser.SeparatedValues.Reading.Binders.CsvUtf8BindingHelper";
     private const string OPTIONS_TYPE = "global::HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions";
     private const string EXCEPTION_TYPE = "global::HeroParser.SeparatedValues.Core.CsvException";
     private const string ERROR_CODE_TYPE = "global::HeroParser.SeparatedValues.Core.CsvErrorCode";

@@ -11,16 +11,16 @@ namespace HeroParser.SeparatedValues.Reading.Binders;
 /// <summary>
 /// UTF-8 parsing helpers used by source-generated CSV binders.
 /// </summary>
-public static class CsvUtf8BindingHelper
+internal static class CsvUtf8BindingHelper
 {
     private const int STACKALLOC_CHAR_THRESHOLD = 256;
 
     /// <summary>
     /// Decodes a UTF-8 span to a managed string.
     /// </summary>
-    public static string Decode(ReadOnlySpan<byte> utf8) => Encoding.UTF8.GetString(utf8);
+    internal static string Decode(ReadOnlySpan<byte> utf8) => Encoding.UTF8.GetString(utf8);
 
-    public static bool TryParseInt32(ReadOnlySpan<byte> utf8, CultureInfo culture, out int value)
+    internal static bool TryParseInt32(ReadOnlySpan<byte> utf8, CultureInfo culture, out int value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -37,7 +37,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseInt64(ReadOnlySpan<byte> utf8, CultureInfo culture, out long value)
+    internal static bool TryParseInt64(ReadOnlySpan<byte> utf8, CultureInfo culture, out long value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -54,7 +54,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseInt16(ReadOnlySpan<byte> utf8, CultureInfo culture, out short value)
+    internal static bool TryParseInt16(ReadOnlySpan<byte> utf8, CultureInfo culture, out short value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -71,7 +71,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseByte(ReadOnlySpan<byte> utf8, CultureInfo culture, out byte value)
+    internal static bool TryParseByte(ReadOnlySpan<byte> utf8, CultureInfo culture, out byte value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -88,7 +88,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseUInt32(ReadOnlySpan<byte> utf8, CultureInfo culture, out uint value)
+    internal static bool TryParseUInt32(ReadOnlySpan<byte> utf8, CultureInfo culture, out uint value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -105,7 +105,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseUInt64(ReadOnlySpan<byte> utf8, CultureInfo culture, out ulong value)
+    internal static bool TryParseUInt64(ReadOnlySpan<byte> utf8, CultureInfo culture, out ulong value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -122,7 +122,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseUInt16(ReadOnlySpan<byte> utf8, CultureInfo culture, out ushort value)
+    internal static bool TryParseUInt16(ReadOnlySpan<byte> utf8, CultureInfo culture, out ushort value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -139,7 +139,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseSByte(ReadOnlySpan<byte> utf8, CultureInfo culture, out sbyte value)
+    internal static bool TryParseSByte(ReadOnlySpan<byte> utf8, CultureInfo culture, out sbyte value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -156,7 +156,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseDecimal(ReadOnlySpan<byte> utf8, CultureInfo culture, out decimal value)
+    internal static bool TryParseDecimal(ReadOnlySpan<byte> utf8, CultureInfo culture, out decimal value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -173,7 +173,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseDouble(ReadOnlySpan<byte> utf8, CultureInfo culture, out double value)
+    internal static bool TryParseDouble(ReadOnlySpan<byte> utf8, CultureInfo culture, out double value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -190,7 +190,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseSingle(ReadOnlySpan<byte> utf8, CultureInfo culture, out float value)
+    internal static bool TryParseSingle(ReadOnlySpan<byte> utf8, CultureInfo culture, out float value)
     {
         if (IsInvariantCulture(culture) &&
             Utf8Parser.TryParse(utf8, out value, out int consumed) &&
@@ -207,13 +207,13 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseBoolean(ReadOnlySpan<byte> utf8, out bool value)
+    internal static bool TryParseBoolean(ReadOnlySpan<byte> utf8, out bool value)
         => Utf8Parser.TryParse(utf8, out value, out int consumed) && consumed == utf8.Length;
 
-    public static bool TryParseGuid(ReadOnlySpan<byte> utf8, out Guid value)
+    internal static bool TryParseGuid(ReadOnlySpan<byte> utf8, out Guid value)
         => Utf8Parser.TryParse(utf8, out value, out int consumed) && consumed == utf8.Length;
 
-    public static bool TryParseDateTime(ReadOnlySpan<byte> utf8, CultureInfo culture, string? format, out DateTime value)
+    internal static bool TryParseDateTime(ReadOnlySpan<byte> utf8, CultureInfo culture, string? format, out DateTime value)
     {
         if (format is null &&
             IsInvariantCulture(culture) &&
@@ -242,7 +242,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseDateTimeOffset(ReadOnlySpan<byte> utf8, CultureInfo culture, string? format, out DateTimeOffset value)
+    internal static bool TryParseDateTimeOffset(ReadOnlySpan<byte> utf8, CultureInfo culture, string? format, out DateTimeOffset value)
     {
         if (format is null)
         {
@@ -263,7 +263,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseDateOnly(ReadOnlySpan<byte> utf8, CultureInfo culture, string? format, out DateOnly value)
+    internal static bool TryParseDateOnly(ReadOnlySpan<byte> utf8, CultureInfo culture, string? format, out DateOnly value)
     {
         if (format is null)
         {
@@ -284,7 +284,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseTimeOnly(ReadOnlySpan<byte> utf8, CultureInfo culture, string? format, out TimeOnly value)
+    internal static bool TryParseTimeOnly(ReadOnlySpan<byte> utf8, CultureInfo culture, string? format, out TimeOnly value)
     {
         if (format is null)
         {
@@ -305,7 +305,7 @@ public static class CsvUtf8BindingHelper
             out value);
     }
 
-    public static bool TryParseEnum<TEnum>(ReadOnlySpan<byte> utf8, out TEnum value)
+    internal static bool TryParseEnum<TEnum>(ReadOnlySpan<byte> utf8, out TEnum value)
         where TEnum : struct, Enum
         => TryParseChars(
             utf8,

@@ -1,8 +1,10 @@
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Rows;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Reading.Records.MultiSchema;
 
@@ -14,7 +16,7 @@ internal interface IMultiSchemaBinderWrapper<TElement>
 {
     bool NeedsHeaderResolution { get; }
     void BindHeader(CsvRow<TElement> headerRow, int rowNumber);
-    bool TryBind(CsvRow<TElement> row, int rowNumber, out object? result);
+    bool TryBind(CsvRow<TElement> row, int rowNumber, out object? result, List<ValidationError>? errors = null);
 }
 
 /// <summary>
@@ -42,9 +44,9 @@ internal sealed class MultiSchemaBinderWrapper<TElement, T> : IMultiSchemaBinder
         => binder.BindHeader(headerRow, rowNumber);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryBind(CsvRow<TElement> row, int rowNumber, out object? result)
+    public bool TryBind(CsvRow<TElement> row, int rowNumber, out object? result, List<ValidationError>? errors = null)
     {
-        if (binder.TryBind(row, rowNumber, out var typed))
+        if (binder.TryBind(row, rowNumber, out var typed, errors))
         {
             result = typed;
             return true;
@@ -262,7 +264,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
     /// Binds a row to a record using the appropriate binder based on the discriminator value.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public object? Bind(CsvRow<TElement> row, int rowNumber)
+    public object? Bind(CsvRow<TElement> row, int rowNumber, List<ValidationError>? errors = null)
     {
         // Ultra-fast path: single ASCII char lookup using specialized accessor
         // This avoids CsvColumn creation and span slicing overhead
@@ -277,7 +279,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
                     var cached = lastWrapper;
                     if (cached is not null && charCode == lastCharCode)
                     {
-                        return TryBindWithWrapper(cached, row, rowNumber);
+                        return TryBindWithWrapper(cached, row, rowNumber, errors);
                     }
 
                     var wrapper = singleCharLookup[charCode];
@@ -288,7 +290,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
                         lastWrapper = wrapper;
                         // Invalidate packed cache to prevent false positives with empty discriminators
                         lastPackedLength = INVALID_CACHED_LENGTH;
-                        return TryBindWithWrapper(wrapper, row, rowNumber);
+                        return TryBindWithWrapper(wrapper, row, rowNumber, errors);
                     }
                 }
             }
@@ -302,7 +304,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
         if (row.TryGetColumnSpan(resolvedDiscriminatorIndex, out var span))
         {
             // Fast path: packed key lookup
-            if (TryBindWithPackedKeySpan(span, row, rowNumber, out var result))
+            if (TryBindWithPackedKeySpan(span, row, rowNumber, out var result, errors))
             {
                 return result;
             }
@@ -312,7 +314,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
             {
                 // Create column only when string lookup is needed
                 var discriminatorColumn = row[resolvedDiscriminatorIndex];
-                if (TryBindWithStringKey(discriminatorColumn, row, rowNumber, out result))
+                if (TryBindWithStringKey(discriminatorColumn, row, rowNumber, out result, errors))
                 {
                     return result;
                 }
@@ -349,7 +351,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool TryBindWithPackedKeySpan(ReadOnlySpan<TElement> span, CsvRow<TElement> row, int rowNumber, out object? result)
+    private bool TryBindWithPackedKeySpan(ReadOnlySpan<TElement> span, CsvRow<TElement> row, int rowNumber, out object? result, List<ValidationError>? errors = null)
     {
         // Quick length check first - most cache misses fail here
         if (span.Length > DiscriminatorKey.MAX_PACKED_LENGTH)
@@ -366,7 +368,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
             // Try to match cached packed value directly
             if (TryMatchPackedValue(span, out bool matched) && matched)
             {
-                result = TryBindWithWrapper(cached, row, rowNumber);
+                result = TryBindWithWrapper(cached, row, rowNumber, errors);
                 return true;
             }
         }
@@ -416,7 +418,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
             // Cache raw values for next row's sticky binding
             key.GetRawValues(out lastPackedValue, out lastPackedLength);
             lastWrapper = entry.Wrapper;
-            result = TryBindWithWrapper(entry.Wrapper, row, rowNumber);
+            result = TryBindWithWrapper(entry.Wrapper, row, rowNumber, errors);
             return true;
         }
 
@@ -484,7 +486,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
         return true;
     }
 
-    private bool TryBindWithStringKey(CsvColumn<TElement> column, CsvRow<TElement> row, int rowNumber, out object? result)
+    private bool TryBindWithStringKey(CsvColumn<TElement> column, CsvRow<TElement> row, int rowNumber, out object? result, List<ValidationError>? errors = null)
     {
         var discriminatorString = GetDiscriminatorString(column);
         var comparer = caseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -493,7 +495,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
         {
             if (comparer.Equals(kvp.Key, discriminatorString))
             {
-                result = TryBindWithWrapper(kvp.Value.Wrapper, row, rowNumber);
+                result = TryBindWithWrapper(kvp.Value.Wrapper, row, rowNumber, errors);
                 return true;
             }
         }
@@ -568,8 +570,8 @@ internal sealed class CsvMultiSchemaBinder<TElement>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static object? TryBindWithWrapper(IMultiSchemaBinderWrapper<TElement> wrapper, CsvRow<TElement> row, int rowNumber)
+    private static object? TryBindWithWrapper(IMultiSchemaBinderWrapper<TElement> wrapper, CsvRow<TElement> row, int rowNumber, List<ValidationError>? errors = null)
     {
-        return wrapper.TryBind(row, rowNumber, out var result) ? result : null;
+        return wrapper.TryBind(row, rowNumber, out var result, errors) ? result : null;
     }
 }

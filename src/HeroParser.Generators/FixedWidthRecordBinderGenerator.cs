@@ -22,6 +22,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private const string FIELD_ALIGNMENT_TYPE = "global::HeroParser.FixedWidths.FieldAlignment";
     private const string DESCRIPTOR_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthRecordDescriptor";
     private const string PROPERTY_DESCRIPTOR_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthPropertyDescriptor";
+    private const string BINDER_INTERFACE_TYPE = "global::HeroParser.FixedWidths.Records.Binding.IFixedWidthBinder";
 
     private static readonly string[] generateAttributeNames =
     [
@@ -43,6 +44,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         "HeroParser.Generators",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
 #pragma warning restore RS2008
 
     /// <inheritdoc/>
@@ -108,12 +110,17 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("using System;");
         builder.AppendLine("using System.Collections.Generic;");
         builder.AppendLine("using System.Globalization;");
+        builder.AppendLine("using System.Runtime.CompilerServices;");
+        builder.AppendLine("using HeroParser.Validation;");
         builder.AppendLine();
         builder.AppendLine($"namespace {GENERATED_NAMESPACE};");
         builder.AppendLine();
 
-        // Emit descriptor class for optimized binding
+        // Emit descriptor class for optimized binding (writer + descriptor registration)
         EmitDescriptorClass(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName, binderMembers);
+
+        // Emit generated binder class for inline validation support
+        EmitGeneratedBinderClass(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName, binderMembers);
 
         context.AddSource($"FixedWidthDescriptor.{descriptor.SafeClassName}.g.cs", builder.ToString());
     }
@@ -186,6 +193,527 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("}");
         builder.AppendLine();
     }
+
+    #region Generated Binder Class (inline validation)
+
+    private static void EmitGeneratedBinderClass(SourceBuilder builder, string fullyQualifiedName, string safeClassName, IReadOnlyList<MemberDescriptor> members)
+    {
+        var binderClassName = $"FixedWidthGeneratedBinder_{safeClassName}";
+
+        builder.AppendLine($"internal sealed class {binderClassName} : {BINDER_INTERFACE_TYPE}<{fullyQualifiedName}>");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        // Emit static Regex fields for Pattern validation
+        foreach (var member in members)
+        {
+            if (member.ValidationPattern != null)
+            {
+                var escapedPattern = EscapeString(member.ValidationPattern);
+                builder.AppendLine($"private static readonly global::System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", global::System.Text.RegularExpressions.RegexOptions.Compiled, TimeSpan.FromMilliseconds({member.ValidationPatternTimeoutMs}));");
+            }
+        }
+
+        // Fields
+        builder.AppendLine("private readonly CultureInfo _culture;");
+        builder.AppendLine("private readonly HashSet<string>? _nullValues;");
+        builder.AppendLine();
+
+        // Constructor
+        builder.AppendLine($"public {binderClassName}(CultureInfo? culture, IReadOnlyList<string>? nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("_culture = culture ?? CultureInfo.InvariantCulture;");
+        builder.AppendLine("_nullValues = nullValues is { Count: > 0 }");
+        builder.AppendLine("    ? new HashSet<string>(nullValues, StringComparer.Ordinal)");
+        builder.AppendLine("    : null;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+
+        // TryBind method
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine($"public bool TryBind(global::HeroParser.FixedWidths.FixedWidthCharSpanRow row, out {fullyQualifiedName} result, List<ValidationError>? errors = null)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"result = new {fullyQualifiedName}();");
+        builder.AppendLine("return BindInto(ref result, row, errors);");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+
+        // BindInto method with inline parsing + validation
+        EmitGeneratedBindIntoMethod(builder, fullyQualifiedName, members);
+
+        // Factory method
+        builder.AppendLine($"public static {BINDER_INTERFACE_TYPE}<{fullyQualifiedName}> Create(CultureInfo? culture, IReadOnlyList<string>? nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"return new {binderClassName}(culture, nullValues);");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+
+        // IsNullValue helper
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine("private static bool IsNullValue(ReadOnlySpan<char> value, HashSet<string> nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("return nullValues.Contains(new string(value));");
+        builder.Unindent();
+        builder.AppendLine("}");
+
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private static void EmitGeneratedBindIntoMethod(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    {
+        bool anyValidation = HasAnyValidation(members);
+
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine($"public bool BindInto(ref {fullyQualifiedName} instance, global::HeroParser.FixedWidths.FixedWidthCharSpanRow row, List<ValidationError>? errors = null)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("var cultureLocal = _culture;");
+        builder.AppendLine("var nullVals = _nullValues;");
+        builder.AppendLine("var rowNumber = row.RecordNumber;");
+
+        if (anyValidation)
+        {
+            builder.AppendLine("bool valid = true;");
+        }
+
+        builder.AppendLine();
+
+        foreach (var member in members)
+        {
+            EmitGeneratedPropertyBinding(builder, member);
+        }
+
+        builder.AppendLine(anyValidation ? "return valid;" : "return true;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private static void EmitGeneratedPropertyBinding(SourceBuilder builder, MemberDescriptor member)
+    {
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"var field = row.GetField({member.Start}, {member.Length}, '{EscapeChar(member.PadChar)}', {FIELD_ALIGNMENT_TYPE}.{member.Alignment});");
+        builder.AppendLine("var span = field.CharSpan;");
+        builder.AppendLine();
+        builder.AppendLine("if (nullVals is null || !IsNullValue(span, nullVals))");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        // Emit inline parsing (same logic as setter methods but inline)
+        EmitInlineParsingLogic(builder, member);
+
+        // Emit validation checks after parsing
+        if (HasAnyValidation(member))
+        {
+            EmitValidationChecks(builder, member);
+        }
+
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private static void EmitInlineParsingLogic(SourceBuilder builder, MemberDescriptor member)
+    {
+        var baseType = member.BaseTypeName;
+
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+        switch (baseType)
+        {
+            case "string":
+                builder.AppendLine($"instance.{member.MemberName} = new string(span);");
+                break;
+
+            case "int":
+            case "System.Int32":
+                EmitInlineNumericParsing(builder, member, "int", "Integer");
+                break;
+
+            case "long":
+            case "System.Int64":
+                EmitInlineNumericParsing(builder, member, "long", "Integer");
+                break;
+
+            case "short":
+            case "System.Int16":
+                EmitInlineNumericParsing(builder, member, "short", "Integer");
+                break;
+
+            case "byte":
+            case "System.Byte":
+                EmitInlineNumericParsing(builder, member, "byte", "Integer");
+                break;
+
+            case "decimal":
+            case "System.Decimal":
+                EmitInlineNumericParsing(builder, member, "decimal", "Number");
+                break;
+
+            case "double":
+            case "System.Double":
+                EmitInlineFloatParsing(builder, member, "double");
+                break;
+
+            case "float":
+            case "System.Single":
+                EmitInlineFloatParsing(builder, member, "float");
+                break;
+
+            case "bool":
+            case "System.Boolean":
+                EmitInlineBooleanParsing(builder, member);
+                break;
+
+            case "System.DateTime":
+                EmitInlineDateTimeParsing(builder, member, "DateTime");
+                break;
+
+            case "System.DateTimeOffset":
+                EmitInlineDateTimeParsing(builder, member, "DateTimeOffset");
+                break;
+
+            case "System.DateOnly":
+                EmitInlineDateTimeParsing(builder, member, "DateOnly");
+                break;
+
+            case "System.TimeOnly":
+                EmitInlineDateTimeParsing(builder, member, "TimeOnly");
+                break;
+
+            case "System.Guid":
+                EmitInlineGuidParsing(builder, member);
+                break;
+
+            default:
+                if (member.IsEnum)
+                    EmitInlineEnumParsing(builder, member);
+                else
+                    builder.AppendLine($"instance.{member.MemberName} = new string(span);");
+                break;
+        }
+#pragma warning restore IDE0010
+    }
+
+    private static void EmitInlineNumericParsing(SourceBuilder builder, MemberDescriptor member, string typeName, string numberStyle)
+    {
+        var propertyName = member.MemberName;
+        var isNullable = member.IsNullable;
+        var styles = numberStyle == "Integer" ? "NumberStyles.Integer" : "NumberStyles.Number";
+
+        if (isNullable)
+        {
+            builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace()) {{ /* null */ }}");
+            builder.AppendLine($"else if ({typeName}.TryParse(span, {styles}, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, typeName);
+        }
+        else
+        {
+            builder.AppendLine($"if ({typeName}.TryParse(span, {styles}, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, typeName);
+        }
+    }
+
+    private static void EmitInlineFloatParsing(SourceBuilder builder, MemberDescriptor member, string typeName)
+    {
+        var propertyName = member.MemberName;
+        var isNullable = member.IsNullable;
+        const string STYLES = "NumberStyles.Float | NumberStyles.AllowThousands";
+
+        if (isNullable)
+        {
+            builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace()) {{ /* null */ }}");
+            builder.AppendLine($"else if ({typeName}.TryParse(span, {STYLES}, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, typeName);
+        }
+        else
+        {
+            builder.AppendLine($"if ({typeName}.TryParse(span, {STYLES}, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, typeName);
+        }
+    }
+
+    private static void EmitInlineBooleanParsing(SourceBuilder builder, MemberDescriptor member)
+    {
+        var propertyName = member.MemberName;
+        var isNullable = member.IsNullable;
+
+        if (isNullable)
+        {
+            builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace()) {{ /* null */ }}");
+            builder.AppendLine($"else if (bool.TryParse(span, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"else if (span.Length == 1)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine($"var c_{propertyName} = span[0];");
+            builder.AppendLine($"if (c_{propertyName} is '1' or 'Y' or 'y' or 'T' or 't') instance.{propertyName} = true;");
+            builder.AppendLine($"else if (c_{propertyName} is '0' or 'N' or 'n' or 'F' or 'f') instance.{propertyName} = false;");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, "bool");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, "bool");
+        }
+        else
+        {
+            builder.AppendLine($"if (bool.TryParse(span, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"else if (span.Length == 1)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine($"var c_{propertyName} = span[0];");
+            builder.AppendLine($"if (c_{propertyName} is '1' or 'Y' or 'y' or 'T' or 't') instance.{propertyName} = true;");
+            builder.AppendLine($"else if (c_{propertyName} is '0' or 'N' or 'n' or 'F' or 'f') instance.{propertyName} = false;");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, "bool");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, "bool");
+        }
+    }
+
+    private static void EmitInlineDateTimeParsing(SourceBuilder builder, MemberDescriptor member, string typeName)
+    {
+        var propertyName = member.MemberName;
+        var format = member.Format;
+        var isNullable = member.IsNullable;
+
+        if (isNullable)
+        {
+            builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace()) {{ /* null */ }}");
+            if (format != null)
+                builder.AppendLine($"else if ({typeName}.TryParseExact(span, \"{EscapeString(format)}\", cultureLocal, DateTimeStyles.None, out var parsed_{propertyName}))");
+            else
+                builder.AppendLine($"else if ({typeName}.TryParse(span, cultureLocal, DateTimeStyles.None, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, typeName);
+        }
+        else
+        {
+            if (format != null)
+                builder.AppendLine($"if ({typeName}.TryParseExact(span, \"{EscapeString(format)}\", cultureLocal, DateTimeStyles.None, out var parsed_{propertyName}))");
+            else
+                builder.AppendLine($"if ({typeName}.TryParse(span, cultureLocal, DateTimeStyles.None, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, typeName);
+        }
+    }
+
+    private static void EmitInlineGuidParsing(SourceBuilder builder, MemberDescriptor member)
+    {
+        var propertyName = member.MemberName;
+        var isNullable = member.IsNullable;
+
+        if (isNullable)
+        {
+            builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace()) {{ /* null */ }}");
+            builder.AppendLine($"else if (Guid.TryParse(span, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, "Guid");
+        }
+        else
+        {
+            builder.AppendLine($"if (Guid.TryParse(span, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, "Guid");
+        }
+    }
+
+    private static void EmitInlineEnumParsing(SourceBuilder builder, MemberDescriptor member)
+    {
+        var propertyName = member.MemberName;
+        var enumType = member.TypeofTypeName;
+        var isNullable = member.IsNullable;
+
+        if (isNullable)
+        {
+            builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace()) {{ /* null */ }}");
+            builder.AppendLine($"else if (Enum.TryParse<{enumType}>(span, ignoreCase: true, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, enumType);
+        }
+        else
+        {
+            builder.AppendLine($"if (Enum.TryParse<{enumType}>(span, ignoreCase: true, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitThrowParseError(builder, propertyName, enumType);
+        }
+    }
+
+    #region Validation Code Generation
+
+    private static bool HasAnyValidation(MemberDescriptor member)
+    {
+        return member.ValidationRequired || member.ValidationNotEmpty
+            || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
+            || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
+            || member.ValidationPattern != null;
+    }
+
+    private static bool HasAnyValidation(IReadOnlyList<MemberDescriptor> members)
+    {
+        foreach (var m in members) if (HasAnyValidation(m)) return true;
+        return false;
+    }
+
+    private static void EmitValidationChecks(SourceBuilder builder, MemberDescriptor member)
+    {
+        // Required validation
+        if (member.ValidationRequired)
+        {
+            builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace())");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "Required", "Value is required");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // NotEmpty validation (string only)
+        if (member.ValidationNotEmpty)
+        {
+            builder.AppendLine($"if (!span.IsEmpty && string.IsNullOrWhiteSpace(instance.{member.MemberName}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "NotEmpty", "Value must not be empty or whitespace");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // MaxLength validation (string only)
+        if (member.ValidationMaxLength >= 0)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.ValidationMaxLength})");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.ValidationMaxLength}");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // MinLength validation (string only)
+        if (member.ValidationMinLength >= 0)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.ValidationMinLength})");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.ValidationMinLength}");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // Range validation (numeric only)
+        if (!double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax))
+        {
+            var valueExpr = $"instance.{member.MemberName}";
+            var conditions = new List<string>();
+            if (!double.IsNaN(member.ValidationRangeMin))
+                conditions.Add($"{valueExpr} < {FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
+            if (!double.IsNaN(member.ValidationRangeMax))
+                conditions.Add($"{valueExpr} > {FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
+
+            builder.AppendLine($"if (!span.IsEmpty && ({string.Join(" || ", conditions)}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            var rangeMsg = FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
+            EmitAddValidationError(builder, member, "Range", rangeMsg);
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // Pattern validation (string only)
+        if (member.ValidationPattern != null)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && !_pattern_{member.MemberName}.IsMatch(instance.{member.MemberName}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "Pattern", "Value does not match pattern");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+    }
+
+    private static void EmitAddValidationError(SourceBuilder builder, MemberDescriptor member, string rule, string message)
+    {
+        builder.AppendLine($"errors?.Add(new global::HeroParser.Validation.ValidationError");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"RowNumber = rowNumber,");
+        builder.AppendLine($"ColumnIndex = {member.Start},");
+        builder.AppendLine($"ColumnName = null,");
+        builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
+        builder.AppendLine($"Rule = \"{rule}\",");
+        builder.AppendLine($"Message = \"{EscapeString(message)}\",");
+        builder.AppendLine($"RawValue = new string(span)");
+        builder.Unindent();
+        builder.AppendLine("});");
+    }
+
+    private static string FormatRangeLiteral(double value, string baseType)
+    {
+        return baseType switch
+        {
+            "decimal" or "System.Decimal" => $"{value}m",
+            "float" or "System.Single" => $"{value}f",
+            "double" or "System.Double" => $"{value}d",
+            "long" or "System.Int64" => $"{(long)value}L",
+            "ulong" or "System.UInt64" => $"{(ulong)value}UL",
+            "int" or "System.Int32" => $"{(int)value}",
+            "uint" or "System.UInt32" => $"{(uint)value}U",
+            "short" or "System.Int16" => $"(short){(short)value}",
+            "ushort" or "System.UInt16" => $"(ushort){(ushort)value}",
+            "byte" or "System.Byte" => $"(byte){(byte)value}",
+            "sbyte" or "System.SByte" => $"(sbyte){(sbyte)value}",
+            _ => $"{value}"
+        };
+    }
+
+    private static string FormatRangeMessage(double min, double max)
+    {
+        if (!double.IsNaN(min) && !double.IsNaN(max))
+            return $"Value must be between {min} and {max}";
+        if (!double.IsNaN(min))
+            return $"Value must be >= {min}";
+        return $"Value must be <= {max}";
+    }
+
+    #endregion
+
+    #endregion
 
     private static void EmitSetterParsingLogic(SourceBuilder builder, MemberDescriptor member)
     {
@@ -457,6 +985,8 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         var builder = new SourceBuilder(8192);
         builder.AppendLine("// <auto-generated/>");
         builder.AppendLine("#nullable enable");
+        builder.AppendLine("using System.Collections.Generic;");
+        builder.AppendLine("using System.Globalization;");
         builder.AppendLine("using System.Runtime.CompilerServices;");
         builder.AppendLine();
         builder.AppendLine($"namespace {GENERATED_NAMESPACE};");
@@ -475,6 +1005,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             if (binderMembers.Count > 0)
             {
                 EmitDescriptorRegistration(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName);
+                EmitGeneratedBinderRegistration(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName);
             }
 
             var writerMembers = GetMembersWithGetters(descriptor.Members);
@@ -518,6 +1049,12 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     {
         var descriptorClassName = $"FixedWidthDescriptor_{safeClassName}";
         builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterDescriptor<{fullyQualifiedName}>({descriptorClassName}.GetDescriptor);");
+    }
+
+    private static void EmitGeneratedBinderRegistration(SourceBuilder builder, string fullyQualifiedName, string safeClassName)
+    {
+        var binderClassName = $"global::{GENERATED_NAMESPACE}.FixedWidthGeneratedBinder_{safeClassName}";
+        builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterGeneratedBinder<{fullyQualifiedName}>({binderClassName}.Create);");
     }
 
     private static void EmitWriterRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
@@ -575,6 +1112,15 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             string alignment = "Left";
             string? format = null;
 
+            bool validationRequired = false;
+            bool validationNotEmpty = false;
+            int validationMaxLength = -1;
+            int validationMinLength = -1;
+            double validationRangeMin = double.NaN;
+            double validationRangeMax = double.NaN;
+            string? validationPattern = null;
+            int validationPatternTimeoutMs = 1000;
+
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
             foreach (var arg in mapAttribute.NamedArguments)
             {
@@ -598,6 +1144,22 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                     case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
                         format = f;
                         break;
+                    case "Required" when arg.Value.Value is bool r:
+                        validationRequired = r; break;
+                    case "NotEmpty" when arg.Value.Value is bool ne:
+                        validationNotEmpty = ne; break;
+                    case "MaxLength" when arg.Value.Value is int ml && ml >= 0:
+                        validationMaxLength = ml; break;
+                    case "MinLength" when arg.Value.Value is int mnl && mnl >= 0:
+                        validationMinLength = mnl; break;
+                    case "RangeMin" when arg.Value.Value is double rmin && !double.IsNaN(rmin):
+                        validationRangeMin = rmin; break;
+                    case "RangeMax" when arg.Value.Value is double rmax && !double.IsNaN(rmax):
+                        validationRangeMax = rmax; break;
+                    case "Pattern" when arg.Value.Value is string pat && !string.IsNullOrWhiteSpace(pat):
+                        validationPattern = pat; break;
+                    case "PatternTimeoutMs" when arg.Value.Value is int pt && pt > 0:
+                        validationPatternTimeoutMs = pt; break;
                 }
             }
 #pragma warning restore IDE0010
@@ -631,6 +1193,35 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             if (padChar == '\0')
                 padChar = ' ';
 
+            bool isStringType = baseTypeName is "string" or "string?";
+            bool isNumericType = baseTypeName is "int" or "System.Int32" or "long" or "System.Int64"
+                or "short" or "System.Int16" or "byte" or "System.Byte" or "uint" or "System.UInt32"
+                or "ulong" or "System.UInt64" or "ushort" or "System.UInt16" or "sbyte" or "System.SByte"
+                or "decimal" or "System.Decimal" or "double" or "System.Double" or "float" or "System.Single";
+
+            if (validationNotEmpty && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(NotEmptyOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationNotEmpty = false;
+            }
+            if ((validationMaxLength >= 0 || validationMinLength >= 0) && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(LengthOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationMaxLength = -1;
+                validationMinLength = -1;
+            }
+            if ((!double.IsNaN(validationRangeMin) || !double.IsNaN(validationRangeMax)) && !isNumericType)
+            {
+                diagnostics.Add(Diagnostic.Create(RangeOnNonNumericDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationRangeMin = double.NaN;
+                validationRangeMax = double.NaN;
+            }
+            if (validationPattern != null && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(PatternOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationPattern = null;
+            }
+
             var setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
             var getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
 
@@ -647,7 +1238,15 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 getterFactory,
                 baseTypeName,
                 isNullable,
-                isEnum));
+                isEnum,
+                validationRequired,
+                validationNotEmpty,
+                validationMaxLength,
+                validationMinLength,
+                validationRangeMin,
+                validationRangeMax,
+                validationPattern,
+                validationPatternTimeoutMs));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)
@@ -720,5 +1319,15 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         string? GetterFactory,
         string BaseTypeName,
         bool IsNullable,
-        bool IsEnum);
+        bool IsEnum,
+        // Validation fields:
+        bool ValidationRequired,
+        bool ValidationNotEmpty,
+        int ValidationMaxLength,       // -1 = unchecked
+        int ValidationMinLength,       // -1 = unchecked
+        double ValidationRangeMin,     // NaN = unchecked
+        double ValidationRangeMax,     // NaN = unchecked
+        string? ValidationPattern,
+        int ValidationPatternTimeoutMs);  // default 1000
+
 }

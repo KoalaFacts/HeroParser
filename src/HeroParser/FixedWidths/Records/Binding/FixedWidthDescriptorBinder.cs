@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using HeroParser.FixedWidths.Mapping;
+using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Records.Binding;
 
@@ -30,10 +32,10 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryBind(FixedWidthCharSpanRow row, out T result)
+    public bool TryBind(FixedWidthCharSpanRow row, out T result, List<ValidationError>? errors = null)
     {
         var instance = descriptor.Factory();
-        if (!BindInto(ref instance, row))
+        if (!BindInto(ref instance, row, errors))
         {
             result = default!;
             return false;
@@ -45,11 +47,12 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
 
     /// <inheritdoc />
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool BindInto(ref T instance, FixedWidthCharSpanRow row)
+    public bool BindInto(ref T instance, FixedWidthCharSpanRow row, List<ValidationError>? errors = null)
     {
         var props = descriptor.Properties;
         var cultureLocal = culture;
         var nullVals = nullValues;
+        bool hasErrors = false;
 
         for (int i = 0; i < props.Length; i++)
         {
@@ -72,9 +75,20 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
                         row.RecordNumber,
                         row.SourceLineNumber);
                 }
+
+                if (prop.Validation is { HasAnyRule: true } validation && errors is not null)
+                {
+                    var fieldStr = new string(span);
+                    hasErrors |= PropertyValidationRunner.Validate(
+                        fieldStr, prop.Name, row.RecordNumber, i,
+                        columnName: prop.Name,
+                        validation.NotEmpty, validation.MinLength, validation.MaxLength,
+                        validation.RangeMin, validation.RangeMax, validation.Pattern,
+                        errors);
+                }
             }
         }
-        return true;
+        return !hasErrors;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -26,7 +26,7 @@ public class AsyncWriterTests
     [CsvGenerateBinder]
     public class FormattedAsyncRecord
     {
-        [CsvColumn(Format = "yyyy-MM-dd")]
+        [CsvColumn(Name = "CreatedOn", Format = "yyyy-MM-dd")]
         public DateTime CreatedOn { get; set; }
     }
 

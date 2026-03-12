@@ -35,4 +35,28 @@ public sealed class CsvColumnAttribute : Attribute
     /// When omitted, default parsing rules apply.
     /// </remarks>
     public string? Format { get; init; }
+
+    /// <summary>Value must be present (non-null, column must exist).</summary>
+    public bool Required { get; init; }
+
+    /// <summary>String value must not be empty or whitespace. Only valid on string properties.</summary>
+    public bool NotEmpty { get; init; }
+
+    /// <summary>Maximum string length. -1 means unchecked. Only valid on string properties.</summary>
+    public int MaxLength { get; init; } = -1;
+
+    /// <summary>Minimum string length. -1 means unchecked. Only valid on string properties.</summary>
+    public int MinLength { get; init; } = -1;
+
+    /// <summary>Minimum numeric value. NaN means unchecked. Only valid on numeric properties.</summary>
+    public double RangeMin { get; init; } = double.NaN;
+
+    /// <summary>Maximum numeric value. NaN means unchecked. Only valid on numeric properties.</summary>
+    public double RangeMax { get; init; } = double.NaN;
+
+    /// <summary>Regex pattern the string value must match. Only valid on string properties.</summary>
+    public string? Pattern { get; init; }
+
+    /// <summary>Regex timeout in milliseconds for Pattern validation. Default 1000ms.</summary>
+    public int PatternTimeoutMs { get; init; } = 1000;
 }

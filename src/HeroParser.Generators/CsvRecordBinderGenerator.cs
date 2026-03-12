@@ -45,6 +45,15 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         "HeroParser.Generators",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor missingNameOrIndexDiagnostic = new(
+        "HERO008",
+        "CsvColumn requires Name or Index",
+        "Property '{0}' has [CsvColumn] but neither Name nor Index is specified. Set Name or Index explicitly.",
+        "HeroParser.Generators",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
 #pragma warning restore RS2008
 
     /// <inheritdoc/>
@@ -114,6 +123,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         byteBuilder.AppendLine("using System.Globalization;");
         byteBuilder.AppendLine("using System.Runtime.CompilerServices;");
         byteBuilder.AppendLine("using System.Text;");
+        byteBuilder.AppendLine("using HeroParser.Validation;");
         byteBuilder.AppendLine();
         byteBuilder.AppendLine($"namespace {GENERATED_BYTE_NAMESPACE};");
         byteBuilder.AppendLine();
@@ -133,6 +143,16 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"internal sealed class {binderClassName} : {BYTE_BINDER_INTERFACE_TYPE}{fullyQualifiedName}>");
         builder.AppendLine("{");
         builder.Indent();
+
+        // Emit static Regex fields for Pattern validation
+        foreach (var member in members)
+        {
+            if (member.ValidationPattern != null)
+            {
+                var escapedPattern = EscapeString(member.ValidationPattern);
+                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.Compiled, TimeSpan.FromMilliseconds({member.ValidationPatternTimeoutMs}));");
+            }
+        }
 
         // Emit fields
         builder.AppendLine("private readonly CultureInfo _culture;");
@@ -236,11 +256,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static void EmitByteBindMethod(SourceBuilder builder, string fullyQualifiedName)
     {
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine($"public bool TryBind({BYTE_ROW_TYPE} row, int rowNumber, out {fullyQualifiedName} result)");
+        builder.AppendLine($"public bool TryBind({BYTE_ROW_TYPE} row, int rowNumber, out {fullyQualifiedName} result, List<ValidationError>? errors = null)");
         builder.AppendLine("{");
         builder.Indent();
         builder.AppendLine($"result = new {fullyQualifiedName}();");
-        builder.AppendLine("return BindInto(ref result, row, rowNumber);");
+        builder.AppendLine("return BindInto(ref result, row, rowNumber, errors);");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -248,19 +268,27 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
     private static void EmitByteBindIntoMethod(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
     {
+        bool anyValidation = HasAnyValidation(members);
+
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine($"public bool BindInto(ref {fullyQualifiedName} instance, {BYTE_ROW_TYPE} row, int rowNumber)");
+        builder.AppendLine($"public bool BindInto(ref {fullyQualifiedName} instance, {BYTE_ROW_TYPE} row, int rowNumber, List<ValidationError>? errors = null)");
         builder.AppendLine("{");
         builder.Indent();
         builder.AppendLine("var columnCount = row.ColumnCount;");
         builder.AppendLine();
+
+        if (anyValidation)
+        {
+            builder.AppendLine("bool valid = true;");
+            builder.AppendLine();
+        }
 
         foreach (var member in members)
         {
             EmitByteInlinePropertyBinding(builder, member);
         }
 
-        builder.AppendLine("return true;");
+        builder.AppendLine(anyValidation ? "return valid;" : "return true;");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -284,6 +312,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         // Emit inline parsing logic
         EmitByteInlineParsingLogic(builder, member);
+
+        // Emit validation checks after parsing
+        if (HasAnyValidation(member))
+        {
+            EmitValidationChecks(builder, member);
+        }
 
         builder.Unindent();
         builder.AppendLine("}");
@@ -560,6 +594,153 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
+    #region Validation Code Generation
+
+    private static bool HasAnyValidation(MemberDescriptor member)
+    {
+        return member.ValidationRequired || member.ValidationNotEmpty
+            || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
+            || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
+            || member.ValidationPattern != null;
+    }
+
+    private static bool HasAnyValidation(IReadOnlyList<MemberDescriptor> members)
+    {
+        foreach (var m in members) if (HasAnyValidation(m)) return true;
+        return false;
+    }
+
+    private static void EmitValidationChecks(SourceBuilder builder, MemberDescriptor member)
+    {
+        // Required validation
+        if (member.ValidationRequired)
+        {
+            builder.AppendLine($"if (utf8.IsEmpty)");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "Required", "Value is required");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // NotEmpty validation (string only)
+        if (member.ValidationNotEmpty)
+        {
+            builder.AppendLine($"if (!utf8.IsEmpty && string.IsNullOrWhiteSpace(instance.{member.MemberName}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "NotEmpty", "Value must not be empty or whitespace");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // MaxLength validation (string only)
+        if (member.ValidationMaxLength >= 0)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.ValidationMaxLength})");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.ValidationMaxLength}");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // MinLength validation (string only)
+        if (member.ValidationMinLength >= 0)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.ValidationMinLength})");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.ValidationMinLength}");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // Range validation (numeric only)
+        if (!double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax))
+        {
+            var valueExpr = $"instance.{member.MemberName}";
+            var conditions = new List<string>();
+            if (!double.IsNaN(member.ValidationRangeMin))
+                conditions.Add($"{valueExpr} < {FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
+            if (!double.IsNaN(member.ValidationRangeMax))
+                conditions.Add($"{valueExpr} > {FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
+
+            builder.AppendLine($"if (!utf8.IsEmpty && ({string.Join(" || ", conditions)}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            var rangeMsg = FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
+            EmitAddValidationError(builder, member, "Range", rangeMsg);
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        // Pattern validation (string only)
+        if (member.ValidationPattern != null)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && !_pattern_{member.MemberName}.IsMatch(instance.{member.MemberName}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitAddValidationError(builder, member, "Pattern", "Value does not match pattern");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+    }
+
+    private static void EmitAddValidationError(SourceBuilder builder, MemberDescriptor member, string rule, string message)
+    {
+        var columnName = member.AttributeIndex.HasValue ? "null" : $"\"{member.HeaderName}\"";
+        var indexField = $"_{member.MemberName}Index";
+        builder.AppendLine($"errors?.Add(new global::HeroParser.Validation.ValidationError");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"RowNumber = rowNumber,");
+        builder.AppendLine($"ColumnIndex = {indexField},");
+        builder.AppendLine($"ColumnName = {columnName},");
+        builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
+        builder.AppendLine($"Rule = \"{rule}\",");
+        builder.AppendLine($"Message = \"{EscapeString(message)}\",");
+        builder.AppendLine($"RawValue = Encoding.UTF8.GetString(utf8)");
+        builder.Unindent();
+        builder.AppendLine("});");
+    }
+
+    private static string FormatRangeLiteral(double value, string baseType)
+    {
+        return baseType switch
+        {
+            "decimal" or "System.Decimal" => $"{value}m",
+            "float" or "System.Single" => $"{value}f",
+            "double" or "System.Double" => $"{value}d",
+            "long" or "System.Int64" => $"{(long)value}L",
+            "ulong" or "System.UInt64" => $"{(ulong)value}UL",
+            "int" or "System.Int32" => $"{(int)value}",
+            "uint" or "System.UInt32" => $"{(uint)value}U",
+            "short" or "System.Int16" => $"(short){(short)value}",
+            "ushort" or "System.UInt16" => $"(ushort){(ushort)value}",
+            "byte" or "System.Byte" => $"(byte){(byte)value}",
+            "sbyte" or "System.SByte" => $"(sbyte){(sbyte)value}",
+            _ => $"{value}"
+        };
+    }
+
+    private static string FormatRangeMessage(double min, double max)
+    {
+        if (!double.IsNaN(min) && !double.IsNaN(max))
+            return $"Value must be between {min} and {max}";
+        if (!double.IsNaN(min))
+            return $"Value must be >= {min}";
+        return $"Value must be <= {max}";
+    }
+
+    #endregion
+
     #endregion
 
     private static void EmitRegistration(SourceProductionContext context, IReadOnlyList<TypeDescriptor> descriptors)
@@ -683,6 +864,17 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             int? attributeIndex = null;
             string? format = null;
 
+            bool hasExplicitName = false;
+
+            bool validationRequired = false;
+            bool validationNotEmpty = false;
+            int validationMaxLength = -1;
+            int validationMinLength = -1;
+            double validationRangeMin = double.NaN;
+            double validationRangeMax = double.NaN;
+            string? validationPattern = null;
+            int validationPatternTimeoutMs = 1000;
+
             if (mapAttribute is not null)
             {
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
@@ -692,6 +884,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                     {
                         case "Name" when arg.Value.Value is string s && !string.IsNullOrWhiteSpace(s):
                             headerName = s;
+                            hasExplicitName = true;
                             break;
                         case "Index" when arg.Value.Value is int i && i >= 0:
                             attributeIndex = i;
@@ -699,9 +892,31 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                         case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
                             format = f;
                             break;
+                        case "Required" when arg.Value.Value is bool r:
+                            validationRequired = r; break;
+                        case "NotEmpty" when arg.Value.Value is bool ne:
+                            validationNotEmpty = ne; break;
+                        case "MaxLength" when arg.Value.Value is int ml && ml >= 0:
+                            validationMaxLength = ml; break;
+                        case "MinLength" when arg.Value.Value is int mnl && mnl >= 0:
+                            validationMinLength = mnl; break;
+                        case "RangeMin" when arg.Value.Value is double rmin && !double.IsNaN(rmin):
+                            validationRangeMin = rmin; break;
+                        case "RangeMax" when arg.Value.Value is double rmax && !double.IsNaN(rmax):
+                            validationRangeMax = rmax; break;
+                        case "Pattern" when arg.Value.Value is string p && !string.IsNullOrWhiteSpace(p):
+                            validationPattern = p; break;
+                        case "PatternTimeoutMs" when arg.Value.Value is int pt && pt > 0:
+                            validationPatternTimeoutMs = pt; break;
                     }
                 }
 #pragma warning restore IDE0010
+
+                if (!hasExplicitName && attributeIndex is null)
+                {
+                    diagnostics.Add(Diagnostic.Create(missingNameOrIndexDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name));
+                    continue;
+                }
             }
 
             if (!IsSupportedType(property.Type))
@@ -722,6 +937,35 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
             var isReadOnlyMemoryChar = IsReadOnlyMemoryChar(property.Type);
 
+            bool isStringType = baseTypeName == "string";
+            bool isNumericType = baseTypeName is "int" or "System.Int32" or "long" or "System.Int64"
+                or "short" or "System.Int16" or "byte" or "System.Byte" or "uint" or "System.UInt32"
+                or "ulong" or "System.UInt64" or "ushort" or "System.UInt16" or "sbyte" or "System.SByte"
+                or "decimal" or "System.Decimal" or "double" or "System.Double" or "float" or "System.Single";
+
+            if (validationNotEmpty && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(NotEmptyOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationNotEmpty = false;
+            }
+            if ((validationMaxLength >= 0 || validationMinLength >= 0) && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(LengthOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationMaxLength = -1;
+                validationMinLength = -1;
+            }
+            if ((!double.IsNaN(validationRangeMin) || !double.IsNaN(validationRangeMax)) && !isNumericType)
+            {
+                diagnostics.Add(Diagnostic.Create(RangeOnNonNumericDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationRangeMin = double.NaN;
+                validationRangeMax = double.NaN;
+            }
+            if (validationPattern != null && !isStringType)
+            {
+                diagnostics.Add(Diagnostic.Create(PatternOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
+                validationPattern = null;
+            }
+
             var setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
             var getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
 
@@ -737,7 +981,15 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 baseTypeName,
                 isNullable,
                 isEnum,
-                isReadOnlyMemoryChar));
+                isReadOnlyMemoryChar,
+                validationRequired,
+                validationNotEmpty,
+                validationMaxLength,
+                validationMinLength,
+                validationRangeMin,
+                validationRangeMax,
+                validationPattern,
+                validationPatternTimeoutMs));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)
@@ -794,5 +1046,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         string BaseTypeName,
         bool IsNullable,
         bool IsEnum,
-        bool IsReadOnlyMemoryChar);
+        bool IsReadOnlyMemoryChar,
+        // Validation fields:
+        bool ValidationRequired,
+        bool ValidationNotEmpty,
+        int ValidationMaxLength,       // -1 = unchecked
+        int ValidationMinLength,       // -1 = unchecked
+        double ValidationRangeMin,     // NaN = unchecked
+        double ValidationRangeMax,     // NaN = unchecked
+        string? ValidationPattern,
+        int ValidationPatternTimeoutMs);  // default 1000
 }

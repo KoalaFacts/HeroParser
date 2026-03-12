@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using HeroParser.FixedWidths.Records;
+using HeroParser.Validation;
 using CustomConverterDictionary = System.Collections.Generic.IReadOnlyDictionary<System.Type, HeroParser.FixedWidths.Records.InternalFixedWidthConverter>;
 
 namespace HeroParser.FixedWidths.Records.Binding;
@@ -80,11 +81,12 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// </summary>
     /// <param name="row">The row to bind.</param>
     /// <param name="result">The bound record when successful.</param>
+    /// <param name="errors">Optional list to collect validation errors. Not used by the reflection-based binder.</param>
     /// <returns>True if binding succeeded; otherwise false if the row should be skipped.</returns>
-    public bool TryBind(FixedWidthCharSpanRow row, out T result)
+    public bool TryBind(FixedWidthCharSpanRow row, out T result, List<ValidationError>? errors = null)
     {
         var instance = new T();
-        if (!BindInto(ref instance, row))
+        if (!BindInto(ref instance, row, errors))
         {
             result = default!;
             return false;
@@ -99,8 +101,9 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// </summary>
     /// <param name="instance">The existing instance to bind into.</param>
     /// <param name="row">The row to bind.</param>
+    /// <param name="errors">Optional list to collect validation errors. Not used by the reflection-based binder.</param>
     /// <returns>True if binding succeeded, false if the row should be skipped.</returns>
-    public bool BindInto(ref T instance, FixedWidthCharSpanRow row)
+    public bool BindInto(ref T instance, FixedWidthCharSpanRow row, List<ValidationError>? errors = null)
     {
         if (typeof(T).IsValueType)
         {
@@ -196,7 +199,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// This method collects all records in memory since the ref struct reader
     /// cannot be used with iterators.
     /// </remarks>
-    public static List<T> Bind(
+    public static FixedWidthReadResult<T> Bind(
         FixedWidthCharSpanReader reader,
         CultureInfo? culture,
         FixedWidthDeserializeErrorHandler? errorHandler,
@@ -208,24 +211,33 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         // Estimate capacity to avoid List resizing allocations
         var estimatedCapacity = reader.EstimateRowCount();
 
-        // Prefer descriptor binder for boxing-free parsing when no error handler is needed
-        // Only use descriptor binder when no custom converters are specified
+        // Prefer generated binder for boxing-free parsing + validation support
+        if (errorHandler is null && customConverters is null &&
+            FixedWidthRecordBinderFactory.TryCreateGeneratedBinder<T>(culture, nullValues, out var generatedBinder))
+        {
+            var errors = new List<ValidationError>();
+            var records = BindWithTypedBinder(reader, generatedBinder!, estimatedCapacity, progress, progressIntervalRows, errors);
+            return new FixedWidthReadResult<T>(records, errors);
+        }
+
+        // Fall back to descriptor binder when no error handler and no custom converters
         if (errorHandler is null && customConverters is null &&
             FixedWidthRecordBinderFactory.TryCreateDescriptorBinder<T>(culture, nullValues, out var descriptorBinder))
         {
-            return BindWithTypedBinder(reader, descriptorBinder!, estimatedCapacity, progress, progressIntervalRows);
+            var records = BindWithTypedBinder(reader, descriptorBinder!, estimatedCapacity, progress, progressIntervalRows, null);
+            return new FixedWidthReadResult<T>(records, []);
         }
 
-        // Fall back to generic binder
-        var binder = Create(culture, errorHandler, nullValues, customConverters);
-        var results = new List<T>(estimatedCapacity);
+        // Fall back to reflection-based binder
+        var reflectionBinder = Create(culture, errorHandler, nullValues, customConverters);
+        var resultList = new List<T>(estimatedCapacity);
         int recordsProcessed = 0;
 
         foreach (var row in reader)
         {
-            if (binder.TryBind(row, out var record))
+            if (reflectionBinder.TryBind(row, out var record))
             {
-                results.Add(record);
+                resultList.Add(record);
             }
 
             recordsProcessed++;
@@ -246,7 +258,22 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
             RecordsProcessed = recordsProcessed
         });
 
-        return results;
+        return new FixedWidthReadResult<T>(resultList, []);
+    }
+
+    /// <summary>
+    /// Binds records using an externally-provided binder (e.g., from a fluent map).
+    /// </summary>
+    public static FixedWidthReadResult<T> Bind(
+        FixedWidthCharSpanReader reader,
+        IFixedWidthBinder<T> binder,
+        IProgress<FixedWidthProgress>? progress = null,
+        int progressIntervalRows = 1000)
+    {
+        var errors = new List<ValidationError>();
+        var records = BindWithTypedBinder(reader, binder, reader.EstimateRowCount(),
+            progress, progressIntervalRows, errors);
+        return new FixedWidthReadResult<T>(records, errors);
     }
 
     private static List<T> BindWithTypedBinder(
@@ -254,14 +281,15 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         IFixedWidthBinder<T> binder,
         int estimatedCapacity,
         IProgress<FixedWidthProgress>? progress,
-        int progressIntervalRows)
+        int progressIntervalRows,
+        List<ValidationError>? errors)
     {
         var results = new List<T>(estimatedCapacity);
         int recordsProcessed = 0;
 
         foreach (var row in reader)
         {
-            if (binder.TryBind(row, out var record))
+            if (binder.TryBind(row, out var record, errors))
             {
                 results.Add(record);
             }
@@ -305,6 +333,14 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         Action<T> callback)
     {
         ArgumentNullException.ThrowIfNull(callback);
+
+        // Try generated binder first (supports validation + best performance)
+        if (customConverters is null &&
+            FixedWidthRecordBinderFactory.TryCreateGeneratedBinder<T>(culture, nullValues, out var generatedBinder))
+        {
+            ForEachWithTypedBinder(reader, generatedBinder!, callback);
+            return;
+        }
 
         // Try descriptor binder for best performance (only when no custom converters)
         if (customConverters is null &&

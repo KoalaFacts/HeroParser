@@ -164,7 +164,7 @@ public class RecordMappingTests
     {
         public int Id { get; set; }
 
-        [CsvColumn(Format = "MM/dd/yyyy")]
+        [CsvColumn(Name = "Date", Format = "MM/dd/yyyy")]
         public DateOnly Date { get; set; }
     }
 
@@ -173,7 +173,7 @@ public class RecordMappingTests
     {
         public int Id { get; set; }
 
-        [CsvColumn(Format = "yyyy-MM-dd HH:mm:ss")]
+        [CsvColumn(Name = "Timestamp", Format = "yyyy-MM-dd HH:mm:ss")]
         public DateTime Timestamp { get; set; }
     }
 

@@ -10,6 +10,29 @@ namespace HeroParser.Generators;
 /// </summary>
 internal static class GeneratorHelpers
 {
+#pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
+    // Shared validation diagnostics used by both CSV and FixedWidth generators
+    public static readonly DiagnosticDescriptor NotEmptyOnNonStringDiagnostic = new(
+        "HERO004", "NotEmpty only applies to string properties",
+        "Property '{0}' has NotEmpty = true but is type '{1}'. NotEmpty only applies to string properties.",
+        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor LengthOnNonStringDiagnostic = new(
+        "HERO005", "MaxLength/MinLength only apply to string properties",
+        "Property '{0}' has MaxLength or MinLength but is type '{1}'. These only apply to string properties.",
+        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor RangeOnNonNumericDiagnostic = new(
+        "HERO006", "RangeMin/RangeMax only apply to numeric properties",
+        "Property '{0}' has RangeMin or RangeMax but is type '{1}'. These only apply to numeric properties.",
+        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor PatternOnNonStringDiagnostic = new(
+        "HERO007", "Pattern only applies to string properties",
+        "Property '{0}' has Pattern but is type '{1}'. Pattern only applies to string properties.",
+        "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
+#pragma warning restore RS2008
+
     /// <summary>
     /// Fully qualified format with nullable reference type modifiers.
     /// </summary>

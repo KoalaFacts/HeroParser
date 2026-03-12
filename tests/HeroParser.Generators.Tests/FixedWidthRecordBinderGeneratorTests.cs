@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using HeroParser.Generators;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -47,7 +46,400 @@ public class FixedWidthRecordBinderGeneratorTests
         Assert.Contains("FixedWidthRecordWriterFactory", allGeneratedCode);
     }
 
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_WithNoValidation_EmitsDescriptorAndGeneratedBinder()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Employee
+            {
+                [FixedWidthColumn(Start = 0, Length = 5)]
+                public int Id { get; set; }
+
+                [FixedWidthColumn(Start = 5, Length = 20)]
+                public string? Name { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var descriptorSource = result.GeneratedSources
+            .FirstOrDefault(s => s.HintName.Contains("FixedWidthDescriptor."))
+            .SourceText?.ToString() ?? "";
+
+        // Both descriptor class and generated binder should be emitted
+        Assert.Contains("FixedWidthDescriptor_", descriptorSource);
+        Assert.Contains("FixedWidthGeneratedBinder_", descriptorSource);
+        Assert.Contains("IFixedWidthBinder<global::TestNamespace.Employee>", descriptorSource);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_RequiredValidation_EmitsRequiredCheck()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 10, Required = true)]
+                public string? Name { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = GetDescriptorSourceCode(result);
+        Assert.Contains("valid = true", generatedCode);
+        Assert.Contains("Rule = \"Required\"", generatedCode);
+        Assert.Contains("return valid;", generatedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_NotEmptyValidation_EmitsNotEmptyCheck()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 10, NotEmpty = true)]
+                public string? Name { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = GetDescriptorSourceCode(result);
+        Assert.Contains("Rule = \"NotEmpty\"", generatedCode);
+        Assert.Contains("string.IsNullOrWhiteSpace", generatedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_MaxLengthValidation_EmitsMaxLengthCheck()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 10, MaxLength = 5)]
+                public string? Name { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = GetDescriptorSourceCode(result);
+        Assert.Contains("Rule = \"MaxLength\"", generatedCode);
+        Assert.Contains("> 5", generatedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_MinLengthValidation_EmitsMinLengthCheck()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 10, MinLength = 3)]
+                public string? Name { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = GetDescriptorSourceCode(result);
+        Assert.Contains("Rule = \"MinLength\"", generatedCode);
+        Assert.Contains("< 3", generatedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_RangeValidation_EmitsRangeCheck()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 5, RangeMin = 1, RangeMax = 100)]
+                public int Age { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = GetDescriptorSourceCode(result);
+        Assert.Contains("Rule = \"Range\"", generatedCode);
+        Assert.Contains("< 1", generatedCode);
+        Assert.Contains("> 100", generatedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_PatternValidation_EmitsRegexCheck()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 10, Pattern = @"^\d+$")]
+                public string? Code { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = GetDescriptorSourceCode(result);
+        Assert.Contains("Rule = \"Pattern\"", generatedCode);
+        Assert.Contains("_pattern_Code", generatedCode);
+        Assert.Contains("IsMatch", generatedCode);
+        // Static Regex field with compiled option
+        Assert.Contains("RegexOptions.Compiled", generatedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_PatternValidation_EmitsCustomTimeoutMs()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 10, Pattern = @"^\d+$", PatternTimeoutMs = 500)]
+                public string? Code { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = GetDescriptorSourceCode(result);
+        Assert.Contains("500", generatedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_NotEmptyOnNonString_EmitsDiagnostic()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 5, NotEmpty = true)]
+                public int Age { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        // Should emit diagnostic for NotEmpty on non-string
+        Assert.Contains(result.Diagnostics, d => d.Id == "HERO004");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_MaxLengthOnNonString_EmitsDiagnostic()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 5, MaxLength = 3)]
+                public int Age { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "HERO005");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_RangeOnNonNumeric_EmitsDiagnostic()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 10, RangeMin = 1)]
+                public string? Name { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "HERO006");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_PatternOnNonString_EmitsDiagnostic()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 5, Pattern = @"^\d+$")]
+                public int Age { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "HERO007");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_GeneratedBinder_RegistersWithFactory()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Employee
+            {
+                [FixedWidthColumn(Start = 0, Length = 5)]
+                public int Id { get; set; }
+
+                [FixedWidthColumn(Start = 5, Length = 20)]
+                public string? Name { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var registrationSource = result.GeneratedSources
+            .FirstOrDefault(s => s.HintName.Contains("Registration"))
+            .SourceText?.ToString() ?? "";
+
+        // Both descriptor and generated binder should be registered
+        Assert.Contains("RegisterDescriptor", registrationSource);
+        Assert.Contains("RegisterGeneratedBinder", registrationSource);
+        Assert.Contains("FixedWidthGeneratedBinder_", registrationSource);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_ValidationError_CollectsRowNumberAndFieldInfo()
+    {
+        var source = """
+            using HeroParser.FixedWidths;
+            using HeroParser.FixedWidths.Records.Binding;
+
+            namespace TestNamespace;
+
+            [FixedWidthGenerateBinder]
+            public class Record
+            {
+                [FixedWidthColumn(Start = 0, Length = 10, Required = true)]
+                public string? Name { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = GetDescriptorSourceCode(result);
+        // Validation error should include RowNumber, ColumnIndex, PropertyName
+        Assert.Contains("RowNumber = rowNumber", generatedCode);
+        Assert.Contains("ColumnIndex = 0", generatedCode);
+        Assert.Contains("PropertyName = \"Name\"", generatedCode);
+        Assert.Contains("RawValue = new string(span)", generatedCode);
+    }
+
     #region Test Infrastructure
+
+    private static string GetDescriptorSourceCode(GeneratorRunResult result)
+    {
+        return result.GeneratedSources
+            .FirstOrDefault(s => s.HintName.Contains("FixedWidthDescriptor."))
+            .SourceText?.ToString() ?? "";
+    }
 
     private static GeneratorRunResult RunGenerator(string source)
     {

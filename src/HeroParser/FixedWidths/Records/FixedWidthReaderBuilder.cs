@@ -1,6 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using HeroParser.FixedWidths.Mapping;
 using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.FixedWidths.Streaming;
 using FixedWidthFactory = HeroParser.FixedWidth;
@@ -53,6 +55,9 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
 
     // Custom converters
     private Dictionary<Type, InternalFixedWidthConverter>? customConverters;
+
+    // Fluent map source (bridges constraint gap with FixedWidthMap<T> which requires class, new())
+    private IFixedWidthReadMapSource<T>? readMapSource;
 
     // Cached options - invalidated when any setting changes
     private FixedWidthReadOptions? cachedOptions;
@@ -350,18 +355,45 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
 
     #endregion
 
+    #region Fluent Map
+
+    /// <summary>
+    /// Configures a fluent map to control field layout and property binding for reading.
+    /// </summary>
+    /// <param name="map">The map providing read descriptors.</param>
+    /// <returns>This builder for method chaining.</returns>
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [FixedWidthGenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [FixedWidthGenerateBinder] for AOT/trimming support.")]
+    public FixedWidthReaderBuilder<T> WithMap(IFixedWidthReadMapSource<T> map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        readMapSource = map;
+        return this;
+    }
+
+    #endregion
+
     #region Terminal Methods
 
     /// <summary>
     /// Reads records from a fixed-width string.
     /// </summary>
     /// <param name="text">The fixed-width content to parse.</param>
-    /// <returns>An enumerable of deserialized records.</returns>
-    public IEnumerable<T> FromText(string text)
+    /// <returns>A <see cref="FixedWidthReadResult{T}"/> containing successfully parsed records and any validation errors.</returns>
+    public FixedWidthReadResult<T> FromText(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
 
         var options = GetOptions();
+
+        if (readMapSource is not null)
+        {
+            var descriptor = readMapSource.BuildReadDescriptor();
+            var binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
+            return FixedWidthRecordBinder<T>.Bind(
+                FixedWidthFactory.ReadFromText(text, options), binder, progress, progressIntervalRows);
+        }
+
         return FixedWidthRecordBinder<T>.Bind(
             FixedWidthFactory.ReadFromText(text, options),
             culture,
@@ -376,8 +408,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     /// Reads records from a fixed-width file.
     /// </summary>
     /// <param name="path">The file path to read from.</param>
-    /// <returns>An enumerable of deserialized records.</returns>
-    public IEnumerable<T> FromFile(string path)
+    /// <returns>A <see cref="FixedWidthReadResult{T}"/> containing successfully parsed records and any validation errors.</returns>
+    public FixedWidthReadResult<T> FromFile(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
@@ -393,8 +425,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     /// Reads records from a stream.
     /// </summary>
     /// <param name="stream">The stream to read from.</param>
-    /// <returns>An enumerable of deserialized records.</returns>
-    public IEnumerable<T> FromStream(Stream stream)
+    /// <returns>A <see cref="FixedWidthReadResult{T}"/> containing successfully parsed records and any validation errors.</returns>
+    public FixedWidthReadResult<T> FromStream(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
 
@@ -475,6 +507,9 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(callback);
 
+        if (readMapSource is not null)
+            throw new NotSupportedException("ForEach methods are not supported with fluent maps. Use FromText() instead.");
+
         var options = GetOptions();
         var reader = FixedWidthFactory.ReadFromText(text, options);
         FixedWidthRecordBinder<T>.ForEach(reader, culture, nullValues, customConverters, callback);
@@ -494,6 +529,9 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(callback);
+
+        if (readMapSource is not null)
+            throw new NotSupportedException("ForEach methods are not supported with fluent maps. Use FromFile() instead.");
 
         var options = GetOptions();
         var fileInfo = new FileInfo(path);

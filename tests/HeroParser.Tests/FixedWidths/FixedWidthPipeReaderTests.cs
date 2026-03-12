@@ -1,4 +1,5 @@
 using System.IO.Pipelines;
+using System.Globalization;
 using System.Text;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Mapping;
@@ -10,7 +11,7 @@ namespace HeroParser.Tests.FixedWidths;
 public class FixedWidthPipeReaderTests
 {
     [FixedWidthGenerateBinder]
-    private sealed class PipeBoundRecord
+    public sealed class PipeBoundRecord
     {
         [FixedWidthColumn(Start = 0, Length = 4, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
@@ -24,6 +25,29 @@ public class FixedWidthPipeReaderTests
         public int Id { get; set; }
 
         public string Name { get; set; } = string.Empty;
+    }
+
+    [FixedWidthGenerateBinder]
+    public sealed class PipeTypedRecord
+    {
+        [FixedWidthColumn(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        public int Id { get; set; }
+
+        [FixedWidthColumn(Start = 5, Length = 8, Format = "yyyyMMdd")]
+        public DateTime DateValue { get; set; }
+
+        [FixedWidthColumn(Start = 13, Length = 1)]
+        public bool Flag { get; set; }
+    }
+
+    [FixedWidthGenerateBinder]
+    public sealed class PipeCultureRecord
+    {
+        [FixedWidthColumn(Start = 0, Length = 5)]
+        public decimal Amount { get; set; }
+
+        [FixedWidthColumn(Start = 5, Length = 5)]
+        public string? Code { get; set; }
     }
 
     private sealed class PipeMappedRecordMap : FixedWidthMap<PipeMappedRecord>
@@ -246,6 +270,110 @@ public class FixedWidthPipeReaderTests
         Assert.Equal("Alice", records[0].Name);
         Assert.Equal(2, records[1].Id);
         Assert.Equal("Bob", records[1].Name);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task DeserializeRecordsAsync_FromPipeReader_BindsGeneratedRecords_FromChunkedSegments()
+    {
+        var pipe = new Pipe();
+        var bytes = Encoding.UTF8.GetBytes("0001Alice \r\n0002Bob   \r\n");
+        var ct = TestContext.Current.CancellationToken;
+
+        _ = Task.Run(async () =>
+        {
+            for (int i = 0; i < bytes.Length; i += 2)
+            {
+                var chunk = bytes.AsMemory(i, Math.Min(2, bytes.Length - i));
+                await pipe.Writer.WriteAsync(chunk, ct);
+                await Task.Delay(1, ct);
+            }
+
+            await pipe.Writer.CompleteAsync();
+        }, ct);
+
+        var records = new List<PipeBoundRecord>();
+        await foreach (var record in FixedWidth.DeserializeRecordsAsync<PipeBoundRecord>(
+            pipe.Reader,
+            cancellationToken: ct))
+        {
+            records.Add(record);
+        }
+
+        Assert.Collection(
+            records,
+            record =>
+            {
+                Assert.Equal(1, record.Id);
+                Assert.Equal("Alice", record.Name);
+            },
+            record =>
+            {
+                Assert.Equal(2, record.Id);
+                Assert.Equal("Bob", record.Name);
+            });
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GeneratedByteBinder_BindsUtf8RowDirectly()
+    {
+        Assert.True(FixedWidthRecordBinderFactory.TryCreateGeneratedByteBinder<PipeTypedRecord>(
+            CultureInfo.InvariantCulture,
+            null,
+            out var binder));
+
+        var row = new FixedWidthByteSpanRow(
+            Encoding.UTF8.GetBytes("0012320231225Y"),
+            recordNumber: 1,
+            sourceLineNumber: 1,
+            new FixedWidthReadOptions());
+
+        Assert.NotNull(binder);
+        Assert.True(binder.TryBind(row, out var record));
+        Assert.Equal(123, record.Id);
+        Assert.Equal(new DateTime(2023, 12, 25), record.DateValue);
+        Assert.True(record.Flag);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void GeneratedByteBinder_UsesCultureAndNullValues()
+    {
+        Assert.True(FixedWidthRecordBinderFactory.TryCreateGeneratedByteBinder<PipeCultureRecord>(
+            CultureInfo.GetCultureInfo("fr-FR"),
+            ["NULL"],
+            out var binder));
+
+        var row = new FixedWidthByteSpanRow(
+            Encoding.UTF8.GetBytes("12,34NULL "),
+            recordNumber: 1,
+            sourceLineNumber: 1,
+            new FixedWidthReadOptions());
+
+        Assert.NotNull(binder);
+        Assert.True(binder.TryBind(row, out var record));
+        Assert.Equal(12.34m, record.Amount);
+        Assert.Null(record.Code);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task DeserializeRecordsAsync_FromPipeReader_RespectsProvidedEncoding()
+    {
+        var encoding = Encoding.Latin1;
+        var pipe = CreatePipeFromBytes(encoding.GetBytes("0001\u00C5sa   \r\n0002Bj\u00F6rn \r\n"));
+
+        var records = new List<PipeBoundRecord>();
+        await foreach (var record in FixedWidth.DeserializeRecordsAsync<PipeBoundRecord>(
+            pipe.Reader,
+            encoding: encoding,
+            cancellationToken: TestContext.Current.CancellationToken))
+        {
+            records.Add(record);
+        }
+
+        Assert.Equal(new[] { "\u00C5sa", "Bj\u00F6rn" }, records.Select(r => r.Name).ToArray());
     }
 
     [Fact]

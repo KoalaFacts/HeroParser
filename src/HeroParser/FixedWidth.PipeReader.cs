@@ -29,138 +29,14 @@ public static partial class FixedWidth
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
-        int remainingRowsToSkip = options.SkipRows + (options.HasHeaderRow ? 1 : 0);
-        int recordCount = 0;
-        int sourceLineNumber = options.TrackSourceLineNumbers ? 1 : 0;
-        long totalBytesRead = 0;
-        long previousUnreadBytes = 0;
-        bool bomProcessed = false;
-
-        try
+        await using var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
+        while (await sequenceReader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-                var originalBuffer = result.Buffer;
-                var newBytes = originalBuffer.Length - previousUnreadBytes;
-                if (newBytes > 0)
-                {
-                    totalBytesRead += newBytes;
-                    options.ValidateInputSize(totalBytesRead);
-                }
-
-                var buffer = originalBuffer;
-                if (!TryProcessUtf8Bom(ref buffer, result.IsCompleted, ref bomProcessed))
-                {
-                    reader.AdvanceTo(buffer.Start, buffer.End);
-                    previousUnreadBytes = buffer.Length;
-                    continue;
-                }
-
-                if (options.RecordLength is { } recordLength)
-                {
-                    while (TryReadPipeFixedLengthRecord(ref buffer, recordLength, out var rowData))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        if (remainingRowsToSkip > 0)
-                        {
-                            if (options.TrackSourceLineNumbers)
-                            {
-                                sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData);
-                            }
-
-                            remainingRowsToSkip--;
-                            continue;
-                        }
-
-                        recordCount++;
-                        EnsureRecordCount(recordCount, options.MaxRecordCount);
-
-                        int rowStartLine = options.TrackSourceLineNumbers ? sourceLineNumber : 0;
-                        if (options.TrackSourceLineNumbers)
-                        {
-                            sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData);
-                        }
-
-                        yield return CreatePipeRow(rowData, recordCount, rowStartLine, options);
-                    }
-
-                    if (result.IsCompleted && buffer.Length > 0 && remainingRowsToSkip <= 0)
-                    {
-                        ThrowInvalidPipeRecordLength(recordLength, buffer.Length, recordCount + 1, sourceLineNumber, options.TrackSourceLineNumbers);
-                    }
-                }
-                else
-                {
-                    while (TryReadPipeLineRecord(ref buffer, result.IsCompleted, out var rowData))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        int rowStartLine = options.TrackSourceLineNumbers ? sourceLineNumber : 0;
-
-                        if (remainingRowsToSkip > 0)
-                        {
-                            remainingRowsToSkip--;
-                            if (options.TrackSourceLineNumbers)
-                            {
-                                sourceLineNumber++;
-                            }
-
-                            continue;
-                        }
-
-                        if (rowData.Length == 0 && options.SkipEmptyLines)
-                        {
-                            if (options.TrackSourceLineNumbers)
-                            {
-                                sourceLineNumber++;
-                            }
-
-                            continue;
-                        }
-
-                        if (options.CommentCharacter is { } commentChar &&
-                            TryGetFirstByte(rowData, out byte firstByte) &&
-                            firstByte == (byte)commentChar)
-                        {
-                            if (options.TrackSourceLineNumbers)
-                            {
-                                sourceLineNumber++;
-                            }
-
-                            continue;
-                        }
-
-                        recordCount++;
-                        EnsureRecordCount(recordCount, options.MaxRecordCount);
-                        yield return CreatePipeRow(rowData, recordCount, rowStartLine, options);
-
-                        if (options.TrackSourceLineNumbers)
-                        {
-                            sourceLineNumber++;
-                        }
-                    }
-
-                }
-
-                reader.AdvanceTo(buffer.Start, buffer.End);
-                previousUnreadBytes = buffer.Length;
-
-                if (result.IsCompleted)
-                {
-                    break;
-                }
-            }
-        }
-        finally
-        {
-            await reader.CompleteAsync().ConfigureAwait(false);
+            yield return sequenceReader.Current.ToOwnedRow();
         }
     }
 
-    private static bool TryProcessUtf8Bom(ref ReadOnlySequence<byte> buffer, bool isCompleted, ref bool bomProcessed)
+    internal static bool TryProcessUtf8Bom(ref ReadOnlySequence<byte> buffer, bool isCompleted, ref bool bomProcessed)
     {
         if (bomProcessed)
         {
@@ -189,7 +65,7 @@ public static partial class FixedWidth
         return true;
     }
 
-    private static bool TryReadPipeFixedLengthRecord(
+    internal static bool TryReadPipeFixedLengthRecord(
         ref ReadOnlySequence<byte> buffer,
         int recordLength,
         out ReadOnlySequence<byte> rowData)
@@ -205,7 +81,7 @@ public static partial class FixedWidth
         return true;
     }
 
-    private static bool TryReadPipeLineRecord(
+    internal static bool TryReadPipeLineRecord(
         ref ReadOnlySequence<byte> buffer,
         bool isCompleted,
         out ReadOnlySequence<byte> rowData)
@@ -253,7 +129,7 @@ public static partial class FixedWidth
         return false;
     }
 
-    private static void EnsureRecordCount(int recordCount, int maxRecordCount)
+    internal static void EnsureRecordCount(int recordCount, int maxRecordCount)
     {
         if (recordCount > maxRecordCount)
         {
@@ -263,7 +139,7 @@ public static partial class FixedWidth
         }
     }
 
-    private static void ThrowInvalidPipeRecordLength(
+    internal static void ThrowInvalidPipeRecordLength(
         int expectedLength,
         long remainingLength,
         int recordNumber,
@@ -286,7 +162,7 @@ public static partial class FixedWidth
             recordNumber);
     }
 
-    private static FixedWidthPipeRow CreatePipeRow(
+    internal static FixedWidthPipeRow CreatePipeRow(
         ReadOnlySequence<byte> rowData,
         int recordNumber,
         int sourceLineNumber,
@@ -303,7 +179,7 @@ public static partial class FixedWidth
         return new FixedWidthPipeRow(rowBytes, recordNumber, sourceLineNumber, options);
     }
 
-    private static bool TryGetFirstByte(ReadOnlySequence<byte> rowData, out byte value)
+    internal static bool TryGetFirstByte(ReadOnlySequence<byte> rowData, out byte value)
     {
         if (rowData.IsEmpty)
         {

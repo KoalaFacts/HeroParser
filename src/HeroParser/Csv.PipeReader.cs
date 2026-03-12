@@ -46,61 +46,11 @@ public static partial class Csv
         options ??= CsvReadOptions.Default;
         options.Validate();
 
-        var quote = (byte)options.Quote;
-        var escape = options.EscapeCharacter is { } escapeChar ? (byte)escapeChar : (byte?)null;
-        var enableQuotes = options.EnableQuotedFields;
-        int rowNumber = 0;
-        int? maxRowSize = options.MaxRowSize;
-        bool bomProcessed = false;
-
-        try
+        await using var sequenceReader = new CsvPipeSequenceReader(reader, options);
+        while (await sequenceReader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                ReadResult result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-                ReadOnlySequence<byte> buffer = result.Buffer;
-
-                if (!TryProcessUtf8Bom(ref buffer, result.IsCompleted, ref bomProcessed))
-                {
-                    reader.AdvanceTo(buffer.Start, buffer.End);
-                    continue;
-                }
-
-                while (TryReadRow(ref buffer, quote, escape, enableQuotes, out var rowData))
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    EnsureRowSize(rowData.Length, maxRowSize);
-                    rowNumber++;
-                    EnsureRowCount(rowNumber, options.MaxRowCount);
-                    yield return ParsePipeRow(rowData, options, rowNumber, quote, escape);
-                }
-
-                if (!result.IsCompleted)
-                {
-                    EnsureRowSize(buffer.Length, maxRowSize);
-                }
-
-                reader.AdvanceTo(buffer.Start, buffer.End);
-
-                if (result.IsCompleted)
-                {
-                    // Process any remaining data that doesn't end with a newline
-                    if (buffer.Length > 0)
-                    {
-                        EnsureRowSize(buffer.Length, maxRowSize);
-                        rowNumber++;
-                        EnsureRowCount(rowNumber, options.MaxRowCount);
-                        yield return ParsePipeRow(buffer, options, rowNumber, quote, escape);
-                    }
-                    break;
-                }
-            }
-        }
-        finally
-        {
-            await reader.CompleteAsync().ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return sequenceReader.Current.ToOwnedRow();
         }
     }
 
@@ -172,65 +122,6 @@ public static partial class Csv
 
         rowData = default;
         return false;
-    }
-
-    private static CsvPipeRow ParsePipeRow(
-        ReadOnlySequence<byte> rowData,
-        CsvReadOptions options,
-        int rowNumber,
-        byte quote,
-        byte? escape)
-    {
-        int rowLength = checked((int)rowData.Length);
-        if (rowLength == 0)
-        {
-            return CreateEmptyPipeRow(rowNumber, options.TrimFields, quote, escape);
-        }
-
-        var rowBytes = GC.AllocateUninitializedArray<byte>(rowLength);
-        rowData.CopyTo(rowBytes);
-
-        int[] scratchColumnEnds = ArrayPool<int>.Shared.Rent(options.MaxColumnCount + 1);
-        try
-        {
-            var parseResult = CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(
-                rowBytes,
-                options,
-                scratchColumnEnds.AsSpan(0, options.MaxColumnCount + 1));
-
-            if (parseResult.ColumnCount == 0)
-            {
-                return CreateEmptyPipeRow(rowNumber, options.TrimFields, quote, escape);
-            }
-
-            var columnEnds = GC.AllocateUninitializedArray<int>(parseResult.ColumnCount + 1);
-            scratchColumnEnds.AsSpan(0, parseResult.ColumnCount + 1).CopyTo(columnEnds);
-
-            return new CsvPipeRow(
-                rowBytes,
-                columnEnds,
-                parseResult.ColumnCount,
-                rowNumber,
-                options.TrimFields,
-                quote,
-                escape);
-        }
-        finally
-        {
-            ArrayPool<int>.Shared.Return(scratchColumnEnds, clearArray: false);
-        }
-    }
-
-    private static CsvPipeRow CreateEmptyPipeRow(int rowNumber, bool trimFields, byte quote, byte? escape)
-    {
-        return new CsvPipeRow(
-            [],
-            [-1, 0],
-            1,
-            rowNumber,
-            trimFields,
-            quote,
-            escape);
     }
 
     internal static void EnsureRowCount(int rowNumber, int maxRowCount)

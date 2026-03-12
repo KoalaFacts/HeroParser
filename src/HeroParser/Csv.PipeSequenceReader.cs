@@ -586,6 +586,25 @@ public readonly ref struct CsvPipeSequenceRow
             SourceLineNumber,
             trimFields);
 
+    internal CsvPipeRow ToOwnedRow()
+    {
+        int rowLength = checked((int)data.Length);
+        var rowBytes = GC.AllocateUninitializedArray<byte>(rowLength);
+        data.CopyTo(rowBytes);
+
+        var ownedColumnEnds = GC.AllocateUninitializedArray<int>(columnCount + 1);
+        columnEnds.CopyTo(ownedColumnEnds);
+
+        return new CsvPipeRow(
+            rowBytes,
+            ownedColumnEnds,
+            columnCount,
+            RowNumber,
+            trimFields,
+            quote,
+            escape);
+    }
+
     private (long start, long end) TrimBounds(long start, long end)
     {
         const byte space = (byte)' ';

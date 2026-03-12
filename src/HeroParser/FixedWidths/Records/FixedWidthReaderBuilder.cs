@@ -531,7 +531,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         ArgumentNullException.ThrowIfNull(reader);
 
         var options = GetOptions();
-        var rows = FixedWidthFactory.ReadFromPipeReaderAsync(reader, options, cancellationToken);
+        await using var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
 
         if (readMapSource is not null)
         {
@@ -539,7 +539,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             var binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
 
             await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
-                rows,
+                sequenceReader,
                 binder,
                 options,
                 encoding,
@@ -554,7 +554,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         }
 
         await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
-            rows,
+            sequenceReader,
             options,
             encoding,
             culture,

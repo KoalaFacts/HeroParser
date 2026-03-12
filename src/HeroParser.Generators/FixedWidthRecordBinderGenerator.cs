@@ -23,6 +23,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private const string DESCRIPTOR_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthRecordDescriptor";
     private const string PROPERTY_DESCRIPTOR_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthPropertyDescriptor";
     private const string BINDER_INTERFACE_TYPE = "global::HeroParser.FixedWidths.Records.Binding.IFixedWidthBinder";
+    private const string BYTE_BINDER_INTERFACE_TYPE = "global::HeroParser.FixedWidths.Records.Binding.IFixedWidthByteBinder";
 
     private static readonly string[] generateAttributeNames =
     [
@@ -111,6 +112,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("using System.Collections.Generic;");
         builder.AppendLine("using System.Globalization;");
         builder.AppendLine("using System.Runtime.CompilerServices;");
+        builder.AppendLine("using System.Text;");
         builder.AppendLine("using HeroParser.Validation;");
         builder.AppendLine();
         builder.AppendLine($"namespace {GENERATED_NAMESPACE};");
@@ -121,6 +123,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
         // Emit generated binder class for inline validation support
         EmitGeneratedBinderClass(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName, binderMembers);
+        EmitGeneratedByteBinderClass(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName, binderMembers);
 
         context.AddSource($"FixedWidthDescriptor.{descriptor.SafeClassName}.g.cs", builder.ToString());
     }
@@ -298,6 +301,152 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
+    private static void EmitGeneratedByteBinderClass(SourceBuilder builder, string fullyQualifiedName, string safeClassName, IReadOnlyList<MemberDescriptor> members)
+    {
+        var binderClassName = $"FixedWidthGeneratedByteBinder_{safeClassName}";
+
+        builder.AppendLine($"internal sealed class {binderClassName} : {BYTE_BINDER_INTERFACE_TYPE}<{fullyQualifiedName}>");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        foreach (var member in members)
+        {
+            if (member.ValidationPattern != null)
+            {
+                var escapedPattern = EscapeString(member.ValidationPattern);
+                builder.AppendLine($"private static readonly global::System.Text.RegularExpressions.Regex _byte_pattern_{member.MemberName} = new(\"{escapedPattern}\", global::System.Text.RegularExpressions.RegexOptions.Compiled, TimeSpan.FromMilliseconds({member.ValidationPatternTimeoutMs}));");
+            }
+        }
+
+        builder.AppendLine("private readonly CultureInfo _culture;");
+        builder.AppendLine("private readonly byte[][]? _nullValues;");
+        builder.AppendLine();
+
+        builder.AppendLine($"public {binderClassName}(CultureInfo? culture, IReadOnlyList<string>? nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("_culture = culture ?? CultureInfo.InvariantCulture;");
+        builder.AppendLine("_nullValues = nullValues is { Count: > 0 }");
+        builder.AppendLine("    ? CreateNullValuesUtf8(nullValues)");
+        builder.AppendLine("    : null;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine($"public bool TryBind(global::HeroParser.FixedWidths.FixedWidthByteSpanRow row, out {fullyQualifiedName} result, List<ValidationError>? errors = null)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"result = new {fullyQualifiedName}();");
+        builder.AppendLine("return BindInto(ref result, row, errors);");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+
+        EmitGeneratedByteBindIntoMethod(builder, fullyQualifiedName, members);
+
+        builder.AppendLine($"public static {BYTE_BINDER_INTERFACE_TYPE}<{fullyQualifiedName}> Create(CultureInfo? culture, IReadOnlyList<string>? nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"return new {binderClassName}(culture, nullValues);");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine("private static bool IsNullValue(ReadOnlySpan<byte> value, byte[][] nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("foreach (var nullValue in nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("if (value.SequenceEqual(nullValue))");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("return true;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine("return false;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+
+        builder.AppendLine("private static byte[][] CreateNullValuesUtf8(IReadOnlyList<string> nullValues)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("var encoded = new byte[nullValues.Count][];");
+        builder.AppendLine("for (int i = 0; i < nullValues.Count; i++)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("encoded[i] = System.Text.Encoding.UTF8.GetBytes(nullValues[i]);");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine("return encoded;");
+        builder.Unindent();
+        builder.AppendLine("}");
+
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private static void EmitGeneratedByteBindIntoMethod(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    {
+        bool anyValidation = HasAnyValidation(members);
+
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine($"public bool BindInto(ref {fullyQualifiedName} instance, global::HeroParser.FixedWidths.FixedWidthByteSpanRow row, List<ValidationError>? errors = null)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("var cultureLocal = _culture;");
+        builder.AppendLine("var nullVals = _nullValues;");
+        builder.AppendLine("var rowNumber = row.RecordNumber;");
+
+        if (anyValidation)
+        {
+            builder.AppendLine("bool valid = true;");
+        }
+
+        builder.AppendLine();
+
+        foreach (var member in members)
+        {
+            EmitGeneratedBytePropertyBinding(builder, member);
+        }
+
+        builder.AppendLine(anyValidation ? "return valid;" : "return true;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
+    private static void EmitGeneratedBytePropertyBinding(SourceBuilder builder, MemberDescriptor member)
+    {
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"var field = row.GetField({member.Start}, {member.Length}, (byte)'{EscapeChar(member.PadChar)}', {FIELD_ALIGNMENT_TYPE}.{member.Alignment});");
+        builder.AppendLine("var utf8 = field.ByteSpan;");
+        builder.AppendLine();
+        builder.AppendLine("if (nullVals is null || !IsNullValue(utf8, nullVals))");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        EmitByteInlineParsingLogic(builder, member);
+
+        if (HasAnyValidation(member))
+        {
+            EmitByteValidationChecks(builder, member);
+        }
+
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
     private static void EmitGeneratedPropertyBinding(SourceBuilder builder, MemberDescriptor member)
     {
         builder.AppendLine("{");
@@ -323,6 +472,302 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
+    }
+
+    private static void EmitByteInlineParsingLogic(SourceBuilder builder, MemberDescriptor member)
+    {
+        var baseType = member.BaseTypeName;
+
+#pragma warning disable IDE0010
+        switch (baseType)
+        {
+            case "string":
+                builder.AppendLine($"instance.{member.MemberName} = FixedWidthUtf8BindingHelper.Decode(utf8);");
+                break;
+
+            case "int":
+            case "System.Int32":
+                EmitByteNumericParsing(builder, member, "TryParseInt32", "int");
+                break;
+
+            case "long":
+            case "System.Int64":
+                EmitByteNumericParsing(builder, member, "TryParseInt64", "long");
+                break;
+
+            case "short":
+            case "System.Int16":
+                EmitByteNumericParsing(builder, member, "TryParseInt16", "short");
+                break;
+
+            case "byte":
+            case "System.Byte":
+                EmitByteNumericParsing(builder, member, "TryParseByte", "byte");
+                break;
+
+            case "decimal":
+            case "System.Decimal":
+                EmitByteNumericParsing(builder, member, "TryParseDecimal", "decimal");
+                break;
+
+            case "double":
+            case "System.Double":
+                EmitByteNumericParsing(builder, member, "TryParseDouble", "double");
+                break;
+
+            case "float":
+            case "System.Single":
+                EmitByteNumericParsing(builder, member, "TryParseSingle", "float");
+                break;
+
+            case "bool":
+            case "System.Boolean":
+                EmitByteBooleanParsing(builder, member);
+                break;
+
+            case "System.DateTime":
+                EmitByteDateTimeParsing(builder, member, "DateTime");
+                break;
+
+            case "System.DateTimeOffset":
+                EmitByteDateTimeParsing(builder, member, "DateTimeOffset");
+                break;
+
+            case "System.DateOnly":
+                EmitByteDateTimeParsing(builder, member, "DateOnly");
+                break;
+
+            case "System.TimeOnly":
+                EmitByteDateTimeParsing(builder, member, "TimeOnly");
+                break;
+
+            case "System.Guid":
+                EmitByteGuidParsing(builder, member);
+                break;
+
+            default:
+                if (member.IsEnum)
+                {
+                    EmitByteEnumParsing(builder, member);
+                }
+                else
+                {
+                    builder.AppendLine($"instance.{member.MemberName} = FixedWidthUtf8BindingHelper.Decode(utf8);");
+                }
+                break;
+        }
+#pragma warning restore IDE0010
+    }
+
+    private static void EmitByteNumericParsing(SourceBuilder builder, MemberDescriptor member, string helperMethod, string typeName)
+    {
+        var propertyName = member.MemberName;
+
+        if (member.IsNullable)
+        {
+            builder.AppendLine("if (utf8.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8)) { /* null */ }");
+            builder.AppendLine($"else if (FixedWidthUtf8BindingHelper.{helperMethod}(utf8, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, typeName);
+        }
+        else
+        {
+            builder.AppendLine($"if (FixedWidthUtf8BindingHelper.{helperMethod}(utf8, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, typeName);
+        }
+    }
+
+    private static void EmitByteBooleanParsing(SourceBuilder builder, MemberDescriptor member)
+    {
+        var propertyName = member.MemberName;
+
+        if (member.IsNullable)
+        {
+            builder.AppendLine("if (utf8.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8)) { /* null */ }");
+            builder.AppendLine($"else if (FixedWidthUtf8BindingHelper.TryParseBoolean(utf8, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, "bool");
+        }
+        else
+        {
+            builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParseBoolean(utf8, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, "bool");
+        }
+    }
+
+    private static void EmitByteDateTimeParsing(SourceBuilder builder, MemberDescriptor member, string typeName)
+    {
+        var propertyName = member.MemberName;
+        var formatExpression = member.Format is null ? "null" : $"\"{EscapeString(member.Format)}\"";
+
+        if (member.IsNullable)
+        {
+            builder.AppendLine("if (utf8.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8)) { /* null */ }");
+            builder.AppendLine($"else if (FixedWidthUtf8BindingHelper.TryParse{typeName}(utf8, cultureLocal, {formatExpression}, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, typeName);
+        }
+        else
+        {
+            builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParse{typeName}(utf8, cultureLocal, {formatExpression}, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, typeName);
+        }
+    }
+
+    private static void EmitByteGuidParsing(SourceBuilder builder, MemberDescriptor member)
+    {
+        var propertyName = member.MemberName;
+
+        if (member.IsNullable)
+        {
+            builder.AppendLine("if (utf8.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8)) { /* null */ }");
+            builder.AppendLine($"else if (FixedWidthUtf8BindingHelper.TryParseGuid(utf8, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, "Guid");
+        }
+        else
+        {
+            builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParseGuid(utf8, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, "Guid");
+        }
+    }
+
+    private static void EmitByteEnumParsing(SourceBuilder builder, MemberDescriptor member)
+    {
+        var propertyName = member.MemberName;
+        var enumType = member.TypeofTypeName;
+
+        if (member.IsNullable)
+        {
+            builder.AppendLine("if (utf8.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8)) { /* null */ }");
+            builder.AppendLine($"else if (FixedWidthUtf8BindingHelper.TryParseEnum<{enumType}>(utf8, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, enumType);
+        }
+        else
+        {
+            builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParseEnum<{enumType}>(utf8, out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            EmitByteThrowParseError(builder, propertyName, enumType);
+        }
+    }
+
+    private static void EmitByteValidationChecks(SourceBuilder builder, MemberDescriptor member)
+    {
+        if (member.ValidationRequired)
+        {
+            builder.AppendLine("if (utf8.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitByteAddValidationError(builder, member, "Required", "Value is required");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        if (member.ValidationNotEmpty)
+        {
+            builder.AppendLine($"if (!utf8.IsEmpty && string.IsNullOrWhiteSpace(instance.{member.MemberName}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitByteAddValidationError(builder, member, "NotEmpty", "Value must not be empty or whitespace");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        if (member.ValidationMaxLength >= 0)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.ValidationMaxLength})");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitByteAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.ValidationMaxLength}");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        if (member.ValidationMinLength >= 0)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.ValidationMinLength})");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitByteAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.ValidationMinLength}");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        if (!double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax))
+        {
+            var valueExpr = $"instance.{member.MemberName}";
+            var conditions = new List<string>();
+            if (!double.IsNaN(member.ValidationRangeMin))
+                conditions.Add($"{valueExpr} < {FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
+            if (!double.IsNaN(member.ValidationRangeMax))
+                conditions.Add($"{valueExpr} > {FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
+
+            builder.AppendLine($"if (!utf8.IsEmpty && ({string.Join(" || ", conditions)}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            var rangeMsg = FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
+            EmitByteAddValidationError(builder, member, "Range", rangeMsg);
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        if (member.ValidationPattern != null)
+        {
+            builder.AppendLine($"if (instance.{member.MemberName} != null && !_byte_pattern_{member.MemberName}.IsMatch(instance.{member.MemberName}))");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitByteAddValidationError(builder, member, "Pattern", "Value does not match pattern");
+            builder.AppendLine("valid = false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+    }
+
+    private static void EmitByteAddValidationError(SourceBuilder builder, MemberDescriptor member, string rule, string message)
+    {
+        builder.AppendLine("errors?.Add(new global::HeroParser.Validation.ValidationError");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("RowNumber = rowNumber,");
+        builder.AppendLine($"ColumnIndex = {member.Start},");
+        builder.AppendLine("ColumnName = null,");
+        builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
+        builder.AppendLine($"Rule = \"{rule}\",");
+        builder.AppendLine($"Message = \"{EscapeString(message)}\",");
+        builder.AppendLine("RawValue = FixedWidthUtf8BindingHelper.Decode(utf8)");
+        builder.Unindent();
+        builder.AppendLine("});");
+    }
+
+    private static void EmitByteThrowParseError(SourceBuilder builder, string propertyName, string typeName)
+    {
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("throw new global::HeroParser.FixedWidths.FixedWidthException(");
+        builder.AppendLine("    global::HeroParser.FixedWidths.FixedWidthErrorCode.ParseError,");
+        builder.AppendLine($"    $\"Failed to parse '{{FixedWidthUtf8BindingHelper.Decode(utf8)}}' for property '{propertyName}' as {typeName}.\");");
+        builder.Unindent();
+        builder.AppendLine("}");
     }
 
     private static void EmitInlineParsingLogic(SourceBuilder builder, MemberDescriptor member)
@@ -1006,6 +1451,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             {
                 EmitDescriptorRegistration(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName);
                 EmitGeneratedBinderRegistration(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName);
+                EmitGeneratedByteBinderRegistration(builder, descriptor.FullyQualifiedName, descriptor.SafeClassName);
             }
 
             var writerMembers = GetMembersWithGetters(descriptor.Members);
@@ -1055,6 +1501,12 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     {
         var binderClassName = $"global::{GENERATED_NAMESPACE}.FixedWidthGeneratedBinder_{safeClassName}";
         builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterGeneratedBinder<{fullyQualifiedName}>({binderClassName}.Create);");
+    }
+
+    private static void EmitGeneratedByteBinderRegistration(SourceBuilder builder, string fullyQualifiedName, string safeClassName)
+    {
+        var binderClassName = $"global::{GENERATED_NAMESPACE}.FixedWidthGeneratedByteBinder_{safeClassName}";
+        builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterGeneratedByteBinder<{fullyQualifiedName}>({binderClassName}.Create);");
     }
 
     private static void EmitWriterRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)

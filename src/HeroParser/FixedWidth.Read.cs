@@ -428,8 +428,9 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
         culture ??= CultureInfo.InvariantCulture;
 
+        await using var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
         await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
-            ReadFromPipeReaderAsync(reader, options, cancellationToken),
+            sequenceReader,
             options,
             encoding,
             culture,

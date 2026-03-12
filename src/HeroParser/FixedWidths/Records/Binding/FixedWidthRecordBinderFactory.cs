@@ -14,6 +14,7 @@ public static class FixedWidthRecordBinderFactory
 {
     private static readonly ConcurrentDictionary<Type, object> descriptorFactories = new();
     private static readonly ConcurrentDictionary<Type, object> generatedBinderFactories = new();
+    private static readonly ConcurrentDictionary<Type, object> generatedByteBinderFactories = new();
 
     /// <summary>
     /// Registers a descriptor factory for high-performance binding.
@@ -88,6 +89,17 @@ public static class FixedWidthRecordBinderFactory
     }
 
     /// <summary>
+    /// Registers a source-generated UTF-8 byte binder factory for a record type.
+    /// </summary>
+    public static void RegisterGeneratedByteBinder<T>(
+        Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthByteBinder<T>> factory)
+        where T : new()
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        generatedByteBinderFactories[typeof(T)] = factory;
+    }
+
+    /// <summary>
     /// Tries to create a source-generated binder for the specified type.
     /// Generated binders support inline validation and are preferred over descriptor binders.
     /// </summary>
@@ -105,6 +117,25 @@ public static class FixedWidthRecordBinderFactory
         if (generatedBinderFactories.TryGetValue(typeof(T), out var factory))
         {
             binder = ((Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthBinder<T>>)factory)(culture, nullValues);
+            return true;
+        }
+
+        binder = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Tries to create a source-generated UTF-8 byte binder for the specified type.
+    /// </summary>
+    public static bool TryCreateGeneratedByteBinder<T>(
+        CultureInfo? culture,
+        IReadOnlyList<string>? nullValues,
+        out IFixedWidthByteBinder<T>? binder)
+        where T : new()
+    {
+        if (generatedByteBinderFactories.TryGetValue(typeof(T), out var factory))
+        {
+            binder = ((Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthByteBinder<T>>)factory)(culture, nullValues);
             return true;
         }
 

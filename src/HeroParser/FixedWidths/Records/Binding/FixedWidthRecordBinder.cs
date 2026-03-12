@@ -1,9 +1,11 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Records;
 using HeroParser.Validation;
 using CustomConverterDictionary = System.Collections.Generic.IReadOnlyDictionary<System.Type, HeroParser.FixedWidths.Records.InternalFixedWidthConverter>;
@@ -282,6 +284,238 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// Binds records from pipe-backed fixed-width rows asynchronously.
     /// </summary>
     internal static async IAsyncEnumerable<T> BindAsync(
+        FixedWidthPipeSequenceReader reader,
+        FixedWidthReadOptions options,
+        Encoding encoding,
+        CultureInfo? culture,
+        FixedWidthDeserializeErrorHandler? errorHandler,
+        IReadOnlyList<string>? nullValues = null,
+        CustomConverterDictionary? customConverters = null,
+        IProgress<FixedWidthProgress>? progress = null,
+        int progressIntervalRows = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (errorHandler is null &&
+            customConverters is null &&
+            FixedWidthUtf8BindingHelper.IsUtf8Encoding(encoding) &&
+            FixedWidthRecordBinderFactory.TryCreateGeneratedByteBinder<T>(culture, nullValues, out var generatedByteBinder))
+        {
+            await foreach (var record in BindAsync(
+                reader,
+                generatedByteBinder!,
+                progress,
+                progressIntervalRows,
+                cancellationToken).ConfigureAwait(false))
+            {
+                yield return record;
+            }
+
+            yield break;
+        }
+
+        var binder =
+            errorHandler is null && customConverters is null &&
+            FixedWidthRecordBinderFactory.TryCreateGeneratedBinder<T>(culture, nullValues, out var generatedBinder)
+                ? generatedBinder!
+                : errorHandler is null && customConverters is null &&
+                  FixedWidthRecordBinderFactory.TryCreateDescriptorBinder<T>(culture, nullValues, out var descriptorBinder)
+                    ? descriptorBinder!
+                    : Create(culture, errorHandler, nullValues, customConverters);
+
+        await foreach (var record in BindAsync(
+            reader,
+            binder,
+            options,
+            encoding,
+            progress,
+            progressIntervalRows,
+            cancellationToken).ConfigureAwait(false))
+        {
+            yield return record;
+        }
+    }
+
+    /// <summary>
+    /// Binds records from borrowed pipe-backed fixed-width rows asynchronously using the provided binder.
+    /// </summary>
+    internal static async IAsyncEnumerable<T> BindAsync(
+        FixedWidthPipeSequenceReader reader,
+        IFixedWidthByteBinder<T> binder,
+        IProgress<FixedWidthProgress>? progress = null,
+        int progressIntervalRows = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(binder);
+
+        int recordsProcessed = 0;
+        byte[]? contiguousRowBuffer = null;
+
+        try
+        {
+            while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var row = reader.Current;
+
+                if (row.TryGetContiguousRow(out var contiguousRow))
+                {
+                    if (binder.TryBind(contiguousRow, out var record, errors: null))
+                    {
+                        yield return record;
+                    }
+                }
+                else
+                {
+                    int rowLength = row.Length;
+                    if (contiguousRowBuffer is null || contiguousRowBuffer.Length < rowLength)
+                    {
+                        if (contiguousRowBuffer is not null)
+                        {
+                            ArrayPool<byte>.Shared.Return(contiguousRowBuffer);
+                        }
+
+                        contiguousRowBuffer = ArrayPool<byte>.Shared.Rent(rowLength);
+                    }
+
+                    row.CopyTo(contiguousRowBuffer);
+                    if (binder.TryBind(row.CreateContiguousRow(contiguousRowBuffer.AsSpan(0, rowLength)), out var record, errors: null))
+                    {
+                        yield return record;
+                    }
+                }
+
+                recordsProcessed++;
+
+                if (progress is not null && recordsProcessed % progressIntervalRows == 0)
+                {
+                    progress.Report(new FixedWidthProgress
+                    {
+                        RecordsProcessed = recordsProcessed
+                    });
+                }
+            }
+        }
+        finally
+        {
+            if (contiguousRowBuffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(contiguousRowBuffer);
+            }
+        }
+
+        progress?.Report(new FixedWidthProgress
+        {
+            RecordsProcessed = recordsProcessed
+        });
+    }
+
+    /// <summary>
+    /// Binds records from borrowed pipe-backed fixed-width rows asynchronously using the provided binder.
+    /// </summary>
+    internal static async IAsyncEnumerable<T> BindAsync(
+        FixedWidthPipeSequenceReader reader,
+        IFixedWidthBinder<T> binder,
+        FixedWidthReadOptions options,
+        Encoding encoding,
+        IProgress<FixedWidthProgress>? progress = null,
+        int progressIntervalRows = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(binder);
+        ArgumentNullException.ThrowIfNull(encoding);
+
+        int recordsProcessed = 0;
+        byte[]? contiguousRowBuffer = null;
+        char[]? decodedBuffer = null;
+
+        try
+        {
+            while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var row = reader.Current;
+
+                ReadOnlySpan<byte> rawRecord;
+                if (row.TryGetContiguousRow(out var contiguousRow))
+                {
+                    rawRecord = contiguousRow.RawRecord;
+                }
+                else
+                {
+                    int rowLength = row.Length;
+                    if (contiguousRowBuffer is null || contiguousRowBuffer.Length < rowLength)
+                    {
+                        if (contiguousRowBuffer is not null)
+                        {
+                            ArrayPool<byte>.Shared.Return(contiguousRowBuffer);
+                        }
+
+                        contiguousRowBuffer = ArrayPool<byte>.Shared.Rent(rowLength);
+                    }
+
+                    row.CopyTo(contiguousRowBuffer);
+                    rawRecord = contiguousRowBuffer.AsSpan(0, rowLength);
+                }
+
+                int charCount = encoding.GetCharCount(rawRecord);
+                if (decodedBuffer is null || decodedBuffer.Length < charCount)
+                {
+                    if (decodedBuffer is not null)
+                    {
+                        ArrayPool<char>.Shared.Return(decodedBuffer);
+                    }
+
+                    decodedBuffer = ArrayPool<char>.Shared.Rent(charCount);
+                }
+
+                int charsWritten = encoding.GetChars(rawRecord, decodedBuffer);
+                var decodedRow = new FixedWidthCharSpanRow(
+                    decodedBuffer.AsSpan(0, charsWritten),
+                    row.RecordNumber,
+                    row.SourceLineNumber,
+                    options);
+
+                if (binder.TryBind(decodedRow, out var record, errors: null))
+                {
+                    yield return record;
+                }
+
+                recordsProcessed++;
+
+                if (progress is not null && recordsProcessed % progressIntervalRows == 0)
+                {
+                    progress.Report(new FixedWidthProgress
+                    {
+                        RecordsProcessed = recordsProcessed
+                    });
+                }
+            }
+        }
+        finally
+        {
+            if (contiguousRowBuffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(contiguousRowBuffer);
+            }
+
+            if (decodedBuffer is not null)
+            {
+                ArrayPool<char>.Shared.Return(decodedBuffer);
+            }
+        }
+
+        progress?.Report(new FixedWidthProgress
+        {
+            RecordsProcessed = recordsProcessed
+        });
+    }
+
+    /// <summary>
+    /// Binds records from pipe-backed fixed-width rows asynchronously.
+    /// </summary>
+    internal static async IAsyncEnumerable<T> BindAsync(
         IAsyncEnumerable<FixedWidthPipeRow> rows,
         FixedWidthReadOptions options,
         Encoding encoding,
@@ -293,6 +527,25 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         int progressIntervalRows = 1000,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        if (errorHandler is null &&
+            customConverters is null &&
+            FixedWidthUtf8BindingHelper.IsUtf8Encoding(encoding) &&
+            FixedWidthRecordBinderFactory.TryCreateGeneratedByteBinder<T>(culture, nullValues, out var generatedByteBinder))
+        {
+            await foreach (var record in BindAsync(
+                rows,
+                generatedByteBinder!,
+                options,
+                progress,
+                progressIntervalRows,
+                cancellationToken).ConfigureAwait(false))
+            {
+                yield return record;
+            }
+
+            yield break;
+        }
+
         var binder =
             errorHandler is null && customConverters is null &&
             FixedWidthRecordBinderFactory.TryCreateGeneratedBinder<T>(culture, nullValues, out var generatedBinder)
@@ -320,31 +573,23 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// </summary>
     internal static async IAsyncEnumerable<T> BindAsync(
         IAsyncEnumerable<FixedWidthPipeRow> rows,
-        IFixedWidthBinder<T> binder,
+        IFixedWidthByteBinder<T> binder,
         FixedWidthReadOptions options,
-        Encoding encoding,
         IProgress<FixedWidthProgress>? progress = null,
         int progressIntervalRows = 1000,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(binder);
-        ArgumentNullException.ThrowIfNull(encoding);
 
         int recordsProcessed = 0;
 
         await foreach (var row in rows.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var byteRow = new FixedWidthByteSpanRow(row.RawRecord, row.RecordNumber, row.SourceLineNumber, options);
 
-            var text = encoding.GetString(row.RawRecord);
-            var decodedRow = new FixedWidthCharSpanRow(
-                text.AsSpan(),
-                row.RecordNumber,
-                row.SourceLineNumber,
-                options);
-
-            if (binder.TryBind(decodedRow, out var record, errors: null))
+            if (binder.TryBind(byteRow, out var record, errors: null))
             {
                 yield return record;
             }
@@ -357,6 +602,79 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
                 {
                     RecordsProcessed = recordsProcessed
                 });
+            }
+        }
+
+        progress?.Report(new FixedWidthProgress
+        {
+            RecordsProcessed = recordsProcessed
+        });
+    }
+
+    /// <summary>
+    /// Binds records from pipe-backed fixed-width rows asynchronously using the provided binder.
+    /// </summary>
+    internal static async IAsyncEnumerable<T> BindAsync(
+        IAsyncEnumerable<FixedWidthPipeRow> rows,
+        IFixedWidthBinder<T> binder,
+        FixedWidthReadOptions options,
+        Encoding encoding,
+        IProgress<FixedWidthProgress>? progress = null,
+        int progressIntervalRows = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(binder);
+        ArgumentNullException.ThrowIfNull(encoding);
+
+        int recordsProcessed = 0;
+        char[]? decodedBuffer = null;
+
+        try
+        {
+            await foreach (var row in rows.WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                int charCount = encoding.GetCharCount(row.RawRecord);
+                if (decodedBuffer is null || decodedBuffer.Length < charCount)
+                {
+                    if (decodedBuffer is not null)
+                    {
+                        ArrayPool<char>.Shared.Return(decodedBuffer);
+                    }
+
+                    decodedBuffer = ArrayPool<char>.Shared.Rent(charCount);
+                }
+
+                int charsWritten = encoding.GetChars(row.RawRecord, decodedBuffer);
+                var decodedRow = new FixedWidthCharSpanRow(
+                    decodedBuffer.AsSpan(0, charsWritten),
+                    row.RecordNumber,
+                    row.SourceLineNumber,
+                    options);
+
+                if (binder.TryBind(decodedRow, out var record, errors: null))
+                {
+                    yield return record;
+                }
+
+                recordsProcessed++;
+
+                if (progress is not null && recordsProcessed % progressIntervalRows == 0)
+                {
+                    progress.Report(new FixedWidthProgress
+                    {
+                        RecordsProcessed = recordsProcessed
+                    });
+                }
+            }
+        }
+        finally
+        {
+            if (decodedBuffer is not null)
+            {
+                ArrayPool<char>.Shared.Return(decodedBuffer);
             }
         }
 

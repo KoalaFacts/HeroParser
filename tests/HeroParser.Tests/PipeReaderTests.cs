@@ -101,6 +101,23 @@ public class PipeReaderTests
         Assert.Equal("Has a, comma", descriptions[0]);
     }
 
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_CommentLines_AreSkipped()
+    {
+        var csv = "# ignore me\r\nName,Age\r\nAlice,30\r\n";
+        var pipe = CreatePipeFromString(csv);
+        var options = new CsvReadOptions { CommentCharacter = '#' };
+
+        var names = new List<string>();
+        await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, TestContext.Current.CancellationToken))
+        {
+            names.Add(row[0].ToString());
+        }
+
+        Assert.Equal(["Name", "Alice"], names);
+    }
+
     #endregion
 
     #region Borrowed Reader

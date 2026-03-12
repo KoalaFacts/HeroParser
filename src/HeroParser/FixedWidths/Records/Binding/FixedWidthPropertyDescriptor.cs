@@ -1,5 +1,6 @@
 using System.Globalization;
 using HeroParser.FixedWidths;
+using HeroParser.FixedWidths.Mapping;
 
 namespace HeroParser.FixedWidths.Records.Binding;
 
@@ -26,7 +27,8 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
     char padChar,
     FieldAlignment alignment,
     FixedWidthPropertySetter<T> setter,
-    bool isRequired = false)
+    bool isRequired = false,
+    FixedWidthPropertyValidation? validation = null)
 {
     /// <summary>Gets the property/field name.</summary>
     public string Name { get; } = name;
@@ -48,6 +50,9 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
 
     /// <summary>Gets whether this property is required (non-nullable value type).</summary>
     public bool IsRequired { get; } = isRequired;
+
+    /// <summary>Gets the validation rules for this property, or null if none configured.</summary>
+    public FixedWidthPropertyValidation? Validation { get; } = validation;
 }
 
 /// <summary>

@@ -137,6 +137,8 @@ public class FixedWidthDescriptorBinderValidationTests
         Assert.Single(errors);
         Assert.Equal("Range", errors[0].Rule);
         Assert.Equal("Value", errors[0].PropertyName);
+        Assert.Equal(10, errors[0].ColumnIndex);
+        Assert.Null(errors[0].ColumnName);
     }
 
     [Fact]
@@ -169,5 +171,19 @@ public class FixedWidthDescriptorBinderValidationTests
         Assert.Equal("Bob", records[0].Name);
         Assert.Single(errors);
         Assert.Equal("MaxLength", errors[0].Rule);
+    }
+
+    [Fact]
+    public void ValidationErrors_WithNullErrorList_StillExcludeRow()
+    {
+        var descriptor = BuildDescriptor(nameValidation: new FixedWidthPropertyValidation { MaxLength = 3 });
+        var binder = new FixedWidthDescriptorBinder<FixedWidthRecord>(descriptor);
+        using var reader = FixedWidth.ReadFromText("Alice     00042", new FixedWidthReadOptions { AllowShortRows = true });
+
+        Assert.True(reader.MoveNext());
+
+        var bound = binder.TryBind(reader.Current, out _);
+
+        Assert.False(bound);
     }
 }

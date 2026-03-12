@@ -34,7 +34,8 @@ public interface ICsvBinder<TElement, T>
     /// <param name="row">The row to bind.</param>
     /// <param name="rowNumber">The 1-based row number for error reporting.</param>
     /// <param name="result">The bound record when successful.</param>
-    /// <param name="errors">Optional list to collect validation errors instead of throwing.</param>
+    /// <param name="errors">Optional list to collect validation errors. Validation failures still skip the row
+    /// when this is null; the list only controls whether details are collected.</param>
     /// <returns>True if binding succeeded; otherwise false if the row should be skipped.</returns>
     bool TryBind(CsvRow<TElement> row, int rowNumber, out T result, List<ValidationError>? errors = null);
 
@@ -45,7 +46,8 @@ public interface ICsvBinder<TElement, T>
     /// <param name="instance">The existing instance to bind into.</param>
     /// <param name="row">The row to bind.</param>
     /// <param name="rowNumber">The 1-based row number for error reporting.</param>
-    /// <param name="errors">Optional list to collect validation errors instead of throwing.</param>
+    /// <param name="errors">Optional list to collect validation errors. Validation failures still skip the row
+    /// when this is null; the list only controls whether details are collected.</param>
     /// <returns>True if binding succeeded, false if the row should be skipped.</returns>
     /// <remarks>
     /// Note: String properties still allocate new strings for each call.

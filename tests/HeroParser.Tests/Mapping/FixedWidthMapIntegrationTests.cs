@@ -63,6 +63,48 @@ public class FixedWidthMapIntegrationTests
     }
 
     [Fact]
+    public void WithMap_FromText_RequiredErrors_Collected()
+    {
+        var map = new FixedWidthMap<Record>();
+        map.Map(r => r.Name, c => c.Start(0).Length(10).Required())
+           .Map(r => r.Value, c => c.Start(10).Length(5).PadChar(' ').Alignment(FieldAlignment.Right))
+           .Map(r => r.Amount, c => c.Start(15).Length(10).PadChar(' ').Alignment(FieldAlignment.Right));
+
+        var text = new string(' ', 10) + "100".PadLeft(5) + "50.25".PadLeft(10);
+
+        var result = FixedWidth.Read<Record>().WithMap(map).FromText(text);
+
+        Assert.Empty(result.Records);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("Required", error.Rule);
+        Assert.Equal("Name", error.PropertyName);
+        Assert.Null(error.ColumnName);
+        Assert.Equal(0, error.ColumnIndex);
+    }
+
+    [Fact]
+    public void WithMap_RangeValidation_UsesConfiguredCulture()
+    {
+        var map = new FixedWidthMap<Record>();
+        map.Map(r => r.Name, c => c.Start(0).Length(10))
+           .Map(r => r.Value, c => c.Start(10).Length(5).PadChar(' ').Alignment(FieldAlignment.Right))
+           .Map(r => r.Amount, c => c.Start(15).Length(10).PadChar(' ').Alignment(FieldAlignment.Right).Range(100, 200));
+
+        var text = "Alice".PadRight(10) + "100".PadLeft(5) + "1,25".PadLeft(10);
+
+        var result = FixedWidth.Read<Record>()
+            .WithMap(map)
+            .WithCulture("de-DE")
+            .FromText(text);
+
+        Assert.Empty(result.Records);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("Range", error.Rule);
+        Assert.Equal("Amount", error.PropertyName);
+        Assert.Equal("1,25", error.RawValue);
+    }
+
+    [Fact]
     public void WithMap_ToText_WritesRecords()
     {
         var map = new FixedWidthMap<Record>();

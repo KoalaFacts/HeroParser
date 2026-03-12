@@ -82,6 +82,51 @@ public class CsvMapIntegrationTests
     }
 
     [Fact]
+    public void WithMap_FromText_RequiredErrors_Collected()
+    {
+        var map = new CsvMap<Trade>();
+        map.Map(t => t.Symbol, c => c.Name("Symbol").Required())
+           .Map(t => t.Price, c => c.Name("Price"))
+           .Map(t => t.Quantity, c => c.Name("Quantity"));
+
+        const string csv = "Symbol,Price,Quantity\n,150.50,100\n";
+
+        var reader = Csv.Read<Trade>().WithMap(map).FromText(csv);
+        var records = Collect(reader);
+
+        Assert.Empty(records);
+        var error = Assert.Single(reader.Errors);
+        Assert.Equal("Required", error.Rule);
+        Assert.Equal("Symbol", error.ColumnName);
+        Assert.Equal("Symbol", error.PropertyName);
+        Assert.Equal(string.Empty, error.RawValue);
+    }
+
+    [Fact]
+    public void WithMap_RangeValidation_UsesConfiguredCulture()
+    {
+        var map = new CsvMap<Trade>();
+        map.Map(t => t.Symbol, c => c.Name("Symbol"))
+           .Map(t => t.Price, c => c.Name("Price").Range(100, 200))
+           .Map(t => t.Quantity, c => c.Name("Quantity"));
+
+        const string csv = "Symbol;Price;Quantity\nIBM;1,25;50\n";
+
+        var reader = Csv.Read<Trade>()
+            .WithMap(map)
+            .WithDelimiter(';')
+            .WithCulture("de-DE")
+            .FromText(csv);
+        var records = Collect(reader);
+
+        Assert.Empty(records);
+        var error = Assert.Single(reader.Errors);
+        Assert.Equal("Range", error.Rule);
+        Assert.Equal("Price", error.PropertyName);
+        Assert.Equal("1,25", error.RawValue);
+    }
+
+    [Fact]
     public void InlineMap_FromText_ReadsRecords()
     {
         const string csv = "Symbol,Price,Quantity\nGOOG,2800.00,50\n";

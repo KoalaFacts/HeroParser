@@ -62,6 +62,20 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
 
             if (nullVals is null || !IsNullValue(span, nullVals))
             {
+                if (prop.IsRequired && (span.IsEmpty || span.Trim().IsEmpty))
+                {
+                    hasErrors |= AddValidationError(
+                        errors,
+                        prop.Name,
+                        row.RecordNumber,
+                        prop.Start,
+                        columnName: null,
+                        "Required",
+                        "Value is required",
+                        new string(span));
+                    continue;
+                }
+
                 try
                 {
                     prop.Setter(ref instance, span, cultureLocal);
@@ -76,19 +90,45 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T> where T
                         row.SourceLineNumber);
                 }
 
-                if (prop.Validation is { HasAnyRule: true } validation && errors is not null)
+                if (prop.Validation is { HasAnyRule: true } validation)
                 {
                     var fieldStr = new string(span);
                     hasErrors |= PropertyValidationRunner.Validate(
-                        fieldStr, prop.Name, row.RecordNumber, i,
-                        columnName: prop.Name,
+                        fieldStr, prop.Name, row.RecordNumber, prop.Start,
+                        columnName: null,
                         validation.NotEmpty, validation.MinLength, validation.MaxLength,
                         validation.RangeMin, validation.RangeMax, validation.Pattern,
-                        errors);
+                        errors,
+                        cultureLocal);
                 }
             }
         }
         return !hasErrors;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool AddValidationError(
+        List<ValidationError>? errors,
+        string propertyName,
+        int rowNumber,
+        int columnIndex,
+        string? columnName,
+        string rule,
+        string message,
+        string? rawValue)
+    {
+        errors?.Add(new ValidationError
+        {
+            PropertyName = propertyName,
+            ColumnName = columnName,
+            RawValue = rawValue,
+            Rule = rule,
+            Message = message,
+            RowNumber = rowNumber,
+            ColumnIndex = columnIndex
+        });
+
+        return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

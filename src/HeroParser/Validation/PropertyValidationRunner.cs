@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace HeroParser.Validation;
@@ -24,100 +25,61 @@ internal static class PropertyValidationRunner
         double? rangeMin,
         double? rangeMax,
         Regex? pattern,
-        List<ValidationError> errors)
+        List<ValidationError>? errors,
+        CultureInfo culture)
     {
-        int initialCount = errors.Count;
+        bool hasErrors = false;
 
-        if (notEmpty && string.IsNullOrWhiteSpace(value))
+        void AddError(string rule, string message)
         {
-            errors.Add(new ValidationError
+            hasErrors = true;
+            errors?.Add(new ValidationError
             {
                 PropertyName = propertyName,
                 ColumnName = columnName,
                 RawValue = value,
-                Rule = "NotEmpty",
-                Message = $"Field '{propertyName}' must not be empty or whitespace.",
+                Rule = rule,
+                Message = message,
                 RowNumber = rowNumber,
                 ColumnIndex = columnIndex
             });
+        }
+
+        if (notEmpty && string.IsNullOrWhiteSpace(value))
+        {
+            AddError("NotEmpty", $"Field '{propertyName}' must not be empty or whitespace.");
         }
 
         if (minLength.HasValue && value.Length < minLength.Value)
         {
-            errors.Add(new ValidationError
-            {
-                PropertyName = propertyName,
-                ColumnName = columnName,
-                RawValue = value,
-                Rule = "MinLength",
-                Message = $"Field '{propertyName}' length {value.Length} is less than minimum {minLength.Value}.",
-                RowNumber = rowNumber,
-                ColumnIndex = columnIndex
-            });
+            AddError("MinLength", $"Field '{propertyName}' length {value.Length} is less than minimum {minLength.Value}.");
         }
 
         if (maxLength.HasValue && value.Length > maxLength.Value)
         {
-            errors.Add(new ValidationError
-            {
-                PropertyName = propertyName,
-                ColumnName = columnName,
-                RawValue = value,
-                Rule = "MaxLength",
-                Message = $"Field '{propertyName}' length {value.Length} exceeds maximum {maxLength.Value}.",
-                RowNumber = rowNumber,
-                ColumnIndex = columnIndex
-            });
+            AddError("MaxLength", $"Field '{propertyName}' length {value.Length} exceeds maximum {maxLength.Value}.");
         }
 
         if (rangeMin.HasValue || rangeMax.HasValue)
         {
-            if (double.TryParse(value, System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out var numericValue))
+            if (double.TryParse(value, NumberStyles.Any, culture, out var numericValue))
             {
                 if (rangeMin.HasValue && numericValue < rangeMin.Value)
                 {
-                    errors.Add(new ValidationError
-                    {
-                        PropertyName = propertyName,
-                        ColumnName = columnName,
-                        RawValue = value,
-                        Rule = "Range",
-                        Message = $"Field '{propertyName}' value {numericValue} is less than minimum {rangeMin.Value}.",
-                        RowNumber = rowNumber,
-                        ColumnIndex = columnIndex
-                    });
+                    AddError("Range", $"Field '{propertyName}' value {numericValue} is less than minimum {rangeMin.Value}.");
                 }
                 if (rangeMax.HasValue && numericValue > rangeMax.Value)
                 {
-                    errors.Add(new ValidationError
-                    {
-                        PropertyName = propertyName,
-                        ColumnName = columnName,
-                        RawValue = value,
-                        Rule = "Range",
-                        Message = $"Field '{propertyName}' value {numericValue} exceeds maximum {rangeMax.Value}.",
-                        RowNumber = rowNumber,
-                        ColumnIndex = columnIndex
-                    });
+                    AddError("Range", $"Field '{propertyName}' value {numericValue} exceeds maximum {rangeMax.Value}.");
                 }
             }
         }
 
         if (pattern is { } regex && !regex.IsMatch(value))
         {
-            errors.Add(new ValidationError
-            {
-                PropertyName = propertyName,
-                ColumnName = columnName,
-                RawValue = value,
-                Rule = "Pattern",
-                Message = $"Field '{propertyName}' value '{value}' does not match pattern '{regex}'.",
-                RowNumber = rowNumber,
-                ColumnIndex = columnIndex
-            });
+            AddError("Pattern", $"Field '{propertyName}' value '{value}' does not match pattern '{regex}'.");
         }
 
-        return errors.Count > initialCount;
+        return hasErrors;
     }
 }

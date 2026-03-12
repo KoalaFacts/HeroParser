@@ -24,7 +24,9 @@ public class CsvDescriptorBinderValidationTests
     // Helper: build a record descriptor with header-based binding for SimpleRecord
     private static CsvRecordDescriptor<SimpleRecord> BuildDescriptor(
         CsvPropertyValidation? nameValidation = null,
-        CsvPropertyValidation? ageValidation = null)
+        CsvPropertyValidation? ageValidation = null,
+        bool nameRequired = false,
+        bool ageRequired = false)
     {
         return new CsvRecordDescriptor<SimpleRecord>(
         [
@@ -32,13 +34,13 @@ public class CsvDescriptorBinderValidationTests
                 "Name",
                 columnIndex: -1,
                 setter: SetName,
-                isRequired: false,
+                isRequired: nameRequired,
                 validation: nameValidation),
             new CsvPropertyDescriptor<SimpleRecord>(
                 "Age",
                 columnIndex: -1,
                 setter: SetAge,
-                isRequired: false,
+                isRequired: ageRequired,
                 validation: ageValidation)
         ]);
     }
@@ -47,10 +49,13 @@ public class CsvDescriptorBinderValidationTests
     private static (List<SimpleRecord> records, IReadOnlyList<ValidationError> errors) Parse(
         string csv,
         CsvPropertyValidation? nameValidation = null,
-        CsvPropertyValidation? ageValidation = null)
+        CsvPropertyValidation? ageValidation = null,
+        bool nameRequired = false,
+        bool ageRequired = false,
+        CsvRecordOptions? options = null)
     {
-        var descriptor = BuildDescriptor(nameValidation, ageValidation);
-        var binder = new CsvDescriptorBinder<SimpleRecord>(descriptor);
+        var descriptor = BuildDescriptor(nameValidation, ageValidation, nameRequired, ageRequired);
+        var binder = new CsvDescriptorBinder<SimpleRecord>(descriptor, options);
         var rowReader = Csv.ReadFromCharSpan(csv.AsSpan());
         var reader = new CsvRecordReader<char, SimpleRecord>(rowReader, binder);
 
@@ -96,6 +101,20 @@ public class CsvDescriptorBinderValidationTests
         Assert.Equal("NotEmpty", errors[0].Rule);
         Assert.Equal("Name", errors[0].PropertyName);
         Assert.Equal("Name", errors[0].ColumnName);
+    }
+
+    [Fact]
+    public void Required_EmptyField_AddsValidationError()
+    {
+        var csv = "Name,Age\n,30";
+        var (records, errors) = Parse(csv, nameRequired: true);
+
+        Assert.Empty(records);
+        Assert.Single(errors);
+        Assert.Equal("Required", errors[0].Rule);
+        Assert.Equal("Name", errors[0].PropertyName);
+        Assert.Equal("Name", errors[0].ColumnName);
+        Assert.Equal(string.Empty, errors[0].RawValue);
     }
 
     [Fact]
@@ -180,5 +199,21 @@ public class CsvDescriptorBinderValidationTests
         Assert.Single(errors);
         // Name is the first column (index 0) after header resolution
         Assert.True(errors[0].ColumnIndex >= 0);
+    }
+
+    [Fact]
+    public void ValidationErrors_WithNullErrorList_StillExcludeRow()
+    {
+        var descriptor = BuildDescriptor(nameValidation: new CsvPropertyValidation { MaxLength = 3 });
+        var binder = new CsvDescriptorBinder<SimpleRecord>(descriptor);
+        var reader = Csv.ReadFromCharSpan("Name,Age\nAlice,30".AsSpan());
+
+        Assert.True(reader.MoveNext());
+        binder.BindHeader(reader.Current, rowNumber: 1);
+        Assert.True(reader.MoveNext());
+
+        var bound = binder.TryBind(reader.Current, rowNumber: 2, out _);
+
+        Assert.False(bound);
     }
 }

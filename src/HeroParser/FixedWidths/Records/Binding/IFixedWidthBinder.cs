@@ -14,8 +14,8 @@ public interface IFixedWidthBinder<T> where T : new()
     /// </summary>
     /// <param name="row">The row to bind.</param>
     /// <param name="result">The bound record when successful.</param>
-    /// <param name="errors">Optional list to collect validation errors. When provided, validation failures
-    /// are recorded here and the row is excluded from results. When null, validation is skipped.</param>
+    /// <param name="errors">Optional list to collect validation errors. Validation failures always exclude
+    /// the row from results; when this is null, the row is still excluded but no error details are recorded.</param>
     /// <returns>True if binding succeeded; otherwise false if the row should be skipped.</returns>
     bool TryBind(FixedWidthCharSpanRow row, out T result, List<ValidationError>? errors = null);
 
@@ -25,8 +25,8 @@ public interface IFixedWidthBinder<T> where T : new()
     /// </summary>
     /// <param name="instance">The existing instance to bind into.</param>
     /// <param name="row">The row to bind.</param>
-    /// <param name="errors">Optional list to collect validation errors. When provided, validation failures
-    /// are recorded here and the row is excluded from results. When null, validation is skipped.</param>
+    /// <param name="errors">Optional list to collect validation errors. Validation failures always exclude
+    /// the row from results; when this is null, the row is still excluded but no error details are recorded.</param>
     /// <returns>True if binding succeeded, false if the row should be skipped.</returns>
     /// <remarks>
     /// Note: String properties still allocate new strings for each call.

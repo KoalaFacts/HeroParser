@@ -122,6 +122,22 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
                 var span = row[idx].Span;
                 if (nullVals is null || !IsNullValue(span, nullVals))
                 {
+                    string? colName = !descriptor.UsesHeaderBinding ? null : prop.Name;
+
+                    if (prop.IsRequired && span.IsEmpty)
+                    {
+                        hasErrors |= AddValidationError(
+                            errors,
+                            prop.Name,
+                            rowNumber,
+                            idx,
+                            colName,
+                            "Required",
+                            "Value is required",
+                            string.Empty);
+                        continue;
+                    }
+
                     try
                     {
                         prop.Setter(ref instance, span, cultureLocal);
@@ -138,16 +154,16 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
                             ex);
                     }
 
-                    if (prop.Validation is { } validation && errors is not null)
+                    if (prop.Validation is { HasAnyRule: true } validation)
                     {
                         var fieldStr = new string(span);
-                        string? colName = !descriptor.UsesHeaderBinding ? null : prop.Name;
                         hasErrors |= PropertyValidationRunner.Validate(
                             fieldStr, prop.Name, rowNumber, idx,
                             columnName: colName,
                             validation.NotEmpty, validation.MinLength, validation.MaxLength,
                             validation.RangeMin, validation.RangeMax, validation.Pattern,
-                            errors);
+                            errors,
+                            cultureLocal);
                     }
                 }
             }
@@ -160,6 +176,31 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
             }
         }
         return !hasErrors;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool AddValidationError(
+        List<ValidationError>? errors,
+        string propertyName,
+        int rowNumber,
+        int columnIndex,
+        string? columnName,
+        string rule,
+        string message,
+        string? rawValue)
+    {
+        errors?.Add(new ValidationError
+        {
+            PropertyName = propertyName,
+            ColumnName = columnName,
+            RawValue = rawValue,
+            Rule = rule,
+            Message = message,
+            RowNumber = rowNumber,
+            ColumnIndex = columnIndex
+        });
+
+        return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

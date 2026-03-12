@@ -8,7 +8,8 @@ public readonly struct ValidationError
     /// <summary>Gets the 1-based row number in the source file where the error occurred.</summary>
     public int RowNumber { get; init; }
 
-    /// <summary>Gets the zero-based column index of the field that failed validation.</summary>
+    /// <summary>Gets the zero-based column index of the field that failed validation. For fixed-width data,
+    /// this is the zero-based start position of the field.</summary>
     public int ColumnIndex { get; init; }
 
     /// <summary>Gets the column name from the header row, or <see langword="null"/> when no header is present.</summary>

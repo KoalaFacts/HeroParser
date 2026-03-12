@@ -1646,6 +1646,79 @@ The default regex timeout for `Pattern` validation is 1000 ms. Override it per-c
 public string Code { get; set; } = "";
 ```
 
+## 🗺️ Fluent Mapping
+
+Define column-to-property mappings at runtime using `CsvMap<T>` or `FixedWidthMap<T>` — no attributes required. Maps are reusable objects that can be passed to both read and write builders.
+
+### CsvMap&lt;T&gt; (Read + Write)
+
+```csharp
+// Define a map (reusable)
+var map = new CsvMap<Trade>();
+map.Map(t => t.Symbol, c => c.Name("Ticker"))
+   .Map(t => t.Price, c => c.Name("TradePrice"))
+   .Map(t => t.Quantity, c => c.Name("Qty"));
+
+// Read
+var reader = Csv.Read<Trade>().WithMap(map).FromText(csvText);
+foreach (var trade in reader)
+    Console.WriteLine($"{trade.Symbol}: {trade.Price}");
+
+// Write
+var csv = Csv.Write<Trade>().WithMap(map).ToText(trades);
+```
+
+### FixedWidthMap&lt;T&gt;
+
+```csharp
+var map = new FixedWidthMap<Record>();
+map.Map(r => r.Name, c => c.Start(0).Length(10))
+   .Map(r => r.Value, c => c.Start(10).Length(5).PadChar('0').Alignment(FieldAlignment.Right))
+   .Map(r => r.Amount, c => c.Start(15).Length(10));
+
+var result = FixedWidth.Read<Record>().WithMap(map).FromText(text);
+var output = FixedWidth.Write<Record>().WithMap(map).ToText(records);
+```
+
+### Subclass Pattern
+
+Encapsulate mapping logic in a dedicated class for reuse across the application:
+
+```csharp
+public class TradeMap : CsvMap<Trade>
+{
+    public TradeMap()
+    {
+        Map(t => t.Symbol, c => c.Name("Ticker"));
+        Map(t => t.Price, c => c.Name("TradePrice"));
+        Map(t => t.Quantity, c => c.Name("Qty"));
+    }
+}
+
+var reader = Csv.Read<Trade>().WithMap(new TradeMap()).FromText(csv);
+```
+
+### Validation Rules
+
+Add field-level validation rules inline on the map:
+
+```csharp
+var map = new CsvMap<Trade>();
+map.Map(t => t.Symbol, c => c.Name("Symbol").NotEmpty().MaxLength(5))
+   .Map(t => t.Price, c => c.Name("Price").Range(0.01, 999999))
+   .Map(t => t.Quantity, c => c.Name("Qty"));
+
+var reader = Csv.Read<Trade>().WithMap(map).FromText(csv);
+foreach (var error in reader.Errors)
+    Console.WriteLine($"Row {error.RowNumber}: {error.Message}");
+```
+
+### Notes
+
+- Fluent maps use reflection and expression trees — annotated with `[RequiresUnreferencedCode]` / `[RequiresDynamicCode]` for AOT awareness
+- Map-based reads use the char path (no SIMD optimization). For maximum performance, use `[CsvGenerateBinder]` attributes instead
+- `ForEach` methods are not supported with fluent maps — use `FromText()` / `FromFile()` instead
+
 ## 🔍 Schema Inference
 
 Automatically detect column types from CSV data without defining record classes:

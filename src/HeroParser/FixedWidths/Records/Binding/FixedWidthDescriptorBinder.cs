@@ -30,7 +30,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T>, IFixed
         this.nullValues = nullValues is { Count: > 0 }
             ? [.. nullValues]
             : null;
-        this.nullValuesUtf8 = nullValues is { Count: > 0 }
+        nullValuesUtf8 = nullValues is { Count: > 0 }
             ? EncodeNullValues(nullValues)
             : null;
     }

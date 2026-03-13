@@ -1,6 +1,5 @@
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Records;
-using HeroParser.FixedWidths.Records.Binding;
 using Xunit;
 
 namespace HeroParser.Tests.FixedWidths;
@@ -158,35 +157,35 @@ public class FixedWidthBuilderTests
 
 public class FixedWidthRecordBindingTests
 {
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class Employee
     {
-        [FixedWidthColumn(Start = 0, Length = 10)]
+        [PositionalMap(Start = 0, Length = 10)]
         public string Id { get; set; } = "";
 
-        [FixedWidthColumn(Start = 10, Length = 20)]
+        [PositionalMap(Start = 10, Length = 20)]
         public string Name { get; set; } = "";
 
-        [FixedWidthColumn(Start = 30, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 30, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
         public decimal Salary { get; set; }
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public struct StructEmployee
     {
-        [FixedWidthColumn(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 5, Length = 10)]
+        [PositionalMap(Start = 5, Length = 10)]
         public string? Name { get; set; }
     }
 
     public struct ReflectionStructEmployee
     {
-        [FixedWidthColumn(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 5, Length = 10)]
+        [PositionalMap(Start = 5, Length = 10)]
         public string? Name { get; set; }
     }
 
@@ -271,16 +270,17 @@ public class FixedWidthRecordBindingTests
         Assert.Equal("Alice", records[0].Name);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class TypedRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int IntValue { get; set; }
 
-        [FixedWidthColumn(Start = 5, Length = 8, Format = "yyyyMMdd")]
+        [PositionalMap(Start = 5, Length = 8)]
+        [Parse(Format = "yyyyMMdd")]
         public DateTime DateValue { get; set; }
 
-        [FixedWidthColumn(Start = 13, Length = 1)]
+        [PositionalMap(Start = 13, Length = 1)]
         public bool BoolValue { get; set; }
     }
 
@@ -300,10 +300,10 @@ public class FixedWidthRecordBindingTests
         Assert.True(records[0].BoolValue);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class BooleanRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 1)]
+        [PositionalMap(Start = 0, Length = 1)]
         public bool Flag { get; set; }
     }
 
@@ -324,10 +324,10 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(expected, records[0].Flag);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class NullableRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 5)]
+        [PositionalMap(Start = 0, Length = 5)]
         public int? NullableInt { get; set; }
     }
 
@@ -361,10 +361,10 @@ public class FixedWidthRecordBindingTests
 
     public enum Status { Active, Inactive, Pending }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class EnumRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10)]
+        [PositionalMap(Start = 0, Length = 10)]
         public Status Status { get; set; }
     }
 
@@ -420,22 +420,22 @@ public class FixedWidthRecordBindingTests
         Assert.Contains("NullableInt", ex.Message);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class NumericTypesRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10)]
+        [PositionalMap(Start = 0, Length = 10)]
         public long LongValue { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 5)]
+        [PositionalMap(Start = 10, Length = 5)]
         public short ShortValue { get; set; }
 
-        [FixedWidthColumn(Start = 15, Length = 3)]
+        [PositionalMap(Start = 15, Length = 3)]
         public byte ByteValue { get; set; }
 
-        [FixedWidthColumn(Start = 18, Length = 10)]
+        [PositionalMap(Start = 18, Length = 10)]
         public double DoubleValue { get; set; }
 
-        [FixedWidthColumn(Start = 28, Length = 10)]
+        [PositionalMap(Start = 28, Length = 10)]
         public float FloatValue { get; set; }
     }
 
@@ -458,16 +458,19 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(2.71828f, records[0].FloatValue, 4);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class DateTypesRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Format = "yyyy-MM-dd")]
+        [PositionalMap(Start = 0, Length = 10)]
+        [Parse(Format = "yyyy-MM-dd")]
         public DateOnly DateOnlyValue { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 8, Format = "HH:mm:ss")]
+        [PositionalMap(Start = 10, Length = 8)]
+        [Parse(Format = "HH:mm:ss")]
         public TimeOnly TimeOnlyValue { get; set; }
 
-        [FixedWidthColumn(Start = 18, Length = 25, Format = "yyyy-MM-ddTHH:mm:sszzz")]
+        [PositionalMap(Start = 18, Length = 25)]
+        [Parse(Format = "yyyy-MM-ddTHH:mm:sszzz")]
         public DateTimeOffset DateTimeOffsetValue { get; set; }
     }
 
@@ -487,10 +490,10 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(new DateTimeOffset(2023, 12, 25, 14, 30, 45, TimeSpan.FromHours(5)), records[0].DateTimeOffsetValue);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class GuidRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 36)]
+        [PositionalMap(Start = 0, Length = 36)]
         public Guid GuidValue { get; set; }
     }
 
@@ -509,16 +512,16 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(guid, records[0].GuidValue);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class AlignmentRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Left)]
+        [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Left)]
         public string LeftAligned { get; set; } = "";
 
-        [FixedWidthColumn(Start = 10, Length = 10, Alignment = FieldAlignment.Right)]
+        [PositionalMap(Start = 10, Length = 10, Alignment = FieldAlignment.Right)]
         public string RightAligned { get; set; } = "";
 
-        [FixedWidthColumn(Start = 20, Length = 10, Alignment = FieldAlignment.None)]
+        [PositionalMap(Start = 20, Length = 10, Alignment = FieldAlignment.None)]
         public string NoTrim { get; set; } = "";
     }
 
@@ -543,16 +546,16 @@ public class FixedWidthRecordBindingTests
         Assert.Equal("  Padded  ", records[0].NoTrim);      // No trimming
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class NullableTypesRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10)]
+        [PositionalMap(Start = 0, Length = 10)]
         public long? NullableLong { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 10)]
+        [PositionalMap(Start = 10, Length = 10)]
         public DateTime? NullableDateTime { get; set; }
 
-        [FixedWidthColumn(Start = 20, Length = 36)]
+        [PositionalMap(Start = 20, Length = 36)]
         public Guid? NullableGuid { get; set; }
     }
 
@@ -603,13 +606,13 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(expected, records[0].Status);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class CustomPadCharRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10, PadChar = '*', Alignment = FieldAlignment.Left)]
+        [PositionalMap(Start = 0, Length = 10, PadChar = '*', Alignment = FieldAlignment.Left)]
         public string StarPadded { get; set; } = "";
 
-        [FixedWidthColumn(Start = 10, Length = 10, PadChar = '0', Alignment = FieldAlignment.Right)]
+        [PositionalMap(Start = 10, Length = 10, PadChar = '0', Alignment = FieldAlignment.Right)]
         public int ZeroPadded { get; set; }
     }
 
@@ -630,13 +633,13 @@ public class FixedWidthRecordBindingTests
 
     #region WithNullValues Tests
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class NullValueTestRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10)]
+        [PositionalMap(Start = 0, Length = 10)]
         public string? StringField { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 10)]
+        [PositionalMap(Start = 10, Length = 10)]
         public int? IntField { get; set; }
     }
 
@@ -722,10 +725,10 @@ public class FixedWidthRecordBindingTests
 
     #region WithProgress Tests
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class SimpleRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10)]
+        [PositionalMap(Start = 0, Length = 10)]
         public string Value { get; set; } = "";
     }
 
@@ -881,16 +884,16 @@ public class FixedWidthRecordBindingTests
 
     #region AllowShortRows Tests
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class ShortRowRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10)]
+        [PositionalMap(Start = 0, Length = 10)]
         public string Field1 { get; set; } = "";
 
-        [FixedWidthColumn(Start = 10, Length = 10)]
+        [PositionalMap(Start = 10, Length = 10)]
         public string Field2 { get; set; } = "";
 
-        [FixedWidthColumn(Start = 20, Length = 10)]
+        [PositionalMap(Start = 20, Length = 10)]
         public string Field3 { get; set; } = "";
     }
 
@@ -1000,18 +1003,18 @@ public class FixedWidthRecordBindingTests
 
     #region End Property Tests
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class EndPropertyRecord
     {
         // Using End instead of Length
-        [FixedWidthColumn(Start = 0, End = 10)]
+        [PositionalMap(Start = 0, End = 10)]
         public string Field1 { get; set; } = "";
 
-        [FixedWidthColumn(Start = 10, End = 25)]
+        [PositionalMap(Start = 10, End = 25)]
         public string Field2 { get; set; } = "";
 
         // Mix of Length and End
-        [FixedWidthColumn(Start = 25, Length = 5)]
+        [PositionalMap(Start = 25, Length = 5)]
         public string Field3 { get; set; } = "";
     }
 
@@ -1031,10 +1034,10 @@ public class FixedWidthRecordBindingTests
         Assert.Equal("F3", records[0].Field3);        // Length=5
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class EndPropertyNumericRecord
     {
-        [FixedWidthColumn(Start = 0, End = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, End = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Number { get; set; }
     }
 
@@ -1053,31 +1056,31 @@ public class FixedWidthRecordBindingTests
     }
 
     [Fact]
-    public void FixedWidthColumnAttribute_End_CalculatesLength()
+    public void PositionalMapAttribute_End_CalculatesLength()
     {
         // Verify the attribute calculates Length from End correctly
-        var attr = new FixedWidthColumnAttribute { Start = 5, End = 15 };
+        var attr = new PositionalMapAttribute { Start = 5, End = 15 };
 
         Assert.Equal(10, attr.Length);
         Assert.Equal(15, attr.End);
     }
 
     [Fact]
-    public void FixedWidthColumnAttribute_Length_CalculatesEnd()
+    public void PositionalMapAttribute_Length_CalculatesEnd()
     {
         // Verify the attribute calculates End from Length correctly
-        var attr = new FixedWidthColumnAttribute { Start = 5, Length = 10 };
+        var attr = new PositionalMapAttribute { Start = 5, Length = 10 };
 
         Assert.Equal(10, attr.Length);
         Assert.Equal(15, attr.End);
     }
 
     [Fact]
-    public void FixedWidthColumnAttribute_LengthTakesPrecedenceOverEnd()
+    public void PositionalMapAttribute_LengthTakesPrecedenceOverEnd()
     {
         // When both are specified, Length takes precedence for determining field bounds
         // The source generator will use Length for the actual field extraction
-        var attr = new FixedWidthColumnAttribute { Start = 0, Length = 10, End = 20 };
+        var attr = new PositionalMapAttribute { Start = 0, Length = 10, End = 20 };
 
         Assert.Equal(10, attr.Length); // Length value is used for field extraction
         Assert.Equal(20, attr.End);    // End retains its set value (source generator ignores it when Length is set)
@@ -1090,7 +1093,7 @@ public class FixedWidthRecordBindingTests
     [Fact]
     public void GenericBuilder_WithHeader_SkipsHeaderRow_SourceGeneratedBinder()
     {
-        // Arrange — header row followed by data (Employee uses [FixedWidthGenerateBinder])
+        // Arrange — header row followed by data (Employee uses [GenerateBinder])
         var data =
             "ID        Name                Salary    \n" +
             "0000000001John Doe            0000012345\n" +

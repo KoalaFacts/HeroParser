@@ -10,7 +10,7 @@ public static partial class FixedWidth
     /// <summary>
     /// Creates a typed writer builder for writing fixed-width records.
     /// </summary>
-    /// <typeparam name="T">The record type to write. Must have properties decorated with <see cref="FixedWidths.Records.Binding.FixedWidthColumnAttribute"/>.</typeparam>
+    /// <typeparam name="T">The record type to write. Must have properties decorated with <see cref="PositionalMapAttribute"/>.</typeparam>
     /// <returns>A fluent builder for configuring the write operation.</returns>
     /// <example>
     /// <code>

@@ -1,5 +1,4 @@
 using HeroParser.FixedWidths;
-using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.FixedWidths.Writing;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -18,13 +17,13 @@ public class FixedWidthAsyncWriterTests
 
     public class TestRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 20)]
+        [PositionalMap(Start = 0, Length = 20)]
         public string? Name { get; set; }
 
-        [FixedWidthColumn(Start = 20, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 20, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Age { get; set; }
 
-        [FixedWidthColumn(Start = 25, Length = 15)]
+        [PositionalMap(Start = 25, Length = 15)]
         public string? City { get; set; }
     }
 
@@ -1162,13 +1161,13 @@ public class FixedWidthAsyncWriterTests
 
     public class ProductRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 30)]
+        [PositionalMap(Start = 10, Length = 30)]
         public string? Name { get; set; }
 
-        [FixedWidthColumn(Start = 40, Length = 15, Alignment = FieldAlignment.Right)]
+        [PositionalMap(Start = 40, Length = 15, Alignment = FieldAlignment.Right)]
         public decimal Price { get; set; }
     }
 

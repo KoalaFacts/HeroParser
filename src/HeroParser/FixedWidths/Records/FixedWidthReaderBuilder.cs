@@ -335,7 +335,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     /// types like Money, Address, or other value objects that are not natively supported.
     /// <para>
     /// The converter receives the column value, the culture from <see cref="WithCulture(CultureInfo)"/>, and the format
-    /// string from <see cref="FixedWidthColumnAttribute.Format"/> if specified.
+    /// string from <see cref="ParseAttribute.Format"/> if specified.
     /// </para>
     /// </remarks>
     /// <example>
@@ -388,8 +388,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     /// </summary>
     /// <param name="map">The map providing read descriptors.</param>
     /// <returns>This builder for method chaining.</returns>
-    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [FixedWidthGenerateBinder] for AOT/trimming support.")]
-    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [FixedWidthGenerateBinder] for AOT/trimming support.")]
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] for AOT/trimming support.")]
     public FixedWidthReaderBuilder<T> WithMap(IFixedWidthReadMapSource<T> map)
     {
         ArgumentNullException.ThrowIfNull(map);

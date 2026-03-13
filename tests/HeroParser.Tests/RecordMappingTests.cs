@@ -1,7 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Shared;
 using System.Text;
 using Xunit;
 
@@ -89,24 +88,24 @@ public class RecordMappingTests
         });
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class Person
     {
         public string Name { get; set; } = string.Empty;
         public int Age { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class Positioned
     {
-        [CsvColumn(Index = 1)]
+        [TabularMap(Index = 1)]
         public string Value { get; set; } = string.Empty;
 
-        [CsvColumn(Index = 0)]
+        [TabularMap(Index = 0)]
         public int Id { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class NullableSample
     {
         public string? Name { get; set; }
@@ -114,14 +113,14 @@ public class RecordMappingTests
         public DateOnly? Birthday { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class MissingColumnType
     {
         public string Name { get; set; } = string.Empty;
         public int Age { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class Player
     {
         public string Name { get; set; } = string.Empty;
@@ -159,21 +158,23 @@ public class RecordMappingTests
         Assert.Equal(new DateTime(2024, 1, 15, 14, 30, 0), results[0].Timestamp);
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class DateFormatted
     {
         public int Id { get; set; }
 
-        [CsvColumn(Name = "Date", Format = "MM/dd/yyyy")]
+        [TabularMap(Name = "Date")]
+        [Parse(Format = "MM/dd/yyyy")]
         public DateOnly Date { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class DateTimeFormatted
     {
         public int Id { get; set; }
 
-        [CsvColumn(Name = "Timestamp", Format = "yyyy-MM-dd HH:mm:ss")]
+        [TabularMap(Name = "Timestamp")]
+        [Parse(Format = "yyyy-MM-dd HH:mm:ss")]
         public DateTime Timestamp { get; set; }
     }
 
@@ -221,14 +222,14 @@ public class RecordMappingTests
         Assert.Equal(new DateOnly(2024, 1, 15), results[0].Date);
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class PriceItem
     {
         public string Name { get; set; } = string.Empty;
         public decimal Price { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class DateItem
     {
         public int Id { get; set; }
@@ -321,7 +322,7 @@ public class RecordMappingTests
         Assert.Equal("second", results[1].Value);
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class NumericRecord
     {
         public int Id { get; set; }
@@ -330,7 +331,7 @@ public class RecordMappingTests
         public double Score { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class DateTimeRecord
     {
         public int Id { get; set; }
@@ -426,7 +427,7 @@ public class RecordMappingTests
         Assert.Equal("LA", results[1].City);
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal sealed class DetailedPerson
     {
         public int Id { get; set; }

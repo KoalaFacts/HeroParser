@@ -1,5 +1,4 @@
 using HeroParser.FixedWidths;
-using HeroParser.FixedWidths.Records.Binding;
 using Xunit;
 
 namespace HeroParser.Tests.FixedWidths;
@@ -8,16 +7,16 @@ public class FixedWidthFieldLayoutValidationTests
 {
     private sealed class OverlappingRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 5)]
+        [PositionalMap(Start = 0, Length = 5)]
         public string? First { get; set; }
 
-        [FixedWidthColumn(Start = 3, Length = 5)]
+        [PositionalMap(Start = 3, Length = 5)]
         public string? Second { get; set; }
     }
 
     private sealed class ZeroLengthRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 0)]
+        [PositionalMap(Start = 0, Length = 0)]
         public string? Value { get; set; }
     }
 

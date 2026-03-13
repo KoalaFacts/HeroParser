@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Linq.Expressions;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Mapping;
-using HeroParser.SeparatedValues.Reading.Shared;
 
 namespace HeroParser.SeparatedValues.Reading.Records;
 
@@ -54,8 +53,8 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
     /// </summary>
     /// <param name="map">The pre-configured CSV map instance.</param>
     /// <returns>This builder for method chaining.</returns>
-    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] for AOT/trimming support.")]
-    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] for AOT support.")]
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] for AOT support.")]
     public CsvRecordReaderBuilder<T> WithMap(ICsvReadMapSource<T> map)
     {
         ArgumentNullException.ThrowIfNull(map);
@@ -72,8 +71,8 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
     /// <param name="configure">Optional column configuration action.</param>
     /// <returns>This builder for method chaining.</returns>
     /// <exception cref="InvalidOperationException">Thrown when <see cref="WithMap"/> was already called.</exception>
-    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] for AOT/trimming support.")]
-    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] for AOT support.")]
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] for AOT support.")]
     public CsvRecordReaderBuilder<T> Map<TProperty>(
         Expression<Func<T, TProperty>> property,
         Action<CsvColumnBuilder>? configure = null)
@@ -90,8 +89,8 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
         return this;
     }
 
-    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] for AOT/trimming support.")]
-    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] for AOT support.")]
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] for AOT support.")]
     private InlineCsvMapWrapper<T> CreateInlineWrapper()
     {
         var wrapper = new InlineCsvMapWrapper<T>();

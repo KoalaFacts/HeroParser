@@ -1,5 +1,4 @@
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Shared;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -11,7 +10,7 @@ public class CsvReaderBuilderTests
 {
     #region Test Record Types
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class TestPerson
     {
         public string? Name { get; set; }
@@ -19,20 +18,20 @@ public class CsvReaderBuilderTests
         public string? City { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class ValueRecord
     {
         public double Value { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public struct StructRecord
     {
         public string? Name { get; set; }
         public int Age { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class NullableRecord
     {
         public int? Value { get; set; }

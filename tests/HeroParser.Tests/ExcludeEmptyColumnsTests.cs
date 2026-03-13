@@ -1,5 +1,4 @@
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using Xunit;
 
@@ -45,10 +44,10 @@ public class ExcludeEmptyColumnsTests
     {
         public string? Name { get; set; }
 
-        [CsvColumn(ExcludeFromWriteIfAllEmpty = true)]
+        [Format(ExcludeIfAllEmpty = true)]
         public string? Phone { get; set; }
 
-        [CsvColumn(ExcludeFromWriteIfAllEmpty = true)]
+        [Format(ExcludeIfAllEmpty = true)]
         public string? Fax { get; set; }
     }
 

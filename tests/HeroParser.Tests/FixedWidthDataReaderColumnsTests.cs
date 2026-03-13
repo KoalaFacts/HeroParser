@@ -1,6 +1,5 @@
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Reading.Data;
-using HeroParser.FixedWidths.Records.Binding;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -43,8 +42,8 @@ public class FixedWidthDataReaderColumnsTests
     {
         var attributes = new[]
         {
-            new FixedWidthColumnAttribute { Start = 0, Length = 2, PadChar = '0', Alignment = FieldAlignment.Right },
-            new FixedWidthColumnAttribute { Start = 2, Length = 3 }
+            new PositionalMapAttribute { Start = 0, Length = 2, PadChar = '0', Alignment = FieldAlignment.Right },
+            new PositionalMapAttribute { Start = 2, Length = 3 }
         };
 
         var columns = FixedWidthDataReaderColumns.FromAttributes(attributes, ["Left", "Right"]);

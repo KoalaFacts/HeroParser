@@ -58,7 +58,7 @@ public sealed class CsvGenerateDispatcherAttribute : Attribute
 /// </summary>
 /// <remarks>
 /// The generator will automatically create binding methods for each mapped type.
-/// All mapped types must have the <c>[CsvGenerateBinder]</c> attribute for AOT compatibility.
+/// All mapped types must have the <c>[GenerateBinder]</c> attribute for AOT compatibility.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class CsvSchemaMappingAttribute : Attribute

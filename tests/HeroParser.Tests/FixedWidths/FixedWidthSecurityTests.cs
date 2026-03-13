@@ -1,16 +1,15 @@
 using System.Text;
 using HeroParser.FixedWidths;
-using HeroParser.FixedWidths.Records.Binding;
 using Xunit;
 
 namespace HeroParser.Tests.FixedWidths;
 
 public class FixedWidthSecurityTests
 {
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     private sealed class FixedWidthRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 4)]
+        [PositionalMap(Start = 0, Length = 4)]
         public string Value { get; set; } = string.Empty;
     }
 

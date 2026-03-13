@@ -2,7 +2,6 @@ using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading;
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using System.Globalization;
 using System.Text;
@@ -328,7 +327,7 @@ public class WriterTests
 
     #region Record Writing
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal class TestPerson
     {
         public string? Name { get; set; }
@@ -372,13 +371,13 @@ public class WriterTests
         Assert.Contains("Alice", csv);
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal class PersonWithColumn
     {
-        [CsvColumn(Name = "Full Name")]
+        [TabularMap(Name = "Full Name")]
         public string? Name { get; set; }
 
-        [CsvColumn(Name = "Years Old")]
+        [TabularMap(Name = "Years Old")]
         public int Age { get; set; }
     }
 
@@ -537,7 +536,7 @@ public class WriterTests
         Assert.Equal("", reader.Current[2].ToString());
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     internal class AllTypesRecord
     {
         public int IntValue { get; set; }

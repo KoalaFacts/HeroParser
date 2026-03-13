@@ -41,10 +41,10 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     }
 
     /// <summary>
-    /// Creates a reflection-based binder for types without [FixedWidthGenerateBinder].
+    /// Creates a reflection-based binder for types without [GenerateBinder].
     /// </summary>
-    [RequiresUnreferencedCode("Reflection-based binding may not work with trimming. Use [FixedWidthGenerateBinder] attribute for AOT/trimming support.")]
-    [RequiresDynamicCode("Reflection-based binding requires dynamic code. Use [FixedWidthGenerateBinder] attribute for AOT support.")]
+    [RequiresUnreferencedCode("Reflection-based binding may not work with trimming. Use [GenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Reflection-based binding requires dynamic code. Use [GenerateBinder] attribute for AOT support.")]
     public static FixedWidthRecordBinder<T> Create(
         CultureInfo? culture,
         FixedWidthDeserializeErrorHandler? errorHandler,
@@ -851,7 +851,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         var members = typeof(T)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanWrite && p.SetMethod is { IsStatic: false })
-            .Select(p => (Property: p, Attribute: p.GetCustomAttribute<FixedWidthColumnAttribute>()))
+            .Select(p => (Property: p, Attribute: p.GetCustomAttribute<PositionalMapAttribute>()))
             .Where(x => x.Attribute is not null)
             .OrderBy(x => x.Attribute!.Start);
 
@@ -860,6 +860,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         foreach (var (property, attribute) in members)
         {
             var setter = SetterFactory.CreateSetter(property);
+            var parseAttr = property.GetCustomAttribute<ParseAttribute>();
 
             bindings.Add(new BindingTemplate(
                 property.Name,
@@ -868,7 +869,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
                 attribute.Length,
                 attribute.PadChar == '\0' ? ' ' : attribute.PadChar,
                 attribute.Alignment,
-                attribute.Format,
+                parseAttr?.Format,
                 setter));
         }
 

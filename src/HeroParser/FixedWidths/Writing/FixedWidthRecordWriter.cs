@@ -428,7 +428,7 @@ public sealed class FixedWidthRecordWriter<T>
     {
         var type = typeof(T);
         var props = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Select(p => (Property: p, Attr: p.GetCustomAttribute<FixedWidthColumnAttribute>()))
+            .Select(p => (Property: p, Attr: p.GetCustomAttribute<PositionalMapAttribute>()))
             .Where(x => x.Attr is not null)
             .OrderBy(x => x.Attr!.Start)
             .ToArray();
@@ -445,6 +445,7 @@ public sealed class FixedWidthRecordWriter<T>
         for (int i = 0; i < props.Length; i++)
         {
             var (prop, attr) = props[i];
+            var parseAttr = prop.GetCustomAttribute<ParseAttribute>();
             fields[i] = new FieldDefinition
             {
                 Name = prop.Name,
@@ -453,7 +454,7 @@ public sealed class FixedWidthRecordWriter<T>
                 Length = attr.Length,
                 Alignment = attr.Alignment,
                 PadChar = attr.PadChar == '\0' ? ' ' : attr.PadChar,
-                Format = attr.Format,
+                Format = parseAttr?.Format,
                 Getter = BuildGetter(prop)
             };
         }

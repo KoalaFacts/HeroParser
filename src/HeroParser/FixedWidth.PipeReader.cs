@@ -236,7 +236,7 @@ public readonly struct FixedWidthPipeRow
     /// <summary>
     /// Gets a field at the specified byte position with custom padding options.
     /// </summary>
-    public FixedWidthByteSpanColumn GetField(int start, int length, byte padByte, FixedWidths.FieldAlignment alignment)
+    public FixedWidthByteSpanColumn GetField(int start, int length, byte padByte, FieldAlignment alignment)
     {
         if (start < 0)
             throw new ArgumentOutOfRangeException(nameof(start), start, "Start position cannot be negative.");
@@ -268,10 +268,10 @@ public readonly struct FixedWidthPipeRow
 
         span = alignment switch
         {
-            FixedWidths.FieldAlignment.Left => TrimEnd(span, padByte),
-            FixedWidths.FieldAlignment.Right => TrimStart(span, padByte),
-            FixedWidths.FieldAlignment.Center => Trim(span, padByte),
-            FixedWidths.FieldAlignment.None => span,
+            FieldAlignment.Left => TrimEnd(span, padByte),
+            FieldAlignment.Right => TrimStart(span, padByte),
+            FieldAlignment.Center => Trim(span, padByte),
+            FieldAlignment.None => span,
             _ => span
         };
 
@@ -282,7 +282,7 @@ public readonly struct FixedWidthPipeRow
     /// Gets the raw field at the specified byte position without trimming.
     /// </summary>
     public FixedWidthByteSpanColumn GetRawField(int start, int length)
-        => GetField(start, length, 0, FixedWidths.FieldAlignment.None);
+        => GetField(start, length, 0, FieldAlignment.None);
 
     /// <summary>
     /// Converts the entire record to a UTF-8 decoded string.

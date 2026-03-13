@@ -1,6 +1,5 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using System.Text;
 using Xunit;
@@ -23,10 +22,11 @@ public class AsyncWriterTests
         public string? City { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class FormattedAsyncRecord
     {
-        [CsvColumn(Name = "CreatedOn", Format = "yyyy-MM-dd")]
+        [TabularMap(Name = "CreatedOn")]
+        [Parse(Format = "yyyy-MM-dd")]
         public DateTime CreatedOn { get; set; }
     }
 

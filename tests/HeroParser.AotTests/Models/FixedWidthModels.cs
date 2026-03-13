@@ -1,24 +1,21 @@
-using HeroParser.FixedWidths;
-using HeroParser.FixedWidths.Records.Binding;
-
 namespace HeroParser.AotTests.Models;
 
-[FixedWidthGenerateBinder]
+[GenerateBinder]
 public class FixedWidthPerson
 {
-    [FixedWidthColumn(Start = 0, Length = 20)]
+    [PositionalMap(Start = 0, Length = 20)]
     public string Name { get; set; } = "";
 
-    [FixedWidthColumn(Start = 20, Length = 10, Alignment = FieldAlignment.Right)]
+    [PositionalMap(Start = 20, Length = 10, Alignment = FieldAlignment.Right)]
     public int Age { get; set; }
 }
 
-[FixedWidthGenerateBinder]
+[GenerateBinder]
 public class FixedWidthAligned
 {
-    [FixedWidthColumn(Start = 0, Length = 5, Alignment = FieldAlignment.Right)]
+    [PositionalMap(Start = 0, Length = 5, Alignment = FieldAlignment.Right)]
     public int Id { get; set; }
 
-    [FixedWidthColumn(Start = 5, Length = 15)]
+    [PositionalMap(Start = 5, Length = 15)]
     public string Name { get; set; } = "";
 }

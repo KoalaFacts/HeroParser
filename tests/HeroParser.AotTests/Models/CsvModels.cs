@@ -1,25 +1,23 @@
-using HeroParser.SeparatedValues.Reading.Shared;
-
 namespace HeroParser.AotTests.Models;
 
-[CsvGenerateBinder]
+[GenerateBinder]
 public class Person
 {
     public string Name { get; set; } = "";
     public int Age { get; set; }
 }
 
-[CsvGenerateBinder]
+[GenerateBinder]
 public class AttributedPerson
 {
-    [CsvColumn(Name = "id", Index = 0)]
+    [TabularMap(Name = "id", Index = 0)]
     public int Id { get; set; }
 
-    [CsvColumn(Name = "full_name", Index = 1)]
+    [TabularMap(Name = "full_name", Index = 1)]
     public string Name { get; set; } = "";
 }
 
-[CsvGenerateBinder]
+[GenerateBinder]
 public class NullableRecord
 {
     public string Name { get; set; } = "";

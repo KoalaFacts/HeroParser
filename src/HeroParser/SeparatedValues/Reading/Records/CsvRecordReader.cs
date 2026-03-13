@@ -93,6 +93,16 @@ public ref struct CsvRecordReader<TElement, T>
     /// <summary>Gets the validation errors collected during iteration.</summary>
     public readonly IReadOnlyList<ValidationError> Errors => errors;
 
+    /// <summary>
+    /// Throws a <see cref="ValidationException"/> if any validation errors were collected during iteration.
+    /// </summary>
+    /// <exception cref="ValidationException">Thrown when <see cref="Errors"/> is non-empty.</exception>
+    public readonly void ThrowIfAnyError()
+    {
+        if (errors.Count > 0)
+            throw new ValidationException(errors);
+    }
+
     /// <summary>Returns this instance for <c>foreach</c> support.</summary>
     public readonly CsvRecordReader<TElement, T> GetEnumerator() => this;
 

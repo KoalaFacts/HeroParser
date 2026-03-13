@@ -395,4 +395,164 @@ public class FixedWidthColumnValidationTests
         Assert.Equal(1, records[0].EmployeeId);
         Assert.Equal(3, records[1].EmployeeId);
     }
+
+    // ──────────────────────────────────────────────
+    // ThrowIfAnyError
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ThrowIfAnyError_NoErrors_ReturnsResult()
+    {
+        var data = ValidLine();
+
+        var result = FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ThrowIfAnyError();
+
+        Assert.Single(result.Records);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ThrowIfAnyError_WithErrors_ThrowsValidationException()
+    {
+        // Salary = 999999 violates Range(20000, 500000)
+        var data = BuildLine(salary: "999999.00 ");
+
+        var ex = Assert.Throws<ValidationException>(() =>
+            FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ThrowIfAnyError());
+
+        Assert.NotEmpty(ex.Errors);
+        Assert.Equal("Range", ex.Errors[0].Rule);
+        Assert.Equal("Salary", ex.Errors[0].PropertyName);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ThrowIfAnyError_FluentChaining_ToListAfterThrow()
+    {
+        var data = ValidLine();
+
+        var records = FixedWidth.DeserializeRecords<ValidatedEmployee>(data)
+            .ThrowIfAnyError()
+            .ToList();
+
+        Assert.Single(records);
+        Assert.Equal(1, records[0].EmployeeId);
+    }
+
+    // ──────────────────────────────────────────────
+    // Error format — ValidationError.ToString()
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsRowNumber()
+    {
+        var data = BuildLine(salary: "005000.00 ");
+
+        var (_, errors) = Parse(data);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("Row 1", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsColumnIndex_AsStartPosition()
+    {
+        // Salary starts at position 25
+        var data = BuildLine(salary: "005000.00 ");
+
+        var (_, errors) = Parse(data);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("Column index 25", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_FixedWidth_HasNoColumnName()
+    {
+        // Fixed-width has no headers — ColumnName is null, so no "Column 'xxx'" in output
+        var data = BuildLine(salary: "005000.00 ");
+
+        var (_, errors) = Parse(data);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.DoesNotContain("Column '", msg);
+        Assert.Contains("Column index", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsPropertyName()
+    {
+        var data = BuildLine(salary: "005000.00 ");
+
+        var (_, errors) = Parse(data);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("Property 'Salary'", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsRuleInBrackets()
+    {
+        var data = BuildLine(salary: "005000.00 ");
+
+        var (_, errors) = Parse(data);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("[Range]", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsRawValue()
+    {
+        var data = BuildLine(salary: "005000.00 ");
+
+        var (_, errors) = Parse(data);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("(raw: '005000.00')", msg);
+    }
+
+    // ──────────────────────────────────────────────
+    // Error format — ValidationException.Message
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ExceptionMessage_SingleError_ContainsFullContext()
+    {
+        var data = BuildLine(salary: "999999.00 ");
+
+        var ex = Assert.Throws<ValidationException>(() =>
+            FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ThrowIfAnyError());
+
+        Assert.StartsWith("Validation failed:", ex.Message);
+        Assert.Contains("Row 1", ex.Message);
+        Assert.Contains("Column index 25", ex.Message);
+        Assert.Contains("Property 'Salary'", ex.Message);
+        Assert.Contains("[Range]", ex.Message);
+        Assert.Contains("(raw: '999999.00')", ex.Message);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ExceptionMessage_MultipleErrors_ContainsCount()
+    {
+        // Row 1: Salary below range + Department too short = 2 errors from same row
+        var data = BuildLine(salary: "005000.00 ", dept: "A  ");
+
+        var (_, errors) = Parse(data);
+        var ex = new ValidationException(errors);
+
+        Assert.StartsWith($"{errors.Count} validation errors occurred:", ex.Message);
+        Assert.Contains("[Range]", ex.Message);
+        Assert.Contains("[MinLength]", ex.Message);
+    }
 }

@@ -31,6 +31,19 @@ public sealed class FixedWidthReadResult<T> : IEnumerable<T>
     /// <summary>Gets the number of successfully parsed records.</summary>
     public int Count => records.Count;
 
+    /// <summary>
+    /// Throws a <see cref="ValidationException"/> if any validation errors were collected during parsing.
+    /// </summary>
+    /// <returns>This instance, for fluent chaining.</returns>
+    /// <exception cref="ValidationException">Thrown when <see cref="Errors"/> is non-empty.</exception>
+    public FixedWidthReadResult<T> ThrowIfAnyError()
+    {
+        if (Errors.Count > 0)
+            throw new ValidationException(Errors);
+
+        return this;
+    }
+
     /// <summary>Converts the result to a <see cref="List{T}"/> containing only the valid records.</summary>
     public List<T> ToList() => [.. records];
 

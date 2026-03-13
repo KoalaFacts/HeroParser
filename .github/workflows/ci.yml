@@ -148,7 +148,12 @@ jobs:
 
   generator-tests:
     name: Source Generator Tests
+    needs: setup
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: ${{ fromJSON(needs.setup.outputs.frameworks) }}
 
     steps:
     - name: Checkout code
@@ -167,10 +172,10 @@ jobs:
       run: dotnet restore --force-evaluate
 
     - name: Build Generator Tests
-      run: dotnet build tests/HeroParser.Generators.Tests --configuration Release
+      run: dotnet build tests/HeroParser.Generators.Tests --configuration Release --framework ${{ matrix.framework }}
 
     - name: Run Generator Tests
-      run: dotnet test tests/HeroParser.Generators.Tests --configuration Release --no-build --verbosity normal
+      run: dotnet test tests/HeroParser.Generators.Tests --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal
 
   code-quality:
     name: Code Quality

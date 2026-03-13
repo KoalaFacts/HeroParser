@@ -457,4 +457,187 @@ public class CsvColumnValidationTests
 
         Assert.Contains("Active", ex.Message);
     }
+
+    // ──────────────────────────────────────────────
+    // ThrowIfAnyError
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ThrowIfAnyError_NoErrors_DoesNotThrow()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,500.00,USD,AB1234";
+
+        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
+        foreach (var _ in reader) { }
+
+        reader.ThrowIfAnyError(); // should not throw
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ThrowIfAnyError_WithErrors_ThrowsValidationException()
+    {
+        // Amount = -1 violates Range(0, 100000)
+        var csv = "Id,Amount,Currency,Reference\nTXN001,-1.00,USD,AB1234";
+
+        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
+        foreach (var _ in reader) { }
+
+        try
+        {
+            reader.ThrowIfAnyError();
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.NotEmpty(ex.Errors);
+            Assert.Equal("Range", ex.Errors[0].Rule);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ThrowIfAnyError_FluentApi_WithErrors_ThrowsValidationException()
+    {
+        // Currency = "US" violates MinLength(3)
+        var csv = "Id,Amount,Currency,Reference\nTXN001,500.00,US,AB1234";
+
+        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
+        foreach (var _ in reader) { }
+
+        try
+        {
+            reader.ThrowIfAnyError();
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.Single(ex.Errors);
+            Assert.Equal("MinLength", ex.Errors[0].Rule);
+            Assert.Equal("Currency", ex.Errors[0].PropertyName);
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    // Error format — ValidationError.ToString()
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsRowNumber()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,-1.00,USD,AB1234";
+
+        var (_, errors) = ParseTransactions(csv);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("Row 2", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_WithColumnName_ContainsColumnNameAndIndex()
+    {
+        // Id is mapped by Name (not explicit Index), so ColumnName = "Id"
+        var csv = "Id,Amount,Currency,Reference\n,500.00,USD,AB1234";
+
+        var (_, errors) = ParseTransactions(csv);
+
+        var msg = errors.First(e => e.Rule == "NotNull" && e.PropertyName == "TransactionId").ToString();
+        Assert.Contains("Column 'Id'", msg);
+        Assert.Contains("(index 0)", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsPropertyName()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,-1.00,USD,AB1234";
+
+        var (_, errors) = ParseTransactions(csv);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("Property 'Amount'", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsRuleInBrackets()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,-1.00,USD,AB1234";
+
+        var (_, errors) = ParseTransactions(csv);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("[Range]", msg);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ErrorToString_ContainsRawValue()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,-1.00,USD,AB1234";
+
+        var (_, errors) = ParseTransactions(csv);
+
+        var msg = errors.First(e => e.Rule == "Range").ToString();
+        Assert.Contains("(raw: '-1.00')", msg);
+    }
+
+    // ──────────────────────────────────────────────
+    // Error format — ValidationException.Message
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ExceptionMessage_SingleError_ContainsFullContext()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,-1.00,USD,AB1234";
+
+        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
+        foreach (var _ in reader) { }
+
+        try
+        {
+            reader.ThrowIfAnyError();
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.StartsWith("Validation failed:", ex.Message);
+            Assert.Contains("Row 2", ex.Message);
+            Assert.Contains("Property 'Amount'", ex.Message);
+            Assert.Contains("[Range]", ex.Message);
+            Assert.Contains("(raw: '-1.00')", ex.Message);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ExceptionMessage_MultipleErrors_ContainsCountAndAllRules()
+    {
+        // Row 2: Amount negative (Range) + Row 3: Currency too short (MinLength)
+        var csv = "Id,Amount,Currency,Reference\n" +
+                  "TXN001,500.00,USD,AB1234\n" +
+                  "TXN002,-10.00,USD,AB1234\n" +
+                  "TXN003,100.00,US,AB1234";
+
+        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
+        foreach (var _ in reader) { }
+
+        try
+        {
+            reader.ThrowIfAnyError();
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.StartsWith("2 validation errors occurred:", ex.Message);
+            Assert.Contains("[Range]", ex.Message);
+            Assert.Contains("[MinLength]", ex.Message);
+            Assert.Contains("Row 3", ex.Message);
+            Assert.Contains("Row 4", ex.Message);
+        }
+    }
 }

@@ -137,7 +137,7 @@ public class AsyncWriterTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
-    public async Task WriteToStreamAsync_WithCsvColumnFormat_UsesFormattedValue()
+    public async Task WriteToStreamAsync_WithParseFormat_UsesFormattedValue()
     {
         FormattedAsyncRecord[] records =
         [

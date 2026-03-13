@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Mapping;
+using HeroParser.FixedWidths.Records.Binding;
 using Xunit;
 
 namespace HeroParser.Tests.FixedWidths;

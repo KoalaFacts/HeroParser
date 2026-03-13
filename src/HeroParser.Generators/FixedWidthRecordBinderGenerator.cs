@@ -19,7 +19,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthRecordBinderFactory";
     private const string WRITER_TYPE = "global::HeroParser.FixedWidths.Writing.FixedWidthRecordWriter";
     private const string WRITER_FACTORY_TYPE = "global::HeroParser.FixedWidths.Writing.FixedWidthRecordWriterFactory";
-    private const string FIELD_ALIGNMENT_TYPE = "global::HeroParser.FixedWidths.FieldAlignment";
+    private const string FIELD_ALIGNMENT_TYPE = "global::HeroParser.FieldAlignment";
     private const string DESCRIPTOR_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthRecordDescriptor";
     private const string PROPERTY_DESCRIPTOR_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthPropertyDescriptor";
     private const string BINDER_INTERFACE_TYPE = "global::HeroParser.FixedWidths.Records.Binding.IFixedWidthBinder";

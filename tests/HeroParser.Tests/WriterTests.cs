@@ -383,7 +383,7 @@ public class WriterTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
-    public void SerializeRecords_WithCsvColumnAttribute_UsesCustomNames()
+    public void SerializeRecords_WithTabularMapAttribute_UsesCustomNames()
     {
         var records = new[]
         {

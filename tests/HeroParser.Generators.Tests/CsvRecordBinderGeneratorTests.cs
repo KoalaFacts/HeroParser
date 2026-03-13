@@ -68,7 +68,7 @@ public class CsvRecordBinderGeneratorTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_WithCsvColumnAttribute_UsesCustomHeaderName()
+    public void Generator_WithTabularMapAttribute_UsesCustomHeaderName()
     {
         var source = """
             using HeroParser;

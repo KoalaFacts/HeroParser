@@ -38,7 +38,7 @@ public class ExcludeEmptyColumnsTests
     }
 
     /// <summary>
-    /// Record with per-column ExcludeFromWriteIfAllEmpty on optional fields.
+    /// Record with per-column ExcludeIfAllEmpty on optional fields.
     /// </summary>
     public class ContactRecord
     {
@@ -423,7 +423,7 @@ public class ExcludeEmptyColumnsTests
 
     #endregion
 
-    #region Per-Column ExcludeFromWriteIfAllEmpty
+    #region Per-Column ExcludeIfAllEmpty
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]

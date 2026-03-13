@@ -63,10 +63,10 @@ public class FixedWidthMapIntegrationTests
     }
 
     [Fact]
-    public void WithMap_FromText_RequiredErrors_Collected()
+    public void WithMap_FromText_NotNullErrors_Collected()
     {
         var map = new FixedWidthMap<Record>();
-        map.Map(r => r.Name, c => c.Start(0).Length(10).Required())
+        map.Map(r => r.Name, c => c.Start(0).Length(10).NotNull())
            .Map(r => r.Value, c => c.Start(10).Length(5).PadChar(' ').Alignment(FieldAlignment.Right))
            .Map(r => r.Amount, c => c.Start(15).Length(10).PadChar(' ').Alignment(FieldAlignment.Right));
 
@@ -76,7 +76,7 @@ public class FixedWidthMapIntegrationTests
 
         Assert.Empty(result.Records);
         var error = Assert.Single(result.Errors);
-        Assert.Equal("Required", error.Rule);
+        Assert.Equal("NotNull", error.Rule);
         Assert.Equal("Name", error.PropertyName);
         Assert.Null(error.ColumnName);
         Assert.Equal(0, error.ColumnIndex);

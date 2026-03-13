@@ -1,4 +1,5 @@
 using HeroParser.SeparatedValues;
+using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.Validation;
 using Xunit;
@@ -61,12 +62,12 @@ public class CsvColumnValidationTests
     }
 
     // ──────────────────────────────────────────────
-    // Required validation
+    // NotNull validation
     // ──────────────────────────────────────────────
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Required_WhenIdIsEmpty_CollectsErrorAndSkipsRow()
+    public void NotNull_WhenIdIsEmpty_CollectsErrorAndSkipsRow()
     {
         var csv = "Id,Amount,Currency,Reference\n,500.00,USD,AB1234";
 
@@ -74,21 +75,21 @@ public class CsvColumnValidationTests
 
         // Row with validation error is excluded from results
         Assert.Empty(records);
-        Assert.Contains(errors, e => e.Rule == "Required" && e.PropertyName == "TransactionId");
+        Assert.Contains(errors, e => e.Rule == "NotNull" && e.PropertyName == "TransactionId");
         Assert.Contains(errors, e => e.ColumnName == "Id");
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Required_WhenAmountIsEmpty_CollectsErrorAndSkipsRow()
+    public void NotNull_WhenAmountIsEmpty_CollectsErrorAndSkipsRow()
     {
-        // Amount is Required=true (decimal)
+        // Amount is NotNull=true (decimal)
         var csv = "Id,Amount,Currency,Reference\nTXN001,,USD,AB1234";
 
         var (records, errors) = ParseTransactions(csv);
 
         Assert.Empty(records);
-        Assert.Contains(errors, e => e.Rule == "Required" && e.PropertyName == "Amount");
+        Assert.Contains(errors, e => e.Rule == "NotNull" && e.PropertyName == "Amount");
         // Amount has explicit Index = 1, so ColumnName is null in ValidationError (generator emits null for index-based columns)
     }
 
@@ -348,5 +349,112 @@ public class CsvColumnValidationTests
         Assert.Single(errors);
         Assert.Equal("Range", errors[0].Rule);
         Assert.Equal("Amount", errors[0].PropertyName);
+    }
+
+    // ──────────────────────────────────────────────
+    // Empty/whitespace on non-nullable value types
+    // WITH NotNull — soft validation errors
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void NotNull_WhenDecimalIsWhitespace_CollectsErrorAndSkipsRow()
+    {
+        // Amount is NotNull=true (decimal) — whitespace should trigger NotNull validation error
+        var csv = "Id,Amount,Currency,Reference\nTXN001,   ,USD,AB1234";
+
+        var (records, errors) = ParseTransactions(csv);
+
+        Assert.Empty(records);
+        Assert.Contains(errors, e => e.Rule == "NotNull" && e.PropertyName == "Amount");
+    }
+
+    // ──────────────────────────────────────────────
+    // Empty/whitespace on non-nullable value types
+    // WITHOUT NotNull — hard parse errors
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void NonRequired_WhenDecimalIsEmpty_ThrowsParseException()
+    {
+        var csv = "Name,Amount,Count,Active\nAlice,,1,true";
+
+        var ex = Assert.Throws<CsvException>(() =>
+        {
+            foreach (var _ in Csv.DeserializeRecords<NonRequiredValueTypeRecord>(csv)) { }
+        });
+
+        Assert.Contains("Amount", ex.Message);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void NonRequired_WhenDecimalIsWhitespace_ThrowsParseException()
+    {
+        var csv = "Name,Amount,Count,Active\nAlice,   ,1,true";
+
+        var ex = Assert.Throws<CsvException>(() =>
+        {
+            foreach (var _ in Csv.DeserializeRecords<NonRequiredValueTypeRecord>(csv)) { }
+        });
+
+        Assert.Contains("Amount", ex.Message);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void NonRequired_WhenIntIsEmpty_ThrowsParseException()
+    {
+        var csv = "Name,Amount,Count,Active\nAlice,100.00,,true";
+
+        var ex = Assert.Throws<CsvException>(() =>
+        {
+            foreach (var _ in Csv.DeserializeRecords<NonRequiredValueTypeRecord>(csv)) { }
+        });
+
+        Assert.Contains("Count", ex.Message);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void NonRequired_WhenIntIsWhitespace_ThrowsParseException()
+    {
+        var csv = "Name,Amount,Count,Active\nAlice,100.00,   ,true";
+
+        var ex = Assert.Throws<CsvException>(() =>
+        {
+            foreach (var _ in Csv.DeserializeRecords<NonRequiredValueTypeRecord>(csv)) { }
+        });
+
+        Assert.Contains("Count", ex.Message);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void NonRequired_WhenBoolIsEmpty_ThrowsParseException()
+    {
+        var csv = "Name,Amount,Count,Active\nAlice,100.00,1,";
+
+        var ex = Assert.Throws<CsvException>(() =>
+        {
+            foreach (var _ in Csv.DeserializeRecords<NonRequiredValueTypeRecord>(csv)) { }
+        });
+
+        Assert.Contains("Active", ex.Message);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void NonRequired_WhenBoolIsWhitespace_ThrowsParseException()
+    {
+        var csv = "Name,Amount,Count,Active\nAlice,100.00,1,   ";
+
+        var ex = Assert.Throws<CsvException>(() =>
+        {
+            foreach (var _ in Csv.DeserializeRecords<NonRequiredValueTypeRecord>(csv)) { }
+        });
+
+        Assert.Contains("Active", ex.Message);
     }
 }

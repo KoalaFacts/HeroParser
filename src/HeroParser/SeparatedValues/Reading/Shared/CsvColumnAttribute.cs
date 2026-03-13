@@ -36,27 +36,73 @@ public sealed class CsvColumnAttribute : Attribute
     /// </remarks>
     public string? Format { get; init; }
 
-    /// <summary>Value must be present (non-null, column must exist).</summary>
-    public bool Required { get; init; }
+    /// <summary>
+    /// When <c>true</c>, the column must exist in the CSV header and the cell value must not be
+    /// empty or whitespace-only. If validation fails, a <c>"NotNull"</c> validation error is
+    /// collected and the entire row is excluded from results.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>On nullable types</b> (<c>string?</c>, <c>int?</c>, etc.): empty or whitespace
+    /// cells normally resolve to <c>null</c>. Setting <c>NotNull = true</c> rejects those cells
+    /// with a validation error instead.</para>
+    /// <para><b>On non-nullable value types</b> (<c>decimal</c>, <c>int</c>, <c>bool</c>, etc.):
+    /// the property keeps its <c>default</c> value (e.g., <c>0</c>, <c>false</c>) because parsing
+    /// is skipped, and a validation error is collected.</para>
+    /// <para><b>Without <c>NotNull</c></b> on a non-nullable value type: empty or whitespace cells
+    /// throw a <see cref="Core.CsvException"/> because the value cannot
+    /// be parsed into the target type.</para>
+    /// </remarks>
+    public bool NotNull { get; init; }
 
-    /// <summary>String value must not be empty or whitespace. Only valid on string properties.</summary>
+    /// <summary>
+    /// When <c>true</c>, the string value must contain at least one non-whitespace character.
+    /// If the cell is empty or contains only whitespace, a <c>"NotEmpty"</c> validation error is
+    /// collected and the row is excluded from results. Only valid on <c>string</c> properties.
+    /// </summary>
+    /// <remarks>
+    /// <para>This differs from <see cref="NotNull"/>: <c>NotNull</c> rejects empty cells,
+    /// while <c>NotEmpty</c> additionally rejects whitespace-only cells like <c>"   "</c>.
+    /// For string properties, you typically use both together.</para>
+    /// </remarks>
     public bool NotEmpty { get; init; }
 
-    /// <summary>Maximum string length. -1 means unchecked. Only valid on string properties.</summary>
+    /// <summary>
+    /// Maximum allowed string length. A <c>"MaxLength"</c> validation error is collected when
+    /// the parsed string exceeds this value. Set to <c>-1</c> (default) to disable.
+    /// Only valid on <c>string</c> properties.
+    /// </summary>
     public int MaxLength { get; init; } = -1;
 
-    /// <summary>Minimum string length. -1 means unchecked. Only valid on string properties.</summary>
+    /// <summary>
+    /// Minimum allowed string length. A <c>"MinLength"</c> validation error is collected when
+    /// the parsed string is shorter than this value. Set to <c>-1</c> (default) to disable.
+    /// Only valid on <c>string</c> properties.
+    /// </summary>
     public int MinLength { get; init; } = -1;
 
-    /// <summary>Minimum numeric value. NaN means unchecked. Only valid on numeric properties.</summary>
+    /// <summary>
+    /// Minimum allowed numeric value (inclusive). A <c>"Range"</c> validation error is collected
+    /// when the parsed number is below this value. Set to <see cref="double.NaN"/> (default)
+    /// to disable. Only valid on numeric properties.
+    /// </summary>
     public double RangeMin { get; init; } = double.NaN;
 
-    /// <summary>Maximum numeric value. NaN means unchecked. Only valid on numeric properties.</summary>
+    /// <summary>
+    /// Maximum allowed numeric value (inclusive). A <c>"Range"</c> validation error is collected
+    /// when the parsed number exceeds this value. Set to <see cref="double.NaN"/> (default)
+    /// to disable. Only valid on numeric properties.
+    /// </summary>
     public double RangeMax { get; init; } = double.NaN;
 
-    /// <summary>Regex pattern the string value must match. Only valid on string properties.</summary>
+    /// <summary>
+    /// Regular expression pattern the string value must match. A <c>"Pattern"</c> validation
+    /// error is collected when the value does not match. Only valid on <c>string</c> properties.
+    /// </summary>
     public string? Pattern { get; init; }
 
-    /// <summary>Regex timeout in milliseconds for Pattern validation. Default 1000ms.</summary>
+    /// <summary>
+    /// Regex timeout in milliseconds for <see cref="Pattern"/> validation. Default is 1000ms.
+    /// Prevents catastrophic backtracking on malicious input.
+    /// </summary>
     public int PatternTimeoutMs { get; init; } = 1000;
 }

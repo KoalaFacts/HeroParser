@@ -15,7 +15,7 @@ public class ValidationErrorTests
             ColumnIndex = 2,
             ColumnName = "Amount",
             PropertyName = "Amount",
-            Rule = "Required",
+            Rule = "NotNull",
             Message = "Value is required",
             RawValue = ""
         };
@@ -23,7 +23,7 @@ public class ValidationErrorTests
         Assert.Equal(2, error.ColumnIndex);
         Assert.Equal("Amount", error.ColumnName);
         Assert.Equal("Amount", error.PropertyName);
-        Assert.Equal("Required", error.Rule);
+        Assert.Equal("NotNull", error.Rule);
         Assert.Equal("Value is required", error.Message);
         Assert.Equal("", error.RawValue);
     }
@@ -36,7 +36,7 @@ public class ValidationErrorTests
         {
             ColumnName = null,
             PropertyName = "Id",
-            Rule = "Required",
+            Rule = "NotNull",
             Message = "fail"
         };
         Assert.Null(error.ColumnName);
@@ -49,7 +49,7 @@ public class ValidationErrorTests
         var error = new ValidationError
         {
             PropertyName = "Id",
-            Rule = "Required",
+            Rule = "NotNull",
             Message = "fail",
             RawValue = null
         };

@@ -36,7 +36,7 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
     char padChar,
     FieldAlignment alignment,
     FixedWidthPropertySetter<T> setter,
-    bool isRequired = false,
+    bool isNotNull = false,
     FixedWidthPropertyValidation? validation = null,
     FixedWidthBytePropertySetter<T>? byteSetter = null)
 {
@@ -58,8 +58,8 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
     /// <summary>Gets the setter delegate for this property.</summary>
     public FixedWidthPropertySetter<T> Setter { get; } = setter;
 
-    /// <summary>Gets whether this property is required (non-nullable value type).</summary>
-    public bool IsRequired { get; } = isRequired;
+    /// <summary>Gets whether this property must have a non-null value.</summary>
+    public bool IsNotNull { get; } = isNotNull;
 
     /// <summary>Gets the validation rules for this property, or null if none configured.</summary>
     public FixedWidthPropertyValidation? Validation { get; } = validation;

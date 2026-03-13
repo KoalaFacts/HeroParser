@@ -201,6 +201,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         EmitByteFindHeaderIndexMethod(builder);
         EmitByteIsNullValueMethod(builder);
         EmitByteCreateParseExceptionMethod(builder);
+        EmitByteIsAllAsciiWhiteSpaceMethod(builder);
 
         // Emit factory method for registration
         builder.AppendLine($"public static {BYTE_BINDER_INTERFACE_TYPE}{fullyQualifiedName}> Create({OPTIONS_TYPE}? options)");
@@ -473,7 +474,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
         if (!isNullable)
         {
-            builder.AppendLine($"else if (!utf8.IsEmpty)");
+            // When ValidationNotNull is set, let the NotNull validation handle empty/whitespace with a soft error;
+            // otherwise throw a hard parse error for any failure including empty/whitespace values.
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
@@ -488,7 +494,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            builder.AppendLine($"else if (!utf8.IsEmpty)");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
@@ -513,7 +522,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            builder.AppendLine($"else if (!utf8.IsEmpty)");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
@@ -528,7 +540,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            builder.AppendLine($"else if (!utf8.IsEmpty)");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
@@ -544,7 +559,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            builder.AppendLine($"else if (!utf8.IsEmpty)");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
@@ -616,11 +634,32 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
+    private static void EmitByteIsAllAsciiWhiteSpaceMethod(SourceBuilder builder)
+    {
+        builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        builder.AppendLine("private static bool IsAllAsciiWhiteSpace(ReadOnlySpan<byte> value)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("if (value.IsEmpty) return true;");
+        builder.AppendLine("for (int i = 0; i < value.Length; i++)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("byte b = value[i];");
+        builder.AppendLine("if (b != (byte)' ' && b != (byte)'\\t' && b != (byte)'\\r' && b != (byte)'\\n')");
+        builder.AppendLine("    return false;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine("return true;");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+    }
+
     #region Validation Code Generation
 
     private static bool HasAnyValidation(MemberDescriptor member)
     {
-        return member.ValidationRequired || member.ValidationNotEmpty
+        return member.ValidationNotNull || member.ValidationNotEmpty
             || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
             || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
             || member.ValidationPattern != null;
@@ -634,13 +673,13 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
     private static void EmitValidationChecks(SourceBuilder builder, MemberDescriptor member)
     {
-        // Required validation
-        if (member.ValidationRequired)
+        // NotNull validation — catches both empty and whitespace-only values
+        if (member.ValidationNotNull)
         {
-            builder.AppendLine($"if (utf8.IsEmpty)");
+            builder.AppendLine("if (IsAllAsciiWhiteSpace(utf8))");
             builder.AppendLine("{");
             builder.Indent();
-            EmitAddValidationError(builder, member, "Required", "Value is required");
+            EmitAddValidationError(builder, member, "NotNull", "Value is required");
             builder.AppendLine("valid = false;");
             builder.Unindent();
             builder.AppendLine("}");
@@ -914,7 +953,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                         case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
                             format = f;
                             break;
-                        case "Required" when arg.Value.Value is bool r:
+                        case "NotNull" when arg.Value.Value is bool r:
                             validationRequired = r; break;
                         case "NotEmpty" when arg.Value.Value is bool ne:
                             validationNotEmpty = ne; break;
@@ -1070,7 +1109,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         bool IsEnum,
         bool IsReadOnlyMemoryChar,
         // Validation fields:
-        bool ValidationRequired,
+        bool ValidationNotNull,
         bool ValidationNotEmpty,
         int ValidationMaxLength,       // -1 = unchecked
         int ValidationMinLength,       // -1 = unchecked

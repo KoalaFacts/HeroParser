@@ -23,8 +23,8 @@ public sealed class FixedWidthColumnBuilder
     /// <summary>Gets the configured format string, or null if not set.</summary>
     public string? FormatString { get; private set; }
 
-    /// <summary>Gets whether the column is required.</summary>
-    public bool IsRequired { get; private set; }
+    /// <summary>Gets whether the column value must be non-null.</summary>
+    public bool IsNotNull { get; private set; }
 
     // Validation state
     private bool notEmpty;
@@ -59,8 +59,8 @@ public sealed class FixedWidthColumnBuilder
     /// <summary>Sets the format string for parsing and writing (e.g., "yyyy-MM-dd", "F2").</summary>
     public FixedWidthColumnBuilder Format(string format) { FormatString = format; return this; }
 
-    /// <summary>Marks the column as required (non-null value).</summary>
-    public FixedWidthColumnBuilder Required() { IsRequired = true; return this; }
+    /// <summary>Marks the column as required to have a non-null value.</summary>
+    public FixedWidthColumnBuilder NotNull() { IsNotNull = true; return this; }
 
     /// <summary>Requires the string value to be non-empty and non-whitespace.</summary>
     public FixedWidthColumnBuilder NotEmpty() { notEmpty = true; return this; }

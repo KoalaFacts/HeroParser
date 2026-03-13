@@ -31,11 +31,11 @@ public class CsvColumnBuilderTests
     }
 
     [Fact]
-    public void Required_SetsFlag()
+    public void NotNull_SetsFlag()
     {
         var builder = new CsvColumnBuilder();
-        builder.Required();
-        Assert.True(builder.IsRequired);
+        builder.NotNull();
+        Assert.True(builder.IsNotNull);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class CsvColumnBuilderTests
     public void FluentChaining_ReturnsThis()
     {
         var builder = new CsvColumnBuilder();
-        var result = builder.Name("A").Index(0).Format("F2").Required().NotEmpty()
+        var result = builder.Name("A").Index(0).Format("F2").NotNull().NotEmpty()
             .MaxLength(10).MinLength(1).Range(0, 99).Pattern(@"\w+");
         Assert.Same(builder, result);
     }

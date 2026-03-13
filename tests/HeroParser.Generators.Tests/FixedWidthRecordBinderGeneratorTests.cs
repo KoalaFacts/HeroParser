@@ -83,7 +83,7 @@ public class FixedWidthRecordBinderGeneratorTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_RequiredValidation_EmitsRequiredCheck()
+    public void Generator_NotNullValidation_EmitsNotNullCheck()
     {
         var source = """
             using HeroParser.FixedWidths;
@@ -94,7 +94,7 @@ public class FixedWidthRecordBinderGeneratorTests
             [FixedWidthGenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, Required = true)]
+                [FixedWidthColumn(Start = 0, Length = 10, NotNull = true)]
                 public string? Name { get; set; }
             }
             """;
@@ -105,7 +105,7 @@ public class FixedWidthRecordBinderGeneratorTests
 
         var generatedCode = GetDescriptorSourceCode(result);
         Assert.Contains("valid = true", generatedCode);
-        Assert.Contains("Rule = \"Required\"", generatedCode);
+        Assert.Contains("Rule = \"NotNull\"", generatedCode);
         Assert.Contains("return valid;", generatedCode);
     }
 
@@ -415,7 +415,7 @@ public class FixedWidthRecordBinderGeneratorTests
             [FixedWidthGenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, Required = true)]
+                [FixedWidthColumn(Start = 0, Length = 10, NotNull = true)]
                 public string? Name { get; set; }
             }
             """;

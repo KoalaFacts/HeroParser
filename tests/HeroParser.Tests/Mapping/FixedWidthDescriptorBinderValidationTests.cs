@@ -37,7 +37,7 @@ public class FixedWidthDescriptorBinderValidationTests
                 padChar: ' ',
                 alignment: FieldAlignment.Left,
                 setter: NameSetter,
-                isRequired: false,
+                isNotNull: false,
                 validation: nameValidation),
             new FixedWidthPropertyDescriptor<FixedWidthRecord>(
                 "Value",
@@ -46,7 +46,7 @@ public class FixedWidthDescriptorBinderValidationTests
                 padChar: ' ',
                 alignment: FieldAlignment.Left,
                 setter: ValueSetter,
-                isRequired: false,
+                isNotNull: false,
                 validation: valueValidation)
         ]);
     }

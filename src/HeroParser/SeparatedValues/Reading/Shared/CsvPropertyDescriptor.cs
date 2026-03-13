@@ -24,7 +24,7 @@ public readonly struct CsvPropertyDescriptor<T>(
     string name,
     int columnIndex,
     CsvPropertySetter<T> setter,
-    bool isRequired = false,
+    bool isNotNull = false,
     CsvPropertyValidation? validation = null)
 {
     /// <summary>Gets the property/column name.</summary>
@@ -36,8 +36,8 @@ public readonly struct CsvPropertyDescriptor<T>(
     /// <summary>Gets the setter delegate for this property.</summary>
     public CsvPropertySetter<T> Setter { get; } = setter;
 
-    /// <summary>Gets whether this property is required (non-nullable value type).</summary>
-    public bool IsRequired { get; } = isRequired;
+    /// <summary>Gets whether this property must have a non-null value.</summary>
+    public bool IsNotNull { get; } = isNotNull;
 
     /// <summary>Gets the validation rules for this property, or null if none configured.</summary>
     public CsvPropertyValidation? Validation { get; } = validation;
@@ -48,8 +48,8 @@ public readonly struct CsvPropertyDescriptor<T>(
     public CsvPropertyDescriptor(
         string name,
         CsvPropertySetter<T> setter,
-        bool isRequired = false)
-        : this(name, -1, setter, isRequired, validation: null)
+        bool isNotNull = false)
+        : this(name, -1, setter, isNotNull, validation: null)
     {
     }
 }
@@ -87,7 +87,7 @@ public sealed class CsvRecordDescriptor<T>(CsvPropertyDescriptor<T>[] properties
                 prop.Name,
                 columnIndices[i],
                 prop.Setter,
-                prop.IsRequired,
+                prop.IsNotNull,
                 prop.Validation);
         }
         return new CsvRecordDescriptor<T>(resolvedProperties, Factory);

@@ -73,33 +73,33 @@ public class FixedWidthColumnValidationTests
     }
 
     // ──────────────────────────────────────────────
-    // Required validation
+    // NotNull validation
     // ──────────────────────────────────────────────
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Required_WhenNameIsBlank_CollectsErrorAndSkipsRow()
+    public void NotNull_WhenNameIsBlank_CollectsErrorAndSkipsRow()
     {
-        // Name (positions 5-24) is Required = true, NotEmpty = true
-        // All-spaces Name triggers Required (and NotEmpty)
+        // Name (positions 5-24) is NotNull = true, NotEmpty = true
+        // All-spaces Name triggers NotNull (and NotEmpty)
         var data = BuildLine(name: "                    "); // 20 spaces
 
         var (records, errors) = Parse(data);
 
         Assert.Empty(records);
-        Assert.Contains(errors, e => e.Rule == "Required" && e.PropertyName == "Name");
+        Assert.Contains(errors, e => e.Rule == "NotNull" && e.PropertyName == "Name");
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Required_WhenNameIsBlank_ErrorContainsEmptyRawValue()
+    public void NotNull_WhenNameIsBlank_ErrorContainsEmptyRawValue()
     {
         // Fixed-width fields are trimmed before validation, so all-spaces becomes ""
         var data = BuildLine(name: "                    "); // 20 spaces
 
         var (_, errors) = Parse(data);
 
-        var error = errors.First(e => e.Rule == "Required" && e.PropertyName == "Name");
+        var error = errors.First(e => e.Rule == "NotNull" && e.PropertyName == "Name");
         // RawValue is the trimmed span, so all-spaces becomes ""
         Assert.Equal("", error.RawValue);
     }
@@ -110,18 +110,18 @@ public class FixedWidthColumnValidationTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void NotEmpty_WhenNameIsBlank_BothRequiredAndNotEmptyMayFire()
+    public void NotEmpty_WhenNameIsBlank_BothNotNullAndNotEmptyMayFire()
     {
         // When name is all spaces, the field is trimmed to "" (empty span)
-        // Required fires because span.IsEmpty is true
+        // NotNull fires because span.IsEmpty is true
         // NotEmpty does not fire because !span.IsEmpty is false (span is empty after trim)
-        // The row is still skipped due to Required failure
+        // The row is still skipped due to NotNull failure
         var data = BuildLine(name: "                    "); // 20 spaces
 
         var (records, errors) = Parse(data);
 
         Assert.Empty(records);
-        // At minimum, Required error is present
+        // At minimum, NotNull error is present
         Assert.Contains(errors, e => e.PropertyName == "Name");
     }
 

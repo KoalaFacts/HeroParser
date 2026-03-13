@@ -49,7 +49,7 @@ internal sealed class InlineCsvMapWrapper<T> : ICsvReadMapSource<T> where T : ne
                 name,
                 columnIndex,
                 entry.Setter,
-                b.IsRequired,
+                b.IsNotNull,
                 validation);
         }
 

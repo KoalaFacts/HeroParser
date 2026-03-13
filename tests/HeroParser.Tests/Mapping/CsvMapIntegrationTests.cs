@@ -82,10 +82,10 @@ public class CsvMapIntegrationTests
     }
 
     [Fact]
-    public void WithMap_FromText_RequiredErrors_Collected()
+    public void WithMap_FromText_NotNullErrors_Collected()
     {
         var map = new CsvMap<Trade>();
-        map.Map(t => t.Symbol, c => c.Name("Symbol").Required())
+        map.Map(t => t.Symbol, c => c.Name("Symbol").NotNull())
            .Map(t => t.Price, c => c.Name("Price"))
            .Map(t => t.Quantity, c => c.Name("Quantity"));
 
@@ -96,7 +96,7 @@ public class CsvMapIntegrationTests
 
         Assert.Empty(records);
         var error = Assert.Single(reader.Errors);
-        Assert.Equal("Required", error.Rule);
+        Assert.Equal("NotNull", error.Rule);
         Assert.Equal("Symbol", error.ColumnName);
         Assert.Equal("Symbol", error.PropertyName);
         Assert.Equal(string.Empty, error.RawValue);

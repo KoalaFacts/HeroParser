@@ -74,7 +74,7 @@ public class CsvMap<T> : ICsvReadMapSource<T>, ICsvWriteMapSource<T> where T : c
                 name,
                 columnIndex,
                 mapped.Setter,
-                b.IsRequired,
+                b.IsNotNull,
                 validation);
         }
 

@@ -515,7 +515,7 @@ public class CsvRecordBinderGeneratorTests
             using HeroParser.SeparatedValues.Reading.Shared;
             namespace TestNamespace;
             [CsvGenerateBinder]
-            public class Bad { [CsvColumn(Required = true)] public string Name { get; set; } = ""; }
+            public class Bad { [CsvColumn(NotNull = true)] public string Name { get; set; } = ""; }
             """;
         var result = RunGenerator(source);
         var hero008 = result.Diagnostics.FirstOrDefault(d => d.Id == "HERO008");
@@ -627,10 +627,10 @@ public class CsvRecordBinderGeneratorTests
             [CsvGenerateBinder]
             public class R
             {
-                [CsvColumn(Name = "X", Required = true, NotEmpty = true, MaxLength = 50)]
+                [CsvColumn(Name = "X", NotNull = true, NotEmpty = true, MaxLength = 50)]
                 public string X { get; set; } = "";
 
-                [CsvColumn(Index = 1, Required = true, RangeMin = 0, RangeMax = 100)]
+                [CsvColumn(Index = 1, NotNull = true, RangeMin = 0, RangeMax = 100)]
                 public decimal Y { get; set; }
             }
             """;
@@ -640,17 +640,17 @@ public class CsvRecordBinderGeneratorTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_WithRequiredValidation_EmitsValidationCode()
+    public void Generator_WithNotNullValidation_EmitsValidationCode()
     {
         var source = """
             using HeroParser.SeparatedValues.Reading.Shared;
             namespace T;
             [CsvGenerateBinder]
-            public class R { [CsvColumn(Name = "X", Required = true)] public string X { get; set; } = ""; }
+            public class R { [CsvColumn(Name = "X", NotNull = true)] public string X { get; set; } = ""; }
             """;
         var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("ValidationError", code);
-        Assert.Contains("Required", code);
+        Assert.Contains("NotNull", code);
     }
 
     [Fact]
@@ -709,10 +709,10 @@ public class CsvRecordBinderGeneratorTests
             [CsvGenerateBinder]
             public class R
             {
-                [CsvColumn(Name = "Id", Required = true, NotEmpty = true)]
+                [CsvColumn(Name = "Id", NotNull = true, NotEmpty = true)]
                 public string Id { get; set; } = "";
 
-                [CsvColumn(Name = "Amount", Required = true, RangeMin = 0, RangeMax = 100)]
+                [CsvColumn(Name = "Amount", NotNull = true, RangeMin = 0, RangeMax = 100)]
                 public decimal Amount { get; set; }
 
                 [CsvColumn(Name = "Code", MinLength = 2, MaxLength = 5)]

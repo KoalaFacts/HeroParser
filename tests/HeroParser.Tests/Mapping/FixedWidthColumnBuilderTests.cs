@@ -90,7 +90,7 @@ public class FixedWidthColumnBuilderTests
     public void FluentChaining_ReturnsThis()
     {
         var builder = new FixedWidthColumnBuilder();
-        var result = builder.Start(0).Length(10).PadChar(' ').Alignment(FieldAlignment.Left).Format("F2").Required().NotEmpty();
+        var result = builder.Start(0).Length(10).PadChar(' ').Alignment(FieldAlignment.Left).Format("F2").NotNull().NotEmpty();
         Assert.Same(builder, result);
     }
 }

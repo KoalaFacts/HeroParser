@@ -34,13 +34,13 @@ public class CsvDescriptorBinderValidationTests
                 "Name",
                 columnIndex: -1,
                 setter: SetName,
-                isRequired: nameRequired,
+                isNotNull: nameRequired,
                 validation: nameValidation),
             new CsvPropertyDescriptor<SimpleRecord>(
                 "Age",
                 columnIndex: -1,
                 setter: SetAge,
-                isRequired: ageRequired,
+                isNotNull: ageRequired,
                 validation: ageValidation)
         ]);
     }
@@ -104,14 +104,14 @@ public class CsvDescriptorBinderValidationTests
     }
 
     [Fact]
-    public void Required_EmptyField_AddsValidationError()
+    public void NotNull_EmptyField_AddsValidationError()
     {
         var csv = "Name,Age\n,30";
         var (records, errors) = Parse(csv, nameRequired: true);
 
         Assert.Empty(records);
         Assert.Single(errors);
-        Assert.Equal("Required", errors[0].Rule);
+        Assert.Equal("NotNull", errors[0].Rule);
         Assert.Equal("Name", errors[0].PropertyName);
         Assert.Equal("Name", errors[0].ColumnName);
         Assert.Equal(string.Empty, errors[0].RawValue);

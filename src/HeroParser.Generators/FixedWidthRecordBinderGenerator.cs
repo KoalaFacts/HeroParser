@@ -575,7 +575,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if (FixedWidthUtf8BindingHelper.{helperMethod}(utf8, cultureLocal, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             EmitByteThrowParseError(builder, propertyName, typeName);
         }
     }
@@ -596,7 +599,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParseBoolean(utf8, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             EmitByteThrowParseError(builder, propertyName, "bool");
         }
     }
@@ -618,7 +624,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParse{typeName}(utf8, cultureLocal, {formatExpression}, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             EmitByteThrowParseError(builder, propertyName, typeName);
         }
     }
@@ -639,7 +648,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParseGuid(utf8, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             EmitByteThrowParseError(builder, propertyName, "Guid");
         }
     }
@@ -661,19 +673,22 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParseEnum<{enumType}>(utf8, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8))");
+            else
+                builder.AppendLine("else");
             EmitByteThrowParseError(builder, propertyName, enumType);
         }
     }
 
     private static void EmitByteValidationChecks(SourceBuilder builder, MemberDescriptor member)
     {
-        if (member.ValidationRequired)
+        if (member.ValidationNotNull)
         {
             builder.AppendLine("if (utf8.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(utf8))");
             builder.AppendLine("{");
             builder.Indent();
-            EmitByteAddValidationError(builder, member, "Required", "Value is required");
+            EmitByteAddValidationError(builder, member, "NotNull", "Value is required");
             builder.AppendLine("valid = false;");
             builder.Unindent();
             builder.AppendLine("}");
@@ -869,7 +884,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if ({typeName}.TryParse(span, {styles}, cultureLocal, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!(span.IsEmpty || span.IsWhiteSpace()))");
+            else
+                builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, typeName);
         }
     }
@@ -892,7 +910,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if ({typeName}.TryParse(span, {STYLES}, cultureLocal, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!(span.IsEmpty || span.IsWhiteSpace()))");
+            else
+                builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, typeName);
         }
     }
@@ -934,7 +955,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             EmitThrowParseError(builder, propertyName, "bool");
             builder.Unindent();
             builder.AppendLine("}");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!(span.IsEmpty || span.IsWhiteSpace()))");
+            else
+                builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, "bool");
         }
     }
@@ -963,7 +987,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             else
                 builder.AppendLine($"if ({typeName}.TryParse(span, cultureLocal, DateTimeStyles.None, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!(span.IsEmpty || span.IsWhiteSpace()))");
+            else
+                builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, typeName);
         }
     }
@@ -985,7 +1012,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if (Guid.TryParse(span, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!(span.IsEmpty || span.IsWhiteSpace()))");
+            else
+                builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, "Guid");
         }
     }
@@ -1008,7 +1038,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             builder.AppendLine($"if (Enum.TryParse<{enumType}>(span, ignoreCase: true, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-            builder.AppendLine("else");
+            if (member.ValidationNotNull)
+                builder.AppendLine("else if (!(span.IsEmpty || span.IsWhiteSpace()))");
+            else
+                builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, enumType);
         }
     }
@@ -1017,7 +1050,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
     private static bool HasAnyValidation(MemberDescriptor member)
     {
-        return member.ValidationRequired || member.ValidationNotEmpty
+        return member.ValidationNotNull || member.ValidationNotEmpty
             || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
             || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
             || member.ValidationPattern != null;
@@ -1031,13 +1064,13 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
     private static void EmitValidationChecks(SourceBuilder builder, MemberDescriptor member)
     {
-        // Required validation
-        if (member.ValidationRequired)
+        // NotNull validation
+        if (member.ValidationNotNull)
         {
             builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace())");
             builder.AppendLine("{");
             builder.Indent();
-            EmitAddValidationError(builder, member, "Required", "Value is required");
+            EmitAddValidationError(builder, member, "NotNull", "Value is required");
             builder.AppendLine("valid = false;");
             builder.Unindent();
             builder.AppendLine("}");
@@ -1596,7 +1629,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                     case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
                         format = f;
                         break;
-                    case "Required" when arg.Value.Value is bool r:
+                    case "NotNull" when arg.Value.Value is bool r:
                         validationRequired = r; break;
                     case "NotEmpty" when arg.Value.Value is bool ne:
                         validationNotEmpty = ne; break;
@@ -1773,7 +1806,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         bool IsNullable,
         bool IsEnum,
         // Validation fields:
-        bool ValidationRequired,
+        bool ValidationNotNull,
         bool ValidationNotEmpty,
         int ValidationMaxLength,       // -1 = unchecked
         int ValidationMinLength,       // -1 = unchecked

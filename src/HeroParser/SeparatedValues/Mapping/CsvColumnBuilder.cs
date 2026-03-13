@@ -17,8 +17,8 @@ public sealed class CsvColumnBuilder
     /// <summary>Gets the configured format string, or null if not set.</summary>
     public string? FormatString { get; private set; }
 
-    /// <summary>Gets whether the column is required.</summary>
-    public bool IsRequired { get; private set; }
+    /// <summary>Gets whether the column value must be non-null.</summary>
+    public bool IsNotNull { get; private set; }
 
     // Validation state
     private bool notEmpty;
@@ -38,8 +38,8 @@ public sealed class CsvColumnBuilder
     /// <summary>Sets the format string for parsing and writing (e.g., "yyyy-MM-dd", "F2").</summary>
     public CsvColumnBuilder Format(string format) { FormatString = format; return this; }
 
-    /// <summary>Marks the column as required (non-null value).</summary>
-    public CsvColumnBuilder Required() { IsRequired = true; return this; }
+    /// <summary>Marks the column as required to have a non-null value.</summary>
+    public CsvColumnBuilder NotNull() { IsNotNull = true; return this; }
 
     /// <summary>Requires the string value to be non-empty and non-whitespace. Most useful for string fields — for numeric fields, the setter parses the value before validation runs.</summary>
     public CsvColumnBuilder NotEmpty() { notEmpty = true; return this; }

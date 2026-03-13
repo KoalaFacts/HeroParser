@@ -64,7 +64,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
         {
             indices[i] = FindHeaderIndex(headerRow, properties[i].Name, comparison);
 
-            if (indices[i] < 0 && properties[i].IsRequired && !allowMissingColumns)
+            if (indices[i] < 0 && properties[i].IsNotNull && !allowMissingColumns)
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
@@ -125,7 +125,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
                 {
                     string? colName = !descriptor.UsesHeaderBinding ? null : prop.Name;
 
-                    if (prop.IsRequired && span.IsEmpty)
+                    if (prop.IsNotNull && span.IsWhiteSpace())
                     {
                         hasErrors |= AddValidationError(
                             errors,
@@ -133,7 +133,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
                             rowNumber,
                             idx,
                             colName,
-                            "Required",
+                            "NotNull",
                             "Value is required",
                             string.Empty);
                         continue;
@@ -167,7 +167,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
                     }
                 }
             }
-            else if (idx >= 0 && prop.IsRequired && !allowMissingColumns)
+            else if (idx >= 0 && prop.IsNotNull && !allowMissingColumns)
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,

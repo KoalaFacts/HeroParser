@@ -67,7 +67,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T>, IFixed
 
             if (nullVals is null || !IsNullValue(span, nullVals))
             {
-                if (prop.IsRequired && (span.IsEmpty || span.Trim().IsEmpty))
+                if (prop.IsNotNull && (span.IsEmpty || span.Trim().IsEmpty))
                 {
                     hasErrors |= AddValidationError(
                         errors,
@@ -75,7 +75,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T>, IFixed
                         row.RecordNumber,
                         prop.Start,
                         columnName: null,
-                        "Required",
+                        "NotNull",
                         "Value is required",
                         new string(span));
                     continue;
@@ -142,7 +142,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T>, IFixed
 
             if (nullValsUtf8 is null || !IsNullValue(span, nullValsUtf8))
             {
-                if (prop.IsRequired && FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(span))
+                if (prop.IsNotNull && FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(span))
                 {
                     hasErrors |= AddValidationError(
                         errors,
@@ -150,7 +150,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T>, IFixed
                         row.RecordNumber,
                         prop.Start,
                         columnName: null,
-                        "Required",
+                        "NotNull",
                         "Value is required",
                         errors is null ? null : FixedWidthUtf8BindingHelper.Decode(span));
                     continue;

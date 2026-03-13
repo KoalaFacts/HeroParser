@@ -84,7 +84,7 @@ public class FixedWidthMap<T> : IFixedWidthReadMapSource<T>, IFixedWidthWriteMap
                 padChar,
                 alignment,
                 mapped.Setter,
-                b.IsRequired,
+                b.IsNotNull,
                 validation,
                 mapped.ByteSetter);
         }

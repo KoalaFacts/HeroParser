@@ -27,15 +27,17 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
     private static readonly string[] generateAttributeNames =
     [
-        "HeroParser.SeparatedValues.Reading.Shared.CsvGenerateBinderAttribute",
-        "HeroParser.CsvGenerateBinderAttribute"
+        "HeroParser.GenerateBinderAttribute"
     ];
 
     private static readonly string[] columnAttributeNames =
     [
-        "HeroParser.SeparatedValues.Reading.Shared.CsvColumnAttribute",
-        "HeroParser.CsvColumnAttribute"
+        "HeroParser.TabularMapAttribute"
     ];
+
+    private static readonly string[] parseAttributeNames = ["HeroParser.ParseAttribute"];
+    private static readonly string[] validateAttributeNames = ["HeroParser.ValidateAttribute"];
+    private static readonly string[] formatAttributeNames = ["HeroParser.FormatAttribute"];
 
 #pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
     private static readonly DiagnosticDescriptor unsupportedPropertyTypeDiagnostic = new(
@@ -46,45 +48,26 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    private static readonly DiagnosticDescriptor missingNameOrIndexDiagnostic = new(
-        "HERO008",
-        "CsvColumn requires Name or Index",
-        "Property '{0}' has [CsvColumn] but neither Name nor Index is specified. Set Name or Index explicitly.",
-        "HeroParser.Generators",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
-
 #pragma warning restore RS2008
 
     /// <inheritdoc/>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Use ForAttributeWithMetadataName for better caching - register for both attribute names
-        var provider1 = context.SyntaxProvider
+        // Use ForAttributeWithMetadataName for better caching
+        var provider = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 generateAttributeNames[0],
                 predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax,
                 transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
             .Where(static x => x is not null);
 
-        var provider2 = context.SyntaxProvider
-            .ForAttributeWithMetadataName(
-                generateAttributeNames[1],
-                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax,
-                transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
-            .Where(static x => x is not null);
-
-        // Combine both providers
-        var combined = provider1.Collect().Combine(provider2.Collect());
-
         // Generate per-type typed binder files for better incrementality
-        context.RegisterSourceOutput(provider1, static (spc, descriptor) => EmitTypedBinder(spc, descriptor!));
-        context.RegisterSourceOutput(provider2, static (spc, descriptor) => EmitTypedBinder(spc, descriptor!));
+        context.RegisterSourceOutput(provider, static (spc, descriptor) => EmitTypedBinder(spc, descriptor!));
 
         // Generate registration file
-        context.RegisterSourceOutput(combined, static (spc, tuple) =>
+        context.RegisterSourceOutput(provider.Collect(), static (spc, descriptors) =>
         {
-            var all = tuple.Left.Concat(tuple.Right).Where(x => x is not null).ToList();
+            var all = descriptors.Where(x => x is not null).ToList();
             if (all.Count > 0)
                 EmitRegistration(spc, all!);
         });
@@ -893,7 +876,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine($"\"{member.HeaderName}\",");
             builder.AppendLine(member.AttributeIndex is null ? "null," : $"{member.AttributeIndex},");
             builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
-            builder.AppendLine($"{member.GetterFactory}),");
+            builder.AppendLine($"{member.GetterFactory},");
+            builder.AppendLine(member.ExcludeIfAllEmpty ? "true)," : "false),");
             builder.Unindent();
         }
 
@@ -920,21 +904,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             if (!hasSetter && !hasGetter)
                 continue;
 
+            // [TabularMap] — Name, Index (convention: use property name when absent)
             var mapAttribute = GetFirstMatchingAttribute(property, columnAttributeNames);
             var headerName = property.Name;
             int? attributeIndex = null;
-            string? format = null;
-
-            bool hasExplicitName = false;
-
-            bool validationRequired = false;
-            bool validationNotEmpty = false;
-            int validationMaxLength = -1;
-            int validationMinLength = -1;
-            double validationRangeMin = double.NaN;
-            double validationRangeMax = double.NaN;
-            string? validationPattern = null;
-            int validationPatternTimeoutMs = 1000;
 
             if (mapAttribute is not null)
             {
@@ -945,14 +918,50 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                     {
                         case "Name" when arg.Value.Value is string s && !string.IsNullOrWhiteSpace(s):
                             headerName = s;
-                            hasExplicitName = true;
                             break;
                         case "Index" when arg.Value.Value is int i && i >= 0:
                             attributeIndex = i;
                             break;
+                    }
+                }
+#pragma warning restore IDE0010
+            }
+
+            // [Parse] — Format
+            string? format = null;
+            var parseAttribute = GetFirstMatchingAttribute(property, parseAttributeNames);
+            if (parseAttribute is not null)
+            {
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+                foreach (var arg in parseAttribute.NamedArguments)
+                {
+                    switch (arg.Key)
+                    {
                         case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
                             format = f;
                             break;
+                    }
+                }
+#pragma warning restore IDE0010
+            }
+
+            // [Validate] — NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern, PatternTimeoutMs
+            bool validationRequired = false;
+            bool validationNotEmpty = false;
+            int validationMaxLength = -1;
+            int validationMinLength = -1;
+            double validationRangeMin = double.NaN;
+            double validationRangeMax = double.NaN;
+            string? validationPattern = null;
+            int validationPatternTimeoutMs = 1000;
+            var validateAttribute = GetFirstMatchingAttribute(property, validateAttributeNames);
+            if (validateAttribute is not null)
+            {
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+                foreach (var arg in validateAttribute.NamedArguments)
+                {
+                    switch (arg.Key)
+                    {
                         case "NotNull" when arg.Value.Value is bool r:
                             validationRequired = r; break;
                         case "NotEmpty" when arg.Value.Value is bool ne:
@@ -972,12 +981,23 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                     }
                 }
 #pragma warning restore IDE0010
+            }
 
-                if (!hasExplicitName && attributeIndex is null)
+            // [Format] — ExcludeIfAllEmpty (writer-side)
+            bool excludeIfAllEmpty = false;
+            var formatAttribute = GetFirstMatchingAttribute(property, formatAttributeNames);
+            if (formatAttribute is not null)
+            {
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+                foreach (var arg in formatAttribute.NamedArguments)
                 {
-                    diagnostics.Add(Diagnostic.Create(missingNameOrIndexDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name));
-                    continue;
+                    switch (arg.Key)
+                    {
+                        case "ExcludeIfAllEmpty" when arg.Value.Value is bool e:
+                            excludeIfAllEmpty = e; break;
+                    }
                 }
+#pragma warning restore IDE0010
             }
 
             if (!IsSupportedType(property.Type))
@@ -1050,7 +1070,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 validationRangeMin,
                 validationRangeMax,
                 validationPattern,
-                validationPatternTimeoutMs));
+                validationPatternTimeoutMs,
+                excludeIfAllEmpty));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)
@@ -1116,5 +1137,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         double ValidationRangeMin,     // NaN = unchecked
         double ValidationRangeMax,     // NaN = unchecked
         string? ValidationPattern,
-        int ValidationPatternTimeoutMs);  // default 1000
+        int ValidationPatternTimeoutMs,  // default 1000
+                                         // Writer fields:
+        bool ExcludeIfAllEmpty);
 }

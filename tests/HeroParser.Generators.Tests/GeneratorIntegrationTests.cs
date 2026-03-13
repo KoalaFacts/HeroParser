@@ -1,7 +1,6 @@
 using HeroParser.Generators.Tests.Generated;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using Xunit;
 
@@ -202,7 +201,7 @@ public class GeneratorIntegrationTests
         public int Age { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     private sealed class UnsupportedProperty
     {
         public string Name { get; set; } = string.Empty;

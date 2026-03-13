@@ -55,6 +55,8 @@ public sealed class TabularMapAttribute : Attribute
 }
 ```
 
+**Convention-based mapping:** On a `[GenerateBinder]`-decorated type, properties without any `[TabularMap]` attribute default to `TabularMap(Name = <property name>)` for tabular binding. This preserves the current CSV behavior where unmarked properties bind by header name. Properties without `[PositionalMap]` are excluded from positional binding (since start/length have no sensible default).
+
 #### `[PositionalMap]` — locating data in fixed-width formats
 
 ```csharp
@@ -223,13 +225,30 @@ The generators are `netstandard2.0` projects that discover attributes by fully-q
 | `[Validate]` | `HeroParser.ValidateAttribute` |
 | `[Format]` | `HeroParser.FormatAttribute` |
 
-All old FQNs (`HeroParser.SeparatedValues.Reading.Shared.CsvGenerateBinderAttribute`, `HeroParser.SeparatedValues.Reading.Shared.CsvColumnAttribute`, `HeroParser.FixedWidths.Records.Binding.FixedWidthGenerateBinderAttribute`, `HeroParser.FixedWidths.Records.Binding.FixedWidthColumnAttribute`, `HeroParser.CsvGenerateBinderAttribute`) are removed. The generators must no longer search for them.
+All old FQNs are removed. The generators must no longer search for them:
+
+- `HeroParser.SeparatedValues.Reading.Shared.CsvGenerateBinderAttribute`
+- `HeroParser.SeparatedValues.Reading.Shared.CsvColumnAttribute`
+- `HeroParser.FixedWidths.Records.Binding.FixedWidthGenerateBinderAttribute`
+- `HeroParser.FixedWidths.Records.Binding.FixedWidthColumnAttribute`
+- `HeroParser.CsvGenerateBinderAttribute`
+- `HeroParser.CsvColumnAttribute`
+- `HeroParser.FixedWidthGenerateBinderAttribute`
+- `HeroParser.FixedWidthColumnAttribute`
 
 #### Multi-schema dispatcher migration
 
 The existing `CsvGenerateDispatcherAttribute` and `CsvSchemaMappingAttribute` must also be updated:
 - The multi-schema dispatcher generator currently searches for `CsvGenerateBinderAttribute` to find candidate types — it must be updated to search for `GenerateBinderAttribute` instead
 - The dispatcher and schema mapping attributes themselves can keep their `Csv`-prefixed names for now, as multi-schema dispatch is CSV-specific behavior (Excel multi-sheet is handled differently via `WithSheet<T>()`)
+- Update `CsvSchemaMappingAttribute` XML doc comments to reference `[GenerateBinder]` instead of `[CsvGenerateBinder]`
+
+#### Migration checklist for user-facing strings
+
+All user-facing error messages and diagnostic descriptions that reference old attribute names must be updated:
+- `CsvRecordBinderFactory.GetByteBinder<T>()` exception message → reference `[GenerateBinder]`
+- Generator diagnostics (e.g., `HERO003`) → reference `[GenerateBinder]`, `[TabularMap]`, `[PositionalMap]`
+- XML doc comments on public types that mention old attributes
 
 ### Data Flow
 
@@ -348,7 +367,7 @@ public sealed record ExcelReadOptions
     public int MaxRowCount { get; init; } = 100_000;
     public int MaxColumnCount { get; init; } = 100;
     public IReadOnlyList<string>? NullValues { get; init; }
-    public CultureInfo? Culture { get; init; }
+    public CultureInfo? Culture { get; init; } // null → InvariantCulture (matches CSV behavior)
     public IProgress<ExcelProgress>? Progress { get; init; }
     public int ProgressIntervalRows { get; init; } = 1000;
 }
@@ -436,6 +455,8 @@ This means:
 - Validation runs through the same `PropertyValidationRunner`
 
 No new binder interface or implementation is needed for Excel.
+
+**Excel-to-binder bridge:** The `XlsxSheetReader` yields rows as arrays of `string` cell values. To feed these into the existing `ICsvBinder<byte, T>` via `CsvCharToByteBinderAdapter`, the Excel reader must construct synthetic `CsvRow<char>` objects. The approach: concatenate cell values with a synthetic delimiter (e.g., `\x01`) into a contiguous `char[]` buffer, then build the `columnEnds` array pointing to delimiter positions. This mirrors how `CsvCharToByteBinderAdapter` internally constructs `CsvRow<byte>` from char input. The synthetic delimiter is never exposed to users — it is an internal implementation detail of the Excel-to-binder bridge.
 
 ### Dependencies
 

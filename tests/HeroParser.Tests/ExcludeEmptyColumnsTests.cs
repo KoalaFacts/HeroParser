@@ -165,7 +165,7 @@ public class ExcludeEmptyColumnsTests
         var result = Csv.WriteToText(records, options);
 
         // Email has whitespace (non-empty), Phone is null (empty)
-        Assert.Equal("Name,Email\r\nAlice,\"  \"\r\n", result);
+        Assert.Equal("Name,Email\r\nAlice,  \r\n", result);
     }
 
     [Fact]

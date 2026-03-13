@@ -151,6 +151,13 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// </summary>
     public void WriteRecords(CsvStreamWriter writer, IEnumerable<T> records, bool includeHeader = true)
     {
+        if (writerOptions.ExcludeEmptyColumns)
+        {
+            var materialized = MaterializeRecords(records, writerOptions.MaxRowCount);
+            WriteRecordsFiltered(writer, materialized, includeHeader);
+            return;
+        }
+
         int rowNumber = 0;
         int dataRowCount = 0;
         var maxRows = writerOptions.MaxRowCount;
@@ -205,6 +212,13 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         bool includeHeader = true,
         CancellationToken cancellationToken = default)
     {
+        if (writerOptions.ExcludeEmptyColumns)
+        {
+            var materialized = await MaterializeRecordsAsync(records, writerOptions.MaxRowCount, cancellationToken).ConfigureAwait(false);
+            WriteRecordsFiltered(writer, materialized, includeHeader);
+            return;
+        }
+
         int rowNumber = 0;
         int dataRowCount = 0;
         var maxRows = writerOptions.MaxRowCount;
@@ -259,6 +273,13 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         bool includeHeader = true,
         CancellationToken cancellationToken = default)
     {
+        if (writerOptions.ExcludeEmptyColumns)
+        {
+            var materialized = await MaterializeRecordsAsync(records, writerOptions.MaxRowCount, cancellationToken).ConfigureAwait(false);
+            await WriteRecordsFilteredAsync(writer, materialized, includeHeader, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         int rowNumber = 0;
         int dataRowCount = 0;
         var maxRows = writerOptions.MaxRowCount;
@@ -313,6 +334,13 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         bool includeHeader = true,
         CancellationToken cancellationToken = default)
     {
+        if (writerOptions.ExcludeEmptyColumns)
+        {
+            var materialized = MaterializeRecords(records, writerOptions.MaxRowCount);
+            await WriteRecordsFilteredAsync(writer, materialized, includeHeader, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         int rowNumber = 0;
         int dataRowCount = 0;
         var maxRows = writerOptions.MaxRowCount;
@@ -472,6 +500,430 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     private void WriteHeaderRow(CsvStreamWriter writer)
     {
         writer.WriteRow(headerBuffer);
+    }
+
+    private static bool IsValueEmpty(object? value)
+    {
+        if (value is null)
+            return true;
+        if (value is string s)
+            return s.Length == 0;
+        var str = value.ToString();
+        return str is null or { Length: 0 };
+    }
+
+    private int[] ScanForNonEmptyColumns(IReadOnlyList<T> records)
+    {
+        int columnCount = accessors.Length;
+        var hasNonEmpty = new bool[columnCount];
+        int nonEmptyCount = 0;
+        bool anyRecordScanned = false;
+
+        foreach (var record in records)
+        {
+            if (record is null)
+                continue;
+
+            anyRecordScanned = true;
+
+            for (int i = 0; i < columnCount; i++)
+            {
+                if (hasNonEmpty[i])
+                    continue;
+
+                object? value;
+                try
+                {
+                    value = accessors[i].GetValue(record);
+                }
+                catch
+                {
+                    // Failed getter → treat as empty for scan purposes
+                    continue;
+                }
+
+                if (!IsValueEmpty(value))
+                {
+                    hasNonEmpty[i] = true;
+                    nonEmptyCount++;
+                    if (nonEmptyCount == columnCount)
+                        return []; // All columns non-empty → no filtering needed
+                }
+            }
+        }
+
+        // No scannable records (empty list or all-null records) → no filtering, write full header
+        if (!anyRecordScanned)
+            return [];
+
+        if (nonEmptyCount == 0)
+            return [-1]; // Sentinel: all columns empty
+
+        var indices = new int[nonEmptyCount];
+        int idx = 0;
+        for (int i = 0; i < columnCount; i++)
+        {
+            if (hasNonEmpty[i])
+                indices[idx++] = i;
+        }
+        return indices;
+    }
+
+    private void WriteFilteredHeader(CsvStreamWriter writer, int[] columnIndices)
+    {
+        var filteredHeaders = new string[columnIndices.Length];
+        for (int i = 0; i < columnIndices.Length; i++)
+            filteredHeaders[i] = headerBuffer[columnIndices[i]];
+        writer.WriteRow(filteredHeaders);
+    }
+
+    private void WriteFilteredRecord(CsvStreamWriter writer, T record, int rowNumber, int[] columnIndices)
+    {
+        if (record is null)
+        {
+            writer.EndRow();
+            return;
+        }
+
+        var filteredValues = new object?[columnIndices.Length];
+        var filteredFormats = new string?[columnIndices.Length];
+        for (int i = 0; i < columnIndices.Length; i++)
+        {
+            int ci = columnIndices[i];
+            filteredFormats[i] = formatsBuffer[ci];
+            try
+            {
+                filteredValues[i] = accessors[ci].GetValue(record);
+            }
+            catch (Exception ex)
+            {
+                if (writerOptions.OnSerializeError is not null)
+                {
+                    var context = new CsvSerializeErrorContext
+                    {
+                        Row = rowNumber,
+                        Column = ci + 1,
+                        MemberName = accessors[ci].MemberName,
+                        SourceType = typeof(T),
+                        Value = null,
+                        Exception = ex
+                    };
+
+                    var action = writerOptions.OnSerializeError(context);
+                    switch (action)
+                    {
+                        case SerializeErrorAction.SkipRow:
+                            return;
+                        case SerializeErrorAction.WriteNull:
+                            filteredValues[i] = null;
+                            continue;
+                        case SerializeErrorAction.Throw:
+                        default:
+                            break;
+                    }
+                }
+
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Row {rowNumber}, Column {ci + 1}: Failed to get value for member '{accessors[ci].MemberName}': {ex.Message}",
+                    ex);
+            }
+        }
+        writer.WriteRowWithFormats(filteredValues, filteredFormats);
+    }
+
+    private async ValueTask WriteFilteredRecordAsync(CsvAsyncStreamWriter writer, T record, int rowNumber, int[] columnIndices, CancellationToken cancellationToken)
+    {
+        if (record is null)
+        {
+            await writer.EndRowAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var filteredValues = new object?[columnIndices.Length];
+        var filteredFormats = new string?[columnIndices.Length];
+        for (int i = 0; i < columnIndices.Length; i++)
+        {
+            int ci = columnIndices[i];
+            filteredFormats[i] = formatsBuffer[ci];
+            try
+            {
+                filteredValues[i] = accessors[ci].GetValue(record);
+            }
+            catch (Exception ex)
+            {
+                if (writerOptions.OnSerializeError is not null)
+                {
+                    var context = new CsvSerializeErrorContext
+                    {
+                        Row = rowNumber,
+                        Column = ci + 1,
+                        MemberName = accessors[ci].MemberName,
+                        SourceType = typeof(T),
+                        Value = null,
+                        Exception = ex
+                    };
+
+                    var action = writerOptions.OnSerializeError(context);
+                    switch (action)
+                    {
+                        case SerializeErrorAction.SkipRow:
+                            return;
+                        case SerializeErrorAction.WriteNull:
+                            filteredValues[i] = null;
+                            continue;
+                        case SerializeErrorAction.Throw:
+                        default:
+                            break;
+                    }
+                }
+
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Row {rowNumber}, Column {ci + 1}: Failed to get value for member '{accessors[ci].MemberName}': {ex.Message}",
+                    ex);
+            }
+        }
+        await writer.WriteRowWithFormatsAsync(filteredValues, filteredFormats, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask WriteFilteredHeaderAsync(CsvAsyncStreamWriter writer, int[] columnIndices, CancellationToken cancellationToken)
+    {
+        var filteredHeaders = new string[columnIndices.Length];
+        for (int i = 0; i < columnIndices.Length; i++)
+            filteredHeaders[i] = headerBuffer[columnIndices[i]];
+        await writer.WriteRowAsync(filteredHeaders, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static IReadOnlyList<T> MaterializeRecords(IEnumerable<T> records, int? maxRowCount)
+    {
+        if (records is IReadOnlyList<T> list)
+        {
+            if (maxRowCount.HasValue && list.Count > maxRowCount.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"Exceeded maximum row count of {maxRowCount.Value}");
+            }
+            return list;
+        }
+
+        var materialized = new List<T>();
+        foreach (var record in records)
+        {
+            materialized.Add(record);
+            if (maxRowCount.HasValue && materialized.Count > maxRowCount.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"Exceeded maximum row count of {maxRowCount.Value}");
+            }
+        }
+        return materialized;
+    }
+
+    private static async ValueTask<IReadOnlyList<T>> MaterializeRecordsAsync(IAsyncEnumerable<T> records, int? maxRowCount, CancellationToken cancellationToken)
+    {
+        var materialized = new List<T>();
+        await foreach (var record in records.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            materialized.Add(record);
+            if (maxRowCount.HasValue && materialized.Count > maxRowCount.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"Exceeded maximum row count of {maxRowCount.Value}");
+            }
+        }
+        return materialized;
+    }
+
+    private void WriteRecordsFiltered(CsvStreamWriter writer, IReadOnlyList<T> records, bool includeHeader)
+    {
+        var columnIndices = ScanForNonEmptyColumns(records);
+
+        // All columns non-empty → no filtering, use normal path
+        if (columnIndices.Length == 0)
+        {
+            WriteRecordsUnfiltered(writer, records, includeHeader);
+            return;
+        }
+
+        // All columns empty → write nothing
+        if (columnIndices is [-1])
+            return;
+
+        var progress = writerOptions.WriteProgress;
+        var progressInterval = writerOptions.WriteProgressIntervalRows;
+        int rowNumber = 0;
+
+        if (includeHeader && writerOptions.WriteHeader)
+        {
+            WriteFilteredHeader(writer, columnIndices);
+            rowNumber++;
+        }
+
+        for (int r = 0; r < records.Count; r++)
+        {
+            rowNumber++;
+            WriteFilteredRecord(writer, records[r], rowNumber, columnIndices);
+
+            if (progress is not null && (r + 1) % progressInterval == 0)
+            {
+                progress.Report(new CsvWriteProgress
+                {
+                    RowsWritten = r + 1,
+                    BytesWritten = writer.CharsWritten,
+                });
+            }
+        }
+
+        progress?.Report(new CsvWriteProgress
+        {
+            RowsWritten = records.Count,
+            BytesWritten = writer.CharsWritten,
+        });
+    }
+
+    private void WriteRecordsUnfiltered(CsvStreamWriter writer, IReadOnlyList<T> records, bool includeHeader)
+    {
+        int rowNumber = 0;
+        var maxRows = writerOptions.MaxRowCount;
+        var progress = writerOptions.WriteProgress;
+        var progressInterval = writerOptions.WriteProgressIntervalRows;
+
+        if (includeHeader && writerOptions.WriteHeader)
+        {
+            WriteHeaderRow(writer);
+            rowNumber++;
+        }
+
+        for (int r = 0; r < records.Count; r++)
+        {
+            rowNumber++;
+
+            if (maxRows.HasValue && (r + 1) > maxRows.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"Exceeded maximum row count of {maxRows.Value}");
+            }
+
+            WriteRecordInternal(writer, records[r], rowNumber);
+
+            if (progress is not null && (r + 1) % progressInterval == 0)
+            {
+                progress.Report(new CsvWriteProgress
+                {
+                    RowsWritten = r + 1,
+                    BytesWritten = writer.CharsWritten,
+                });
+            }
+        }
+
+        progress?.Report(new CsvWriteProgress
+        {
+            RowsWritten = records.Count,
+            BytesWritten = writer.CharsWritten,
+        });
+    }
+
+    private async ValueTask WriteRecordsFilteredAsync(
+        CsvAsyncStreamWriter writer,
+        IReadOnlyList<T> records,
+        bool includeHeader,
+        CancellationToken cancellationToken)
+    {
+        var columnIndices = ScanForNonEmptyColumns(records);
+
+        if (columnIndices.Length == 0)
+        {
+            await WriteRecordsUnfilteredAsync(writer, records, includeHeader, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (columnIndices is [-1])
+            return;
+
+        var progress = writerOptions.WriteProgress;
+        var progressInterval = writerOptions.WriteProgressIntervalRows;
+        int rowNumber = 0;
+
+        if (includeHeader && writerOptions.WriteHeader)
+        {
+            await WriteFilteredHeaderAsync(writer, columnIndices, cancellationToken).ConfigureAwait(false);
+            rowNumber++;
+        }
+
+        for (int r = 0; r < records.Count; r++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            rowNumber++;
+            await WriteFilteredRecordAsync(writer, records[r], rowNumber, columnIndices, cancellationToken).ConfigureAwait(false);
+
+            if (progress is not null && (r + 1) % progressInterval == 0)
+            {
+                progress.Report(new CsvWriteProgress
+                {
+                    RowsWritten = r + 1,
+                    BytesWritten = writer.CharsWritten,
+                });
+            }
+        }
+
+        progress?.Report(new CsvWriteProgress
+        {
+            RowsWritten = records.Count,
+            BytesWritten = writer.CharsWritten,
+        });
+    }
+
+    private async ValueTask WriteRecordsUnfilteredAsync(
+        CsvAsyncStreamWriter writer,
+        IReadOnlyList<T> records,
+        bool includeHeader,
+        CancellationToken cancellationToken)
+    {
+        int rowNumber = 0;
+        var maxRows = writerOptions.MaxRowCount;
+        var progress = writerOptions.WriteProgress;
+        var progressInterval = writerOptions.WriteProgressIntervalRows;
+
+        if (includeHeader && writerOptions.WriteHeader)
+        {
+            await writer.WriteRowAsync(headerBuffer, cancellationToken).ConfigureAwait(false);
+            rowNumber++;
+        }
+
+        for (int r = 0; r < records.Count; r++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            rowNumber++;
+
+            if (maxRows.HasValue && (r + 1) > maxRows.Value)
+            {
+                throw new CsvException(
+                    CsvErrorCode.TooManyRows,
+                    $"Exceeded maximum row count of {maxRows.Value}");
+            }
+
+            await WriteRecordInternalAsync(writer, records[r], rowNumber, cancellationToken).ConfigureAwait(false);
+
+            if (progress is not null && (r + 1) % progressInterval == 0)
+            {
+                progress.Report(new CsvWriteProgress
+                {
+                    RowsWritten = r + 1,
+                    BytesWritten = writer.CharsWritten,
+                });
+            }
+        }
+
+        progress?.Report(new CsvWriteProgress
+        {
+            RowsWritten = records.Count,
+            BytesWritten = writer.CharsWritten,
+        });
     }
 
     private static PropertyAccessor[] BuildAccessors(Type type)

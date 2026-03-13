@@ -29,11 +29,17 @@
   - `FixedWidth.WriteToFileAsync()`, `WriteToStreamAsync()` - Async writing with IAsyncEnumerable support
   - `FixedWidthStreamWriter` - Low-level writer for manual field writing
   - Configurable padding, alignment, and newline options
-- **Fixed-Width Validation Attributes**: Data validation during deserialization
-  - `[FixedWidthRequired]` - Ensure field is not null/empty/whitespace
-  - `[FixedWidthStringLength]` - Validate string length with min/max
-  - `[FixedWidthRange]` - Validate numeric values within range
-  - `[FixedWidthRegex]` - Validate against regular expression pattern
+- **Inline Field Validation**: Declare validation constraints directly on `[CsvColumn]` and `[FixedWidthColumn]` attributes
+  - `NotNull` - Reject empty or whitespace values with a soft validation error (row excluded, error collected)
+  - `NotEmpty` - Reject empty or whitespace string values
+  - `MinLength` / `MaxLength` - Validate string length bounds
+  - `RangeMin` / `RangeMax` - Validate numeric value bounds (inclusive)
+  - `Pattern` / `PatternTimeoutMs` - Validate string against a regex pattern with configurable timeout
+  - `ValidationError` struct with `ToString()` producing rich diagnostics: row number, column name/index, property name, rule, message, and raw value
+  - `ValidationException` with formatted multi-error messages
+  - `ThrowIfAnyError()` fluent API on both CSV and Fixed-Width readers
+  - Compile-time diagnostics (HERO004-HERO008) for invalid attribute usage
+  - Legacy `[FixedWidthRequired]`, `[FixedWidthStringLength]`, `[FixedWidthRange]`, `[FixedWidthRegex]` attributes removed
 - **Fixed-Width Source Generator**: AOT-compatible record binding
   - `[FixedWidthGenerateBinder]` attribute for compile-time binder generation
   - Reflection-free binding for trimming and AOT scenarios

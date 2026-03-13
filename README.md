@@ -1352,7 +1352,7 @@ Validation constraints are declared inline on `[FixedWidthColumn]` — no separa
 [FixedWidthGenerateBinder]
 public class ValidatedRecord
 {
-    [FixedWidthColumn(Start = 0, Length = 10, Required = true, NotEmpty = true)]
+    [FixedWidthColumn(Start = 0, Length = 10, NotNull = true, NotEmpty = true)]
     public string Id { get; set; } = "";
 
     [FixedWidthColumn(Start = 10, Length = 20, MinLength = 2, MaxLength = 20)]
@@ -1557,13 +1557,13 @@ Declare validation constraints directly on column attributes. Validation failure
 [CsvGenerateBinder]
 public class Transaction
 {
-    [CsvColumn(Name = "Id", Required = true, NotEmpty = true)]
+    [CsvColumn(Name = "Id", NotNull = true, NotEmpty = true)]
     public string TransactionId { get; set; } = "";
 
-    [CsvColumn(Name = "Amount", Index = 1, Required = true, RangeMin = 0, RangeMax = 100_000)]
+    [CsvColumn(Name = "Amount", Index = 1, NotNull = true, RangeMin = 0, RangeMax = 100_000)]
     public decimal Amount { get; set; }
 
-    [CsvColumn(Name = "Currency", Index = 2, Required = true, MinLength = 3, MaxLength = 3)]
+    [CsvColumn(Name = "Currency", Index = 2, NotNull = true, MinLength = 3, MaxLength = 3)]
     public string Currency { get; set; } = "";
 
     [CsvColumn(Name = "Ref", Index = 3, Pattern = @"^[A-Z]{2}\d{4}$")]
@@ -1579,8 +1579,13 @@ foreach (var record in reader)
 if (reader.Errors.Count > 0)
 {
     foreach (var error in reader.Errors)
-        Console.WriteLine($"Row {error.RowNumber}: {error.Rule} - {error.Message}");
+        Console.WriteLine(error);
+        // Row 2, Column 'Amount' (index 1), Property 'Amount': [Range] Value must be between 0 and 100000 (raw: '-50.00')
 }
+
+// Or throw if any validation errors occurred
+reader.ThrowIfAnyError();
+// ValidationException: Validation failed: Row 2, Column 'Id' (index 0), Property 'TransactionId': [NotNull] Value is required (raw: '')
 ```
 
 ### Fixed-Width Validation
@@ -1589,10 +1594,10 @@ if (reader.Errors.Count > 0)
 [FixedWidthGenerateBinder]
 public class Employee
 {
-    [FixedWidthColumn(Start = 0, Length = 5, Required = true)]
+    [FixedWidthColumn(Start = 0, Length = 5, NotNull = true)]
     public int Id { get; set; }
 
-    [FixedWidthColumn(Start = 5, Length = 20, Required = true, NotEmpty = true)]
+    [FixedWidthColumn(Start = 5, Length = 20, NotNull = true, NotEmpty = true)]
     public string Name { get; set; } = "";
 
     [FixedWidthColumn(Start = 25, Length = 10, RangeMin = 20_000, RangeMax = 500_000)]
@@ -1606,15 +1611,19 @@ var records = result.Records;  // or result.ToList()
 if (result.Errors.Count > 0)
 {
     foreach (var error in result.Errors)
-        Console.WriteLine($"Row {error.RowNumber}: {error.Rule} - {error.Message}");
+        Console.WriteLine(error);
+        // Row 1, Column index 25, Property 'Salary': [Range] Value must be between 20000 and 500000 (raw: '005000.00')
 }
+
+// Or throw if any validation errors occurred
+result.ThrowIfAnyError();
 ```
 
 ### Validation Properties
 
 | Property | Type | Default | Applies To | Description |
 |---|---|---|---|---|
-| `Required` | `bool` | `false` | All types | Value must be present (column must exist and be non-null) |
+| `NotNull` | `bool` | `false` | All types | Value must not be null, empty, or whitespace. On nullable types, rejects with a validation error instead of resolving to `null`. On non-nullable value types, collects a validation error and keeps the default value. Without `NotNull`, empty/whitespace on a non-nullable value type throws a hard parse exception. |
 | `NotEmpty` | `bool` | `false` | `string` | Value must not be empty or whitespace |
 | `MaxLength` | `int` | `-1` (unchecked) | `string` | Maximum string length |
 | `MinLength` | `int` | `-1` (unchecked) | `string` | Minimum string length |
@@ -1713,7 +1722,8 @@ foreach (var trade in reader)
     Console.WriteLine($"{trade.Symbol}: {trade.Price}");
 
 foreach (var error in reader.Errors)
-    Console.WriteLine($"Row {error.RowNumber}: {error.Message}");
+    Console.WriteLine(error);
+    // Row 2, Column 'Price' (index 1), Property 'Price': [Range] Value must be between 0.01 and 999999 (raw: '-5.00')
 ```
 
 ### Notes

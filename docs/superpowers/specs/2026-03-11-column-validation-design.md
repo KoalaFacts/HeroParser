@@ -22,7 +22,7 @@ Add field-level validation to both CSV and FixedWidth column attributes, emitted
 
 ```csharp
 // Added to both CsvColumnAttribute and FixedWidthColumnAttribute:
-public bool Required { get; init; }              // Value must be non-null/non-missing
+public bool NotNull { get; init; }               // Value must not be null, empty, or whitespace
 public bool NotEmpty { get; init; }              // String must not be empty/whitespace
 public int MaxLength { get; init; } = -1;        // Max string length (-1 = unchecked)
 public int MinLength { get; init; } = -1;        // Min string length (-1 = unchecked)
@@ -45,9 +45,13 @@ public readonly struct ValidationError
     public int ColumnIndex { get; init; }
     public string? ColumnName { get; init; }
     public string PropertyName { get; init; }
-    public string Rule { get; init; }        // "Required", "NotEmpty", "MaxLength", etc.
+    public string Rule { get; init; }        // "NotNull", "NotEmpty", "MaxLength", etc.
     public string Message { get; init; }
     public string? RawValue { get; init; }
+
+    // Rich diagnostic output:
+    // Row 2, Column 'Amount' (index 1), Property 'Amount': [Range] Value must be between 0 and 100000 (raw: '-1.00')
+    public override string ToString() { ... }
 }
 ```
 
@@ -87,13 +91,13 @@ For:
 [CsvGenerateBinder]
 public class Transaction
 {
-    [CsvColumn(Name = "Id", Required = true, NotEmpty = true)]
+    [CsvColumn(Name = "Id", NotNull = true, NotEmpty = true)]
     public string TransactionId { get; set; }
 
-    [CsvColumn(Name = "Amount", Required = true, RangeMin = 0, RangeMax = 999999.99)]
+    [CsvColumn(Name = "Amount", NotNull = true, RangeMin = 0, RangeMax = 999999.99)]
     public decimal Amount { get; set; }
 
-    [CsvColumn(Name = "Currency", Required = true, MinLength = 3, MaxLength = 3)]
+    [CsvColumn(Name = "Currency", NotNull = true, MinLength = 3, MaxLength = 3)]
     public string Currency { get; set; }
 
     [CsvColumn(Name = "Reference", Pattern = @"^[A-Z]{2}\d{6}$")]
@@ -109,7 +113,7 @@ private static readonly Regex _pattern_Reference = new(@"^[A-Z]{2}\d{6}$", Regex
 // In BindInto method — after parsing "Amount" column:
 if (amount_isNull)
 {
-    errors?.Add(new ValidationError { Rule = "Required", ... });
+    errors?.Add(new ValidationError { Rule = "NotNull", ... });
     valid = false;
 }
 else if (parsed_Amount < 0m || parsed_Amount > 999999.99m)  // decimal literal
@@ -154,7 +158,7 @@ New diagnostic codes emitted by generators for attribute misuse:
 | HERO005 | `MaxLength`/`MinLength` only apply to string properties | `[CsvColumn(MaxLength = 10)] public decimal Amount` |
 | HERO006 | `RangeMin`/`RangeMax` only apply to numeric properties | `[CsvColumn(RangeMin = 0)] public string Name` |
 | HERO007 | `Pattern` only applies to string properties | `[CsvColumn(Pattern = ".*")] public int Id` |
-| HERO008 | `CsvColumn` requires `Name` or `Index` | `[CsvColumn(Required = true)] public string Name` |
+| HERO008 | `CsvColumn` requires `Name` or `Index` | `[CsvColumn(NotNull = true)] public string Name` |
 
 ## API Changes (Breaking)
 

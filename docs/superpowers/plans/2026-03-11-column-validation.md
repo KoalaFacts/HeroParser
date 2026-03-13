@@ -37,18 +37,18 @@ public class ValidationErrorTests
         var error = new ValidationError
         {
             RowNumber = 5, ColumnIndex = 2, ColumnName = "Amount",
-            PropertyName = "Amount", Rule = "Required",
+            PropertyName = "Amount", Rule = "NotNull",
             Message = "Value is required", RawValue = ""
         };
         Assert.Equal(5, error.RowNumber);
-        Assert.Equal("Required", error.Rule);
+        Assert.Equal("NotNull", error.Rule);
     }
 
     [Fact]
     [Trait("Category", "Unit")]
     public void ValidationError_ColumnNameCanBeNull()
     {
-        var error = new ValidationError { ColumnName = null, PropertyName = "Id", Rule = "Required", Message = "fail" };
+        var error = new ValidationError { ColumnName = null, PropertyName = "Id", Rule = "NotNull", Message = "fail" };
         Assert.Null(error.ColumnName);
     }
 
@@ -56,7 +56,7 @@ public class ValidationErrorTests
     [Trait("Category", "Unit")]
     public void ValidationError_RawValueCanBeNull()
     {
-        var error = new ValidationError { PropertyName = "Id", Rule = "Required", Message = "fail", RawValue = null };
+        var error = new ValidationError { PropertyName = "Id", Rule = "NotNull", Message = "fail", RawValue = null };
         Assert.Null(error.RawValue);
     }
 }
@@ -97,7 +97,7 @@ public readonly struct ValidationError
 
 Add to `CsvColumnAttribute`:
 ```csharp
-public bool Required { get; init; }
+public bool NotNull { get; init; }
 public bool NotEmpty { get; init; }
 public int MaxLength { get; init; } = -1;
 public int MinLength { get; init; } = -1;
@@ -195,7 +195,7 @@ public void Generator_WithoutNameOrIndex_ReportsHERO008()
         using HeroParser.SeparatedValues.Reading.Shared;
         namespace TestNamespace;
         [CsvGenerateBinder]
-        public class Bad { [CsvColumn(Required = true)] public string Name { get; set; } = ""; }
+        public class Bad { [CsvColumn(NotNull = true)] public string Name { get; set; } = ""; }
         """;
     var result = RunGenerator(source);
     Assert.Contains(result.Diagnostics, d => d.Id == "HERO008");
@@ -288,7 +288,7 @@ public void Generator_PatternOnInt_ReportsHERO007()
 
 - [ ] **Step 1: Extend MemberDescriptor**
 
-Add fields: `ValidationRequired`, `ValidationNotEmpty`, `ValidationMaxLength`, `ValidationMinLength`, `ValidationRangeMin`, `ValidationRangeMax`, `ValidationPattern`, `ValidationPatternTimeoutMs`
+Add fields: `ValidationNotNull`, `ValidationNotEmpty`, `ValidationMaxLength`, `ValidationMinLength`, `ValidationRangeMin`, `ValidationRangeMax`, `ValidationPattern`, `ValidationPatternTimeoutMs`
 
 - [ ] **Step 2: Read properties from attribute in BuildDescriptor**
 
@@ -318,17 +318,17 @@ Key implementation details:
 ```csharp
 [Fact]
 [Trait("Category", "Unit")]
-public void Generator_WithRequiredValidation_EmitsValidationCode()
+public void Generator_WithNotNullValidation_EmitsValidationCode()
 {
     var source = """
         using HeroParser.SeparatedValues.Reading.Shared;
         namespace T;
         [CsvGenerateBinder]
-        public class R { [CsvColumn(Name = "X", Required = true)] public string X { get; set; } = ""; }
+        public class R { [CsvColumn(Name = "X", NotNull = true)] public string X { get; set; } = ""; }
         """;
     var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
     Assert.Contains("ValidationError", code);
-    Assert.Contains("Required", code);
+    Assert.Contains("NotNull", code);
 }
 
 [Fact]
@@ -412,13 +412,13 @@ namespace HeroParser.Tests.Validation;
 [CsvGenerateBinder]
 public class ValidatedTransaction
 {
-    [CsvColumn(Name = "Id", Required = true, NotEmpty = true)]
+    [CsvColumn(Name = "Id", NotNull = true, NotEmpty = true)]
     public string TransactionId { get; set; } = "";
 
-    [CsvColumn(Name = "Amount", Index = 1, Required = true, RangeMin = 0, RangeMax = 100000)]
+    [CsvColumn(Name = "Amount", Index = 1, NotNull = true, RangeMin = 0, RangeMax = 100000)]
     public decimal Amount { get; set; }
 
-    [CsvColumn(Name = "Currency", Index = 2, Required = true, MinLength = 3, MaxLength = 3)]
+    [CsvColumn(Name = "Currency", Index = 2, NotNull = true, MinLength = 3, MaxLength = 3)]
     public string Currency { get; set; } = "";
 
     [CsvColumn(Name = "Reference", Index = 3, Pattern = @"^[A-Z]{2}\d{4}$")]
@@ -428,7 +428,7 @@ public class ValidatedTransaction
 
 - [ ] **Step 2: Write integration tests**
 
-Tests for: Required (missing value), NotEmpty (whitespace), MaxLength/MinLength, Range out of bounds, Pattern no match, valid data (no errors), multiple errors collected across rows.
+Tests for: NotNull (missing value), NotEmpty (whitespace), MaxLength/MinLength, Range out of bounds, Pattern no match, valid data (no errors), multiple errors collected across rows.
 
 - [ ] **Step 3: Run — expect PASS**
 - [ ] **Step 4: Commit**

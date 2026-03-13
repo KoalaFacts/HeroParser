@@ -25,7 +25,7 @@ HeroParser uses attribute-based configuration exclusively for column-to-property
 ```csharp
 // Standalone reusable map
 var tradeMap = new CsvMap<Trade>()
-    .Map(t => t.Symbol, col => col.Name("Ticker").Required().MaxLength(10))
+    .Map(t => t.Symbol, col => col.Name("Ticker").NotNull().MaxLength(10))
     .Map(t => t.Price, col => col.Index(2).Format("F2").Range(0, 99999))
     .Map(t => t.Date, col => col.Name("TradeDate").Format("yyyy-MM-dd"));
 
@@ -46,7 +46,7 @@ Csv.Write<Trade>().WithMap(tradeMap).ToFile("out.csv", trades);
 
 // Inline convenience (read-only shorthand, builds CsvMap<T> internally)
 foreach (var trade in Csv.Read<Trade>()
-    .Map(t => t.Symbol, col => col.Name("Ticker").Required())
+    .Map(t => t.Symbol, col => col.Name("Ticker").NotNull())
     .FromFile("trades.csv", out var bytes2))
 {
     Console.WriteLine(trade.Symbol);
@@ -57,7 +57,7 @@ public class TradeMap : CsvMap<Trade>
 {
     public TradeMap()
     {
-        Map(t => t.Symbol, col => col.Name("Ticker").Required().MaxLength(10));
+        Map(t => t.Symbol, col => col.Name("Ticker").NotNull().MaxLength(10));
         Map(t => t.Price, col => col.Index(2).Range(0, 99999));
     }
 }
@@ -71,7 +71,7 @@ foreach (var trade in Csv.Read<Trade>().WithMap(new TradeMap()).FromFile("trades
 
 ```csharp
 var empMap = new FixedWidthMap<Employee>()
-    .Map(e => e.Id, col => col.Start(0).Length(5).Required())
+    .Map(e => e.Id, col => col.Start(0).Length(5).NotNull())
     .Map(e => e.Name, col => col.Start(5).Length(30).NotEmpty())
     .Map(e => e.Salary, col => col.Start(35).Length(10).Alignment(FieldAlignment.Right));
 
@@ -107,7 +107,7 @@ public class CsvColumnBuilder
     public CsvColumnBuilder Format(string format);
 
     // Validation
-    public CsvColumnBuilder Required();
+    public CsvColumnBuilder NotNull();
     public CsvColumnBuilder NotEmpty();
     public CsvColumnBuilder MaxLength(int length);
     public CsvColumnBuilder MinLength(int length);
@@ -134,7 +134,7 @@ public class FixedWidthColumnBuilder
     public FixedWidthColumnBuilder Format(string format);
 
     // Validation
-    public FixedWidthColumnBuilder Required();
+    public FixedWidthColumnBuilder NotNull();
     public FixedWidthColumnBuilder NotEmpty();
     public FixedWidthColumnBuilder MaxLength(int length);
     public FixedWidthColumnBuilder MinLength(int length);
@@ -169,7 +169,7 @@ public readonly struct CsvPropertyDescriptor<T>(
     string name,
     int columnIndex,
     CsvPropertySetter<T> setter,
-    bool isRequired = false,
+    bool isNotNull = false,
     CsvPropertyValidation? validation = null)
 ```
 
@@ -197,7 +197,7 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
     char padChar,
     FieldAlignment alignment,
     FixedWidthPropertySetter<T> setter,
-    bool isRequired = false,
+    bool isNotNull = false,
     FixedWidthPropertyValidation? validation = null)
 ```
 
@@ -312,7 +312,7 @@ public FixedWidthWriterBuilder<T> WithMap(FixedWidthMap<T> map);
 
 Same `ValidationError` struct used across all paths (source-gen and fluent map).
 
-**Note:** The CSV descriptor binder currently throws on parse failures (e.g. non-numeric text in an `int` field) rather than collecting them as errors. This is pre-existing behavior. The new validation checks (Required, NotEmpty, MaxLength, etc.) run *after* successful parsing and collect errors into the `errors` list. Parse failures continue to throw. This matches the existing source-generated binder behavior for the descriptor path.
+**Note:** The CSV descriptor binder currently throws on parse failures (e.g. non-numeric text in an `int` field) rather than collecting them as errors. This is pre-existing behavior. The new validation checks (NotNull, NotEmpty, MaxLength, etc.) run *after* successful parsing and collect errors into the `errors` list. Parse failures continue to throw. This matches the existing source-generated binder behavior for the descriptor path.
 
 ## Breaking Changes
 

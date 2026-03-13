@@ -115,11 +115,11 @@ public class CsvColumnBuilderTests
     }
 
     [Fact]
-    public void Required_SetsFlag()
+    public void NotNull_SetsFlag()
     {
         var builder = new CsvColumnBuilder();
-        builder.Required();
-        Assert.True(builder.IsRequired);
+        builder.NotNull();
+        Assert.True(builder.IsNotNull);
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public class CsvColumnBuilderTests
     public void FluentChaining_ReturnsThis()
     {
         var builder = new CsvColumnBuilder();
-        var result = builder.Name("A").Index(0).Format("F2").Required().NotEmpty()
+        var result = builder.Name("A").Index(0).Format("F2").NotNull().NotEmpty()
             .MaxLength(10).MinLength(1).Range(0, 99).Pattern(@"\w+");
         Assert.Same(builder, result);
     }
@@ -184,7 +184,7 @@ public sealed class CsvColumnBuilder
     public string? FormatString { get; private set; }
 
     /// <summary>Gets whether the column is required.</summary>
-    public bool IsRequired { get; private set; }
+    public bool IsNotNull { get; private set; }
 
     // Validation state
     private bool notEmpty;
@@ -205,7 +205,7 @@ public sealed class CsvColumnBuilder
     public CsvColumnBuilder Format(string format) { FormatString = format; return this; }
 
     /// <summary>Marks the column as required (non-null value).</summary>
-    public CsvColumnBuilder Required() { IsRequired = true; return this; }
+    public CsvColumnBuilder NotNull() { IsNotNull = true; return this; }
 
     /// <summary>Requires the string value to be non-empty and non-whitespace.</summary>
     public CsvColumnBuilder NotEmpty() { notEmpty = true; return this; }
@@ -278,7 +278,7 @@ public readonly struct CsvPropertyDescriptor<T>(
     string name,
     int columnIndex,
     CsvPropertySetter<T> setter,
-    bool isRequired = false)
+    bool isNotNull = false)
 ```
 to:
 ```csharp
@@ -286,11 +286,11 @@ public readonly struct CsvPropertyDescriptor<T>(
     string name,
     int columnIndex,
     CsvPropertySetter<T> setter,
-    bool isRequired = false,
+    bool isNotNull = false,
     CsvPropertyValidation? validation = null)
 ```
 
-Add a new property after `IsRequired`:
+Add a new property after `IsNotNull`:
 ```csharp
 /// <summary>Gets the validation rules for this property, or null if none configured.</summary>
 public CsvPropertyValidation? Validation { get; } = validation;
@@ -301,8 +301,8 @@ Update the header-based constructor (line 43-48) to pass `validation: null`:
 public CsvPropertyDescriptor(
     string name,
     CsvPropertySetter<T> setter,
-    bool isRequired = false)
-    : this(name, -1, setter, isRequired, validation: null)
+    bool isNotNull = false)
+    : this(name, -1, setter, isNotNull, validation: null)
 {
 }
 ```
@@ -313,7 +313,7 @@ resolvedProperties[i] = new CsvPropertyDescriptor<T>(
     prop.Name,
     columnIndices[i],
     prop.Setter,
-    prop.IsRequired,
+    prop.IsNotNull,
     prop.Validation);
 ```
 
@@ -590,7 +590,7 @@ Expected: FAIL — `CsvMap<T>` does not exist.
 Key implementation details:
 - `CsvMap<T> where T : new()` class with `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` attributes
 - Internal `List<MappedProperty>` storing per-property config
-- `MappedProperty` record: `PropertyName`, `PropertyInfo`, `HeaderName`, `ColumnIndex`, `FormatString`, `IsRequired`, `CsvPropertyValidation?`
+- `MappedProperty` record: `PropertyName`, `PropertyInfo`, `HeaderName`, `ColumnIndex`, `FormatString`, `IsNotNull`, `CsvPropertyValidation?`
 - `Map<TProperty>(Expression<Func<T, TProperty>> property, Action<CsvColumnBuilder>? configure = null)`:
   - Extract `PropertyInfo` from expression via `((MemberExpression)lambda.Body).Member`
   - Create `CsvColumnBuilder`, call configure lambda
@@ -903,7 +903,7 @@ git commit -m "feat: add FixedWidthPropertyValidation type"
 Mirror `CsvColumnBuilder` with these differences:
 - **Remove:** `Name()`, `Index()` (FixedWidth uses positional layout, not headers)
 - **Add:** `Start(int)`, `Length(int)`, `End(int)`, `PadChar(char)`, `Alignment(FieldAlignment)`, `Format(string)`
-- **Keep:** All validation methods identical (`NotEmpty()`, `MaxLength()`, `MinLength()`, `Range()`, `Pattern()`, `Required()`)
+- **Keep:** All validation methods identical (`NotEmpty()`, `MaxLength()`, `MinLength()`, `Range()`, `Pattern()`, `NotNull()`)
 
 `End` semantics: exclusive end position. `End` is an alternative to `Length`. If both `Length` and `End` are set, `End` takes precedence. Compute `Length = End - Start`.
 
@@ -915,7 +915,7 @@ Properties exposed (for `FixedWidthMap` to read):
 - `FieldPadChar` (char?) — set via `PadChar()`
 - `FieldAlignment` (FieldAlignment?) — set via `Alignment()`
 - `FormatString` (string?) — set via `Format()`
-- `IsRequired` (bool) — set via `Required()`
+- `IsNotNull` (bool) — set via `NotNull()`
 - `BuildValidation()` → `FixedWidthPropertyValidation?`
 
 - [ ] **Step 1: Write tests**
@@ -957,7 +957,7 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
     char padChar,
     FieldAlignment alignment,
     FixedWidthPropertySetter<T> setter,
-    bool isRequired = false)
+    bool isNotNull = false)
 ```
 
 Change to:
@@ -969,7 +969,7 @@ public readonly struct FixedWidthPropertyDescriptor<T>(
     char padChar,
     FieldAlignment alignment,
     FixedWidthPropertySetter<T> setter,
-    bool isRequired = false,
+    bool isNotNull = false,
     FixedWidthPropertyValidation? validation = null)
 ```
 
@@ -1052,7 +1052,7 @@ Same pattern as Task 5 but produces `FixedWidthRecordDescriptor<T>` for reading 
 - `padChar` ← from `FixedWidthColumnBuilder.FieldPadChar ?? ' '`
 - `alignment` ← from `FixedWidthColumnBuilder.FieldAlignment ?? FieldAlignment.Left`
 - `setter` ← built same way as CsvMap (expression tree + type parser)
-- `isRequired` ← from builder
+- `isNotNull` ← from builder
 - `validation` ← from builder
 
 The setter for FixedWidth uses `FixedWidthPropertySetter<T>` which has the same signature as `CsvPropertySetter<T>`: `(ref T instance, ReadOnlySpan<char> value, CultureInfo culture)`. Reuse the same setter factory approach from Task 5.

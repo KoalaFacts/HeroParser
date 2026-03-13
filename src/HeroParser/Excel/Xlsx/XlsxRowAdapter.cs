@@ -63,6 +63,19 @@ internal static class XlsxRowAdapter
     }
 
     /// <summary>
+    /// Ensures the char buffer and column-ends array are large enough for the given cells,
+    /// growing them if necessary.
+    /// </summary>
+    public static void EnsureBuffers(string[] cells, ref char[] buffer, ref int[] columnEnds)
+    {
+        int bufferSize = CalculateBufferSize(cells) + 1;
+        if (buffer.Length < bufferSize)
+            buffer = new char[bufferSize];
+        if (columnEnds.Length < cells.Length + 1)
+            columnEnds = new int[cells.Length + 1];
+    }
+
+    /// <summary>
     /// Calculates the minimum buffer size needed for the given cells.
     /// </summary>
     public static int CalculateBufferSize(string[] cells)

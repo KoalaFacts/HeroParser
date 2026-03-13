@@ -19,7 +19,10 @@ internal sealed class XlsxStylesheet
         19, // h:mm:ss AM/PM
         20, // h:mm
         21, // h:mm:ss
-        22  // m/d/yyyy h:mm
+        22, // m/d/yyyy h:mm
+        45, // mm:ss
+        46, // [h]:mm:ss
+        47  // mm:ss.0
     ];
 
     private readonly bool[] dateStyleFlags;
@@ -48,8 +51,7 @@ internal sealed class XlsxStylesheet
         if (stream is null)
             return new XlsxStylesheet([]);
 
-        var settings = new XmlReaderSettings { IgnoreWhitespace = true };
-        using var reader = XmlReader.Create(stream, settings);
+        using var reader = XmlReader.Create(stream, XlsxXml.CreateReaderSettings());
 
         // Step 1: Parse custom number formats from <numFmts>
         var customFormats = new Dictionary<int, string>();

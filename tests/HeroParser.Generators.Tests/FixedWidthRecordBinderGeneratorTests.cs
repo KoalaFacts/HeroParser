@@ -367,6 +367,44 @@ public class FixedWidthRecordBinderGeneratorTests
 
     [Fact]
     [Trait("Category", "Unit")]
+    public void Generator_WithWriteFormatAttribute_EmitsWriteFormatInWriter()
+    {
+        var source = """
+            using System;
+            using HeroParser;
+
+            namespace TestNamespace;
+
+            [GenerateBinder]
+            public class WriteFormatRecord
+            {
+                [PositionalMap(Start = 0, Length = 12)]
+                [Parse(Format = "yyyy-MM-dd")]
+                [Format(WriteFormat = "dd/MM/yyyy")]
+                public DateTime Date { get; set; }
+
+                [PositionalMap(Start = 12, Length = 10)]
+                [Parse(Format = "N2")]
+                [Format(WriteFormat = "F4")]
+                public decimal Amount { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+
+        // Writer template should use WriteFormat values
+        Assert.Contains("dd/MM/yyyy", allGeneratedCode);
+        Assert.Contains("F4", allGeneratedCode);
+        // Read-side binder should use Parse Format values
+        Assert.Contains("yyyy-MM-dd", allGeneratedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
     public void Generator_GeneratedBinder_RegistersWithFactory()
     {
         var source = """

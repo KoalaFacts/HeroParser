@@ -101,7 +101,7 @@ var result = Excel.Read()
 using var reader = Excel.CreateDataReader("data.xlsx");
 ```
 
-Key files in `src/HeroParser/Excels/` (internal namespace uses `Excels` to avoid conflict with the `Excel` static class).
+Key files in `src/HeroParser/Excel/` (internal namespace uses `HeroParser.Excels` to avoid conflict with the `Excel` static class).
 
 ## Multi-Schema CSV Parsing
 Supports mapping rows to different record types via a discriminator column.

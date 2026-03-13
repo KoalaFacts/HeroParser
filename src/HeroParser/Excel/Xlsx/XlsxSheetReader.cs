@@ -11,6 +11,7 @@ internal sealed class XlsxSheetReader : IDisposable
     private readonly XmlReader reader;
     private readonly XlsxSharedStrings sharedStrings;
     private readonly XlsxStylesheet stylesheet;
+    private readonly List<(int ColumnIndex, string Value)> cellBuffer = [];
     private bool inSheetData;
     private bool finished;
 
@@ -19,8 +20,7 @@ internal sealed class XlsxSheetReader : IDisposable
     /// </summary>
     public XlsxSheetReader(Stream sheetStream, XlsxSharedStrings sharedStrings, XlsxStylesheet stylesheet)
     {
-        var settings = new XmlReaderSettings { IgnoreWhitespace = true };
-        reader = XmlReader.Create(sheetStream, settings);
+        reader = XmlReader.Create(sheetStream, XlsxXml.CreateReaderSettings());
         this.sharedStrings = sharedStrings;
         this.stylesheet = stylesheet;
     }
@@ -91,7 +91,7 @@ internal sealed class XlsxSheetReader : IDisposable
         if (reader.IsEmptyElement)
             return [];
 
-        var cells = new List<(int ColumnIndex, string Value)>();
+        cellBuffer.Clear();
         int maxColumnIndex = -1;
 
         // Use ReadSubtree to safely iterate cells within this row
@@ -106,26 +106,26 @@ internal sealed class XlsxSheetReader : IDisposable
                 var typeAttr = rowReader.GetAttribute("t");
                 var styleAttr = rowReader.GetAttribute("s");
 
-                int columnIndex = cellRef is not null ? ParseColumnIndex(cellRef) : cells.Count;
+                int columnIndex = cellRef is not null ? ParseColumnIndex(cellRef) : cellBuffer.Count;
                 var cellType = ParseCellType(typeAttr);
                 int styleIndex = styleAttr is not null && int.TryParse(styleAttr, out int si) ? si : -1;
 
                 var value = ReadCellValue(rowReader, cellType, styleIndex);
 
-                cells.Add((columnIndex, value));
+                cellBuffer.Add((columnIndex, value));
                 if (columnIndex > maxColumnIndex)
                     maxColumnIndex = columnIndex;
             }
         }
 
-        if (cells.Count == 0)
+        if (cellBuffer.Count == 0)
             return [];
 
         // Build the result array, filling sparse gaps with empty strings
         var result = new string[maxColumnIndex + 1];
         Array.Fill(result, "");
 
-        foreach (var (columnIndex, value) in cells)
+        foreach (var (columnIndex, value) in cellBuffer)
         {
             result[columnIndex] = value;
         }

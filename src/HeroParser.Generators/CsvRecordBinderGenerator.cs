@@ -35,10 +35,6 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         "HeroParser.TabularMapAttribute"
     ];
 
-    private static readonly string[] parseAttributeNames = ["HeroParser.ParseAttribute"];
-    private static readonly string[] validateAttributeNames = ["HeroParser.ValidateAttribute"];
-    private static readonly string[] formatAttributeNames = ["HeroParser.FormatAttribute"];
-
 #pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
     private static readonly DiagnosticDescriptor unsupportedPropertyTypeDiagnostic = new(
         "HERO001",
@@ -875,7 +871,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine($"typeof({member.TypeofTypeName}),");
             builder.AppendLine($"\"{member.HeaderName}\",");
             builder.AppendLine(member.AttributeIndex is null ? "null," : $"{member.AttributeIndex},");
-            builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
+            var writerFormat = member.WriteFormat ?? member.Format;
+            builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
             builder.AppendLine($"{member.GetterFactory},");
             builder.AppendLine(member.ExcludeIfAllEmpty ? "true)," : "false),");
             builder.Unindent();
@@ -929,7 +926,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
             // [Parse] — Format
             string? format = null;
-            var parseAttribute = GetFirstMatchingAttribute(property, parseAttributeNames);
+            var parseAttribute = GetFirstMatchingAttribute(property, ParseAttributeNames);
             if (parseAttribute is not null)
             {
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
@@ -954,7 +951,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             double validationRangeMax = double.NaN;
             string? validationPattern = null;
             int validationPatternTimeoutMs = 1000;
-            var validateAttribute = GetFirstMatchingAttribute(property, validateAttributeNames);
+            var validateAttribute = GetFirstMatchingAttribute(property, ValidateAttributeNames);
             if (validateAttribute is not null)
             {
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
@@ -983,9 +980,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 #pragma warning restore IDE0010
             }
 
-            // [Format] — ExcludeIfAllEmpty (writer-side)
+            // [Format] — WriteFormat, ExcludeIfAllEmpty (writer-side)
             bool excludeIfAllEmpty = false;
-            var formatAttribute = GetFirstMatchingAttribute(property, formatAttributeNames);
+            string? writeFormat = null;
+            var formatAttribute = GetFirstMatchingAttribute(property, FormatAttributeNames);
             if (formatAttribute is not null)
             {
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
@@ -993,6 +991,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 {
                     switch (arg.Key)
                     {
+                        case "WriteFormat" when arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf):
+                            writeFormat = wf; break;
                         case "ExcludeIfAllEmpty" when arg.Value.Value is bool e:
                             excludeIfAllEmpty = e; break;
                     }
@@ -1014,6 +1014,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var typeofTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var headerLiteral = EscapeString(headerName);
             var formatLiteral = format != null ? EscapeString(format) : null;
+            var writeFormatLiteral = writeFormat != null ? EscapeString(writeFormat) : null;
 
             var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
             var isReadOnlyMemoryChar = IsReadOnlyMemoryChar(property.Type);
@@ -1071,6 +1072,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 validationRangeMax,
                 validationPattern,
                 validationPatternTimeoutMs,
+                writeFormatLiteral,
                 excludeIfAllEmpty));
         }
 
@@ -1139,5 +1141,6 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         string? ValidationPattern,
         int ValidationPatternTimeoutMs,  // default 1000
                                          // Writer fields:
+        string? WriteFormat,
         bool ExcludeIfAllEmpty);
 }

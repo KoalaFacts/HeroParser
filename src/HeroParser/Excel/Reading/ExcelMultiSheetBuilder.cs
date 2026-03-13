@@ -81,6 +81,8 @@ public sealed class ExcelMultiSheetBuilder
         }
 
         var results = new List<T>();
+        char[] buffer = [];
+        int[] columnEnds = [];
 
         while (true)
         {
@@ -88,9 +90,7 @@ public sealed class ExcelMultiSheetBuilder
             if (cells is null)
                 break;
 
-            int bufferSize = XlsxRowAdapter.CalculateBufferSize(cells);
-            var buffer = new char[bufferSize + 1];
-            var columnEnds = new int[cells.Length + 1];
+            XlsxRowAdapter.EnsureBuffers(cells, ref buffer, ref columnEnds);
             var csvRow = XlsxRowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber, buffer, columnEnds);
 
             if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record))

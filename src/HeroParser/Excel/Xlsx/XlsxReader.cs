@@ -26,7 +26,12 @@ internal sealed class XlsxReader : IDisposable
             sharedStrings = ParseSharedStrings(archive);
             stylesheet = ParseStylesheet(archive);
         }
-        catch (Exception ex) when (ex is not ExcelException)
+        catch (ExcelException)
+        {
+            archive?.Dispose();
+            throw;
+        }
+        catch (Exception ex)
         {
             archive?.Dispose();
             throw new ExcelException("Failed to open .xlsx file: " + ex.Message, ex);

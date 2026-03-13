@@ -88,10 +88,9 @@ internal sealed class XlsxWorkbook
             return [];
 
         var relationships = new Dictionary<string, string>(StringComparer.Ordinal);
-        var settings = new XmlReaderSettings { IgnoreWhitespace = true };
 
         using var stream = relsEntry.Open();
-        using var reader = XmlReader.Create(stream, settings);
+        using var reader = XmlReader.Create(stream, XlsxXml.CreateReaderSettings());
 
         while (reader.Read())
         {
@@ -112,11 +111,10 @@ internal sealed class XlsxWorkbook
         var workbookEntry = archive.GetEntry("xl/workbook.xml")
             ?? throw new ExcelException("Missing xl/workbook.xml in .xlsx archive.");
 
-        var settings = new XmlReaderSettings { IgnoreWhitespace = true };
         var sheets = new List<(string Name, string RId)>();
 
         using var stream = workbookEntry.Open();
-        using var reader = XmlReader.Create(stream, settings);
+        using var reader = XmlReader.Create(stream, XlsxXml.CreateReaderSettings());
 
         while (reader.Read())
         {

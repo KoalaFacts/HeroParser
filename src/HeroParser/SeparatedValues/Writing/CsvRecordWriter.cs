@@ -992,7 +992,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             var parseAttr = property.GetCustomAttribute<ParseAttribute>();
             var formatAttr = property.GetCustomAttribute<FormatAttribute>();
             var headerName = !string.IsNullOrWhiteSpace(tabularMap?.Name) ? tabularMap.Name : property.Name;
-            var format = parseAttr?.Format;
+            var format = formatAttr?.WriteFormat ?? parseAttr?.Format;
 
             accessors[i] = new PropertyAccessor(
                 property.Name,

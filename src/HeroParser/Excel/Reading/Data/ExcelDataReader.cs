@@ -295,11 +295,28 @@ public sealed class ExcelDataReader : DbDataReader
         table.Columns.Add(SchemaTableColumn.ColumnName, typeof(string));
         table.Columns.Add(SchemaTableColumn.ColumnOrdinal, typeof(int));
         table.Columns.Add(SchemaTableColumn.ColumnSize, typeof(int));
+        table.Columns.Add(SchemaTableColumn.NumericPrecision, typeof(short));
+        table.Columns.Add(SchemaTableColumn.NumericScale, typeof(short));
         table.Columns.Add(SchemaTableColumn.DataType, typeof(Type));
+        table.Columns.Add(SchemaTableColumn.ProviderType, typeof(int));
+        table.Columns.Add(SchemaTableColumn.IsLong, typeof(bool));
         table.Columns.Add(SchemaTableColumn.AllowDBNull, typeof(bool));
-        table.Columns.Add(SchemaTableColumn.IsKey, typeof(bool));
+        table.Columns.Add(SchemaTableOptionalColumn.IsReadOnly, typeof(bool));
+        table.Columns.Add(SchemaTableOptionalColumn.IsRowVersion, typeof(bool));
         table.Columns.Add(SchemaTableColumn.IsUnique, typeof(bool));
+        table.Columns.Add(SchemaTableColumn.IsKey, typeof(bool));
+        table.Columns.Add(SchemaTableOptionalColumn.IsAutoIncrement, typeof(bool));
+        table.Columns.Add(SchemaTableOptionalColumn.BaseCatalogName, typeof(string));
+        table.Columns.Add(SchemaTableColumn.BaseSchemaName, typeof(string));
+        table.Columns.Add(SchemaTableColumn.BaseTableName, typeof(string));
         table.Columns.Add(SchemaTableColumn.BaseColumnName, typeof(string));
+        table.Columns.Add(SchemaTableOptionalColumn.AutoIncrementSeed, typeof(long));
+        table.Columns.Add(SchemaTableOptionalColumn.AutoIncrementStep, typeof(long));
+        table.Columns.Add(SchemaTableOptionalColumn.DefaultValue, typeof(object));
+        table.Columns.Add(SchemaTableOptionalColumn.Expression, typeof(string));
+        table.Columns.Add(SchemaTableOptionalColumn.ColumnMapping, typeof(MappingType));
+        table.Columns.Add(SchemaTableOptionalColumn.BaseTableNamespace, typeof(string));
+        table.Columns.Add(SchemaTableOptionalColumn.BaseColumnNamespace, typeof(string));
 
         for (int i = 0; i < fieldCount; i++)
         {
@@ -307,11 +324,28 @@ public sealed class ExcelDataReader : DbDataReader
             row[SchemaTableColumn.ColumnName] = columnNames[i];
             row[SchemaTableColumn.ColumnOrdinal] = i;
             row[SchemaTableColumn.ColumnSize] = -1;
+            row[SchemaTableColumn.NumericPrecision] = DBNull.Value;
+            row[SchemaTableColumn.NumericScale] = DBNull.Value;
             row[SchemaTableColumn.DataType] = typeof(string);
+            row[SchemaTableColumn.ProviderType] = DBNull.Value;
+            row[SchemaTableColumn.IsLong] = false;
             row[SchemaTableColumn.AllowDBNull] = true;
-            row[SchemaTableColumn.IsKey] = false;
+            row[SchemaTableOptionalColumn.IsReadOnly] = false;
+            row[SchemaTableOptionalColumn.IsRowVersion] = false;
             row[SchemaTableColumn.IsUnique] = false;
+            row[SchemaTableColumn.IsKey] = false;
+            row[SchemaTableOptionalColumn.IsAutoIncrement] = false;
+            row[SchemaTableOptionalColumn.BaseCatalogName] = DBNull.Value;
+            row[SchemaTableColumn.BaseSchemaName] = DBNull.Value;
+            row[SchemaTableColumn.BaseTableName] = string.Empty;
             row[SchemaTableColumn.BaseColumnName] = columnNames[i];
+            row[SchemaTableOptionalColumn.AutoIncrementSeed] = 0L;
+            row[SchemaTableOptionalColumn.AutoIncrementStep] = 1L;
+            row[SchemaTableOptionalColumn.DefaultValue] = DBNull.Value;
+            row[SchemaTableOptionalColumn.Expression] = DBNull.Value;
+            row[SchemaTableOptionalColumn.ColumnMapping] = MappingType.Element;
+            row[SchemaTableOptionalColumn.BaseTableNamespace] = string.Empty;
+            row[SchemaTableOptionalColumn.BaseColumnNamespace] = string.Empty;
             table.Rows.Add(row);
         }
 

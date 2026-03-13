@@ -16,6 +16,9 @@ public class XlsxStylesheetTests
     [InlineData(20)]
     [InlineData(21)]
     [InlineData(22)]
+    [InlineData(45)]
+    [InlineData(46)]
+    [InlineData(47)]
     public void IsDateFormat_BuiltInDateFormatIds_ReturnsTrue(int numFmtId)
     {
         // Stylesheet with a single cellXf referencing the given built-in format ID

@@ -446,6 +446,7 @@ public sealed class FixedWidthRecordWriter<T>
         {
             var (prop, attr) = props[i];
             var parseAttr = prop.GetCustomAttribute<ParseAttribute>();
+            var formatAttr = prop.GetCustomAttribute<FormatAttribute>();
             fields[i] = new FieldDefinition
             {
                 Name = prop.Name,
@@ -454,7 +455,7 @@ public sealed class FixedWidthRecordWriter<T>
                 Length = attr.Length,
                 Alignment = attr.Alignment,
                 PadChar = attr.PadChar == '\0' ? ' ' : attr.PadChar,
-                Format = parseAttr?.Format,
+                Format = formatAttr?.WriteFormat ?? parseAttr?.Format,
                 Getter = BuildGetter(prop)
             };
         }

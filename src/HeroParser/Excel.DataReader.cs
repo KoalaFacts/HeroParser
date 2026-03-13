@@ -22,12 +22,20 @@ public static partial class Excel
         ArgumentNullException.ThrowIfNull(stream);
 
         var xlsxReader = new XlsxReader(stream);
-        var sheet = sheetName is not null
-            ? xlsxReader.Workbook.GetSheetByName(sheetName)
-            : xlsxReader.Workbook.GetFirstSheet();
-        var sheetReader = xlsxReader.OpenSheet(sheet);
+        try
+        {
+            var sheet = sheetName is not null
+                ? xlsxReader.Workbook.GetSheetByName(sheetName)
+                : xlsxReader.Workbook.GetFirstSheet();
+            var sheetReader = xlsxReader.OpenSheet(sheet);
 
-        return new ExcelDataReader(xlsxReader, sheetReader, hasHeaderRow, skipRows);
+            return new ExcelDataReader(xlsxReader, sheetReader, hasHeaderRow, skipRows);
+        }
+        catch
+        {
+            xlsxReader.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -47,6 +55,14 @@ public static partial class Excel
         ArgumentException.ThrowIfNullOrEmpty(path);
 
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return CreateDataReader(stream, sheetName, hasHeaderRow, skipRows);
+        try
+        {
+            return CreateDataReader(stream, sheetName, hasHeaderRow, skipRows);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
     }
 }

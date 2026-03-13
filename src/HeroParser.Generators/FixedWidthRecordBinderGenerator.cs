@@ -35,9 +35,6 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         "HeroParser.PositionalMapAttribute"
     ];
 
-    private static readonly string[] parseAttributeNames = ["HeroParser.ParseAttribute"];
-    private static readonly string[] validateAttributeNames = ["HeroParser.ValidateAttribute"];
-
 #pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
     private static readonly DiagnosticDescriptor unsupportedPropertyTypeDiagnostic = new(
         "HERO002",
@@ -1548,7 +1545,8 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine($"{member.Length},");
             builder.AppendLine($"{FIELD_ALIGNMENT_TYPE}.{member.Alignment},");
             builder.AppendLine($"'{EscapeChar(member.PadChar)}',");
-            builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
+            var writerFormat = member.WriteFormat ?? member.Format;
+            builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
             builder.AppendLine($"{member.GetterFactory}),");
             builder.Unindent();
         }
@@ -1617,7 +1615,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
             // [Parse] — Format
             string? format = null;
-            var parseAttribute = GetFirstMatchingAttribute(property, parseAttributeNames);
+            var parseAttribute = GetFirstMatchingAttribute(property, ParseAttributeNames);
             if (parseAttribute is not null)
             {
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
@@ -1633,6 +1631,23 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 #pragma warning restore IDE0010
             }
 
+            // [Format] — WriteFormat (writer-side)
+            string? writeFormat = null;
+            var formatAttribute = GetFirstMatchingAttribute(property, FormatAttributeNames);
+            if (formatAttribute is not null)
+            {
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+                foreach (var arg in formatAttribute.NamedArguments)
+                {
+                    switch (arg.Key)
+                    {
+                        case "WriteFormat" when arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf):
+                            writeFormat = wf; break;
+                    }
+                }
+#pragma warning restore IDE0010
+            }
+
             // [Validate] — NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern, PatternTimeoutMs
             bool validationRequired = false;
             bool validationNotEmpty = false;
@@ -1642,7 +1657,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             double validationRangeMax = double.NaN;
             string? validationPattern = null;
             int validationPatternTimeoutMs = 1000;
-            var validateAttribute = GetFirstMatchingAttribute(property, validateAttributeNames);
+            var validateAttribute = GetFirstMatchingAttribute(property, ValidateAttributeNames);
             if (validateAttribute is not null)
             {
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
@@ -1684,6 +1699,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             var typeName = property.Type.ToDisplayString(FullyQualifiedFormatWithNullable);
             var typeofTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var formatLiteral = format != null ? EscapeString(format) : null;
+            var writeFormatLiteral = writeFormat != null ? EscapeString(writeFormat) : null;
 
             var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
 
@@ -1731,6 +1747,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 typeName,
                 typeofTypeName,
                 formatLiteral,
+                writeFormatLiteral,
                 setterFactory,
                 getterFactory,
                 baseTypeName,
@@ -1812,6 +1829,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         string TypeName,
         string TypeofTypeName,
         string? Format,
+        string? WriteFormat,
         string? SetterFactory,
         string? GetterFactory,
         string BaseTypeName,

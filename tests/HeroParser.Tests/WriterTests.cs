@@ -911,6 +911,137 @@ public class WriterTests
     }
 
     #endregion
-}
 
+    #region WriteFormat Tests
+
+    [GenerateBinder]
+    internal class WriteFormatRecord
+    {
+        [TabularMap(Name = "Date")]
+        [Parse(Format = "yyyy-MM-dd")]
+        [Format(WriteFormat = "dd/MM/yyyy")]
+        public DateTime Date { get; set; }
+
+        [TabularMap(Name = "Amount")]
+        [Parse(Format = "N2")]
+        [Format(WriteFormat = "F4")]
+        public decimal Amount { get; set; }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void WriteFormat_OverridesParseFormat_ForCsvWriter()
+    {
+        var records = new[]
+        {
+            new WriteFormatRecord
+            {
+                Date = new DateTime(2026, 3, 14),
+                Amount = 42.5m
+            }
+        };
+
+        var csv = Csv.WriteToText(records);
+
+        // WriteFormat "dd/MM/yyyy" should be used instead of Parse "yyyy-MM-dd"
+        Assert.Contains("14/03/2026", csv);
+        Assert.DoesNotContain("2026-03-14", csv);
+        // WriteFormat "F4" should be used instead of Parse "N2"
+        Assert.Contains("42.5000", csv);
+    }
+
+    [GenerateBinder]
+    internal class ParseOnlyFormatRecord
+    {
+        [TabularMap(Name = "Date")]
+        [Parse(Format = "yyyy-MM-dd")]
+        public DateTime Date { get; set; }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void WriteFormat_FallsBackToParseFormat_WhenWriteFormatNotSet()
+    {
+        var records = new[]
+        {
+            new ParseOnlyFormatRecord { Date = new DateTime(2026, 3, 14) }
+        };
+
+        var csv = Csv.WriteToText(records);
+
+        // Should fall back to Parse Format "yyyy-MM-dd"
+        Assert.Contains("2026-03-14", csv);
+    }
+
+    [Theory]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    [InlineData("en-US", "03/14/2026")]   // '/' separator stays '/'
+    [InlineData("de-DE", "03.14.2026")]   // '/' becomes '.' (German date separator)
+    public void WriteFormat_WithCulture_DateSeparatorChanges(
+        string cultureName, string expectedDate)
+    {
+        var records = new[]
+        {
+            new CultureWriteFormatRecord
+            {
+                Date = new DateTime(2026, 3, 14),
+                Amount = 42.5m
+            }
+        };
+
+        var options = new CsvWriteOptions
+        {
+            Culture = CultureInfo.GetCultureInfo(cultureName)
+        };
+
+        var csv = Csv.WriteToText(records, options);
+
+        Assert.Contains(expectedDate, csv);
+    }
+
+    [GenerateBinder]
+    internal class CultureWriteFormatRecord
+    {
+        [TabularMap(Name = "Date")]
+        [Format(WriteFormat = "MM/dd/yyyy")]
+        public DateTime Date { get; set; }
+
+        [TabularMap(Name = "Amount")]
+        [Format(WriteFormat = "F4")]
+        public decimal Amount { get; set; }
+    }
+
+    [Theory]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    [InlineData("en-US", "42,500.75")]
+    [InlineData("de-DE", "42.500,75")]
+    [InlineData("zh-CN", "42,500.75")]
+    public void WriteFormat_WithCulture_DecimalGroupSeparatorVaries(
+        string cultureName, string expectedAmount)
+    {
+        var records = new[]
+        {
+            new CultureDecimalRecord { Amount = 42500.75m }
+        };
+
+        var options = new CsvWriteOptions
+        {
+            Culture = CultureInfo.GetCultureInfo(cultureName)
+        };
+
+        var csv = Csv.WriteToText(records, options);
+
+        Assert.Contains(expectedAmount, csv);
+    }
+
+    [GenerateBinder]
+    internal class CultureDecimalRecord
+    {
+        [TabularMap(Name = "Amount")]
+        [Format(WriteFormat = "N2")]
+        public decimal Amount { get; set; }
+    }
+
+    #endregion
+}
 

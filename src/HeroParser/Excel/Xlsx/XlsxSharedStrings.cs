@@ -25,18 +25,29 @@ internal sealed class XlsxSharedStrings
     /// </summary>
     public static XlsxSharedStrings Parse(Stream stream)
     {
-        var settings = new XmlReaderSettings { IgnoreWhitespace = true };
-        using var reader = XmlReader.Create(stream, settings);
+        using var reader = XmlReader.Create(stream, XlsxXml.CreateReaderSettings());
 
-        var result = new List<string>();
+        // Pre-size from <sst uniqueCount="..."> if available
+        List<string>? result = null;
 
         while (reader.Read())
         {
+            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "sst")
+            {
+                var uniqueCountAttr = reader.GetAttribute("uniqueCount");
+                int capacity = uniqueCountAttr is not null && int.TryParse(uniqueCountAttr, out int uc) && uc > 0 ? uc : 0;
+                result = new List<string>(capacity);
+                continue;
+            }
+
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "si")
             {
+                result ??= [];
                 result.Add(ReadStringItem(reader.ReadSubtree()));
             }
         }
+
+        result ??= [];
 
         return new XlsxSharedStrings([.. result]);
     }

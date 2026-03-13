@@ -1,4 +1,4 @@
-namespace HeroParser.Excel.Core;
+namespace HeroParser.Excels.Core;
 
 /// <summary>
 /// Reports progress during Excel reading operations.

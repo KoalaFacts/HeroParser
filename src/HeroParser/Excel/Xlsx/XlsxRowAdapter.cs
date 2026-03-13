@@ -1,6 +1,6 @@
 using HeroParser.SeparatedValues.Reading.Rows;
 
-namespace HeroParser.Excel.Xlsx;
+namespace HeroParser.Excels.Xlsx;
 
 /// <summary>
 /// Adapts Excel row data (string arrays) into <see cref="CsvRow{T}">CsvRow&lt;char&gt;</see> for binder compatibility.

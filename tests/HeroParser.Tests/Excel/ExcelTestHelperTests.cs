@@ -1,4 +1,4 @@
-using HeroParser.Excel.Xlsx;
+using HeroParser.Excels.Xlsx;
 using HeroParser.Tests.Fixtures.Excel;
 using Xunit;
 

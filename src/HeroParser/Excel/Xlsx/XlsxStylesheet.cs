@@ -1,6 +1,6 @@
 using System.Xml;
 
-namespace HeroParser.Excel.Xlsx;
+namespace HeroParser.Excels.Xlsx;
 
 /// <summary>
 /// Parses the styles (xl/styles.xml) from an .xlsx file to detect date-formatted cells.

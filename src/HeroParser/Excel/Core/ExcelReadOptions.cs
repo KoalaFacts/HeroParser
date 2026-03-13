@@ -1,4 +1,4 @@
-namespace HeroParser.Excel.Core;
+namespace HeroParser.Excels.Core;
 
 /// <summary>
 /// Options for configuring Excel .xlsx reading behavior.

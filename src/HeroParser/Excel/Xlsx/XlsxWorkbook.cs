@@ -1,8 +1,8 @@
 using System.IO.Compression;
 using System.Xml;
-using HeroParser.Excel.Core;
+using HeroParser.Excels.Core;
 
-namespace HeroParser.Excel.Xlsx;
+namespace HeroParser.Excels.Xlsx;
 
 /// <summary>
 /// Parses workbook metadata (sheet names, indices, paths) from an .xlsx file.

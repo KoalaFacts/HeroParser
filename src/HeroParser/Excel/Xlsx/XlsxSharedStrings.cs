@@ -1,6 +1,6 @@
 using System.Xml;
 
-namespace HeroParser.Excel.Xlsx;
+namespace HeroParser.Excels.Xlsx;
 
 /// <summary>
 /// Parses the shared string table (xl/sharedStrings.xml) from an .xlsx file.

@@ -1,7 +1,7 @@
 using System.IO.Compression;
-using HeroParser.Excel.Core;
+using HeroParser.Excels.Core;
 
-namespace HeroParser.Excel.Xlsx;
+namespace HeroParser.Excels.Xlsx;
 
 /// <summary>
 /// Orchestrates reading of .xlsx files. Opens the ZIP archive, parses metadata,

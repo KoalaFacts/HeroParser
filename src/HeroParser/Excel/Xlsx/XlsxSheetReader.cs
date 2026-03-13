@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Xml;
 
-namespace HeroParser.Excel.Xlsx;
+namespace HeroParser.Excels.Xlsx;
 
 /// <summary>
 /// Streaming reader for a single Excel worksheet. Reads rows one at a time.

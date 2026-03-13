@@ -1,6 +1,6 @@
 using System.IO.Compression;
-using HeroParser.Excel.Core;
-using HeroParser.Excel.Xlsx;
+using HeroParser.Excels.Core;
+using HeroParser.Excels.Xlsx;
 using Xunit;
 
 namespace HeroParser.Tests.Excel;

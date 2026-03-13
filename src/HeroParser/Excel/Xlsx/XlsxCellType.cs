@@ -1,4 +1,4 @@
-namespace HeroParser.Excel.Xlsx;
+namespace HeroParser.Excels.Xlsx;
 
 /// <summary>
 /// Cell type as indicated by the 't' attribute in .xlsx cell elements.

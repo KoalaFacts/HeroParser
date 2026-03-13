@@ -1,4 +1,4 @@
-namespace HeroParser.Excel.Core;
+namespace HeroParser.Excels.Core;
 
 /// <summary>
 /// Exception thrown when an error occurs during Excel file processing.

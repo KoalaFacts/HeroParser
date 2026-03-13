@@ -63,6 +63,9 @@ namespace HeroParser;
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false, Inherited = true)]
 public sealed class PositionalMapAttribute : Attribute
 {
+    private int lengthValue;
+    private int endValue = -1;
+
     /// <summary>
     /// Zero-based starting position of the field in the record.
     /// </summary>
@@ -70,15 +73,23 @@ public sealed class PositionalMapAttribute : Attribute
 
     /// <summary>
     /// Length of the field in characters. If End is specified and Length is not,
-    /// length is calculated as End - Start.
+    /// length is calculated as End - Start. Length takes precedence over End.
     /// </summary>
-    public int Length { get; init; }
+    public int Length
+    {
+        get => lengthValue > 0 ? lengthValue : (endValue > Start ? endValue - Start : 0);
+        init => lengthValue = value;
+    }
 
     /// <summary>
     /// Zero-based ending position (exclusive). Alternative to Length.
     /// If both Length and End are specified, Length takes precedence.
     /// </summary>
-    public int End { get; init; }
+    public int End
+    {
+        get => endValue > 0 ? endValue : Start + lengthValue;
+        init => endValue = value;
+    }
 
     /// <summary>
     /// Padding character to trim. '\0' means use default from options.
@@ -91,6 +102,8 @@ public sealed class PositionalMapAttribute : Attribute
     public FieldAlignment Alignment { get; init; } = FieldAlignment.Left;
 }
 ```
+
+**Note:** `FieldAlignment` must be moved from `HeroParser.FixedWidths` to the root `HeroParser` namespace as part of this migration, since it is now referenced by a root-namespace attribute.
 
 #### `[Parse]` — read-side type conversion
 
@@ -171,15 +184,17 @@ public sealed class FormatAttribute : Attribute
     /// Format string for writing. Overrides [Parse].Format for write direction.
     /// When omitted, [Parse].Format is used for both read and write.
     /// </summary>
-    public string? Pattern { get; init; }
+    public string? WriteFormat { get; init; }
 
     /// <summary>
     /// When true, this column is excluded from output if all records have
-    /// null or empty string values for it.
+    /// null or empty string values for it. Replaces CsvColumnAttribute.ExcludeFromWriteIfAllEmpty.
     /// </summary>
     public bool ExcludeIfAllEmpty { get; init; }
 }
 ```
+
+**Note:** The `WriteFormat` property name avoids confusion with `[Validate].Pattern` (which is a regex). Writer code that previously read `CsvColumnAttribute.ExcludeFromWriteIfAllEmpty` must be updated to read `FormatAttribute.ExcludeIfAllEmpty` instead — this includes `CsvRecordWriter` and any source-generated writer code.
 
 #### `[GenerateBinder]` — source generator trigger
 
@@ -195,6 +210,27 @@ The source generator inspects properties on the decorated type:
 - Properties with `[PositionalMap]` → emit a positional binder (used by FixedWidth reader)
 - Properties with both → emit both binders
 
+#### Source generator attribute discovery
+
+The generators are `netstandard2.0` projects that discover attributes by fully-qualified string name (not by type reference). The following FQNs are the canonical names for v2:
+
+| Attribute | FQN |
+|---|---|
+| `[GenerateBinder]` | `HeroParser.GenerateBinderAttribute` |
+| `[TabularMap]` | `HeroParser.TabularMapAttribute` |
+| `[PositionalMap]` | `HeroParser.PositionalMapAttribute` |
+| `[Parse]` | `HeroParser.ParseAttribute` |
+| `[Validate]` | `HeroParser.ValidateAttribute` |
+| `[Format]` | `HeroParser.FormatAttribute` |
+
+All old FQNs (`HeroParser.SeparatedValues.Reading.Shared.CsvGenerateBinderAttribute`, `HeroParser.SeparatedValues.Reading.Shared.CsvColumnAttribute`, `HeroParser.FixedWidths.Records.Binding.FixedWidthGenerateBinderAttribute`, `HeroParser.FixedWidths.Records.Binding.FixedWidthColumnAttribute`, `HeroParser.CsvGenerateBinderAttribute`) are removed. The generators must no longer search for them.
+
+#### Multi-schema dispatcher migration
+
+The existing `CsvGenerateDispatcherAttribute` and `CsvSchemaMappingAttribute` must also be updated:
+- The multi-schema dispatcher generator currently searches for `CsvGenerateBinderAttribute` to find candidate types — it must be updated to search for `GenerateBinderAttribute` instead
+- The dispatcher and schema mapping attributes themselves can keep their `Csv`-prefixed names for now, as multi-schema dispatch is CSV-specific behavior (Excel multi-sheet is handled differently via `WithSheet<T>()`)
+
 ### Data Flow
 
 **Read path:** `Map → Parse → Validate → Property`
@@ -208,7 +244,7 @@ The source generator inspects properties on the decorated type:
 
 1. **Property** — read the value from the record
 2. **Validate** — check the same constraints (bidirectional enforcement)
-3. **Format** — serialize using `[Format].Pattern`, falling back to `[Parse].Format`
+3. **Format** — serialize using `[Format].WriteFormat`, falling back to `[Parse].Format`
 4. **Output** — write to the target format
 
 ### Example
@@ -226,7 +262,7 @@ public class Order
     [TabularMap(Name = "Amount")]
     [PositionalMap(Start = 10, Length = 12)]
     [Validate(RangeMin = 0)]
-    [Format(Pattern = "F2")]
+    [Format(WriteFormat = "F2")]
     public decimal Amount { get; set; }
 
     [TabularMap(Name = "Customer")]
@@ -295,6 +331,11 @@ List<Order> orders = result.Get<Order>();
 List<Customer> customers = result.Get<Customer>();
 ```
 
+**Multi-sheet result semantics:**
+- `Get<T>()` throws `InvalidOperationException` if `T` was not registered via `WithSheet<T>()`
+- Each type can only be registered once — calling `WithSheet<Order>("Sheet1").WithSheet<Order>("Sheet2")` is a compile-time or runtime error
+- Internal storage is keyed by `Type` — sheet name is used for lookup during reading, type is used for retrieval
+
 #### ExcelReadOptions
 
 ```csharp
@@ -312,6 +353,8 @@ public sealed record ExcelReadOptions
     public int ProgressIntervalRows { get; init; } = 1000;
 }
 ```
+
+**MaxRowCount behavior:** When `MaxRowCount` is exceeded, an `ExcelException` is thrown (same pattern as `CsvException` for CSV). Set to `int.MaxValue` to disable the limit. The builder exposes `WithMaxRowCount(int)` for override.
 
 #### Builder
 
@@ -371,11 +414,23 @@ All internal types are in `namespace HeroParser.Excel.Xlsx` and marked `internal
 
 Date detection: when a numeric cell's style references a date number format (built-in IDs 14-22, or custom patterns containing `y`, `m`, `d`, `h`, `s`), convert the OLE Automation date value to a DateTime string before passing to the binder.
 
+**OLE Automation date handling:**
+- Uses the 1900 date system (standard for Windows Excel). The 1904 date system (legacy Mac) is not supported.
+- Replicates the Lotus 123 leap year bug: Excel incorrectly treats 1900 as a leap year (serial 60 = Feb 29, 1900). Values ≤60 are adjusted by -1 day for correctness, values >60 use standard OLE Automation conversion.
+- Time-only values (fractional dates < 1.0) are converted to `TimeSpan` string representation.
+
+#### Row numbering in validation errors
+
+Excel validation errors report 1-based row numbers matching what users see in the Excel application. The row number accounts for `SkipRows` and the header row. For example, if `SkipRows = 2` and `HasHeaderRow = true`, the first data row is reported as row 4 (2 skipped + 1 header + 1 first data row).
+
 #### Binder integration
 
-Excel cell values are extracted as `string` text. The existing `ICsvBinder<char, T>` pipeline handles type conversion. This means:
+Excel cell values are extracted as `string` text and fed through the char-based binder path.
 
-- Source-generated binders work without modification (they already support char input)
+**Byte vs char binder path:** The source generators currently emit `ICsvBinder<byte, T>` (UTF-8 optimized). For char-based input (CSV from `string`/`char[]`, and now Excel), the existing `CsvCharToByteBinderAdapter` converts char input to UTF-8 bytes and delegates to the byte binder. Excel will use this same adapter pattern — no new binder interface or char-specific binder generation is needed.
+
+This means:
+- Source-generated byte binders are reused via `CsvCharToByteBinderAdapter` (same as CSV char path)
 - Descriptor-based (fluent mapping) binders work without modification
 - Custom type converters registered via options work without modification
 - Validation runs through the same `PropertyValidationRunner`
@@ -446,6 +501,12 @@ FixedWidths/Records/Binding/FixedWidthColumnAttribute.cs
 FixedWidths/Records/Binding/FixedWidthGenerateBinderAttribute.cs
 ```
 
+### Moved types (namespace change)
+
+```
+FixedWidths/FieldAlignment.cs → root HeroParser namespace (or Attributes/ folder)
+```
+
 ### Test structure
 
 ```
@@ -497,3 +558,6 @@ tests/HeroParser.Tests/Fixtures/Excel/       # .xlsx test fixtures
 - Formulas (read cached values only)
 - Styling, formatting, merged cells
 - Charts, images, pivot tables
+- Async Excel reading (deferred — `ZipArchive` + `XmlReader` async support can be added in a future release)
+- Per-property culture overrides in `[Parse]` (intentionally deferred to avoid attribute bloat; culture is set at the options level via `ExcelReadOptions.Culture` / `CsvRecordOptions.Culture`)
+- 1904 date system support (extremely rare in modern files)

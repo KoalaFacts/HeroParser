@@ -35,6 +35,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
 
     private readonly PropertyAccessor[] accessors;
     private readonly CsvWriteOptions writerOptions;
+    private readonly bool needsEmptyColumnScan;
 
     // Reusable arrays to eliminate per-record allocations
     private readonly object?[] valuesBuffer;
@@ -51,6 +52,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     {
         writerOptions = options ?? CsvWriteOptions.Default;
         accessors = propertyCache.GetOrAdd(typeof(T), BuildAccessors);
+        needsEmptyColumnScan = ComputeNeedsEmptyColumnScan();
 
         // Pre-allocate buffers based on accessor count
         int count = accessors.Length;
@@ -73,6 +75,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     {
         writerOptions = options;
         accessors = InstantiateAccessors(templates);
+        needsEmptyColumnScan = ComputeNeedsEmptyColumnScan();
 
         // Pre-allocate buffers based on accessor count
         int count = accessors.Length;
@@ -111,13 +114,15 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// <param name="AttributeIndex">Optional explicit column index.</param>
     /// <param name="Format">Optional format string for the value.</param>
     /// <param name="Getter">The getter delegate for extracting the value.</param>
+    /// <param name="ExcludeFromWriteIfAllEmpty">Whether to exclude this column from output when all values are empty.</param>
     public sealed record WriterTemplate(
         string MemberName,
         Type SourceType,
         string HeaderName,
         int? AttributeIndex,
         string? Format,
-        Func<T, object?> Getter);
+        Func<T, object?> Getter,
+        bool ExcludeFromWriteIfAllEmpty = false);
 
     private static PropertyAccessor[] InstantiateAccessors(IReadOnlyList<WriterTemplate> templates)
     {
@@ -129,6 +134,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                 template.MemberName,
                 template.HeaderName,
                 template.Format,
+                template.ExcludeFromWriteIfAllEmpty,
                 obj => template.Getter((T)obj));
         }
         return result;
@@ -151,7 +157,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// </summary>
     public void WriteRecords(CsvStreamWriter writer, IEnumerable<T> records, bool includeHeader = true)
     {
-        if (writerOptions.ExcludeEmptyColumns)
+        if (needsEmptyColumnScan)
         {
             var materialized = MaterializeRecords(records, writerOptions.MaxRowCount);
             WriteRecordsFiltered(writer, materialized, includeHeader);
@@ -212,7 +218,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         bool includeHeader = true,
         CancellationToken cancellationToken = default)
     {
-        if (writerOptions.ExcludeEmptyColumns)
+        if (needsEmptyColumnScan)
         {
             var materialized = await MaterializeRecordsAsync(records, writerOptions.MaxRowCount, cancellationToken).ConfigureAwait(false);
             WriteRecordsFiltered(writer, materialized, includeHeader);
@@ -273,7 +279,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         bool includeHeader = true,
         CancellationToken cancellationToken = default)
     {
-        if (writerOptions.ExcludeEmptyColumns)
+        if (needsEmptyColumnScan)
         {
             var materialized = await MaterializeRecordsAsync(records, writerOptions.MaxRowCount, cancellationToken).ConfigureAwait(false);
             await WriteRecordsFilteredAsync(writer, materialized, includeHeader, cancellationToken).ConfigureAwait(false);
@@ -334,7 +340,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         bool includeHeader = true,
         CancellationToken cancellationToken = default)
     {
-        if (writerOptions.ExcludeEmptyColumns)
+        if (needsEmptyColumnScan)
         {
             var materialized = MaterializeRecords(records, writerOptions.MaxRowCount);
             await WriteRecordsFilteredAsync(writer, materialized, includeHeader, cancellationToken).ConfigureAwait(false);
@@ -502,12 +508,26 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         writer.WriteRow(headerBuffer);
     }
 
+    private bool ComputeNeedsEmptyColumnScan()
+    {
+        if (writerOptions.ExcludeEmptyColumns)
+            return true;
+        for (int i = 0; i < accessors.Length; i++)
+        {
+            if (accessors[i].ExcludeFromWriteIfAllEmpty)
+                return true;
+        }
+        return false;
+    }
+
     private static bool IsValueEmpty(object? value)
     {
         if (value is null)
             return true;
         if (value is string s)
             return s.Length == 0;
+        if (value.GetType().IsValueType)
+            return false; // Boxed value types (int, DateTime, etc.) never have empty ToString()
         var str = value.ToString();
         return str is null or { Length: 0 };
     }
@@ -515,8 +535,22 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     private int[] ScanForNonEmptyColumns(IReadOnlyList<T> records)
     {
         int columnCount = accessors.Length;
+        bool globalExclude = writerOptions.ExcludeEmptyColumns;
+
+        // Determine which columns are candidates for exclusion
+        var isCandidate = new bool[columnCount];
+        int candidateCount = 0;
+        for (int i = 0; i < columnCount; i++)
+        {
+            isCandidate[i] = globalExclude || accessors[i].ExcludeFromWriteIfAllEmpty;
+            if (isCandidate[i]) candidateCount++;
+        }
+
+        if (candidateCount == 0)
+            return []; // No candidates → no filtering needed
+
         var hasNonEmpty = new bool[columnCount];
-        int nonEmptyCount = 0;
+        int resolvedCandidateCount = 0;
         bool anyRecordScanned = false;
 
         foreach (var record in records)
@@ -528,7 +562,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
 
             for (int i = 0; i < columnCount; i++)
             {
-                if (hasNonEmpty[i])
+                if (!isCandidate[i] || hasNonEmpty[i])
                     continue;
 
                 object? value;
@@ -545,9 +579,9 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                 if (!IsValueEmpty(value))
                 {
                     hasNonEmpty[i] = true;
-                    nonEmptyCount++;
-                    if (nonEmptyCount == columnCount)
-                        return []; // All columns non-empty → no filtering needed
+                    resolvedCandidateCount++;
+                    if (resolvedCandidateCount == candidateCount)
+                        return []; // All candidate columns are non-empty → no filtering needed
                 }
             }
         }
@@ -556,14 +590,25 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         if (!anyRecordScanned)
             return [];
 
-        if (nonEmptyCount == 0)
-            return [-1]; // Sentinel: all columns empty
+        // Build result: include non-candidate columns (always) + non-empty candidate columns
+        int includeCount = 0;
+        for (int i = 0; i < columnCount; i++)
+        {
+            if (!isCandidate[i] || hasNonEmpty[i])
+                includeCount++;
+        }
 
-        var indices = new int[nonEmptyCount];
+        if (includeCount == columnCount)
+            return []; // All columns included → no filtering
+
+        if (includeCount == 0)
+            return [-1]; // Sentinel: all columns excluded
+
+        var indices = new int[includeCount];
         int idx = 0;
         for (int i = 0; i < columnCount; i++)
         {
-            if (hasNonEmpty[i])
+            if (!isCandidate[i] || hasNonEmpty[i])
                 indices[idx++] = i;
         }
         return indices;
@@ -577,7 +622,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         writer.WriteRow(filteredHeaders);
     }
 
-    private void WriteFilteredRecord(CsvStreamWriter writer, T record, int rowNumber, int[] columnIndices)
+    private void WriteFilteredRecord(CsvStreamWriter writer, T record, int rowNumber, int[] columnIndices, object?[] filteredValues, string?[] filteredFormats)
     {
         if (record is null)
         {
@@ -585,12 +630,9 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             return;
         }
 
-        var filteredValues = new object?[columnIndices.Length];
-        var filteredFormats = new string?[columnIndices.Length];
         for (int i = 0; i < columnIndices.Length; i++)
         {
             int ci = columnIndices[i];
-            filteredFormats[i] = formatsBuffer[ci];
             try
             {
                 filteredValues[i] = accessors[ci].GetValue(record);
@@ -632,7 +674,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         writer.WriteRowWithFormats(filteredValues, filteredFormats);
     }
 
-    private async ValueTask WriteFilteredRecordAsync(CsvAsyncStreamWriter writer, T record, int rowNumber, int[] columnIndices, CancellationToken cancellationToken)
+    private async ValueTask WriteFilteredRecordAsync(CsvAsyncStreamWriter writer, T record, int rowNumber, int[] columnIndices, object?[] filteredValues, string?[] filteredFormats, CancellationToken cancellationToken)
     {
         if (record is null)
         {
@@ -640,12 +682,9 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             return;
         }
 
-        var filteredValues = new object?[columnIndices.Length];
-        var filteredFormats = new string?[columnIndices.Length];
         for (int i = 0; i < columnIndices.Length; i++)
         {
             int ci = columnIndices[i];
-            filteredFormats[i] = formatsBuffer[ci];
             try
             {
                 filteredValues[i] = accessors[ci].GetValue(record);
@@ -753,6 +792,12 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         if (columnIndices is [-1])
             return;
 
+        // Pre-allocate reusable buffers for the filtered write loop
+        var filteredValues = new object?[columnIndices.Length];
+        var filteredFormats = new string?[columnIndices.Length];
+        for (int i = 0; i < columnIndices.Length; i++)
+            filteredFormats[i] = formatsBuffer[columnIndices[i]];
+
         var progress = writerOptions.WriteProgress;
         var progressInterval = writerOptions.WriteProgressIntervalRows;
         int rowNumber = 0;
@@ -766,7 +811,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         for (int r = 0; r < records.Count; r++)
         {
             rowNumber++;
-            WriteFilteredRecord(writer, records[r], rowNumber, columnIndices);
+            WriteFilteredRecord(writer, records[r], rowNumber, columnIndices, filteredValues, filteredFormats);
 
             if (progress is not null && (r + 1) % progressInterval == 0)
             {
@@ -845,6 +890,12 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         if (columnIndices is [-1])
             return;
 
+        // Pre-allocate reusable buffers for the filtered write loop
+        var filteredValues = new object?[columnIndices.Length];
+        var filteredFormats = new string?[columnIndices.Length];
+        for (int i = 0; i < columnIndices.Length; i++)
+            filteredFormats[i] = formatsBuffer[columnIndices[i]];
+
         var progress = writerOptions.WriteProgress;
         var progressInterval = writerOptions.WriteProgressIntervalRows;
         int rowNumber = 0;
@@ -859,7 +910,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         {
             cancellationToken.ThrowIfCancellationRequested();
             rowNumber++;
-            await WriteFilteredRecordAsync(writer, records[r], rowNumber, columnIndices, cancellationToken).ConfigureAwait(false);
+            await WriteFilteredRecordAsync(writer, records[r], rowNumber, columnIndices, filteredValues, filteredFormats, cancellationToken).ConfigureAwait(false);
 
             if (progress is not null && (r + 1) % progressInterval == 0)
             {
@@ -946,6 +997,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                 property.Name,
                 headerName,
                 format,
+                attribute?.ExcludeFromWriteIfAllEmpty ?? false,
                 CreateGetter(property));
         }
 
@@ -974,11 +1026,12 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         return lambda.Compile();
     }
 
-    private sealed class PropertyAccessor(string memberName, string headerName, string? format, Func<object, object?> getter)
+    private sealed class PropertyAccessor(string memberName, string headerName, string? format, bool excludeFromWriteIfAllEmpty, Func<object, object?> getter)
     {
         public string MemberName { get; } = memberName;
         public string HeaderName { get; } = headerName;
         public string? Format { get; } = format;
+        public bool ExcludeFromWriteIfAllEmpty { get; } = excludeFromWriteIfAllEmpty;
         private readonly Func<object, object?> getter = getter;
 
         public object? GetValue(object instance) => getter(instance);

@@ -105,4 +105,16 @@ public sealed class CsvColumnAttribute : Attribute
     /// Prevents catastrophic backtracking on malicious input.
     /// </summary>
     public int PatternTimeoutMs { get; init; } = 1000;
+
+    /// <summary>
+    /// When <c>true</c>, this column is excluded from CSV output if <b>all</b> records have
+    /// empty values (<see langword="null"/> or <c>""</c>) for it. Whitespace values are <b>not</b>
+    /// considered empty. This is a <b>write-side</b> option.
+    /// </summary>
+    /// <remarks>
+    /// <para>Works independently of <see cref="Writing.CsvWriteOptions.ExcludeEmptyColumns"/>:
+    /// that option applies to all columns globally, while this targets specific columns.</para>
+    /// <para>Requires materializing all records before writing. Not suitable for unbounded streaming.</para>
+    /// </remarks>
+    public bool ExcludeFromWriteIfAllEmpty { get; init; }
 }

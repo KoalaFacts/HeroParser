@@ -1,4 +1,5 @@
 using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using Xunit;
 
@@ -35,6 +36,20 @@ public class ExcludeEmptyColumnsTests
     public class EmptyToStringType
     {
         public override string ToString() => "";
+    }
+
+    /// <summary>
+    /// Record with per-column ExcludeFromWriteIfAllEmpty on optional fields.
+    /// </summary>
+    public class ContactRecord
+    {
+        public string? Name { get; set; }
+
+        [CsvColumn(ExcludeFromWriteIfAllEmpty = true)]
+        public string? Phone { get; set; }
+
+        [CsvColumn(ExcludeFromWriteIfAllEmpty = true)]
+        public string? Fax { get; set; }
     }
 
     #endregion
@@ -362,7 +377,7 @@ public class ExcludeEmptyColumnsTests
         var options = new CsvWriteOptions { ExcludeEmptyColumns = true };
 
         using var stream = new MemoryStream();
-        await Csv.WriteToStreamAsync<PersonRecord>(stream, records, options, cancellationToken: TestContext.Current.CancellationToken);
+        await Csv.WriteToStreamAsync(stream, records, options, cancellationToken: TestContext.Current.CancellationToken);
         stream.Position = 0;
         var result = await new StreamReader(stream).ReadToEndAsync(TestContext.Current.CancellationToken);
 
@@ -405,6 +420,87 @@ public class ExcludeEmptyColumnsTests
 
         // All columns non-empty in first record → short-circuit, output includes all
         Assert.Equal("Name,Email,Phone\r\nAlice,a@b.com,123\r\nBob,,\r\n", result);
+    }
+
+    #endregion
+
+    #region Per-Column ExcludeFromWriteIfAllEmpty
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void PerColumn_ExcludesMarkedColumnsWhenAllEmpty()
+    {
+        var records = new[]
+        {
+            new ContactRecord { Name = "Alice", Phone = null, Fax = null },
+            new ContactRecord { Name = "Bob", Phone = "123", Fax = null },
+        };
+
+        // No global option — per-column attribute drives exclusion
+        var result = Csv.WriteToText(records);
+
+        // Fax excluded (all null, marked), Phone included (non-empty in row 2, marked)
+        // Name always included (not marked)
+        Assert.Equal("Name,Phone\r\nAlice,\r\nBob,123\r\n", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void PerColumn_UnmarkedColumnsAlwaysIncluded()
+    {
+        var records = new[]
+        {
+            new ContactRecord { Name = null, Phone = null, Fax = null },
+        };
+
+        // Name is NOT marked → always included even though all empty
+        // Phone and Fax are marked → excluded
+        var result = Csv.WriteToText(records);
+
+        Assert.Equal("Name\r\n\r\n", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void PerColumn_AllMarkedColumnsHaveData_NoFiltering()
+    {
+        var records = new[]
+        {
+            new ContactRecord { Name = "Alice", Phone = "123", Fax = "456" },
+        };
+
+        var result = Csv.WriteToText(records);
+
+        Assert.Equal("Name,Phone,Fax\r\nAlice,123,456\r\n", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void PerColumn_CombinedWithGlobalOption_BothApply()
+    {
+        var records = new[]
+        {
+            new ContactRecord { Name = null, Phone = null, Fax = null },
+        };
+
+        // Global option excludes Name (all empty), per-column excludes Phone and Fax
+        var options = new CsvWriteOptions { ExcludeEmptyColumns = true };
+        var result = Csv.WriteToText(records, options);
+
+        // All columns empty → empty output
+        Assert.Equal("", result);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void PerColumn_ZeroRecords_HeaderIncludesAllColumns()
+    {
+        var records = Array.Empty<ContactRecord>();
+
+        var result = Csv.WriteToText(records);
+
+        // Zero records → no scan data → all columns in header
+        Assert.Equal("Name,Phone,Fax\r\n", result);
     }
 
     #endregion

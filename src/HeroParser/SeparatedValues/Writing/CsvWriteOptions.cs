@@ -112,6 +112,21 @@ public sealed record CsvWriteOptions
     public bool WriteHeader { get; init; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether to exclude columns where every record's value is empty.
+    /// </summary>
+    /// <remarks>
+    /// <para>When <see langword="true"/>, columns where all records have <see langword="null"/> or empty string
+    /// values are omitted from the output (both header and data rows). Whitespace values are <b>not</b>
+    /// considered empty.</para>
+    /// <para>Requires materializing all records before writing to determine which columns are empty.
+    /// Not suitable for unbounded streaming scenarios.</para>
+    /// <para>The emptiness check inspects pre-serialization values from property accessors,
+    /// not the formatted output. The <see cref="NullValue"/> setting does not affect which columns
+    /// are considered empty.</para>
+    /// </remarks>
+    public bool ExcludeEmptyColumns { get; init; } = false;
+
+    /// <summary>
     /// Gets or sets the culture used for formatting values (invariant culture by default).
     /// </summary>
     public CultureInfo Culture { get; init; } = CultureInfo.InvariantCulture;

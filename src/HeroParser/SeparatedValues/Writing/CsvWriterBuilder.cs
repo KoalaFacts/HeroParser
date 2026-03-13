@@ -16,6 +16,7 @@ public sealed class CsvWriterBuilder<T>
     private string newLine = "\r\n";
     private QuoteStyle quoteStyle = QuoteStyle.WhenNeeded;
     private bool writeHeader = true;
+    private bool excludeEmptyColumns;
     private CultureInfo culture = CultureInfo.InvariantCulture;
     private string nullValue = "";
     private string? dateTimeFormat;
@@ -132,6 +133,22 @@ public sealed class CsvWriterBuilder<T>
     public CsvWriterBuilder<T> WithoutHeader()
     {
         writeHeader = false;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Excludes columns from the output where all records have empty (null or "") values.
+    /// Whitespace values are not considered empty.
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// Requires materializing all records before writing to determine which columns are empty.
+    /// Not suitable for unbounded streaming scenarios.
+    /// </remarks>
+    public CsvWriterBuilder<T> WithoutEmptyColumns()
+    {
+        excludeEmptyColumns = true;
         cachedOptions = null;
         return this;
     }
@@ -573,6 +590,7 @@ public sealed class CsvWriterBuilder<T>
             NewLine = newLine,
             QuoteStyle = quoteStyle,
             WriteHeader = writeHeader,
+            ExcludeEmptyColumns = excludeEmptyColumns,
             Culture = culture,
             NullValue = nullValue,
             DateTimeFormat = dateTimeFormat,

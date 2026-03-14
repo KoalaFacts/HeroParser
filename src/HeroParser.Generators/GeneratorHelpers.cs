@@ -33,10 +33,10 @@ internal static class GeneratorHelpers
         "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
 #pragma warning restore RS2008
 
-    // Shared attribute name arrays used by both CSV and FixedWidth generators
-    public static readonly string[] ParseAttributeNames = ["HeroParser.ParseAttribute"];
-    public static readonly string[] ValidateAttributeNames = ["HeroParser.ValidateAttribute"];
-    public static readonly string[] FormatAttributeNames = ["HeroParser.FormatAttribute"];
+    // Shared attribute name lists used by both CSV and FixedWidth generators
+    public static readonly IReadOnlyList<string> ParseAttributeNames = ["HeroParser.ParseAttribute"];
+    public static readonly IReadOnlyList<string> ValidateAttributeNames = ["HeroParser.ValidateAttribute"];
+    public static readonly IReadOnlyList<string> FormatAttributeNames = ["HeroParser.FormatAttribute"];
 
     /// <summary>
     /// Fully qualified format with nullable reference type modifiers.

@@ -1636,16 +1636,11 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             var formatAttribute = GetFirstMatchingAttribute(property, FormatAttributeNames);
             if (formatAttribute is not null)
             {
-#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
                 foreach (var arg in formatAttribute.NamedArguments)
                 {
-                    switch (arg.Key)
-                    {
-                        case "WriteFormat" when arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf):
-                            writeFormat = wf; break;
-                    }
+                    if (arg.Key == "WriteFormat" && arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf))
+                        writeFormat = wf;
                 }
-#pragma warning restore IDE0010
             }
 
             // [Validate] — NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern, PatternTimeoutMs

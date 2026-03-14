@@ -986,18 +986,13 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var formatAttribute = GetFirstMatchingAttribute(property, FormatAttributeNames);
             if (formatAttribute is not null)
             {
-#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
                 foreach (var arg in formatAttribute.NamedArguments)
                 {
-                    switch (arg.Key)
-                    {
-                        case "WriteFormat" when arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf):
-                            writeFormat = wf; break;
-                        case "ExcludeIfAllEmpty" when arg.Value.Value is bool e:
-                            excludeIfAllEmpty = e; break;
-                    }
+                    if (arg.Key == "WriteFormat" && arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf))
+                        writeFormat = wf;
+                    else if (arg.Key == "ExcludeIfAllEmpty" && arg.Value.Value is bool e)
+                        excludeIfAllEmpty = e;
                 }
-#pragma warning restore IDE0010
             }
 
             if (!IsSupportedType(property.Type))

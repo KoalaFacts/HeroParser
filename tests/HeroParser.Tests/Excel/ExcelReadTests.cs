@@ -73,6 +73,22 @@ public class ExcelReadTests
         var records = HeroParser.Excel.Read<SimpleProduct>().FromStream(xlsx);
         Assert.Empty(records);
     }
+
+    [Fact]
+    public void DeserializeRecords_FromStream_ReturnsTypedRecords()
+    {
+        using var xlsx = ExcelTestHelper.CreateXlsx("Sheet1", [
+            ["Name", "Price", "Quantity"],
+            ["Widget", "9.99", "100"],
+        ]);
+
+        var records = HeroParser.Excel.DeserializeRecords<SimpleProduct>(xlsx);
+
+        Assert.Single(records);
+        Assert.Equal("Widget", records[0].Name);
+        Assert.Equal(9.99m, records[0].Price);
+        Assert.Equal(100, records[0].Quantity);
+    }
 }
 
 [GenerateBinder]

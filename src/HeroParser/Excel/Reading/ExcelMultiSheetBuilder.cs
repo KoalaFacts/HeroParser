@@ -21,6 +21,11 @@ public sealed class ExcelMultiSheetBuilder
     public ExcelMultiSheetBuilder WithSheet<T>(string sheetName) where T : new()
     {
         ArgumentException.ThrowIfNullOrEmpty(sheetName);
+
+        var recordType = typeof(T);
+        if (registrations.Exists(r => r.RecordType == recordType))
+            throw new ArgumentException($"Type '{recordType.Name}' is already registered. Each type can only be registered once.", nameof(T));
+
         registrations.Add(new SheetRegistration(
             sheetName,
             typeof(T),

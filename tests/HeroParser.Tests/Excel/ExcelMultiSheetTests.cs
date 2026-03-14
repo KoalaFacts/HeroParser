@@ -69,6 +69,15 @@ public class ExcelMultiSheetTests
     }
 
     [Fact]
+    public void MultiSheet_DuplicateType_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            HeroParser.Excel.Read()
+                .WithSheet<OrderRecord>("Orders")
+                .WithSheet<OrderRecord>("OtherOrders"));
+    }
+
+    [Fact]
     public void MultiSheet_MultipleRowsPerSheet()
     {
         var sheets = new Dictionary<string, string[][]>

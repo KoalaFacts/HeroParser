@@ -71,7 +71,7 @@ public static class CsvRecordBinderFactory
         }
 
         throw new InvalidOperationException(
-            $"No byte binder found for type {typeof(T).Name}. Add [CsvGenerateBinder] attribute to the type.");
+            $"No byte binder found for type {typeof(T).Name}. Add [GenerateBinder] attribute to the type.");
     }
 
     internal static bool TryGetByteBinder<T>(CsvRecordOptions? options, out ICsvBinder<byte, T>? binder)

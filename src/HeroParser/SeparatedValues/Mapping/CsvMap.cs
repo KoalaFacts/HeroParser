@@ -25,8 +25,8 @@ namespace HeroParser.SeparatedValues.Mapping;
 /// not <see cref="CsvRecordWriter{T}.WriterTemplate.AttributeIndex"/>.
 /// </para>
 /// </remarks>
-[RequiresUnreferencedCode("CsvMap uses expression trees and reflection for property binding. Use [CsvGenerateBinder] for AOT/trimming support.")]
-[RequiresDynamicCode("CsvMap uses expression trees and reflection. Use [CsvGenerateBinder] for AOT support.")]
+[RequiresUnreferencedCode("CsvMap uses expression trees and reflection for property binding. Use [GenerateBinder] for AOT/trimming support.")]
+[RequiresDynamicCode("CsvMap uses expression trees and reflection. Use [GenerateBinder] for AOT support.")]
 public class CsvMap<T> : ICsvReadMapSource<T>, ICsvWriteMapSource<T> where T : class, new()
 {
     private readonly List<MappedProperty> mappedProperties = [];

@@ -174,7 +174,7 @@ public class MultiSchemaBenchmarks
     // Record Types
     // ============================================================
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class SingleTypeRecord
     {
         public string Type { get; set; } = "";
@@ -183,36 +183,36 @@ public class MultiSchemaBenchmarks
         public string Description { get; set; } = "";
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class HeaderRecord
     {
-        [CsvColumn(Name = "Data1")]
+        [TabularMap(Name = "Data1")]
         public string FileId { get; set; } = "";
 
-        [CsvColumn(Name = "Data2")]
+        [TabularMap(Name = "Data2")]
         public string Date { get; set; } = "";
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class DetailRecord
     {
-        [CsvColumn(Name = "Data1")]
+        [TabularMap(Name = "Data1")]
         public string ItemId { get; set; } = "";
 
-        [CsvColumn(Name = "Data2")]
+        [TabularMap(Name = "Data2")]
         public decimal Amount { get; set; }
 
-        [CsvColumn(Name = "Data3")]
+        [TabularMap(Name = "Data3")]
         public string Description { get; set; } = "";
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class TrailerRecord
     {
-        [CsvColumn(Name = "Data1")]
+        [TabularMap(Name = "Data1")]
         public int RecordCount { get; set; }
 
-        [CsvColumn(Name = "Data2")]
+        [TabularMap(Name = "Data2")]
         public decimal TotalAmount { get; set; }
     }
 

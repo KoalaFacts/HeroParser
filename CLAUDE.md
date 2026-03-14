@@ -1,12 +1,12 @@
 # HeroParser Development Guidelines
 
 ## Active Technologies
-- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Minimal dependencies (only System.IO.Pipelines)
+- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 
 ## Project Structure
 ```
 src/
-  HeroParser/                  # Core library (CSV + Fixed-Width parsing/writing)
+  HeroParser/                  # Core library (CSV + Fixed-Width + Excel parsing/writing)
   HeroParser.Generators/       # Source generators (netstandard2.0)
 tests/
   HeroParser.Tests/            # Unit and integration tests
@@ -65,6 +65,44 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 - **NuGet lock files**: `RestoreLockedMode` is enabled. When adding/updating packages, run `dotnet restore --force-evaluate` to regenerate lock files
 - **Dependency policy**: GPL-2.0, GPL-3.0, and AGPL-3.0 licenses are denied. High-severity vulnerabilities fail CI
 
+## Unified Attribute System (v2)
+HeroParser v2 uses concern-separated attributes instead of format-specific ones:
+- **`[TabularMap(Name, Index)]`** — column mapping for CSV/Excel
+- **`[PositionalMap(Start, Length, End, PadChar, Alignment)]`** — position mapping for FixedWidth
+- **`[Parse(Format)]`** — read-side type conversion (e.g., date format)
+- **`[Validate(NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern)]`** — bidirectional validation
+- **`[Format(WriteFormat, ExcludeIfAllEmpty)]`** — write-side formatting
+- **`[GenerateBinder]`** — triggers source generator for the class (replaces `[CsvGenerateBinder]` and `[FixedWidthGenerateBinder]`)
+
+Convention-based mapping: unmarked properties default to `TabularMap(Name = propertyName)` for CSV/Excel. FixedWidth requires explicit `[PositionalMap]`.
+
+A single record can have both `[TabularMap]` and `[PositionalMap]` to be read from CSV, Excel, and FixedWidth.
+
+## Excel (.xlsx) Reading
+Read Excel files with zero extra dependencies (uses `System.IO.Compression` + `System.Xml`):
+```csharp
+// Typed record reading
+var records = Excel.Read<MyRecord>().FromFile("data.xlsx");
+var records = Excel.Read<MyRecord>().FromSheet("Sheet2").FromStream(stream);
+
+// Row-level reading (string arrays)
+var rows = Excel.Read().FromFile("data.xlsx");
+
+// All sheets (same type)
+var dict = Excel.Read<MyRecord>().AllSheets().FromFile("data.xlsx");  // Dictionary<string, List<T>>
+
+// Multi-sheet (different types)
+var result = Excel.Read()
+    .WithSheet<OrderRecord>("Orders")
+    .WithSheet<CustomerRecord>("Customers")
+    .FromFile("data.xlsx");
+
+// DataReader for database bulk loading
+using var reader = Excel.CreateDataReader("data.xlsx");
+```
+
+Key files in `src/HeroParser/Excel/` (internal namespace uses `HeroParser.Excels` to avoid conflict with the `Excel` static class).
+
 ## Multi-Schema CSV Parsing
 Supports mapping rows to different record types via a discriminator column.
 - **Runtime**: Flexible, uses `WithMultiSchema().WithDiscriminator("Type")`.
@@ -77,9 +115,10 @@ Key files in `src/HeroParser/SeparatedValues/Records/MultiSchema/`.
 Key files in `src/HeroParser/SeparatedValues/Detection/` and `src/HeroParser/SeparatedValues/Validation/`.
 
 ## IDataReader Support
-Both CSV and Fixed-Width support `DbDataReader` for streaming large files into databases.
+CSV, Fixed-Width, and Excel support `DbDataReader` for streaming large files into databases.
 - `Csv.CreateDataReader(stream|path)` - CSV streaming reader
 - `FixedWidth.CreateDataReader(stream|path)` - Fixed-width streaming reader
+- `Excel.CreateDataReader(stream|path)` - Excel streaming reader
 - Supports header mapping, null value detection, column name overrides, case-insensitive headers.
 
 ## Code Quality Rules
@@ -179,7 +218,7 @@ error NU1004: The packages lock file is inconsistent with the project dependenci
 
 ### AOT trim warnings
 If `dotnet publish -r linux-x64 --self-contained` produces trim warnings:
-- Ensure record types use `[CsvGenerateBinder]` or `[FixedWidthGenerateBinder]` attributes
+- Ensure record types use `[GenerateBinder]` attribute
 - Reflection-based binding is annotated with `[RequiresUnreferencedCode]` and will warn under trimming
 
 ### SIMD fallback behavior

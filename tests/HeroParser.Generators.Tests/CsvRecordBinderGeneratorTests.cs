@@ -20,11 +20,11 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithSimpleClass_GeneratesBinderAndWriter()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class Person
             {
                 public string Name { get; set; } = "";
@@ -46,11 +46,11 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithStruct_GeneratesBinderAndWriter()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public struct PersonStruct
             {
                 public string Name { get; set; }
@@ -68,20 +68,20 @@ public class CsvRecordBinderGeneratorTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_WithCsvColumnAttribute_UsesCustomHeaderName()
+    public void Generator_WithTabularMapAttribute_UsesCustomHeaderName()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class Product
             {
-                [CsvColumn(Name = "product_name")]
+                [TabularMap(Name = "product_name")]
                 public string Name { get; set; } = "";
 
-                [CsvColumn(Name = "unit_price", Index = 1)]
+                [TabularMap(Name = "unit_price", Index = 1)]
                 public decimal Price { get; set; }
             }
             """;
@@ -102,11 +102,11 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithUnsupportedType_ReportsHERO001Diagnostic()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class WithArray
             {
                 public string Name { get; set; } = "";
@@ -128,11 +128,11 @@ public class CsvRecordBinderGeneratorTests
     {
         var source = """
             using System;
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class NullableRecord
             {
                 public string? Name { get; set; }
@@ -157,11 +157,11 @@ public class CsvRecordBinderGeneratorTests
     {
         var source = """
             using System;
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class AllTypes
             {
                 public string Text { get; set; } = "";
@@ -199,11 +199,11 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithReadOnlyProperty_SkipsInBinder()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class ReadOnlyProps
             {
                 public string Name { get; set; } = "";
@@ -228,11 +228,11 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithRecordType_GeneratesCorrectly()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public record PersonRecord(string Name, int Age);
             """;
 
@@ -252,17 +252,19 @@ public class CsvRecordBinderGeneratorTests
     {
         var source = """
             using System;
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class FormattedRecord
             {
-                [CsvColumn(Name = "Date", Format = "yyyy-MM-dd")]
+                [TabularMap(Name = "Date")]
+                [Parse(Format = "yyyy-MM-dd")]
                 public DateTime Date { get; set; }
 
-                [CsvColumn(Name = "Amount", Format = "N2")]
+                [TabularMap(Name = "Amount")]
+                [Parse(Format = "N2")]
                 public decimal Amount { get; set; }
             }
             """;
@@ -276,6 +278,44 @@ public class CsvRecordBinderGeneratorTests
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("yyyy-MM-dd", allGeneratedCode);
         Assert.Contains("N2", allGeneratedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_WithWriteFormatAttribute_EmitsWriteFormatInWriter()
+    {
+        var source = """
+            using System;
+            using HeroParser;
+
+            namespace TestNamespace;
+
+            [GenerateBinder]
+            public class WriteFormatRecord
+            {
+                [TabularMap(Name = "Date")]
+                [Parse(Format = "yyyy-MM-dd")]
+                [Format(WriteFormat = "dd/MM/yyyy")]
+                public DateTime Date { get; set; }
+
+                [TabularMap(Name = "Amount")]
+                [Parse(Format = "N2")]
+                [Format(WriteFormat = "F4")]
+                public decimal Amount { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Equal(2, result.GeneratedSources.Length);
+
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        // Writer template should use WriteFormat values
+        Assert.Contains("dd/MM/yyyy", allGeneratedCode);
+        Assert.Contains("F4", allGeneratedCode);
+        // Read-side binder should use Parse Format values
+        Assert.Contains("yyyy-MM-dd", allGeneratedCode);
     }
 
     [Fact]
@@ -302,17 +342,17 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithMultipleAnnotatedTypes_GeneratesForAll()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class Person
             {
                 public string Name { get; set; } = "";
             }
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class Product
             {
                 public string Title { get; set; } = "";
@@ -338,11 +378,11 @@ public class CsvRecordBinderGeneratorTests
     {
         var source = """
             using System.Collections.Generic;
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class WithList
             {
                 public string Name { get; set; } = "";
@@ -363,13 +403,13 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithNestedClass_GeneratesWithFullName()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
             public class Outer
             {
-                [CsvGenerateBinder]
+                [GenerateBinder]
                 public class Inner
                 {
                     public string Value { get; set; } = "";
@@ -392,11 +432,11 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_OutputContainsBothBinderAndWriter()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class Person
             {
                 public string Name { get; set; } = "";
@@ -418,11 +458,11 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_IncrementalCaching_DoesNotRegenerateUnchangedInput()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class Person
             {
                 public string Name { get; set; } = "";
@@ -459,9 +499,9 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithGlobalNamespace_GeneratesCorrectly()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class GlobalRecord
             {
                 public string Value { get; set; } = "";
@@ -483,11 +523,11 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_ProducesValidCSharpSyntax()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class Person
             {
                 public string Name { get; set; } = "";
@@ -509,59 +549,67 @@ public class CsvRecordBinderGeneratorTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_CsvColumnWithoutNameOrIndex_ReportsHERO008()
+    public void Generator_PropertyWithoutTabularMap_UseConventionBinding()
     {
+        // Convention-based mapping: properties without [TabularMap] bind by property name — no error expected
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace TestNamespace;
-            [CsvGenerateBinder]
-            public class Bad { [CsvColumn(NotNull = true)] public string Name { get; set; } = ""; }
+            [GenerateBinder]
+            public class Ok { [Validate(NotNull = true)] public string Name { get; set; } = ""; }
             """;
         var result = RunGenerator(source);
-        var hero008 = result.Diagnostics.FirstOrDefault(d => d.Id == "HERO008");
-        Assert.NotNull(hero008);
-        Assert.Equal(DiagnosticSeverity.Error, hero008.Severity);
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        // Property is included and bound by its property name
+        Assert.Contains("\"Name\"", allGeneratedCode);
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_CsvColumnWithName_DoesNotReportHERO008()
+    public void Generator_TabularMapWithName_UsesCustomHeaderName()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace TestNamespace;
-            [CsvGenerateBinder]
-            public class Good { [CsvColumn(Name = "name")] public string Name { get; set; } = ""; }
+            [GenerateBinder]
+            public class Good { [TabularMap(Name = "name")] public string Name { get; set; } = ""; }
             """;
         var result = RunGenerator(source);
-        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "HERO008");
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("\"name\"", allGeneratedCode);
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_CsvColumnWithIndex_DoesNotReportHERO008()
+    public void Generator_TabularMapWithIndex_UsesExplicitIndex()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace TestNamespace;
-            [CsvGenerateBinder]
-            public class Good { [CsvColumn(Index = 0)] public string Name { get; set; } = ""; }
+            [GenerateBinder]
+            public class Good { [TabularMap(Index = 0)] public string Name { get; set; } = ""; }
             """;
         var result = RunGenerator(source);
-        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "HERO008");
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("0", allGeneratedCode);
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_PropertyWithoutCsvColumn_DoesNotReportHERO008()
+    public void Generator_PropertyWithoutTabularMap_IsIncludedByConvention()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace TestNamespace;
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class Ok { public string Name { get; set; } = ""; }
             """;
         var result = RunGenerator(source);
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        // No HERO008 should ever be emitted — it no longer exists
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "HERO008");
     }
 
@@ -570,10 +618,10 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_NotEmptyOnInt_ReportsHERO004()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
-            public class R { [CsvColumn(Index = 0, NotEmpty = true)] public int X { get; set; } }
+            [GenerateBinder]
+            public class R { [TabularMap(Index = 0)] [Validate(NotEmpty = true)] public int X { get; set; } }
             """;
         Assert.Contains(RunGenerator(source).Diagnostics, d => d.Id == "HERO004");
     }
@@ -583,10 +631,10 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_MaxLengthOnDecimal_ReportsHERO005()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
-            public class R { [CsvColumn(Index = 0, MaxLength = 10)] public decimal X { get; set; } }
+            [GenerateBinder]
+            public class R { [TabularMap(Index = 0)] [Validate(MaxLength = 10)] public decimal X { get; set; } }
             """;
         Assert.Contains(RunGenerator(source).Diagnostics, d => d.Id == "HERO005");
     }
@@ -596,10 +644,10 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_RangeOnString_ReportsHERO006()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
-            public class R { [CsvColumn(Name = "X", RangeMin = 0)] public string X { get; set; } = ""; }
+            [GenerateBinder]
+            public class R { [TabularMap(Name = "X")] [Validate(RangeMin = 0)] public string X { get; set; } = ""; }
             """;
         Assert.Contains(RunGenerator(source).Diagnostics, d => d.Id == "HERO006");
     }
@@ -609,10 +657,10 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_PatternOnInt_ReportsHERO007()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
-            public class R { [CsvColumn(Index = 0, Pattern = ".*")] public int X { get; set; } }
+            [GenerateBinder]
+            public class R { [TabularMap(Index = 0)] [Validate(Pattern = ".*")] public int X { get; set; } }
             """;
         Assert.Contains(RunGenerator(source).Diagnostics, d => d.Id == "HERO007");
     }
@@ -622,15 +670,17 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_ValidValidationProperties_NoExtraDiagnostics()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class R
             {
-                [CsvColumn(Name = "X", NotNull = true, NotEmpty = true, MaxLength = 50)]
+                [TabularMap(Name = "X")]
+                [Validate(NotNull = true, NotEmpty = true, MaxLength = 50)]
                 public string X { get; set; } = "";
 
-                [CsvColumn(Index = 1, NotNull = true, RangeMin = 0, RangeMax = 100)]
+                [TabularMap(Index = 1)]
+                [Validate(NotNull = true, RangeMin = 0, RangeMax = 100)]
                 public decimal Y { get; set; }
             }
             """;
@@ -643,10 +693,10 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithNotNullValidation_EmitsValidationCode()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
-            public class R { [CsvColumn(Name = "X", NotNull = true)] public string X { get; set; } = ""; }
+            [GenerateBinder]
+            public class R { [TabularMap(Name = "X")] [Validate(NotNull = true)] public string X { get; set; } = ""; }
             """;
         var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("ValidationError", code);
@@ -658,10 +708,10 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithNoValidation_NoValidationCode()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
-            public class R { [CsvColumn(Name = "X")] public string X { get; set; } = ""; }
+            [GenerateBinder]
+            public class R { [TabularMap(Name = "X")] public string X { get; set; } = ""; }
             """;
         var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
         // "valid = false" is only emitted when validation is present; the method signature always contains ValidationError
@@ -674,10 +724,10 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithPattern_EmitsStaticRegex()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
-            public class R { [CsvColumn(Name = "X", Pattern = @"^\d+$")] public string X { get; set; } = ""; }
+            [GenerateBinder]
+            public class R { [TabularMap(Name = "X")] [Validate(Pattern = @"^\d+$")] public string X { get; set; } = ""; }
             """;
         var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("static readonly", code);
@@ -690,10 +740,10 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithDecimalRange_EmitsDecimalLiteral()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
-            public class R { [CsvColumn(Index = 0, RangeMin = 0, RangeMax = 999.99)] public decimal X { get; set; } }
+            [GenerateBinder]
+            public class R { [TabularMap(Index = 0)] [Validate(RangeMin = 0, RangeMax = 999.99)] public decimal X { get; set; } }
             """;
         var code = string.Join("\n", RunGenerator(source).GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("999.99m", code);
@@ -704,21 +754,25 @@ public class CsvRecordBinderGeneratorTests
     public void Generator_WithAllValidations_ProducesValidCSharp()
     {
         var source = """
-            using HeroParser.SeparatedValues.Reading.Shared;
+            using HeroParser;
             namespace T;
-            [CsvGenerateBinder]
+            [GenerateBinder]
             public class R
             {
-                [CsvColumn(Name = "Id", NotNull = true, NotEmpty = true)]
+                [TabularMap(Name = "Id")]
+                [Validate(NotNull = true, NotEmpty = true)]
                 public string Id { get; set; } = "";
 
-                [CsvColumn(Name = "Amount", NotNull = true, RangeMin = 0, RangeMax = 100)]
+                [TabularMap(Name = "Amount")]
+                [Validate(NotNull = true, RangeMin = 0, RangeMax = 100)]
                 public decimal Amount { get; set; }
 
-                [CsvColumn(Name = "Code", MinLength = 2, MaxLength = 5)]
+                [TabularMap(Name = "Code")]
+                [Validate(MinLength = 2, MaxLength = 5)]
                 public string Code { get; set; } = "";
 
-                [CsvColumn(Name = "Ref", Pattern = @"^[A-Z]+$")]
+                [TabularMap(Name = "Ref")]
+                [Validate(Pattern = @"^[A-Z]+$")]
                 public string Ref { get; set; } = "";
             }
             """;

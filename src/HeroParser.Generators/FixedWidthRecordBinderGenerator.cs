@@ -19,7 +19,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthRecordBinderFactory";
     private const string WRITER_TYPE = "global::HeroParser.FixedWidths.Writing.FixedWidthRecordWriter";
     private const string WRITER_FACTORY_TYPE = "global::HeroParser.FixedWidths.Writing.FixedWidthRecordWriterFactory";
-    private const string FIELD_ALIGNMENT_TYPE = "global::HeroParser.FixedWidths.FieldAlignment";
+    private const string FIELD_ALIGNMENT_TYPE = "global::HeroParser.FieldAlignment";
     private const string DESCRIPTOR_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthRecordDescriptor";
     private const string PROPERTY_DESCRIPTOR_TYPE = "global::HeroParser.FixedWidths.Records.Binding.FixedWidthPropertyDescriptor";
     private const string BINDER_INTERFACE_TYPE = "global::HeroParser.FixedWidths.Records.Binding.IFixedWidthBinder";
@@ -27,14 +27,12 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
     private static readonly string[] generateAttributeNames =
     [
-        "HeroParser.FixedWidths.Records.Binding.FixedWidthGenerateBinderAttribute",
-        "HeroParser.FixedWidthGenerateBinderAttribute"
+        "HeroParser.GenerateBinderAttribute"
     ];
 
     private static readonly string[] columnAttributeNames =
     [
-        "HeroParser.FixedWidths.Records.Binding.FixedWidthColumnAttribute",
-        "HeroParser.FixedWidthColumnAttribute"
+        "HeroParser.PositionalMapAttribute"
     ];
 
 #pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
@@ -51,32 +49,21 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     /// <inheritdoc/>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Use ForAttributeWithMetadataName for better caching - register for both attribute names
-        var provider1 = context.SyntaxProvider
+        // Use ForAttributeWithMetadataName for better caching
+        var provider = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 generateAttributeNames[0],
                 predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax,
                 transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
             .Where(static x => x is not null);
 
-        var provider2 = context.SyntaxProvider
-            .ForAttributeWithMetadataName(
-                generateAttributeNames[1],
-                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax,
-                transform: static (ctx, ct) => TransformToDescriptor(ctx, ct))
-            .Where(static x => x is not null);
-
-        // Combine both providers
-        var combined = provider1.Collect().Combine(provider2.Collect());
-
         // Generate per-type descriptor files for better incrementality
-        context.RegisterSourceOutput(provider1, static (spc, descriptor) => EmitDescriptor(spc, descriptor!));
-        context.RegisterSourceOutput(provider2, static (spc, descriptor) => EmitDescriptor(spc, descriptor!));
+        context.RegisterSourceOutput(provider, static (spc, descriptor) => EmitDescriptor(spc, descriptor!));
 
         // Generate registration file
-        context.RegisterSourceOutput(combined, static (spc, tuple) =>
+        context.RegisterSourceOutput(provider.Collect(), static (spc, descriptors) =>
         {
-            var all = tuple.Left.Concat(tuple.Right).Where(x => x is not null).ToList();
+            var all = descriptors.Where(x => x is not null).ToList();
             if (all.Count > 0)
                 EmitRegistration(spc, all!);
         });
@@ -1558,7 +1545,8 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine($"{member.Length},");
             builder.AppendLine($"{FIELD_ALIGNMENT_TYPE}.{member.Alignment},");
             builder.AppendLine($"'{EscapeChar(member.PadChar)}',");
-            builder.AppendLine(member.Format is null ? "null," : $"\"{member.Format}\",");
+            var writerFormat = member.WriteFormat ?? member.Format;
+            builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
             builder.AppendLine($"{member.GetterFactory}),");
             builder.Unindent();
         }
@@ -1590,21 +1578,12 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             if (mapAttribute is null)
                 continue;
 
+            // [PositionalMap] — Start, Length, End, PadChar, Alignment
             int start = 0;
             int length = 0;
             int end = -1;
             char padChar = '\0';
             string alignment = "Left";
-            string? format = null;
-
-            bool validationRequired = false;
-            bool validationNotEmpty = false;
-            int validationMaxLength = -1;
-            int validationMinLength = -1;
-            double validationRangeMin = double.NaN;
-            double validationRangeMax = double.NaN;
-            string? validationPattern = null;
-            int validationPatternTimeoutMs = 1000;
 
 #pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
             foreach (var arg in mapAttribute.NamedArguments)
@@ -1626,25 +1605,6 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                     case "Alignment" when arg.Value.Value is int a:
                         alignment = GetAlignmentName(a);
                         break;
-                    case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
-                        format = f;
-                        break;
-                    case "NotNull" when arg.Value.Value is bool r:
-                        validationRequired = r; break;
-                    case "NotEmpty" when arg.Value.Value is bool ne:
-                        validationNotEmpty = ne; break;
-                    case "MaxLength" when arg.Value.Value is int ml && ml >= 0:
-                        validationMaxLength = ml; break;
-                    case "MinLength" when arg.Value.Value is int mnl && mnl >= 0:
-                        validationMinLength = mnl; break;
-                    case "RangeMin" when arg.Value.Value is double rmin && !double.IsNaN(rmin):
-                        validationRangeMin = rmin; break;
-                    case "RangeMax" when arg.Value.Value is double rmax && !double.IsNaN(rmax):
-                        validationRangeMax = rmax; break;
-                    case "Pattern" when arg.Value.Value is string pat && !string.IsNullOrWhiteSpace(pat):
-                        validationPattern = pat; break;
-                    case "PatternTimeoutMs" when arg.Value.Value is int pt && pt > 0:
-                        validationPatternTimeoutMs = pt; break;
                 }
             }
 #pragma warning restore IDE0010
@@ -1653,11 +1613,73 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             if (length == 0 && end > start)
                 length = end - start;
 
-            // Constructor arguments take precedence
-            if (mapAttribute.ConstructorArguments.Length >= 1 && mapAttribute.ConstructorArguments[0].Value is int startArg)
-                start = startArg;
-            if (mapAttribute.ConstructorArguments.Length >= 2 && mapAttribute.ConstructorArguments[1].Value is int lengthArg)
-                length = lengthArg;
+            // [Parse] — Format
+            string? format = null;
+            var parseAttribute = GetFirstMatchingAttribute(property, ParseAttributeNames);
+            if (parseAttribute is not null)
+            {
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+                foreach (var arg in parseAttribute.NamedArguments)
+                {
+                    switch (arg.Key)
+                    {
+                        case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
+                            format = f;
+                            break;
+                    }
+                }
+#pragma warning restore IDE0010
+            }
+
+            // [Format] — WriteFormat (writer-side)
+            string? writeFormat = null;
+            var formatAttribute = GetFirstMatchingAttribute(property, FormatAttributeNames);
+            if (formatAttribute is not null)
+            {
+                foreach (var arg in formatAttribute.NamedArguments)
+                {
+                    if (arg.Key == "WriteFormat" && arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf))
+                        writeFormat = wf;
+                }
+            }
+
+            // [Validate] — NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern, PatternTimeoutMs
+            bool validationRequired = false;
+            bool validationNotEmpty = false;
+            int validationMaxLength = -1;
+            int validationMinLength = -1;
+            double validationRangeMin = double.NaN;
+            double validationRangeMax = double.NaN;
+            string? validationPattern = null;
+            int validationPatternTimeoutMs = 1000;
+            var validateAttribute = GetFirstMatchingAttribute(property, ValidateAttributeNames);
+            if (validateAttribute is not null)
+            {
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+                foreach (var arg in validateAttribute.NamedArguments)
+                {
+                    switch (arg.Key)
+                    {
+                        case "NotNull" when arg.Value.Value is bool r:
+                            validationRequired = r; break;
+                        case "NotEmpty" when arg.Value.Value is bool ne:
+                            validationNotEmpty = ne; break;
+                        case "MaxLength" when arg.Value.Value is int ml && ml >= 0:
+                            validationMaxLength = ml; break;
+                        case "MinLength" when arg.Value.Value is int mnl && mnl >= 0:
+                            validationMinLength = mnl; break;
+                        case "RangeMin" when arg.Value.Value is double rmin && !double.IsNaN(rmin):
+                            validationRangeMin = rmin; break;
+                        case "RangeMax" when arg.Value.Value is double rmax && !double.IsNaN(rmax):
+                            validationRangeMax = rmax; break;
+                        case "Pattern" when arg.Value.Value is string pat && !string.IsNullOrWhiteSpace(pat):
+                            validationPattern = pat; break;
+                        case "PatternTimeoutMs" when arg.Value.Value is int pt && pt > 0:
+                            validationPatternTimeoutMs = pt; break;
+                    }
+                }
+#pragma warning restore IDE0010
+            }
 
             if (!IsSupportedType(property.Type))
             {
@@ -1672,6 +1694,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             var typeName = property.Type.ToDisplayString(FullyQualifiedFormatWithNullable);
             var typeofTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var formatLiteral = format != null ? EscapeString(format) : null;
+            var writeFormatLiteral = writeFormat != null ? EscapeString(writeFormat) : null;
 
             var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
 
@@ -1719,6 +1742,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 typeName,
                 typeofTypeName,
                 formatLiteral,
+                writeFormatLiteral,
                 setterFactory,
                 getterFactory,
                 baseTypeName,
@@ -1800,6 +1824,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         string TypeName,
         string TypeofTypeName,
         string? Format,
+        string? WriteFormat,
         string? SetterFactory,
         string? GetterFactory,
         string BaseTypeName,

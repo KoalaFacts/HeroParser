@@ -1,5 +1,4 @@
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Shared;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -46,8 +45,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// Creates a new reflection-based CSV record writer.
     /// </summary>
     /// <param name="options">Writer options, or null for defaults.</param>
-    [RequiresUnreferencedCode("Reflection-based writing may not work with trimming. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
-    [RequiresDynamicCode("Reflection-based writing requires dynamic code. Use [CsvGenerateBinder] attribute for AOT support.")]
+    [RequiresUnreferencedCode("Reflection-based writing may not work with trimming. Use [GenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Reflection-based writing requires dynamic code. Use [GenerateBinder] attribute for AOT support.")]
     public CsvRecordWriter(CsvWriteOptions? options = null)
     {
         writerOptions = options ?? CsvWriteOptions.Default;
@@ -989,15 +988,17 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         for (int i = 0; i < properties.Count; i++)
         {
             var property = properties[i];
-            var attribute = property.GetCustomAttribute<CsvColumnAttribute>();
-            var headerName = !string.IsNullOrWhiteSpace(attribute?.Name) ? attribute.Name : property.Name;
-            var format = attribute?.Format;
+            var tabularMap = property.GetCustomAttribute<TabularMapAttribute>();
+            var parseAttr = property.GetCustomAttribute<ParseAttribute>();
+            var formatAttr = property.GetCustomAttribute<FormatAttribute>();
+            var headerName = !string.IsNullOrWhiteSpace(tabularMap?.Name) ? tabularMap.Name : property.Name;
+            var format = formatAttr?.WriteFormat ?? parseAttr?.Format;
 
             accessors[i] = new PropertyAccessor(
                 property.Name,
                 headerName,
                 format,
-                attribute?.ExcludeFromWriteIfAllEmpty ?? false,
+                formatAttr?.ExcludeIfAllEmpty ?? false,
                 CreateGetter(property));
         }
 

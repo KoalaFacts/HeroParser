@@ -1,7 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.FixedWidths;
-using HeroParser.FixedWidths.Records.Binding;
 using System.Text;
 
 namespace HeroParser.Benchmarks;
@@ -145,16 +144,16 @@ public class FixedWidthBenchmarks
 
     #region Record Binding Benchmarks
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class BenchmarkRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 20)]
+        [PositionalMap(Start = 10, Length = 20)]
         public string Name { get; set; } = "";
 
-        [FixedWidthColumn(Start = 30, Length = 10, Alignment = FieldAlignment.Right)]
+        [PositionalMap(Start = 30, Length = 10, Alignment = FieldAlignment.Right)]
         public int Value { get; set; }
     }
 
@@ -399,10 +398,10 @@ public class FixedWidthStreamingBenchmarks
         return total;
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class StreamingBenchmarkRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10)]
+        [PositionalMap(Start = 0, Length = 10)]
         public string Field0 { get; set; } = "";
     }
 }

@@ -10,13 +10,13 @@ namespace HeroParser.Tests.FixedWidths;
 
 public class FixedWidthPipeReaderTests
 {
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public sealed class PipeBoundRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 4, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 4, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 4, Length = 6)]
+        [PositionalMap(Start = 4, Length = 6)]
         public string Name { get; set; } = string.Empty;
     }
 
@@ -27,26 +27,27 @@ public class FixedWidthPipeReaderTests
         public string Name { get; set; } = string.Empty;
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public sealed class PipeTypedRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 5, Length = 8, Format = "yyyyMMdd")]
+        [PositionalMap(Start = 5, Length = 8)]
+        [Parse(Format = "yyyyMMdd")]
         public DateTime DateValue { get; set; }
 
-        [FixedWidthColumn(Start = 13, Length = 1)]
+        [PositionalMap(Start = 13, Length = 1)]
         public bool Flag { get; set; }
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public sealed class PipeCultureRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 5)]
+        [PositionalMap(Start = 0, Length = 5)]
         public decimal Amount { get; set; }
 
-        [FixedWidthColumn(Start = 5, Length = 5)]
+        [PositionalMap(Start = 5, Length = 5)]
         public string? Code { get; set; }
     }
 

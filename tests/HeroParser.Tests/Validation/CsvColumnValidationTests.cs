@@ -1,6 +1,5 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.Validation;
 using Xunit;
 

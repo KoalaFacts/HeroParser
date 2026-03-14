@@ -1,5 +1,4 @@
 using HeroParser.SeparatedValues;
-using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using System.Runtime.CompilerServices;
 using System.Text;

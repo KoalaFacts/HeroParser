@@ -1,5 +1,4 @@
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Writing;
 using Xunit;
 
@@ -39,16 +38,16 @@ public class ExcludeEmptyColumnsTests
     }
 
     /// <summary>
-    /// Record with per-column ExcludeFromWriteIfAllEmpty on optional fields.
+    /// Record with per-column ExcludeIfAllEmpty on optional fields.
     /// </summary>
     public class ContactRecord
     {
         public string? Name { get; set; }
 
-        [CsvColumn(ExcludeFromWriteIfAllEmpty = true)]
+        [Format(ExcludeIfAllEmpty = true)]
         public string? Phone { get; set; }
 
-        [CsvColumn(ExcludeFromWriteIfAllEmpty = true)]
+        [Format(ExcludeIfAllEmpty = true)]
         public string? Fax { get; set; }
     }
 
@@ -424,7 +423,7 @@ public class ExcludeEmptyColumnsTests
 
     #endregion
 
-    #region Per-Column ExcludeFromWriteIfAllEmpty
+    #region Per-Column ExcludeIfAllEmpty
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]

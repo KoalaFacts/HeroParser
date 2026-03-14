@@ -1,8 +1,6 @@
-using HeroParser.SeparatedValues.Reading.Shared;
-
 namespace HeroParser.Generators.Tests.Generated;
 
-[CsvGenerateBinder]
+[GenerateBinder]
 internal sealed class GeneratedPerson
 {
     public string Name { get; set; } = string.Empty;

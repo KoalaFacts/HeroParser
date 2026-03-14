@@ -16,7 +16,7 @@ public static class CsvAotTests
         runner.Run("CSV: Generated writer output", GeneratedWriterOutput);
         runner.Run("CSV: Round-trip integrity", RoundTripIntegrity);
         runner.Run("CSV: Basic parsing", BasicParsing);
-        runner.Run("CSV: CsvColumn attribute handling", AttributeHandling);
+        runner.Run("CSV: TabularMap attribute handling", AttributeHandling);
         runner.Run("CSV: Multiple generated types", MultipleGeneratedTypes);
         runner.Run("CSV: Nullable types handling", NullableTypesHandling);
     }

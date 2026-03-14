@@ -15,7 +15,7 @@ public interface ICsvWriteMapSource<T>
     /// <summary>
     /// Builds write templates from the map configuration.
     /// </summary>
-    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
-    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] attribute for AOT/trimming support.")]
     CsvRecordWriter<T>.WriterTemplate[] BuildWriteTemplates();
 }

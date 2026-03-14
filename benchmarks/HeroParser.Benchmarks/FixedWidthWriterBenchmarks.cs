@@ -1,7 +1,5 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
-using HeroParser.FixedWidths;
-using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.FixedWidths.Streaming;
 using HeroParser.FixedWidths.Writing;
 using System.Globalization;
@@ -38,19 +36,21 @@ public class FixedWidthWriterBenchmarks
         Console.WriteLine($"Record count: {records.Length:N0}");
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class WriteBenchmarkRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 20)]
+        [PositionalMap(Start = 10, Length = 20)]
         public string Name { get; set; } = "";
 
-        [FixedWidthColumn(Start = 30, Length = 15, Alignment = FieldAlignment.Right, Format = "F2")]
+        [PositionalMap(Start = 30, Length = 15, Alignment = FieldAlignment.Right)]
+        [Parse(Format = "F2")]
         public decimal Amount { get; set; }
 
-        [FixedWidthColumn(Start = 45, Length = 10, Format = "yyyy-MM-dd")]
+        [PositionalMap(Start = 45, Length = 10)]
+        [Parse(Format = "yyyy-MM-dd")]
         public DateTime Date { get; set; }
     }
 
@@ -120,29 +120,29 @@ public class FixedWidthCustomConverterBenchmarks
     }
 
     // Using built-in decimal converter
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class RecordWithDecimal
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 20)]
+        [PositionalMap(Start = 10, Length = 20)]
         public string Name { get; set; } = "";
 
-        [FixedWidthColumn(Start = 30, Length = 15, Alignment = FieldAlignment.Right)]
+        [PositionalMap(Start = 30, Length = 15, Alignment = FieldAlignment.Right)]
         public decimal Amount { get; set; }
     }
 
     // Using custom Money type that requires custom converter
     public class RecordWithMoney
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 20)]
+        [PositionalMap(Start = 10, Length = 20)]
         public string Name { get; set; } = "";
 
-        [FixedWidthColumn(Start = 30, Length = 15, Alignment = FieldAlignment.Right)]
+        [PositionalMap(Start = 30, Length = 15, Alignment = FieldAlignment.Right)]
         public Money Amount { get; set; }
     }
 
@@ -402,19 +402,21 @@ public class FixedWidthAsyncWriterBenchmarks
         }
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class AsyncWriteRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 20)]
+        [PositionalMap(Start = 10, Length = 20)]
         public string Name { get; set; } = "";
 
-        [FixedWidthColumn(Start = 30, Length = 15, Alignment = FieldAlignment.Right, Format = "F2")]
+        [PositionalMap(Start = 30, Length = 15, Alignment = FieldAlignment.Right)]
+        [Parse(Format = "F2")]
         public decimal Amount { get; set; }
 
-        [FixedWidthColumn(Start = 45, Length = 10, Format = "yyyy-MM-dd")]
+        [PositionalMap(Start = 45, Length = 10)]
+        [Parse(Format = "yyyy-MM-dd")]
         public DateTime Date { get; set; }
     }
 

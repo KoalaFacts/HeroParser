@@ -16,13 +16,13 @@ public sealed record FixedWidthReadOptions
 
     /// <summary>
     /// Gets or sets the default padding character for all fields.
-    /// Individual fields can override this via <see cref="Records.Binding.FixedWidthColumnAttribute.PadChar"/>.
+    /// Individual fields can override this via <see cref="PositionalMapAttribute.PadChar"/>.
     /// </summary>
     public char DefaultPadChar { get; init; } = ' ';
 
     /// <summary>
     /// Gets or sets the default field alignment for all fields.
-    /// Individual fields can override this via <see cref="Records.Binding.FixedWidthColumnAttribute.Alignment"/>.
+    /// Individual fields can override this via <see cref="PositionalMapAttribute.Alignment"/>.
     /// </summary>
     public FieldAlignment DefaultAlignment { get; init; } = FieldAlignment.Left;
 

@@ -369,8 +369,8 @@ public sealed class CsvWriterBuilder<T>
     /// </summary>
     /// <param name="map">The map providing write templates.</param>
     /// <returns>This builder for method chaining.</returns>
-    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
-    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] attribute for AOT/trimming support.")]
     public CsvWriterBuilder<T> WithMap(ICsvWriteMapSource<T> map)
     {
         ArgumentNullException.ThrowIfNull(map);
@@ -572,8 +572,8 @@ public sealed class CsvWriterBuilder<T>
 
     #region Private Helpers
 
-    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
-    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [CsvGenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] attribute for AOT/trimming support.")]
     private CsvRecordWriter<T> GetRecordWriter(CsvWriteOptions options)
     {
         return writeMapSource is not null

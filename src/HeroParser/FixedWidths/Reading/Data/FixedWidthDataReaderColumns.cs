@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using HeroParser.FixedWidths.Records.Binding;
 
 namespace HeroParser.FixedWidths.Reading.Data;
 
@@ -63,12 +62,12 @@ public static class FixedWidthDataReaderColumns
     }
 
     /// <summary>
-    /// Creates columns from fixed-width attributes, preserving the attribute order.
+    /// Creates columns from positional map attributes, preserving the attribute order.
     /// </summary>
-    /// <param name="attributes">Fixed-width column attributes.</param>
+    /// <param name="attributes">Positional map attributes.</param>
     /// <param name="names">Optional column names, matching the attribute count.</param>
     public static FixedWidthDataReaderColumn[] FromAttributes(
-        IReadOnlyList<FixedWidthColumnAttribute> attributes,
+        IReadOnlyList<PositionalMapAttribute> attributes,
         IReadOnlyList<string>? names = null)
     {
         ArgumentNullException.ThrowIfNull(attributes);

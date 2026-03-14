@@ -19,8 +19,8 @@ namespace HeroParser.FixedWidths.Mapping;
 /// <c>ref T</c>, but compiled <see cref="Action{T, TProperty}"/> expression trees do not.
 /// For reference types, the ref passes the object reference so property mutation works correctly.
 /// </remarks>
-[RequiresUnreferencedCode("FixedWidthMap uses expression trees and reflection for property binding. Use [FixedWidthGenerateBinder] for AOT/trimming support.")]
-[RequiresDynamicCode("FixedWidthMap uses expression trees and reflection. Use [FixedWidthGenerateBinder] for AOT support.")]
+[RequiresUnreferencedCode("FixedWidthMap uses expression trees and reflection for property binding. Use [GenerateBinder] for AOT/trimming support.")]
+[RequiresDynamicCode("FixedWidthMap uses expression trees and reflection. Use [GenerateBinder] for AOT support.")]
 public class FixedWidthMap<T> : IFixedWidthReadMapSource<T>, IFixedWidthWriteMapSource<T> where T : class, new()
 {
     private readonly List<MappedProperty> mappedProperties = [];

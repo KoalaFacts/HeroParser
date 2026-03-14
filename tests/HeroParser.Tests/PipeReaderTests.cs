@@ -2,7 +2,6 @@ using System.Buffers;
 using System.IO.Pipelines;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
-using HeroParser.SeparatedValues.Reading.Shared;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -12,7 +11,7 @@ namespace HeroParser.Tests;
 /// </summary>
 public class PipeReaderTests
 {
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public sealed class PipePersonRecord
     {
         public string Name { get; set; } = string.Empty;

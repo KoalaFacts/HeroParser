@@ -1,5 +1,4 @@
 using System.Globalization;
-using HeroParser.SeparatedValues.Reading.Shared;
 
 namespace HeroParser.SeparatedValues.Reading.Records;
 
@@ -149,7 +148,7 @@ public sealed record CsvRecordOptions
     /// types like Money, Address, or other value objects that are not natively supported.
     /// <para>
     /// The converter receives the column value, the culture from <see cref="Culture"/>, and the format
-    /// string from <see cref="CsvColumnAttribute.Format"/> if specified.
+    /// string from <see cref="ParseAttribute.Format"/> if specified.
     /// </para>
     /// </remarks>
     /// <example>

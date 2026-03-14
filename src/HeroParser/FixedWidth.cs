@@ -15,16 +15,16 @@ public static partial class FixedWidth
     /// <example>
     /// <code>
     /// // Define record type with column mappings
-    /// [FixedWidthGenerateBinder]
+    /// [GenerateBinder]
     /// public class Employee
     /// {
-    ///     [FixedWidthColumn(Start = 0, Length = 10)]
+    ///     [PositionalMap(Start = 0, Length = 10)]
     ///     public string Id { get; set; }
     ///
-    ///     [FixedWidthColumn(Start = 10, Length = 30)]
+    ///     [PositionalMap(Start = 10, Length = 30)]
     ///     public string Name { get; set; }
     ///
-    ///     [FixedWidthColumn(Start = 40, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+    ///     [PositionalMap(Start = 40, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
     ///     public decimal Salary { get; set; }
     /// }
     ///

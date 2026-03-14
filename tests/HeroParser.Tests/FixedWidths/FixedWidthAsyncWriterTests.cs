@@ -1,5 +1,4 @@
 using HeroParser.FixedWidths;
-using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.FixedWidths.Writing;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -18,13 +17,13 @@ public class FixedWidthAsyncWriterTests
 
     public class TestRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 20)]
+        [PositionalMap(Start = 0, Length = 20)]
         public string? Name { get; set; }
 
-        [FixedWidthColumn(Start = 20, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 20, Length = 5, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Age { get; set; }
 
-        [FixedWidthColumn(Start = 25, Length = 15)]
+        [PositionalMap(Start = 25, Length = 15)]
         public string? City { get; set; }
     }
 
@@ -1162,13 +1161,13 @@ public class FixedWidthAsyncWriterTests
 
     public class ProductRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 10, Length = 30)]
+        [PositionalMap(Start = 10, Length = 30)]
         public string? Name { get; set; }
 
-        [FixedWidthColumn(Start = 40, Length = 15, Alignment = FieldAlignment.Right)]
+        [PositionalMap(Start = 40, Length = 15, Alignment = FieldAlignment.Right)]
         public decimal Price { get; set; }
     }
 
@@ -1253,6 +1252,96 @@ public class FixedWidthAsyncWriterTests
                 City = $"City{i % 10}"
             };
         }
+    }
+
+    #endregion
+
+    #region WriteFormat Tests
+
+    public class WriteFormatFixedWidthRecord
+    {
+        [PositionalMap(Start = 0, Length = 12)]
+        [Parse(Format = "yyyy-MM-dd")]
+        [Format(WriteFormat = "dd/MM/yyyy")]
+        public DateTime Date { get; set; }
+
+        [PositionalMap(Start = 12, Length = 10, Alignment = FieldAlignment.Right)]
+        [Parse(Format = "N2")]
+        [Format(WriteFormat = "F4")]
+        public decimal Amount { get; set; }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void WriteFormat_OverridesParseFormat_ForFixedWidthWriter()
+    {
+        var records = new[]
+        {
+            new WriteFormatFixedWidthRecord
+            {
+                Date = new DateTime(2026, 3, 14),
+                Amount = 42.5m
+            }
+        };
+
+        var output = FixedWidth.WriteToText(records);
+
+        // WriteFormat "dd/MM/yyyy" should be used instead of Parse "yyyy-MM-dd"
+        Assert.Contains("14/03/2026", output);
+        Assert.DoesNotContain("2026-03-14", output);
+        // WriteFormat "F4" should be used instead of Parse "N2"
+        Assert.Contains("42.5000", output);
+    }
+
+    public class ParseOnlyFixedWidthRecord
+    {
+        [PositionalMap(Start = 0, Length = 12)]
+        [Parse(Format = "yyyy-MM-dd")]
+        public DateTime Date { get; set; }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void WriteFormat_FallsBackToParseFormat_WhenWriteFormatNotSet_FixedWidth()
+    {
+        var records = new[]
+        {
+            new ParseOnlyFixedWidthRecord { Date = new DateTime(2026, 3, 14) }
+        };
+
+        var output = FixedWidth.WriteToText(records);
+
+        // Should fall back to Parse Format "yyyy-MM-dd"
+        Assert.Contains("2026-03-14", output);
+    }
+
+    [Theory]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    [InlineData("en-US", "03/14/2026")]   // '/' separator stays '/'
+    [InlineData("de-DE", "03.14.2026")]   // '/' becomes '.' (German date separator)
+    public void WriteFormat_WithCulture_DateSeparatorChanges_FixedWidth(
+        string cultureName, string expectedDate)
+    {
+        var records = new[]
+        {
+            new CultureFixedWidthRecord { Date = new DateTime(2026, 3, 14) }
+        };
+
+        var options = new FixedWidthWriteOptions
+        {
+            Culture = System.Globalization.CultureInfo.GetCultureInfo(cultureName)
+        };
+
+        var output = FixedWidth.WriteToText(records, options);
+
+        Assert.Contains(expectedDate, output);
+    }
+
+    public class CultureFixedWidthRecord
+    {
+        [PositionalMap(Start = 0, Length = 20)]
+        [Format(WriteFormat = "MM/dd/yyyy")]
+        public DateTime Date { get; set; }
     }
 
     #endregion

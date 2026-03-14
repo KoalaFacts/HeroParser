@@ -2,10 +2,8 @@ using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Mapping;
-using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Shared;
 using System.IO.Pipelines;
 using System.Text;
 
@@ -189,7 +187,7 @@ public class CsvTypedPipeReaderBenchmarks
         return sb.ToString();
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public sealed class CsvTypedPipeRecord
     {
         public string Name { get; set; } = string.Empty;
@@ -386,13 +384,13 @@ public class FixedWidthTypedPipeReaderBenchmarks
         sb.Append(' ', width - value.Length);
     }
 
-    [FixedWidthGenerateBinder]
+    [GenerateBinder]
     public class TypedPipeRecord
     {
-        [FixedWidthColumn(Start = 0, Length = 4, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 4, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [FixedWidthColumn(Start = 4, Length = 6)]
+        [PositionalMap(Start = 4, Length = 6)]
         public string Name { get; set; } = string.Empty;
     }
 

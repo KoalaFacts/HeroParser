@@ -2,7 +2,6 @@ using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records.MultiSchema;
 using HeroParser.SeparatedValues.Reading.Rows;
-using HeroParser.SeparatedValues.Reading.Shared;
 using System.Text;
 using Xunit;
 
@@ -504,115 +503,115 @@ public class MultiSchemaTests
 
     #region Test Record Classes
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class HeaderRecord
     {
-        [CsvColumn(Name = "Data1")]
+        [TabularMap(Name = "Data1")]
         public string FileId { get; set; } = string.Empty;
 
-        [CsvColumn(Name = "Data2")]
+        [TabularMap(Name = "Data2")]
         public DateOnly Date { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class DetailRecord
     {
-        [CsvColumn(Name = "Data1")]
+        [TabularMap(Name = "Data1")]
         public string ItemId { get; set; } = string.Empty;
 
-        [CsvColumn(Name = "Data2")]
+        [TabularMap(Name = "Data2")]
         public decimal Amount { get; set; }
 
-        [CsvColumn(Name = "Data3")]
+        [TabularMap(Name = "Data3")]
         public string Description { get; set; } = string.Empty;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class TrailerRecord
     {
-        [CsvColumn(Name = "Data1")]
+        [TabularMap(Name = "Data1")]
         public int RecordCount { get; set; }
 
-        [CsvColumn(Name = "Data2")]
+        [TabularMap(Name = "Data2")]
         public decimal TotalAmount { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class FileHeader
     {
         public string Value1 { get; set; } = string.Empty;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class BatchItem
     {
         public string Value1 { get; set; } = string.Empty;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class FileControl
     {
         public string Value1 { get; set; } = string.Empty;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class NoHeaderRecord
     {
-        [CsvColumn(Index = 0)]
+        [TabularMap(Index = 0)]
         public string Type { get; set; } = string.Empty;
 
-        [CsvColumn(Index = 1)]
+        [TabularMap(Index = 1)]
         public string FileId { get; set; } = string.Empty;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class NoHeaderDetail
     {
-        [CsvColumn(Index = 0)]
+        [TabularMap(Index = 0)]
         public string Type { get; set; } = string.Empty;
 
-        [CsvColumn(Index = 1)]
+        [TabularMap(Index = 1)]
         public string ItemId { get; set; } = string.Empty;
 
-        [CsvColumn(Index = 2)]
+        [TabularMap(Index = 2)]
         public decimal Amount { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class NoHeaderTrailer
     {
-        [CsvColumn(Index = 0)]
+        [TabularMap(Index = 0)]
         public string Type { get; set; } = string.Empty;
 
-        [CsvColumn(Index = 1)]
+        [TabularMap(Index = 1)]
         public int RecordCount { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class SimpleHeader
     {
         public string Data { get; set; } = string.Empty;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class SimpleDetail
     {
         public string Data { get; set; } = string.Empty;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class SimpleTrailer
     {
         public string Data { get; set; } = string.Empty;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public struct StructHeader
     {
         public string? Value { get; set; }
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public struct StructDetail
     {
         public string? Value { get; set; }

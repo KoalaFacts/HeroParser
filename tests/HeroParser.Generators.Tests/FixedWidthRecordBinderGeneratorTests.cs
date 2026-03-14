@@ -17,18 +17,17 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_WithStruct_GeneratesDescriptorAndWriter()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public struct PersonStruct
             {
-                [FixedWidthColumn(Start = 0, Length = 5)]
+                [PositionalMap(Start = 0, Length = 5)]
                 public int Id { get; set; }
 
-                [FixedWidthColumn(Start = 5, Length = 10)]
+                [PositionalMap(Start = 5, Length = 10)]
                 public string? Name { get; set; }
             }
             """;
@@ -51,18 +50,17 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_WithNoValidation_EmitsDescriptorAndGeneratedBinder()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Employee
             {
-                [FixedWidthColumn(Start = 0, Length = 5)]
+                [PositionalMap(Start = 0, Length = 5)]
                 public int Id { get; set; }
 
-                [FixedWidthColumn(Start = 5, Length = 20)]
+                [PositionalMap(Start = 5, Length = 20)]
                 public string? Name { get; set; }
             }
             """;
@@ -86,15 +84,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_NotNullValidation_EmitsNotNullCheck()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, NotNull = true)]
+                [PositionalMap(Start = 0, Length = 10)]
+                [Validate(NotNull = true)]
                 public string? Name { get; set; }
             }
             """;
@@ -114,15 +112,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_NotEmptyValidation_EmitsNotEmptyCheck()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, NotEmpty = true)]
+                [PositionalMap(Start = 0, Length = 10)]
+                [Validate(NotEmpty = true)]
                 public string? Name { get; set; }
             }
             """;
@@ -141,15 +139,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_MaxLengthValidation_EmitsMaxLengthCheck()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, MaxLength = 5)]
+                [PositionalMap(Start = 0, Length = 10)]
+                [Validate(MaxLength = 5)]
                 public string? Name { get; set; }
             }
             """;
@@ -168,15 +166,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_MinLengthValidation_EmitsMinLengthCheck()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, MinLength = 3)]
+                [PositionalMap(Start = 0, Length = 10)]
+                [Validate(MinLength = 3)]
                 public string? Name { get; set; }
             }
             """;
@@ -195,15 +193,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_RangeValidation_EmitsRangeCheck()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 5, RangeMin = 1, RangeMax = 100)]
+                [PositionalMap(Start = 0, Length = 5)]
+                [Validate(RangeMin = 1, RangeMax = 100)]
                 public int Age { get; set; }
             }
             """;
@@ -223,15 +221,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_PatternValidation_EmitsRegexCheck()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, Pattern = @"^\d+$")]
+                [PositionalMap(Start = 0, Length = 10)]
+                [Validate(Pattern = @"^\d+$")]
                 public string? Code { get; set; }
             }
             """;
@@ -253,15 +251,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_PatternValidation_EmitsCustomTimeoutMs()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, Pattern = @"^\d+$", PatternTimeoutMs = 500)]
+                [PositionalMap(Start = 0, Length = 10)]
+                [Validate(Pattern = @"^\d+$", PatternTimeoutMs = 500)]
                 public string? Code { get; set; }
             }
             """;
@@ -279,15 +277,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_NotEmptyOnNonString_EmitsDiagnostic()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 5, NotEmpty = true)]
+                [PositionalMap(Start = 0, Length = 5)]
+                [Validate(NotEmpty = true)]
                 public int Age { get; set; }
             }
             """;
@@ -303,15 +301,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_MaxLengthOnNonString_EmitsDiagnostic()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 5, MaxLength = 3)]
+                [PositionalMap(Start = 0, Length = 5)]
+                [Validate(MaxLength = 3)]
                 public int Age { get; set; }
             }
             """;
@@ -326,15 +324,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_RangeOnNonNumeric_EmitsDiagnostic()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, RangeMin = 1)]
+                [PositionalMap(Start = 0, Length = 10)]
+                [Validate(RangeMin = 1)]
                 public string? Name { get; set; }
             }
             """;
@@ -349,15 +347,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_PatternOnNonString_EmitsDiagnostic()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 5, Pattern = @"^\d+$")]
+                [PositionalMap(Start = 0, Length = 5)]
+                [Validate(Pattern = @"^\d+$")]
                 public int Age { get; set; }
             }
             """;
@@ -369,21 +367,58 @@ public class FixedWidthRecordBinderGeneratorTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void Generator_GeneratedBinder_RegistersWithFactory()
+    public void Generator_WithWriteFormatAttribute_EmitsWriteFormatInWriter()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using System;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
+            public class WriteFormatRecord
+            {
+                [PositionalMap(Start = 0, Length = 12)]
+                [Parse(Format = "yyyy-MM-dd")]
+                [Format(WriteFormat = "dd/MM/yyyy")]
+                public DateTime Date { get; set; }
+
+                [PositionalMap(Start = 12, Length = 10)]
+                [Parse(Format = "N2")]
+                [Format(WriteFormat = "F4")]
+                public decimal Amount { get; set; }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+
+        // Writer template should use WriteFormat values
+        Assert.Contains("dd/MM/yyyy", allGeneratedCode);
+        Assert.Contains("F4", allGeneratedCode);
+        // Read-side binder should use Parse Format values
+        Assert.Contains("yyyy-MM-dd", allGeneratedCode);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Generator_GeneratedBinder_RegistersWithFactory()
+    {
+        var source = """
+            using HeroParser;
+
+            namespace TestNamespace;
+
+            [GenerateBinder]
             public class Employee
             {
-                [FixedWidthColumn(Start = 0, Length = 5)]
+                [PositionalMap(Start = 0, Length = 5)]
                 public int Id { get; set; }
 
-                [FixedWidthColumn(Start = 5, Length = 20)]
+                [PositionalMap(Start = 5, Length = 20)]
                 public string? Name { get; set; }
             }
             """;
@@ -407,15 +442,15 @@ public class FixedWidthRecordBinderGeneratorTests
     public void Generator_ValidationError_CollectsRowNumberAndFieldInfo()
     {
         var source = """
-            using HeroParser.FixedWidths;
-            using HeroParser.FixedWidths.Records.Binding;
+            using HeroParser;
 
             namespace TestNamespace;
 
-            [FixedWidthGenerateBinder]
+            [GenerateBinder]
             public class Record
             {
-                [FixedWidthColumn(Start = 0, Length = 10, NotNull = true)]
+                [PositionalMap(Start = 0, Length = 10)]
+                [Validate(NotNull = true)]
                 public string? Name { get; set; }
             }
             """;

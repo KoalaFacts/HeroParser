@@ -1,4 +1,4 @@
-namespace HeroParser.FixedWidths;
+namespace HeroParser;
 
 /// <summary>
 /// Specifies how data is aligned within a fixed-width field.

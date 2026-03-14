@@ -3,7 +3,6 @@ using BenchmarkDotNet.Engines;
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records;
-using HeroParser.SeparatedValues.Reading.Shared;
 using System.Globalization;
 using System.Text;
 
@@ -243,7 +242,7 @@ public class BinderOverheadBenchmarks
         return total;
     }
 
-    [CsvGenerateBinder]
+    [GenerateBinder]
     public class TypedRecord
     {
         public string Name { get; set; } = "";

@@ -21,7 +21,7 @@ public sealed class ExcelRecordWriter<T>
     /// <summary>
     /// Delegate for source-generated direct record writing that avoids boxing value-type properties.
     /// </summary>
-    internal delegate void DirectRecordWriterDelegate(
+    public delegate void DirectRecordWriterDelegate(
         XlsxWriter.SheetWriter sheetWriter,
         T record,
         int rowNumber,
@@ -106,7 +106,11 @@ public sealed class ExcelRecordWriter<T>
     /// Creates a record writer from source-generated templates with a direct record writer delegate
     /// that avoids boxing value-type properties.
     /// </summary>
-    internal static ExcelRecordWriter<T> CreateFromTemplates(
+    /// <param name="options">Writer options, or <see langword="null"/> to use defaults.</param>
+    /// <param name="templates">The source-generated templates describing each property.</param>
+    /// <param name="directWriter">A delegate that writes a record directly to a sheet writer without boxing.</param>
+    /// <returns>A new <see cref="ExcelRecordWriter{T}"/> backed by the provided templates and direct writer.</returns>
+    public static ExcelRecordWriter<T> CreateFromTemplates(
         ExcelWriteOptions? options,
         IReadOnlyList<WriterTemplate> templates,
         DirectRecordWriterDelegate directWriter)

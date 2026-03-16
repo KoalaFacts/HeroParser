@@ -16,7 +16,14 @@ namespace HeroParser.Excels.Xlsx;
 //   sheet.EndRow();
 //   sheet.Close();
 //   // Dispose writes the workbook-level XML parts.
-internal sealed class XlsxWriter : IDisposable
+/// <summary>
+/// Low-level writer for creating .xlsx packages. Manages ZIP archive entries and XML generation.
+/// </summary>
+/// <remarks>
+/// This type is public to support source-generated direct writers that avoid boxing.
+/// Prefer the higher-level <c>Excel.Write&lt;T&gt;()</c> API for general use.
+/// </remarks>
+public sealed class XlsxWriter : IDisposable
 {
     // numFmtId 14 = "m/d/yyyy" (built-in Excel date format, always recognised as date by readers)
     private const int DATE_NUM_FMT_ID = 14;
@@ -28,9 +35,9 @@ internal sealed class XlsxWriter : IDisposable
     private readonly List<string> sheetNames = [];
     private bool disposed;
 
-    // Opens a new .xlsx writer over <paramref name="stream"/> in Create mode.
-    // <param name="stream">Writable stream to receive the .xlsx data.</param>
-    // <param name="leaveOpen">When true, the stream is not closed on Dispose.</param>
+    /// <summary>Opens a new .xlsx writer over the given stream in Create mode.</summary>
+    /// <param name="stream">Writable stream to receive the .xlsx data.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, the stream is not closed on Dispose.</param>
     public XlsxWriter(Stream stream, bool leaveOpen = false)
     {
         archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: leaveOpen);
@@ -42,8 +49,9 @@ internal sealed class XlsxWriter : IDisposable
     // Characters not allowed in Excel sheet names.
     private static ReadOnlySpan<char> IllegalSheetNameChars => ['\\', '/', '?', '*', '[', ']', ':'];
 
-    // Starts a new sheet and returns a writer for it.
-    // Sheets must be closed (via SheetWriter.Close()) before XlsxWriter is disposed.
+    /// <summary>Starts a new sheet and returns a writer for it.</summary>
+    /// <param name="name">The worksheet name (max 31 chars, no illegal characters).</param>
+    /// <returns>A <see cref="SheetWriter"/> for writing rows and cells.</returns>
     public SheetWriter StartSheet(string name)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
@@ -57,8 +65,7 @@ internal sealed class XlsxWriter : IDisposable
         return new SheetWriter(entry.Open(), sharedStrings);
     }
 
-    // Finalises the workbook: writes [Content_Types].xml, _rels/.rels, xl/workbook.xml,
-    // xl/_rels/workbook.xml.rels, xl/sharedStrings.xml, and xl/styles.xml.
+    /// <summary>Finalises the workbook by writing package-level XML parts and disposes the archive.</summary>
     public void Dispose()
     {
         if (disposed)
@@ -347,7 +354,10 @@ internal sealed class XlsxWriter : IDisposable
     // Call WriteHeaderRow (optional), then for each data row:
     //   StartRow → WriteCellXxx (one per column) → EndRow
     // Call Close() when all rows are written.
-    internal sealed class SheetWriter : IDisposable
+    /// <summary>
+    /// Writes cells into a single Excel worksheet within an <see cref="XlsxWriter"/>.
+    /// </summary>
+    public sealed class SheetWriter : IDisposable
     {
         private readonly XmlWriter xmlWriter;
         private readonly XlsxSharedStringTable sharedStrings;
@@ -376,8 +386,8 @@ internal sealed class XlsxWriter : IDisposable
             xmlWriter.WriteStartElement("sheetData", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
         }
 
-        // Writes row 1 as a header row using shared string cells.
-        // Must be called before StartRow if used.
+        /// <summary>Writes row 1 as a header row using shared string cells.</summary>
+        /// <param name="headers">Column header names.</param>
         public void WriteHeaderRow(string[] headers)
         {
             StartRow(1);
@@ -386,7 +396,8 @@ internal sealed class XlsxWriter : IDisposable
             EndRow();
         }
 
-        // Opens a new row element. rowNumber is 1-based.
+        /// <summary>Opens a new row element.</summary>
+        /// <param name="rowNumber">The 1-based row number.</param>
         public void StartRow(int rowNumber)
         {
             if (rowOpen)
@@ -401,7 +412,9 @@ internal sealed class XlsxWriter : IDisposable
             rowOpen = true;
         }
 
-        // Writes a shared-string cell. columnIndex is 1-based.
+        /// <summary>Writes a shared-string cell.</summary>
+        /// <param name="columnIndex">The 1-based column index.</param>
+        /// <param name="value">The string value.</param>
         public void WriteCellString(int columnIndex, string value)
         {
             int ssIndex = sharedStrings.GetOrAdd(value);
@@ -419,7 +432,9 @@ internal sealed class XlsxWriter : IDisposable
             xmlWriter.WriteEndElement(); // c
         }
 
-        // Writes a numeric cell. columnIndex is 1-based.
+        /// <summary>Writes a numeric cell.</summary>
+        /// <param name="columnIndex">The 1-based column index.</param>
+        /// <param name="value">The numeric value.</param>
         public void WriteCellNumber(int columnIndex, double value)
         {
             xmlWriter.WriteStartElement("c", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
@@ -434,7 +449,9 @@ internal sealed class XlsxWriter : IDisposable
             xmlWriter.WriteEndElement(); // c
         }
 
-        // Writes a boolean cell (1 for true, 0 for false). columnIndex is 1-based.
+        /// <summary>Writes a boolean cell (1 for true, 0 for false).</summary>
+        /// <param name="columnIndex">The 1-based column index.</param>
+        /// <param name="value">The boolean value.</param>
         public void WriteCellBoolean(int columnIndex, bool value)
         {
             xmlWriter.WriteStartElement("c", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
@@ -446,8 +463,9 @@ internal sealed class XlsxWriter : IDisposable
             xmlWriter.WriteEndElement(); // c
         }
 
-        // Writes a date cell as an OA date serial number with style index 1 (date format).
-        // columnIndex is 1-based.
+        /// <summary>Writes a date cell as an OA date serial number with a date style.</summary>
+        /// <param name="columnIndex">The 1-based column index.</param>
+        /// <param name="value">The date/time value.</param>
         public void WriteCellDate(int columnIndex, DateTime value)
         {
             double oaDate = value.ToOADate();
@@ -465,7 +483,8 @@ internal sealed class XlsxWriter : IDisposable
             xmlWriter.WriteEndElement(); // c
         }
 
-        // Writes an empty cell (no value element). columnIndex is 1-based.
+        /// <summary>Writes an empty cell (no value element).</summary>
+        /// <param name="columnIndex">The 1-based column index.</param>
         public void WriteCellEmpty(int columnIndex)
         {
             xmlWriter.WriteStartElement("c", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
@@ -473,7 +492,7 @@ internal sealed class XlsxWriter : IDisposable
             xmlWriter.WriteEndElement(); // c
         }
 
-        // Closes the current row element.
+        /// <summary>Closes the current row element.</summary>
         public void EndRow()
         {
             if (!rowOpen)
@@ -483,7 +502,7 @@ internal sealed class XlsxWriter : IDisposable
             rowOpen = false;
         }
 
-        // Finalises the worksheet XML. Must be called after all rows are written.
+        /// <summary>Finalises the worksheet XML. Must be called after all rows are written.</summary>
         public void Close()
         {
             if (closed)
@@ -500,7 +519,7 @@ internal sealed class XlsxWriter : IDisposable
             xmlWriter.Flush();
         }
 
-        // Calls Close() if not already done.
+        /// <summary>Calls <see cref="Close"/> if not already done and disposes the underlying writer.</summary>
         public void Dispose()
         {
             Close();

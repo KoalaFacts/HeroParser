@@ -788,9 +788,78 @@ public class CsvRecordBinderGeneratorTests
         }
     }
 
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void GeneratedCode_WithValidation_CompilesWithoutInternalAccess()
+    {
+        // This test verifies that generated code only references public types.
+        // The compilation is named "TestAssembly" (not a friend assembly), so any
+        // reference to internal types like WriteValidationRunner would produce CS0122.
+        var source = """
+            using HeroParser;
+            namespace ConsumerApp;
+            [GenerateBinder]
+            public class Order
+            {
+                [TabularMap(Name = "Id")]
+                [Validate(NotNull = true, NotEmpty = true)]
+                public string Id { get; set; } = "";
+
+                [TabularMap(Name = "Amount")]
+                [Validate(NotNull = true, RangeMin = 0, RangeMax = 100000)]
+                public decimal Amount { get; set; }
+
+                [TabularMap(Name = "Code")]
+                [Validate(MinLength = 2, MaxLength = 10, Pattern = @"^[A-Z0-9]+$")]
+                public string Code { get; set; } = "";
+
+                [TabularMap(Name = "Notes")]
+                public string Notes { get; set; } = "";
+            }
+            """;
+
+        var (_, outputCompilation) = RunGeneratorWithCompilation(source);
+
+        var errors = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void GeneratedCode_WithoutValidation_CompilesWithoutInternalAccess()
+    {
+        var source = """
+            using HeroParser;
+            namespace ConsumerApp;
+            [GenerateBinder]
+            public class Simple
+            {
+                public string Name { get; set; } = "";
+                public int Age { get; set; }
+            }
+            """;
+
+        var (_, outputCompilation) = RunGeneratorWithCompilation(source);
+
+        var errors = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+
+        Assert.Empty(errors);
+    }
+
     #region Test Infrastructure
 
     private static GeneratorRunResult RunGenerator(string source)
+    {
+        var (result, _) = RunGeneratorWithCompilation(source);
+        return result;
+    }
+
+    private static (GeneratorRunResult Result, CSharpCompilation OutputCompilation) RunGeneratorWithCompilation(string source)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
         var compilation = CreateCompilation(syntaxTree);
@@ -800,11 +869,11 @@ public class CsvRecordBinderGeneratorTests
 
         driver = (CSharpGeneratorDriver)driver.RunGeneratorsAndUpdateCompilation(
             compilation,
-            out _,
+            out var outputCompilation,
             out _);
 
         var runResult = driver.GetRunResult();
-        return runResult.Results.Single();
+        return (runResult.Results.Single(), (CSharpCompilation)outputCompilation);
     }
 
     private static CSharpCompilation CreateCompilation(SyntaxTree syntaxTree)
@@ -820,6 +889,7 @@ public class CsvRecordBinderGeneratorTests
         var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
         references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Runtime.dll")));
         references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Collections.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Text.RegularExpressions.dll")));
 
         return CSharpCompilation.Create(
             "TestAssembly",

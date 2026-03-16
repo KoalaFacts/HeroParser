@@ -945,14 +945,6 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
     }
 
-    private static bool MemberHasValidation(MemberDescriptor member)
-    {
-        return member.ValidationNotNull || member.ValidationNotEmpty
-            || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
-            || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
-            || member.ValidationPattern != null;
-    }
-
     private static void EmitExcelDirectWriter(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
     {
         // Emit a lambda that writes each property directly without boxing
@@ -963,40 +955,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("var culture = opts.Culture ?? System.Globalization.CultureInfo.InvariantCulture;");
         builder.AppendLine();
 
-        // Emit validation block if any member has validation rules
-        bool hasAnyValidation = false;
-        foreach (var member in members)
-        {
-            if (MemberHasValidation(member))
-            {
-                hasAnyValidation = true;
-                break;
-            }
-        }
-
-        if (hasAnyValidation)
-        {
-            builder.AppendLine("if (opts.ValidationMode == global::HeroParser.Validation.ValidationMode.Strict)");
-            builder.AppendLine("{");
-            builder.Indent();
-            builder.AppendLine("System.Collections.Generic.List<global::HeroParser.Validation.ValidationError>? errors = null;");
-
-            for (int i = 0; i < members.Count; i++)
-            {
-                var member = members[i];
-                if (!MemberHasValidation(member))
-                    continue;
-
-                // Extract value for validation (boxes only validated properties)
-                builder.AppendLine($"errors ??= new();");
-                builder.AppendLine($"global::HeroParser.Validation.WriteValidationRunner.Validate((object?)record.{member.MemberName}, \"{member.MemberName}\", rowNumber, {i}, excelTemplates_{fullyQualifiedName.Replace(".", "_").Replace("::", "_")}[{i}].Validation!, errors);");
-            }
-
-            builder.AppendLine("if (errors is { Count: > 0 }) throw new global::HeroParser.Validation.ValidationException(errors);");
-            builder.Unindent();
-            builder.AppendLine("}");
-            builder.AppendLine();
-        }
+        // Validation is handled by ExcelRecordWriter before invoking this delegate
 
         builder.AppendLine("sw.StartRow(rowNumber);");
 

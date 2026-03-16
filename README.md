@@ -1,10 +1,10 @@
-# HeroParser - A .Net High-Performance CSV & Fixed-Width Parser
+# HeroParser - A .Net High-Performance CSV, Fixed-Width & Excel (.xlsx) Parser
 
 [![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**High-Performance SIMD Parsing** | **Zero Allocations** | **AOT/Trimming Ready** | **Fixed-Width Support** | **Fluent APIs**
+**High-Performance SIMD Parsing** | **Zero Allocations** | **AOT/Trimming Ready** | **Fixed-Width Support** | **Excel (.xlsx) Support** | **Fluent APIs**
 
 ## 🚀 Key Features
 
@@ -19,8 +19,15 @@
 - **Fluent Builder API**: Configure readers with chainable methods (`Csv.Read<T>()`)
 - **LINQ-Style Extensions**: `Where()`, `Select()`, `First()`, `ToList()`, `GroupBy()`, and more
 
+### Excel (.xlsx)
+- **Zero-Dependency Excel**: Read and write `.xlsx` files using only `System.IO.Compression` and `System.Xml`
+- **Typed Record Reading**: `Excel.Read<T>().FromFile("data.xlsx")` with the same fluent API
+- **Multi-Sheet Support**: Read all sheets or specific sheets with different record types
+- **Typed Record Writing**: `Excel.Write<T>(records).ToFile("out.xlsx")` with headers, formatting, and validation
+- **IDataReader Support**: Stream large Excel files into databases with `Excel.CreateDataReader()`
+
 ### Writing
-- **High-Performance CSV Writer**: 2-5x faster than Sep with 35-85% less memory allocation
+- **High-Performance CSV Writer**: Ultra-fast writing with minimal memory allocation
 - **SIMD-Accelerated**: Uses AVX2/SSE2 for quote detection and field analysis
 - **RFC 4180 Compliant**: Proper quote escaping and field quoting
 - **Fluent Builder API**: Configure writers with chainable methods (`Csv.Write<T>()`)
@@ -620,7 +627,7 @@ var records = Csv.Read<Order>()
 
 ## ✍️ CSV Writing
 
-HeroParser includes a high-performance CSV writer that is 2-5x faster than Sep with significantly lower memory allocations.
+HeroParser includes a high-performance CSV writer with ultra-fast throughput and minimal memory allocations.
 
 ### Basic Writing
 

@@ -171,6 +171,24 @@ public sealed class ExcelRecordWriter<T>
             return;
         }
 
+        // Validate before writing when in Strict mode (both generated and reflection paths)
+        if (options.ValidationMode == ValidationMode.Strict)
+        {
+            List<ValidationError>? validationErrors = null;
+            for (int i = 0; i < accessors.Length; i++)
+            {
+                var accessor = accessors[i];
+                if (accessor.Validation is { HasAnyRule: true } rules)
+                {
+                    validationErrors ??= [];
+                    WriteValidationRunner.Validate(accessor.GetValue(record), accessor.MemberName, rowNumber, i, rules, validationErrors);
+                }
+            }
+
+            if (validationErrors is { Count: > 0 })
+                throw new ValidationException(validationErrors);
+        }
+
         // Source-generated direct writer: avoids boxing value-type properties
         if (directRecordWriter is not null)
         {
@@ -181,24 +199,6 @@ public sealed class ExcelRecordWriter<T>
         // Reflection path: extract values into buffer (boxes value types)
         for (int i = 0; i < accessors.Length; i++)
             valuesBuffer[i] = accessors[i].GetValue(record);
-
-        // Validate before writing when in Strict mode
-        if (options.ValidationMode == ValidationMode.Strict)
-        {
-            List<ValidationError>? validationErrors = null;
-            for (int i = 0; i < accessors.Length; i++)
-            {
-                var accessor = accessors[i];
-                if (accessor.Validation is { HasAnyRule: true } rules)
-                {
-                    validationErrors ??= [];
-                    WriteValidationRunner.Validate(valuesBuffer[i], accessor.MemberName, rowNumber, i, rules, validationErrors);
-                }
-            }
-
-            if (validationErrors is { Count: > 0 })
-                throw new ValidationException(validationErrors);
-        }
 
         sheetWriter.StartRow(rowNumber);
         for (int i = 0; i < accessors.Length; i++)

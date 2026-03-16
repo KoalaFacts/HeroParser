@@ -24,6 +24,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private const string ERROR_CODE_TYPE = "global::HeroParser.SeparatedValues.Core.CsvErrorCode";
     private const string WRITER_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriter";
     private const string WRITER_FACTORY_TYPE = "global::HeroParser.SeparatedValues.Writing.CsvRecordWriterFactory";
+    private const string EXCEL_WRITER_TYPE = "global::HeroParser.Excels.Writing.ExcelRecordWriter";
+    private const string EXCEL_WRITER_FACTORY_TYPE = "global::HeroParser.Excels.Writing.ExcelRecordWriterFactory";
 
     private static readonly string[] generateAttributeNames =
     [
@@ -817,6 +819,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             if (writerMembers.Count > 0)
             {
                 EmitWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers);
+                EmitExcelWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers);
             }
         }
 
@@ -875,33 +878,266 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
             builder.AppendLine($"{member.GetterFactory},");
             builder.AppendLine(member.ExcludeIfAllEmpty ? "true," : "false,");
-            if (member.ValidationNotNull || member.ValidationNotEmpty
-                || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
-                || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
-                || member.ValidationPattern != null)
-            {
-                builder.AppendLine($"new global::HeroParser.Validation.WritePropertyValidation(");
-                builder.Indent();
-                builder.AppendLine($"{(member.ValidationNotNull ? "true" : "false")},");
-                builder.AppendLine($"{(member.ValidationNotEmpty ? "true" : "false")},");
-                builder.AppendLine(member.ValidationMaxLength >= 0 ? $"{member.ValidationMaxLength}," : "null,");
-                builder.AppendLine(member.ValidationMinLength >= 0 ? $"{member.ValidationMinLength}," : "null,");
-                builder.AppendLine(!double.IsNaN(member.ValidationRangeMin) ? FormattableString.Invariant($"{member.ValidationRangeMin},") : "null,");
-                builder.AppendLine(!double.IsNaN(member.ValidationRangeMax) ? FormattableString.Invariant($"{member.ValidationRangeMax},") : "null,");
-                builder.AppendLine(member.ValidationPattern != null ? $"\"{EscapeString(member.ValidationPattern)}\"," : "null,");
-                builder.AppendLine($"{member.ValidationPatternTimeoutMs})),");
-                builder.Unindent();
-            }
-            else
-            {
-                builder.AppendLine("null),");
-            }
+            EmitValidationParam(builder, member);
             builder.Unindent();
         }
 
         builder.Unindent();
         builder.AppendLine("}));");
         builder.AppendLine();
+    }
+
+    private static void EmitExcelWriterRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    {
+        // Emit the templates array
+        builder.AppendLine($"var excelTemplates_{fullyQualifiedName.Replace(".", "_").Replace("::", "_")} = new {EXCEL_WRITER_TYPE}<{fullyQualifiedName}>.WriterTemplate[]");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        foreach (var member in members)
+        {
+            builder.AppendLine($"new {EXCEL_WRITER_TYPE}<{fullyQualifiedName}>.WriterTemplate(");
+            builder.Indent();
+            builder.AppendLine($"\"{member.MemberName}\",");
+            builder.AppendLine($"typeof({member.TypeofTypeName}),");
+            builder.AppendLine($"\"{member.HeaderName}\",");
+            var writerFormat = member.WriteFormat ?? member.Format;
+            builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
+            builder.AppendLine($"{member.GetterFactory},");
+            EmitValidationParam(builder, member);
+            builder.Unindent();
+        }
+
+        builder.Unindent();
+        builder.AppendLine("};");
+
+        // Register with both templates and direct writer
+        builder.AppendLine($"{EXCEL_WRITER_FACTORY_TYPE}.RegisterGeneratedWriter(typeof({fullyQualifiedName}), options => {EXCEL_WRITER_TYPE}<{fullyQualifiedName}>.CreateFromTemplates(options, excelTemplates_{fullyQualifiedName.Replace(".", "_").Replace("::", "_")},");
+        builder.Indent();
+        EmitExcelDirectWriter(builder, fullyQualifiedName, members);
+        builder.Unindent();
+        builder.AppendLine("));");
+        builder.AppendLine();
+    }
+
+    private static void EmitValidationParam(SourceBuilder builder, MemberDescriptor member)
+    {
+        if (member.ValidationNotNull || member.ValidationNotEmpty
+            || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
+            || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
+            || member.ValidationPattern != null)
+        {
+            builder.AppendLine($"new global::HeroParser.Validation.WritePropertyValidation(");
+            builder.Indent();
+            builder.AppendLine($"{(member.ValidationNotNull ? "true" : "false")},");
+            builder.AppendLine($"{(member.ValidationNotEmpty ? "true" : "false")},");
+            builder.AppendLine(member.ValidationMaxLength >= 0 ? $"{member.ValidationMaxLength}," : "null,");
+            builder.AppendLine(member.ValidationMinLength >= 0 ? $"{member.ValidationMinLength}," : "null,");
+            builder.AppendLine(!double.IsNaN(member.ValidationRangeMin) ? FormattableString.Invariant($"{member.ValidationRangeMin},") : "null,");
+            builder.AppendLine(!double.IsNaN(member.ValidationRangeMax) ? FormattableString.Invariant($"{member.ValidationRangeMax},") : "null,");
+            builder.AppendLine(member.ValidationPattern != null ? $"\"{EscapeString(member.ValidationPattern)}\"," : "null,");
+            builder.AppendLine($"{member.ValidationPatternTimeoutMs})),");
+            builder.Unindent();
+        }
+        else
+        {
+            builder.AppendLine("null),");
+        }
+    }
+
+    private static bool MemberHasValidation(MemberDescriptor member)
+    {
+        return member.ValidationNotNull || member.ValidationNotEmpty
+            || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
+            || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
+            || member.ValidationPattern != null;
+    }
+
+    private static void EmitExcelDirectWriter(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    {
+        // Emit a lambda that writes each property directly without boxing
+        builder.AppendLine($"(global::HeroParser.Excels.Xlsx.XlsxWriter.SheetWriter sw, {fullyQualifiedName} record, int rowNumber, global::HeroParser.Excels.Core.ExcelWriteOptions opts) =>");
+        builder.AppendLine("{");
+        builder.Indent();
+
+        builder.AppendLine("var culture = opts.Culture ?? System.Globalization.CultureInfo.InvariantCulture;");
+        builder.AppendLine();
+
+        // Emit validation block if any member has validation rules
+        bool hasAnyValidation = false;
+        foreach (var member in members)
+        {
+            if (MemberHasValidation(member))
+            {
+                hasAnyValidation = true;
+                break;
+            }
+        }
+
+        if (hasAnyValidation)
+        {
+            builder.AppendLine("if (opts.ValidationMode == global::HeroParser.Validation.ValidationMode.Strict)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("System.Collections.Generic.List<global::HeroParser.Validation.ValidationError>? errors = null;");
+
+            for (int i = 0; i < members.Count; i++)
+            {
+                var member = members[i];
+                if (!MemberHasValidation(member))
+                    continue;
+
+                // Extract value for validation (boxes only validated properties)
+                builder.AppendLine($"errors ??= new();");
+                builder.AppendLine($"global::HeroParser.Validation.WriteValidationRunner.Validate((object?)record.{member.MemberName}, \"{member.MemberName}\", rowNumber, {i}, excelTemplates_{fullyQualifiedName.Replace(".", "_").Replace("::", "_")}[{i}].Validation!, errors);");
+            }
+
+            builder.AppendLine("if (errors is { Count: > 0 }) throw new global::HeroParser.Validation.ValidationException(errors);");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine();
+        }
+
+        builder.AppendLine("sw.StartRow(rowNumber);");
+
+        for (int i = 0; i < members.Count; i++)
+        {
+            var member = members[i];
+            int colIndex = i + 1;
+            var writerFormat = member.WriteFormat ?? member.Format;
+            EmitExcelDirectCellWrite(builder, member, colIndex, writerFormat);
+        }
+
+        builder.AppendLine("sw.EndRow();");
+        builder.Unindent();
+        builder.AppendLine("}");
+    }
+
+    private static void EmitExcelDirectCellWrite(SourceBuilder builder, MemberDescriptor member, int colIndex, string? format)
+    {
+        var propExpr = $"record.{member.MemberName}";
+        var baseType = member.BaseTypeName;
+
+        // Handle nullable value types
+        if (member.IsNullable && baseType != "string")
+        {
+            builder.AppendLine($"if ({propExpr}.HasValue)");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitExcelDirectCellWriteCore(builder, $"{propExpr}.Value", baseType, member.IsEnum, colIndex, format);
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("else");
+            builder.AppendLine($"    sw.WriteCellEmpty({colIndex});");
+            return;
+        }
+
+        if (baseType == "string")
+        {
+            builder.AppendLine($"var v{colIndex} = {propExpr};");
+            builder.AppendLine($"if (v{colIndex} is null || v{colIndex}.Length == 0 || v{colIndex} == opts.NullValue)");
+            builder.AppendLine($"    sw.WriteCellEmpty({colIndex});");
+            builder.AppendLine("else");
+            builder.AppendLine($"    sw.WriteCellString({colIndex}, v{colIndex});");
+            return;
+        }
+
+        EmitExcelDirectCellWriteCore(builder, propExpr, baseType, member.IsEnum, colIndex, format);
+    }
+
+    private static void EmitExcelDirectCellWriteCore(SourceBuilder builder, string valueExpr, string baseType, bool isEnum, int colIndex, string? format)
+    {
+        // For types that support runtime format options, check both the attribute format and the options format.
+        // Attribute format takes precedence, then options format, then default behavior.
+        var fmtExpr = format != null ? $"\"{format}\"" : null;
+
+        switch (baseType)
+        {
+            case "int" or "System.Int32" or "long" or "System.Int64" or "short" or "System.Int16"
+                or "byte" or "System.Byte" or "uint" or "System.UInt32" or "ulong" or "System.UInt64"
+                or "ushort" or "System.UInt16" or "sbyte" or "System.SByte"
+                or "double" or "System.Double" or "float" or "System.Single":
+                if (format != null)
+                {
+                    // Attribute format is known at compile time — always use it
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                }
+                else
+                {
+                    // Check runtime NumberFormat option
+                    builder.AppendLine($"if (opts.NumberFormat is not null)");
+                    builder.AppendLine($"    sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.NumberFormat, culture));");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    sw.WriteCellNumber({colIndex}, (double){valueExpr});");
+                }
+                break;
+
+            case "decimal" or "System.Decimal":
+                // Always write decimal as string to preserve precision
+                builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr ?? "opts.NumberFormat"}, culture));");
+                break;
+
+            case "bool" or "System.Boolean":
+                if (format != null)
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString(culture));");
+                else
+                    builder.AppendLine($"sw.WriteCellBoolean({colIndex}, {valueExpr});");
+                break;
+
+            case "System.DateTime":
+                if (format != null)
+                {
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                }
+                else
+                {
+                    builder.AppendLine($"if (opts.DateTimeFormat is not null)");
+                    builder.AppendLine($"    sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.DateTimeFormat, culture));");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    sw.WriteCellDate({colIndex}, {valueExpr});");
+                }
+                break;
+
+            case "System.DateTimeOffset":
+                // Write as ISO 8601 by default to preserve offset
+                if (format != null)
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                else
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.DateTimeFormat ?? \"O\", culture));");
+                break;
+
+            case "System.DateOnly":
+                if (format != null)
+                {
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                }
+                else
+                {
+                    builder.AppendLine($"if (opts.DateOnlyFormat is not null)");
+                    builder.AppendLine($"    sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.DateOnlyFormat, culture));");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    sw.WriteCellDate({colIndex}, {valueExpr}.ToDateTime(System.TimeOnly.MinValue));");
+                }
+                break;
+
+            case "System.TimeOnly":
+                if (format != null)
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                else
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.TimeOnlyFormat ?? \"HH:mm:ss\", culture));");
+                break;
+
+            case "System.Guid":
+                builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString());");
+                break;
+
+            default:
+                if (isEnum)
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString());");
+                else
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}?.ToString() ?? \"\");");
+                break;
+        }
     }
 
     private static TypeDescriptor? BuildDescriptor(INamedTypeSymbol type, CancellationToken ct)

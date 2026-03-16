@@ -1,8 +1,12 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Linq.Expressions;
 using HeroParser.Excels.Core;
 using HeroParser.Excels.Xlsx;
+using HeroParser.SeparatedValues.Mapping;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Records;
+using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.Validation;
 
 namespace HeroParser.Excels.Reading;
@@ -23,7 +27,10 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     private int? maxRows;
     private int skipRows;
     private IProgress<ExcelProgress>? progress;
+    private int progressIntervalRows = 1000;
     private ValidationMode validationMode = ValidationMode.Strict;
+    private List<Func<CsvRecordOptions, CsvRecordOptions>>? converterRegistrations;
+    private ICsvReadMapSource<T>? mapSource;
 
     internal ExcelRecordReaderBuilder() { }
 
@@ -53,6 +60,16 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     }
 
     /// <summary>
+    /// Indicates that the Excel data includes a header row (default).
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelRecordReaderBuilder<T> WithHeader()
+    {
+        hasHeaderRow = true;
+        return this;
+    }
+
+    /// <summary>
     /// Indicates that the Excel data does not include a header row.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
@@ -70,6 +87,17 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     public ExcelRecordReaderBuilder<T> WithCulture(CultureInfo culture)
     {
         this.culture = culture ?? CultureInfo.InvariantCulture;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the culture for parsing cell values using a culture name.
+    /// </summary>
+    /// <param name="cultureName">The culture name (e.g., "en-US", "de-DE").</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelRecordReaderBuilder<T> WithCulture(string cultureName)
+    {
+        culture = CultureInfo.GetCultureInfo(cultureName);
         return this;
     }
 
@@ -99,11 +127,78 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     /// Sets the progress reporter for receiving reading progress updates.
     /// </summary>
     /// <param name="progress">The progress reporter.</param>
+    /// <param name="intervalRows">Rows between progress updates (default 1000).</param>
     /// <returns>This builder for method chaining.</returns>
-    public ExcelRecordReaderBuilder<T> WithProgress(IProgress<ExcelProgress> progress)
+    public ExcelRecordReaderBuilder<T> WithProgress(IProgress<ExcelProgress> progress, int intervalRows = 1000)
     {
         this.progress = progress;
+        progressIntervalRows = intervalRows;
         return this;
+    }
+
+    /// <summary>
+    /// Registers a custom type converter for a specific type.
+    /// </summary>
+    /// <typeparam name="TValue">The type to convert to.</typeparam>
+    /// <param name="converter">The converter delegate.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelRecordReaderBuilder<T> RegisterConverter<TValue>(CsvTypeConverter<TValue> converter)
+    {
+        ArgumentNullException.ThrowIfNull(converter);
+        converterRegistrations ??= [];
+        converterRegistrations.Add(options => options.RegisterConverter(converter));
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the builder to use a fluent <see cref="CsvMap{T}"/> for column mapping.
+    /// When set, terminal methods use descriptor binding instead of attribute/source-generator binding.
+    /// </summary>
+    /// <param name="map">The pre-configured CSV map instance.</param>
+    /// <returns>This builder for method chaining.</returns>
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] for AOT support.")]
+    public ExcelRecordReaderBuilder<T> WithMap(ICsvReadMapSource<T> map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        mapSource = map;
+        return this;
+    }
+
+    /// <summary>
+    /// Maps a property to an Excel column inline, creating a <see cref="CsvMap{T}"/> if one has not been set.
+    /// Cannot be mixed with <see cref="WithMap"/>; use one approach or the other.
+    /// </summary>
+    /// <typeparam name="TProperty">The property type.</typeparam>
+    /// <param name="property">An expression selecting the property to map (e.g., <c>t =&gt; t.Name</c>).</param>
+    /// <param name="configure">Optional column configuration action.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <see cref="WithMap"/> was already called.</exception>
+    [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] for AOT support.")]
+    public ExcelRecordReaderBuilder<T> Map<TProperty>(
+        Expression<Func<T, TProperty>> property,
+        Action<CsvColumnBuilder>? configure = null)
+    {
+        if (mapSource is not null and not InlineCsvMapWrapper<T>)
+        {
+            throw new InvalidOperationException(
+                "Cannot call Map() after WithMap(). Either use WithMap() with a fully configured map, " +
+                "or use Map() calls exclusively for inline mapping.");
+        }
+
+        var wrapper = (mapSource as InlineCsvMapWrapper<T>) ?? CreateInlineWrapper();
+        wrapper.Map(property, configure);
+        return this;
+    }
+
+    [RequiresUnreferencedCode("Fluent mapping uses reflection.")]
+    [RequiresDynamicCode("Fluent mapping uses expression compilation.")]
+    private InlineCsvMapWrapper<T> CreateInlineWrapper()
+    {
+        var wrapper = new InlineCsvMapWrapper<T>();
+        mapSource = wrapper;
+        return wrapper;
     }
 
     /// <summary>
@@ -204,7 +299,23 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             Culture = culture,
             ValidationMode = validationMode
         };
-        var binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions, delimiter: '\x01');
+
+        if (converterRegistrations is { Count: > 0 })
+        {
+            foreach (var registration in converterRegistrations)
+                recordOptions = registration(recordOptions);
+        }
+
+        ICsvBinder<char, T> binder;
+        if (mapSource is not null)
+        {
+            var descriptor = mapSource.BuildReadDescriptor();
+            binder = new CsvDescriptorBinder<T>(descriptor, recordOptions);
+        }
+        else
+        {
+            binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions, delimiter: '\x01');
+        }
 
         // Read header row if configured
         if (hasHeaderRow)
@@ -247,7 +358,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
 
             rowsRead++;
 
-            if (progress is not null && rowsRead % 1000 == 0)
+            if (progress is not null && rowsRead % progressIntervalRows == 0)
             {
                 progress.Report(new ExcelProgress(rowsRead, currentSheetName));
             }
@@ -257,7 +368,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             throw new ValidationException(errors);
 
         // Final progress report
-        if (progress is not null && rowsRead % 1000 != 0)
+        if (progress is not null && rowsRead % progressIntervalRows != 0)
         {
             progress.Report(new ExcelProgress(rowsRead, currentSheetName));
         }

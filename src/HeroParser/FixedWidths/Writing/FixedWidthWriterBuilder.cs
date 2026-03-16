@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using HeroParser.FixedWidths.Mapping;
+using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Writing;
 
@@ -25,6 +26,7 @@ public sealed class FixedWidthWriterBuilder<T>
     private OverflowBehavior overflowBehavior = OverflowBehavior.Truncate;
     private FixedWidthSerializeErrorHandler? onSerializeError;
     private long? maxOutputSize;
+    private ValidationMode validationMode = ValidationMode.Strict;
 
     // Cached options - invalidated when any setting changes
     private FixedWidthWriteOptions? cachedOptions;
@@ -255,6 +257,18 @@ public sealed class FixedWidthWriterBuilder<T>
     public FixedWidthWriterBuilder<T> OnError(FixedWidthSerializeErrorHandler handler)
     {
         onSerializeError = handler;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the validation mode for write operations. Default is <see cref="ValidationMode.Strict"/>.
+    /// </summary>
+    /// <param name="mode">The validation mode to use.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthWriterBuilder<T> WithValidationMode(ValidationMode mode)
+    {
+        validationMode = mode;
         cachedOptions = null;
         return this;
     }
@@ -534,7 +548,8 @@ public sealed class FixedWidthWriterBuilder<T>
             MaxRowCount = maxRowCount,
             OverflowBehavior = overflowBehavior,
             OnSerializeError = onSerializeError,
-            MaxOutputSize = maxOutputSize
+            MaxOutputSize = maxOutputSize,
+            ValidationMode = validationMode
         };
     }
 

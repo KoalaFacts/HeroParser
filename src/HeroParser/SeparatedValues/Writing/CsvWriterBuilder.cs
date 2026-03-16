@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using HeroParser.SeparatedValues.Mapping;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Writing;
 
@@ -33,6 +34,9 @@ public sealed class CsvWriterBuilder<T>
     private long? maxOutputSize;
     private int? maxFieldSize;
     private int? maxColumnCount;
+
+    // Validation
+    private ValidationMode validationMode = ValidationMode.Strict;
 
     // Progress reporting
     private IProgress<CsvWriteProgress>? writeProgress;
@@ -272,6 +276,18 @@ public sealed class CsvWriterBuilder<T>
     public CsvWriterBuilder<T> OnError(CsvSerializeErrorHandler handler)
     {
         onSerializeError = handler;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the validation mode for write operations. Default is <see cref="ValidationMode.Strict"/>.
+    /// </summary>
+    /// <param name="mode">The validation mode to use.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder<T> WithValidationMode(ValidationMode mode)
+    {
+        validationMode = mode;
         cachedOptions = null;
         return this;
     }
@@ -605,7 +621,8 @@ public sealed class CsvWriterBuilder<T>
             MaxFieldSize = maxFieldSize,
             MaxColumnCount = maxColumnCount,
             WriteProgress = writeProgress,
-            WriteProgressIntervalRows = writeProgressIntervalRows
+            WriteProgressIntervalRows = writeProgressIntervalRows,
+            ValidationMode = validationMode
         };
     }
 

@@ -210,7 +210,8 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         IReadOnlyList<string>? nullValues = null,
         CustomConverterDictionary? customConverters = null,
         IProgress<FixedWidthProgress>? progress = null,
-        int progressIntervalRows = 1000)
+        int progressIntervalRows = 1000,
+        ValidationMode validationMode = ValidationMode.Strict)
     {
         // Estimate capacity to avoid List resizing allocations
         var estimatedCapacity = reader.EstimateRowCount();
@@ -221,7 +222,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         {
             var errors = new List<ValidationError>();
             var records = BindWithTypedBinder(reader, generatedBinder!, estimatedCapacity, progress, progressIntervalRows, errors);
-            return new FixedWidthReadResult<T>(records, errors);
+            return new FixedWidthReadResult<T>(records, errors, validationMode);
         }
 
         // Fall back to descriptor binder when no error handler and no custom converters
@@ -229,7 +230,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
             FixedWidthRecordBinderFactory.TryCreateDescriptorBinder<T>(culture, nullValues, out var descriptorBinder))
         {
             var records = BindWithTypedBinder(reader, descriptorBinder!, estimatedCapacity, progress, progressIntervalRows, null);
-            return new FixedWidthReadResult<T>(records, []);
+            return new FixedWidthReadResult<T>(records, [], validationMode);
         }
 
         // Fall back to reflection-based binder
@@ -262,7 +263,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
             RecordsProcessed = recordsProcessed
         });
 
-        return new FixedWidthReadResult<T>(resultList, []);
+        return new FixedWidthReadResult<T>(resultList, [], validationMode);
     }
 
     /// <summary>
@@ -272,12 +273,13 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         FixedWidthCharSpanReader reader,
         IFixedWidthBinder<T> binder,
         IProgress<FixedWidthProgress>? progress = null,
-        int progressIntervalRows = 1000)
+        int progressIntervalRows = 1000,
+        ValidationMode validationMode = ValidationMode.Strict)
     {
         var errors = new List<ValidationError>();
         var records = BindWithTypedBinder(reader, binder, reader.EstimateRowCount(),
             progress, progressIntervalRows, errors);
-        return new FixedWidthReadResult<T>(records, errors);
+        return new FixedWidthReadResult<T>(records, errors, validationMode);
     }
 
     /// <summary>

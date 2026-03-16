@@ -1,3 +1,5 @@
+using HeroParser.Validation;
+
 namespace HeroParser.FixedWidths;
 
 /// <summary>
@@ -94,6 +96,13 @@ public sealed record FixedWidthReadOptions
     /// Default is 100 MB to prevent accidental memory exhaustion.
     /// </summary>
     public long? MaxInputSize { get; init; } = 100 * 1024 * 1024; // 100 MB
+
+    /// <summary>
+    /// Gets or sets how validation errors are surfaced during record reading.
+    /// When <see cref="ValidationMode.Strict"/> (default), terminal methods throw a <see cref="ValidationException"/> if any errors were collected.
+    /// When <see cref="ValidationMode.Lenient"/>, errors are collected silently and invalid rows are excluded from results.
+    /// </summary>
+    public ValidationMode ValidationMode { get; init; } = ValidationMode.Strict;
 
     /// <summary>
     /// Gets the default read options instance.

@@ -110,7 +110,7 @@ public static partial class Csv
         var reader = ReadFromByteSpan(textBytes, parserOptions);
         var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
         return new CsvRecordReader<byte, T>(reader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
     }
 
     /// <summary>
@@ -143,13 +143,14 @@ public static partial class Csv
                 textBytes,
                 recordOptions.SkipRows,
                 recordOptions.Progress,
-                recordOptions.ProgressIntervalRows);
+                recordOptions.ProgressIntervalRows,
+                recordOptions.ValidationMode);
         }
 
         var reader = ReadFromCharSpan(data.AsSpan(), parserOptions);
         var binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions, parserOptions.Delimiter);
         return new CsvRecordReader<char, T>(reader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
     }
 
     /// <summary>
@@ -167,7 +168,7 @@ public static partial class Csv
         var reader = ReadFromByteSpan(data, parserOptions);
         var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
         return new CsvRecordReader<byte, T>(reader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
     }
 
     /// <summary>

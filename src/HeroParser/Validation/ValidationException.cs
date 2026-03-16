@@ -4,7 +4,7 @@ namespace HeroParser.Validation;
 /// Represents one or more field-level validation errors that occurred during record binding.
 /// </summary>
 /// <remarks>
-/// Thrown by methods such as <c>ThrowIfAnyError()</c> on read-result types.
+/// Thrown automatically by terminal methods (e.g., <c>ToList()</c>) when <see cref="ValidationMode.Strict"/> is active.
 /// Inspect <see cref="Errors"/> for the full list of structured validation failures.
 /// </remarks>
 public sealed class ValidationException : Exception

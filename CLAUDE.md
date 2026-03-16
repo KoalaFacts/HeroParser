@@ -1,5 +1,11 @@
 # HeroParser Development Guidelines
 
+## gstack
+
+- **Web browsing**: Always use the `/browse` skill from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools.
+- **Available skills**: `/plan-ceo-review`, `/plan-eng-review`, `/review`, `/ship`, `/browse`, `/qa`, `/setup-browser-cookies`, `/retro`
+- **Troubleshooting**: If gstack skills aren't working, run `cd .claude/skills/gstack && ./setup` to build the binary and register skills.
+
 ## Active Technologies
 - C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 

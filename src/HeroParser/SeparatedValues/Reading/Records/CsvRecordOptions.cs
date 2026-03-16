@@ -1,4 +1,5 @@
 using System.Globalization;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Reading.Records;
 
@@ -129,6 +130,17 @@ public sealed record CsvRecordOptions
     /// (not recommended for large files due to performance impact).
     /// </remarks>
     public int ProgressIntervalRows { get; init; } = 1000;
+
+    /// <summary>
+    /// Gets or sets the validation mode for record reading. Default is <see cref="ValidationMode.Strict"/>.
+    /// </summary>
+    /// <remarks>
+    /// In <see cref="ValidationMode.Strict"/> mode, terminal methods like <c>ToList()</c> throw a
+    /// <see cref="ValidationException"/> if any validation errors are collected during iteration.
+    /// In <see cref="ValidationMode.Lenient"/> mode, invalid rows are silently excluded from results
+    /// and errors can be inspected via <see cref="CsvRecordReader{TElement, T}.Errors"/>.
+    /// </remarks>
+    public ValidationMode ValidationMode { get; init; } = ValidationMode.Strict;
 
     internal StringComparer HeaderComparer => CaseSensitiveHeaders ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 

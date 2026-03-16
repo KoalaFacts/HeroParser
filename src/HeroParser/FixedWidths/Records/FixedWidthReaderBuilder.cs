@@ -6,6 +6,7 @@ using System.Text;
 using HeroParser.FixedWidths.Mapping;
 using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.FixedWidths.Streaming;
+using HeroParser.Validation;
 using FixedWidthFactory = HeroParser.FixedWidth;
 
 namespace HeroParser.FixedWidths.Records;
@@ -51,6 +52,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     private IReadOnlyList<string>? nullValues = null;
     private IProgress<FixedWidthProgress>? progress = null;
     private int progressIntervalRows = 1000;
+    private ValidationMode validationMode = ValidationMode.Strict;
 
     // Encoding for file/stream operations
     private Encoding encoding = Encoding.UTF8;
@@ -314,6 +316,21 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     }
 
     /// <summary>
+    /// Sets how validation errors are surfaced during record reading.
+    /// </summary>
+    /// <param name="mode">
+    /// Use <see cref="ValidationMode.Strict"/> (default) to throw a <see cref="ValidationException"/> when errors are found,
+    /// or <see cref="ValidationMode.Lenient"/> to collect errors silently and exclude invalid rows.
+    /// </param>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthReaderBuilder<T> WithValidationMode(ValidationMode mode)
+    {
+        validationMode = mode;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
     /// Sets the encoding for file and stream operations.
     /// </summary>
     /// <param name="encoding">The encoding to use.</param>
@@ -417,7 +434,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             var descriptor = readMapSource.BuildReadDescriptor();
             var binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
             return FixedWidthRecordBinder<T>.Bind(
-                FixedWidthFactory.ReadFromText(text, options), binder, progress, progressIntervalRows);
+                FixedWidthFactory.ReadFromText(text, options), binder, progress, progressIntervalRows, validationMode);
         }
 
         return FixedWidthRecordBinder<T>.Bind(
@@ -427,7 +444,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             nullValues,
             customConverters,
             progress,
-            progressIntervalRows);
+            progressIntervalRows,
+            validationMode);
     }
 
     /// <summary>
@@ -642,7 +660,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             CommentCharacter = commentCharacter,
             HasHeaderRow = hasHeaderRow,
             SkipRows = skipRows,
-            MaxInputSize = maxInputSize
+            MaxInputSize = maxInputSize,
+            ValidationMode = validationMode
         };
     }
 

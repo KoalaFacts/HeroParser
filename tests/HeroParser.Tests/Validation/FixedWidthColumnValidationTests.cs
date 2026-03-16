@@ -28,7 +28,7 @@ public class FixedWidthColumnValidationTests
     private static (List<ValidatedEmployee> records, IReadOnlyList<ValidationError> errors) Parse(string data)
     {
         var result = FixedWidth.DeserializeRecords<ValidatedEmployee>(data);
-        return (result.ToList(), result.Errors);
+        return ([.. result.Records], result.Errors);
     }
 
     // ──────────────────────────────────────────────
@@ -397,30 +397,32 @@ public class FixedWidthColumnValidationTests
     }
 
     // ──────────────────────────────────────────────
-    // ThrowIfAnyError
+    // Strict mode — ToList() auto-throws on errors
     // ──────────────────────────────────────────────
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void ThrowIfAnyError_NoErrors_ReturnsResult()
+    public void ToList_NoErrors_ReturnsRecords()
     {
         var data = ValidLine();
 
-        var result = FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ThrowIfAnyError();
+        // In strict mode (default), ToList() does not throw when there are no errors
+        var result = FixedWidth.DeserializeRecords<ValidatedEmployee>(data);
+        var records = result.ToList();
 
-        Assert.Single(result.Records);
+        Assert.Single(records);
         Assert.Empty(result.Errors);
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void ThrowIfAnyError_WithErrors_ThrowsValidationException()
+    public void ToList_WithRangeError_ThrowsValidationException()
     {
         // Salary = 999999 violates Range(20000, 500000)
         var data = BuildLine(salary: "999999.00 ");
 
         var ex = Assert.Throws<ValidationException>(() =>
-            FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ThrowIfAnyError());
+            FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ToList());
 
         Assert.NotEmpty(ex.Errors);
         Assert.Equal("Range", ex.Errors[0].Rule);
@@ -429,13 +431,11 @@ public class FixedWidthColumnValidationTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void ThrowIfAnyError_FluentChaining_ToListAfterThrow()
+    public void ToList_ValidData_ReturnsAllRecords()
     {
         var data = ValidLine();
 
-        var records = FixedWidth.DeserializeRecords<ValidatedEmployee>(data)
-            .ThrowIfAnyError()
-            .ToList();
+        var records = FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ToList();
 
         Assert.Single(records);
         Assert.Equal(1, records[0].EmployeeId);
@@ -531,7 +531,7 @@ public class FixedWidthColumnValidationTests
         var data = BuildLine(salary: "999999.00 ");
 
         var ex = Assert.Throws<ValidationException>(() =>
-            FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ThrowIfAnyError());
+            FixedWidth.DeserializeRecords<ValidatedEmployee>(data).ToList());
 
         Assert.StartsWith("Validation failed:", ex.Message);
         Assert.Contains("Row 1", ex.Message);

@@ -1,5 +1,6 @@
 using HeroParser.Excels.Xlsx;
 using HeroParser.SeparatedValues.Reading.Binders;
+using HeroParser.Validation;
 
 namespace HeroParser.Excels.Reading;
 
@@ -9,8 +10,20 @@ namespace HeroParser.Excels.Reading;
 public sealed class ExcelMultiSheetBuilder
 {
     private readonly List<SheetRegistration> registrations = [];
+    private ValidationMode validationMode = ValidationMode.Strict;
 
     internal ExcelMultiSheetBuilder() { }
+
+    /// <summary>
+    /// Sets the validation mode for record reading. Default is <see cref="ValidationMode.Strict"/>.
+    /// </summary>
+    /// <param name="mode">The validation mode to use.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelMultiSheetBuilder WithValidationMode(ValidationMode mode)
+    {
+        validationMode = mode;
+        return this;
+    }
 
     /// <summary>
     /// Registers a sheet to be read with the specified record type.
@@ -29,6 +42,7 @@ public sealed class ExcelMultiSheetBuilder
         registrations.Add(new SheetRegistration(
             sheetName,
             typeof(T),
+            validationMode,
             static sheetReader => ReadSheet<T>(sheetReader)));
         return this;
     }
@@ -110,5 +124,6 @@ public sealed class ExcelMultiSheetBuilder
     private sealed record SheetRegistration(
         string SheetName,
         Type RecordType,
+        ValidationMode ValidationMode,
         Func<XlsxSheetReader, object> ReadFunc);
 }

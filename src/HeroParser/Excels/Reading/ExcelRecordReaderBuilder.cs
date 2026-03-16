@@ -2,6 +2,7 @@ using System.Globalization;
 using HeroParser.Excels.Core;
 using HeroParser.Excels.Xlsx;
 using HeroParser.SeparatedValues.Reading.Binders;
+using HeroParser.Validation;
 
 namespace HeroParser.Excels.Reading;
 
@@ -18,6 +19,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     private int? maxRows;
     private int skipRows;
     private IProgress<ExcelProgress>? progress;
+    private ValidationMode validationMode = ValidationMode.Strict;
 
     internal ExcelRecordReaderBuilder() { }
 
@@ -101,12 +103,23 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     }
 
     /// <summary>
+    /// Sets the validation mode for record reading. Default is <see cref="ValidationMode.Strict"/>.
+    /// </summary>
+    /// <param name="mode">The validation mode to use.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelRecordReaderBuilder<T> WithValidationMode(ValidationMode mode)
+    {
+        validationMode = mode;
+        return this;
+    }
+
+    /// <summary>
     /// Reads all sheets of the same record type and returns results keyed by sheet name.
     /// </summary>
     /// <returns>A builder for same-type multi-sheet reading.</returns>
     public ExcelAllSheetsBuilder<T> AllSheets()
     {
-        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, culture, maxRows, skipRows, progress);
+        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, culture, maxRows, skipRows, progress, validationMode);
     }
 
     /// <summary>

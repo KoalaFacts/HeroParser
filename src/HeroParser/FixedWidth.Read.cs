@@ -287,7 +287,7 @@ public static partial class FixedWidth
         options.ValidateInputSize(data.Length * sizeof(char));
 
         var reader = ReadFromText(data, options);
-        return FixedWidthRecordBinder<T>.Bind(reader, culture, onError);
+        return FixedWidthRecordBinder<T>.Bind(reader, culture, onError, validationMode: options.ValidationMode);
     }
 
     /// <summary>

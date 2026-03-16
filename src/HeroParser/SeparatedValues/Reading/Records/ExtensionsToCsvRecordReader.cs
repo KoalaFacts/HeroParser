@@ -4,8 +4,19 @@ namespace HeroParser.SeparatedValues.Reading.Records;
 /// Provides LINQ-style extension methods for CSV record readers.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Since CSV readers are ref structs, they cannot implement <see cref="IEnumerable{T}"/>.
 /// These extension methods provide common operations that consume the reader and return materialized results.
+/// </para>
+/// <para>
+/// <strong>Validation behavior:</strong> All methods that fully consume the reader (e.g.,
+/// <see cref="ToList{T}"/>, <see cref="ForEach{T}"/>, <see cref="Count{T}(CsvRecordReader{char, T})"/>)
+/// automatically throw a <see cref="HeroParser.Validation.ValidationException"/> when the reader is in
+/// <see cref="HeroParser.Validation.ValidationMode.Strict"/> mode (the default) and validation errors
+/// were collected during iteration. These methods also dispose the reader after consumption.
+/// Methods that only partially consume the reader (e.g., <see cref="First{T}(CsvRecordReader{char, T})"/>,
+/// <see cref="Take{T}"/>) do not check for errors or dispose because not all rows have been processed.
+/// </para>
 /// </remarks>
 public static class ExtensionsToCsvRecordReader
 {
@@ -14,7 +25,8 @@ public static class ExtensionsToCsvRecordReader
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="reader">The record reader to consume.</param>
-    /// <returns>A list containing all records.</returns>
+    /// <returns>A list containing all valid records.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the reader. The reader should not be used after calling this method.</remarks>
     public static List<T> ToList<T>(this CsvRecordReader<char, T> reader) where T : new()
     {
@@ -23,6 +35,8 @@ public static class ExtensionsToCsvRecordReader
         {
             list.Add(reader.Current);
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return list;
     }
 
@@ -31,7 +45,8 @@ public static class ExtensionsToCsvRecordReader
     /// </summary>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="reader">The record reader to consume.</param>
-    /// <returns>An array containing all records.</returns>
+    /// <returns>An array containing all valid records.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the reader. The reader should not be used after calling this method.</remarks>
     public static T[] ToArray<T>(this CsvRecordReader<char, T> reader) where T : new()
         => reader.ToList().ToArray();
@@ -115,6 +130,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <returns>The single record.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the reader contains zero or more than one record.</exception>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the reader to verify exactly one record exists.</remarks>
     public static T Single<T>(this CsvRecordReader<char, T> reader) where T : new()
     {
@@ -130,6 +146,8 @@ public static class ExtensionsToCsvRecordReader
             throw new InvalidOperationException("The CSV contains more than one record.");
         }
 
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return result;
     }
 
@@ -140,6 +158,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <returns>The single record, or the default value if no records exist.</returns>
     /// <exception cref="InvalidOperationException">Thrown when the reader contains more than one record.</exception>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the reader to verify at most one record exists.</remarks>
     public static T? SingleOrDefault<T>(this CsvRecordReader<char, T> reader) where T : new()
     {
@@ -155,6 +174,8 @@ public static class ExtensionsToCsvRecordReader
             throw new InvalidOperationException("The CSV contains more than one record.");
         }
 
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return result;
     }
 
@@ -164,6 +185,7 @@ public static class ExtensionsToCsvRecordReader
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="reader">The record reader to consume.</param>
     /// <returns>The number of records.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static int Count<T>(this CsvRecordReader<char, T> reader) where T : new()
     {
@@ -172,6 +194,8 @@ public static class ExtensionsToCsvRecordReader
         {
             count++;
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return count;
     }
 
@@ -182,6 +206,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="predicate">A function to test each record.</param>
     /// <returns>The number of matching records.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static int Count<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : new()
     {
@@ -193,6 +218,8 @@ public static class ExtensionsToCsvRecordReader
                 count++;
             }
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return count;
     }
 
@@ -232,6 +259,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="predicate">A function to test each record.</param>
     /// <returns><see langword="true"/> if all records match the predicate; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method returns <see langword="true"/> for an empty reader (vacuous truth).</remarks>
     public static bool All<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : new()
     {
@@ -242,6 +270,8 @@ public static class ExtensionsToCsvRecordReader
                 return false;
             }
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return true;
     }
 
@@ -252,6 +282,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="predicate">A function to test each record.</param>
     /// <returns>A list containing all records that match the predicate.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static List<T> Where<T>(this CsvRecordReader<char, T> reader, Func<T, bool> predicate) where T : new()
     {
@@ -263,6 +294,8 @@ public static class ExtensionsToCsvRecordReader
                 results.Add(reader.Current);
             }
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return results;
     }
 
@@ -274,6 +307,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="selector">A transform function to apply to each record.</param>
     /// <returns>A list containing the projected results.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static List<TResult> Select<TSource, TResult>(this CsvRecordReader<char, TSource> reader, Func<TSource, TResult> selector)
         where TSource : new()
@@ -283,6 +317,8 @@ public static class ExtensionsToCsvRecordReader
         {
             results.Add(selector(reader.Current));
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return results;
     }
 
@@ -293,6 +329,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="count">The number of records to skip.</param>
     /// <returns>A list containing all records after skipping the specified count.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static List<T> Skip<T>(this CsvRecordReader<char, T> reader, int count) where T : new()
     {
@@ -307,6 +344,8 @@ public static class ExtensionsToCsvRecordReader
             }
             results.Add(reader.Current);
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return results;
     }
 
@@ -336,6 +375,7 @@ public static class ExtensionsToCsvRecordReader
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="action">The action to perform on each record.</param>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static void ForEach<T>(this CsvRecordReader<char, T> reader, Action<T> action) where T : new()
     {
@@ -343,6 +383,8 @@ public static class ExtensionsToCsvRecordReader
         {
             action(reader.Current);
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
     }
 
     /// <summary>
@@ -354,6 +396,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="keySelector">A function to extract a key from each record.</param>
     /// <returns>A dictionary mapping keys to records.</returns>
     /// <exception cref="ArgumentException">Thrown when duplicate keys are encountered.</exception>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static Dictionary<TKey, T> ToDictionary<T, TKey>(
         this CsvRecordReader<char, T> reader,
@@ -366,6 +409,8 @@ public static class ExtensionsToCsvRecordReader
         {
             dict.Add(keySelector(reader.Current), reader.Current);
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return dict;
     }
 
@@ -380,6 +425,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="valueSelector">A function to extract a value from each record.</param>
     /// <returns>A dictionary mapping keys to values.</returns>
     /// <exception cref="ArgumentException">Thrown when duplicate keys are encountered.</exception>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static Dictionary<TKey, TValue> ToDictionary<T, TKey, TValue>(
         this CsvRecordReader<char, T> reader,
@@ -393,6 +439,8 @@ public static class ExtensionsToCsvRecordReader
         {
             dict.Add(keySelector(reader.Current), valueSelector(reader.Current));
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return dict;
     }
 
@@ -404,6 +452,7 @@ public static class ExtensionsToCsvRecordReader
     /// <param name="reader">The record reader to consume.</param>
     /// <param name="keySelector">A function to extract a key from each record.</param>
     /// <returns>A dictionary mapping keys to lists of records.</returns>
+    /// <exception cref="HeroParser.Validation.ValidationException">Thrown when validation errors were collected during iteration.</exception>
     /// <remarks>This method consumes the entire reader.</remarks>
     public static Dictionary<TKey, List<T>> GroupBy<T, TKey>(
         this CsvRecordReader<char, T> reader,
@@ -422,7 +471,8 @@ public static class ExtensionsToCsvRecordReader
             }
             list.Add(reader.Current);
         }
+        reader.ThrowOnStrictErrors();
+        reader.Dispose();
         return groups;
     }
-
 }

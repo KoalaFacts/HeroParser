@@ -1,6 +1,7 @@
 using System.Globalization;
 using HeroParser.Excels.Core;
 using HeroParser.Excels.Xlsx;
+using HeroParser.Validation;
 
 namespace HeroParser.Excels.Reading;
 
@@ -15,19 +16,32 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
     private readonly int? maxRows;
     private readonly int skipRows;
     private readonly IProgress<ExcelProgress>? progress;
+    private readonly ValidationMode validationMode;
 
     internal ExcelAllSheetsBuilder(
         bool hasHeaderRow,
         CultureInfo culture,
         int? maxRows,
         int skipRows,
-        IProgress<ExcelProgress>? progress)
+        IProgress<ExcelProgress>? progress,
+        ValidationMode validationMode = ValidationMode.Strict)
     {
         this.hasHeaderRow = hasHeaderRow;
         this.culture = culture;
         this.maxRows = maxRows;
         this.skipRows = skipRows;
         this.progress = progress;
+        this.validationMode = validationMode;
+    }
+
+    /// <summary>
+    /// Sets the validation mode for record reading. Default is <see cref="ValidationMode.Strict"/>.
+    /// </summary>
+    /// <param name="mode">The validation mode to use.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelAllSheetsBuilder<T> WithValidationMode(ValidationMode mode)
+    {
+        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, culture, maxRows, skipRows, progress, mode);
     }
 
     /// <summary>
@@ -78,5 +92,6 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
         builder.SkipRows(skipRows);
         if (progress is not null)
             builder.WithProgress(progress);
+        builder.WithValidationMode(validationMode);
     }
 }

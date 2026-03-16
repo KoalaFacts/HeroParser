@@ -92,7 +92,7 @@ public sealed partial class CsvRecordReaderBuilder<T>
         var rowReader = Csv.ReadFromFile(path, out fileBytes, parserOptions);
         var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
         return new CsvRecordReader<byte, T>(rowReader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
     }
 
     /// <summary>
@@ -138,7 +138,7 @@ public sealed partial class CsvRecordReaderBuilder<T>
         var rowReader = Csv.ReadFromStream(stream, out streamBytes, parserOptions, leaveOpen);
         var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
         return new CsvRecordReader<byte, T>(rowReader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
     }
 
     private CsvRecordReader<char, T> FromTextWithMap(string csvText)
@@ -148,7 +148,7 @@ public sealed partial class CsvRecordReaderBuilder<T>
         var binder = new CsvDescriptorBinder<T>(descriptor, recordOptions);
         var rowReader = Csv.ReadFromCharSpan(csvText.AsSpan(), parserOptions);
         return new CsvRecordReader<char, T>(rowReader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
     }
 
     private void ThrowIfMapConfigured()

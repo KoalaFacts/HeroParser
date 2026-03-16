@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq.Expressions;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Mapping;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Reading.Records;
 
@@ -35,6 +36,7 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
     private int skipRows = 0;
     private IProgress<CsvProgress>? progress = null;
     private int progressIntervalRows = 1000;
+    private ValidationMode validationMode = ValidationMode.Strict;
     private List<Func<CsvRecordOptions, CsvRecordOptions>>? converterRegistrations;
 
     // Fluent mapping
@@ -128,6 +130,7 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
             HasHeaderRow = hasHeaderRow,
             CaseSensitiveHeaders = caseSensitiveHeaders,
             AllowMissingColumns = allowMissingColumns,
+            ValidationMode = validationMode,
             NullValues = nullValues,
             Culture = culture,
             SkipRows = skipRows,

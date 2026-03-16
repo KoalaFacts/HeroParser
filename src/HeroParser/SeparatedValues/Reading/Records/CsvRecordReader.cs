@@ -24,13 +24,15 @@ public ref struct CsvRecordReader<TElement, T>
     private readonly int skipRows;
     private readonly IProgress<CsvProgress>? progress;
     private readonly int progressInterval;
+    private readonly ValidationMode validationMode;
     private int rowNumber;
     private int skippedCount;
     private int dataRowCount;
     private readonly List<ValidationError> errors = [];
 
     internal CsvRecordReader(CsvRowReader<TElement> reader, ICsvBinder<TElement, T> binder, int skipRows = 0,
-        IProgress<CsvProgress>? progress = null, int progressInterval = 1000)
+        IProgress<CsvProgress>? progress = null, int progressInterval = 1000,
+        ValidationMode validationMode = ValidationMode.Strict)
     {
         this.reader = reader;
         byteReader = default;
@@ -41,6 +43,7 @@ public ref struct CsvRecordReader<TElement, T>
         this.skipRows = skipRows;
         this.progress = progress;
         this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
+        this.validationMode = validationMode;
         Current = default!;
         rowNumber = 0;
         skippedCount = 0;
@@ -53,7 +56,8 @@ public ref struct CsvRecordReader<TElement, T>
         byte[] ownedBuffer,
         int skipRows = 0,
         IProgress<CsvProgress>? progress = null,
-        int progressInterval = 1000)
+        int progressInterval = 1000,
+        ValidationMode validationMode = ValidationMode.Strict)
     {
         reader = default;
         this.byteReader = byteReader;
@@ -64,6 +68,7 @@ public ref struct CsvRecordReader<TElement, T>
         this.skipRows = skipRows;
         this.progress = progress;
         this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
+        this.validationMode = validationMode;
         Current = default!;
         rowNumber = 0;
         skippedCount = 0;
@@ -76,7 +81,8 @@ public ref struct CsvRecordReader<TElement, T>
         byte[] ownedBuffer,
         int skipRows = 0,
         IProgress<CsvProgress>? progress = null,
-        int progressInterval = 1000)
+        int progressInterval = 1000,
+        ValidationMode validationMode = ValidationMode.Strict)
     {
         return new CsvRecordReader<char, T>(
             byteReader,
@@ -84,7 +90,8 @@ public ref struct CsvRecordReader<TElement, T>
             ownedBuffer,
             skipRows,
             progress,
-            progressInterval);
+            progressInterval,
+            validationMode);
     }
 
     /// <summary>Gets the current mapped record.</summary>
@@ -94,12 +101,18 @@ public ref struct CsvRecordReader<TElement, T>
     public readonly IReadOnlyList<ValidationError> Errors => errors;
 
     /// <summary>
-    /// Throws a <see cref="ValidationException"/> if any validation errors were collected during iteration.
+    /// Gets the validation mode for this reader.
     /// </summary>
-    /// <exception cref="ValidationException">Thrown when <see cref="Errors"/> is non-empty.</exception>
-    public readonly void ThrowIfAnyError()
+    public readonly ValidationMode ValidationMode => validationMode;
+
+    /// <summary>
+    /// Throws a <see cref="ValidationException"/> if the reader is in <see cref="ValidationMode.Strict"/>
+    /// mode and any validation errors were collected during iteration.
+    /// Called automatically by terminal methods like <c>ToList()</c>.
+    /// </summary>
+    internal readonly void ThrowOnStrictErrors()
     {
-        if (errors.Count > 0)
+        if (validationMode == ValidationMode.Strict && errors.Count > 0)
             throw new ValidationException(errors);
     }
 

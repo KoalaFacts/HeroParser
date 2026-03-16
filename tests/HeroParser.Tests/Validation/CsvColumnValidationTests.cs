@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Records;
 using HeroParser.Validation;
 using Xunit;
 
@@ -458,34 +459,31 @@ public class CsvColumnValidationTests
     }
 
     // ──────────────────────────────────────────────
-    // ThrowIfAnyError
+    // Strict mode — ToList() auto-throws on errors
     // ──────────────────────────────────────────────
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void ThrowIfAnyError_NoErrors_DoesNotThrow()
+    public void ToList_NoErrors_DoesNotThrow()
     {
         var csv = "Id,Amount,Currency,Reference\nTXN001,500.00,USD,AB1234";
 
-        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
-        foreach (var _ in reader) { }
+        // In strict mode (default), ToList() does not throw when there are no errors
+        var records = Csv.DeserializeRecords<ValidatedTransaction>(csv).ToList();
 
-        reader.ThrowIfAnyError(); // should not throw
+        Assert.Single(records);
     }
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void ThrowIfAnyError_WithErrors_ThrowsValidationException()
+    public void ToList_WithRangeError_ThrowsValidationException()
     {
         // Amount = -1 violates Range(0, 100000)
         var csv = "Id,Amount,Currency,Reference\nTXN001,-1.00,USD,AB1234";
 
-        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
-        foreach (var _ in reader) { }
-
         try
         {
-            reader.ThrowIfAnyError();
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).ToList();
             Assert.Fail("Expected ValidationException");
         }
         catch (ValidationException ex)
@@ -497,17 +495,14 @@ public class CsvColumnValidationTests
 
     [Fact]
     [Trait("Category", "Unit")]
-    public void ThrowIfAnyError_FluentApi_WithErrors_ThrowsValidationException()
+    public void ToList_WithMinLengthError_ThrowsValidationException()
     {
         // Currency = "US" violates MinLength(3)
         var csv = "Id,Amount,Currency,Reference\nTXN001,500.00,US,AB1234";
 
-        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
-        foreach (var _ in reader) { }
-
         try
         {
-            reader.ThrowIfAnyError();
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).ToList();
             Assert.Fail("Expected ValidationException");
         }
         catch (ValidationException ex)
@@ -515,6 +510,111 @@ public class CsvColumnValidationTests
             Assert.Single(ex.Errors);
             Assert.Equal("MinLength", ex.Errors[0].Rule);
             Assert.Equal("Currency", ex.Errors[0].PropertyName);
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    // ToList / terminal methods — strict validation
+    // ──────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ToList_WithValidationErrors_ThrowsValidationException()
+    {
+        // Amount is empty — should trigger NotNull for decimal
+        var csv = "Id,Amount,Currency,Reference\nTXN001,,USD,AB1234";
+
+        try
+        {
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).ToList();
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.Contains(ex.Errors, e => e.Rule == "NotNull" && e.PropertyName == "Amount");
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ToList_WithNoErrors_ReturnsRecords()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,500.00,USD,AB1234";
+
+        var records = Csv.DeserializeRecords<ValidatedTransaction>(csv).ToList();
+
+        Assert.Single(records);
+        Assert.Equal(500.00m, records[0].Amount);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ToArray_WithValidationErrors_ThrowsValidationException()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,,USD,AB1234";
+
+        try
+        {
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).ToArray();
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.NotEmpty(ex.Errors);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void ForEach_WithValidationErrors_ThrowsValidationException()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,,USD,AB1234";
+
+        try
+        {
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).ForEach(_ => { });
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.NotEmpty(ex.Errors);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Count_WithValidationErrors_ThrowsValidationException()
+    {
+        var csv = "Id,Amount,Currency,Reference\nTXN001,,USD,AB1234";
+
+        try
+        {
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).Count();
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.NotEmpty(ex.Errors);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void Single_WithValidationErrors_ThrowsValidationException()
+    {
+        // Valid row followed by invalid row — Single should throw for validation, not "more than one"
+        var csv = "Id,Amount,Currency,Reference\nTXN001,500.00,USD,AB1234\nTXN002,,USD,CD5678";
+
+        try
+        {
+            // The valid row returns, the invalid row is skipped, so Single succeeds on count
+            // but should still throw because of validation errors
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).Single();
+            Assert.Fail("Expected ValidationException");
+        }
+        catch (ValidationException ex)
+        {
+            Assert.Contains(ex.Errors, e => e.Rule == "NotNull" && e.PropertyName == "Amount");
         }
     }
 
@@ -594,12 +694,9 @@ public class CsvColumnValidationTests
     {
         var csv = "Id,Amount,Currency,Reference\nTXN001,-1.00,USD,AB1234";
 
-        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
-        foreach (var _ in reader) { }
-
         try
         {
-            reader.ThrowIfAnyError();
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).ToList();
             Assert.Fail("Expected ValidationException");
         }
         catch (ValidationException ex)
@@ -622,12 +719,9 @@ public class CsvColumnValidationTests
                   "TXN002,-10.00,USD,AB1234\n" +
                   "TXN003,100.00,US,AB1234";
 
-        var reader = Csv.DeserializeRecords<ValidatedTransaction>(csv);
-        foreach (var _ in reader) { }
-
         try
         {
-            reader.ThrowIfAnyError();
+            Csv.DeserializeRecords<ValidatedTransaction>(csv).ToList();
             Assert.Fail("Expected ValidationException");
         }
         catch (ValidationException ex)

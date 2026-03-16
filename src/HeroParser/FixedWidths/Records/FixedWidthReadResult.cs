@@ -15,11 +15,13 @@ namespace HeroParser.FixedWidths.Records;
 public sealed class FixedWidthReadResult<T> : IEnumerable<T>
 {
     private readonly List<T> records;
+    private readonly ValidationMode validationMode;
 
-    internal FixedWidthReadResult(List<T> records, List<ValidationError> errors)
+    internal FixedWidthReadResult(List<T> records, List<ValidationError> errors, ValidationMode validationMode = ValidationMode.Strict)
     {
         this.records = records;
         Errors = errors;
+        this.validationMode = validationMode;
     }
 
     /// <summary>Gets the successfully parsed records.</summary>
@@ -31,21 +33,23 @@ public sealed class FixedWidthReadResult<T> : IEnumerable<T>
     /// <summary>Gets the number of successfully parsed records.</summary>
     public int Count => records.Count;
 
-    /// <summary>
-    /// Throws a <see cref="ValidationException"/> if any validation errors were collected during parsing.
-    /// </summary>
-    /// <returns>This instance, for fluent chaining.</returns>
-    /// <exception cref="ValidationException">Thrown when <see cref="Errors"/> is non-empty.</exception>
-    public FixedWidthReadResult<T> ThrowIfAnyError()
+    /// <summary>Converts the result to a <see cref="List{T}"/> containing only the valid records.</summary>
+    /// <remarks>
+    /// In <see cref="ValidationMode.Strict"/> mode (default), throws a <see cref="ValidationException"/> if any errors were collected.
+    /// In <see cref="ValidationMode.Lenient"/> mode, invalid rows are silently excluded and no exception is thrown.
+    /// </remarks>
+    /// <exception cref="ValidationException">Thrown when validation errors exist and mode is <see cref="ValidationMode.Strict"/>.</exception>
+    public List<T> ToList()
     {
-        if (Errors.Count > 0)
-            throw new ValidationException(Errors);
-
-        return this;
+        ThrowOnStrictErrors();
+        return [.. records];
     }
 
-    /// <summary>Converts the result to a <see cref="List{T}"/> containing only the valid records.</summary>
-    public List<T> ToList() => [.. records];
+    internal void ThrowOnStrictErrors()
+    {
+        if (validationMode == ValidationMode.Strict && Errors.Count > 0)
+            throw new ValidationException(Errors);
+    }
 
     /// <inheritdoc/>
     public IEnumerator<T> GetEnumerator() => records.GetEnumerator();

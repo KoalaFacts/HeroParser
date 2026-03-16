@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO.Compression;
 using System.Text;
 using System.Xml;
@@ -314,7 +315,14 @@ public sealed class XlsxWriter : IDisposable
     {
         if ((uint)columnIndex < (uint)columnLetterCache.Length)
         {
-            return columnLetterCache[columnIndex] ??= BuildColumnLetter(columnIndex);
+            // Benign race: concurrent threads may both compute and write the same value.
+            // Reference writes are atomic in .NET; Volatile.Read prevents stale cache reads.
+            var cached = Volatile.Read(ref columnLetterCache[columnIndex]);
+            if (cached is not null)
+                return cached;
+            var value = BuildColumnLetter(columnIndex);
+            Volatile.Write(ref columnLetterCache[columnIndex], value);
+            return value;
         }
 
         return BuildColumnLetter(columnIndex);
@@ -356,34 +364,45 @@ public sealed class XlsxWriter : IDisposable
     // Call Close() when all rows are written.
     /// <summary>
     /// Writes cells into a single Excel worksheet within an <see cref="XlsxWriter"/>.
+    /// Uses direct UTF-8 byte output instead of XmlWriter for zero per-cell allocations.
     /// </summary>
     public sealed class SheetWriter : IDisposable
     {
-        private readonly XmlWriter xmlWriter;
+        // Pre-encoded XML fragments as UTF-8 byte literals
+        private static readonly byte[] xmlHeader = "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>"u8.ToArray();
+        private static readonly byte[] xmlFooter = "</sheetData></worksheet>"u8.ToArray();
+        private static readonly byte[] rowOpen = "<row r=\""u8.ToArray();
+        private static readonly byte[] rowClose = "</row>"u8.ToArray();
+        private static readonly byte[] cellStringOpen = "<c r=\""u8.ToArray();
+        private static readonly byte[] cellStringTypeAttr = "\" t=\"s\"><v>"u8.ToArray();
+        private static readonly byte[] cellNumOpen = "\" ><v>"u8.ToArray(); // no t attr for numeric
+        private static readonly byte[] cellBoolOpen = "\" t=\"b\"><v>"u8.ToArray();
+        private static readonly byte[] cellDateOpen = "\" s=\"1\"><v>"u8.ToArray();
+        private static readonly byte[] cellValueClose = "</v></c>"u8.ToArray();
+        private static readonly byte[] cellEmptyClose = "\" />"u8.ToArray();
+        private static readonly byte[] quoteClose = "\">"u8.ToArray();
+
+        private const int BUFFER_SIZE = 65536; // 64 KB output buffer
+
+        private readonly Stream stream;
         private readonly XlsxSharedStringTable sharedStrings;
-        private bool rowOpen;
+        private readonly byte[] buffer;
+        private int bufferPos;
+        private bool rowIsOpen;
         private bool closed;
         private int currentRowNumber;
 
-        // Reusable buffer for cell references (max 3 col letters + 7 row digits = 10 chars)
-        private readonly char[] cellRefBuffer = new char[10];
+        // Pre-formatted column letter bytes (cached per column, lazily built)
+        private static readonly byte[][] columnLetterBytes = new byte[16384][];
 
         internal SheetWriter(Stream stream, XlsxSharedStringTable sharedStrings)
         {
+            this.stream = stream;
             this.sharedStrings = sharedStrings;
+            buffer = ArrayPool<byte>.Shared.Rent(BUFFER_SIZE);
+            bufferPos = 0;
 
-            var settings = new XmlWriterSettings
-            {
-                Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-                Indent = false,
-                CloseOutput = true
-            };
-            xmlWriter = XmlWriter.Create(stream, settings);
-
-            // Open the worksheet element
-            xmlWriter.WriteStartDocument(standalone: true);
-            xmlWriter.WriteStartElement("worksheet", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-            xmlWriter.WriteStartElement("sheetData", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
+            WriteRaw(xmlHeader);
         }
 
         /// <summary>Writes row 1 as a header row using shared string cells.</summary>
@@ -400,16 +419,14 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="rowNumber">The 1-based row number.</param>
         public void StartRow(int rowNumber)
         {
-            if (rowOpen)
+            if (rowIsOpen)
                 EndRow();
 
             currentRowNumber = rowNumber;
-            xmlWriter.WriteStartElement("row", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-
-            Span<char> rowBuf = stackalloc char[7]; // max 1048576
-            rowNumber.TryFormat(rowBuf, out int written);
-            xmlWriter.WriteAttributeString("r", new string(rowBuf[..written]));
-            rowOpen = true;
+            WriteRaw(rowOpen);                     // <row r="
+            WriteInt(rowNumber);                   // 123
+            WriteRaw(quoteClose);                  // ">
+            rowIsOpen = true;
         }
 
         /// <summary>Writes a shared-string cell.</summary>
@@ -418,18 +435,11 @@ public sealed class XlsxWriter : IDisposable
         public void WriteCellString(int columnIndex, string value)
         {
             int ssIndex = sharedStrings.GetOrAdd(value);
-
-            xmlWriter.WriteStartElement("c", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-            WriteCellRefAttribute(columnIndex);
-            xmlWriter.WriteAttributeString("t", "s");
-            xmlWriter.WriteStartElement("v", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-
-            Span<char> idxBuf = stackalloc char[10];
-            ssIndex.TryFormat(idxBuf, out int written);
-            xmlWriter.WriteString(new string(idxBuf[..written]));
-
-            xmlWriter.WriteEndElement(); // v
-            xmlWriter.WriteEndElement(); // c
+            WriteRaw(cellStringOpen);              // <c r="
+            WriteCellRef(columnIndex);             // B3
+            WriteRaw(cellStringTypeAttr);          // " t="s"><v>
+            WriteInt(ssIndex);                     // 42
+            WriteRaw(cellValueClose);              // </v></c>
         }
 
         /// <summary>Writes a numeric cell.</summary>
@@ -437,16 +447,11 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="value">The numeric value.</param>
         public void WriteCellNumber(int columnIndex, double value)
         {
-            xmlWriter.WriteStartElement("c", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-            WriteCellRefAttribute(columnIndex);
-            xmlWriter.WriteStartElement("v", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-
-            Span<char> numBuf = stackalloc char[32];
-            value.TryFormat(numBuf, out int written, provider: System.Globalization.CultureInfo.InvariantCulture);
-            xmlWriter.WriteString(new string(numBuf[..written]));
-
-            xmlWriter.WriteEndElement(); // v
-            xmlWriter.WriteEndElement(); // c
+            WriteRaw(cellStringOpen);              // <c r="
+            WriteCellRef(columnIndex);             // B3
+            WriteRaw(cellNumOpen);                 // " ><v>
+            WriteDouble(value);                    // 3.14159
+            WriteRaw(cellValueClose);              // </v></c>
         }
 
         /// <summary>Writes a boolean cell (1 for true, 0 for false).</summary>
@@ -454,13 +459,11 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="value">The boolean value.</param>
         public void WriteCellBoolean(int columnIndex, bool value)
         {
-            xmlWriter.WriteStartElement("c", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-            WriteCellRefAttribute(columnIndex);
-            xmlWriter.WriteAttributeString("t", "b");
-            xmlWriter.WriteStartElement("v", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-            xmlWriter.WriteString(value ? "1" : "0");
-            xmlWriter.WriteEndElement(); // v
-            xmlWriter.WriteEndElement(); // c
+            WriteRaw(cellStringOpen);              // <c r="
+            WriteCellRef(columnIndex);             // B3
+            WriteRaw(cellBoolOpen);                // " t="b"><v>
+            buffer[bufferPos++] = value ? (byte)'1' : (byte)'0';
+            WriteRaw(cellValueClose);              // </v></c>
         }
 
         /// <summary>Writes a date cell as an OA date serial number with a date style.</summary>
@@ -468,38 +471,30 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="value">The date/time value.</param>
         public void WriteCellDate(int columnIndex, DateTime value)
         {
-            double oaDate = value.ToOADate();
-
-            xmlWriter.WriteStartElement("c", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-            WriteCellRefAttribute(columnIndex);
-            xmlWriter.WriteAttributeString("s", "1"); // DATE_STYLE_INDEX
-            xmlWriter.WriteStartElement("v", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-
-            Span<char> dateBuf = stackalloc char[32];
-            oaDate.TryFormat(dateBuf, out int written, provider: System.Globalization.CultureInfo.InvariantCulture);
-            xmlWriter.WriteString(new string(dateBuf[..written]));
-
-            xmlWriter.WriteEndElement(); // v
-            xmlWriter.WriteEndElement(); // c
+            WriteRaw(cellStringOpen);              // <c r="
+            WriteCellRef(columnIndex);             // B3
+            WriteRaw(cellDateOpen);                // " s="1"><v>
+            WriteDouble(value.ToOADate());         // 45123.5
+            WriteRaw(cellValueClose);              // </v></c>
         }
 
         /// <summary>Writes an empty cell (no value element).</summary>
         /// <param name="columnIndex">The 1-based column index.</param>
         public void WriteCellEmpty(int columnIndex)
         {
-            xmlWriter.WriteStartElement("c", "http://schemas.openxmlformats.org/spreadsheetml/2006/main");
-            WriteCellRefAttribute(columnIndex);
-            xmlWriter.WriteEndElement(); // c
+            WriteRaw(cellStringOpen);              // <c r="
+            WriteCellRef(columnIndex);             // B3
+            WriteRaw(cellEmptyClose);              // " />
         }
 
         /// <summary>Closes the current row element.</summary>
         public void EndRow()
         {
-            if (!rowOpen)
+            if (!rowIsOpen)
                 return;
 
-            xmlWriter.WriteEndElement(); // row
-            rowOpen = false;
+            WriteRaw(rowClose);                    // </row>
+            rowIsOpen = false;
         }
 
         /// <summary>Finalises the worksheet XML. Must be called after all rows are written.</summary>
@@ -510,28 +505,96 @@ public sealed class XlsxWriter : IDisposable
 
             closed = true;
 
-            if (rowOpen)
+            if (rowIsOpen)
                 EndRow();
 
-            xmlWriter.WriteEndElement(); // sheetData
-            xmlWriter.WriteEndElement(); // worksheet
-            xmlWriter.WriteEndDocument();
-            xmlWriter.Flush();
+            WriteRaw(xmlFooter);
+            Flush();
         }
 
         /// <summary>Calls <see cref="Close"/> if not already done and disposes the underlying writer.</summary>
         public void Dispose()
         {
             Close();
-            xmlWriter.Dispose();
+            ArrayPool<byte>.Shared.Return(buffer);
+            stream.Dispose();
         }
 
-        // Writes the "r" attribute with a cell reference (e.g. "B3") using the reusable buffer.
-        // columnIndex is 1-based.
-        private void WriteCellRefAttribute(int columnIndex)
+        // --- zero-alloc formatting helpers ---
+
+        private void WriteRaw(ReadOnlySpan<byte> data)
         {
-            int len = FormatCellRef(cellRefBuffer, columnIndex - 1, currentRowNumber);
-            xmlWriter.WriteAttributeString("r", new string(cellRefBuffer, 0, len));
+            if (bufferPos + data.Length > buffer.Length)
+                Flush();
+
+            // Handle data larger than buffer (unlikely but safe)
+            if (data.Length > buffer.Length)
+            {
+                stream.Write(data);
+                return;
+            }
+
+            data.CopyTo(buffer.AsSpan(bufferPos));
+            bufferPos += data.Length;
+        }
+
+        private void WriteInt(int value)
+        {
+            EnsureSpace(11); // max int digits + sign
+            value.TryFormat(buffer.AsSpan(bufferPos), out int written);
+            bufferPos += written;
+        }
+
+        private void WriteDouble(double value)
+        {
+            EnsureSpace(32);
+            value.TryFormat(buffer.AsSpan(bufferPos), out int written, provider: System.Globalization.CultureInfo.InvariantCulture);
+            bufferPos += written;
+        }
+
+        private void WriteCellRef(int columnIndex)
+        {
+            // Column letter bytes (cached)
+            int col0 = columnIndex - 1;
+            var colBytes = GetColumnLetterBytes(col0);
+            EnsureSpace(colBytes.Length + 7); // col letters + max row digits
+            colBytes.AsSpan().CopyTo(buffer.AsSpan(bufferPos));
+            bufferPos += colBytes.Length;
+
+            // Row number (direct format into buffer)
+            currentRowNumber.TryFormat(buffer.AsSpan(bufferPos), out int written);
+            bufferPos += written;
+        }
+
+        private static byte[] GetColumnLetterBytes(int columnIndex)
+        {
+            if ((uint)columnIndex < (uint)columnLetterBytes.Length)
+            {
+                // Benign race: concurrent threads may both compute and write the same value.
+                var cached = Volatile.Read(ref columnLetterBytes[columnIndex]);
+                if (cached is not null)
+                    return cached;
+                var value = Encoding.UTF8.GetBytes(GetColumnLetter(columnIndex));
+                Volatile.Write(ref columnLetterBytes[columnIndex], value);
+                return value;
+            }
+
+            return Encoding.UTF8.GetBytes(GetColumnLetter(columnIndex));
+        }
+
+        private void EnsureSpace(int needed)
+        {
+            if (bufferPos + needed > buffer.Length)
+                Flush();
+        }
+
+        private void Flush()
+        {
+            if (bufferPos > 0)
+            {
+                stream.Write(buffer, 0, bufferPos);
+                bufferPos = 0;
+            }
         }
     }
 }

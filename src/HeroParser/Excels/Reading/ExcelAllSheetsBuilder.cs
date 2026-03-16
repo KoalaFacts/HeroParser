@@ -12,6 +12,9 @@ namespace HeroParser.Excels.Reading;
 public sealed class ExcelAllSheetsBuilder<T> where T : new()
 {
     private readonly bool hasHeaderRow;
+    private readonly bool caseSensitiveHeaders;
+    private readonly bool allowMissingColumns;
+    private readonly IReadOnlyList<string>? nullValues;
     private readonly CultureInfo culture;
     private readonly int? maxRows;
     private readonly int skipRows;
@@ -20,6 +23,9 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
 
     internal ExcelAllSheetsBuilder(
         bool hasHeaderRow,
+        bool caseSensitiveHeaders,
+        bool allowMissingColumns,
+        IReadOnlyList<string>? nullValues,
         CultureInfo culture,
         int? maxRows,
         int skipRows,
@@ -27,6 +33,9 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
         ValidationMode validationMode = ValidationMode.Strict)
     {
         this.hasHeaderRow = hasHeaderRow;
+        this.caseSensitiveHeaders = caseSensitiveHeaders;
+        this.allowMissingColumns = allowMissingColumns;
+        this.nullValues = nullValues;
         this.culture = culture;
         this.maxRows = maxRows;
         this.skipRows = skipRows;
@@ -41,7 +50,7 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
     /// <returns>This builder for method chaining.</returns>
     public ExcelAllSheetsBuilder<T> WithValidationMode(ValidationMode mode)
     {
-        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, culture, maxRows, skipRows, progress, mode);
+        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, caseSensitiveHeaders, allowMissingColumns, nullValues, culture, maxRows, skipRows, progress, mode);
     }
 
     /// <summary>
@@ -86,6 +95,12 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
     {
         if (!hasHeaderRow)
             builder.WithoutHeader();
+        if (caseSensitiveHeaders)
+            builder.CaseSensitiveHeaders();
+        if (allowMissingColumns)
+            builder.AllowMissingColumns();
+        if (nullValues is not null)
+            builder.WithNullValues([.. nullValues]);
         builder.WithCulture(culture);
         if (maxRows.HasValue)
             builder.WithMaxRows(maxRows.Value);

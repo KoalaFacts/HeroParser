@@ -2,6 +2,7 @@ using System.Globalization;
 using HeroParser.Excels.Core;
 using HeroParser.Excels.Xlsx;
 using HeroParser.SeparatedValues.Reading.Binders;
+using HeroParser.SeparatedValues.Reading.Records;
 using HeroParser.Validation;
 
 namespace HeroParser.Excels.Reading;
@@ -15,6 +16,9 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     private string? sheetName;
     private int? sheetIndex;
     private bool hasHeaderRow = true;
+    private bool caseSensitiveHeaders;
+    private bool allowMissingColumns;
+    private IReadOnlyList<string>? nullValues;
     private CultureInfo culture = CultureInfo.InvariantCulture;
     private int? maxRows;
     private int skipRows;
@@ -114,12 +118,43 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     }
 
     /// <summary>
+    /// Enables case-sensitive header matching.
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelRecordReaderBuilder<T> CaseSensitiveHeaders()
+    {
+        caseSensitiveHeaders = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Allows missing columns without throwing an exception.
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelRecordReaderBuilder<T> AllowMissingColumns()
+    {
+        allowMissingColumns = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets values that should be treated as null during parsing.
+    /// </summary>
+    /// <param name="values">The string values to treat as null.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelRecordReaderBuilder<T> WithNullValues(params string[] values)
+    {
+        nullValues = values;
+        return this;
+    }
+
+    /// <summary>
     /// Reads all sheets of the same record type and returns results keyed by sheet name.
     /// </summary>
     /// <returns>A builder for same-type multi-sheet reading.</returns>
     public ExcelAllSheetsBuilder<T> AllSheets()
     {
-        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, culture, maxRows, skipRows, progress, validationMode);
+        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, caseSensitiveHeaders, allowMissingColumns, nullValues, culture, maxRows, skipRows, progress, validationMode);
     }
 
     /// <summary>
@@ -160,7 +195,16 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
         }
 
         // Get binder
-        var binder = CsvRecordBinderFactory.GetCharBinder<T>(delimiter: '\x01');
+        var recordOptions = new CsvRecordOptions
+        {
+            HasHeaderRow = hasHeaderRow,
+            CaseSensitiveHeaders = caseSensitiveHeaders,
+            AllowMissingColumns = allowMissingColumns,
+            NullValues = nullValues,
+            Culture = culture,
+            ValidationMode = validationMode
+        };
+        var binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions, delimiter: '\x01');
 
         // Read header row if configured
         if (hasHeaderRow)
@@ -179,6 +223,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
         }
 
         var results = new List<T>();
+        var errors = new List<ValidationError>();
         int rowsRead = 0;
         char[] buffer = [];
         int[] columnEnds = [];
@@ -195,7 +240,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             XlsxRowAdapter.EnsureBuffers(cells, ref buffer, ref columnEnds);
             var csvRow = XlsxRowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber, buffer, columnEnds);
 
-            if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record))
+            if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record, errors))
             {
                 results.Add(record);
             }
@@ -207,6 +252,9 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
                 progress.Report(new ExcelProgress(rowsRead, currentSheetName));
             }
         }
+
+        if (validationMode == ValidationMode.Strict && errors.Count > 0)
+            throw new ValidationException(errors);
 
         // Final progress report
         if (progress is not null && rowsRead % 1000 != 0)

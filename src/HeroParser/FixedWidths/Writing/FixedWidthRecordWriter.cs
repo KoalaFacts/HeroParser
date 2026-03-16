@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using HeroParser.FixedWidths.Records.Binding;
+using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Writing;
 
@@ -67,6 +68,7 @@ public sealed class FixedWidthRecordWriter<T>
     /// <param name="PadChar">The padding character.</param>
     /// <param name="Format">Optional format string for the value.</param>
     /// <param name="Getter">The getter delegate for extracting the value.</param>
+    /// <param name="Validation">Optional write-side validation rules derived from <see cref="ValidateAttribute"/>.</param>
     public sealed record WriterTemplate(
         string MemberName,
         Type SourceType,
@@ -75,7 +77,8 @@ public sealed class FixedWidthRecordWriter<T>
         FieldAlignment Alignment,
         char PadChar,
         string? Format,
-        Func<T, object?> Getter);
+        Func<T, object?> Getter,
+        WritePropertyValidation? Validation = null);
 
     private static FieldDefinition[] InstantiateFieldDefinitions(IReadOnlyList<WriterTemplate> templates)
     {
@@ -100,7 +103,8 @@ public sealed class FixedWidthRecordWriter<T>
                 Alignment = template.Alignment,
                 PadChar = template.PadChar == '\0' ? ' ' : template.PadChar,
                 Format = template.Format,
-                Getter = template.Getter
+                Getter = template.Getter,
+                Validation = template.Validation
             };
         }
         return result;
@@ -220,6 +224,15 @@ public sealed class FixedWidthRecordWriter<T>
         {
             var field = fields[i];
             var value = field.GetValue(record);
+
+            // Validate field value before writing
+            if (options.ValidationMode == ValidationMode.Strict && field.Validation is { HasAnyRule: true } rules)
+            {
+                List<ValidationError> validationErrors = [];
+                WriteValidationRunner.Validate(value, field.Name, rowNumber, i, rules, validationErrors);
+                if (validationErrors.Count > 0)
+                    throw new ValidationException(validationErrors);
+            }
 
             try
             {
@@ -447,6 +460,22 @@ public sealed class FixedWidthRecordWriter<T>
             var (prop, attr) = props[i];
             var parseAttr = prop.GetCustomAttribute<ParseAttribute>();
             var formatAttr = prop.GetCustomAttribute<FormatAttribute>();
+            var validateAttr = prop.GetCustomAttribute<ValidateAttribute>();
+            WritePropertyValidation? validation = null;
+            if (validateAttr is not null)
+            {
+                var v = new WritePropertyValidation(
+                    validateAttr.NotNull,
+                    validateAttr.NotEmpty,
+                    validateAttr.MaxLength >= 0 ? validateAttr.MaxLength : null,
+                    validateAttr.MinLength >= 0 ? validateAttr.MinLength : null,
+                    !double.IsNaN(validateAttr.RangeMin) ? validateAttr.RangeMin : null,
+                    !double.IsNaN(validateAttr.RangeMax) ? validateAttr.RangeMax : null,
+                    validateAttr.Pattern,
+                    validateAttr.PatternTimeoutMs);
+                if (v.HasAnyRule)
+                    validation = v;
+            }
             fields[i] = new FieldDefinition
             {
                 Name = prop.Name,
@@ -456,7 +485,8 @@ public sealed class FixedWidthRecordWriter<T>
                 Alignment = attr.Alignment,
                 PadChar = attr.PadChar == '\0' ? ' ' : attr.PadChar,
                 Format = formatAttr?.WriteFormat ?? parseAttr?.Format,
-                Getter = BuildGetter(prop)
+                Getter = BuildGetter(prop),
+                Validation = validation
             };
         }
 
@@ -483,6 +513,7 @@ public sealed class FixedWidthRecordWriter<T>
         public required char PadChar { get; init; }
         public required string? Format { get; init; }
         public required Func<T, object?> Getter { get; init; }
+        public WritePropertyValidation? Validation { get; init; }
 
         public object? GetValue(T record) => Getter(record);
     }

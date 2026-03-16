@@ -1,5 +1,6 @@
 using System.Globalization;
 using HeroParser.SeparatedValues.Core;
+using HeroParser.Validation;
 
 namespace HeroParser.SeparatedValues.Writing;
 
@@ -257,6 +258,17 @@ public sealed record CsvWriteOptions
     /// Set to <see langword="null"/> (the default) to disable this protection.
     /// </remarks>
     public int? MaxColumnCount { get; init; }
+
+    /// <summary>
+    /// Gets or sets the validation mode applied when writing records.
+    /// </summary>
+    /// <remarks>
+    /// When set to <see cref="ValidationMode.Strict"/> (the default), any property annotated with
+    /// <see cref="ValidateAttribute"/> that fails its rule will cause a <see cref="ValidationException"/>
+    /// to be thrown before the row is written.
+    /// When set to <see cref="ValidationMode.Lenient"/>, validation is skipped entirely on write.
+    /// </remarks>
+    public ValidationMode ValidationMode { get; init; } = ValidationMode.Strict;
 
     /// <summary>
     /// Gets or sets the progress reporter for receiving writing progress updates.

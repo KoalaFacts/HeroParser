@@ -1,5 +1,6 @@
 using HeroParser.Excels.Xlsx;
 using HeroParser.SeparatedValues.Reading.Binders;
+using HeroParser.SeparatedValues.Reading.Records;
 using HeroParser.Validation;
 
 namespace HeroParser.Excels.Reading;
@@ -39,11 +40,12 @@ public sealed class ExcelMultiSheetBuilder
         if (registrations.Exists(r => r.RecordType == recordType))
             throw new ArgumentException($"Type '{recordType.Name}' is already registered. Each type can only be registered once.", nameof(T));
 
+        var capturedMode = validationMode;
         registrations.Add(new SheetRegistration(
             sheetName,
             typeof(T),
             validationMode,
-            static sheetReader => ReadSheet<T>(sheetReader)));
+            sheetReader => ReadSheet<T>(sheetReader, capturedMode)));
         return this;
     }
 
@@ -82,9 +84,14 @@ public sealed class ExcelMultiSheetBuilder
         return new ExcelMultiSheetResult(resultData);
     }
 
-    private static List<T> ReadSheet<T>(XlsxSheetReader sheetReader) where T : new()
+    private static List<T> ReadSheet<T>(XlsxSheetReader sheetReader, ValidationMode mode) where T : new()
     {
-        var binder = CsvRecordBinderFactory.GetCharBinder<T>(delimiter: '\x01');
+        var recordOptions = new CsvRecordOptions
+        {
+            HasHeaderRow = true,
+            ValidationMode = mode
+        };
+        var binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions, delimiter: '\x01');
 
         // Read header row
         var headerCells = sheetReader.ReadNextRow();
@@ -100,6 +107,7 @@ public sealed class ExcelMultiSheetBuilder
         }
 
         var results = new List<T>();
+        var errors = new List<ValidationError>();
         char[] buffer = [];
         int[] columnEnds = [];
 
@@ -112,11 +120,14 @@ public sealed class ExcelMultiSheetBuilder
             XlsxRowAdapter.EnsureBuffers(cells, ref buffer, ref columnEnds);
             var csvRow = XlsxRowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber, buffer, columnEnds);
 
-            if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record))
+            if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record, errors))
             {
                 results.Add(record);
             }
         }
+
+        if (mode == ValidationMode.Strict && errors.Count > 0)
+            throw new ValidationException(errors);
 
         return results;
     }

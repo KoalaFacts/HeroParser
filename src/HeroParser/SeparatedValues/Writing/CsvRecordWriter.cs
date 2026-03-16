@@ -1,4 +1,5 @@
 using HeroParser.SeparatedValues.Core;
+using HeroParser.Validation;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -114,6 +115,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     /// <param name="Format">Optional format string for the value.</param>
     /// <param name="Getter">The getter delegate for extracting the value.</param>
     /// <param name="ExcludeFromWriteIfAllEmpty">Whether to exclude this column from output when all values are empty.</param>
+    /// <param name="Validation">Optional write-side validation rules derived from <see cref="ValidateAttribute"/>.</param>
     public sealed record WriterTemplate(
         string MemberName,
         Type SourceType,
@@ -121,7 +123,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         int? AttributeIndex,
         string? Format,
         Func<T, object?> Getter,
-        bool ExcludeFromWriteIfAllEmpty = false);
+        bool ExcludeFromWriteIfAllEmpty = false,
+        WritePropertyValidation? Validation = null);
 
     private static PropertyAccessor[] InstantiateAccessors(IReadOnlyList<WriterTemplate> templates)
     {
@@ -134,7 +137,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                 template.HeaderName,
                 template.Format,
                 template.ExcludeFromWriteIfAllEmpty,
-                obj => template.Getter((T)obj));
+                obj => template.Getter((T)obj),
+                template.Validation);
         }
         return result;
     }
@@ -444,6 +448,25 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                     ex);
             }
         }
+
+        // Validate extracted values before writing
+        if (writerOptions.ValidationMode == ValidationMode.Strict)
+        {
+            List<ValidationError>? validationErrors = null;
+            for (int i = 0; i < accessors.Length; i++)
+            {
+                var accessor = accessors[i];
+                if (accessor.Validation is { HasAnyRule: true } rules)
+                {
+                    validationErrors ??= [];
+                    WriteValidationRunner.Validate(valuesBuffer[i], accessor.MemberName, rowNumber, i, rules, validationErrors);
+                }
+            }
+
+            if (validationErrors is { Count: > 0 })
+                throw new ValidationException(validationErrors);
+        }
+
         writer.WriteRowWithFormats(valuesBuffer, formatsBuffer);
     }
 
@@ -499,6 +522,25 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                     ex);
             }
         }
+
+        // Validate extracted values before writing
+        if (writerOptions.ValidationMode == ValidationMode.Strict)
+        {
+            List<ValidationError>? validationErrors = null;
+            for (int i = 0; i < accessors.Length; i++)
+            {
+                var accessor = accessors[i];
+                if (accessor.Validation is { HasAnyRule: true } rules)
+                {
+                    validationErrors ??= [];
+                    WriteValidationRunner.Validate(valuesBuffer[i], accessor.MemberName, rowNumber, i, rules, validationErrors);
+                }
+            }
+
+            if (validationErrors is { Count: > 0 })
+                throw new ValidationException(validationErrors);
+        }
+
         await writer.WriteRowWithFormatsAsync(valuesBuffer, formatsBuffer, cancellationToken).ConfigureAwait(false);
     }
 
@@ -994,12 +1036,28 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             var headerName = !string.IsNullOrWhiteSpace(tabularMap?.Name) ? tabularMap.Name : property.Name;
             var format = formatAttr?.WriteFormat ?? parseAttr?.Format;
 
+            var validateAttr = property.GetCustomAttribute<ValidateAttribute>();
+            WritePropertyValidation? validation = null;
+            if (validateAttr is not null)
+            {
+                validation = new WritePropertyValidation(
+                    validateAttr.NotNull,
+                    validateAttr.NotEmpty,
+                    validateAttr.MaxLength >= 0 ? validateAttr.MaxLength : null,
+                    validateAttr.MinLength >= 0 ? validateAttr.MinLength : null,
+                    !double.IsNaN(validateAttr.RangeMin) ? validateAttr.RangeMin : null,
+                    !double.IsNaN(validateAttr.RangeMax) ? validateAttr.RangeMax : null,
+                    validateAttr.Pattern,
+                    validateAttr.PatternTimeoutMs);
+            }
+
             accessors[i] = new PropertyAccessor(
                 property.Name,
                 headerName,
                 format,
                 formatAttr?.ExcludeIfAllEmpty ?? false,
-                CreateGetter(property));
+                CreateGetter(property),
+                validation);
         }
 
         return accessors;
@@ -1027,12 +1085,13 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         return lambda.Compile();
     }
 
-    private sealed class PropertyAccessor(string memberName, string headerName, string? format, bool excludeFromWriteIfAllEmpty, Func<object, object?> getter)
+    private sealed class PropertyAccessor(string memberName, string headerName, string? format, bool excludeFromWriteIfAllEmpty, Func<object, object?> getter, WritePropertyValidation? validation = null)
     {
         public string MemberName { get; } = memberName;
         public string HeaderName { get; } = headerName;
         public string? Format { get; } = format;
         public bool ExcludeFromWriteIfAllEmpty { get; } = excludeFromWriteIfAllEmpty;
+        public WritePropertyValidation? Validation { get; } = validation;
         private readonly Func<object, object?> getter = getter;
 
         public object? GetValue(object instance) => getter(instance);

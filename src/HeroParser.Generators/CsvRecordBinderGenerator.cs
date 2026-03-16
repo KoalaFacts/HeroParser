@@ -874,7 +874,28 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var writerFormat = member.WriteFormat ?? member.Format;
             builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
             builder.AppendLine($"{member.GetterFactory},");
-            builder.AppendLine(member.ExcludeIfAllEmpty ? "true)," : "false),");
+            builder.AppendLine(member.ExcludeIfAllEmpty ? "true," : "false,");
+            if (member.ValidationNotNull || member.ValidationNotEmpty
+                || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
+                || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
+                || member.ValidationPattern != null)
+            {
+                builder.AppendLine($"new global::HeroParser.Validation.WritePropertyValidation(");
+                builder.Indent();
+                builder.AppendLine($"{(member.ValidationNotNull ? "true" : "false")},");
+                builder.AppendLine($"{(member.ValidationNotEmpty ? "true" : "false")},");
+                builder.AppendLine(member.ValidationMaxLength >= 0 ? $"{member.ValidationMaxLength}," : "null,");
+                builder.AppendLine(member.ValidationMinLength >= 0 ? $"{member.ValidationMinLength}," : "null,");
+                builder.AppendLine(!double.IsNaN(member.ValidationRangeMin) ? FormattableString.Invariant($"{member.ValidationRangeMin},") : "null,");
+                builder.AppendLine(!double.IsNaN(member.ValidationRangeMax) ? FormattableString.Invariant($"{member.ValidationRangeMax},") : "null,");
+                builder.AppendLine(member.ValidationPattern != null ? $"\"{EscapeString(member.ValidationPattern)}\"," : "null,");
+                builder.AppendLine($"{member.ValidationPatternTimeoutMs})),");
+                builder.Unindent();
+            }
+            else
+            {
+                builder.AppendLine("null),");
+            }
             builder.Unindent();
         }
 

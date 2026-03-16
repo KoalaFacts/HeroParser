@@ -1,4 +1,5 @@
 using System.Globalization;
+using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Writing;
 
@@ -169,6 +170,17 @@ public sealed record FixedWidthWriteOptions
     /// Gets or sets a callback to handle serialization errors during record writing.
     /// </summary>
     public FixedWidthSerializeErrorHandler? OnSerializeError { get; init; }
+
+    /// <summary>
+    /// Gets or sets the validation mode applied when writing records.
+    /// </summary>
+    /// <remarks>
+    /// When set to <see cref="ValidationMode.Strict"/> (the default), any property annotated with
+    /// <see cref="ValidateAttribute"/> that fails its rule will cause a <see cref="ValidationException"/>
+    /// to be thrown before the row is written.
+    /// When set to <see cref="ValidationMode.Lenient"/>, validation is skipped entirely on write.
+    /// </remarks>
+    public ValidationMode ValidationMode { get; init; } = ValidationMode.Strict;
 
     /// <summary>
     /// Gets or sets the maximum total output size in characters (DoS protection).

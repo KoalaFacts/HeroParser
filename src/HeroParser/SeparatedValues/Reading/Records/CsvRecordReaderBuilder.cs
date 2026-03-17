@@ -26,6 +26,7 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
     private int? maxFieldSize = null;
     private char? escapeCharacter = null;
     private int? maxRowSize = 512 * 1024;
+    private long? maxInputSize = null;
 
     // Record options
     private bool hasHeaderRow = true;
@@ -38,6 +39,7 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
     private int progressIntervalRows = 1000;
     private ValidationMode validationMode = ValidationMode.Strict;
     private List<Func<CsvRecordOptions, CsvRecordOptions>>? converterRegistrations;
+    private CsvDeserializeErrorHandler? onDeserializeError = null;
 
     // Fluent mapping
     private ICsvReadMapSource<T>? mapSource;
@@ -115,7 +117,8 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
             TrimFields = trimFields,
             MaxFieldSize = maxFieldSize,
             EscapeCharacter = escapeCharacter,
-            MaxRowSize = maxRowSize
+            MaxRowSize = maxRowSize,
+            MaxInputSize = maxInputSize
         };
 
         var record = CreateRecordOptions();
@@ -135,7 +138,8 @@ public sealed partial class CsvRecordReaderBuilder<T> where T : new()
             Culture = culture,
             SkipRows = skipRows,
             Progress = progress,
-            ProgressIntervalRows = progressIntervalRows
+            ProgressIntervalRows = progressIntervalRows,
+            OnDeserializeError = onDeserializeError
         };
 
         // Apply custom converter registrations

@@ -53,7 +53,9 @@ public sealed partial class CsvRowReaderBuilder
     public CsvRowReader<byte> FromFile(string path, out byte[] fileBytes)
     {
         ArgumentNullException.ThrowIfNull(path);
-        var reader = Csv.ReadFromFile(path, out fileBytes, GetOptions());
+        var options = GetOptions();
+        options.ValidateInputSize(new FileInfo(path).Length);
+        var reader = Csv.ReadFromFile(path, out fileBytes, options);
         SkipInitialRows(ref reader);
         return reader;
     }
@@ -75,7 +77,10 @@ public sealed partial class CsvRowReaderBuilder
     public CsvRowReader<byte> FromStream(Stream stream, out byte[] streamBytes, bool leaveOpen = true)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        var reader = Csv.ReadFromStream(stream, out streamBytes, GetOptions(), leaveOpen);
+        var options = GetOptions();
+        if (stream.CanSeek)
+            options.ValidateInputSize(stream.Length);
+        var reader = Csv.ReadFromStream(stream, out streamBytes, options, leaveOpen);
         SkipInitialRows(ref reader);
         return reader;
     }

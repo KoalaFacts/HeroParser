@@ -1,926 +1,284 @@
-# HeroParser - A .Net High-Performance CSV, Fixed-Width & Excel (.xlsx) Parser
+# HeroParser - A .NET High-Performance CSV, Fixed-Width & Excel (.xlsx) Parser
 
 [![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**High-Performance SIMD Parsing** | **Zero Allocations** | **AOT/Trimming Ready** | **Fixed-Width Support** | **Excel (.xlsx) Support** | **Fluent APIs**
+High-performance SIMD-accelerated CSV, Fixed-Width, and Excel (.xlsx) parsing and writing for .NET 8, 9, and 10. Zero extra dependencies, AOT/trimming ready, source-generated binding.
 
-## 🚀 Key Features
+## Install
 
-### Reading
-- **RFC 4180 Quote Handling**: Supports quoted fields with escaped quotes (`""`), commas in quotes, per spec
-- **Quote-Aware SIMD**: Maintains SIMD performance even with quoted fields
-- **Automatic Delimiter Detection**: Detect delimiter from CSV data (comma, semicolon, pipe, tab)
-- **CSV Validation**: Pre-flight validation with detailed error reporting
-- **Zero Allocations**: Stack-only parsing with ArrayPool for column metadata
-- **Lazy Evaluation**: Columns parsed only when accessed
-- **Configurable RFC vs Speed**: Toggle quote parsing and opt-in newlines-in-quotes; defaults favor speed
-- **Fluent Builder API**: Configure readers with chainable methods (`Csv.Read<T>()`)
-- **LINQ-Style Extensions**: `Where()`, `Select()`, `First()`, `ToList()`, `GroupBy()`, and more
-
-### Excel (.xlsx)
-- **Zero-Dependency Excel**: Read and write `.xlsx` files using only `System.IO.Compression` and `System.Xml`
-- **Typed Record Reading**: `Excel.Read<T>().FromFile("data.xlsx")` with the same fluent API
-- **Multi-Sheet Support**: Read all sheets or specific sheets with different record types
-- **Typed Record Writing**: `Excel.Write<T>(records).ToFile("out.xlsx")` with headers, formatting, and validation
-- **IDataReader Support**: Stream large Excel files into databases with `Excel.CreateDataReader()`
-
-### Writing
-- **High-Performance CSV Writer**: Ultra-fast writing with minimal memory allocation
-- **SIMD-Accelerated**: Uses AVX2/SSE2 for quote detection and field analysis
-- **RFC 4180 Compliant**: Proper quote escaping and field quoting
-- **Fluent Builder API**: Configure writers with chainable methods (`Csv.Write<T>()`)
-- **Multiple Output Targets**: Write to strings, streams, or files
-
-### General
-- **Async Streaming**: True async I/O with `IAsyncEnumerable<T>` support for reading and writing
-- **AOT/Trimming Support**: Source generators for reflection-free binding (`[CsvGenerateBinder]`)
-- **Line Number Tracking**: Both logical row numbers and physical source line numbers for error reporting
-- **Progress Reporting**: Track parsing progress for large files with callbacks
-- **Custom Type Converters**: Register converters for domain-specific types
-- **Multi-Framework**: .NET 8, 9, and 10 support
-- **Minimal Dependencies**: No third-party dependencies; only the Microsoft `System.IO.Pipelines` package is referenced
-
-## 🎯 Design Philosophy
-
-### Zero-Allocation, RFC-Compliant Design
-
-- **Target Frameworks**: .NET 8, 9, 10 (modern JIT optimizations)
-- **Memory Safety**: No `unsafe` keyword - uses safe `Unsafe` class and `MemoryMarshal` APIs for performance
-- **Minimal API**: Simple, focused API surface
-- **Minimal Dependencies**: No third-party dependencies; only the Microsoft `System.IO.Pipelines` package is referenced
-- **RFC 4180**: Quote handling, escaped quotes, delimiters in quotes; optional newlines-in-quotes (default off), no header detection
-- **SIMD First**: Quote-aware SIMD for AVX-512, AVX2, NEON
-- **Allocation Notes**: Char-span parsing remains allocation-free; UTF-8 parsing stays zero-allocation for invariant primitives. Culture/format-based parsing on UTF-8 columns decodes to UTF-16 and allocates by design.
-
-### API Surface
-
-```csharp
-// Primary API - parse from string with options
-var reader = Csv.ReadFromText(csvData);
-
-// Custom options (delimiter, quote character, max columns)
-var options = new CsvReadOptions
-{
-    Delimiter = ',',  // Default
-    Quote = '"',      // Default - RFC 4180 compliant
-    MaxColumnCount = 100, // Default
-    AllowNewlinesInsideQuotes = false, // Enable for full RFC newlines-in-quotes support (slower)
-    EnableQuotedFields = true         // Disable for maximum speed when your data has no quotes
-};
-var reader = Csv.ReadFromText(csvData, options);
+```bash
+dotnet add package HeroParser
 ```
 
-## 📊 Usage Examples
+## Quick Start: CSV
 
-### Basic Iteration (Zero Allocations)
+Define a record — `[GenerateBinder]` enables source-generated, reflection-free binding. Unmarked properties auto-map by name.
 
 ```csharp
+[GenerateBinder]
+public class Order
+{
+    public int Id { get; set; }
+    public string Customer { get; set; } = "";
+
+    [Validate(NotEmpty = true, RangeMin = 0)]
+    public decimal Amount { get; set; }
+
+    [Parse(Format = "yyyy-MM-dd")]
+    public DateTime OrderDate { get; set; }
+}
+```
+
+### Read
+
+```csharp
+// Full fluent chain — delimiter, culture, validation, progress, error handling
+var orders = Csv.Read<Order>()
+    .WithDelimiter(';')
+    .TrimFields()
+    .WithCulture("de-DE")
+    .WithNullValues("N/A", "NULL", "")
+    .SkipRows(2)
+    .WithValidationMode(ValidationMode.Lenient)
+    .OnError((ctx, ex) =>
+    {
+        Console.WriteLine($"Row {ctx.Row}: {ex.Message}");
+        return CsvDeserializeErrorAction.SkipRecord;
+    })
+    .WithProgress(new Progress<CsvProgress>(p =>
+        Console.WriteLine($"{p.RowsProcessed:N0} rows ({p.ProgressPercentage:P0})")))
+    .FromFile("orders.csv")
+    .ToList();
+
+// Async streaming — process millions of rows without buffering
+await foreach (var order in Csv.Read<Order>().FromFileAsync("orders.csv"))
+    Console.WriteLine($"{order.Id}: {order.Customer}");
+
+// Zero-alloc row-level — no record type, no heap allocations
 foreach (var row in Csv.ReadFromText(csv))
 {
-    // Access columns by index - no allocations
-    var id = row[0].Parse<int>();
-    var name = row[1].CharSpan; // ReadOnlySpan<char>
+    var id    = row[0].Parse<int>();
+    var name  = row[1].CharSpan;      // ReadOnlySpan<char>
     var price = row[2].Parse<decimal>();
 }
 ```
 
-### Files and Streams
+### Write
 
 ```csharp
-using var fileReader = Csv.ReadFromFile("data.csv"); // streams file without loading it fully
-
-using var stream = File.OpenRead("data.csv");
-using var streamReader = Csv.ReadFromStream(stream); // leaveOpen defaults to true
-```
-
-Both overloads stream with pooled buffers and do not load the entire file/stream; dispose the reader (and the stream if you own it) to release resources.
-
-#### Async I/O
-
-```csharp
-var source = await Csv.ReadFromFileAsync("data.csv");
-using var reader = source.CreateReader();
-```
-
-Async overloads also buffer the full payload (required because readers are ref structs); use when you need non-blocking file/stream reads.
-
-#### Streaming large files (low memory)
-
-```csharp
-using var reader = Csv.ReadFromStream(File.OpenRead("data.csv"));
-while (reader.MoveNext())
-{
-    var row = reader.Current;
-    var id = row[0].Parse<int>();
-}
-```
-
-Streaming keeps a pooled buffer and does not load the entire file into memory; rows remain valid until the next `MoveNext` call.
-
-#### Async streaming (without buffering entire file)
-
-```csharp
-await using var reader = Csv.CreateAsyncStreamReader(File.OpenRead("data.csv"));
-while (await reader.MoveNextAsync())
-{
-    var row = reader.Current;
-    var id = row[0].Parse<int>();
-}
-```
-
-Async streaming uses pooled buffers and async I/O; each row stays valid until the next `MoveNextAsync` invocation.
-
-### Fluent Reader Builder
-
-Use the fluent builder API for a clean, chainable configuration:
-
-```csharp
-// Read CSV records with fluent configuration
-var records = Csv.Read<Person>()
+Csv.Write<Order>()
     .WithDelimiter(';')
-    .TrimFields()
-    .AllowMissingColumns()
-    .SkipRows(2)  // Skip metadata rows
-    .FromText(csvData)
-    .ToList();
-
-// Read from file with async streaming
-await foreach (var person in Csv.Read<Person>()
-    .WithDelimiter(',')
-    .FromFileAsync("data.csv"))
-{
-    Console.WriteLine($"{person.Name}: {person.Age}");
-}
-```
-
-The builder provides a symmetric API to `CsvWriterBuilder<T>` for reading records.
-
-### Manual Row-by-Row Reading (Fluent)
-
-Use the non-generic builder for low-level row-by-row parsing:
-
-```csharp
-// Manual row-by-row reading with fluent configuration
-using var reader = Csv.Read()
-    .WithDelimiter(';')
-    .TrimFields()
-    .WithCommentCharacter('#')
-    .FromText(csvData);
-
-foreach (var row in reader)
-{
-    var id = row[0].Parse<int>();
-    var name = row[1].ToString();
-}
-
-// Stream from file with custom options
-using var fileReader = Csv.Read()
-    .WithMaxFieldSize(10_000)
-    .AllowNewlinesInQuotes()
-    .FromFile("data.csv");
-```
-
-### LINQ-Style Extension Methods
-
-CSV record readers provide familiar LINQ-style operations for working with records:
-
-```csharp
-// Materialize all records
-var allPeople = Csv.Read<Person>().FromText(csv).ToList();
-var peopleArray = Csv.Read<Person>().FromText(csv).ToArray();
-
-// Query operations
-var adults = Csv.Read<Person>()
-    .FromText(csv)
-    .Where(p => p.Age >= 18);
-
-var names = Csv.Read<Person>()
-    .FromText(csv)
-    .Select(p => p.Name);
-
-// First/Single operations
-var first = Csv.Read<Person>().FromText(csv).First();
-var firstAdult = Csv.Read<Person>().FromText(csv).First(p => p.Age >= 18);
-var single = Csv.Read<Person>().FromText(csv).SingleOrDefault();
-
-// Aggregation
-var count = Csv.Read<Person>().FromText(csv).Count();
-var adultCount = Csv.Read<Person>().FromText(csv).Count(p => p.Age >= 18);
-var hasRecords = Csv.Read<Person>().FromText(csv).Any();
-var allAdults = Csv.Read<Person>().FromText(csv).All(p => p.Age >= 18);
-
-// Pagination
-var page = Csv.Read<Person>().FromText(csv).Skip(10).Take(5);
-
-// Grouping and indexing
-var byCity = Csv.Read<Person>()
-    .FromText(csv)
-    .GroupBy(p => p.City);
-
-var byId = Csv.Read<Person>()
-    .FromText(csv)
-    .ToDictionary(p => p.Id);
-
-// Iteration
-Csv.Read<Person>()
-    .FromText(csv)
-    .ForEach(p => Console.WriteLine(p.Name));
-```
-
-> **Note**: Since CSV readers are ref structs, they cannot implement `IEnumerable<T>`. These extension methods consume the reader and return materialized results.
-
-### Multi-Schema CSV Parsing
-
-Parse CSV files where different rows map to different record types based on a discriminator column. This is common in banking/financial file formats (NACHA, BAI, EDI) with header/detail/trailer patterns:
-
-```csharp
-// Define record types
-[CsvGenerateBinder]
-public class HeaderRecord
-{
-    [CsvColumn(Name = "Type")]
-    public string Type { get; set; } = "";
-
-    [CsvColumn(Name = "Date")]
-    public DateTime Date { get; set; }
-}
-
-[CsvGenerateBinder]
-public class DetailRecord
-{
-    [CsvColumn(Name = "Type")]
-    public string Type { get; set; } = "";
-
-    [CsvColumn(Name = "Id")]
-    public int Id { get; set; }
-
-    [CsvColumn(Name = "Amount")]
-    public decimal Amount { get; set; }
-}
-
-[CsvGenerateBinder]
-public class TrailerRecord
-{
-    [CsvColumn(Name = "Type")]
-    public string Type { get; set; } = "";
-
-    [CsvColumn(Name = "Count")]
-    public int Count { get; set; }
-}
-
-// Parse with discriminator-based type routing
-var csv = """
-Type,Id,Amount,Date,Count
-H,0,0.00,2024-01-15,0
-D,1,100.50,,0
-D,2,200.75,,0
-T,0,301.25,,2
-""";
-
-foreach (var record in Csv.Read()
-    .WithMultiSchema()
-    .WithDiscriminator("Type")           // By column name
-    .MapRecord<HeaderRecord>("H")
-    .MapRecord<DetailRecord>("D")
-    .MapRecord<TrailerRecord>("T")
-    .AllowMissingColumns()
-    .FromText(csv))
-{
-    switch (record)
-    {
-        case HeaderRecord h:
-            Console.WriteLine($"Header: {h.Date}");
-            break;
-        case DetailRecord d:
-            Console.WriteLine($"Detail: {d.Id} = {d.Amount:C}");
-            break;
-        case TrailerRecord t:
-            Console.WriteLine($"Trailer: {t.Count} records");
-            break;
-    }
-}
-```
-
-#### Discriminator Options
-
-```csharp
-// By column index (0-based)
-.WithDiscriminator(columnIndex: 0)
-
-// By column name (resolved from header)
-.WithDiscriminator("RecordType")
-
-// Case-insensitive discriminator matching (default)
-.CaseSensitiveDiscriminator(false)
-```
-
-#### Handling Unmatched Rows
-
-```csharp
-// Skip rows that don't match any registered type
-.OnUnmatchedRow(UnmatchedRowBehavior.Skip)
-
-// Throw exception for unmatched rows (default)
-.OnUnmatchedRow(UnmatchedRowBehavior.Throw)
-
-// Use custom factory for unmatched rows
-.MapRecord((discriminator, columns, rowNum) => new UnknownRecord
-{
-    Type = discriminator,
-    RawData = string.Join(",", columns)
-})
-```
-
-#### Streaming and Async Support
-
-```csharp
-// From file
-foreach (var record in Csv.Read()
-    .WithMultiSchema()
-    .WithDiscriminator("Type")
-    .MapRecord<HeaderRecord>("H")
-    .MapRecord<DetailRecord>("D")
-    .FromFile("transactions.csv"))
-{
-    // Process records
-}
-
-// Async streaming
-await foreach (var record in Csv.Read()
-    .WithMultiSchema()
-    .WithDiscriminator("Type")
-    .MapRecord<HeaderRecord>("H")
-    .MapRecord<DetailRecord>("D")
-    .FromFileAsync("transactions.csv"))
-{
-    // Process records asynchronously
-}
-```
-
-#### Source-Generated Dispatch (Optimal Performance)
-
-For maximum performance, use source-generated dispatchers instead of runtime multi-schema. The generator creates optimized switch-based dispatch that compiles to jump tables:
-
-```csharp
-[CsvGenerateDispatcher(DiscriminatorIndex = 0)]
-[CsvSchemaMapping("H", typeof(HeaderRecord))]
-[CsvSchemaMapping("D", typeof(DetailRecord))]
-[CsvSchemaMapping("T", typeof(TrailerRecord))]
-public partial class BankingDispatcher { }
-
-// Usage:
-var reader = Csv.Read().FromText(csv);
-if (reader.MoveNext()) { } // Skip header
-int rowNumber = 1;
-while (reader.MoveNext())
-{
-    rowNumber++;
-    var record = BankingDispatcher.Dispatch(reader.Current, rowNumber);
-    switch (record)
-    {
-        case HeaderRecord h: /* ... */ break;
-        case DetailRecord d: /* ... */ break;
-        case TrailerRecord t: /* ... */ break;
-    }
-}
-```
-
-**Why source-generated is faster:**
-- Switch expression compiles to jump table (no dictionary lookup)
-- Direct binder invocation (no interface dispatch)
-- No boxing/unboxing overhead
-- ~2.85x faster than runtime multi-schema dispatch
-
-> **Note**: All mapped types must have `[CsvGenerateBinder]` attribute for AOT compatibility.
-
-### Automatic Delimiter Detection
-
-HeroParser can automatically detect the delimiter character used in CSV data:
-
-```csharp
-// Auto-detect delimiter
-char delimiter = Csv.DetectDelimiter(csvData);
-
-// Use detected delimiter
-var records = Csv.Read<Person>()
-    .WithDelimiter(delimiter)
-    .FromText(csvData)
-    .ToList();
-```
-
-**Supported delimiters**: comma (`,`), semicolon (`;`), pipe (`|`), tab (`\t`)
-
-#### Detailed Detection Results
-
-Get confidence scores and candidate delimiter counts:
-
-```csharp
-var result = Csv.DetectDelimiterWithDetails(csvData);
-
-Console.WriteLine($"Detected: '{result.DetectedDelimiter}'");
-Console.WriteLine($"Confidence: {result.Confidence}%");
-Console.WriteLine($"Average count per row: {result.AverageDelimiterCount}");
-
-if (result.Confidence < 50)
-{
-    Console.WriteLine("Low confidence - manual verification recommended");
-    foreach (var candidate in result.CandidateCounts)
-    {
-        Console.WriteLine($"  {candidate.Key}: {candidate.Value} occurrences");
-    }
-}
-
-// Use detected delimiter
-var records = Csv.Read<Person>()
-    .WithDelimiter(result.DetectedDelimiter)
-    .FromText(csvData)
-    .ToList();
-```
-
-**Detection Algorithm**:
-- Samples first N rows (default 10, configurable)
-- Counts occurrences of candidate delimiters
-- Selects delimiter with most consistent count across rows
-- Calculates confidence based on consistency (100% = perfect consistency)
-
-**Use Cases**:
-- User-uploaded CSV files with unknown format
-- Processing CSVs from multiple sources with varying delimiters
-- European CSVs (semicolon-delimited)
-- Log files (pipe or tab-delimited)
-
-### CSV Validation
-
-Validate CSV structure and content before processing:
-
-```csharp
-var options = new CsvValidationOptions
-{
-    RequiredHeaders = new[] { "Name", "Email", "Age" },
-    ExpectedColumnCount = 3,
-    MaxRows = 10000
-};
-
-var result = Csv.Validate(csvData, options);
-
-if (!result.IsValid)
-{
-    Console.WriteLine($"Validation failed with {result.Errors.Count} errors:");
-    foreach (var error in result.Errors)
-    {
-        Console.WriteLine($"  Row {error.RowNumber}: {error.Message}");
-    }
-    return;
-}
-
-// Validation passed - proceed with processing
-var records = Csv.Read<Person>().FromText(csvData).ToList();
-```
-
-#### Validation Checks
-
-**Automatic checks**:
-- Parse errors (malformed CSV structure)
-- Empty files
-- Inconsistent column counts across rows
-- Row count limits (DoS protection)
-
-**Configurable checks**:
-- Required headers presence
-- Expected column count
-- Delimiter auto-detection
-
-**Validation Options**:
-
-```csharp
-var options = new CsvValidationOptions
-{
-    Delimiter = null,                    // Auto-detect delimiter
-    HasHeaderRow = true,                 // Expect header row
-    RequiredHeaders = new[] { "Id", "Name" },  // Required columns
-    ExpectedColumnCount = 5,             // Exact column count
-    MaxRows = 1_000_000,                 // Maximum rows allowed
-    CheckConsistentColumnCount = true,   // All rows must have same column count
-    AllowEmptyFile = false               // Reject empty files
-};
-```
-
-**Validation Result**:
-
-```csharp
-var result = Csv.Validate(csvData, options);
-
-// Check overall validity
-if (result.IsValid)
-{
-    Console.WriteLine($"Valid CSV: {result.TotalRows} rows, {result.ColumnCount} columns");
-    Console.WriteLine($"Delimiter: '{result.Delimiter}'");
-    Console.WriteLine($"Headers: {string.Join(", ", result.Headers)}");
-}
-
-// Inspect errors
-foreach (var error in result.Errors)
-{
-    Console.WriteLine($"[{error.ErrorType}] Row {error.RowNumber}, Col {error.ColumnNumber}");
-    Console.WriteLine($"  Message: {error.Message}");
-    if (error.Expected != null)
-        Console.WriteLine($"  Expected: {error.Expected}, Actual: {error.Actual}");
-}
-```
-
-**Error Types**:
-- `ParseError` - CSV structure could not be parsed
-- `MissingHeader` - Required header is missing
-- `ColumnCountMismatch` - Column count doesn't match expected
-- `TooManyRows` - Row count exceeds maximum
-- `EmptyFile` - File contains no data
-- `InconsistentColumnCount` - Rows have different column counts
-- `DelimiterDetectionFailed` - Could not auto-detect delimiter
-
-**Use Cases**:
-- Pre-flight validation for ETL pipelines
-- User-uploaded file validation
-- API request validation
-- Data quality checks before processing
-- Fail-fast error detection for large files
-
-### Advanced Reader Options
-
-#### Progress Reporting
-
-Track parsing progress for large files:
-
-```csharp
-var progress = new Progress<CsvProgress>(p =>
-{
-    var pct = p.TotalBytes > 0 ? (p.BytesProcessed * 100.0 / p.TotalBytes) : 0;
-    Console.WriteLine($"Processed {p.RowsProcessed} rows ({pct:F1}%)");
-});
-
-var records = Csv.Read<Person>()
-    .WithProgress(progress, intervalRows: 1000)
-    .FromFile("large-file.csv")
-    .ToList();
-```
-
-#### Error Handling
-
-Handle deserialization errors gracefully:
-
-```csharp
-var records = Csv.Read<Person>()
+    .WithDateTimeFormat("yyyy-MM-dd")
+    .WithNumberFormat("N2")
+    .WithCulture("en-US")
+    .AlwaysQuote()
+    .WithInjectionProtection(CsvInjectionProtection.EscapeWithTab)
+    .WithMaxRowCount(100_000)
     .OnError(ctx =>
     {
-        Console.WriteLine($"Error at row {ctx.Row}, column '{ctx.MemberName}': {ctx.Exception?.Message}");
-        return DeserializeErrorAction.Skip;  // Or UseDefault, Throw
+        Console.WriteLine($"Row {ctx.Row}, {ctx.MemberName}: {ctx.Exception.Message}");
+        return SerializeErrorAction.SkipRow;
     })
-    .FromText(csv)
-    .ToList();
+    .WithProgress(new Progress<CsvWriteProgress>(p =>
+        Console.WriteLine($"{p.RowsWritten:N0} rows written")))
+    .ToFile("out.csv", orders);
+
+// Async — same chain, different terminal
+await Csv.Write<Order>()
+    .WithDateTimeFormat("O")
+    .ToFileAsync("out.csv", orders);
 ```
 
-#### Header Validation
+## Quick Start: Excel
 
-Enforce required headers and detect duplicates:
+### Read
 
 ```csharp
-// Require specific headers
-var records = Csv.Read<Person>()
-    .RequireHeaders("Name", "Email", "Age")
-    .FromText(csv)
-    .ToList();
-
-// Detect duplicate headers
-var records = Csv.Read<Person>()
-    .DetectDuplicateHeaders()
-    .FromText(csv)
-    .ToList();
-
-// Custom header validation
-var records = Csv.Read<Person>()
-    .ValidateHeaders(headers =>
+// Full chain — sheet selection, culture, validation, error handling
+var orders = Excel.Read<Order>()
+    .FromSheet("Sales")
+    .WithCulture("en-US")
+    .WithNullValues("N/A", "")
+    .SkipRows(1)
+    .CaseSensitiveHeaders()
+    .WithValidationMode(ValidationMode.Lenient)
+    .OnError((ctx, ex) =>
     {
-        if (!headers.Contains("Id"))
-            throw new CsvException(CsvErrorCode.InvalidHeader, "Missing required 'Id' column");
+        Console.WriteLine($"Sheet '{ctx.SheetName}', row {ctx.Row}: {ex.Message}");
+        return ExcelDeserializeErrorAction.SkipRecord;
     })
-    .FromText(csv)
-    .ToList();
+    .WithProgress(new Progress<ExcelProgress>(p =>
+        Console.WriteLine($"Sheet '{p.SheetName}': {p.RowsRead:N0} rows")))
+    .FromFile("orders.xlsx");
+
+// Multi-sheet — different types per sheet
+var result = Excel.Read()
+    .WithSheet<Order>("Orders")
+    .WithSheet<Customer>("Customers")
+    .FromFile("workbook.xlsx");
+
+var orders    = result.Get<Order>();
+var customers = result.Get<Customer>();
+
+// All sheets, same type
+var allSheets = Excel.Read<Order>().AllSheets().FromFile("orders.xlsx");
+// allSheets: Dictionary<string, List<Order>>
 ```
 
-#### Custom Type Converters
-
-Register custom converters for domain-specific types:
+### Write
 
 ```csharp
-var records = Csv.Read<Order>()
-    .RegisterConverter<Money>((column, culture) =>
-    {
-        var text = column.ToString();
-        if (Money.TryParse(text, out var money))
-            return money;
-        throw new FormatException($"Invalid money format: {text}");
-    })
-    .FromText(csv)
-    .ToList();
-```
-
-## ✍️ CSV Writing
-
-HeroParser includes a high-performance CSV writer with ultra-fast throughput and minimal memory allocations.
-
-### Basic Writing
-
-```csharp
-// Write records to a string
-var records = new[]
-{
-    new Person { Name = "Alice", Age = 30 },
-    new Person { Name = "Bob", Age = 25 }
-};
-
-string csv = Csv.WriteToText(records);
-// Output:
-// Name,Age
-// Alice,30
-// Bob,25
-```
-
-### Writing to Files and Streams
-
-```csharp
-// Write to a file
-Csv.WriteToFile("output.csv", records);
-
-// Write to a stream
-using var stream = File.Create("output.csv");
-Csv.WriteToStream(stream, records);
-
-// Async writing (optimized for in-memory collections)
-await Csv.WriteToFileAsync("output.csv", records);
-
-// Async writing with IAsyncEnumerable (for streaming data sources)
-await Csv.WriteToFileAsync("output.csv", GetRecordsAsync());
-```
-
-### High-Performance Async Writing
-
-For scenarios requiring true async I/O, use the `CsvAsyncStreamWriter`:
-
-```csharp
-// Low-level async writer with sync fast paths
-await using var writer = Csv.CreateAsyncStreamWriter(stream);
-await writer.WriteRowAsync(new[] { "Alice", "30", "NYC" });
-await writer.WriteRowAsync(new[] { "Bob", "25", "LA" });
-await writer.FlushAsync();
-
-// Builder API with async streaming (16-43% faster than sync at scale)
-await Csv.Write<Person>()
-    .WithDelimiter(',')
-    .WithHeader()
-    .ToStreamAsyncStreaming(stream, records);  // IEnumerable overload
-```
-
-The async writer uses sync fast paths when data fits in the buffer, avoiding async overhead for small writes while supporting true non-blocking I/O for large datasets.
-
-### Writer Options
-
-```csharp
-var options = new CsvWriteOptions
-{
-    Delimiter = ',',           // Field delimiter (default: comma)
-    Quote = '"',               // Quote character (default: double quote)
-    NewLine = "\r\n",          // Line ending (default: CRLF per RFC 4180)
-    WriteHeader = true,        // Include header row (default: true)
-    QuoteStyle = QuoteStyle.WhenNeeded,  // Quote only when necessary
-    NullValue = "",            // String to write for null values
-    Culture = CultureInfo.InvariantCulture,
-    DateTimeFormat = "O",      // ISO 8601 format for dates
-    NumberFormat = "G"         // General format for numbers
-};
-
-string csv = Csv.WriteToText(records, options);
-```
-
-### Fluent Writer Builder
-
-```csharp
-// Write records with fluent configuration
-var csv = Csv.Write<Person>()
-    .WithDelimiter(';')
-    .AlwaysQuote()
+// Full chain — formatting, error handling, progress, output limits
+Excel.Write<Order>()
+    .WithSheetName("Sales Q1")
     .WithDateTimeFormat("yyyy-MM-dd")
-    .WithHeader()
-    .ToText(records);
-
-// Write to file with async streaming
-await Csv.Write<Person>()
-    .WithDelimiter(',')
-    .WithoutHeader()
-    .ToFileAsync("output.csv", recordsAsync);
-```
-
-The builder provides a symmetric API to `CsvReaderBuilder<T>` for writing records.
-
-### Manual Row-by-Row Writing (Fluent)
-
-Use the non-generic builder for low-level row-by-row writing:
-
-```csharp
-// Manual row-by-row writing with fluent configuration
-using var writer = Csv.Write()
-    .WithDelimiter(';')
-    .AlwaysQuote()
-    .WithDateTimeFormat("yyyy-MM-dd")
-    .CreateWriter(Console.Out);
-
-writer.WriteField("Name");
-writer.WriteField("Age");
-writer.EndRow();
-
-writer.WriteField("Alice");
-writer.WriteField(30);
-writer.EndRow();
-
-writer.Flush();
-
-// Write to file with custom options
-using var fileWriter = Csv.Write()
-    .WithNewLine("\n")
-    .WithCulture("de-DE")
-    .CreateFileWriter("output.csv");
-```
-
-### Low-Level Row Writing
-
-```csharp
-using var writer = Csv.CreateWriter(Console.Out);
-
-// Write header
-writer.WriteField("Name");
-writer.WriteField("Age");
-writer.EndRow();
-
-// Write data rows
-writer.WriteField("Alice");
-writer.WriteField(30);
-writer.EndRow();
-
-writer.Flush();
-```
-
-### Error Handling
-
-```csharp
-var options = new CsvWriteOptions
-{
-    OnSerializeError = ctx =>
+    .WithNumberFormat("N2")
+    .WithCulture("en-US")
+    .WithMaxRowCount(1_000_000)
+    .WithMaxOutputSize(500 * 1024 * 1024)  // 500 MB limit
+    .OnError(ctx =>
     {
-        Console.WriteLine($"Error at row {ctx.Row}, column '{ctx.MemberName}': {ctx.Exception?.Message}");
-        return SerializeErrorAction.WriteNull;  // Or SkipRow, Throw
-    }
-};
+        Console.WriteLine($"Row {ctx.Row}, {ctx.MemberName}: {ctx.Exception.Message}");
+        return ExcelSerializeErrorAction.SkipRow;
+    })
+    .WithProgress(new Progress<ExcelWriteProgress>(p =>
+        Console.WriteLine($"Sheet '{p.SheetName}': {p.RowsWritten:N0} rows")))
+    .ToFile("out.xlsx", orders);
+
+// Multi-sheet write
+Excel.WriteMultiSheet()
+    .WithSheet("Orders", orders)
+    .WithSheet("Customers", customers)
+    .ToFile("workbook.xlsx");
+
+// Async (offloads to thread pool — ZIP format requires sync I/O internally)
+await Excel.Write<Order>().ToFileAsync("out.xlsx", orders);
 ```
 
-## 🔒 Security Considerations
+## Quick Start: Fixed-Width
 
-HeroParser includes built-in protections against common CSV security vulnerabilities.
-
-### DoS Protection
-
-Protect against malicious or malformed CSV files with configurable limits:
+Define a record — `[PositionalMap]` declares character-position boundaries.
 
 ```csharp
-var options = new CsvReadOptions
+[GenerateBinder]
+public class Employee
 {
-    MaxColumnCount = 100,       // Prevent column explosion attacks
-    MaxRowCount = 1_000_000,    // Limit total rows processed
-    MaxFieldSize = 10_000,      // Prevent huge field allocations
-    MaxRowSize = 512 * 1024     // 512KB row limit for streaming
-};
+    [PositionalMap(Start = 0, Length = 10)]
+    public string Id { get; set; } = "";
 
-var reader = Csv.Read().WithOptions(options).FromFile("untrusted.csv");
+    [PositionalMap(Start = 10, Length = 30)]
+    public string Name { get; set; } = "";
+
+    [PositionalMap(Start = 40, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+    [Validate(RangeMin = 0)]
+    public decimal Salary { get; set; }
+
+    [PositionalMap(Start = 50, Length = 8)]
+    [Parse(Format = "yyyyMMdd")]
+    public DateTime HireDate { get; set; }
+}
 ```
 
-**Recommended Limits for Untrusted Input:**
-- `MaxColumnCount`: 100-1000 (based on expected schema)
-- `MaxRowCount`: 1,000,000 (based on available memory)
-- `MaxFieldSize`: 10,000-100,000 bytes
-- `MaxRowSize`: 512KB-1MB (for streaming readers)
-
-### CSV Injection Prevention
-
-When exporting user data to CSV, enable injection protection to prevent formula injection attacks:
+### Read
 
 ```csharp
-Csv.Write<T>()
-    .WithInjectionProtection(CsvInjectionProtection.Sanitize)
-    .ToFile("export.csv");
+// Full chain — padding, alignment, validation, error handling
+var result = FixedWidth.Read<Employee>()
+    .WithDefaultPadChar(' ')
+    .WithDefaultAlignment(FieldAlignment.Left)
+    .AllowShortRows()
+    .CaseSensitiveHeaders()
+    .WithValidationMode(ValidationMode.Lenient)
+    .OnError((ctx, ex) =>
+    {
+        Console.WriteLine($"Row {ctx.RecordNumber}: {ex.Message}");
+        return FixedWidthDeserializeErrorAction.SkipRecord;
+    })
+    .WithProgress(new Progress<FixedWidthProgress>(p =>
+        Console.WriteLine($"{p.RecordsProcessed:N0} records")))
+    .FromFile("employees.dat");
+
+var employees = result.Records;
+
+// Async streaming
+await foreach (var emp in FixedWidth.Read<Employee>().FromFileAsync("employees.dat"))
+    Console.WriteLine($"{emp.Name}: {emp.Salary:C}");
+
+// Inline mapping — no attributes needed
+var records = FixedWidth.Read<Employee>()
+    .Map(e => e.Id, f => f.Start(0).Length(10))
+    .Map(e => e.Name, f => f.Start(10).Length(30))
+    .Map(e => e.Salary, f => f.Start(40).Length(10).Alignment(FieldAlignment.Right).PadChar('0'))
+    .Map(e => e.HireDate, f => f.Start(50).Length(8))
+    .FromText(fixedWidthData);
 ```
 
-**Injection Protection Modes:**
-- **`EscapeWithQuote`** (default): Prefixes dangerous values with a single quote inside the quoted field
-- **`None`**: No protection - use only for trusted data that will not be opened in spreadsheet tools
-- **`Sanitize`**: Removes dangerous characters (`=`, `@`, `+`, `-`, `\t`, `\r`)
-- **`EscapeWithTab`**: Prefixes dangerous characters with tab
+### Write
 
-**Example:**
 ```csharp
-var writeOptions = new CsvWriteOptions
-{
-    InjectionProtection = CsvInjectionProtection.Sanitize
-};
+FixedWidth.Write<Employee>()
+    .WithPadChar(' ')
+    .AlignLeft()
+    .WithDateTimeFormat("yyyyMMdd")
+    .TruncateOnOverflow()
+    .WithMaxRowCount(500_000)
+    .OnError(ctx =>
+    {
+        Console.WriteLine($"Row {ctx.Row}: {ctx.Exception.Message}");
+        return FixedWidthSerializeErrorAction.SkipRow;
+    })
+    .ToFile("out.dat", employees);
 
-// Dangerous value: "=1+1" becomes "1+1" (dangerous prefix removed)
-Csv.WriteToText(records, writeOptions);
+// Async
+await FixedWidth.Write<Employee>()
+    .WithNewLine("\r\n")
+    .ToFileAsync("out.dat", employees);
 ```
 
-### Secure File Handling
+## Unified Attribute System
 
-**For production applications processing untrusted files:**
+HeroParser v2 uses concern-separated attributes that work across all formats:
 
-1. **Validate before processing:**
-   ```csharp
-   var options = new CsvReadOptions { MaxColumnCount = 50, MaxRowCount = 100_000 };
-   options.Validate(); // Throws if configuration is invalid
-   ```
+| Attribute | Purpose |
+|-----------|---------|
+| `[GenerateBinder]` | Triggers source generator — emits a compile-time binder for AOT/trimming compatibility |
+| `[TabularMap(Name, Index)]` | Column mapping for CSV and Excel |
+| `[PositionalMap(Start, Length, End, PadChar, Alignment)]` | Position mapping for Fixed-Width |
+| `[Parse(Format)]` | Read-side type conversion (e.g., date format string) |
+| `[Format(WriteFormat, ExcludeIfAllEmpty)]` | Write-side formatting |
+| `[Validate(NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern)]` | Bidirectional field validation |
 
-2. **Use streaming for large files:**
-   ```csharp
-   // Avoid loading entire file into memory
-   await using var reader = Csv.CreateAsyncStreamReader(File.OpenRead("large.csv"));
-   while (await reader.MoveNextAsync())
-   {
-       var row = reader.Current;
-       // Process row...
-   }
-   ```
+A single record class can carry both `[TabularMap]` and `[PositionalMap]` attributes, allowing it to be used with CSV, Excel, and Fixed-Width APIs simultaneously.
 
-3. **Catch and handle exceptions:**
-   ```csharp
-   try
-   {
-       var records = Csv.Read<T>().FromFile("untrusted.csv").ToList();
-   }
-   catch (CsvException ex)
-   {
-       Console.WriteLine($"CSV error at row {ex.Row}, col {ex.Column}: {ex.Message}");
-       // Log and handle appropriately
-   }
-   ```
+Convention-based mapping: unmarked properties default to `[TabularMap(Name = propertyName)]` for CSV/Excel. Fixed-Width requires explicit `[PositionalMap]`.
 
-4. **Implement timeouts for async operations:**
-   ```csharp
-   using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-   await foreach (var record in Csv.Read<T>()
-       .FromFileAsync("untrusted.csv")
-       .WithCancellation(cts.Token))
-   {
-       // Process record...
-   }
-   ```
+## Key Features
 
-### Thread-Safety
-
-**Note:** HeroParser readers and writers are **not thread-safe** by design for performance:
-
-- **Readers**: Use separate reader instances per thread
-- **Writers**: Use separate writer instances per thread
-- **Options**: `CsvReadOptions` and `CsvWriteOptions` are immutable and safe to share after validation
-
-**Multi-threaded Processing:**
-```csharp
-// ✅ Good: Each thread gets its own reader
-Parallel.ForEach(files, file =>
-{
-    var reader = Csv.Read<T>().FromFile(file);
-    // Process...
-});
-
-// ❌ Bad: Sharing reader across threads
-var reader = Csv.Read<T>().FromFile("data.csv");
-Parallel.ForEach(reader, record => { /* ... */ }); // NOT SAFE!
-```
+- **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking
+- **Zero allocations** — fixed 4 KB stack footprint regardless of column count or file size; `ArrayPool` for buffers
+- **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
+- **Async streaming** — `IAsyncEnumerable<T>` for all three formats; true non-blocking I/O with sync fast paths
+- **Excel without extra dependencies** — reads and writes `.xlsx` using only `System.IO.Compression` and `System.Xml`
+- **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()` for database bulk loading via `SqlBulkCopy`
+- **PipeReader integration** — `Csv.ReadFromPipeReaderAsync(pipe)` for network streaming without buffering the entire payload
+- **Multi-schema CSV** — discriminator-based row routing to different record types; source-generated dispatch for ~2.85x faster throughput
+- **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score
+- **CSV validation** — pre-flight structural checks with detailed per-row error reporting
+- **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; `result.ThrowIfAnyError()` for fail-fast
+- **CSV injection protection** — configurable sanitization modes for user-data exports
+- **Progress reporting** — row/byte callbacks for large-file UX
+- **Custom type converters** — register converters for domain types on any reader or writer
+- **Multi-framework** — .NET 8, 9, 10; CI validates all three on Windows, Linux, and macOS
 
 ## Benchmarks
 
-```bash
-# Run all benchmarks
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
-
-# Reading benchmarks
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --throughput
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --streaming
-
-# Writing benchmarks
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --writer
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --sync-writer
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --async-writer
-```
+Test configuration: AMD Ryzen AI 9 HX PRO 370, .NET 10, Release build.
 
 ### Reading Performance
 
-HeroParser uses CLMUL-based branchless quote masking (PCLMULQDQ instruction) for efficient quote-aware SIMD parsing. Results on AMD Ryzen AI 9 HX PRO 370, .NET 10:
+HeroParser uses CLMUL-based branchless quote masking (PCLMULQDQ instruction) for quote-aware SIMD parsing.
 
 | Rows | Columns | Quotes | Time | Throughput |
 |------|---------|--------|------|------------|
@@ -931,1109 +289,72 @@ HeroParser uses CLMUL-based branchless quote masking (PCLMULQDQ instruction) for
 | 100k | 100 | No | 14,568 μs | ~4.5 GB/s |
 | 100k | 100 | Yes | 35,396 μs | ~1.9 GB/s |
 
-**Key characteristics:**
-- **Fixed 4 KB allocation** regardless of column count or file size
-- **Scales well with wide CSVs** - performance remains consistent with 50-100+ columns
-- **UTF-8 optimized** - use `byte[]` or `ReadOnlySpan<byte>` APIs for best performance
-- **Quote-aware SIMD** - maintains high throughput even with quoted fields
+Key characteristics:
+- Fixed 4 KB allocation regardless of column count or file size
+- UTF-8 optimized — use `byte[]` or `ReadOnlySpan<byte>` APIs for best performance
+- Quote-aware SIMD — maintains high throughput even with quoted fields
 
 ### Writing Performance
-
-HeroParser's CSV writer is optimized for high throughput with minimal allocations:
 
 | Scenario | Throughput | Memory |
 |----------|------------|--------|
 | Sync Writing | ~2-3 GB/s | 35-85% less than alternatives |
 | Async Writing | ~1.5-2 GB/s | Pooled buffers, minimal GC |
 
-**Key characteristics:**
-- **SIMD-accelerated** quote detection and field analysis
-- **RFC 4180 compliant** proper quote escaping
-- **Sync fast paths** in async writer avoid overhead for small writes
-
-### Quote Handling (RFC 4180)
-
-```csharp
-var csv = "field1,\"field2\",\"field,3\"\n" +
-          "aaa,\"b,bb\",ccc\n" +
-          "zzz,\"y\"\"yy\",xxx";  // Escaped quote
-
-foreach (var row in Csv.ReadFromText(csv))
-{
-    // Access raw value (includes quotes)
-    var raw = row[1].ToString(); // "b,bb"
-
-    // Remove surrounding quotes and unescape
-    var unquoted = row[1].UnquoteToString(); // b,bb
-
-    // Zero-allocation unquote (returns span)
-    var span = row[1].Unquote(); // ReadOnlySpan<char>
-}
-```
-
-### Type Parsing
-
-```csharp
-foreach (var row in Csv.ReadFromText(csv))
-{
-    // Generic parsing (ISpanParsable<T>)
-    var value = row[0].Parse<int>();
-
-    // Optimized type-specific methods
-    if (row[1].TryParseDouble(out double d)) { }
-    if (row[2].TryParseDateTime(out DateTime dt)) { }
-    if (row[3].TryParseBoolean(out bool b)) { }
-
-    // Additional type parsing
-    if (row[4].TryParseGuid(out Guid id)) { }
-    if (row[5].TryParseEnum<DayOfWeek>(out var day)) { }  // Case-insensitive
-    if (row[6].TryParseTimeZoneInfo(out TimeZoneInfo tz)) { }
-}
-```
-
-### Lazy Evaluation
-
-```csharp
-// Columns are NOT parsed until first access
-foreach (var row in Csv.ReadFromText(csv))
-{
-    // Skip rows without parsing columns
-    if (ShouldSkip(row))
-        continue;
-
-    // Only parse columns when accessed
-    var value = row[0].Parse<int>();  // First access triggers parsing
-}
-```
-
-### Comment Lines
-
-Skip comment lines in CSV files:
-
-```csharp
-var options = new CsvReadOptions
-{
-    CommentCharacter = '#'  // Lines starting with # are ignored
-};
-
-var csv = @"# This is a comment
-Name,Age
-Alice,30
-# Another comment
-Bob,25";
-
-foreach (var row in Csv.ReadFromText(csv, options))
-{
-    // Only data rows are processed
-}
-```
-
-### Trimming Whitespace
-
-Remove leading and trailing whitespace from unquoted fields:
-
-```csharp
-var options = new CsvReadOptions
-{
-    TrimFields = true  // Trim whitespace from unquoted fields
-};
-
-var csv = "  Name  ,  Age  \nAlice,  30  ";
-foreach (var row in Csv.ReadFromText(csv, options))
-{
-    var name = row[0].ToString();  // "Name" (trimmed)
-    var age = row[1].ToString();   // "30" (trimmed)
-}
-```
-
-### Null Value Handling
-
-Treat specific string values as null during record parsing:
-
-```csharp
-var recordOptions = new CsvRecordOptions
-{
-    NullValues = new[] { "NULL", "N/A", "NA", "" }
-};
-
-var csv = "Name,Value\nAlice,100\nBob,NULL\nCharlie,N/A";
-foreach (var record in Csv.ParseRecords<MyRecord>(csv, recordOptions))
-{
-    // record.Value will be null when the field contains "NULL" or "N/A"
-}
-```
-
-### Security: Field Length Limits
-
-Protect against DoS attacks with oversized fields:
-
-```csharp
-var options = new CsvReadOptions
-{
-    MaxFieldSize = 10_000  // Throw exception if any field exceeds 10KB
-};
-
-// This will throw CsvException if a field is too large
-var reader = Csv.ReadFromText(csv, options);
-```
-
-### Skip Metadata Rows
-
-Skip header rows or metadata before parsing:
-
-```csharp
-var recordOptions = new CsvRecordOptions
-{
-    SkipRows = 2,  // Skip first 2 rows (e.g., metadata)
-    HasHeaderRow = true  // The 3rd row is the header
-};
-
-var csv = @"File Version: 1.0
-Generated: 2024-01-01
-Name,Age
-Alice,30
-Bob,25";
-
-foreach (var record in Csv.ParseRecords<MyRecord>(csv, recordOptions))
-{
-    // First 2 rows are skipped, 3rd row used as header
-}
-```
-
-### Storing Rows Safely
-
-Rows are ref structs and cannot escape their scope. Use `Clone()` or `ToImmutable()` to store them:
-
-```csharp
-var storedRows = new List<CsvCharSpanRow>();
-
-foreach (var row in Csv.ReadFromText(csv))
-{
-    // ❌ WRONG: Cannot store ref struct directly
-    // storedRows.Add(row);
-
-    // ✅ CORRECT: Clone creates an owned copy
-    storedRows.Add(row.Clone());
-}
-
-// Rows can now be safely accessed after enumeration
-foreach (var row in storedRows)
-{
-    var value = row[0].ToString();
-}
-```
-
-### Line Number Tracking
-
-Track row positions and source line numbers for error reporting:
-
-```csharp
-foreach (var row in Csv.ReadFromText(csv))
-{
-    try
-    {
-        var id = row[0].Parse<int>();
-    }
-    catch (FormatException)
-    {
-        // LineNumber: 1-based logical row position (ordinal)
-        // SourceLineNumber: 1-based physical line in the file (handles multi-line quoted fields)
-        Console.WriteLine($"Invalid data at row {row.LineNumber} (source line {row.SourceLineNumber})");
-    }
-}
-```
-
-This distinction is important when CSV files contain multi-line quoted fields - `LineNumber` gives you the row index while `SourceLineNumber` tells you the exact line in the source file where the row starts.
-
-### ⚠️ Important: Resource Management
-
-**HeroParser readers use `ArrayPool` buffers and MUST be disposed to prevent memory leaks.**
-
-```csharp
-// ✅ RECOMMENDED: Use 'using' statement
-using (var reader = Csv.ReadFromText(csv))
-{
-    foreach (var row in reader)
-    {
-        var value = row[0].ToString();
-    }
-} // ArrayPool buffers automatically returned
-
-// ✅ ALSO WORKS: foreach automatically disposes
-foreach (var row in Csv.ReadFromText(csv))
-{
-    var value = row[0].ToString();
-} // Disposed after foreach completes
-
-// ❌ AVOID: Manual iteration without disposal
-var reader = Csv.ReadFromText(csv);
-while (reader.MoveNext())
-{
-    // ...
-}
-// MEMORY LEAK! ArrayPool buffers not returned
-
-// ✅ FIX: Manually dispose if not using foreach
-var reader = Csv.ReadFromText(csv);
-try
-{
-    while (reader.MoveNext()) { /* ... */ }
-}
-finally
-{
-    reader.Dispose(); // Always dispose!
-}
-```
-
-## 📁 Fixed-Width File Parsing
-
-HeroParser includes comprehensive support for fixed-width (fixed-length) file parsing and writing, commonly used in legacy systems, mainframe exports, and financial data interchange.
-
-### Basic Reading
-
-```csharp
-// Define record type with column mappings
-[FixedWidthGenerateBinder]
-public class Employee
-{
-    [FixedWidthColumn(Start = 0, Length = 10)]
-    public string Id { get; set; } = "";
-
-    [FixedWidthColumn(Start = 10, Length = 30)]
-    public string Name { get; set; } = "";
-
-    [FixedWidthColumn(Start = 40, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
-    public decimal Salary { get; set; }
-}
-
-// Read records with fluent builder
-foreach (var emp in FixedWidth.Read<Employee>().FromFile("employees.dat"))
-{
-    Console.WriteLine($"{emp.Name}: {emp.Salary:C}");
-}
-```
-
-### Reading from Files and Streams
-
-```csharp
-// Read from string
-var records = FixedWidth.Read<Employee>().FromText(data).ToList();
-
-// Read from file
-var records = FixedWidth.Read<Employee>().FromFile("data.dat").ToList();
-
-// Read from stream
-var records = FixedWidth.Read<Employee>().FromStream(stream).ToList();
-
-// Async file reading
-await foreach (var emp in FixedWidth.Read<Employee>().FromFileAsync("data.dat"))
-{
-    Console.WriteLine(emp.Name);
-}
-```
-
-### Manual Row-by-Row Reading
-
-```csharp
-// Configure and read manually without binding to a type
-foreach (var row in FixedWidth.Read()
-    .WithRecordLength(80)
-    .WithDefaultPadChar(' ')
-    .FromFile("legacy.dat"))
-{
-    var id = row.GetField(0, 10).ToString();
-    var name = row.GetField(10, 30).ToString();
-    Console.WriteLine($"{id}: {name}");
-}
-```
-
-### Field Alignment
-
-Fixed-width fields support four alignment modes that control how padding is trimmed:
-
-```csharp
-public class Transaction
-{
-    // Left-aligned: "John      " -> "John" (trims trailing spaces)
-    [FixedWidthColumn(Start = 0, Length = 10, Alignment = FieldAlignment.Left)]
-    public string Name { get; set; } = "";
-
-    // Right-aligned: "000012345" -> "12345" (trims leading zeros)
-    [FixedWidthColumn(Start = 10, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
-    public int Amount { get; set; }
-
-    // Center-aligned: "  Data  " -> "Data" (trims both sides)
-    [FixedWidthColumn(Start = 20, Length = 10, Alignment = FieldAlignment.Center)]
-    public string Code { get; set; } = "";
-
-    // None: No trimming, raw value preserved
-    [FixedWidthColumn(Start = 30, Length = 10, Alignment = FieldAlignment.None)]
-    public string RawField { get; set; } = "";
-}
-```
-
-### Alternative Field Bound Syntax: End Property
-
-You can specify field bounds using either `Start`/`Length` or `Start`/`End`:
-
-```csharp
-public class Record
-{
-    // Using Length: field from position 0, 10 characters long
-    [FixedWidthColumn(Start = 0, Length = 10)]
-    public string Id { get; set; } = "";
-
-    // Using End: field from position 10 to 30 (exclusive), same as Length = 20
-    [FixedWidthColumn(Start = 10, End = 30)]
-    public string Name { get; set; } = "";
-
-    // Using End with other options
-    [FixedWidthColumn(Start = 30, End = 40, Alignment = FieldAlignment.Right, PadChar = '0')]
-    public decimal Amount { get; set; }
-}
-```
-
-The `End` property specifies the exclusive ending position of the field. When both `Length` and `End` are specified, `Length` takes precedence.
-
-### Handling Missing Columns
-
-When parsing files where trailing fields may be omitted or rows vary in length, use `AllowMissingColumns()`:
-
-```csharp
-// Handle short rows gracefully - missing fields return empty values
-var records = FixedWidth.Read<Employee>()
-    .AllowMissingColumns()
-    .FromFile("variable-length.dat")
-    .ToList();
-
-// By default, accessing fields beyond row length throws FixedWidthException
-// Use AllowMissingColumns() when:
-// - Trailing fields are optional
-// - Records may have variable lengths
-// - Legacy files have inconsistent formatting
-```
-
-### Date/Time Format Strings
-
-```csharp
-public class Record
-{
-    // Parse date with exact format
-    [FixedWidthColumn(Start = 0, Length = 8, Format = "yyyyMMdd")]
-    public DateTime TransactionDate { get; set; }
-
-    // Parse time with exact format
-    [FixedWidthColumn(Start = 8, Length = 6, Format = "HHmmss")]
-    public TimeOnly TransactionTime { get; set; }
-}
-```
-
-### Fluent Builder Options
-
-```csharp
-var records = FixedWidth.Read<Employee>()
-    .WithDefaultPadChar(' ')           // Default padding character
-    .WithDefaultAlignment(FieldAlignment.Left)  // Default field alignment
-    .WithRecordLength(80)              // Fixed record length (vs line-based)
-    .SkipRows(2)                       // Skip header rows
-    .WithCommentCharacter('#')         // Skip comment lines
-    .WithMaxRecords(10_000)            // Limit records (DoS protection)
-    .WithMaxInputSize(50 * 1024 * 1024) // 50 MB max file size
-    .WithCulture("de-DE")              // Culture for parsing
-    .WithNullValues("NULL", "N/A")     // Values treated as null
-    .TrackLineNumbers()                // Enable line number tracking
-    .OnError((ctx, ex) =>              // Error handling
-    {
-        Console.WriteLine($"Error at record {ctx.RecordNumber}: {ex.Message}");
-        return FixedWidthDeserializeErrorAction.SkipRecord;
-    })
-    .FromFile("data.dat")
-    .ToList();
-```
-
-### Validation Attributes
-
-Validation constraints are declared inline on `[FixedWidthColumn]` — no separate attribute types are required:
-
-```csharp
-[FixedWidthGenerateBinder]
-public class ValidatedRecord
-{
-    [FixedWidthColumn(Start = 0, Length = 10, NotNull = true, NotEmpty = true)]
-    public string Id { get; set; } = "";
-
-    [FixedWidthColumn(Start = 10, Length = 20, MinLength = 2, MaxLength = 20)]
-    public string Name { get; set; } = "";
-
-    [FixedWidthColumn(Start = 30, Length = 10, RangeMin = 0, RangeMax = 1_000_000)]
-    public decimal Amount { get; set; }
-
-    [FixedWidthColumn(Start = 40, Length = 15, Pattern = @"^\d{3}-\d{3}-\d{4}$")]
-    public string Phone { get; set; } = "";
-}
-```
-
-> **Breaking change**: The legacy `FixedWidthRequiredAttribute`, `FixedWidthRangeAttribute`, `FixedWidthRegexAttribute`, and `FixedWidthStringLengthAttribute` types have been removed. Use the inline properties on `[FixedWidthColumn]` instead.
-
-### Writing Fixed-Width Data
-
-```csharp
-// Write records to string
-var text = FixedWidth.WriteToText(employees);
-
-// Write to file
-FixedWidth.WriteToFile("output.dat", employees);
-
-// Write to stream
-FixedWidth.WriteToStream(stream, employees);
-
-// Async writing
-await FixedWidth.WriteToFileAsync("output.dat", employees);
-
-// With options
-await FixedWidth.WriteToFileAsync("output.dat", employees, new FixedWidthWriteOptions
-{
-    NewLine = "\r\n",
-    DefaultPadChar = ' '
-});
-```
-
-### Fluent Writer Builder
-
-```csharp
-// Write with fluent configuration
-var text = FixedWidth.Write<Employee>()
-    .WithPadChar(' ')
-    .AlignLeft()
-    .ToText(employees);
-
-// Write to file
-FixedWidth.Write<Employee>()
-    .WithNewLine("\r\n")
-    .ToFile("output.dat", employees);
-```
-
-### Manual Row-by-Row Writing
-
-```csharp
-using var writer = FixedWidth.Write()
-    .WithPadChar(' ')
-    .CreateFileWriter("output.dat");
-
-// Write header
-writer.WriteField("ID", 10);
-writer.WriteField("NAME", 30);
-writer.WriteField("AMOUNT", 10, FieldAlignment.Right);
-writer.EndRow();
-
-// Write data
-writer.WriteField("001", 10);
-writer.WriteField("Alice", 30);
-writer.WriteField("12345", 10, FieldAlignment.Right, '0');
-writer.EndRow();
-
-writer.Flush();
-```
-
-### Low-Level Writer Creation
-
-```csharp
-// Create writer from TextWriter
-using var writer = FixedWidth.CreateWriter(Console.Out);
-
-// Create writer from Stream
-using var stream = File.Create("output.dat");
-using var streamWriter = FixedWidth.CreateStreamWriter(stream);
-```
-
-### Async Row-by-Row Writing
-
-For scenarios requiring true async I/O, use the `FixedWidthAsyncStreamWriter`:
-
-```csharp
-// Low-level async writer with sync fast paths
-await using var writer = FixedWidth.CreateAsyncStreamWriter(stream);
-await writer.WriteFieldAsync("Alice", 20);
-await writer.WriteFieldAsync("30", 5, FieldAlignment.Right);
-await writer.EndRowAsync();
-await writer.FlushAsync();
-```
-
-The async writer uses sync fast paths when data fits in the buffer, avoiding async overhead for small writes while supporting true non-blocking I/O for large datasets.
-
-### Custom Type Converters
-
-```csharp
-var records = FixedWidth.Read<Order>()
-    .RegisterConverter<Money>((value, culture, format, out result) =>
-    {
-        if (decimal.TryParse(value, NumberStyles.Currency, culture, out var amount))
-        {
-            result = new Money(amount);
-            return true;
-        }
-        result = default;
-        return false;
-    })
-    .FromFile("orders.dat")
-    .ToList();
-```
-
-### Source Generator (AOT Support)
-
-For AOT compilation and trimming support, use the `[FixedWidthGenerateBinder]` attribute:
-
-```csharp
-using HeroParser.FixedWidths.Records.Binding;
-
-[FixedWidthGenerateBinder]
-public class Employee
-{
-    [FixedWidthColumn(Start = 0, Length = 10)]
-    public string Id { get; set; } = "";
-
-    [FixedWidthColumn(Start = 10, Length = 30)]
-    public string Name { get; set; } = "";
-}
-```
-
-The source generator creates compile-time binders, enabling:
-- **AOT compatibility** - No runtime reflection
-- **Faster startup** - Binders are pre-compiled
-- **Trimming-safe** - Works with .NET trimming/linking
-
-## 🏗️ Building
-
-**Requirements:**
-- .NET 8, 9, or 10 SDK
-- C# 12+ language features
-- Recommended: AVX-512 or AVX2 capable CPU for maximum performance
+Run benchmarks locally:
 
 ```bash
-# Build library
-dotnet build src/HeroParser/HeroParser.csproj
-
-# Run tests
-dotnet test tests/HeroParser.Tests/HeroParser.Tests.csproj
-
-# Run all benchmarks
-dotnet run --project benchmarks/HeroParser.Benchmarks -c Release -- --all
+dotnet run -c Release --project benchmarks/HeroParser.Benchmarks -- --all
 ```
 
-### Development Setup
+## Detailed API Reference
 
-To enable pre-commit format checks (recommended):
+- [CSV API Reference](docs/csv.md) — Full CSV reading, writing, options, delimiter detection, validation, multi-schema, security, PipeReader, DataReader
+- [Excel API Reference](docs/excel.md) — Full Excel reading, writing, multi-sheet, DataReader, options
+- [Fixed-Width API Reference](docs/fixed-width.md) — Full fixed-width reading, writing, fluent mapping, options, converters, PipeReader
+
+## Building & Testing
 
 ```bash
-# Configure git to use the project's hooks
-git config core.hooksPath .githooks
+# Build all projects
+dotnet build
+
+# Run unit tests
+dotnet test --filter Category=Unit
+
+# Run integration tests
+dotnet test --filter Category=Integration
+
+# Run all tests
+dotnet test
+
+# Check code formatting
+dotnet format --verify-no-changes
+
+# Run benchmarks
+dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
+
+# Regenerate NuGet lock files after adding/updating packages
+dotnet restore --force-evaluate
 ```
 
-This runs `dotnet format --verify-no-changes` before each commit. If formatting issues are found, the commit is blocked until you run `dotnet format` to fix them.
+CI builds Release configuration across .NET 8, 9, and 10 on Windows, Linux, and macOS.
 
-## 🔧 Source Generators (AOT Support)
-
-For AOT (Ahead-of-Time) compilation scenarios, HeroParser supports source-generated binders that avoid reflection:
-
-```csharp
-using HeroParser.SeparatedValues.Reading.Shared;
-
-[CsvGenerateBinder]
-public class Person
-{
-    public string Name { get; set; } = "";
-    public int Age { get; set; }
-    public string? Email { get; set; }
-}
-```
-
-The `[CsvGenerateBinder]` attribute instructs the source generator to emit a compile-time binder, enabling:
-- **AOT compatibility** - No runtime reflection required
-- **Faster startup** - Binders are pre-compiled
-- **Trimming-safe** - Works with .NET trimming/linking
-
-> **Note**: Source generators ship inside the main `HeroParser` package. No separate `HeroParser.Generators` package is required; you only need a compatible SDK.
-
-## ✅ Field Validation
-
-Declare validation constraints directly on column attributes. Validation failures are collected lazily during iteration; inspect `reader.Errors` (CSV) or `result.Errors` (Fixed-Width) after the loop. Parse and conversion failures can still throw unless you configure error handling separately.
-
-### CSV Validation
-
-```csharp
-[CsvGenerateBinder]
-public class Transaction
-{
-    [CsvColumn(Name = "Id", NotNull = true, NotEmpty = true)]
-    public string TransactionId { get; set; } = "";
-
-    [CsvColumn(Name = "Amount", Index = 1, NotNull = true, RangeMin = 0, RangeMax = 100_000)]
-    public decimal Amount { get; set; }
-
-    [CsvColumn(Name = "Currency", Index = 2, NotNull = true, MinLength = 3, MaxLength = 3)]
-    public string Currency { get; set; } = "";
-
-    [CsvColumn(Name = "Ref", Index = 3, Pattern = @"^[A-Z]{2}\d{4}$")]
-    public string Reference { get; set; } = "";
-}
-
-// Read and collect validation errors lazily
-var reader = Csv.DeserializeRecords<Transaction>(csvData);
-var records = new List<Transaction>();
-foreach (var record in reader)
-    records.Add(record);
-
-if (reader.Errors.Count > 0)
-{
-    foreach (var error in reader.Errors)
-        Console.WriteLine(error);
-        // Row 2, Column 'Amount' (index 1), Property 'Amount': [Range] Value must be between 0 and 100000 (raw: '-50.00')
-}
-
-// Or throw if any validation errors occurred
-reader.ThrowIfAnyError();
-// ValidationException: Validation failed: Row 2, Column 'Id' (index 0), Property 'TransactionId': [NotNull] Value is required (raw: '')
-```
-
-### Fixed-Width Validation
-
-```csharp
-[FixedWidthGenerateBinder]
-public class Employee
-{
-    [FixedWidthColumn(Start = 0, Length = 5, NotNull = true)]
-    public int Id { get; set; }
-
-    [FixedWidthColumn(Start = 5, Length = 20, NotNull = true, NotEmpty = true)]
-    public string Name { get; set; } = "";
-
-    [FixedWidthColumn(Start = 25, Length = 10, RangeMin = 20_000, RangeMax = 500_000)]
-    public decimal Salary { get; set; }
-}
-
-// FromText/FromFile/FromStream return FixedWidthReadResult<T>
-var result = FixedWidth.Read<Employee>().FromText(data);
-var records = result.Records;  // or result.ToList()
-
-if (result.Errors.Count > 0)
-{
-    foreach (var error in result.Errors)
-        Console.WriteLine(error);
-        // Row 1, Column index 25, Property 'Salary': [Range] Value must be between 20000 and 500000 (raw: '005000.00')
-}
-
-// Or throw if any validation errors occurred
-result.ThrowIfAnyError();
-```
-
-### Validation Properties
-
-| Property | Type | Default | Applies To | Description |
-|---|---|---|---|---|
-| `NotNull` | `bool` | `false` | All types | Value must not be null, empty, or whitespace. On nullable types, rejects with a validation error instead of resolving to `null`. On non-nullable value types, collects a validation error and keeps the default value. Without `NotNull`, empty/whitespace on a non-nullable value type throws a hard parse exception. |
-| `NotEmpty` | `bool` | `false` | `string` | Value must not be empty or whitespace |
-| `MaxLength` | `int` | `-1` (unchecked) | `string` | Maximum string length |
-| `MinLength` | `int` | `-1` (unchecked) | `string` | Minimum string length |
-| `RangeMin` | `double` | `NaN` (unchecked) | numeric | Minimum numeric value (inclusive) |
-| `RangeMax` | `double` | `NaN` (unchecked) | numeric | Maximum numeric value (inclusive) |
-| `Pattern` | `string?` | `null` | `string` | Regex pattern the value must match |
-| `PatternTimeoutMs` | `int` | `1000` | `string` | Regex evaluation timeout in milliseconds |
-
-### Compile-Time Diagnostics
-
-The source generator validates attribute usage at build time and reports errors for incorrect configurations:
-
-| Code | Severity | Description |
-|---|---|---|
-| HERO004 | Error | `NotEmpty` applied to a non-string property |
-| HERO005 | Error | `MaxLength` or `MinLength` applied to a non-string property |
-| HERO006 | Error | `RangeMin` or `RangeMax` applied to a non-numeric property |
-| HERO007 | Error | `Pattern` applied to a non-string property |
-| HERO008 | Error | `[CsvColumn]` used with `[CsvGenerateBinder]` but neither `Name` nor `Index` is specified |
-
-> **Breaking change**: `[CsvColumn]` now requires an explicit `Name` or `Index` when used with `[CsvGenerateBinder]`. Omitting both produces a HERO008 build error.
-
-### Pattern Timeout
-
-The default regex timeout for `Pattern` validation is 1000 ms. Override it per-column to prevent ReDoS on untrusted input:
-
-```csharp
-[CsvColumn(Name = "Code", Pattern = @"^[A-Z0-9]{1,20}$", PatternTimeoutMs = 500)]
-public string Code { get; set; } = "";
-```
-
-## 🗺️ Fluent Mapping
-
-Define column-to-property mappings at runtime using `CsvMap<T>` or `FixedWidthMap<T>` — no attributes required. Maps are reusable objects that can be passed to both read and write builders.
-
-### CsvMap&lt;T&gt; (Read + Write)
-
-```csharp
-// Define a map (reusable)
-var map = new CsvMap<Trade>();
-map.Map(t => t.Symbol, c => c.Name("Ticker"))
-   .Map(t => t.Price, c => c.Name("TradePrice"))
-   .Map(t => t.Quantity, c => c.Name("Qty"));
-
-// Read
-var reader = Csv.Read<Trade>().WithMap(map).FromText(csvText);
-foreach (var trade in reader)
-    Console.WriteLine($"{trade.Symbol}: {trade.Price}");
-
-// Write
-var csv = Csv.Write<Trade>().WithMap(map).ToText(trades);
-```
-
-### FixedWidthMap&lt;T&gt;
-
-```csharp
-var map = new FixedWidthMap<Record>();
-map.Map(r => r.Name, c => c.Start(0).Length(10))
-   .Map(r => r.Value, c => c.Start(10).Length(5).PadChar('0').Alignment(FieldAlignment.Right))
-   .Map(r => r.Amount, c => c.Start(15).Length(10));
-
-var result = FixedWidth.Read<Record>().WithMap(map).FromText(text);
-var output = FixedWidth.Write<Record>().WithMap(map).ToText(records);
-```
-
-### Subclass Pattern
-
-Encapsulate mapping logic in a dedicated class for reuse across the application:
-
-```csharp
-public class TradeMap : CsvMap<Trade>
-{
-    public TradeMap()
-    {
-        Map(t => t.Symbol, c => c.Name("Ticker"));
-        Map(t => t.Price, c => c.Name("TradePrice"));
-        Map(t => t.Quantity, c => c.Name("Qty"));
-    }
-}
-
-var reader = Csv.Read<Trade>().WithMap(new TradeMap()).FromText(csv);
-```
-
-### Validation Rules
-
-Add field-level validation rules inline on the map:
-
-```csharp
-var map = new CsvMap<Trade>();
-map.Map(t => t.Symbol, c => c.Name("Symbol").NotEmpty().MaxLength(5))
-   .Map(t => t.Price, c => c.Name("Price").Range(0.01, 999999))
-   .Map(t => t.Quantity, c => c.Name("Qty"));
-
-var reader = Csv.Read<Trade>().WithMap(map).FromText(csv);
-foreach (var trade in reader)
-    Console.WriteLine($"{trade.Symbol}: {trade.Price}");
-
-foreach (var error in reader.Errors)
-    Console.WriteLine(error);
-    // Row 2, Column 'Price' (index 1), Property 'Price': [Range] Value must be between 0.01 and 999999 (raw: '-5.00')
-```
-
-### Notes
-
-- Fluent maps use reflection and expression trees — annotated with `[RequiresUnreferencedCode]` / `[RequiresDynamicCode]` for AOT awareness
-- Map-based reads use the char path (no SIMD optimization). For maximum performance, use `[CsvGenerateBinder]` attributes instead
-- `ForEach` methods are not supported with fluent maps — use `FromText()` / `FromFile()` instead
-
-## 🔍 Schema Inference
-
-Automatically detect column types from CSV data without defining record classes:
-
-```csharp
-var schema = Csv.InferSchema(csvData);
-foreach (var col in schema.Columns)
-{
-    Console.WriteLine($"{col.Name}: {col.InferredType}{(col.IsNullable ? "?" : "")} (max length: {col.MaxLength})");
-}
-```
-
-**Inferred Types**: `Boolean`, `Integer`, `Long`, `Decimal`, `Guid`, `DateTime`, `String`
-
-The inference algorithm samples rows and tries to parse each value in order of specificity, falling back to the widest compatible type (e.g., `int` + `decimal` = `decimal`, `int` + `string` = `string`).
-
-```csharp
-// Configure inference
-var options = new CsvSchemaInferenceOptions
-{
-    Delimiter = ';',    // Auto-detects if null
-    SampleRows = 200    // Default: 100
-};
-
-var schema = Csv.InferSchema(csvData, options);
-Console.WriteLine($"Sampled {schema.SampledRowCount} rows, found {schema.Columns.Count} columns");
-```
-
-**Use Cases**:
-- Dynamic CSV import without pre-defined schemas
-- Generating CREATE TABLE statements from CSV files
-- Validating data types before processing
-
-## 🗄️ IDataReader Integration
-
-Stream CSV or fixed-width data through `System.Data.IDataReader` for database bulk loading with `SqlBulkCopy`, Dapper, or any ADO.NET consumer:
-
-### CSV DataReader
-
-```csharp
-// From a stream
-using var reader = Csv.CreateDataReader(File.OpenRead("data.csv"));
-
-// From a file
-using var reader = Csv.CreateDataReader("data.csv");
-
-// Bulk load into SQL Server
-using var bulkCopy = new SqlBulkCopy(connection);
-bulkCopy.DestinationTableName = "MyTable";
-await bulkCopy.WriteToServerAsync(reader);
-```
-
-**DataReader Options**:
-
-```csharp
-var readerOptions = new CsvDataReaderOptions
-{
-    HasHeaderRow = true,              // First row is header (default: true)
-    CaseSensitiveHeaders = false,     // Header name lookup (default: false)
-    AllowMissingColumns = false,      // Tolerate rows with fewer columns
-    SkipRows = 2,                     // Skip metadata rows before header
-    NullValues = ["NULL", "N/A"],     // Values treated as DBNull
-    ColumnNames = ["Id", "Name"]      // Override header names
-};
-
-using var reader = Csv.CreateDataReader(stream, readerOptions: readerOptions);
-```
-
-### Fixed-Width DataReader
-
-```csharp
-// From a stream
-using var reader = FixedWidth.CreateDataReader(File.OpenRead("data.dat"));
-
-// From a file
-using var reader = FixedWidth.CreateDataReader("data.dat");
-```
-
-## 🔌 PipeReader Support
-
-Parse CSV data from `System.IO.Pipelines` sources (network sockets, HTTP response bodies) without buffering the entire payload:
-
-```csharp
-var pipe = PipeReader.Create(networkStream);
-await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe))
-{
-    var id = row[0].ToString();
-    var name = row[1].ToString();
-    Console.WriteLine($"{id}: {name}");
-}
-```
-
-Each row is yielded as a `CsvPipeRow` with column access via UTF-8 byte spans. The `PipeReader` path honors the same delimiter, quote, and size/shape limits as other streaming readers:
-
-```csharp
-var options = new CsvReadOptions
-{
-    Delimiter = ';',
-    EnableQuotedFields = true,
-    MaxColumnCount = 100,
-    MaxFieldSize = 10_000,
-    MaxRowSize = 512 * 1024,
-    MaxRowCount = 100_000
-};
-await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe, options, cancellationToken))
-{
-    // row.RowNumber - 1-based row number
-    // row.ColumnCount - number of columns
-    // row[i].Span - raw UTF-8 bytes
-    // row[i].ToUnquotedString() - decoded string with quotes stripped
-}
-```
-
-**Use Cases**:
-- Parsing CSV from HTTP response streams
-- Processing CSV over network sockets
-- High-throughput pipeline architectures
-
-Fixed-width parsing has the same direct `PipeReader` entry point:
-
-```csharp
-var pipe = PipeReader.Create(networkStream);
-var options = new FixedWidthReadOptions
-{
-    TrackSourceLineNumbers = true,
-    MaxRecordCount = 100_000,
-    MaxInputSize = 100 * 1024 * 1024
-};
-
-await foreach (var row in FixedWidth.ReadFromPipeReaderAsync(pipe, options, cancellationToken))
-{
-    var id = row.GetField(0, 4).ToString();
-    var name = row.GetField(4, 10).ToString();
-    Console.WriteLine($"{row.RecordNumber} @ line {row.SourceLineNumber}: {id} {name}");
-}
-```
-
-For fixed-length records without line breaks, set `RecordLength` just like the other fixed-width readers:
-
-```csharp
-var options = new FixedWidthReadOptions { RecordLength = 32 };
-await foreach (var row in FixedWidth.ReadFromPipeReaderAsync(pipe, options, cancellationToken))
-{
-    var field = row.GetField(0, 8);
-}
-```
-
-Typed fixed-width binding also works directly from a `PipeReader`:
-
-```csharp
-await foreach (var employee in FixedWidth.Read<Employee>()
-    .FromPipeReaderAsync(pipe, cancellationToken))
-{
-    Console.WriteLine(employee.Name);
-}
-```
-
-## 🔄 Format Converters
-
-Convert between CSV and fixed-width formats:
-
-### CSV to Fixed-Width
-
-```csharp
-using HeroParser.Conversion;
-
-var columns = new[]
-{
-    new FixedWidthFieldDefinition("Name", width: 20),
-    new FixedWidthFieldDefinition("Age", width: 5, FieldAlignment.Right),
-    new FixedWidthFieldDefinition("City", width: 15)
-};
-
-var fixedWidth = CsvToFixedWidthConverter.Convert(csvData, columns);
-```
-
-**Options**:
-
-```csharp
-var options = new CsvToFixedWidthOptions
-{
-    Delimiter = ';',          // CSV delimiter (default: comma)
-    IncludeHeader = true,     // Include header row in output (default: false)
-    NewLine = "\r\n"          // Line ending (default: CRLF)
-};
-
-var fixedWidth = CsvToFixedWidthConverter.Convert(csvData, columns, options);
-```
-
-### Fixed-Width to CSV
-
-```csharp
-var columns = new[]
-{
-    new FixedWidthFieldDefinition("Name", width: 20),
-    new FixedWidthFieldDefinition("Amount", width: 10, FieldAlignment.Right, padChar: '0')
-};
-
-var csv = FixedWidthToCsvConverter.Convert(fixedWidthData, columns);
-```
-
-**Options**:
-
-```csharp
-var options = new FixedWidthToCsvOptions
-{
-    Delimiter = ';',          // CSV delimiter (default: comma)
-    Quote = '"',              // Quote character (default: double quote)
-    IncludeHeader = true,     // Include header row (default: true)
-    NewLine = "\r\n"          // Line ending (default: CRLF)
-};
-
-var csv = FixedWidthToCsvConverter.Convert(fixedWidthData, columns, options);
-```
-
-## 📏 Span-Based Parsing
-
-For maximum performance when data is already in memory, use span-based overloads that avoid stream/string overhead:
-
-```csharp
-// Parse from char span
-ReadOnlySpan<char> charData = csvText.AsSpan();
-using var charReader = Csv.ReadFromCharSpan(charData);
-while (charReader.MoveNext())
-{
-    var value = charReader.Current[0].Parse<int>();
-}
-
-// Parse from UTF-8 byte span (fastest path)
-ReadOnlySpan<byte> utf8Data = File.ReadAllBytes("data.csv");
-using var byteReader = Csv.ReadFromByteSpan(utf8Data);
-while (byteReader.MoveNext())
-{
-    var value = byteReader.Current[0].Parse<int>();
-}
-```
-
-Fixed-width span-based parsing:
-
-```csharp
-// Parse fixed-width from char span
-using var reader = FixedWidth.ReadFromCharSpan(charData);
-
-// Parse fixed-width from UTF-8 byte span (with char conversion)
-using var reader = FixedWidth.ReadFromByteSpan(utf8Data);
-
-// Parse fixed-width directly from UTF-8 bytes (no conversion)
-using var reader = FixedWidth.ReadFromUtf8ByteSpan(utf8Data);
-```
-
-## 🖥️ Hardware Diagnostics
-
-Check which SIMD instruction sets are available at runtime:
-
-```csharp
-Console.WriteLine(Hardware.GetHardwareInfo());
-// Output: "SIMD: AVX-512F, AVX-512BW, AVX2, SSE2"
-```
-
-Useful for diagnostics, benchmark output, and verifying that the expected SIMD optimizations are active.
-
-## ⚠️ RFC 4180 Compliance
-
-HeroParser implements **core RFC 4180 features**:
-
-✅ **Supported:**
-- Quoted fields with double-quote character (`"`)
-- Escaped quotes using double-double-quotes (`""`)
-- Delimiters (commas) within quoted fields
-- Both LF (`\n`) and CRLF (`\r\n`) line endings
-- Newlines inside quoted fields when `AllowNewlinesInsideQuotes = true` (default is `false` for performance)
-- Empty fields and spaces preserved
-- Custom delimiters and quote characters
-
-❌ **Not Supported:**
-- **Automatic header detection** - Users skip header rows manually
-
-This provides excellent RFC 4180 compatibility for most CSV use cases (logs, exports, data interchange).
-
-## 📝 License
+## License
 
 MIT
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 HeroParser was inspired by the excellent work in the .NET CSV parsing ecosystem:
 
-- **[Sep](https://github.com/nietras/Sep)** by nietras - Pioneering SIMD-based CSV parsing techniques
-- **Sylvan.Data.Csv** - High-performance CSV parsing patterns
-- **SimdUnicode** - SIMD text processing techniques
+- **[simdjson](https://github.com/simdjson/simdjson)** by Geoff Langdale & Daniel Lemire — The PCLMULQDQ carry-less multiplication technique for branchless prefix-XOR quote tracking
+- **[Sep](https://github.com/nietras/Sep)** by nietras — Pioneering SIMD-based CSV parsing techniques for .NET
+- **Sylvan.Data.Csv** — High-performance CSV parsing patterns
+- **SimdUnicode** — SIMD text processing techniques
 
 Special thanks to the .NET performance community for their research and open-source contributions.
 
 ---
 
-**High-performance, zero-allocation, AOT-ready CSV & fixed-width parsing for .NET**
-
-
+**High-performance, zero-allocation, AOT-ready CSV, Fixed-Width & Excel parsing for .NET**

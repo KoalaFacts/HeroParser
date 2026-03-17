@@ -80,8 +80,17 @@ public sealed record FixedWidthReadOptions
     /// <summary>
     /// Gets or sets whether the first data row (after <see cref="SkipRows"/>) is a header row that should be skipped.
     /// Unlike CSV, fixed-width columns are positional, so the header is not used for column resolution — it is simply discarded.
+    /// When using inline <c>Map&lt;TProperty&gt;()</c> with <c>WithHeaderName</c>, the header row is used to validate column names.
     /// </summary>
     public bool HasHeaderRow { get; init; } = false;
+
+    /// <summary>
+    /// Gets or sets whether header name matching is case-sensitive.
+    /// Only applies when <see cref="HasHeaderRow"/> is <see langword="true"/> and inline mapping with
+    /// <c>WithHeaderName</c> is configured. When <see langword="false"/> (default), header names are
+    /// matched case-insensitively.
+    /// </summary>
+    public bool CaseSensitiveHeaders { get; init; } = false;
 
     /// <summary>
     /// Gets or sets the number of rows to skip before parsing data.

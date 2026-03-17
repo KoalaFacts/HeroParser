@@ -129,4 +129,20 @@ public sealed partial class CsvRecordReaderBuilder<T>
         maxRowSize = maxSize;
         return this;
     }
+
+    /// <summary>
+    /// Sets the maximum input size in bytes for file and stream operations (DoS protection).
+    /// </summary>
+    /// <param name="maxBytes">The maximum size in bytes, or <see langword="null"/> to disable the limit (the default).</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// When set, <see cref="FromFile(string, out byte[])"/> and
+    /// <see cref="FromStream(Stream, out byte[], bool)"/> will throw a
+    /// <see cref="Core.CsvException"/> if the input exceeds this size.
+    /// </remarks>
+    public CsvRecordReaderBuilder<T> WithMaxInputSize(long? maxBytes)
+    {
+        maxInputSize = maxBytes;
+        return this;
+    }
 }

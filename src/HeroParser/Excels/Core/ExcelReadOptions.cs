@@ -1,4 +1,5 @@
 using System.Globalization;
+using HeroParser.Excels.Reading;
 using HeroParser.Validation;
 
 namespace HeroParser.Excels.Core;
@@ -31,6 +32,13 @@ public sealed record ExcelReadOptions
 
     /// <summary>Gets or sets the validation mode. Default is <see cref="ValidationMode.Strict"/>.</summary>
     public ValidationMode ValidationMode { get; init; } = ValidationMode.Strict;
+
+    /// <summary>
+    /// Gets or sets the error handler for deserialization errors.
+    /// When set, the handler is called for each row that fails to deserialize, allowing the caller
+    /// to skip the record or rethrow the exception.
+    /// </summary>
+    public ExcelDeserializeErrorHandler? OnDeserializeError { get; init; }
 
     /// <summary>Gets a reusable default instance.</summary>
     public static ExcelReadOptions Default { get; } = new();

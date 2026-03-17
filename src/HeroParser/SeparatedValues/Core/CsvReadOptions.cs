@@ -119,6 +119,16 @@ public sealed record CsvReadOptions
     public bool TrackSourceLineNumbers { get; init; } = false;
 
     /// <summary>
+    /// Gets or sets the maximum input size in bytes for file and stream read operations (DoS protection).
+    /// </summary>
+    /// <remarks>
+    /// When set, <c>FromFile</c> and <c>FromStream</c> methods on builder types will throw a
+    /// <see cref="CsvException"/> if the input exceeds this size.
+    /// Set to <see langword="null"/> (the default) to disable this protection.
+    /// </remarks>
+    public long? MaxInputSize { get; init; } = null;
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>
@@ -208,6 +218,13 @@ public sealed record CsvReadOptions
             }
         }
 
+        if (MaxInputSize.HasValue && MaxInputSize.Value <= 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxInputSize must be positive when specified, got {MaxInputSize.Value}");
+        }
+
         if (MaxFieldSize.HasValue && MaxFieldSize.Value <= 0)
         {
             throw new CsvException(
@@ -253,5 +270,19 @@ public sealed record CsvReadOptions
                 $"MaxRowSize must be positive when specified, got {MaxRowSize.Value}");
         }
     }
-}
 
+    /// <summary>
+    /// Throws a <see cref="CsvException"/> if the given size exceeds <see cref="MaxInputSize"/>.
+    /// </summary>
+    /// <param name="size">The actual input size in bytes.</param>
+    internal void ValidateInputSize(long size)
+    {
+        if (MaxInputSize is not null && size > MaxInputSize.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"Input size ({size:N0} bytes) exceeds maximum allowed ({MaxInputSize.Value:N0} bytes). " +
+                "Set MaxInputSize to a larger value or null to disable this check.");
+        }
+    }
+}

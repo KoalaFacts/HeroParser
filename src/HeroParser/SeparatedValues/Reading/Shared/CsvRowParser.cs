@@ -8,6 +8,8 @@ using HeroParser.SeparatedValues.Core;
 
 // CLMUL-based branchless quote masking (Phase 1 optimization)
 // Uses PCLMULQDQ instruction to compute prefix XOR in O(1), avoiding per-quote iteration
+// Technique from: Langdale & Lemire, "Parsing Gigabytes of JSON per Second" (simdjson)
+// https://github.com/simdjson/simdjson — adapted for CSV quote tracking
 
 namespace HeroParser.SeparatedValues.Reading.Shared;
 

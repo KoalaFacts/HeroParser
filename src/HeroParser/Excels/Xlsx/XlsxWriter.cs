@@ -388,9 +388,13 @@ public sealed class XlsxWriter : IDisposable
         private readonly XlsxSharedStringTable sharedStrings;
         private readonly byte[] buffer;
         private int bufferPos;
+        private long totalBytesWritten;
         private bool rowIsOpen;
         private bool closed;
         private int currentRowNumber;
+
+        /// <summary>Gets the total number of uncompressed bytes written to the worksheet stream so far.</summary>
+        public long BytesWritten => totalBytesWritten + bufferPos;
 
         // Pre-formatted column letter bytes (cached per column, lazily built)
         private static readonly byte[][] columnLetterBytes = new byte[16384][];
@@ -593,6 +597,7 @@ public sealed class XlsxWriter : IDisposable
             if (bufferPos > 0)
             {
                 stream.Write(buffer, 0, bufferPos);
+                totalBytesWritten += bufferPos;
                 bufferPos = 0;
             }
         }

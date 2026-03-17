@@ -134,4 +134,20 @@ public sealed partial class CsvRecordReaderBuilder<T>
         converterRegistrations.Add(options => options.RegisterConverter(converter));
         return this;
     }
+
+    /// <summary>
+    /// Registers a callback to handle deserialization errors instead of throwing.
+    /// </summary>
+    /// <param name="handler">
+    /// The callback to invoke when a row fails to deserialize.
+    /// Return <see cref="CsvDeserializeErrorAction.SkipRecord"/> to skip the bad row and continue,
+    /// or <see cref="CsvDeserializeErrorAction.Throw"/> to re-throw the exception.
+    /// </param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvRecordReaderBuilder<T> OnError(CsvDeserializeErrorHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        onDeserializeError = handler;
+        return this;
+    }
 }

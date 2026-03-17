@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Rows;
 using HeroParser.Validation;
@@ -25,6 +26,7 @@ public ref struct CsvRecordReader<TElement, T>
     private readonly IProgress<CsvProgress>? progress;
     private readonly int progressInterval;
     private readonly ValidationMode validationMode;
+    private readonly CsvDeserializeErrorHandler? onDeserializeError;
     private int rowNumber;
     private int skippedCount;
     private int dataRowCount;
@@ -32,7 +34,8 @@ public ref struct CsvRecordReader<TElement, T>
 
     internal CsvRecordReader(CsvRowReader<TElement> reader, ICsvBinder<TElement, T> binder, int skipRows = 0,
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000,
-        ValidationMode validationMode = ValidationMode.Strict)
+        ValidationMode validationMode = ValidationMode.Strict,
+        CsvDeserializeErrorHandler? onDeserializeError = null)
     {
         this.reader = reader;
         byteReader = default;
@@ -44,6 +47,7 @@ public ref struct CsvRecordReader<TElement, T>
         this.progress = progress;
         this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
         this.validationMode = validationMode;
+        this.onDeserializeError = onDeserializeError;
         Current = default!;
         rowNumber = 0;
         skippedCount = 0;
@@ -57,7 +61,8 @@ public ref struct CsvRecordReader<TElement, T>
         int skipRows = 0,
         IProgress<CsvProgress>? progress = null,
         int progressInterval = 1000,
-        ValidationMode validationMode = ValidationMode.Strict)
+        ValidationMode validationMode = ValidationMode.Strict,
+        CsvDeserializeErrorHandler? onDeserializeError = null)
     {
         reader = default;
         this.byteReader = byteReader;
@@ -69,6 +74,7 @@ public ref struct CsvRecordReader<TElement, T>
         this.progress = progress;
         this.progressInterval = progressInterval > 0 ? progressInterval : 1000;
         this.validationMode = validationMode;
+        this.onDeserializeError = onDeserializeError;
         Current = default!;
         rowNumber = 0;
         skippedCount = 0;
@@ -82,7 +88,8 @@ public ref struct CsvRecordReader<TElement, T>
         int skipRows = 0,
         IProgress<CsvProgress>? progress = null,
         int progressInterval = 1000,
-        ValidationMode validationMode = ValidationMode.Strict)
+        ValidationMode validationMode = ValidationMode.Strict,
+        CsvDeserializeErrorHandler? onDeserializeError = null)
     {
         return new CsvRecordReader<char, T>(
             byteReader,
@@ -91,7 +98,8 @@ public ref struct CsvRecordReader<TElement, T>
             skipRows,
             progress,
             progressInterval,
-            validationMode);
+            validationMode,
+            onDeserializeError);
     }
 
     /// <summary>Gets the current mapped record.</summary>
@@ -152,7 +160,28 @@ public ref struct CsvRecordReader<TElement, T>
                 continue;
             }
 
-            if (!binder!.TryBind(row, rowNumber, out var result, errors))
+            bool bound;
+            T? result;
+            if (onDeserializeError is not null)
+            {
+                try
+                {
+                    bound = binder!.TryBind(row, rowNumber, out result, errors);
+                }
+                catch (Exception ex)
+                {
+                    var action = onDeserializeError(BuildErrorContext(row, ex), ex);
+                    if (action == CsvDeserializeErrorAction.SkipRecord)
+                        continue;
+                    throw;
+                }
+            }
+            else
+            {
+                bound = binder!.TryBind(row, rowNumber, out result, errors);
+            }
+
+            if (!bound)
             {
                 // Row was skipped due to error handling
                 continue;
@@ -161,7 +190,7 @@ public ref struct CsvRecordReader<TElement, T>
             dataRowCount++;
             ReportProgress();
 
-            Current = result;
+            Current = result!;
             return true;
         }
 
@@ -191,7 +220,28 @@ public ref struct CsvRecordReader<TElement, T>
                 continue;
             }
 
-            if (!byteBinder.TryBind(row, rowNumber, out var result, errors))
+            bool bound;
+            T? result;
+            if (onDeserializeError is not null)
+            {
+                try
+                {
+                    bound = byteBinder!.TryBind(row, rowNumber, out result, errors);
+                }
+                catch (Exception ex)
+                {
+                    var action = onDeserializeError(BuildErrorContext(row, ex), ex);
+                    if (action == CsvDeserializeErrorAction.SkipRecord)
+                        continue;
+                    throw;
+                }
+            }
+            else
+            {
+                bound = byteBinder!.TryBind(row, rowNumber, out result, errors);
+            }
+
+            if (!bound)
             {
                 continue;
             }
@@ -199,13 +249,27 @@ public ref struct CsvRecordReader<TElement, T>
             dataRowCount++;
             ReportProgress();
 
-            Current = result;
+            Current = result!;
             return true;
         }
 
         ReportFinalProgress();
         Current = default!;
         return false;
+    }
+
+    private static CsvDeserializeErrorContext BuildErrorContext<TRow>(CsvRow<TRow> row, Exception ex)
+        where TRow : unmanaged, IEquatable<TRow>
+    {
+        string? rawValue = ex is CsvException csvEx ? csvEx.FieldValue : null;
+        return new CsvDeserializeErrorContext
+        {
+            Row = row.LineNumber,
+            SourceLineNumber = row.SourceLineNumber,
+            FieldName = null,
+            RawValue = rawValue,
+            TargetType = null
+        };
     }
 
     private void ReportProgress()

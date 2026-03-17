@@ -29,6 +29,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     private IProgress<ExcelProgress>? progress;
     private int progressIntervalRows = 1000;
     private ValidationMode validationMode = ValidationMode.Strict;
+    private ExcelDeserializeErrorHandler? onDeserializeError;
     private List<Func<CsvRecordOptions, CsvRecordOptions>>? converterRegistrations;
     private ICsvReadMapSource<T>? mapSource;
 
@@ -213,6 +214,20 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     }
 
     /// <summary>
+    /// Sets the error handler for deserialization errors.
+    /// When set, the handler is called for each row that fails to deserialize, allowing the caller
+    /// to skip the record or rethrow the exception.
+    /// </summary>
+    /// <param name="handler">The error handler delegate.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelRecordReaderBuilder<T> OnError(ExcelDeserializeErrorHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        onDeserializeError = handler;
+        return this;
+    }
+
+    /// <summary>
     /// Enables case-sensitive header matching.
     /// </summary>
     /// <returns>This builder for method chaining.</returns>
@@ -249,7 +264,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     /// <returns>A builder for same-type multi-sheet reading.</returns>
     public ExcelAllSheetsBuilder<T> AllSheets()
     {
-        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, caseSensitiveHeaders, allowMissingColumns, nullValues, culture, maxRows, skipRows, progress, validationMode);
+        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, caseSensitiveHeaders, allowMissingColumns, nullValues, culture, maxRows, skipRows, progress, validationMode, onDeserializeError);
     }
 
     /// <summary>
@@ -351,9 +366,27 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             XlsxRowAdapter.EnsureBuffers(cells, ref buffer, ref columnEnds);
             var csvRow = XlsxRowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber, buffer, columnEnds);
 
-            if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record, errors))
+            try
             {
-                results.Add(record);
+                if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record, errors))
+                {
+                    results.Add(record);
+                }
+            }
+            catch (Exception ex) when (onDeserializeError is not null)
+            {
+                string? rawValue = ex is SeparatedValues.Core.CsvException csvEx ? csvEx.FieldValue : null;
+                var context = new ExcelDeserializeErrorContext
+                {
+                    Row = sheetReader.CurrentRowNumber,
+                    SheetName = currentSheetName,
+                    RawValue = rawValue
+                };
+
+                var action = onDeserializeError(context, ex);
+                if (action == ExcelDeserializeErrorAction.Throw)
+                    throw;
+                continue; // SkipRecord: skip rowsRead++ so skipped rows don't count toward maxRows
             }
 
             rowsRead++;

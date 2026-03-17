@@ -18,6 +18,10 @@ public sealed class ExcelDataReader : DbDataReader
     private readonly XlsxSheetReader sheetReader;
     private readonly bool hasHeaderRow;
     private readonly int skipRows;
+    private readonly bool caseSensitiveHeaders;
+    private readonly bool allowMissingColumns;
+    private readonly HashSet<string>? nullValues;
+    private readonly IReadOnlyList<string>? columnNameOverrides;
 
     private string[] columnNames = [];
     private Dictionary<string, int>? ordinals;
@@ -39,6 +43,23 @@ public sealed class ExcelDataReader : DbDataReader
         this.sheetReader = sheetReader;
         this.hasHeaderRow = hasHeaderRow;
         this.skipRows = skipRows;
+    }
+
+    internal ExcelDataReader(
+        XlsxReader xlsxReader,
+        XlsxSheetReader sheetReader,
+        ExcelDataReaderOptions options)
+    {
+        this.xlsxReader = xlsxReader;
+        this.sheetReader = sheetReader;
+        hasHeaderRow = options.HasHeaderRow;
+        skipRows = options.SkipRows;
+        caseSensitiveHeaders = options.CaseSensitiveHeaders;
+        allowMissingColumns = options.AllowMissingColumns;
+        nullValues = options.NullValues is { Count: > 0 }
+            ? new HashSet<string>(options.NullValues, StringComparer.Ordinal)
+            : null;
+        columnNameOverrides = options.ColumnNames;
     }
 
     /// <inheritdoc />
@@ -142,10 +163,17 @@ public sealed class ExcelDataReader : DbDataReader
         ValidateOrdinal(ordinal);
 
         if (currentRow is null || ordinal >= currentRow.Length)
+        {
+            if (!allowMissingColumns && currentRow is not null && ordinal >= currentRow.Length)
+                throw new ExcelException($"Row has only {currentRow.Length} columns but requested index {ordinal}.");
             return DBNull.Value;
+        }
 
         var value = currentRow[ordinal];
         if (string.IsNullOrEmpty(value))
+            return DBNull.Value;
+
+        if (nullValues is not null && nullValues.Contains(value))
             return DBNull.Value;
 
         return value;
@@ -281,9 +309,20 @@ public sealed class ExcelDataReader : DbDataReader
         ValidateOrdinal(ordinal);
 
         if (currentRow is null || ordinal >= currentRow.Length)
+        {
+            if (!allowMissingColumns && currentRow is not null && ordinal >= currentRow.Length)
+                throw new ExcelException($"Row has only {currentRow.Length} columns but requested index {ordinal}.");
+            return true;
+        }
+
+        var value = currentRow[ordinal];
+        if (string.IsNullOrEmpty(value))
             return true;
 
-        return string.IsNullOrEmpty(currentRow[ordinal]);
+        if (nullValues is not null && nullValues.Contains(value))
+            return true;
+
+        return false;
     }
 
     /// <inheritdoc />
@@ -414,6 +453,20 @@ public sealed class ExcelDataReader : DbDataReader
             }
         }
 
+        // Apply column name overrides if provided
+        if (columnNameOverrides is { Count: > 0 })
+        {
+            if (fieldCount == 0)
+                fieldCount = columnNameOverrides.Count;
+
+            var overrideNames = new string[fieldCount];
+            for (int i = 0; i < fieldCount; i++)
+            {
+                overrideNames[i] = i < columnNameOverrides.Count ? columnNameOverrides[i] : columnNames[i];
+            }
+            columnNames = overrideNames;
+        }
+
         // Peek at first data row to detect HasRows
         var firstRow = sheetReader.ReadNextRow();
         if (firstRow is not null)
@@ -458,13 +511,15 @@ public sealed class ExcelDataReader : DbDataReader
 
     private void BuildOrdinalMap()
     {
+        var comparer = caseSensitiveHeaders ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+
         if (columnNames.Length == 0)
         {
-            ordinals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            ordinals = new Dictionary<string, int>(comparer);
             return;
         }
 
-        ordinals = new Dictionary<string, int>(columnNames.Length, StringComparer.OrdinalIgnoreCase);
+        ordinals = new Dictionary<string, int>(columnNames.Length, comparer);
         for (int i = 0; i < columnNames.Length; i++)
         {
             if (!ordinals.ContainsKey(columnNames[i]))

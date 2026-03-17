@@ -20,6 +20,49 @@ public delegate bool CsvTypeConverter<T>(ReadOnlySpan<char> value, CultureInfo c
 internal delegate bool InternalCustomConverter(ReadOnlySpan<char> value, CultureInfo culture, string? format, out object? result);
 
 /// <summary>
+/// Specifies the action to take when a deserialization error occurs.
+/// </summary>
+public enum CsvDeserializeErrorAction
+{
+    /// <summary>Skip the current row and continue parsing.</summary>
+    SkipRecord,
+
+    /// <summary>Re-throw the exception and abort parsing.</summary>
+    Throw
+}
+
+/// <summary>
+/// Provides context about a deserialization error to an <see cref="CsvDeserializeErrorHandler"/>.
+/// </summary>
+public readonly struct CsvDeserializeErrorContext
+{
+    /// <summary>Gets the logical row number (1-based, data rows only).</summary>
+    public int Row { get; init; }
+
+    /// <summary>Gets the source file line number when line-number tracking is enabled; otherwise 0.</summary>
+    public int SourceLineNumber { get; init; }
+
+    /// <summary>Gets the field name that caused the error, if available.</summary>
+    public string? FieldName { get; init; }
+
+    /// <summary>Gets the raw field value that caused the error, if available.</summary>
+    public string? RawValue { get; init; }
+
+    /// <summary>Gets the target property type that parsing failed for, if available.</summary>
+    public Type? TargetType { get; init; }
+}
+
+/// <summary>
+/// Handles a deserialization error and returns the action to take.
+/// </summary>
+/// <param name="context">Context information about the error.</param>
+/// <param name="exception">The exception that occurred.</param>
+/// <returns>The action to take: skip the record or re-throw the exception.</returns>
+public delegate CsvDeserializeErrorAction CsvDeserializeErrorHandler(
+    CsvDeserializeErrorContext context,
+    Exception exception);
+
+/// <summary>
 /// Represents progress information during CSV parsing.
 /// </summary>
 public readonly struct CsvProgress
@@ -205,6 +248,15 @@ public sealed record CsvRecordOptions
             return false;
         };
     }
+
+    /// <summary>
+    /// Gets or sets the callback to invoke when a row fails to deserialize.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="null"/> (the default), deserialization errors are thrown as-is.
+    /// Set this to a delegate to handle errors gracefully — for example, to skip bad rows and continue.
+    /// </remarks>
+    public CsvDeserializeErrorHandler? OnDeserializeError { get; init; } = null;
 
     /// <summary>
     /// Gets a reusable default instance.

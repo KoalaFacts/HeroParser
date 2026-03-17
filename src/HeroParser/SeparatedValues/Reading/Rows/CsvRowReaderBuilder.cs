@@ -21,6 +21,7 @@ public sealed partial class CsvRowReaderBuilder
     private char? escapeCharacter = null;
     private int? maxRowSize = 512 * 1024;
     private bool trackSourceLineNumbers = false;
+    private long? maxInputSize = null;
 
     // Row reading options
     private int skipRows = 0;
@@ -41,7 +42,8 @@ public sealed partial class CsvRowReaderBuilder
         MaxFieldSize = maxFieldSize,
         EscapeCharacter = escapeCharacter,
         MaxRowSize = maxRowSize,
-        TrackSourceLineNumbers = trackSourceLineNumbers
+        TrackSourceLineNumbers = trackSourceLineNumbers,
+        MaxInputSize = maxInputSize
     };
 }
 

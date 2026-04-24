@@ -4,6 +4,13 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+### Added
+- **Excel AOT compatibility tests.** `tests/HeroParser.AotTests/Tests/ExcelAotTests.cs` exercises `Excel.Write<T>()` and `Excel.Read<T>()` under `PublishAot=true` for the first time: generated writer output, generated reader parsing, round-trip integrity, `[TabularMap]` index/name handling, multiple generated types in the same binary, and nullable value columns. Complements the existing CSV and Fixed-Width AOT coverage.
+- **Write-path generator-vs-reflection benchmark.** `benchmarks/HeroParser.Benchmarks/WriteGeneratorBenchmarks.cs` isolates the source-generated template writer from the reflection-based writer for both CSV and Fixed-Width by using two record types of identical shape (one with `[GenerateBinder]`, one without). Quantifies the throughput and allocation delta a user buys by adding the attribute.
+
+### Changed
+- **Factory fallback annotations.** `CsvRecordWriterFactory.GetWriter<T>` and `FixedWidthRecordWriterFactory.GetWriter<T>` carry an `[UnconditionalSuppressMessage]` for `IL2026` and `IL3050` with a justification comment explaining that the reflection branch is only taken when no `[GenerateBinder]` is registered for `T`. Users decorating their types with `[GenerateBinder]` no longer see trimming/AOT warnings propagate from these factory methods.
+
 ## [2.1.3] - 2026-04-24
 
 Documentation and CI hardening release. No runtime code changes — functionally identical to 2.1.2.

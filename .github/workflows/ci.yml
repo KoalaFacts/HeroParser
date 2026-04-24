@@ -146,6 +146,18 @@ jobs:
     - name: Run AOT Tests
       run: dotnet run --project tests/HeroParser.AotTests --configuration Release --framework ${{ matrix.framework }} --no-build
 
+    # Verify Native AOT publish is clean and the natively-compiled binary runs.
+    # JIT-only runs above miss IL2070/IL2090 warnings and ILC codegen failures
+    # because the IL compiler never runs. Gated to one OS/framework combo since
+    # native publish is slow (~5 min) and bugs here are rarely platform-specific.
+    - name: AOT publish (ILC)
+      if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
+      run: dotnet publish tests/HeroParser.AotTests --configuration Release --framework ${{ matrix.framework }} --runtime linux-x64
+
+    - name: Run natively-compiled AOT binary
+      if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
+      run: ./tests/HeroParser.AotTests/bin/Release/${{ matrix.framework }}/linux-x64/publish/HeroParser.AotTests
+
   generator-tests:
     name: Source Generator Tests
     needs: setup

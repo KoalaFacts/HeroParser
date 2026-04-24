@@ -1018,6 +1018,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         });
     }
 
+    [RequiresUnreferencedCode("Uses reflection over T.GetProperties; only reached via the [RequiresUnreferencedCode] constructor.")]
+    [RequiresDynamicCode("Compiles property getters with Expression.Compile; only reached via the [RequiresDynamicCode] constructor.")]
     private static PropertyAccessor[] BuildAccessors(Type type)
     {
         var properties = type
@@ -1063,6 +1065,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         return accessors;
     }
 
+    [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
     private static Func<object, object?> CreateGetter(PropertyInfo property)
     {
         // Create a compiled expression tree for ~10x faster access than MethodInfo.Invoke

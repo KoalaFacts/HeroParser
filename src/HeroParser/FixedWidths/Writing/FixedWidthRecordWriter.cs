@@ -20,6 +20,8 @@ public sealed class FixedWidthRecordWriter<T>
     /// Creates a new record writer with reflection-based field discovery.
     /// </summary>
     /// <param name="options">The writer options.</param>
+    [RequiresUnreferencedCode("Reflection-based writing may not work with trimming. Use [GenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Reflection-based writing requires dynamic code. Use [GenerateBinder] attribute for AOT support.")]
     public FixedWidthRecordWriter(FixedWidthWriteOptions options)
     {
         this.options = options;
@@ -438,6 +440,8 @@ public sealed class FixedWidthRecordWriter<T>
         return value.ToString() ?? string.Empty;
     }
 
+    [RequiresUnreferencedCode("Uses typeof(T).GetProperties; only reached via the [RequiresUnreferencedCode] constructor.")]
+    [RequiresDynamicCode("Compiles property getters with Expression.Compile; only reached via the [RequiresDynamicCode] constructor.")]
     private static FieldDefinition[] BuildFieldDefinitions()
     {
         var type = typeof(T);
@@ -494,6 +498,7 @@ public sealed class FixedWidthRecordWriter<T>
         return fields;
     }
 
+    [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
     private static Func<T, object?> BuildGetter(PropertyInfo prop)
     {
         // Use compiled expression for better performance

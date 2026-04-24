@@ -201,8 +201,18 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// </summary>
     /// <remarks>
     /// This method collects all records in memory since the ref struct reader
-    /// cannot be used with iterators.
+    /// cannot be used with iterators. Prefers the source-generated descriptor
+    /// binder for <typeparamref name="T"/>; falls back to the reflection-based
+    /// <see cref="Create"/> only when no descriptor binder is registered.
     /// </remarks>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:Members attributed with RequiresUnreferencedCode may break when trimming",
+        Justification = "Reflection fallback via Create() only runs when no descriptor binder is registered for T (i.e., T is not decorated with [GenerateBinder]).")]
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling.",
+        Justification = "Reflection fallback via Create() only runs when no descriptor binder is registered for T (i.e., T is not decorated with [GenerateBinder]).")]
     public static FixedWidthReadResult<T> Bind(
         FixedWidthCharSpanReader reader,
         CultureInfo? culture,
@@ -845,9 +855,13 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         return list;
     }
 
+    [RequiresUnreferencedCode("Uses reflection over T.GetProperties; only reached via the [RequiresUnreferencedCode] Create method.")]
+    [RequiresDynamicCode("Compiles setters and converters with Expression.Compile; only reached via the [RequiresDynamicCode] Create method.")]
     private static IReadOnlyList<BindingTemplate> CreateTemplatesFromReflection()
         => bindingCache.GetOrAdd(typeof(T), _ => BuildTemplates());
 
+    [RequiresUnreferencedCode("Uses reflection over T.GetProperties; only reached via the [RequiresUnreferencedCode] Create method.")]
+    [RequiresDynamicCode("Compiles setters and converters with Expression.Compile; only reached via the [RequiresDynamicCode] Create method.")]
     private static List<BindingTemplate> BuildTemplates()
     {
         var members = typeof(T)

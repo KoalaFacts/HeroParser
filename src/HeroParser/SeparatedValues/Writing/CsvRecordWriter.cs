@@ -1018,6 +1018,8 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         });
     }
 
+    [RequiresUnreferencedCode("Uses reflection over T.GetProperties; only reached via the [RequiresUnreferencedCode] constructor.")]
+    [RequiresDynamicCode("Compiles property getters with Expression.Compile; only reached via the [RequiresDynamicCode] constructor.")]
     private static PropertyAccessor[] BuildAccessors(Type type)
     {
         var properties = type
@@ -1063,6 +1065,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         return accessors;
     }
 
+    [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
     private static Func<object, object?> CreateGetter(PropertyInfo property)
     {
         // Create a compiled expression tree for ~10x faster access than MethodInfo.Invoke
@@ -1120,6 +1123,22 @@ public static partial class CsvRecordWriterFactory
     /// Creates a new record writer for the specified type and options.
     /// Prefers generated writers when available, falling back to reflection-based writers.
     /// </summary>
+    /// <remarks>
+    /// Under Native AOT or aggressive trimming, callers are expected to decorate <typeparamref name="T"/>
+    /// with <c>[GenerateBinder]</c> so the registry fast-path is hit. The reflection fallback below exists
+    /// for the non-AOT runtime case and will throw at construction time if trimming has removed the
+    /// required members. The IL2026/IL3050 warnings are suppressed here to avoid noise at every call site
+    /// of <see cref="Csv"/>.WriteToText / ToFile / ToStream — those facades work correctly for any type
+    /// decorated with <c>[GenerateBinder]</c>.
+    /// </remarks>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:Members attributed with RequiresUnreferencedCode may break when trimming",
+        Justification = "Reflection fallback only runs when no [GenerateBinder] is registered for T. Users under AOT are expected to decorate T.")]
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling.",
+        Justification = "Reflection fallback only runs when no [GenerateBinder] is registered for T. Users under AOT are expected to decorate T.")]
     public static CsvRecordWriter<T> GetWriter<T>(CsvWriteOptions? options = null)
     {
         options ??= CsvWriteOptions.Default;

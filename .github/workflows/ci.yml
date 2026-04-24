@@ -31,7 +31,7 @@ jobs:
       frameworks: ${{ steps.extract.outputs.frameworks }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Extract configuration
         id: extract
@@ -49,7 +49,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         fetch-depth: 0  # Full history for Source Link
 
@@ -91,7 +91,7 @@ jobs:
         ${{ matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0' && '--collect:"XPlat Code Coverage"' || '' }}
 
     - name: Publish test results
-      uses: EnricoMi/publish-unit-test-result-action@v2
+      uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
       if: always() && matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
       with:
         files: 'TestResults/**/*.trx'
@@ -99,7 +99,7 @@ jobs:
 
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: test-results-${{ matrix.os }}-${{ matrix.framework }}
         path: TestResults/**/*.trx
@@ -107,7 +107,7 @@ jobs:
 
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
       with:
         files: 'TestResults/**/coverage.cobertura.xml'
         fail_ci_if_error: false
@@ -126,7 +126,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     - name: Extract configuration
       id: extract
@@ -146,6 +146,18 @@ jobs:
     - name: Run AOT Tests
       run: dotnet run --project tests/HeroParser.AotTests --configuration Release --framework ${{ matrix.framework }} --no-build
 
+    # Verify Native AOT publish is clean and the natively-compiled binary runs.
+    # JIT-only runs above miss IL2070/IL2090 warnings and ILC codegen failures
+    # because the IL compiler never runs. Gated to one OS/framework combo since
+    # native publish is slow (~5 min) and bugs here are rarely platform-specific.
+    - name: AOT publish (ILC)
+      if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
+      run: dotnet publish tests/HeroParser.AotTests --configuration Release --framework ${{ matrix.framework }} --runtime linux-x64
+
+    - name: Run natively-compiled AOT binary
+      if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
+      run: ./tests/HeroParser.AotTests/bin/Release/${{ matrix.framework }}/linux-x64/publish/HeroParser.AotTests
+
   generator-tests:
     name: Source Generator Tests
     needs: setup
@@ -157,7 +169,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     - name: Extract configuration
       id: extract
@@ -183,7 +195,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         fetch-depth: 0
 
@@ -221,12 +233,12 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         fetch-depth: 0  # Need full history for comparing commits on push events
 
     - name: Dependency Review
-      uses: actions/dependency-review-action@v4
+      uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
       with:
         fail-on-severity: high
         deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0

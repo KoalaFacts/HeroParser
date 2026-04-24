@@ -35,7 +35,7 @@ jobs:
           echo "Version validated: $VERSION"
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Show current and requested versions
         id: version-context
@@ -101,7 +101,11 @@ jobs:
         run: dotnet restore --force-evaluate
 
       - name: Build Release
-        run: dotnet build --configuration Release --no-restore
+        # Pass -p:Version so AssemblyVersion, FileVersion, and
+        # AssemblyInformationalVersion are stamped into the compiled DLLs
+        # with the release version. The Pack step below uses --no-build,
+        # so whatever we stamp here is what ships in the .nupkg.
+        run: dotnet build --configuration Release --no-restore -p:Version=${{ inputs.version }}
 
       - name: Run tests
         run: dotnet test --configuration Release --no-build --verbosity normal
@@ -131,7 +135,7 @@ jobs:
           ls -lh packages/HeroParser.${{ inputs.version }}.*
 
       - name: Generate package provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'packages/*.nupkg'
 

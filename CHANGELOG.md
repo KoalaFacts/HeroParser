@@ -2,92 +2,88 @@
 
 All notable changes to HeroParser are documented in this file. This project follows [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] - 2026-04-24
+## [Unreleased]
+
+### Changed
+- **GitHub Actions hardened.** Every external `uses:` in `.github/workflows/*.yml` and `.github/actions/*` pinned to an immutable 40-character commit SHA with a `# <version>` comment. Floating `@v4` / `@v5` / `@v6` tags can no longer be silently repointed by an upstream compromise.
+- **GitHub Actions bumped to latest stable**: `actions/checkout` v6.0.2, `actions/setup-dotnet` v5.2.0, `actions/upload-artifact` v7.0.1, `actions/download-artifact` v8.0.1, `actions/github-script` v9.0.0 (major — Node 24 runtime), `actions/attest-build-provenance` v4.1.0, `actions/dependency-review-action` v4.9.0, `codecov/codecov-action` v6.0.0 (major), `EnricoMi/publish-unit-test-result-action` v2.23.0, `NuGet/login` v1.1.0.
+
+### Documentation
+- Added `docs/migration-v1-to-v2.md` — attribute rename map from 1.x to 2.x (`[CsvColumn]` → `[TabularMap]` + `[Validate]`, `[FixedWidthColumn]` → `[PositionalMap]`, etc.), before/after samples for CSV / Fixed-Width / combined records, behavioral callouts, and a mechanical migration recipe. Written for anyone still on 1.x; was missing at the time of the 2.0.0 release.
+- Added repository development guidelines (`CLAUDE.md`, `AGENTS.md`) covering project structure, build commands, code style, performance lessons, and architecture overview.
+- Swept `docs/csv.md` and `docs/fixed-width.md` to replace lingering v1 attribute references (`[CsvColumn]`, `[CsvGenerateBinder]`, `[FixedWidthColumn]`) with current v2 names. Removed stale "legacy X" transition notes now that the legacy attributes are gone.
+- Restructured this CHANGELOG with per-version entries for 2.0.0, 2.1.0, 2.1.1, and 2.1.2 (previously all lumped under `Unreleased`).
+
+## [2.1.2] - 2026-03-17
+
+### Added
+- Comprehensive unit and integration tests for Excel reading and writing features.
+
+### Changed
+- QA skill validation: checks for `qa-only SKILL.md` and enhanced skill-structure validation.
+
+## [2.1.1] - 2026-03-16
+
+### Changed
+- README and NuGet package description enhanced to reflect Excel support.
+- Minor validation-handling refactor in `ExcelRecordWriter` and `CsvRecordBinderGenerator`.
+
+## [2.1.0] - 2026-03-16
+
+### Added
+- **Validation mode for record reading**: `ValidationMode.Strict` (default) and `ValidationMode.Lenient`. Strict throws on first validation failure; lenient collects errors and continues.
+- **Write-side validation**: `[Validate]` rules now enforced for Excel and Fixed-Width writers. Previously only read paths ran validation; writers could emit records that would fail to read back.
+- **`ExcelReadOptions`** with validation enforcement controls.
+
+### Performance
+- **`XlsxWriter` zero-allocation cell writing**: restructured the cell emission path to avoid per-cell allocations.
+
+### Changed
+- Enhanced XML documentation and access modifiers for `ExcelRecordWriter` and `XlsxWriter`.
+
+### Tests
+- `CsvWriteValidationTests` for CSV write-side validation scenarios.
+- Comprehensive Excel write tests covering quoting, formatting, multi-sheet, progress, and error handling.
+
+## [2.0.0] - 2026-03-14
 
 ### Breaking Changes
 
 - **Unified attribute model.** The format-specific attributes from 1.x are removed and replaced by six concern-separated attributes that work across CSV, Excel, and Fixed-Width. See [docs/migration-v1-to-v2.md](docs/migration-v1-to-v2.md) for the rename map and mechanical migration recipe.
   - Removed: `[CsvColumn]`, `[FixedWidthColumn]`, `[CsvGenerateBinder]`, `[FixedWidthGenerateBinder]`, `[FixedWidthRequired]`, `[FixedWidthStringLength]`, `[FixedWidthRange]`, `[FixedWidthRegex]`.
   - Added: `[GenerateBinder]`, `[TabularMap]`, `[PositionalMap]`, `[Parse]`, `[Format]`, `[Validate]`.
-- **Write-side validation is now enforced by default.** In 1.x the `NotNull` / `NotEmpty` / `MinLength` / `MaxLength` / `RangeMin` / `RangeMax` / `Pattern` rules ran only on reads. In 2.0 they run on both directions. Use `OnError(...)` on the writer builder to control the action (skip / throw / write anyway) when a rule fails on write.
-- **HERO008 build diagnostic.** When `[GenerateBinder]` is applied, every `[TabularMap]` must specify either `Name` or `Index`. Omitting both is now a hard build error (it was a silent fallback in 1.x).
-- **Framework targets raised.** 2.0 targets `net8.0`, `net9.0`, and `net10.0`. Earlier framework targets from 1.x are dropped. The source generator continues to target `netstandard2.0` for IDE compatibility.
+- **HERO008 build diagnostic.** When `[GenerateBinder]` is applied, every `[TabularMap]` must specify either `Name` or `Index`. Omitting both is a hard build error (was a silent fallback in 1.x).
 
 ### Added
 
-#### Excel (.xlsx) reading and writing — new in 2.0
-- **Read**: `Excel.Read<T>()` fluent builder — sheet selection, culture, validation, progress, error handling. Zero extra dependencies — uses only `System.IO.Compression` + `System.Xml`.
-- **Read variants**: `FromSheet(name|index)`, `AllSheets()` (returns `Dictionary<string, List<T>>`), multi-sheet different-type reads via `Excel.Read().WithSheet<T>(name)`.
-- **Row-level read**: `Excel.Read().FromFile(...)` for untyped row iteration.
+#### Excel (.xlsx) reading — new in 2.0
+- **Read**: `Excel.Read<T>()` fluent builder — sheet selection, culture, validation, progress, error handling. Zero extra dependencies (uses only `System.IO.Compression` + `System.Xml`).
+- **Read variants**: `FromSheet(name|index)`, `AllSheets()` returning `Dictionary<string, List<T>>`, multi-sheet different-type reads via `Excel.Read().WithSheet<T>(name)`.
+- **Row-level read**: `Excel.Read().FromFile(...)` for untyped row iteration via `ExcelRowReaderBuilder`.
 - **DataReader**: `Excel.CreateDataReader(stream|path)` — `DbDataReader` for streaming into `SqlBulkCopy` and ADO.NET consumers.
-- **Write**: `Excel.Write<T>()` fluent builder — sheet naming, date/number formats, culture, output limits, progress, `OnError`.
-- **Multi-sheet write**: `Excel.WriteMultiSheet().WithSheet(name, records)` for heterogeneous workbooks.
-- **Async**: `ToFileAsync(...)` offloads ZIP writing to the thread pool.
+- **XLSX infrastructure**: `XlsxReader`, `XlsxWorkbook` (sheet name/index mapping), `XlsxSheetReader` (streaming rows), `XlsxStylesheet` (date-format detection), `XlsxSharedStrings` (shared-string table), `XlsxRowAdapter` bridge, `ExcelException`, `ExcelReadOptions`, `ExcelProgress`, `XlsxCellType`.
 
-#### Fixed-Width reading and writing — new in 2.0
-- **Read**: `FixedWidth.Read<T>()` and `FixedWidth.Read()` fluent builders.
-  - Zero-allocation span readers (`FixedWidthCharSpanReader`, `FixedWidthByteSpanReader`).
-  - Position mapping via `[PositionalMap(Start, Length, End, PadChar, Alignment)]` — `End` is an alternative to `Length`.
-  - `FieldAlignment` (Left / Right / Center / None) for padding-aware trimming.
-  - Line-based and fixed-record-length modes; comment lines, empty lines, and row skipping.
-  - `AllowShortRows()`, `MaxRecordCount`, `MaxInputSize` DoS protection.
-  - `IProgress<FixedWidthProgress>`, custom type converters (`RegisterConverter<T>`), null values (`WithNullValues(...)`).
-- **Write**: `FixedWidth.Write<T>()` and `FixedWidth.Write()` fluent builders.
-  - `WriteToText`, `WriteToFile`, `WriteToStream` + async variants with `IAsyncEnumerable<T>` support.
-  - `FixedWidthStreamWriter` low-level writer.
-  - Configurable padding, alignment, newlines.
-- **Async stream writer**: `FixedWidth.CreateAsyncStreamWriter(Stream)` for true non-blocking async I/O.
-- **Source generator**: `[GenerateBinder]` emits a reflection-free binder for Fixed-Width records (AOT/trim-clean).
-- **PipeReader**: streaming reads from network sockets.
+#### Unified attribute system
+- **`[GenerateBinder]`** — single source-generator trigger for CSV, Fixed-Width, and Excel record binding (replaces `[CsvGenerateBinder]` + `[FixedWidthGenerateBinder]`).
+- **`[TabularMap(Name, Index)]`** — column mapping for CSV and Excel.
+- **`[PositionalMap(Start, Length, End, PadChar, Alignment)]`** — position mapping for Fixed-Width.
+- **`[Parse(Format)]`** — read-side type conversion.
+- **`[Format(WriteFormat, ExcludeIfAllEmpty)]`** — write-side formatting and empty-column pruning.
+- **`[Validate(NotNull, NotEmpty, MinLength, MaxLength, RangeMin, RangeMax, Pattern, PatternTimeoutMs)]`** — cross-format field validation.
+- Compile-time diagnostics `HERO004`–`HERO008` for invalid attribute usage.
 
-#### CSV additions
-- **Fluent Reader builder**: `Csv.Read<T>()` — symmetric with the writer builder. `FromText / FromFile / FromStream` terminals plus async variants.
-- **Fluent Writer builder**: `Csv.Write<T>()` — `ToText / ToFile / ToStream` terminals plus async. Configure delimiter, quote style, date/number formats, culture.
-- **Non-generic builders**: `Csv.Read()` / `Csv.Write()` for manual row-by-row access without a record type.
-- **CSV writing**: RFC 4180-compliant `Csv.WriteToText<T>`, `Csv.WriteToFile<T>`, `Csv.WriteToStream<T>` + async variants. Low-level `CsvStreamWriter`.
-- **Async stream writer**: `CsvAsyncStreamWriter` with sync fast paths — async overhead only when I/O actually needs to await. Uses `PoolingAsyncValueTaskMethodBuilder` on .NET 6+.
-- **Writer options**: `QuoteStyle` (Always / Never / WhenNeeded), `NullValue`, `DateTimeFormat`, `DateOnlyFormat`, `TimeOnlyFormat`, `NumberFormat`, `MaxRowCount`, `OnSerializeError`.
-- **SIMD-accelerated writing**: AVX2 / SSE2 single-pass field analysis for quote detection.
-- **LINQ-style extensions**: `ToList / ToArray / First / FirstOrDefault / Single / SingleOrDefault / Where / Select / Skip / Take / Count / Any / All / ToDictionary / GroupBy / ForEach` on CSV record readers.
-- **Reader options**: `WithProgress`, `OnError` (Skip / UseDefault / Throw actions), `RequireHeaders`, `ValidateHeaders`, `DetectDuplicateHeaders`, `RegisterConverter<T>`.
-- **CSV injection protection**: configurable sanitization modes for user-data exports (`CsvInjectionProtection.EscapeWithTab` and friends).
-- **Source line number tracking**: `CsvRow.LineNumber` (1-based logical row), `CsvRow.SourceLineNumber` (1-based physical line, multi-line quote aware), `CsvException.SourceLineNumber`. Error messages now include both: `"Row 5 (Line 12): ..."`.
-- **Multi-schema dispatch**: source-generated dispatcher (~2.85x faster than runtime) plus a `WithMultiSchema().WithDiscriminator(...)` runtime variant.
-- **Delimiter auto-detection**: `CsvDelimiterDetector.DetectDelimiter(...)` with confidence score over `,`, `;`, `|`, `\t`. UTF-8 and UTF-16 input supported.
-- **CSV validation**: `Csv.Validate(...)` pre-flight checks for consistent column counts, required headers, row limits, empty files.
-- **Schema inference**: `Csv.InferSchema(...)` detects column types (Integer / Decimal / Boolean / DateTime / Guid / String) and nullability from sample data.
-- **Converters**: `CsvToFixedWidthConverter.Convert(...)` and `FixedWidthToCsvConverter.Convert(...)`.
-
-#### Cross-cutting
-- **Inline field validation**: `[Validate(NotNull, NotEmpty, MinLength, MaxLength, RangeMin, RangeMax, Pattern, PatternTimeoutMs)]` — works on both read and write paths, in all three formats.
-- **`[Format(WriteFormat, ExcludeIfAllEmpty)]`**: write-side format override and empty-column pruning.
-- **Fluent mapping API**: inline `.Map(e => e.Name, f => ...)` chains on reader and writer builders, for all three formats — useful when the schema is known only at runtime.
-- **Validation diagnostics**: `ValidationError` struct carries row number, column name/index, property name, rule, message, raw value; `ValidationException` formats multi-error messages; `ThrowIfAnyError()` fluent API. Compile-time diagnostics `HERO004`–`HERO008` for invalid attribute usage.
-- **DataReader support**: `Csv.CreateDataReader(...)`, `FixedWidth.CreateDataReader(...)`, `Excel.CreateDataReader(...)` — `DbDataReader` for `SqlBulkCopy` and ADO.NET consumers. Header mapping, null value detection, column overrides, case-insensitive headers.
-- **PipeReader integration**: `Csv.ReadFromPipeReaderAsync(pipe)` for network streaming without buffering the whole payload.
-- **Source generators**: `[GenerateBinder]` triggers `CsvRecordBinderGenerator`, `FixedWidthRecordBinderGenerator`, and (for polymorphic dispatch) `CsvMultiSchemaDispatcherGenerator`. Reflection-free, AOT-clean, trim-clean for read paths.
-- **AOT tests**: `HeroParser.AotTests` project validates Native AOT compilation for CSV and Fixed-Width read paths.
-
-### Performance
-- **CLMUL-based quote handling**: PCLMULQDQ instruction for branchless prefix XOR enables quote-aware SIMD parsing. HeroParser UTF-8 is now faster than Sep 0.12.1 in all tested scenarios, including quoted data (~21% faster on quoted 10k × 25; ~7% on unquoted; 25–45% faster on wide CSVs).
-- **SIMD row scanner**: AVX-512 (64-byte chunks), AVX2 (32-byte), ARM NEON (16-byte), scalar fallback. Runtime auto-detection.
-- **Fixed 4 KB allocation**: parser allocation is constant regardless of column count or file size (Sep varies 2–13 KB).
-- **Async writing is 16–43% faster than sync** at scale with 25–35% less allocation; sync fast paths avoid async overhead when I/O doesn't need to await.
-- **CSV writing** is 2–5x faster than Sep 0.12.1 with 35–85% less allocation.
-- **ArrayPool buffer reuse**: `CsvCharToByteBinderAdapter`, stream readers and writers use `ArrayPool<char>` / `ArrayPool<byte>`.
-- **Stackalloc for small arrays**: column byte lengths use `stackalloc` when ≤128 columns.
-- **XlsxWriter**: zero-allocation cell writing path.
-- **Cached options**: hot paths avoid repeated property access.
+### Changed
+- **Attribute handling simplified** in CSV and Fixed-Width record binder generators.
+- **Excel XML parsing hardened**, shared code deduplicated across the Excel read path.
 
 ### Fixed
-- **`FieldAlignment` enum mapping in source generator**: corrected `FieldAlignment.Center` (value 2) and `FieldAlignment.None` (value 3) so padding trimming behaves correctly.
-- **`ArrayPool<char>` in `CsvStreamReader`**: buffer allocation now uses the pool instead of allocating per read, reducing GC pressure.
-- **Unbounded buffer growth**: added 128 MB absolute limit (`ABSOLUTE_MAX_BUFFER_SIZE`) in stream readers as DoS protection.
+- v2 release gaps: duplicate type guard, dead type removal, shortcut API cleanup.
 
-### Security
-- **CSV injection protection**: opt-in sanitization for user-controlled fields exported to spreadsheets (`EscapeWithTab`, `EscapeWithQuote`, and other modes).
-- **DoS limits**: `MaxRowCount`, `MaxInputSize`, `MaxRecordCount` on all three formats; absolute buffer caps on stream readers.
-- **Dependency policy**: GPL-2.0, GPL-3.0, and AGPL-3.0 licenses denied by CI; high-severity vulnerabilities fail the build.
+## [1.x] — 2025-11 through 2026-03
+
+Pre-2.0 releases (1.0.0 through 1.7.1) added, incrementally, everything from the 1.0 foundation to the 1.x feature set that was carried into 2.0: CSV writing with RFC 4180 compliance, SIMD-accelerated writing (AVX2/SSE2), fluent reader/writer builders (`Csv.Read<T>()`, `Csv.Write<T>()`), non-generic builders, `CsvAsyncStreamWriter`, Fixed-Width read and write (`FixedWidth.Read<T>()` / `Write<T>()` with `[PositionalMap]`, alignment, padding, `AllowShortRows`, `MaxRecordCount`, `MaxInputSize`, async streaming), LINQ-style extensions on CSV readers, CSV injection protection, source line number tracking (`CsvRow.SourceLineNumber`), source-generated multi-schema dispatch, delimiter auto-detection, CSV structural validation, schema inference, CSV↔Fixed-Width converters, PipeReader integration, `IDataReader`/`DbDataReader` bridges, CLMUL-based branchless quote tracking (PCLMULQDQ), `ArrayPool<T>` buffer reuse, `stackalloc` fast paths for small column counts, and DoS-resistant stream reader buffer caps.
+
+Per-version detail for 1.1.0 through 1.7.1 lives in the GitHub release notes: <https://github.com/KoalaFacts/HeroParser/releases>. This CHANGELOG was not maintained during that period; it will be kept current from 2.0.0 forward.
 
 ## [1.0.0] - 2025-11-20
 

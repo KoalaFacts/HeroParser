@@ -220,7 +220,7 @@ These types and members are removed in 2.0 with no backward-compatibility shim:
 
 For a medium-sized project, this sequence works:
 
-1. Add `HeroParser` 2.0.0 as the package version — the build will fail on all 1.x attribute references.
+1. Bump the `HeroParser` package reference to the latest 2.x (currently 2.1.2) — the build will fail on all 1.x attribute references.
 2. Global replacements (literal text, case-sensitive):
    - `[CsvGenerateBinder]` → `[GenerateBinder]`
    - `[FixedWidthGenerateBinder]` → `[GenerateBinder]`

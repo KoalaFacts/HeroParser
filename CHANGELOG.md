@@ -14,6 +14,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ### Changed
 - **Factory fallback annotations.** `CsvRecordWriterFactory.GetWriter<T>` and `FixedWidthRecordWriterFactory.GetWriter<T>` carry an `[UnconditionalSuppressMessage]` for `IL2026` and `IL3050` with a justification comment explaining that the reflection branch is only taken when no `[GenerateBinder]` is registered for `T`. Users decorating their types with `[GenerateBinder]` no longer see trimming/AOT warnings propagate from these factory methods.
+- **NuGet dependencies refreshed.** `Microsoft.SourceLink.GitHub` 8.0.0 → 10.0.203 (build-time only, `PrivateAssets=all`), `Sep` 0.12.1 → 0.12.5 (benchmarks, improves comparison accuracy), `Microsoft.NET.Test.Sdk` 18.0.1 → 18.4.0, `xunit.v3` 3.2.0/3.2.1 → 3.2.2 (unifies the previously inconsistent versions across the two test projects), `Microsoft.CodeAnalysis.CSharp` 5.0.0 → 5.3.0, `coverlet.collector` 6.0.0 → 10.0.0 (major version bump aligning coverlet with .NET release cadence; coverage collector only). Runtime-facing dependency `System.IO.Pipelines` deliberately kept at 8.0.0 — it ships transitively to consumers and 8.0.0 is the correct floor version for a library that multi-targets `net8.0`.
 
 ## [2.1.3] - 2026-04-24
 

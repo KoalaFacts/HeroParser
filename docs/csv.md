@@ -397,7 +397,7 @@ await foreach (var person in Csv.Read<Person>()
 
 **Convention-based mapping (no attributes):**
 
-Properties are mapped by name to CSV header columns. No `[CsvColumn]` attribute is needed for simple cases:
+Properties are mapped by name to CSV header columns. No `[TabularMap]` attribute is needed for simple cases:
 
 ```csharp
 public class Person
@@ -413,19 +413,23 @@ var records = Csv.Read<Person>().FromText(csv).ToList();
 **Attribute-based mapping:**
 
 ```csharp
-[CsvGenerateBinder]
+[GenerateBinder]
 public class Transaction
 {
-    [CsvColumn(Name = "Id", NotNull = true, NotEmpty = true)]
+    [TabularMap(Name = "Id")]
+    [Validate(NotNull = true, NotEmpty = true)]
     public string TransactionId { get; set; } = "";
 
-    [CsvColumn(Name = "Amount", Index = 1, NotNull = true, RangeMin = 0, RangeMax = 100_000)]
+    [TabularMap(Name = "Amount", Index = 1)]
+    [Validate(NotNull = true, RangeMin = 0, RangeMax = 100_000)]
     public decimal Amount { get; set; }
 
-    [CsvColumn(Name = "Currency", Index = 2, MinLength = 3, MaxLength = 3)]
+    [TabularMap(Name = "Currency", Index = 2)]
+    [Validate(MinLength = 3, MaxLength = 3)]
     public string Currency { get; set; } = "";
 
-    [CsvColumn(Name = "Ref", Index = 3, Pattern = @"^[A-Z]{2}\d{4}$")]
+    [TabularMap(Name = "Ref", Index = 3)]
+    [Validate(Pattern = @"^[A-Z]{2}\d{4}$")]
     public string Reference { get; set; } = "";
 }
 ```
@@ -450,7 +454,7 @@ if (reader.Errors.Count > 0)
 reader.ThrowIfAnyError();
 ```
 
-**Validation properties on `[CsvColumn]`:**
+**Validation properties on `[Validate]`:**
 
 | Property | Type | Default | Description |
 |---|---|---|---|
@@ -547,26 +551,26 @@ Csv.Read<Person>()
 Parse CSV files where different rows map to different record types based on a discriminator column. Common in banking and financial file formats (NACHA, BAI, EDI) with header/detail/trailer patterns.
 
 ```csharp
-[CsvGenerateBinder]
+[GenerateBinder]
 public class HeaderRecord
 {
-    [CsvColumn(Name = "Type")]  public string Type { get; set; } = "";
-    [CsvColumn(Name = "Date")]  public DateTime Date { get; set; }
+    [TabularMap(Name = "Type")]  public string Type { get; set; } = "";
+    [TabularMap(Name = "Date")]  public DateTime Date { get; set; }
 }
 
-[CsvGenerateBinder]
+[GenerateBinder]
 public class DetailRecord
 {
-    [CsvColumn(Name = "Type")]   public string Type { get; set; } = "";
-    [CsvColumn(Name = "Id")]     public int Id { get; set; }
-    [CsvColumn(Name = "Amount")] public decimal Amount { get; set; }
+    [TabularMap(Name = "Type")]   public string Type { get; set; } = "";
+    [TabularMap(Name = "Id")]     public int Id { get; set; }
+    [TabularMap(Name = "Amount")] public decimal Amount { get; set; }
 }
 
-[CsvGenerateBinder]
+[GenerateBinder]
 public class TrailerRecord
 {
-    [CsvColumn(Name = "Type")]  public string Type { get; set; } = "";
-    [CsvColumn(Name = "Count")] public int Count { get; set; }
+    [TabularMap(Name = "Type")]  public string Type { get; set; } = "";
+    [TabularMap(Name = "Count")] public int Count { get; set; }
 }
 
 var csv = """
@@ -1474,12 +1478,12 @@ HeroParser implements **core RFC 4180** behaviour:
 
 ### 7.1 [GenerateBinder] attribute
 
-Attach `[CsvGenerateBinder]` to a record class to trigger compile-time binder generation. This is the recommended approach for AOT, trimming, and maximum read performance:
+Attach `[GenerateBinder]` to a record class to trigger compile-time binder generation. This is the recommended approach for AOT, trimming, and maximum read performance:
 
 ```csharp
 using HeroParser.SeparatedValues.Reading.Shared;
 
-[CsvGenerateBinder]
+[GenerateBinder]
 public class Person
 {
     public string Name  { get; set; } = "";
@@ -1493,16 +1497,16 @@ The source generator emits a binder alongside the class — no separate package 
 **With explicit column mapping:**
 
 ```csharp
-[CsvGenerateBinder]
+[GenerateBinder]
 public class Trade
 {
-    [CsvColumn(Name = "Ticker",     Index = 0)] public string Symbol   { get; set; } = "";
-    [CsvColumn(Name = "TradePrice", Index = 1)] public decimal Price   { get; set; }
-    [CsvColumn(Name = "Qty",        Index = 2)] public int Quantity    { get; set; }
+    [TabularMap(Name = "Ticker",     Index = 0)] public string Symbol   { get; set; } = "";
+    [TabularMap(Name = "TradePrice", Index = 1)] public decimal Price   { get; set; }
+    [TabularMap(Name = "Qty",        Index = 2)] public int Quantity    { get; set; }
 }
 ```
 
-> **Note:** When using `[CsvGenerateBinder]`, each `[CsvColumn]` must specify either `Name` or `Index`. Omitting both produces a **HERO008** build error.
+> **Note:** When using `[GenerateBinder]`, each `[TabularMap]` must specify either `Name` or `Index`. Omitting both produces a **HERO008** build error.
 
 **Compile-time diagnostics:**
 
@@ -1512,13 +1516,13 @@ public class Trade
 | `HERO005` | Error | `MaxLength` or `MinLength` applied to a non-string property |
 | `HERO006` | Error | `RangeMin` or `RangeMax` applied to a non-numeric property |
 | `HERO007` | Error | `Pattern` applied to a non-string property |
-| `HERO008` | Error | `[CsvColumn]` used with `[CsvGenerateBinder]` but neither `Name` nor `Index` is specified |
+| `HERO008` | Error | `[TabularMap]` used with `[GenerateBinder]` but neither `Name` nor `Index` is specified |
 
 ---
 
 ### 7.2 Generated binder vs reflection binder
 
-| Feature | Source-generated (`[CsvGenerateBinder]`) | Reflection binder |
+| Feature | Source-generated (`[GenerateBinder]`) | Reflection binder |
 |---|---|---|
 | AOT / trimming compatible | Yes | No (`[RequiresUnreferencedCode]`) |
 | Startup time | Fast (pre-compiled) | Slower (first-use compilation) |
@@ -1526,7 +1530,7 @@ public class Trade
 | Configuration | Attributes or fluent map at design time | Fluent map at runtime |
 | SIMD path | UTF-8 byte path | Char path (no SIMD) |
 
-Use `[CsvGenerateBinder]` for production code paths. Use fluent maps (`CsvMap<T>`) when the schema is known only at runtime.
+Use `[GenerateBinder]` for production code paths. Use fluent maps (`CsvMap<T>`) when the schema is known only at runtime.
 
 ---
 
@@ -1568,7 +1572,7 @@ while (reader.MoveNext())
 - No boxing/unboxing
 - Approximately **2.85x faster** than the runtime `WithMultiSchema()` path
 
-> All mapped types must have `[CsvGenerateBinder]` for AOT compatibility.
+> All mapped types must have `[GenerateBinder]` for AOT compatibility.
 
 ---
 
@@ -1647,7 +1651,7 @@ foreach (var error in reader.Errors)
 **Notes:**
 
 - Fluent maps use reflection and expression trees — annotated with `[RequiresUnreferencedCode]` / `[RequiresDynamicCode]` for AOT awareness.
-- Map-based reads use the char path (no SIMD byte-path optimization). Use `[CsvGenerateBinder]` for maximum throughput.
+- Map-based reads use the char path (no SIMD byte-path optimization). Use `[GenerateBinder]` for maximum throughput.
 - `ForEach` extension methods are not supported with fluent maps — use `FromText()` / `FromFile()` / `FromStream()` instead.
 
 ---

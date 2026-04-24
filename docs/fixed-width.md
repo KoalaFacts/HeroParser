@@ -43,7 +43,7 @@ HeroParser provides comprehensive support for fixed-width (fixed-length) file pa
 
 ### Typed Record Reading
 
-Annotate record properties with `[PositionalMap]` (or the legacy `[FixedWidthColumn]`) to declare field positions, then call `FixedWidth.Read<T>()`:
+Annotate record properties with `[PositionalMap]` to declare field positions, then call `FixedWidth.Read<T>()`. (Migrating from 1.x? See [migration-v1-to-v2.md](migration-v1-to-v2.md).)
 
 ```csharp
 [GenerateBinder]
@@ -529,7 +529,7 @@ public class Transaction
 
 ### PositionalMap Attribute
 
-`[PositionalMap]` declares a property's position in the fixed-width record. It is the v2 replacement for `[FixedWidthColumn]`.
+`[PositionalMap]` declares a property's position in the fixed-width record.
 
 ```csharp
 [PositionalMap(Start = 0, Length = 10)]
@@ -680,7 +680,7 @@ Both converters operate on `IReadOnlyList<FixedWidthFieldDefinition>`. Each `Fix
 
 ## Source Generators
 
-Add `[GenerateBinder]` to your record class to have the source generator emit a compile-time binder. This is the v2 replacement for `[FixedWidthGenerateBinder]`.
+Add `[GenerateBinder]` to your record class to have the source generator emit a compile-time binder.
 
 ```csharp
 [GenerateBinder]

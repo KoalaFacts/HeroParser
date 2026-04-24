@@ -114,7 +114,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
             var returnTypeName = recordTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var safeTypeName = CreateSafeClassName(recordTypeSymbol);
 
-            // Check if record type has [CsvGenerateBinder] attribute (required for AOT)
+            // Check if record type has [GenerateBinder] attribute (required for AOT)
             bool hasGenerateBinderAttribute = recordTypeSymbol.GetAttributes()
                 .Any(a => a.AttributeClass != null &&
                           generateBinderAttributeNames.Contains(a.AttributeClass.ToDisplayString()));
@@ -147,7 +147,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
 
     private static void EmitDispatcher(SourceProductionContext context, DispatcherDescriptor descriptor)
     {
-        // Report diagnostics for missing [CsvGenerateBinder] attributes
+        // Report diagnostics for missing [GenerateBinder] attributes
         foreach (var mapping in descriptor.Mappings.Where(m => !m.HasGenerateBinderAttribute))
         {
             context.ReportDiagnostic(Diagnostic.Create(

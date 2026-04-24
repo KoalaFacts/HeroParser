@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using HeroParser.Excels.Core;
 using HeroParser.Excels.Xlsx;
 using HeroParser.SeparatedValues.Mapping;
@@ -295,13 +296,82 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
         return ReadRecords(sheetReader, sheet.Name);
     }
 
+    /// <summary>
+    /// Asynchronously reads typed records from an Excel file, yielding each record as it is parsed
+    /// rather than loading the entire result into memory.
+    /// </summary>
+    /// <param name="path">The path to the .xlsx file.</param>
+    /// <param name="cancellationToken">Token to cancel enumeration between rows.</param>
+    /// <returns>An async sequence of deserialized records.</returns>
+    public async IAsyncEnumerable<T> FromFileAsync(
+        string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var fileStream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        try
+        {
+            await foreach (var record in FromStreamAsync(fileStream, cancellationToken).ConfigureAwait(false))
+            {
+                yield return record;
+            }
+        }
+        finally
+        {
+            await fileStream.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously reads typed records from a stream containing .xlsx data, yielding each record
+    /// as it is parsed rather than loading the entire result into memory.
+    /// </summary>
+    /// <param name="stream">A seekable stream containing .xlsx data.</param>
+    /// <param name="cancellationToken">Token to cancel enumeration between rows.</param>
+    /// <returns>An async sequence of deserialized records.</returns>
+    public async IAsyncEnumerable<T> FromStreamAsync(
+        Stream stream,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        await Task.Yield();
+
+        using var xlsxReader = new XlsxReader(stream);
+        var sheet = ResolveSheet(xlsxReader.Workbook);
+        using var sheetReader = xlsxReader.OpenSheet(sheet);
+
+        foreach (var record in EnumerateRecords(sheetReader, sheet.Name))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return record;
+        }
+    }
+
     internal List<T> ReadRecords(XlsxSheetReader sheetReader, string currentSheetName)
+    {
+        var results = new List<T>();
+        foreach (var record in EnumerateRecords(sheetReader, currentSheetName))
+        {
+            results.Add(record);
+        }
+        return results;
+    }
+
+    private IEnumerable<T> EnumerateRecords(XlsxSheetReader sheetReader, string currentSheetName)
     {
         // Skip configured rows
         for (int i = 0; i < skipRows; i++)
         {
             if (sheetReader.ReadNextRow() is null)
-                return [];
+                yield break;
         }
 
         // Get binder
@@ -337,7 +407,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
         {
             var headerCells = sheetReader.ReadNextRow();
             if (headerCells is null)
-                return [];
+                yield break;
 
             if (binder.NeedsHeaderResolution)
             {
@@ -348,7 +418,6 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             }
         }
 
-        var results = new List<T>();
         var errors = new List<ValidationError>();
         int rowsRead = 0;
         char[] buffer = [];
@@ -366,12 +435,12 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             XlsxRowAdapter.EnsureBuffers(cells, ref buffer, ref columnEnds);
             var csvRow = XlsxRowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber, buffer, columnEnds);
 
+            T record = default!;
+            bool produced = false;
+            bool skipDueToError = false;
             try
             {
-                if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record, errors))
-                {
-                    results.Add(record);
-                }
+                produced = binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out record, errors);
             }
             catch (Exception ex) when (onDeserializeError is not null)
             {
@@ -386,7 +455,15 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
                 var action = onDeserializeError(context, ex);
                 if (action == ExcelDeserializeErrorAction.Throw)
                     throw;
+                skipDueToError = true;
+            }
+
+            if (skipDueToError)
                 continue; // SkipRecord: skip rowsRead++ so skipped rows don't count toward maxRows
+
+            if (produced)
+            {
+                yield return record;
             }
 
             rowsRead++;
@@ -405,8 +482,6 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
         {
             progress.Report(new ExcelProgress(rowsRead, currentSheetName));
         }
-
-        return results;
     }
 
     private XlsxWorkbook.SheetInfo ResolveSheet(XlsxWorkbook workbook)

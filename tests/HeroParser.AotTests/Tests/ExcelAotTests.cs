@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using HeroParser.AotTests.Models;
 
 namespace HeroParser.AotTests.Tests;
@@ -8,6 +9,23 @@ namespace HeroParser.AotTests.Tests;
 /// any hidden reflection or dynamic-code dependency in the Excel pipeline
 /// surfaces as an ILCompiler warning or runtime failure under PublishAot=true.
 /// </summary>
+/// <remarks>
+/// The <see cref="UnconditionalSuppressMessageAttribute"/>s below are required
+/// because the public <see cref="Excel"/> write facades are annotated with
+/// <c>[RequiresUnreferencedCode]</c> + <c>[RequiresDynamicCode]</c> to warn users
+/// who might call them with types lacking <c>[GenerateBinder]</c>. Every record
+/// type used in this test class carries <c>[GenerateBinder]</c>, so the runtime
+/// hits the source-generated template path, never reflection, and the warnings
+/// do not represent real AOT hazards here.
+/// </remarks>
+[UnconditionalSuppressMessage(
+    "Trimming",
+    "IL2026:Members attributed with RequiresUnreferencedCode may break when trimming",
+    Justification = "All record types in this test class are decorated with [GenerateBinder]; the reflection fallback in Excel.Write is never taken.")]
+[UnconditionalSuppressMessage(
+    "AOT",
+    "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling.",
+    Justification = "All record types in this test class are decorated with [GenerateBinder]; the reflection fallback in Excel.Write is never taken.")]
 public static class ExcelAotTests
 {
     public static void Run(TestRunner runner)

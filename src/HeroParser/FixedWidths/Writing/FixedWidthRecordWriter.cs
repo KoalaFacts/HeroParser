@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -544,11 +545,11 @@ public static partial class FixedWidthRecordWriterFactory
     /// of <see cref="FixedWidth"/>.WriteToText / ToFile / ToStream — those facades work correctly for any
     /// type decorated with <c>[GenerateBinder]</c>.
     /// </remarks>
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+    [UnconditionalSuppressMessage(
         "Trimming",
         "IL2026:Members attributed with RequiresUnreferencedCode may break when trimming",
         Justification = "Reflection fallback only runs when no [GenerateBinder] is registered for T. Users under AOT are expected to decorate T.")]
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+    [UnconditionalSuppressMessage(
         "AOT",
         "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling.",
         Justification = "Reflection fallback only runs when no [GenerateBinder] is registered for T. Users under AOT are expected to decorate T.")]

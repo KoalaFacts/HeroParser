@@ -51,19 +51,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         IReadOnlyList<string>? nullValues = null,
         CustomConverterDictionary? customConverters = null)
     {
-        return CreateFromTemplates(culture, errorHandler, CreateTemplatesFromReflection(), nullValues, customConverters);
-    }
-
-    /// <summary>
-    /// Creates a binder from pre-built templates (used by source generator).
-    /// </summary>
-    public static FixedWidthRecordBinder<T> CreateFromTemplates(
-        CultureInfo? culture,
-        FixedWidthDeserializeErrorHandler? errorHandler,
-        IReadOnlyList<BindingTemplate> templates,
-        IReadOnlyList<string>? nullValues = null,
-        CustomConverterDictionary? customConverters = null)
-    {
+        var templates = CreateTemplatesFromReflection();
         var layouts = new FixedWidthFieldLayout[templates.Count];
         for (int i = 0; i < templates.Count; i++)
         {

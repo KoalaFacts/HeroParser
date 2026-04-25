@@ -543,7 +543,7 @@ internal static class CsvRowParser
         where TTrack : struct
         where TQuotePolicy : struct
     {
-        if (!Avx2.IsSupported)
+        if (!HardwareCapabilities.Avx2IsSupported)
             return false;
 
         int columnCapacity = columnEnds.Length - 1;
@@ -706,7 +706,7 @@ internal static class CsvRowParser
 
             // CLMUL fast path for quoted fields (when PCLMULQDQ is available)
             // JIT eliminates this entire block when TQuotePolicy is QuotesDisabled
-            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported)
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && HardwareCapabilities.PclmulqdqIsSupported)
             {
                 uint quoteMask = (uint)Avx2.MoveMask(quoteMatch);
                 uint delimMask = (uint)Avx2.MoveMask(delimMatch);
@@ -972,7 +972,7 @@ internal static class CsvRowParser
         where TTrack : struct
         where TQuotePolicy : struct
     {
-        if (!Avx512BW.IsSupported)
+        if (!HardwareCapabilities.Avx512BWIsSupported)
             return false;
 
         int columnCapacity = columnEnds.Length - 1;
@@ -1122,7 +1122,7 @@ internal static class CsvRowParser
                 }
             }
 
-            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported)
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && HardwareCapabilities.PclmulqdqIsSupported)
             {
                 uint quoteMask = (uint)quoteMatch.ExtractMostSignificantBits();
                 uint delimMask = (uint)delimMatch.ExtractMostSignificantBits();
@@ -1392,7 +1392,7 @@ internal static class CsvRowParser
         where TTrack : struct
         where TQuotePolicy : struct
     {
-        if (Avx512BW.IsSupported)
+        if (HardwareCapabilities.Avx512BWIsSupported)
         {
             return TrySimdParseUtf16Avx512<TTrack, TQuotePolicy>(
                 ref mutableRef,
@@ -1418,7 +1418,7 @@ internal static class CsvRowParser
                 maxFieldLength);
         }
 
-        if (!Avx2.IsSupported)
+        if (!HardwareCapabilities.Avx2IsSupported)
             return false;
 
         int columnCapacity = columnEnds.Length - 1;
@@ -1573,7 +1573,7 @@ internal static class CsvRowParser
             }
 
             // CLMUL fast path for quoted fields (when PCLMULQDQ is available)
-            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && Pclmulqdq.IsSupported)
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && HardwareCapabilities.PclmulqdqIsSupported)
             {
                 uint quoteMask = quoteMatch.ExtractMostSignificantBits();
                 uint delimMask = delimMatch.ExtractMostSignificantBits();

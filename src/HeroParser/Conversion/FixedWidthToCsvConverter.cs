@@ -29,6 +29,17 @@ public sealed record FixedWidthToCsvOptions
     public string NewLine { get; init; } = "\r\n";
 
     /// <summary>
+    /// Gets or sets how spreadsheet-formula injection in field values is handled.
+    /// </summary>
+    /// <remarks>
+    /// Default is <see cref="CsvInjectionProtection.EscapeWithQuote"/>, matching <see cref="CsvWriteOptions"/>.
+    /// Fixed-width data often originates from upstream systems where trimmed strings can start with
+    /// <c>=</c>/<c>+</c>/<c>-</c>/<c>@</c>/<c>\t</c>/<c>\r</c>; without protection these would execute as
+    /// formulas when the converted CSV is opened in a spreadsheet.
+    /// </remarks>
+    public CsvInjectionProtection InjectionProtection { get; init; } = CsvInjectionProtection.EscapeWithQuote;
+
+    /// <summary>
     /// Gets the default options.
     /// </summary>
     public static FixedWidthToCsvOptions Default { get; } = new();
@@ -73,7 +84,9 @@ public static class FixedWidthToCsvConverter
             for (int i = 0; i < columns.Count; i++)
             {
                 if (i > 0) sb.Append(options.Delimiter);
-                WriteCsvField(sb, columns[i].Name, options.Delimiter, options.Quote);
+                // Column names come from developer-supplied metadata, so injection protection isn't
+                // applied to them — but quoting still happens if a name contains delimiter/quote/newline.
+                WriteCsvField(sb, columns[i].Name, options.Delimiter, options.Quote, CsvInjectionProtection.None);
             }
             sb.Append(options.NewLine);
         }
@@ -105,7 +118,7 @@ public static class FixedWidthToCsvConverter
                     _ => field.TrimEnd(col.PadChar)
                 };
 
-                WriteCsvField(sb, trimmed, options.Delimiter, options.Quote);
+                WriteCsvField(sb, trimmed, options.Delimiter, options.Quote, options.InjectionProtection);
             }
             sb.Append(options.NewLine);
         }
@@ -113,8 +126,14 @@ public static class FixedWidthToCsvConverter
         return sb.ToString();
     }
 
-    private static void WriteCsvField(System.Text.StringBuilder sb, string value, char delimiter, char quote)
+    private static void WriteCsvField(System.Text.StringBuilder sb, string value, char delimiter, char quote, CsvInjectionProtection injectionProtection)
     {
+        if (injectionProtection != CsvInjectionProtection.None && IsDangerousField(value))
+        {
+            WriteFieldWithInjectionProtection(sb, value, quote, injectionProtection);
+            return;
+        }
+
         bool needsQuoting = value.Contains(delimiter) || value.Contains(quote) || value.Contains('\r') || value.Contains('\n');
 
         if (needsQuoting)
@@ -132,5 +151,81 @@ public static class FixedWidthToCsvConverter
         {
             sb.Append(value);
         }
+    }
+
+    private static bool IsDangerousField(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return false;
+        char first = value[0];
+        switch (first)
+        {
+            case '=':
+            case '@':
+            case '\t':
+            case '\r':
+                return true;
+            case '-':
+            case '+':
+                if (value.Length == 1) return false;
+                char second = value[1];
+                return !((uint)(second - '0') <= 9 || second == '.');
+            default:
+                return false;
+        }
+    }
+
+    private static void WriteFieldWithInjectionProtection(System.Text.StringBuilder sb, string value, char quote, CsvInjectionProtection injectionProtection)
+    {
+        switch (injectionProtection)
+        {
+            case CsvInjectionProtection.EscapeWithQuote:
+                WriteQuotedFieldWithPrefix(sb, value, '\'', quote);
+                break;
+            case CsvInjectionProtection.EscapeWithTab:
+                WriteQuotedFieldWithPrefix(sb, value, '\t', quote);
+                break;
+            case CsvInjectionProtection.Sanitize:
+                sb.Append(StripDangerousPrefix(value));
+                break;
+            case CsvInjectionProtection.Reject:
+                throw new HeroParser.SeparatedValues.Core.CsvException(
+                    HeroParser.SeparatedValues.Core.CsvErrorCode.InjectionDetected,
+                    $"CSV injection detected: field starts with dangerous character '{value[0]}'");
+            default:
+                sb.Append(value);
+                break;
+        }
+    }
+
+    private static void WriteQuotedFieldWithPrefix(System.Text.StringBuilder sb, string value, char prefix, char quote)
+    {
+        sb.Append(quote);
+        sb.Append(prefix);
+        foreach (var ch in value)
+        {
+            if (ch == quote)
+                sb.Append(quote);
+            sb.Append(ch);
+        }
+        sb.Append(quote);
+    }
+
+    private static string StripDangerousPrefix(string value)
+    {
+        int start = 0;
+        while (start < value.Length)
+        {
+            char c = value[start];
+            bool dangerous = c == '=' || c == '@' || c == '\t' || c == '\r';
+            if (!dangerous && (c == '-' || c == '+') && start + 1 < value.Length)
+            {
+                char next = value[start + 1];
+                dangerous = !((uint)(next - '0') <= 9 || next == '.');
+            }
+            if (!dangerous)
+                break;
+            start++;
+        }
+        return start == 0 ? value : value[start..];
     }
 }

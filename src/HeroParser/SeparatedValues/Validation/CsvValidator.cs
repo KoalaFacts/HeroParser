@@ -119,14 +119,28 @@ public static class CsvValidator
         return ValidateStructure(data, parseOptions, options, errors);
     }
 
+    // Maximum size of UTF-8 input accepted by the byte-overload of Validate. The overload must
+    // fully decode the input into UTF-16 before parsing, so the worst-case heap allocation is
+    // 2 * this value. Callers with larger inputs should use a stream-based validation entry point.
+    private const int MAX_UTF8_INPUT_BYTES = 64 * 1024 * 1024;
+
     /// <summary>
     /// Validates UTF-8 encoded CSV data according to the specified options.
     /// </summary>
     /// <param name="data">The CSV data to validate (UTF-8).</param>
     /// <param name="options">Validation options. If null, default options are used.</param>
     /// <returns>A validation result containing any errors found.</returns>
+    /// <exception cref="ArgumentException">The input exceeds the maximum supported size.</exception>
     public static CsvValidationResult Validate(ReadOnlySpan<byte> data, CsvValidationOptions? options = null)
     {
+        if (data.Length > MAX_UTF8_INPUT_BYTES)
+        {
+            throw new ArgumentException(
+                $"Input exceeds the maximum supported size for in-memory validation ({MAX_UTF8_INPUT_BYTES} bytes). " +
+                "Use a stream-based validation API for larger inputs.",
+                nameof(data));
+        }
+
         // Decode UTF-8 to UTF-16 for validation
         var charCount = Encoding.UTF8.GetCharCount(data);
         Span<char> chars = charCount <= 8192

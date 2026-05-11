@@ -102,6 +102,17 @@ public sealed record ExcelWriteOptions
     public long? MaxOutputSize { get; init; }
 
     /// <summary>
+    /// Gets or sets how spreadsheet-formula injection is handled when writing string cells.
+    /// </summary>
+    /// <remarks>
+    /// <para>Default is <see cref="ExcelInjectionProtection.EscapeWithApostrophe"/>, which prefixes any
+    /// value starting with <c>=</c>/<c>+</c>/<c>-</c>/<c>@</c>/<c>\t</c>/<c>\r</c> with an apostrophe so the
+    /// receiving spreadsheet treats it as literal text instead of a formula.</para>
+    /// <para>Set to <see cref="ExcelInjectionProtection.None"/> only when the data source is fully trusted.</para>
+    /// </remarks>
+    public ExcelInjectionProtection InjectionProtection { get; init; } = ExcelInjectionProtection.EscapeWithApostrophe;
+
+    /// <summary>
     /// Gets or sets the progress reporter notified during writing.
     /// </summary>
     public IProgress<ExcelWriteProgress>? WriteProgress { get; init; }

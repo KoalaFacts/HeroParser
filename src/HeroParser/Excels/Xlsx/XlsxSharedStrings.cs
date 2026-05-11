@@ -20,6 +20,11 @@ internal sealed class XlsxSharedStrings
     /// <summary>Gets the shared string at the specified index.</summary>
     public string this[int index] => strings[index];
 
+    // Cap for the pre-allocation capacity derived from the attacker-controlled `uniqueCount`
+    // attribute. Excel's own limit on distinct strings per workbook is well below this; values
+    // above the cap let the List grow naturally instead of pre-reserving gigabytes of pointers.
+    private const int MAX_PREALLOCATED_CAPACITY = 65_536;
+
     /// <summary>
     /// Parses the shared string table from the given stream.
     /// </summary>
@@ -35,7 +40,11 @@ internal sealed class XlsxSharedStrings
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "sst")
             {
                 var uniqueCountAttr = reader.GetAttribute("uniqueCount");
-                int capacity = uniqueCountAttr is not null && int.TryParse(uniqueCountAttr, out int uc) && uc > 0 ? uc : 0;
+                int capacity = 0;
+                if (uniqueCountAttr is not null && int.TryParse(uniqueCountAttr, out int uc) && uc > 0)
+                {
+                    capacity = Math.Min(uc, MAX_PREALLOCATED_CAPACITY);
+                }
                 result = new List<string>(capacity);
                 continue;
             }

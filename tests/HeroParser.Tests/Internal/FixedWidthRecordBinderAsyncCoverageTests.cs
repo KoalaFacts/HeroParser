@@ -68,7 +68,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         var reader = await WriteSmallSegmentsAsync(Sample(5), segmentSize: 16, ct);
 
         var list = new List<GenRow>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<GenRow>(reader,
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<GenRow>(reader,
             cancellationToken: ct))
         {
             list.Add(r);
@@ -86,7 +86,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         var reader = await WriteSmallSegmentsAsync(Sample(5), segmentSize: 16, ct);
 
         var list = new List<ReflectionRow>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<ReflectionRow>(reader,
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<ReflectionRow>(reader,
             cancellationToken: ct))
         {
             list.Add(r);
@@ -103,7 +103,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         var pipe = PipeReader.Create(new MemoryStream(bytes));
 
         var list = new List<GenRow>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<GenRow>(pipe,
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<GenRow>(pipe,
             encoding: Encoding.Latin1,
             cancellationToken: ct))
         {
@@ -131,7 +131,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         await pipe.Writer.CompleteAsync();
 
         var list = new List<GenRow>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<GenRow>(pipe.Reader,
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<GenRow>(pipe.Reader,
             encoding: Encoding.Latin1,
             cancellationToken: ct))
         {
@@ -148,7 +148,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         var pipe = PipeReader.Create(new MemoryStream(bytes));
 
         var list = new List<ReflectionRow>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<ReflectionRow>(pipe,
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<ReflectionRow>(pipe,
             encoding: Encoding.Latin1,
             cancellationToken: ct))
         {
@@ -166,7 +166,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
 
         var list = new List<ReflectionRow>();
         // Use the builder which supports progress reporter.
-        await foreach (var r in HeroParser.FixedWidth.Read<ReflectionRow>()
+        await foreach (var r in FixedWidth.Read<ReflectionRow>()
             .WithProgress(new Progress<FixedWidthProgress>(reports.Add), intervalRows: 10)
             .FromPipeReaderAsync(pipe, ct))
         {
@@ -186,7 +186,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
            .Map(r => r.Age, c => c.Start(5).Length(5).PadChar('0').Alignment(FieldAlignment.Right));
 
         var list = new List<ReflectionRow>();
-        await foreach (var r in HeroParser.FixedWidth.Read<ReflectionRow>()
+        await foreach (var r in FixedWidth.Read<ReflectionRow>()
             .WithMap(map)
             .FromPipeReaderAsync(reader, ct))
         {
@@ -214,7 +214,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         await pipe.Writer.CompleteAsync();
 
         var list = new List<GenRow>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<GenRow>(pipe.Reader,
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<GenRow>(pipe.Reader,
             encoding: Encoding.Latin1,
             cancellationToken: ct))
         {
@@ -234,7 +234,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         var pipe = PipeReader.Create(new MemoryStream(bytes));
 
         var list = new List<GenRow>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<GenRow>(pipe,
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<GenRow>(pipe,
             encoding: encoding,
             cancellationToken: ct))
         {
@@ -255,7 +255,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
            .Map(r => r.Age, c => c.Start(5).Length(5).PadChar('0').Alignment(FieldAlignment.Right));
 
         var list = new List<ReflectionRow>();
-        await foreach (var r in HeroParser.FixedWidth.Read<ReflectionRow>()
+        await foreach (var r in FixedWidth.Read<ReflectionRow>()
             .WithMap(map)
             .WithEncoding(Encoding.Latin1)
             .FromPipeReaderAsync(pipe, ct))
@@ -274,7 +274,7 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         var pipe = PipeReader.Create(new MemoryStream(bytes));
 
         var list = new List<ReflectionRow>();
-        await foreach (var r in HeroParser.FixedWidth.Read<ReflectionRow>()
+        await foreach (var r in FixedWidth.Read<ReflectionRow>()
             .WithCulture(CultureInfo.GetCultureInfo("en-GB"))
             .FromPipeReaderAsync(pipe, ct))
         {

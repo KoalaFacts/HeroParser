@@ -1,4 +1,5 @@
 using HeroParser.FixedWidths;
+using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Writing;
 
 namespace HeroParser.Conversion;
@@ -188,8 +189,8 @@ public static class FixedWidthToCsvConverter
                 sb.Append(StripDangerousPrefix(value));
                 break;
             case CsvInjectionProtection.Reject:
-                throw new HeroParser.SeparatedValues.Core.CsvException(
-                    HeroParser.SeparatedValues.Core.CsvErrorCode.InjectionDetected,
+                throw new CsvException(
+                    CsvErrorCode.InjectionDetected,
                     $"CSV injection detected: field starts with dangerous character '{value[0]}'");
             case CsvInjectionProtection.None:
             default:

@@ -107,7 +107,7 @@ public class FixedWidthAllTypesByteRoundTripTests
         var pipe = PipeReader.Create(new MemoryStream(bytes));
 
         var records = new List<AllTypes>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<AllTypes>(
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<AllTypes>(
             pipe, cancellationToken: TestContext.Current.CancellationToken))
         {
             records.Add(r);
@@ -139,7 +139,7 @@ public class FixedWidthAllTypesByteRoundTripTests
         var pipe = PipeReader.Create(new MemoryStream(bytes));
 
         var records = new List<NullableAll>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<NullableAll>(
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<NullableAll>(
             pipe, cancellationToken: TestContext.Current.CancellationToken))
         {
             records.Add(r);
@@ -161,7 +161,7 @@ public class FixedWidthAllTypesByteRoundTripTests
         var pipe = PipeReader.Create(new MemoryStream(bytes));
 
         var records = new List<NullableAll>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<NullableAll>(
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<NullableAll>(
             pipe, cancellationToken: TestContext.Current.CancellationToken))
         {
             records.Add(r);
@@ -190,7 +190,7 @@ public class FixedWidthAllTypesByteRoundTripTests
         var pipe = PipeReader.Create(new MemoryStream(bytes));
 
         var records = new List<NullableAll>();
-        await foreach (var r in HeroParser.FixedWidth.DeserializeRecordsAsync<NullableAll>(
+        await foreach (var r in FixedWidth.DeserializeRecordsAsync<NullableAll>(
             pipe, cancellationToken: TestContext.Current.CancellationToken))
         {
             records.Add(r);

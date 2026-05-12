@@ -33,6 +33,10 @@ public static class CsvDelimiterDetector
     /// </summary>
     public const int DEFAULT_SAMPLE_ROWS = 10;
 
+    // Detection only inspects the first few rows, so the byte-overload truncates oversized inputs
+    // before UTF-16 decoding to keep the worst-case allocation bounded.
+    private const int MAX_DETECTION_BYTES = 1 * 1024 * 1024;
+
     /// <summary>
     /// Detects the most likely delimiter character in the CSV data.
     /// </summary>
@@ -81,8 +85,13 @@ public static class CsvDelimiterDetector
     /// </exception>
     public static char DetectDelimiter(ReadOnlySpan<byte> data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
-        // Decode UTF-8 to UTF-16 for analysis
-        // For delimiter detection, we only need to decode a small sample
+        // Delimiter detection only needs the first few rows. Slice the input so a giant attacker-
+        // controlled byte span doesn't force a multi-MB UTF-16 decode allocation.
+        if (data.Length > MAX_DETECTION_BYTES)
+        {
+            data = data[..MAX_DETECTION_BYTES];
+        }
+
         var charCount = Encoding.UTF8.GetCharCount(data);
         Span<char> chars = charCount <= 4096
             ? stackalloc char[charCount]

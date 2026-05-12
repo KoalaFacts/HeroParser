@@ -1,3 +1,4 @@
+using System.Runtime.Intrinsics.X86;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Shared;
@@ -54,6 +55,7 @@ public class CsvSimdLevelCoverageTests
     [Fact]
     public void Avx512Forced_Off_Avx2_On_Pclmul_On_Unquoted()
     {
+        Assert.SkipUnless(Avx2.IsSupported, "Forces avx2 = true; requires real AVX2 hardware (skipping on ARM macOS).");
         using (HardwareCapabilities.Override(avx512BW: false, avx2: true, pclmulqdq: true))
         {
             var records = Parse(Sample(64));
@@ -64,6 +66,7 @@ public class CsvSimdLevelCoverageTests
     [Fact]
     public void Avx512Forced_Off_Avx2_On_Pclmul_On_Quoted()
     {
+        Assert.SkipUnless(Avx2.IsSupported, "Forces avx2 = true; requires real AVX2 hardware (skipping on ARM macOS).");
         using (HardwareCapabilities.Override(avx512BW: false, avx2: true, pclmulqdq: true))
         {
             var records = Parse(SampleWithQuotes(64));
@@ -74,6 +77,7 @@ public class CsvSimdLevelCoverageTests
     [Fact]
     public void Avx512Forced_Off_Avx2_On_Pclmul_Off_Quoted()
     {
+        Assert.SkipUnless(Avx2.IsSupported, "Forces avx2 = true; requires real AVX2 hardware (skipping on ARM macOS).");
         // Disabling PCLMULQDQ forces the non-CLMUL quote-handling branch in the AVX2 path.
         using (HardwareCapabilities.Override(avx512BW: false, avx2: true, pclmulqdq: false))
         {

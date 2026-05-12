@@ -277,7 +277,7 @@ public sealed class ExcelWriterBuilder<T> where T : new()
         var options = GetOptions();
         var recordWriter = GetRecordWriter(options);
 
-        using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen);
+        using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen, injectionProtection: options.InjectionProtection);
         using var sheetWriter = xlsxWriter.StartSheet(sheetName);
         recordWriter.WriteRecords(sheetWriter, records, options, sheetName);
     }

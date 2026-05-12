@@ -34,14 +34,20 @@ public sealed class XlsxWriter : IDisposable
     private readonly ZipArchive archive;
     private readonly XlsxSharedStringTable sharedStrings = new();
     private readonly List<string> sheetNames = [];
+    private readonly ExcelInjectionProtection injectionProtection;
     private bool disposed;
 
     /// <summary>Opens a new .xlsx writer over the given stream in Create mode.</summary>
     /// <param name="stream">Writable stream to receive the .xlsx data.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the stream is not closed on Dispose.</param>
-    public XlsxWriter(Stream stream, bool leaveOpen = false)
+    /// <param name="injectionProtection">
+    /// Controls how string cells beginning with formula-trigger characters are sanitised.
+    /// Defaults to <see cref="ExcelInjectionProtection.EscapeWithApostrophe"/>.
+    /// </param>
+    public XlsxWriter(Stream stream, bool leaveOpen = false, ExcelInjectionProtection injectionProtection = ExcelInjectionProtection.EscapeWithApostrophe)
     {
         archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: leaveOpen);
+        this.injectionProtection = injectionProtection;
     }
 
     // Maximum sheet name length per Excel specification.
@@ -63,7 +69,7 @@ public sealed class XlsxWriter : IDisposable
 
         var entryName = $"xl/worksheets/sheet{sheetIndex}.xml";
         var entry = archive.CreateEntry(entryName);
-        return new SheetWriter(entry.Open(), sharedStrings);
+        return new SheetWriter(entry.Open(), sharedStrings, injectionProtection);
     }
 
     /// <summary>Finalises the workbook by writing package-level XML parts and disposes the archive.</summary>
@@ -386,6 +392,7 @@ public sealed class XlsxWriter : IDisposable
 
         private readonly Stream stream;
         private readonly XlsxSharedStringTable sharedStrings;
+        private readonly ExcelInjectionProtection injectionProtection;
         private readonly byte[] buffer;
         private int bufferPos;
         private long totalBytesWritten;
@@ -399,10 +406,11 @@ public sealed class XlsxWriter : IDisposable
         // Pre-formatted column letter bytes (cached per column, lazily built)
         private static readonly byte[][] columnLetterBytes = new byte[16384][];
 
-        internal SheetWriter(Stream stream, XlsxSharedStringTable sharedStrings)
+        internal SheetWriter(Stream stream, XlsxSharedStringTable sharedStrings, ExcelInjectionProtection injectionProtection = ExcelInjectionProtection.EscapeWithApostrophe)
         {
             this.stream = stream;
             this.sharedStrings = sharedStrings;
+            this.injectionProtection = injectionProtection;
             buffer = ArrayPool<byte>.Shared.Rent(BUFFER_SIZE);
             bufferPos = 0;
 
@@ -438,12 +446,66 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="value">The string value.</param>
         public void WriteCellString(int columnIndex, string value)
         {
-            int ssIndex = sharedStrings.GetOrAdd(value);
+            string sanitised = ApplyInjectionProtection(value);
+            int ssIndex = sharedStrings.GetOrAdd(sanitised);
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
             WriteRaw(cellStringTypeAttr);          // " t="s"><v>
             WriteInt(ssIndex);                     // 42
             WriteRaw(cellValueClose);              // </v></c>
+        }
+
+        // Applies the configured injection protection. The check is a single character comparison
+        // for non-dangerous values, so the cost on the common path is negligible.
+        private string ApplyInjectionProtection(string value)
+        {
+            if (injectionProtection == ExcelInjectionProtection.None || string.IsNullOrEmpty(value))
+                return value;
+
+            if (!IsDangerousLeadingChar(value))
+                return value;
+
+            return injectionProtection switch
+            {
+                ExcelInjectionProtection.EscapeWithApostrophe => "'" + value,
+                ExcelInjectionProtection.Sanitize => StripDangerousPrefix(value),
+                ExcelInjectionProtection.Reject => throw new ExcelException(
+                    $"Excel injection detected: cell value starts with dangerous character '{value[0]}'."),
+                ExcelInjectionProtection.None => value,
+                _ => value,
+            };
+        }
+
+        private static bool IsDangerousLeadingChar(ReadOnlySpan<char> value)
+        {
+            if (value.IsEmpty) return false;
+            char first = value[0];
+            switch (first)
+            {
+                case '=':
+                case '@':
+                case '\t':
+                case '\r':
+                    return true;
+                case '-':
+                case '+':
+                    if (value.Length == 1) return false;
+                    char second = value[1];
+                    return !((uint)(second - '0') <= 9 || second == '.');
+                default:
+                    return false;
+            }
+        }
+
+        private static string StripDangerousPrefix(string value)
+        {
+            int start = 0;
+            ReadOnlySpan<char> span = value.AsSpan();
+            while (start < span.Length && IsDangerousLeadingChar(span[start..]))
+            {
+                start++;
+            }
+            return start == 0 ? value : value[start..];
         }
 
         /// <summary>Writes a numeric cell.</summary>

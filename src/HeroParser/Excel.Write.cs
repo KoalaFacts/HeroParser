@@ -55,7 +55,7 @@ public static partial class Excel
         var recordWriter = ExcelRecordWriterFactory.GetWriter<T>(options);
 
         using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var xlsxWriter = new XlsxWriter(fileStream, leaveOpen: false);
+        using var xlsxWriter = new XlsxWriter(fileStream, leaveOpen: false, injectionProtection: options.InjectionProtection);
         using var sheetWriter = xlsxWriter.StartSheet(sheetName);
         recordWriter.WriteRecords(sheetWriter, records, options, sheetName);
     }
@@ -79,7 +79,7 @@ public static partial class Excel
         options ??= ExcelWriteOptions.Default;
         var recordWriter = ExcelRecordWriterFactory.GetWriter<T>(options);
 
-        using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen);
+        using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen, injectionProtection: options.InjectionProtection);
         using var sheetWriter = xlsxWriter.StartSheet(sheetName);
         recordWriter.WriteRecords(sheetWriter, records, options, sheetName);
     }

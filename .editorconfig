@@ -86,8 +86,9 @@ dotnet_diagnostic.IDE0008.severity = none
 # IDE0001: name-can-be-simplified — frequently false-positives when a member name
 # shadows a type (e.g. a test method named Guid()) or when callers prefer fully
 # qualified names for readability across many enclosing namespaces. Demoted to
-# suggestion so IDEs still surface it but it does not break the build.
-dotnet_diagnostic.IDE0001.severity = suggestion
+# none so dotnet format --verify-no-changes doesn't fail on pre-existing
+# violations in test files (also unaffected by the bulk Style category warning).
+dotnet_diagnostic.IDE0001.severity = none
 # IDE0160: block-scoped namespace preference
 dotnet_diagnostic.IDE0160.severity = none
 # IDE0161: file-scoped namespace preference

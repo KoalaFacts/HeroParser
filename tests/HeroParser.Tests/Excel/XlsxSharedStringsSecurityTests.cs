@@ -33,14 +33,15 @@ public class XlsxSharedStringsSecurityTests
 
     // Verifies that the shared XmlReaderSettings used by every .xlsx XML part has the security
     // limits configured. Behavioural testing of the underlying XmlReader is .NET's responsibility;
-    // this test guarantees we wired the caps in.
+    // this test guarantees we wired the caps in. XmlResolver is write-only on XmlReaderSettings,
+    // so it's not asserted here (the contract test below exercises the resolver = null path
+    // indirectly by relying on DtdProcessing.Prohibit).
     [Fact]
     public void CreateReaderSettings_HasSecurityCaps()
     {
         var settings = XlsxXml.CreateReaderSettings();
 
         Assert.Equal(DtdProcessing.Prohibit, settings.DtdProcessing);
-        Assert.Null(settings.XmlResolver);
         Assert.True(settings.MaxCharactersInDocument > 0,
             "MaxCharactersInDocument must be > 0 to bound zip-bomb decompression-attack memory");
         Assert.True(settings.MaxCharactersFromEntities > 0,

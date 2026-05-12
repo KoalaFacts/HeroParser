@@ -60,7 +60,7 @@ public class FixedWidthByteSpanColumnTests
     public void Guid()
     {
         Assert.True(new FixedWidthByteSpanColumn("12345678-1234-1234-1234-123456789012"u8).TryParseGuid(out var g));
-        Assert.NotEqual(Guid.Empty, g);
+        Assert.NotEqual(System.Guid.Empty, g);
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public class FixedWidthCharSpanColumnTests
         Assert.True(new FixedWidthCharSpanColumn("true".AsSpan()).TryParseBoolean(out var b));
         Assert.True(b);
         Assert.True(new FixedWidthCharSpanColumn("12345678-1234-1234-1234-123456789012".AsSpan()).TryParseGuid(out var g));
-        Assert.NotEqual(Guid.Empty, g);
+        Assert.NotEqual(System.Guid.Empty, g);
     }
 
     [Fact]
@@ -312,7 +312,7 @@ public class SpanParserFactoryTests
             SpanParserFactory.GetParser<DateOnly>()("2024-01-15".AsSpan(), CultureInfo.InvariantCulture));
         Assert.Equal(new TimeOnly(10, 30),
             SpanParserFactory.GetParser<TimeOnly>()("10:30".AsSpan(), CultureInfo.InvariantCulture));
-        Assert.NotEqual(Guid.Empty,
+        Assert.NotEqual(System.Guid.Empty,
             SpanParserFactory.GetParser<Guid>()("12345678-1234-1234-1234-123456789012".AsSpan(), CultureInfo.InvariantCulture));
     }
 

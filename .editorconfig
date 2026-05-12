@@ -89,6 +89,10 @@ dotnet_diagnostic.IDE0008.severity = none
 # none so dotnet format --verify-no-changes doesn't fail on pre-existing
 # violations in test files (also unaffected by the bulk Style category warning).
 dotnet_diagnostic.IDE0001.severity = none
+# IDE0002: simplify-member-access — same rationale as IDE0001 (e.g. fully qualified
+# pipe/stream/encoding member access in tests is intentional for readability).
+# Disabled so pre-existing test-suite violations don't fail the build.
+dotnet_diagnostic.IDE0002.severity = none
 # IDE0160: block-scoped namespace preference
 dotnet_diagnostic.IDE0160.severity = none
 # IDE0161: file-scoped namespace preference

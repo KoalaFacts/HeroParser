@@ -122,7 +122,7 @@ public static class CsvValidator
     // Maximum size of UTF-8 input accepted by the byte-overload of Validate. The overload must
     // fully decode the input into UTF-16 before parsing, so the worst-case heap allocation is
     // 2 * this value. Callers with larger inputs should use a stream-based validation entry point.
-    private const int MAX_UTF8_INPUT_BYTES = 64 * 1024 * 1024;
+    internal const int MAX_UTF8_INPUT_BYTES = 16 * 1024 * 1024;
 
     /// <summary>
     /// Validates UTF-8 encoded CSV data according to the specified options.

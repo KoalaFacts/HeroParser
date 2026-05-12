@@ -13,12 +13,12 @@ namespace HeroParser.Tests;
 public class ParserByteSpanSecurityTests
 {
     // Validate(byte[]) must reject inputs above the documented MAX_UTF8_INPUT_BYTES cap rather
-    // than allocating a 2x heap buffer to decode them. The cap is 64 MiB.
+    // than allocating a 2x heap buffer to decode them. The cap is read from the production
+    // constant so the test stays in sync if the limit is retuned.
     [Fact]
     public void Validate_BytesAboveMaxInputSize_ThrowsArgumentException()
     {
-        const int max = 64 * 1024 * 1024;
-        var data = new byte[max + 1];
+        var data = new byte[CsvValidator.MAX_UTF8_INPUT_BYTES + 1];
 
         Assert.Throws<ArgumentException>(() => CsvValidator.Validate(data.AsSpan()));
     }

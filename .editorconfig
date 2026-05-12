@@ -83,6 +83,11 @@ dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1822.severity = none
 # IDE0008: 'var' usage vs explicit type
 dotnet_diagnostic.IDE0008.severity = none
+# IDE0001: name-can-be-simplified — frequently false-positives when a member name
+# shadows a type (e.g. a test method named Guid()) or when callers prefer fully
+# qualified names for readability across many enclosing namespaces. Demoted to
+# suggestion so IDEs still surface it but it does not break the build.
+dotnet_diagnostic.IDE0001.severity = suggestion
 # IDE0160: block-scoped namespace preference
 dotnet_diagnostic.IDE0160.severity = none
 # IDE0161: file-scoped namespace preference

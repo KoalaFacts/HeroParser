@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <!-- Example project demonstrating an AI training-data pipeline; not part of the published package. -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+    <!-- Reflection-based JSONL paths in this example deliberately trigger trim/AOT warnings; suppress -->
+    <NoWarn>$(NoWarn);IL2026;IL3050</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
+  </ItemGroup>
+
+</Project>

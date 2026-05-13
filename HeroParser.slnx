@@ -2,6 +2,9 @@
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks\HeroParser.Benchmarks\HeroParser.Benchmarks.csproj" />
   </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples\HeroParser.Examples.AiPipeline\HeroParser.Examples.AiPipeline.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests\HeroParser.Tests\HeroParser.Tests.csproj" />
     <Project Path="tests\HeroParser.Generators.Tests\HeroParser.Generators.Tests.csproj" />

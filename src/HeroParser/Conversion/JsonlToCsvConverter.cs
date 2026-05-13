@@ -10,38 +10,42 @@ namespace HeroParser.Conversion;
 /// the first <see cref="JsonlToCsvOptions.SchemaInferencePeekRows"/> lines. Nested objects/arrays are
 /// emitted as JSON-encoded strings in their cell.
 /// </summary>
-public static class JsonlToCsvConverter
+public sealed class JsonlToCsvConverter
 {
+    private readonly JsonlToCsvOptions options;
+
     /// <summary>
-    /// Converts a JSONL string to a CSV string.
+    /// Initializes a new converter.
     /// </summary>
-    public static string Convert(string jsonlData, JsonlToCsvOptions? options = null)
+    /// <param name="options">Optional conversion options (defaults to <see cref="JsonlToCsvOptions.Default"/>).</param>
+    public JsonlToCsvConverter(JsonlToCsvOptions? options = null)
+    {
+        this.options = options ?? JsonlToCsvOptions.Default;
+    }
+
+    /// <summary>Converts a JSONL string to a CSV string.</summary>
+    public string Convert(string jsonlData)
     {
         ArgumentNullException.ThrowIfNull(jsonlData);
-        JsonlToCsvOptions opt = options ?? JsonlToCsvOptions.Default;
         byte[] bytes = Encoding.UTF8.GetBytes(jsonlData);
         using var input = new MemoryStream(bytes, writable: false);
         using var output = new StringWriter();
-        ConvertCore(input, output, opt);
+        ConvertCore(input, output);
         return output.ToString();
     }
 
-    /// <summary>
-    /// Converts a JSONL file to a CSV file.
-    /// </summary>
-    public static void Convert(string jsonlPath, string csvPath, JsonlToCsvOptions? options = null)
+    /// <summary>Converts a JSONL file to a CSV file.</summary>
+    public void Convert(string jsonlPath, string csvPath)
     {
         ArgumentNullException.ThrowIfNull(jsonlPath);
         ArgumentNullException.ThrowIfNull(csvPath);
-        JsonlToCsvOptions opt = options ?? JsonlToCsvOptions.Default;
         using FileStream input = new(jsonlPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         using StreamWriter output = new(new FileStream(csvPath, FileMode.Create, FileAccess.Write, FileShare.None), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        ConvertCore(input, output, opt);
+        ConvertCore(input, output);
     }
 
-    private static void ConvertCore(Stream jsonlStream, TextWriter csvWriter, JsonlToCsvOptions options)
+    private void ConvertCore(Stream jsonlStream, TextWriter csvWriter)
     {
-        // First pass: collect column union from peeked lines.
         List<string> peekedLines = [];
         List<string> columns = [];
         HashSet<string> seenCols = new(StringComparer.Ordinal);
@@ -64,10 +68,8 @@ public static class JsonlToCsvConverter
             }
         }
 
-        // Reset stream and read all lines for emission. Streams without seek aren't supported here —
-        // restart by replaying peeked lines first, then continuing the original reader if needed.
         CsvWriteOptions writeOpts = new() { Delimiter = options.Delimiter };
-        using var csv = new HeroParser.SeparatedValues.Writing.CsvStreamWriter(csvWriter, writeOpts, leaveOpen: true);
+        using var csv = new CsvStreamWriter(csvWriter, writeOpts, leaveOpen: true);
 
         csv.WriteRow(columns.ToArray());
 
@@ -78,7 +80,6 @@ public static class JsonlToCsvConverter
         {
             jsonlStream.Position = 0;
             using var rereader = new StreamReader(jsonlStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-            // Skip already-emitted peeked lines.
             for (int i = 0; i < peekedLines.Count; i++)
                 rereader.ReadLine();
 
@@ -88,7 +89,7 @@ public static class JsonlToCsvConverter
         }
     }
 
-    private static void EmitRow(HeroParser.SeparatedValues.Writing.CsvStreamWriter csv, string line, List<string> columns)
+    private static void EmitRow(CsvStreamWriter csv, string line, List<string> columns)
     {
         if (string.IsNullOrWhiteSpace(line)) return;
 

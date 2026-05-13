@@ -9,60 +9,61 @@ namespace HeroParser.Conversion;
 /// Converts CSV data to JSONL using a configurable shape — most usefully OpenAI/Anthropic chat-completion
 /// fine-tuning records produced from a tabular Q/A dataset.
 /// </summary>
-public static class CsvToJsonlConverter
+/// <remarks>
+/// Instance type so the shape and options can be captured once and reused (and so the converter
+/// can be injected through DI in pipeline scenarios).
+/// </remarks>
+public sealed class CsvToJsonlConverter
 {
+    private readonly CsvToJsonlShape shape;
+    private readonly CsvToJsonlOptions options;
+
     /// <summary>
-    /// Converts a CSV string to a JSONL string using the given <paramref name="shape"/>.
+    /// Initializes a new converter.
     /// </summary>
-    public static string Convert(string csvData, CsvToJsonlShape shape, CsvToJsonlOptions? options = null)
+    /// <param name="shape">The JSONL row shape (flat object, OpenAI chat, Anthropic messages, …).</param>
+    /// <param name="options">Optional conversion options (defaults to <see cref="CsvToJsonlOptions.Default"/>).</param>
+    public CsvToJsonlConverter(CsvToJsonlShape shape, CsvToJsonlOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(shape);
+        this.shape = shape;
+        this.options = options ?? CsvToJsonlOptions.Default;
+    }
+
+    /// <summary>Converts a CSV string to a JSONL string.</summary>
+    public string Convert(string csvData)
     {
         ArgumentNullException.ThrowIfNull(csvData);
-        ArgumentNullException.ThrowIfNull(shape);
-        CsvToJsonlOptions opt = options ?? CsvToJsonlOptions.Default;
         using var stream = new MemoryStream();
-        ConvertCore(csvData.AsSpan(), shape, opt, stream);
+        ConvertCore(csvData.AsSpan(), stream);
         return Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
     }
 
-    /// <summary>
-    /// Converts a CSV file to a JSONL file.
-    /// </summary>
-    public static void Convert(string csvPath, string jsonlPath, CsvToJsonlShape shape, CsvToJsonlOptions? options = null)
+    /// <summary>Converts a CSV file to a JSONL file.</summary>
+    public void Convert(string csvPath, string jsonlPath)
     {
         ArgumentNullException.ThrowIfNull(csvPath);
         ArgumentNullException.ThrowIfNull(jsonlPath);
-        ArgumentNullException.ThrowIfNull(shape);
-        CsvToJsonlOptions opt = options ?? CsvToJsonlOptions.Default;
         string csvText = File.ReadAllText(csvPath, Encoding.UTF8);
         using FileStream output = new(jsonlPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        ConvertCore(csvText.AsSpan(), shape, opt, output);
+        ConvertCore(csvText.AsSpan(), output);
     }
 
-    /// <summary>
-    /// Asynchronously converts a CSV stream to a JSONL stream.
-    /// </summary>
-    public static async ValueTask ConvertAsync(
-        Stream csvStream,
-        Stream jsonlStream,
-        CsvToJsonlShape shape,
-        CsvToJsonlOptions? options = null,
-        CancellationToken cancellationToken = default)
+    /// <summary>Asynchronously converts a CSV stream to a JSONL stream.</summary>
+    public async ValueTask ConvertAsync(Stream csvStream, Stream jsonlStream, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(csvStream);
         ArgumentNullException.ThrowIfNull(jsonlStream);
-        ArgumentNullException.ThrowIfNull(shape);
-        CsvToJsonlOptions opt = options ?? CsvToJsonlOptions.Default;
-
         using var ms = new MemoryStream();
         await csvStream.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
         string csvText = Encoding.UTF8.GetString(StripBom(ms.GetBuffer().AsSpan(0, (int)ms.Length)));
-        ConvertCore(csvText.AsSpan(), shape, opt, jsonlStream);
+        ConvertCore(csvText.AsSpan(), jsonlStream);
     }
 
     private static ReadOnlySpan<byte> StripBom(ReadOnlySpan<byte> bytes)
         => bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? bytes[3..] : bytes;
 
-    private static void ConvertCore(ReadOnlySpan<char> csvText, CsvToJsonlShape shape, CsvToJsonlOptions options, Stream output)
+    private void ConvertCore(ReadOnlySpan<char> csvText, Stream output)
     {
         CsvReadOptions parser = new() { Delimiter = options.Delimiter };
         ReadOnlySpan<byte> newlineBytes = Encoding.UTF8.GetBytes(options.NewLine);
@@ -106,7 +107,7 @@ public static class CsvToJsonlConverter
                     output.Write(newlineBytes);
                 }
 
-                EmitRecord(writer, shape, headers, values);
+                EmitRecord(writer, headers, values);
                 writer.Flush();
                 writer.Reset();
                 emitted++;
@@ -118,7 +119,7 @@ public static class CsvToJsonlConverter
         }
     }
 
-    private static void EmitRecord(Utf8JsonWriter writer, CsvToJsonlShape shape, string[]? headers, string[] values)
+    private void EmitRecord(Utf8JsonWriter writer, string[]? headers, string[] values)
     {
         switch (shape)
         {

@@ -29,9 +29,9 @@ string csv = """
 Console.WriteLine($"Input CSV: {csv.Split('\n').Length} rows");
 
 // Step 2: convert to OpenAI fine-tuning JSONL.
-string jsonl = CsvToJsonlConverter.Convert(
-    csv,
+var converter = new CsvToJsonlConverter(
     CsvToJsonlShape.OpenAiChat(systemColumn: "System", userColumn: "Question", assistantColumn: "Answer"));
+string jsonl = converter.Convert(csv);
 
 string outputPath = Path.Combine(Path.GetTempPath(), "training.jsonl");
 File.WriteAllText(outputPath, jsonl);

@@ -11,7 +11,8 @@ public class JsonlConversionTests
     {
         string csv = "Name,Age\nAlice,30\nBob,25\n";
 
-        string jsonl = CsvToJsonlConverter.Convert(csv, CsvToJsonlShape.FlatObject());
+        var converter = new CsvToJsonlConverter(CsvToJsonlShape.FlatObject());
+        string jsonl = converter.Convert(csv);
 
         string[] lines = jsonl.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(2, lines.Length);
@@ -26,9 +27,9 @@ public class JsonlConversionTests
     {
         string csv = "System,Question,Answer\n\"Be helpful.\",\"What is 2+2?\",\"4\"\n";
 
-        string jsonl = CsvToJsonlConverter.Convert(
-            csv,
+        var converter = new CsvToJsonlConverter(
             CsvToJsonlShape.OpenAiChat(systemColumn: "System", userColumn: "Question", assistantColumn: "Answer"));
+        string jsonl = converter.Convert(csv);
 
         Assert.Contains("\"messages\":", jsonl);
         Assert.Contains("\"role\":\"system\"", jsonl);
@@ -44,9 +45,9 @@ public class JsonlConversionTests
     {
         string csv = "Question,Answer\nhi,hello\n";
 
-        string jsonl = CsvToJsonlConverter.Convert(
-            csv,
+        var converter = new CsvToJsonlConverter(
             CsvToJsonlShape.OpenAiChat(systemColumn: null, userColumn: "Question", assistantColumn: "Answer"));
+        string jsonl = converter.Convert(csv);
 
         Assert.DoesNotContain("\"role\":\"system\"", jsonl);
         Assert.Contains("\"role\":\"user\"", jsonl);
@@ -59,13 +60,28 @@ public class JsonlConversionTests
     {
         string csv = "Question,Answer\nhi,hello\n";
 
-        string jsonl = CsvToJsonlConverter.Convert(
-            csv,
+        var converter = new CsvToJsonlConverter(
             CsvToJsonlShape.AnthropicMessages(userColumn: "Question", assistantColumn: "Answer"));
+        string jsonl = converter.Convert(csv);
 
         Assert.DoesNotContain("\"role\":\"system\"", jsonl);
         Assert.Contains("\"role\":\"user\"", jsonl);
         Assert.Contains("\"role\":\"assistant\"", jsonl);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvToJsonl_ReusesInstanceAcrossCalls()
+    {
+        var converter = new CsvToJsonlConverter(CsvToJsonlShape.FlatObject());
+
+        string first = converter.Convert("Name\nAlice\n");
+        string second = converter.Convert("Name\nBob\n");
+
+        Assert.Contains("Alice", first);
+        Assert.Contains("Bob", second);
+        Assert.DoesNotContain("Bob", first);
+        Assert.DoesNotContain("Alice", second);
     }
 
     [Fact]
@@ -77,7 +93,7 @@ public class JsonlConversionTests
             {"Name":"Bob","Age":25}
             """;
 
-        string csv = JsonlToCsvConverter.Convert(jsonl);
+        string csv = new JsonlToCsvConverter().Convert(jsonl);
 
         Assert.Contains("Name", csv);
         Assert.Contains("Alice", csv);
@@ -91,7 +107,7 @@ public class JsonlConversionTests
     {
         string jsonl = """{"name":"Alice","tags":["a","b"]}""";
 
-        string csv = JsonlToCsvConverter.Convert(jsonl);
+        string csv = new JsonlToCsvConverter().Convert(jsonl);
 
         Assert.Contains("Alice", csv);
         // Nested JSON arrays are CSV-quoted because they contain a delimiter,

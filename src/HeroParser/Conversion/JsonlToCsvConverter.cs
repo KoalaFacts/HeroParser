@@ -6,45 +6,36 @@ using HeroParser.SeparatedValues.Writing;
 namespace HeroParser.Conversion;
 
 /// <summary>
-/// Converts JSONL to CSV. The CSV column set is inferred from the union of top-level keys observed in
-/// the first <see cref="JsonlToCsvOptions.SchemaInferencePeekRows"/> lines. Nested objects/arrays are
-/// emitted as JSON-encoded strings in their cell.
+/// Pure JSONL-to-CSV conversion functions. The CSV column set is inferred from the union of top-level
+/// keys observed in the first <see cref="JsonlToCsvOptions.SchemaInferencePeekRows"/> lines. Nested
+/// objects/arrays are emitted as JSON-encoded strings in their cell.
 /// </summary>
-public sealed class JsonlToCsvConverter
+public static class JsonlToCsvConverter
 {
-    private readonly JsonlToCsvOptions options;
-
-    /// <summary>
-    /// Initializes a new converter.
-    /// </summary>
-    /// <param name="options">Optional conversion options (defaults to <see cref="JsonlToCsvOptions.Default"/>).</param>
-    public JsonlToCsvConverter(JsonlToCsvOptions? options = null)
-    {
-        this.options = options ?? JsonlToCsvOptions.Default;
-    }
-
     /// <summary>Converts a JSONL string to a CSV string.</summary>
-    public string Convert(string jsonlData)
+    public static string Convert(string jsonlData, JsonlToCsvOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(jsonlData);
+        JsonlToCsvOptions opt = options ?? JsonlToCsvOptions.Default;
         byte[] bytes = Encoding.UTF8.GetBytes(jsonlData);
         using var input = new MemoryStream(bytes, writable: false);
         using var output = new StringWriter();
-        ConvertCore(input, output);
+        ConvertCore(input, output, opt);
         return output.ToString();
     }
 
     /// <summary>Converts a JSONL file to a CSV file.</summary>
-    public void Convert(string jsonlPath, string csvPath)
+    public static void Convert(string jsonlPath, string csvPath, JsonlToCsvOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(jsonlPath);
         ArgumentNullException.ThrowIfNull(csvPath);
+        JsonlToCsvOptions opt = options ?? JsonlToCsvOptions.Default;
         using FileStream input = new(jsonlPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         using StreamWriter output = new(new FileStream(csvPath, FileMode.Create, FileAccess.Write, FileShare.None), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        ConvertCore(input, output);
+        ConvertCore(input, output, opt);
     }
 
-    private void ConvertCore(Stream jsonlStream, TextWriter csvWriter)
+    private static void ConvertCore(Stream jsonlStream, TextWriter csvWriter, JsonlToCsvOptions options)
     {
         List<string> peekedLines = [];
         List<string> columns = [];

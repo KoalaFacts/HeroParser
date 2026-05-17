@@ -139,6 +139,30 @@ CSV, Fixed-Width, and Excel support `DbDataReader` for streaming large files int
 - For integer discriminator keys, compare numeric values directly rather than calling `ToString()`
 - Prefer `stackalloc` or `ArrayPool` over heap allocations in tight loops
 
+### Minimum CodeQL / Static-Analysis Standards (always follow)
+These are the patterns CodeQL flags as `cs/useless-assignment-to-local` and
+`cs/local-not-disposed`. Apply them everywhere — `src/`, `tests/`,
+`benchmarks/`, and example projects:
+
+1. **Dispose every locally-created `IDisposable` deterministically.** Use
+   `using var x = new T()` (or `await using var` for `IAsyncDisposable`)
+   instead of bare `var x = new T()`. This includes `CancellationTokenSource`
+   — even in tests where the process is about to exit.
+2. **For locally-created streams in `IAsyncEnumerable` methods, prefer
+   `await using` at the declaration site** rather than disposing in a
+   `finally` block. CodeQL cannot trace disposal through iterator state
+   machines, and the `await using` form also guarantees disposal if a later
+   constructor (e.g. `PipeReader.Create`) throws before the `try` block.
+3. **Never write `var _ = expr;`.** If the value is genuinely discarded,
+   write `_ = expr;` (no `var`). If the value is used, name it.
+4. **Never write `foreach (var _name in source)` for an unused loop
+   variable.** Use `foreach (var _ in source)` — the discard pattern.
+5. **Don't write redundant null assertions after the variable has already
+   been dereferenced.** `Assert.True(x is not null)` *after* `x.ToList()`
+   tells CodeQL that `x` could have been null at the prior dereference; it
+   either adds nothing (the dereference would have NRE'd) or it masks the
+   real bug. Assert on the actual outcome (`Assert.Equal(5, result.Count)`).
+
 ## Performance Optimization Lessons
 
 ### What Works

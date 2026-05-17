@@ -134,7 +134,8 @@ public sealed class JsonlWriterBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
-        await using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, FileOptions.Asynchronous);
+        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, FileOptions.Asynchronous);
+        await using var streamDisposal = stream.ConfigureAwait(false);
         await WriteToStreamInternalAsync(stream, records, leaveOpen: false, cancellationToken).ConfigureAwait(false);
     }
 
@@ -167,7 +168,8 @@ public sealed class JsonlWriterBuilder<T>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Reflection path is gated by [RequiresDynamicCode] on the public terminals; callers using WithTypeInfo never reach this branch.")]
     private async ValueTask WriteToStreamInternalAsync(Stream stream, IAsyncEnumerable<T> records, bool leaveOpen, CancellationToken cancellationToken)
     {
-        await using var writer = new JsonlStreamWriter(stream, BuildOptions(), leaveOpen);
+        var writer = new JsonlStreamWriter(stream, BuildOptions(), leaveOpen);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         await foreach (T record in records.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             if (typeInfo is not null)

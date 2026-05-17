@@ -252,12 +252,22 @@ internal sealed class XlsxSheetReader : IDisposable
     /// </summary>
     internal static int ParseColumnIndex(string cellRef)
     {
+        // Excel's maximum column is XFD (1-based 16384 / 0-based 16383). Cap the loop
+        // so an attacker-crafted cellRef like "ZZZZZZZZZZZZ1" can't overflow the int
+        // multiplication and bypass downstream bounds checks.
+        const int MAX_ONE_BASED_COLUMN = 16384;
+
         int columnIndex = 0;
         int i = 0;
 
         while (i < cellRef.Length && char.IsLetter(cellRef[i]))
         {
             columnIndex = columnIndex * 26 + (char.ToUpperInvariant(cellRef[i]) - 'A' + 1);
+            if (columnIndex > MAX_ONE_BASED_COLUMN)
+            {
+                throw new ExcelException(
+                    $"Cell reference '{cellRef}' exceeds Excel's maximum column 'XFD' ({MAX_ONE_BASED_COLUMN}).");
+            }
             i++;
         }
 

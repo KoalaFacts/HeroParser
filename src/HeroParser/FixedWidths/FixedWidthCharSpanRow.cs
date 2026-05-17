@@ -72,8 +72,9 @@ public readonly ref struct FixedWidthCharSpanRow
         if (length < 0)
             throw new ArgumentOutOfRangeException(nameof(length), length, "Field length cannot be negative.");
 
-        // Check if field extends beyond the row
-        var fieldEnd = start + length;
+        // Check if field extends beyond the row. Use long arithmetic so pathological
+        // start+length values can't wrap negative and bypass the bounds check.
+        long fieldEnd = (long)start + length;
         if (fieldEnd > line.Length)
         {
             if (!options.AllowShortRows)
@@ -171,7 +172,7 @@ public sealed class ImmutableFixedWidthRow
             throw new ArgumentOutOfRangeException(nameof(length), length, "Field length cannot be negative.");
 
         // Check if field extends beyond the row
-        var fieldEnd = start + length;
+        long fieldEnd = (long)start + length;
         if (fieldEnd > data.Length)
         {
             if (!options.AllowShortRows)

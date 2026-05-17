@@ -147,7 +147,8 @@ public static partial class Csv
 
         options.Validate();
 
-        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -178,7 +179,8 @@ public static partial class Csv
 
         options.Validate();
 
-        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -202,8 +204,10 @@ public static partial class Csv
 
         options.Validate();
 
-        await using var stringWriter = new StringWriter();
-        await using var writer = new CsvStreamWriter(stringWriter, options);
+        var stringWriter = new StringWriter();
+        await using var stringWriterDisposal = stringWriter.ConfigureAwait(false);
+        var writer = new CsvStreamWriter(stringWriter, options);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -258,14 +262,16 @@ public static partial class Csv
 
         options.Validate();
 
-        await using var stream = new FileStream(
+        var stream = new FileStream(
             path,
             FileMode.Create,
             FileAccess.Write,
             FileShare.None,
             bufferSize: 4096,
             FileOptions.Asynchronous);
-        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen: false);
+        await using var streamDisposal = stream.ConfigureAwait(false);
+        var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen: false);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -294,14 +300,16 @@ public static partial class Csv
 
         options.Validate();
 
-        await using var stream = new FileStream(
+        var stream = new FileStream(
             path,
             FileMode.Create,
             FileAccess.Write,
             FileShare.None,
             bufferSize: 4096,
             FileOptions.Asynchronous);
-        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen: false);
+        await using var streamDisposal = stream.ConfigureAwait(false);
+        var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen: false);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);

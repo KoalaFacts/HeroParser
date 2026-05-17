@@ -309,6 +309,8 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
+        // await using at the declaration site (not finally) so CodeQL can prove disposal
+        // across the iterator state machine.
         var fileStream = new FileStream(
             path,
             FileMode.Open,
@@ -316,16 +318,10 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             FileShare.Read,
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        try
+        await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
+        await foreach (var record in FromStreamAsync(fileStream, cancellationToken).ConfigureAwait(false))
         {
-            await foreach (var record in FromStreamAsync(fileStream, cancellationToken).ConfigureAwait(false))
-            {
-                yield return record;
-            }
-        }
-        finally
-        {
-            await fileStream.DisposeAsync().ConfigureAwait(false);
+            yield return record;
         }
     }
 

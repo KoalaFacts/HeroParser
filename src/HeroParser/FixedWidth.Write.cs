@@ -142,16 +142,19 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        await using var fileStream = new FileStream(
+        var fileStream = new FileStream(
             path,
             FileMode.Create,
             FileAccess.Write,
             FileShare.None,
             bufferSize: 4096,
             FileOptions.Asynchronous);
+        await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
 
-        await using var streamWriter = new StreamWriter(fileStream, encoding);
-        await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        var streamWriter = new StreamWriter(fileStream, encoding);
+        await using var streamWriterDisposal = streamWriter.ConfigureAwait(false);
+        var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -180,16 +183,19 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        await using var fileStream = new FileStream(
+        var fileStream = new FileStream(
             path,
             FileMode.Create,
             FileAccess.Write,
             FileShare.None,
             bufferSize: 4096,
             FileOptions.Asynchronous);
+        await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
 
-        await using var streamWriter = new StreamWriter(fileStream, encoding);
-        await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        var streamWriter = new StreamWriter(fileStream, encoding);
+        await using var streamWriterDisposal = streamWriter.ConfigureAwait(false);
+        var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -220,8 +226,10 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
-        await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
+        await using var streamWriterDisposal = streamWriter.ConfigureAwait(false);
+        var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -252,8 +260,10 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
-        await using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
+        await using var streamWriterDisposal = streamWriter.ConfigureAwait(false);
+        var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -287,8 +297,10 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        await using var stringWriter = new StringWriter();
-        await using var writer = new FixedWidthStreamWriter(stringWriter, options, leaveOpen: true);
+        var stringWriter = new StringWriter();
+        await using var stringWriterDisposal = stringWriter.ConfigureAwait(false);
+        var writer = new FixedWidthStreamWriter(stringWriter, options, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
         await recordWriter.WriteRecordsAsync(writer, records, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);

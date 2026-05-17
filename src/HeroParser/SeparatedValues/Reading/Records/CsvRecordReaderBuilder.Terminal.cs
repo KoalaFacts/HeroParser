@@ -173,6 +173,9 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ThrowIfOnErrorConfiguredForAsync();
         var (parserOptions, recordOptions) = GetOptions();
         parserOptions.ValidateInputSize(new FileInfo(path).Length);
+        // Declare the FileStream with await using here (not in a finally) so CodeQL can prove
+        // disposal across the iterator state machine and so it's released if a later
+        // construction (e.g. PipeReader.Create) throws.
         var fileStream = new FileStream(
             path,
             FileMode.Open,
@@ -180,6 +183,7 @@ public sealed partial class CsvRecordReaderBuilder<T>
             FileShare.Read,
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
         var pipeReader = PipeReader.Create(fileStream);
         try
         {
@@ -189,7 +193,6 @@ public sealed partial class CsvRecordReaderBuilder<T>
         finally
         {
             await pipeReader.CompleteAsync().ConfigureAwait(false);
-            await fileStream.DisposeAsync().ConfigureAwait(false);
         }
     }
 

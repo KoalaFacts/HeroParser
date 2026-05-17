@@ -465,7 +465,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     {
         var baseType = member.BaseTypeName;
 
-#pragma warning disable IDE0010
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
         switch (baseType)
         {
             case "string":

@@ -99,8 +99,10 @@ public static partial class Jsonl
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
-        await using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, FileOptions.Asynchronous);
-        await using var writer = new JsonlStreamWriter(stream, options, leaveOpen: false);
+        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, FileOptions.Asynchronous);
+        await using var streamDisposal = stream.ConfigureAwait(false);
+        var writer = new JsonlStreamWriter(stream, options, leaveOpen: false);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         await foreach (T record in records.WithCancellation(cancellationToken).ConfigureAwait(false))
             await writer.WriteRecordAsync(record, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -120,7 +122,8 @@ public static partial class Jsonl
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
-        await using var writer = new JsonlStreamWriter(stream, options, leaveOpen);
+        var writer = new JsonlStreamWriter(stream, options, leaveOpen);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         await foreach (T record in records.WithCancellation(cancellationToken).ConfigureAwait(false))
             await writer.WriteRecordAsync(record, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);

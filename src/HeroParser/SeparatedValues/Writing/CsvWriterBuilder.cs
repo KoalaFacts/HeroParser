@@ -426,8 +426,10 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        await using var stringWriter = new StringWriter();
-        await using var writer = new CsvStreamWriter(stringWriter, options, leaveOpen: true);
+        var stringWriter = new StringWriter();
+        await using var stringWriterDisposal = stringWriter.ConfigureAwait(false);
+        var writer = new CsvStreamWriter(stringWriter, options, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -500,16 +502,19 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        await using var fileStream = new FileStream(
+        var fileStream = new FileStream(
             path,
             FileMode.Create,
             FileAccess.Write,
             FileShare.None,
             bufferSize: 4096,
             FileOptions.Asynchronous);
+        await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
 
-        await using var streamWriter = new StreamWriter(fileStream, encoding);
-        await using var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
+        var streamWriter = new StreamWriter(fileStream, encoding);
+        await using var streamWriterDisposal = streamWriter.ConfigureAwait(false);
+        var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -528,8 +533,10 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        await using var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
-        await using var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
+        var streamWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
+        await using var streamWriterDisposal = streamWriter.ConfigureAwait(false);
+        var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -553,7 +560,8 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = GetRecordWriter(options);
 
         // Use the proper async method with compiled accessors (no reflection)
@@ -576,7 +584,8 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        await using var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        var writer = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
+        await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = GetRecordWriter(options);
 
         // Use the proper async method with compiled accessors (no reflection)

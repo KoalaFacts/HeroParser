@@ -234,7 +234,7 @@ public class CoveragePushTests21
         using var ms = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
         await using var reader = Csv.CreateAsyncStreamReader(ms);
 
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         int n = 0;
         try
         {

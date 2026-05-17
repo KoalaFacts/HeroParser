@@ -310,7 +310,7 @@ public class CoveragePushTests5
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task AsyncWriter_CancellationToken_StopsEnumeration()
     {
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.Cancel();
         using var ms = new MemoryStream();
         var rows = Enumerable.Range(0, 100).Select(i => new CoveragePerson { Name = $"P{i}", Age = i });

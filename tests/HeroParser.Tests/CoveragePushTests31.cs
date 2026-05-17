@@ -228,7 +228,7 @@ public class CoveragePushTests31
         Assert.True(reader.MoveNext());
         var row = reader.Current;
         // Indexer out of range may throw or return empty depending on implementation.
-        try { var c = row[99]; } catch (Exception) { /* tolerable */ }
+        try { _ = row[99]; } catch (Exception) { /* tolerable */ }
     }
 
     // ---------- More Csv.Read edge cases ----------

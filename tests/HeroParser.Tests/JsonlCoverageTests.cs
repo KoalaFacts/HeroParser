@@ -191,11 +191,11 @@ public class JsonlCoverageTests
         var progress = new Progress<JsonlProgress>(reports.Add);
 
         using var reader = Jsonl.Read<Person>().WithProgress(progress, intervalRows: 1).FromText(jsonl);
-        _ = reader.ToList();
+        List<Person> result = [.. reader];
 
-        // Progress is async-dispatched via Progress<T>; the value being non-zero is sufficient evidence
-        // it was wired up (exact callback count is timing-dependent).
-        Assert.True(reader is not null);
+        // Progress is async-dispatched via Progress<T>; verifying enumeration completed is sufficient
+        // evidence the pipeline ran (exact callback count is timing-dependent).
+        Assert.Equal(5, result.Count);
     }
 
     [Fact]

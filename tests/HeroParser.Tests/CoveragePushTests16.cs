@@ -396,7 +396,7 @@ public class CoveragePushTests16
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
         int n = 0;
-        await foreach (var _row in Csv.ReadFromPipeReaderAsync(
+        await foreach (var _ in Csv.ReadFromPipeReaderAsync(
             PipeReader.Create(stream),
             cancellationToken: TestContext.Current.CancellationToken))
         {

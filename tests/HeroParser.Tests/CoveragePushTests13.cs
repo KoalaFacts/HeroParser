@@ -51,7 +51,7 @@ public class CoveragePushTests13
         using var ms = new MemoryStream(Encoding.UTF8.GetBytes(line));
         try
         {
-            var _ = FixedWidth.Read<FixedDates>().FromStream(ms).ToList();
+            _ = FixedWidth.Read<FixedDates>().FromStream(ms).ToList();
         }
         catch (Exception)
         {
@@ -213,7 +213,7 @@ public class CoveragePushTests13
     {
         using var ms = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
         await using var reader = Csv.CreateAsyncStreamReader(ms);
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {

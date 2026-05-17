@@ -226,7 +226,7 @@ public class CoveragePushTests23
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task RecordWriter_AsyncCancellation_DuringWrite()
     {
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.Cancel();
         var rows = Enumerable.Range(0, 100).Select(i => new CoveragePerson { Name = $"P{i}", Age = i });
         using var ms = new MemoryStream();

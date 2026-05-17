@@ -54,7 +54,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(path);
 
-        FileStream stream = new(
+        await using FileStream stream = new(
             path,
             FileMode.Open,
             FileAccess.Read,
@@ -71,7 +71,6 @@ public sealed partial class JsonlRecordReaderBuilder<T>
         finally
         {
             await pipe.CompleteAsync().ConfigureAwait(false);
-            await stream.DisposeAsync().ConfigureAwait(false);
         }
     }
 

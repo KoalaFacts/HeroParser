@@ -218,7 +218,7 @@ public class CoveragePushTests6
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task PipeReader_Direct_CancellationAtStart()
     {
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.Cancel();
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>

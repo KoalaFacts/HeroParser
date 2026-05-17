@@ -1,10 +1,10 @@
-# HeroParser - A .NET High-Performance CSV, Fixed-Width & Excel (.xlsx) Parser
+# HeroParser - A .NET High-Performance CSV, Fixed-Width, Excel (.xlsx) & JSONL Parser
 
 [![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-High-performance SIMD-accelerated CSV, Fixed-Width, and Excel (.xlsx) parsing and writing for .NET 8, 9, and 10. Zero extra dependencies, AOT/trimming ready, source-generated binding.
+High-performance SIMD-accelerated CSV, Fixed-Width, Excel (.xlsx), and JSONL parsing and writing for .NET 8, 9, and 10. Zero extra dependencies, AOT/trimming ready, source-generated binding, with first-class support for AI/ML pipelines (CSV → JSONL fine-tuning data, embedding-API batching, inline vector columns).
 
 ## Install
 
@@ -237,6 +237,129 @@ await FixedWidth.Write<Employee>()
     .ToFileAsync("out.dat", employees);
 ```
 
+## Quick Start: JSONL
+
+JSONL (JSON Lines) is the de-facto format for LLM fine-tuning datasets (OpenAI, Anthropic, HuggingFace), model evaluations, synthetic data, and streamed AI responses. HeroParser ships a JSONL reader/writer that mirrors the `Csv` and `Excel` builder pattern, plus a `DbDataReader` adapter, CSV↔JSONL converters, an inline `VectorParser`, and an async `BatchAsync` extension for embedding-API pipelines.
+
+```csharp
+public sealed class ChatExample
+{
+    public List<ChatMessage>? Messages { get; set; }
+}
+public sealed class ChatMessage
+{
+    public string? Role { get; set; }
+    public string? Content { get; set; }
+}
+```
+
+### Read
+
+```csharp
+// Sync — full builder
+var examples = Jsonl.Read<ChatExample>()
+    .WithJsonOptions(new JsonSerializerOptions(JsonSerializerDefaults.Web))
+    .SkipEmptyLines(true)
+    .WithMaxLineSize(4 * 1024 * 1024)
+    .WithMaxRowCount(5_000_000)
+    .OnError((ctx, ex) =>
+    {
+        Console.WriteLine($"line {ctx.LineNumber}: {ex.Message}");
+        return JsonlDeserializeErrorAction.SkipRecord;
+    })
+    .FromFile("training.jsonl")
+    .ToList();
+
+// Async streaming — process millions of records without buffering
+await foreach (var example in Jsonl.Read<ChatExample>().FromFileAsync("training.jsonl"))
+    Console.WriteLine(example.Messages?[^1].Content);
+
+// PipeReader (network sockets, HTTP responses)
+PipeReader pipe = PipeReader.Create(socketStream);
+await foreach (var r in Jsonl.DeserializeRecordsAsync<ChatExample>(pipe)) { /* ... */ }
+
+// DataReader — drop straight into SqlBulkCopy
+using var reader = Jsonl.CreateDataReader("inputs.jsonl");
+using var bulk = new SqlBulkCopy(conn) { DestinationTableName = "Inputs" };
+bulk.WriteToServer(reader);
+```
+
+### Write
+
+```csharp
+Jsonl.Write<ChatExample>()
+    .WithNewLine("\n")
+    .WithFinalNewline()
+    .WithMaxRowCount(100_000)
+    .ToFile("out.jsonl", examples);
+
+// Async — from an IAsyncEnumerable source
+await Jsonl.Write<ChatExample>().ToFileAsync("out.jsonl", asyncExamples);
+```
+
+### CSV → JSONL (fine-tuning data)
+
+`CsvToJsonlConverter` projects a CSV into JSONL in the shape an LLM fine-tuning API expects:
+
+```csharp
+string jsonl = CsvToJsonlConverter.Convert(
+    csv,
+    CsvToJsonlShape.OpenAiChat(systemColumn: "System", userColumn: "Question", assistantColumn: "Answer"));
+
+// {"messages":[
+//   {"role":"system","content":"You are a math tutor."},
+//   {"role":"user","content":"What is 2+2?"},
+//   {"role":"assistant","content":"4"}
+// ]}
+
+// Also: CsvToJsonlShape.FlatObject() / AnthropicMessages(userCol, assistantCol)
+// And the reverse direction: JsonlToCsvConverter.Convert(jsonl)
+```
+
+### BatchAsync — embedding-API pipelines
+
+```csharp
+using HeroParser.Streaming;
+
+await foreach (IReadOnlyList<ChatExample> batch in
+    Jsonl.Read<ChatExample>()
+        .FromFileAsync("inputs.jsonl")
+        .BatchAsync(100))               // OpenAI/Voyage/Cohere/Anthropic embedding batch size
+{
+    var vectors = await embeddings.EmbedAsync(batch.Select(x => x.Messages![^1].Content!));
+    await vectorDb.UpsertAsync(batch.Zip(vectors));
+}
+```
+
+`BatchAsync` works on any `IAsyncEnumerable<T>` — pair with `Csv.Read<T>().FromFileAsync(...)` or `Excel.Read<T>().FromFileAsync(...)` just as easily.
+
+### VectorParser — inline embedding columns
+
+```csharp
+using HeroParser.Vectors;
+
+float[] embedding = VectorParser.ParseFloats(row[3].CharSpan);
+// Accepted: "[0.1, 0.2, 0.3]", "0.1,0.2,0.3", "0.1 0.2 0.3", "[]"
+// Culture-aware: VectorParser.ParseFloats("1,5;2,5", CultureInfo.GetCultureInfo("de-DE"))
+```
+
+### AOT / trimming
+
+Pass a `JsonTypeInfo<T>` from a source-generated `JsonSerializerContext` to bypass reflection entirely:
+
+```csharp
+[JsonSerializable(typeof(ChatExample))]
+[JsonSerializable(typeof(ChatMessage))]
+public partial class TrainingContext : JsonSerializerContext;
+
+var records = Jsonl.Read<ChatExample>()
+    .WithTypeInfo(TrainingContext.Default.ChatExample)
+    .FromFile("training.jsonl")
+    .ToList();
+```
+
+The reflection-based overloads carry `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` so AOT/trim users get a clear build warning. The `JsonTypeInfo<T>` path is fully trim/AOT-safe.
+
 ## Unified Attribute System
 
 HeroParser v2 uses concern-separated attributes that work across all formats:
@@ -259,9 +382,12 @@ Convention-based mapping: unmarked properties default to `[TabularMap(Name = pro
 - **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking
 - **Zero allocations** — fixed 4 KB stack footprint regardless of column count or file size; `ArrayPool` for buffers
 - **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
-- **Async streaming** — `IAsyncEnumerable<T>` for all three formats; true non-blocking I/O with sync fast paths
+- **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, and JSONL; true non-blocking I/O with sync fast paths
 - **Excel without extra dependencies** — reads and writes `.xlsx` using only `System.IO.Compression` and `System.Xml`
-- **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()` for database bulk loading via `SqlBulkCopy`
+- **JSONL for AI/ML pipelines** — `Jsonl.Read<T>()` / `Jsonl.Write<T>()` mirror the CSV builder pattern; AOT-safe via `JsonTypeInfo<T>`; `CsvToJsonlConverter` projects tabular data into OpenAI/Anthropic fine-tuning shapes
+- **Embedding-API batching** — `IAsyncEnumerable<T>.BatchAsync(size)` groups streamed records into fixed-size batches for OpenAI/Voyage/Cohere/Anthropic embedding calls
+- **Inline vector parser** — `VectorParser.ParseFloats(span)` handles pre-computed embeddings (`"[0.1,0.2,…]"`, comma/semicolon/whitespace separators, culture-aware)
+- **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()` for database bulk loading via `SqlBulkCopy`
 - **PipeReader integration** — `Csv.ReadFromPipeReaderAsync(pipe)` for network streaming without buffering the entire payload
 - **Multi-schema CSV** — discriminator-based row routing to different record types; source-generated dispatch for ~2.85x faster throughput
 - **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score
@@ -312,6 +438,7 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks -- --all
 - [CSV API Reference](docs/csv.md) — Full CSV reading, writing, options, delimiter detection, validation, multi-schema, security, PipeReader, DataReader
 - [Excel API Reference](docs/excel.md) — Full Excel reading, writing, multi-sheet, DataReader, options
 - [Fixed-Width API Reference](docs/fixed-width.md) — Full fixed-width reading, writing, fluent mapping, options, converters, PipeReader
+- [JSONL API Reference](docs/jsonl.md) — Full JSONL reading, writing, DataReader, AOT support, CSV↔JSONL conversion (OpenAI/Anthropic fine-tuning shapes), BatchAsync, VectorParser
 
 ## Building & Testing
 

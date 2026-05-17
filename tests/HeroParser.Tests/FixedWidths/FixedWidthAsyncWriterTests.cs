@@ -953,7 +953,7 @@ public class FixedWidthAsyncWriterTests
     public async Task WriteToTextAsync_CancellationMidStream_ThrowsOperationCanceledException()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
         var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);
 
@@ -968,7 +968,7 @@ public class FixedWidthAsyncWriterTests
     public async Task WriteToStreamAsync_CancellationMidStream_ThrowsOperationCanceledException()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
         var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);
         using var ms = new MemoryStream();
@@ -1074,7 +1074,7 @@ public class FixedWidthAsyncWriterTests
     public async Task WriteToTextAsync_WithCancellation_ThrowsWhenCancelled()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         var records = CreateAsyncEnumerableWithDelay(
             new TestRecord { Name = "Alice", Age = 30, City = "NYC" },
             new TestRecord { Name = "Bob", Age = 25, City = "LA" }

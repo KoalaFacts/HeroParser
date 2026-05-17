@@ -82,7 +82,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToTextAsync_WithCancellation_ThrowsWhenCancelled()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         var records = CreateAsyncEnumerableWithDelay(
             new Person("Alice", 30, "New York"),
             new Person("Bob", 25, "London")
@@ -160,7 +160,7 @@ public class AsyncEnumerableWriterTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var cts = new CancellationTokenSource();
+            using var cts = new CancellationTokenSource();
             var records = CreateAsyncEnumerableWithDelay(
                 new Person("Alice", 30, "New York"),
                 new Person("Bob", 25, "London")
@@ -397,7 +397,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToTextAsync_CancellationMidStream_ThrowsOperationCanceledException()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         // Link our CTS with test context token for proper test framework cancellation support
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
         var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);

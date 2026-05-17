@@ -4,6 +4,9 @@
     <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- JSON002: "Probable JSON string detected" — tests intentionally contain JSONL string fixtures
+         and we don't want the embedded-JSON analyzer to validate them against a schema. -->
+    <NoWarn>$(NoWarn);JSON002</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

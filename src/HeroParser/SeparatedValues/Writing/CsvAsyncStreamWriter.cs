@@ -886,10 +886,21 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 break;
 
             case CsvInjectionProtection.Sanitize:
-                // Strip dangerous leading characters
+                // Strip dangerous leading characters. Copy into a pooled buffer (not .ToArray())
+                // so the temp memory is recycled across writes.
                 var sanitized = StripDangerousPrefix(valueSpan);
-                // Convert span back to memory
-                await WriteFieldValueWithoutInjectionCheckInternalAsync(sanitized.ToArray().AsMemory(), cancellationToken).ConfigureAwait(false);
+                char[] sanitizedRented = charPool.Rent(sanitized.Length);
+                try
+                {
+                    sanitized.CopyTo(sanitizedRented);
+                    await WriteFieldValueWithoutInjectionCheckInternalAsync(
+                        sanitizedRented.AsMemory(0, sanitized.Length),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    charPool.Return(sanitizedRented, clearArray: true);
+                }
                 break;
 
             case CsvInjectionProtection.Reject:
@@ -1314,7 +1325,17 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         Span<char> stackBuffer = stackalloc char[MAX_STACK_ALLOC_SIZE];
         if (value.TryFormat(stackBuffer, out int charsWritten, format, culture))
         {
-            await WriteFieldValueAsync(stackBuffer[..charsWritten].ToArray().AsMemory(), cancellationToken).ConfigureAwait(false);
+            // Copy out of stackalloc into a pooled buffer that can survive the await.
+            char[] rented = charPool.Rent(charsWritten);
+            try
+            {
+                stackBuffer[..charsWritten].CopyTo(rented);
+                await WriteFieldValueAsync(rented.AsMemory(0, charsWritten), cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                charPool.Return(rented, clearArray: true);
+            }
         }
         else
         {
@@ -1342,22 +1363,44 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 $"Field size {length} exceeds maximum of {maxFieldSize.Value}");
         }
 
-        // For AlwaysQuote or if quoting needed, we need to copy and rewrite
+        // For AlwaysQuote or if quoting needed, we need to copy and rewrite. Use a pooled
+        // buffer rather than .ToArray() — charBuffer may be overwritten by the quoted write,
+        // and the temp memory is recycled across calls.
         if (quoteStyle == QuoteStyle.Always)
         {
-            var temp = valueSpan.ToArray();
-            await WriteQuotedFieldWithKnownQuoteCountInternalAsync(
-                temp.AsMemory(),
-                CsvWriterQuoting.CountQuotes(valueSpan, quote),
-                cancellationToken).ConfigureAwait(false);
+            int quoteCount = CsvWriterQuoting.CountQuotes(valueSpan, quote);
+            char[] rented = charPool.Rent(length);
+            try
+            {
+                valueSpan.CopyTo(rented);
+                await WriteQuotedFieldWithKnownQuoteCountInternalAsync(
+                    rented.AsMemory(0, length),
+                    quoteCount,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                charPool.Return(rented, clearArray: true);
+            }
         }
         else
         {
             var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(valueSpan, delimiter, quote);
             if (needsQuoting)
             {
-                var temp = valueSpan.ToArray();
-                await WriteQuotedFieldWithKnownQuoteCountInternalAsync(temp.AsMemory(), quoteCount, cancellationToken).ConfigureAwait(false);
+                char[] rented = charPool.Rent(length);
+                try
+                {
+                    valueSpan.CopyTo(rented);
+                    await WriteQuotedFieldWithKnownQuoteCountInternalAsync(
+                        rented.AsMemory(0, length),
+                        quoteCount,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    charPool.Return(rented, clearArray: true);
+                }
             }
             else
             {
@@ -1377,7 +1420,17 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
 
         if (value.TryFormat(stackBuffer, out int charsWritten, format, culture))
         {
-            await WriteFieldValueAsync(stackBuffer[..charsWritten].ToArray().AsMemory(), cancellationToken).ConfigureAwait(false);
+            // Copy out of stackalloc into a pooled buffer that can survive the await.
+            char[] rented = charPool.Rent(charsWritten);
+            try
+            {
+                stackBuffer[..charsWritten].CopyTo(rented);
+                await WriteFieldValueAsync(rented.AsMemory(0, charsWritten), cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                charPool.Return(rented, clearArray: true);
+            }
         }
         else
         {

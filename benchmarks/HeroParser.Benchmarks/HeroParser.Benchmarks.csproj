@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-		<TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
-		<IsPackable>false</IsPackable>
+    <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
+    <IsPackable>false</IsPackable>
     <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 

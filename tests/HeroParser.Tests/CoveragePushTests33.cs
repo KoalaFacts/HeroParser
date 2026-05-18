@@ -191,20 +191,15 @@ public class CoveragePushTests33
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void FixedWidthDataReaderColumns_FromAttributes_OverlapAccepted()
+    public void FixedWidthDataReaderColumns_FromAttributes_OverlapThrows()
     {
-        // NOTE: FromAttributes does not currently validate field overlap — it only validates
-        // names.Count vs attributes.Count and individual attribute ranges. Overlapping
-        // attributes pass through unchanged. Asserting the current observable behavior.
         var attrs = new[]
         {
             new global::HeroParser.PositionalMapAttribute { Start = 0, Length = 5 },
             new global::HeroParser.PositionalMapAttribute { Start = 3, Length = 5 },
         };
-        var columns = global::HeroParser.FixedWidths.Reading.Data.FixedWidthDataReaderColumns.FromAttributes(attrs, ["A", "B"]);
-        Assert.Equal(2, columns.Length);
-        Assert.Equal(0, columns[0].Start);
-        Assert.Equal(3, columns[1].Start);
+        Assert.Throws<ArgumentException>(() =>
+            global::HeroParser.FixedWidths.Reading.Data.FixedWidthDataReaderColumns.FromAttributes(attrs, ["A", "B"]));
     }
 
     [Fact]

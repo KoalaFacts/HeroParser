@@ -78,9 +78,10 @@ Convention-based mapping: unmarked properties default to `TabularMap(Name = prop
 
 A single record can have both `[TabularMap]` and `[PositionalMap]` to be read from CSV, Excel, and FixedWidth.
 
-## Excel (.xlsx) Reading
-Read Excel files with zero extra dependencies (uses `System.IO.Compression` + `System.Xml`):
+## Excel (.xlsx) Reading and Writing
+Read and write Excel files with zero extra dependencies (uses `System.IO.Compression` + `System.Xml`):
 ```csharp
+// --- Reading ---
 // Typed record reading
 var records = Excel.Read<MyRecord>().FromFile("data.xlsx");
 var records = Excel.Read<MyRecord>().FromSheet("Sheet2").FromStream(stream);
@@ -99,9 +100,30 @@ var result = Excel.Read()
 
 // DataReader for database bulk loading
 using var reader = Excel.CreateDataReader("data.xlsx");
+
+// --- Writing ---
+// Typed record writing (fluent builder)
+Excel.Write<MyRecord>().ToFile("out.xlsx", records);
+Excel.Write<MyRecord>().WithSheetName("Sheet1").ToStream(stream, records);
+
+// Static convenience
+Excel.WriteToFile("out.xlsx", records);
+Excel.WriteToStream(stream, records);
+byte[] bytes = Excel.SerializeRecords(records);
+
+// Async variants (IEnumerable or IAsyncEnumerable)
+await Excel.Write<MyRecord>().ToFileAsync("out.xlsx", records);
+await Excel.Write<MyRecord>().ToStreamAsync(stream, records);
+await Excel.WriteToFileAsync("out.xlsx", records);
+
+// Multi-sheet output
+Excel.WriteMultiSheet()
+    .WithSheet("Orders", orderRecords)
+    .WithSheet("Customers", customerRecords)
+    .ToFile("out.xlsx");
 ```
 
-Key files in `src/HeroParser/Excel/` (internal namespace uses `HeroParser.Excels` to avoid conflict with the `Excel` static class).
+Key files in `src/HeroParser/Excels/` (internal namespace uses `HeroParser.Excels` to avoid conflict with the `Excel` static class).
 
 ## Multi-Schema CSV Parsing
 Supports mapping rows to different record types via a discriminator column.

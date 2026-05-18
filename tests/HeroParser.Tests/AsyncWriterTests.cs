@@ -836,7 +836,7 @@ public class AsyncWriterTests
     {
         for (int i = 0; i < 1000; i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
             yield return new TestRecord { Name = $"Name{i}", Age = i, City = $"City{i}" };
         }
     }

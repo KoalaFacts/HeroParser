@@ -1188,7 +1188,7 @@ public class FixedWidthAsyncWriterTests
     {
         foreach (var item in items)
         {
-            await Task.Delay(50);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
             yield return item;
         }
     }
@@ -1223,7 +1223,7 @@ public class FixedWidthAsyncWriterTests
         // Simulate database query with async delay
         for (int i = 1; i <= 10; i++)
         {
-            await Task.Delay(1); // Simulate database latency
+            await Task.Delay(1, TestContext.Current.CancellationToken); // Simulate database latency
             yield return new ProductRecord { Id = i, Name = $"Product {i}", Price = i * 10.5m };
         }
     }
@@ -1232,7 +1232,7 @@ public class FixedWidthAsyncWriterTests
     {
         for (int i = 0; i < 1000; i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
             yield return new TestRecord { Name = $"Name{i}", Age = i, City = $"City{i}" };
         }
     }

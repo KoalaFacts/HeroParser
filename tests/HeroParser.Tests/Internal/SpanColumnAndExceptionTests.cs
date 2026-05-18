@@ -244,6 +244,8 @@ public class FixedWidthExceptionTests
 /// Tests <see cref="SpanParserFactory.GetParser{T}"/> for every supported type variant,
 /// mirroring the Utf8SpanParserFactory coverage but for the char-based code path.
 /// </summary>
+// SpanParserFactory.GetParser uses reflection / MakeGenericMethod for runtime parser dispatch.
+// Tests exercise that path explicitly; the trim/AOT warnings are inherent to the SUT.
 #pragma warning disable IL2026, IL3050
 [Trait("Category", "Unit")]
 public class SpanParserFactoryTests

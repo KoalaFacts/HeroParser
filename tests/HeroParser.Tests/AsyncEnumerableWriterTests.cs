@@ -499,7 +499,7 @@ public class AsyncEnumerableWriterTests
     {
         foreach (var item in items)
         {
-            await Task.Delay(50);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
             yield return item;
         }
     }
@@ -534,7 +534,7 @@ public class AsyncEnumerableWriterTests
         // Simulate database query with async delay
         for (int i = 1; i <= 10; i++)
         {
-            await Task.Delay(1); // Simulate database latency
+            await Task.Delay(1, TestContext.Current.CancellationToken); // Simulate database latency
             yield return new Product(i, $"Product {i}", i * 10.5m);
         }
     }

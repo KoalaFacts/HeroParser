@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageReference Include="Sep" Version="0.12.5" />
+    <PackageReference Include="Sep" Version="0.14.1" />
   </ItemGroup>
 
   <ItemGroup>

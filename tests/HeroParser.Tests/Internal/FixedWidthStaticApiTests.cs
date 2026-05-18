@@ -186,7 +186,8 @@ public class FixedWidthStaticApiTests
     public async Task DeserializeRecordsAsync_FromPipeReader()
     {
         var bytes = Encoding.UTF8.GetBytes(SampleText());
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         var list = new List<Row>();
         await foreach (var r in FixedWidth.DeserializeRecordsAsync<Row>(pipe,
             cancellationToken: TestContext.Current.CancellationToken))

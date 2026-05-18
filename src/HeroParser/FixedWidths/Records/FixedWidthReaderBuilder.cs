@@ -653,7 +653,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         ArgumentNullException.ThrowIfNull(reader);
 
         var options = GetOptions();
-        await using var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
+        var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
+        await using var sequenceReaderDisposal = sequenceReader.ConfigureAwait(false);
 
         if (readMapSource is not null)
         {

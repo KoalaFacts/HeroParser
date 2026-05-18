@@ -89,7 +89,7 @@ public class CsvWriterBuilderTerminalTests
     [Fact]
     public void ToStream_LeaveOpenFalse_ClosesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         Csv.Write<Person>().ToStream(ms, Sample(), leaveOpen: false);
         Assert.False(ms.CanWrite);
     }
@@ -125,7 +125,7 @@ public class CsvWriterBuilderTerminalTests
     [Fact]
     public void ToWriter_WritesAndLeavesOpen()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         Csv.Write<Person>().ToWriter(sw, Sample(), leaveOpen: true);
         Assert.Contains("Alice", sw.ToString());
     }

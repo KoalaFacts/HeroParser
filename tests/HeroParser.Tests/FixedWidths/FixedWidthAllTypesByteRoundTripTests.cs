@@ -104,7 +104,8 @@ public class FixedWidthAllTypesByteRoundTripTests
             "Green";                     // EnumValue:    5 chars
 
         var bytes = EncodeRow(line);
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var records = new List<AllTypes>();
         await foreach (var r in FixedWidth.DeserializeRecordsAsync<AllTypes>(
@@ -136,7 +137,8 @@ public class FixedWidthAllTypesByteRoundTripTests
     {
         var line = "00042" + "0000.001" + "true " + "20240115";
         var bytes = EncodeRow(line);
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var records = new List<NullableAll>();
         await foreach (var r in FixedWidth.DeserializeRecordsAsync<NullableAll>(
@@ -158,7 +160,8 @@ public class FixedWidthAllTypesByteRoundTripTests
         // All-blank fields should map to null for nullable types.
         var line = "     " + "        " + "     " + "        ";
         var bytes = EncodeRow(line);
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var records = new List<NullableAll>();
         await foreach (var r in FixedWidth.DeserializeRecordsAsync<NullableAll>(
@@ -187,7 +190,8 @@ public class FixedWidthAllTypesByteRoundTripTests
             sb.Append('\n');
         }
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var records = new List<NullableAll>();
         await foreach (var r in FixedWidth.DeserializeRecordsAsync<NullableAll>(

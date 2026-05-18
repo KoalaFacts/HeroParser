@@ -819,7 +819,7 @@ public class CsvReaderBuilderTests
     public void FromStream_ClosesStream_WhenRequested()
     {
         var csvContent = "Name,Age\r\nAlice,30\r\n";
-        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csvContent));
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csvContent));
 
         var reader = Csv.Read().FromStream(stream, out _, leaveOpen: false);
 

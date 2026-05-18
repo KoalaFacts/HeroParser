@@ -228,7 +228,7 @@ public class CoveragePushTests8
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task AsyncStreamReader_DisposeAsync_CleansUp()
     {
-        var ms = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
         var reader = Csv.CreateAsyncStreamReader(ms, leaveOpen: false);
         Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
         await reader.DisposeAsync();

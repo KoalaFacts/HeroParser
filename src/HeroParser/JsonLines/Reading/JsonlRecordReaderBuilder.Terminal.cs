@@ -54,13 +54,14 @@ public sealed partial class JsonlRecordReaderBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(path);
 
-        await using FileStream stream = new(
+        FileStream stream = new(
             path,
             FileMode.Open,
             FileAccess.Read,
             FileShare.Read,
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var streamDisposal = stream.ConfigureAwait(false);
 
         PipeReader pipe = PipeReader.Create(stream);
         try

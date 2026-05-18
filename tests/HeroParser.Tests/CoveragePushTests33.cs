@@ -175,16 +175,16 @@ public class CoveragePushTests33
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void FixedWidthFieldLayoutValidator_DuplicateNames_Behavior()
+    public void FixedWidthFieldLayoutValidator_DuplicateNames_DoesNotThrow()
     {
-        // Duplicate names may or may not throw — just exercise.
+        // Validator only checks ranges/overlap — duplicate field names are accepted as a no-op.
         var layouts = new[]
         {
             new global::HeroParser.FixedWidths.FixedWidthFieldLayout("A", 0, 3),
             new global::HeroParser.FixedWidths.FixedWidthFieldLayout("A", 3, 3),
         };
-        try { global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator.Validate(layouts); }
-        catch (Exception) { /* tolerable */ }
+        // Non-overlapping, valid ranges — must not throw.
+        global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator.Validate(layouts);
     }
 
     // ---------- FixedWidthDataReaderColumns ----------
@@ -198,11 +198,8 @@ public class CoveragePushTests33
             new global::HeroParser.PositionalMapAttribute { Start = 0, Length = 5 },
             new global::HeroParser.PositionalMapAttribute { Start = 3, Length = 5 },
         };
-        try
-        {
-            global::HeroParser.FixedWidths.Reading.Data.FixedWidthDataReaderColumns.FromAttributes(attrs, ["A", "B"]);
-        }
-        catch (Exception) { /* tolerable: overlap should throw */ }
+        Assert.Throws<ArgumentException>(() =>
+            global::HeroParser.FixedWidths.Reading.Data.FixedWidthDataReaderColumns.FromAttributes(attrs, ["A", "B"]));
     }
 
     [Fact]
@@ -222,11 +219,8 @@ public class CoveragePushTests33
             new global::HeroParser.PositionalMapAttribute { Start = 0, Length = 5 },
             new global::HeroParser.PositionalMapAttribute { Start = 5, Length = 3 },
         };
-        try
-        {
-            global::HeroParser.FixedWidths.Reading.Data.FixedWidthDataReaderColumns.FromAttributes(attrs, ["A"]);
-        }
-        catch (Exception) { /* tolerable */ }
+        Assert.Throws<ArgumentException>(() =>
+            global::HeroParser.FixedWidths.Reading.Data.FixedWidthDataReaderColumns.FromAttributes(attrs, ["A"]));
     }
 
     // ---------- Csv.Validation extras ----------
@@ -332,18 +326,19 @@ public class CoveragePushTests33
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void CsvRecordReaderBuilder_WithoutHeader_ReadsAllRowsAsData()
+    public void CsvRecordReaderBuilder_WithoutHeader_ThrowsForNameMappedRecord()
     {
-        // Records require header for typed binding by name; this will likely fail validation.
-        try
+        // Records require a header row for typed binding by column name; the first data row's
+        // first column ('Alice') cannot be resolved to the 'Name' property, surfacing as a
+        // CsvException about a missing required column.
+        string csv = "Alice,30\nBob,25\n";
+        Assert.Throws<CsvException>(() =>
         {
-            string csv = "Alice,30\nBob,25\n";
             using var reader = Csv.Read<CoveragePerson>()
                 .WithoutHeader()
                 .FromStream(new MemoryStream(Encoding.UTF8.GetBytes(csv)), out _);
             foreach (var _ in reader) { }
-        }
-        catch (Exception) { /* tolerable */ }
+        });
     }
 
     [Fact]

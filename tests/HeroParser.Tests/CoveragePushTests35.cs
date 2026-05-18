@@ -39,14 +39,11 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FixedWidth_NonInvariant_IsNullOrWhiteSpace_NonAscii()
     {
-        // Non-ASCII byte triggers the IsNullOrWhiteSpace fallback decode (line 46).
-        // Note: parsing a non-ASCII field as numeric should fail; just exercise.
+        // Non-ASCII byte triggers the IsNullOrWhiteSpace fallback decode in Utf8BindingHelper.
+        // The "é\n" line is only 1 character wide so the layout extends beyond the record.
         byte[] bytes = [0xC3, 0xA9, (byte)'\n']; // "é\n"
-        try
-        {
-            FixedWidth.Read<FixedAllTypes>().WithCulture("en-US").FromStream(new MemoryStream(bytes)).ToList();
-        }
-        catch (Exception) { /* tolerable */ }
+        Assert.Throws<FixedWidthException>(() =>
+            FixedWidth.Read<FixedAllTypes>().WithCulture("en-US").FromStream(new MemoryStream(bytes)).ToList());
     }
 
     [Fact]
@@ -95,8 +92,8 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Read_Span()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         Span<byte> buf = stackalloc byte[5];
         int read = stream.Read(buf);
@@ -108,8 +105,8 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_ReadByte()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("ABC"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("ABC"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         int b = stream.ReadByte();
         Assert.Equal('A', b);
@@ -120,8 +117,8 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_ReadByte_PastEnd_ReturnsNegativeOne()
     {
-        var inner = new MemoryStream();
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream();
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         Assert.Equal(-1, stream.ReadByte());
     }
@@ -130,8 +127,8 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Write_DelegatesToInner()
     {
-        var inner = new MemoryStream();
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream();
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         // CountingReadStream forwards write to inner.
         stream.Write([1, 2, 3], 0, 3);
@@ -142,8 +139,8 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Write_ReadOnlySpan()
     {
-        var inner = new MemoryStream();
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream();
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         ReadOnlySpan<byte> data = [1, 2, 3];
         stream.Write(data);
@@ -154,8 +151,8 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CountingReadStream_WriteAsync_Buffer()
     {
-        var inner = new MemoryStream();
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream();
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         byte[] data = [1, 2, 3];
         await stream.WriteAsync(data, 0, 3, TestContext.Current.CancellationToken);
@@ -166,8 +163,8 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CountingReadStream_WriteAsync_ReadOnlyMemory()
     {
-        var inner = new MemoryStream();
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream();
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         await stream.WriteAsync(new ReadOnlyMemory<byte>([1, 2, 3]), TestContext.Current.CancellationToken);
         Assert.Equal(3, inner.Length);
@@ -177,8 +174,8 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_WriteByte()
     {
-        var inner = new MemoryStream();
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream();
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         stream.WriteByte(0x41);
         Assert.Equal(1, inner.Length);
@@ -188,19 +185,20 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_SetLength_DelegatesToInner()
     {
-        var inner = new MemoryStream(new byte[10], writable: true);
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        // Use a growable MemoryStream so SetLength succeeds and we can observe delegation.
+        using var inner = new MemoryStream();
+        inner.Write([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0, 10);
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
-        // SetLength on MemoryStream over a fixed array throws; on growable, it doesn't.
-        try { stream.SetLength(5); }
-        catch (Exception) { /* tolerable */ }
+        stream.SetLength(5);
+        Assert.Equal(5, inner.Length);
     }
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CountingReadStream_DisposeAsync_LeaveOpenTrue()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("abc"));
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("abc"));
         var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: true);
         await stream.DisposeAsync();
@@ -211,7 +209,7 @@ public class CoveragePushTests35
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CountingReadStream_DisposeAsync_LeaveOpenFalse()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("abc"));
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("abc"));
         var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, FixedWidthReadOptions.Default, leaveOpen: false);
         await stream.DisposeAsync();
@@ -279,17 +277,19 @@ public class CoveragePushTests35
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void FixedWidthByteSpanReader_VeryShortRecord_AllowShortRows()
+    public void FixedWidthByteSpanReader_VeryShortRecord_AllowShortRows_StillThrows()
     {
-        // RecordLength=10 with only "a\n" — short record, behavior implementation-defined.
+        // AllowShortRows applies to per-field reads inside a record, not to the record-length
+        // boundary itself: when RecordLength is set, the span reader requires that many bytes.
+        // A 2-byte payload "a\n" against RecordLength=10 must throw.
         byte[] data = "a\n"u8.ToArray();
         var opts = FixedWidthReadOptions.Default with { RecordLength = 10, AllowShortRows = true };
-        try
+        var ex = Assert.Throws<FixedWidthException>(() =>
         {
             var reader = new FixedWidthByteSpanReader(data.AsSpan(), opts);
             while (reader.MoveNext()) { }
-        }
-        catch (Exception) { /* tolerable */ }
+        });
+        Assert.Contains("record length", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

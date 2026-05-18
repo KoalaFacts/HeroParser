@@ -63,11 +63,8 @@ public class CoveragePushTests30
     public void FixedWidthWriteOptions_BadNewLine_Throws()
     {
         var rows = new[] { new FixedAllTypes { L = 1L, S = 2, B = 3, D = 0.5, F = 0.25f, Bo = true, M = 1.5m } };
-        try
-        {
-            FixedWidth.WriteToText(rows, options: new global::HeroParser.FixedWidths.Writing.FixedWidthWriteOptions { NewLine = "x" });
-        }
-        catch (Exception) { /* expected */ }
+        Assert.Throws<FixedWidthException>(() =>
+            FixedWidth.WriteToText(rows, options: new global::HeroParser.FixedWidths.Writing.FixedWidthWriteOptions { NewLine = "x" }));
     }
 
     [Fact]
@@ -75,11 +72,8 @@ public class CoveragePushTests30
     public void FixedWidthWriteOptions_EmptyNewLine_Throws()
     {
         var rows = new[] { new FixedAllTypes { L = 1L, S = 2, B = 3, D = 0.5, F = 0.25f, Bo = true, M = 1.5m } };
-        try
-        {
-            FixedWidth.WriteToText(rows, options: new global::HeroParser.FixedWidths.Writing.FixedWidthWriteOptions { NewLine = "" });
-        }
-        catch (Exception) { /* expected */ }
+        Assert.Throws<FixedWidthException>(() =>
+            FixedWidth.WriteToText(rows, options: new global::HeroParser.FixedWidths.Writing.FixedWidthWriteOptions { NewLine = "" }));
     }
 
     [Fact]
@@ -87,11 +81,8 @@ public class CoveragePushTests30
     public void FixedWidthWriteOptions_NegativeMaxRowCount_Throws()
     {
         var rows = new[] { new FixedAllTypes { L = 1L, S = 2, B = 3, D = 0.5, F = 0.25f, Bo = true, M = 1.5m } };
-        try
-        {
-            FixedWidth.WriteToText(rows, options: new global::HeroParser.FixedWidths.Writing.FixedWidthWriteOptions { MaxRowCount = 0 });
-        }
-        catch (Exception) { /* expected */ }
+        Assert.Throws<FixedWidthException>(() =>
+            FixedWidth.WriteToText(rows, options: new global::HeroParser.FixedWidths.Writing.FixedWidthWriteOptions { MaxRowCount = 0 }));
     }
 
     [Fact]
@@ -99,11 +90,8 @@ public class CoveragePushTests30
     public void FixedWidthWriteOptions_NegativeMaxOutputSize_Throws()
     {
         var rows = new[] { new FixedAllTypes { L = 1L, S = 2, B = 3, D = 0.5, F = 0.25f, Bo = true, M = 1.5m } };
-        try
-        {
-            FixedWidth.WriteToText(rows, options: new global::HeroParser.FixedWidths.Writing.FixedWidthWriteOptions { MaxOutputSize = 0 });
-        }
-        catch (Exception) { /* expected */ }
+        Assert.Throws<FixedWidthException>(() =>
+            FixedWidth.WriteToText(rows, options: new global::HeroParser.FixedWidths.Writing.FixedWidthWriteOptions { MaxOutputSize = 0 }));
     }
 
     // ---------- ExcelReadOptions instantiation (any usage will cover its members) ----------

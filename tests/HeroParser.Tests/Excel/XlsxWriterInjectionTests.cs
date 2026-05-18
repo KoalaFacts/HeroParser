@@ -123,7 +123,7 @@ public class XlsxWriterInjectionTests
     public void Reject_DangerousValue_ThrowsExcelException()
     {
         const string dangerous = "=cmd|'/c calc'!A1";
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
 
         using var writer = new XlsxWriter(ms, leaveOpen: true, injectionProtection: ExcelInjectionProtection.Reject);
         using var sheet = writer.StartSheet("Sheet1");
@@ -134,7 +134,7 @@ public class XlsxWriterInjectionTests
 
     private static byte[] WriteSingleStringCell(string value, ExcelInjectionProtection? protection)
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         XlsxWriter writer = protection.HasValue
             ? new XlsxWriter(ms, leaveOpen: true, injectionProtection: protection.Value)
             : new XlsxWriter(ms, leaveOpen: true);

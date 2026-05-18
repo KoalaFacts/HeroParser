@@ -19,7 +19,8 @@ public class CsvPipeSequenceReaderRemainingGapsTests
         CancellationToken ct = default)
     {
         var bytes = Encoding.UTF8.GetBytes(csv);
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         await using var reader = HeroParser.Csv.CreatePipeSequenceReader(pipe, options);
         var values = new List<string>();
         while (await reader.MoveNextAsync(ct))
@@ -170,7 +171,8 @@ public class CsvPipeSequenceReaderRemainingGapsTests
         var ct = TestContext.Current.CancellationToken;
         var opts = new CsvReadOptions { TrackSourceLineNumbers = true };
         var bytes = Encoding.UTF8.GetBytes("A,B\n1,2\n3,4\n");
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         await using var reader = HeroParser.Csv.CreatePipeSequenceReader(pipe, opts);
 
         Assert.True(await reader.MoveNextAsync(ct));
@@ -211,7 +213,8 @@ public class CsvPipeSequenceReaderRemainingGapsTests
         sb.Append('\n');
 
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         await using var reader = HeroParser.Csv.CreatePipeSequenceReader(pipe);
         Assert.True(await reader.MoveNextAsync(ct));
         Assert.Equal(50, reader.Current.ColumnCount);
@@ -222,7 +225,8 @@ public class CsvPipeSequenceReaderRemainingGapsTests
     {
         var ct = TestContext.Current.CancellationToken;
         var bytes = Encoding.UTF8.GetBytes("A,B\nhello,world\n");
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         await using var reader = HeroParser.Csv.CreatePipeSequenceReader(pipe);
         Assert.True(await reader.MoveNextAsync(ct)); // header
         Assert.True(await reader.MoveNextAsync(ct)); // data

@@ -110,6 +110,33 @@ public static class FixedWidthDataReaderColumns
             };
         }
 
+        // PositionalMap attributes are not expected to overlap — matches the validation that
+        // FixedWidthFieldLayoutValidator applies in the record-binding path.
+        ValidateNoOverlap(columns);
+
         return columns;
+    }
+
+    private static void ValidateNoOverlap(FixedWidthDataReaderColumn[] columns)
+    {
+        if (columns.Length < 2)
+            return;
+
+        var ordered = (FixedWidthDataReaderColumn[])columns.Clone();
+        Array.Sort(ordered, static (left, right) => left.Start.CompareTo(right.Start));
+
+        for (int i = 1; i < ordered.Length; i++)
+        {
+            var previous = ordered[i - 1];
+            var current = ordered[i];
+            int previousEnd = previous.Start + previous.Length;
+            if (current.Start < previousEnd)
+            {
+                throw new ArgumentException(
+                    $"Columns overlap: [{previous.Start}:{previousEnd}) and " +
+                    $"[{current.Start}:{current.Start + current.Length}).",
+                    nameof(columns));
+            }
+        }
     }
 }

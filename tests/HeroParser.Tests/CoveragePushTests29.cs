@@ -84,14 +84,11 @@ public class CoveragePushTests29
     public void FixedWidth_NonInvariant_BadInt_Throws()
     {
         byte[] bytes = Encoding.UTF8.GetBytes("xx\n");
-        try
-        {
+        Assert.Throws<FixedWidthException>(() =>
             FixedWidth.Read<FixedIntRow>()
                 .WithCulture("en-US")
                 .FromStream(new MemoryStream(bytes))
-                .ToList();
-        }
-        catch (Exception) { /* expected */ }
+                .ToList());
     }
 
     [Fact]
@@ -99,14 +96,11 @@ public class CoveragePushTests29
     public void FixedWidth_NonInvariant_BadDouble_Throws()
     {
         byte[] bytes = Encoding.UTF8.GetBytes("xx\n");
-        try
-        {
+        Assert.Throws<FixedWidthException>(() =>
             FixedWidth.Read<FixedDoubleRow>()
                 .WithCulture("en-US")
                 .FromStream(new MemoryStream(bytes))
-                .ToList();
-        }
-        catch (Exception) { /* expected */ }
+                .ToList());
     }
 
     [Fact]
@@ -114,14 +108,11 @@ public class CoveragePushTests29
     public void FixedWidth_NonInvariant_BadDecimal_Throws()
     {
         byte[] bytes = Encoding.UTF8.GetBytes("xxx\n");
-        try
-        {
+        Assert.Throws<FixedWidthException>(() =>
             FixedWidth.Read<FixedDecimalRow>()
                 .WithCulture("en-US")
                 .FromStream(new MemoryStream(bytes))
-                .ToList();
-        }
-        catch (Exception) { /* expected */ }
+                .ToList());
     }
 
     [Fact]
@@ -129,14 +120,11 @@ public class CoveragePushTests29
     public void FixedWidth_NonInvariant_BadShort_Throws()
     {
         byte[] bytes = Encoding.UTF8.GetBytes("xx\n");
-        try
-        {
+        Assert.Throws<FixedWidthException>(() =>
             FixedWidth.Read<FixedShortRow>()
                 .WithCulture("en-US")
                 .FromStream(new MemoryStream(bytes))
-                .ToList();
-        }
-        catch (Exception) { /* expected */ }
+                .ToList());
     }
 
     [Fact]
@@ -144,14 +132,11 @@ public class CoveragePushTests29
     public void FixedWidth_NonInvariant_BadByte_Throws()
     {
         byte[] bytes = Encoding.UTF8.GetBytes("xx\n");
-        try
-        {
+        Assert.Throws<FixedWidthException>(() =>
             FixedWidth.Read<FixedByteRow>()
                 .WithCulture("en-US")
                 .FromStream(new MemoryStream(bytes))
-                .ToList();
-        }
-        catch (Exception) { /* expected */ }
+                .ToList());
     }
 
     [Fact]
@@ -159,14 +144,11 @@ public class CoveragePushTests29
     public void FixedWidth_NonInvariant_BadLong_Throws()
     {
         byte[] bytes = Encoding.UTF8.GetBytes("xx\n");
-        try
-        {
+        Assert.Throws<FixedWidthException>(() =>
             FixedWidth.Read<FixedLongRow>()
                 .WithCulture("en-US")
                 .FromStream(new MemoryStream(bytes))
-                .ToList();
-        }
-        catch (Exception) { /* expected */ }
+                .ToList());
     }
 
     [Fact]
@@ -174,14 +156,11 @@ public class CoveragePushTests29
     public void FixedWidth_NonInvariant_BadFloat_Throws()
     {
         byte[] bytes = Encoding.UTF8.GetBytes("xx\n");
-        try
-        {
+        Assert.Throws<FixedWidthException>(() =>
             FixedWidth.Read<FixedFloatRow>()
                 .WithCulture("en-US")
                 .FromStream(new MemoryStream(bytes))
-                .ToList();
-        }
-        catch (Exception) { /* expected */ }
+                .ToList());
     }
 
     // ---------- FixedWidthRecordWriter clusters ----------
@@ -221,37 +200,33 @@ public class CoveragePushTests29
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FW_RecordWriter_NullRecord_HandlesGracefully()
     {
-        // Writing a list with null record entries.
+        // Writing a list with null record entries — writer treats nulls as default-valued rows.
         var rows = new List<FixedAllTypes?>
         {
             new() { L = 1L, S = 2, B = 3, D = 0.5, F = 0.25f, Bo = true, M = 1.5m },
             null,
             new() { L = 2L, S = 3, B = 4, D = 1.5, F = 1.25f, Bo = false, M = 2.5m },
         };
-        try
-        {
-            string text = FixedWidth.Write<FixedAllTypes>().ToText(rows.Cast<FixedAllTypes>());
-            Assert.NotEmpty(text);
-        }
-        catch (Exception) { /* tolerable */ }
+        string text = FixedWidth.Write<FixedAllTypes>().ToText(rows.Cast<FixedAllTypes>());
+        Assert.NotEmpty(text);
     }
 
     // ---------- Csv builder validate-mode strict via record-builder ----------
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void Csv_Reader_ValidationMode_Strict_BehaviorVaries()
+    public void Csv_Reader_ValidationMode_Strict_SkipsInvalidRows()
     {
-        // Strict mode behavior on missing NotNull may throw or skip — just exercise the path.
+        // Strict mode with a missing required value skips the bad row (does not throw at the
+        // enumeration level — validation errors surface via the diagnostics collection).
         string csv = "Name,Age\n,30\n";
-        try
-        {
-            using var reader = Csv.Read<RequiredFieldRow>()
-                .WithValidationMode(ValidationMode.Strict)
-                .FromStream(new MemoryStream(Encoding.UTF8.GetBytes(csv)), out _);
-            foreach (var _ in reader) { }
-        }
-        catch (Exception) { /* tolerable */ }
+        using var reader = Csv.Read<RequiredFieldRow>()
+            .WithValidationMode(ValidationMode.Strict)
+            .FromStream(new MemoryStream(Encoding.UTF8.GetBytes(csv)), out _);
+        int n = 0;
+        foreach (var _ in reader) n++;
+        // The single data row has a missing required field and is filtered in strict mode.
+        Assert.Equal(0, n);
     }
 
     [Fact]

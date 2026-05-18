@@ -198,7 +198,17 @@ internal readonly struct DiscriminatorKey : IEquatable<DiscriminatorKey>
 
         if (lowercase)
         {
-            Span<char> buffer = stackalloc char[value.Length];
+            // Defense-in-depth: bound the stackalloc by MAX_PACKED_LENGTH before allocating
+            // so a long input can't blow the stack even though callers are developer-controlled today.
+            if (value.Length > MAX_PACKED_LENGTH)
+            {
+                throw new ArgumentException(
+                    $"Discriminator value '{value}' cannot be packed. " +
+                    $"It must be at most {MAX_PACKED_LENGTH} ASCII characters.",
+                    nameof(value));
+            }
+            Span<char> buffer = stackalloc char[MAX_PACKED_LENGTH];
+            buffer = buffer[..value.Length];
             for (int i = 0; i < value.Length; i++)
             {
                 buffer[i] = char.ToLowerInvariant(value[i]);

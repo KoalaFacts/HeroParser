@@ -17,7 +17,8 @@ public class CsvPipeSequenceReaderCoverageTests
     private static async Task<int> CountRowsAsync(string csv, CsvReadOptions? options = null, CancellationToken ct = default)
     {
         var bytes = Encoding.UTF8.GetBytes(csv);
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         await using var reader = HeroParser.Csv.CreatePipeSequenceReader(pipe, options);
         int count = 0;
         while (await reader.MoveNextAsync(ct))
@@ -160,7 +161,8 @@ public class CsvPipeSequenceReaderCoverageTests
     {
         var ct = TestContext.Current.CancellationToken;
         var bytes = Encoding.UTF8.GetBytes("A,B\n1,2\n");
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         var reader = HeroParser.Csv.CreatePipeSequenceReader(pipe);
         await reader.MoveNextAsync(ct);
         await reader.DisposeAsync();
@@ -179,7 +181,8 @@ public class CsvPipeSequenceReaderCoverageTests
     {
         var ct = TestContext.Current.CancellationToken;
         var bytes = Encoding.UTF8.GetBytes("A,B\nhello,world\n");
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         await using var reader = HeroParser.Csv.CreatePipeSequenceReader(pipe);
 
         Assert.True(await reader.MoveNextAsync(ct)); // header
@@ -200,7 +203,8 @@ public class CsvPipeSequenceReaderCoverageTests
         var sb = new StringBuilder("A,B\n");
         for (int i = 0; i < 10000; i++) sb.Append($"row{i},data{i}\n");
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         await using var reader = HeroParser.Csv.CreatePipeSequenceReader(pipe);
 
         using var cts = new CancellationTokenSource();

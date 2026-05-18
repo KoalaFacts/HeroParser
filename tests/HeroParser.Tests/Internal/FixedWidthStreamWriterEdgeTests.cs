@@ -16,7 +16,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_DateTime_Formatted()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(new DateTime(2024, 1, 15), 10, format: "yyyy-MM-dd");
@@ -28,7 +28,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_Decimal_RightAligned()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(123.45m, 10, FieldAlignment.Right, '0');
@@ -40,7 +40,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_Guid()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             var g = new Guid("12345678-1234-1234-1234-123456789012");
@@ -53,7 +53,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_Int_FormattedWithPadding()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(42, 6, FieldAlignment.Right, '0');
@@ -65,7 +65,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_NullValue_PadsBlank()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField((object?)null, 5);
@@ -77,7 +77,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_DateOnly()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(new DateOnly(2024, 1, 15), 10, format: "yyyy-MM-dd");
@@ -89,7 +89,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_TimeOnly()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(new TimeOnly(10, 30), 5, format: "HH:mm");
@@ -101,7 +101,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_Bool()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(true, 5);
@@ -113,7 +113,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_Long()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(9_000_000_000L, 12, FieldAlignment.Right, '0');
@@ -125,7 +125,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_Float()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(3.14f, 8);
@@ -137,7 +137,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Object_Double()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(2.71828, 10);
@@ -150,7 +150,7 @@ public class FixedWidthStreamWriterEdgeTests
     public void WriteField_LargeString_TriggersBufferGrowth()
     {
         var big = new string('a', 32 * 1024);
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(big, 32 * 1024);
@@ -162,7 +162,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void ManyRows_TriggerMultipleFlushes()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             for (int i = 0; i < 200; i++)
@@ -180,7 +180,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Span_LeftAlignment()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField("abc".AsSpan(), 6, FieldAlignment.Left, ' ');
@@ -192,7 +192,7 @@ public class FixedWidthStreamWriterEdgeTests
     [Fact]
     public void WriteField_Span_RightAlignment()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField("42".AsSpan(), 5, FieldAlignment.Right, '0');
@@ -205,7 +205,7 @@ public class FixedWidthStreamWriterEdgeTests
     public void EndRow_AppendsConfiguredNewLine()
     {
         var opts = new FixedWidthWriteOptions { NewLine = "\n" };
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, opts, leaveOpen: true))
         {
             w.WriteField("a", 3);

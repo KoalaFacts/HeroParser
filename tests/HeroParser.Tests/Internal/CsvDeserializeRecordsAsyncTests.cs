@@ -27,7 +27,8 @@ public class CsvDeserializeRecordsAsyncTests
     public async Task BasicRecords_ParsedFromPipeReader()
     {
         var bytes = "Name,Age\nAlice,30\nBob,25\n"u8.ToArray();
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         var records = new List<Person>();
         await foreach (var p in HeroParser.Csv.DeserializeRecordsAsync<Person>(pipe,
             cancellationToken: TestContext.Current.CancellationToken))
@@ -55,7 +56,8 @@ public class CsvDeserializeRecordsAsyncTests
         for (int i = 0; i < 50; i++) sb.AppendLine($"P{i},{i + 18}");
 
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         var reports = new List<CsvProgress>();
         var recordOptions = new CsvRecordOptions
         {
@@ -81,7 +83,8 @@ public class CsvDeserializeRecordsAsyncTests
         var bigName = new string('a', 4096);
         var csv = $"Name,Age\n{bigName},42\n";
         var bytes = Encoding.UTF8.GetBytes(csv);
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var records = new List<Person>();
         await foreach (var p in HeroParser.Csv.DeserializeRecordsAsync<Person>(pipe,
@@ -130,7 +133,8 @@ public class CsvDeserializeRecordsAsyncTests
     {
         var csv = "skip-me\nName,Age\nAlice,30\n";
         var bytes = Encoding.UTF8.GetBytes(csv);
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         var recordOptions = new CsvRecordOptions { SkipRows = 1 };
 
         var records = new List<Person>();
@@ -147,7 +151,8 @@ public class CsvDeserializeRecordsAsyncTests
     public async Task PreCancelledToken_ThrowsOperationCancelled()
     {
         var bytes = Encoding.UTF8.GetBytes("Name,Age\nAlice,30\nBob,25\n");
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
@@ -162,7 +167,8 @@ public class CsvDeserializeRecordsAsyncTests
     [Fact]
     public async Task EmptyCsv_NoRecords()
     {
-        var pipe = PipeReader.Create(new MemoryStream([]));
+        using var ms = new MemoryStream([]);
+        var pipe = PipeReader.Create(ms);
         var records = new List<Person>();
         await foreach (var p in HeroParser.Csv.DeserializeRecordsAsync<Person>(pipe,
             cancellationToken: TestContext.Current.CancellationToken))
@@ -175,7 +181,8 @@ public class CsvDeserializeRecordsAsyncTests
     [Fact]
     public async Task HeaderOnly_NoDataRecords()
     {
-        var pipe = PipeReader.Create(new MemoryStream("Name,Age\n"u8.ToArray()));
+        using var ms = new MemoryStream("Name,Age\n"u8.ToArray());
+        var pipe = PipeReader.Create(ms);
         var records = new List<Person>();
         await foreach (var p in HeroParser.Csv.DeserializeRecordsAsync<Person>(pipe,
             cancellationToken: TestContext.Current.CancellationToken))
@@ -189,7 +196,8 @@ public class CsvDeserializeRecordsAsyncTests
     public async Task ParserOptions_CustomDelimiter_Honored()
     {
         var bytes = "Name|Age\nAlice|30\n"u8.ToArray();
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         var parserOptions = new CsvReadOptions { Delimiter = '|' };
 
         var records = new List<Person>();

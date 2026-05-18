@@ -100,7 +100,8 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         // Non-UTF8 encoding takes the encoding.GetChars decode path in BindAsync.
         var ct = TestContext.Current.CancellationToken;
         var bytes = Encoding.Latin1.GetBytes(Sample(3));
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var list = new List<GenRow>();
         await foreach (var r in FixedWidth.DeserializeRecordsAsync<GenRow>(pipe,
@@ -145,7 +146,8 @@ public class FixedWidthRecordBinderAsyncCoverageTests
     {
         var ct = TestContext.Current.CancellationToken;
         var bytes = Encoding.Latin1.GetBytes(Sample(3));
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var list = new List<ReflectionRow>();
         await foreach (var r in FixedWidth.DeserializeRecordsAsync<ReflectionRow>(pipe,
@@ -161,7 +163,8 @@ public class FixedWidthRecordBinderAsyncCoverageTests
     public async Task PipeReader_WithProgressReporter()
     {
         var ct = TestContext.Current.CancellationToken;
-        var pipe = PipeReader.Create(new MemoryStream(Encoding.UTF8.GetBytes(Sample(50))));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(Sample(50)));
+        var pipe = PipeReader.Create(ms);
         var reports = new List<FixedWidthProgress>();
 
         var list = new List<ReflectionRow>();
@@ -231,7 +234,8 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         var ct = TestContext.Current.CancellationToken;
         var encoding = Encoding.GetEncoding("ISO-8859-1");
         var bytes = encoding.GetBytes(Sample(5));
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var list = new List<GenRow>();
         await foreach (var r in FixedWidth.DeserializeRecordsAsync<GenRow>(pipe,
@@ -248,7 +252,8 @@ public class FixedWidthRecordBinderAsyncCoverageTests
     {
         var ct = TestContext.Current.CancellationToken;
         var bytes = Encoding.Latin1.GetBytes(Sample(3));
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var map = new FixedWidthMap<ReflectionRow>();
         map.Map(r => r.Name, c => c.Start(0).Length(5))
@@ -271,7 +276,8 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         // Non-invariant culture exercises the culture-passing branch.
         var ct = TestContext.Current.CancellationToken;
         var bytes = Encoding.UTF8.GetBytes(Sample(3));
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
 
         var list = new List<ReflectionRow>();
         await foreach (var r in FixedWidth.Read<ReflectionRow>()

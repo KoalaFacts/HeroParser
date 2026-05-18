@@ -221,7 +221,8 @@ public class CsvWriterBuilderTests
             .ToStream(ms, records);
 
         ms.Position = 0;
-        var csv = new StreamReader(ms).ReadToEnd();
+        using var sr = new StreamReader(ms);
+        var csv = sr.ReadToEnd();
         Assert.Contains("Alice", csv);
         Assert.Contains("|", csv);
     }
@@ -341,7 +342,8 @@ public class CsvWriterBuilderTests
         writer.Flush();
 
         ms.Position = 0;
-        var csv = new StreamReader(ms).ReadToEnd();
+        using var sr = new StreamReader(ms);
+        var csv = sr.ReadToEnd();
         Assert.Contains("X|Y|Z", csv);
     }
 
@@ -521,7 +523,8 @@ public class CsvWriterBuilderTests
             .ToStreamAsync(ms, records, leaveOpen: true, cancellationToken);
 
         ms.Position = 0;
-        var csv = new StreamReader(ms).ReadToEnd();
+        using var sr = new StreamReader(ms);
+        var csv = sr.ReadToEnd();
         Assert.Contains("Bob|25|LA", csv);
     }
 

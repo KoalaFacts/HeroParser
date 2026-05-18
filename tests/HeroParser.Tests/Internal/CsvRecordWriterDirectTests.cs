@@ -45,7 +45,7 @@ public class CsvRecordWriterDirectTests
     public void WriteHeader_WritesNamedColumns()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Person>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = new CsvStreamWriter(sw, leaveOpen: true))
         {
             rw.WriteHeader(writer);
@@ -57,7 +57,7 @@ public class CsvRecordWriterDirectTests
     public void WriteRecord_WritesSingleRow()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Person>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = new CsvStreamWriter(sw, leaveOpen: true))
         {
             rw.WriteRecord(writer, new Person { Name = "Alice", Age = 30 });
@@ -69,7 +69,7 @@ public class CsvRecordWriterDirectTests
     public void WriteRecords_WithHeader_IncludesHeader()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Person>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = new CsvStreamWriter(sw, leaveOpen: true))
         {
             rw.WriteRecords(writer, Sample(), includeHeader: true);
@@ -84,7 +84,7 @@ public class CsvRecordWriterDirectTests
     public void WriteRecords_WithoutHeader_OmitsHeader()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Person>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = new CsvStreamWriter(sw, leaveOpen: true))
         {
             rw.WriteRecords(writer, Sample(), includeHeader: false);
@@ -98,7 +98,7 @@ public class CsvRecordWriterDirectTests
     public void WriteRecords_MaxRowCount_Exceeded_Throws()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Person>(new CsvWriteOptions { MaxRowCount = 2 });
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using var writer = new CsvStreamWriter(sw, leaveOpen: true);
         Assert.Throws<CsvException>(() => rw.WriteRecords(writer, Sample(5), includeHeader: false));
     }
@@ -114,7 +114,7 @@ public class CsvRecordWriterDirectTests
             WriteProgressIntervalRows = 1
         });
 
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = new CsvStreamWriter(sw, leaveOpen: true))
         {
             rw.WriteRecords(writer, Sample(3), includeHeader: false);
@@ -128,7 +128,7 @@ public class CsvRecordWriterDirectTests
     public async Task WriteRecordsAsync_AsyncEnumerable_WritesAll()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Person>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         await using (var writer = new CsvStreamWriter(sw, leaveOpen: true))
         {
             await rw.WriteRecordsAsync(writer, SampleAsync(3), includeHeader: true,
@@ -143,7 +143,7 @@ public class CsvRecordWriterDirectTests
     public async Task WriteRecordsAsync_AsyncEnumerable_MaxRowCount_Throws()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Person>(new CsvWriteOptions { MaxRowCount = 1 });
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         await using var writer = new CsvStreamWriter(sw, leaveOpen: true);
         await Assert.ThrowsAsync<CsvException>(async () =>
             await rw.WriteRecordsAsync(writer, SampleAsync(5), includeHeader: false,
@@ -155,7 +155,7 @@ public class CsvRecordWriterDirectTests
     {
         // Smoke-test the WriteRecordsAsync(IAsyncEnumerable) path completes for a small batch.
         var rw = CsvRecordWriterFactory.GetWriter<Person>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         await using (var writer = new CsvStreamWriter(sw, leaveOpen: true))
         {
             await rw.WriteRecordsAsync(writer, SampleAsync(2), includeHeader: false,
@@ -169,7 +169,7 @@ public class CsvRecordWriterDirectTests
     public void WriteRecords_WithExcludeIfAllEmpty_RemovesEmptyColumn()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Sparse>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         var records = new[]
         {
             new Sparse { Always = "x", Sometimes = null },
@@ -189,7 +189,7 @@ public class CsvRecordWriterDirectTests
     public void WriteRecords_WithExcludeIfAllEmpty_KeepsColumnIfAnyValue()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Sparse>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         var records = new[]
         {
             new Sparse { Always = "x", Sometimes = null },
@@ -208,7 +208,7 @@ public class CsvRecordWriterDirectTests
     public async Task WriteRecordsAsync_WithExcludeIfAllEmpty_AsyncMaterializesAndFilters()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Sparse>();
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
 
         static async IAsyncEnumerable<Sparse> AsyncSparse()
         {
@@ -236,7 +236,7 @@ public class CsvRecordWriterDirectTests
     public void Factory_GetWriter_WithOptions_HonorsConfiguration()
     {
         var rw = CsvRecordWriterFactory.GetWriter<Person>(new CsvWriteOptions { Delimiter = ';' });
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = new CsvStreamWriter(sw, new CsvWriteOptions { Delimiter = ';' }, leaveOpen: true))
         {
             rw.WriteRecords(writer, Sample(1), includeHeader: true);

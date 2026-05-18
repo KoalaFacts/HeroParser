@@ -88,7 +88,7 @@ public class CoveragePushTests27
     public void FixedWidthWriter_ToWriter()
     {
         var rows = new[] { new FixedAllTypes { L = 1L, S = 2, B = 3, D = 0.5, F = 0.25f, Bo = true, M = 1.5m } };
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         FixedWidth.Write<FixedAllTypes>().ToWriter(sw, rows);
         Assert.NotEmpty(sw.ToString());
     }
@@ -247,8 +247,8 @@ public class CoveragePushTests27
     {
         var cols = global::HeroParser.FixedWidths.Reading.Data.FixedWidthDataReaderColumns.FromLengths(
             [3], ["A"]);
-        var ms = new MemoryStream(Encoding.UTF8.GetBytes("foo\n"));
-        var dr = FixedWidth.CreateDataReader(
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes("foo\n"));
+        using var dr = FixedWidth.CreateDataReader(
             ms,
             readerOptions: new global::HeroParser.FixedWidths.Reading.Data.FixedWidthDataReaderOptions { Columns = cols });
         dr.Close();

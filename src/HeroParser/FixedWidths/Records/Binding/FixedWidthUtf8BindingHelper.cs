@@ -3,6 +3,9 @@ using System.Buffers.Text;
 using System.Globalization;
 using System.Text;
 
+// Infrastructure helpers used exclusively by source-generated fixed-width binders.
+// CS1591: members are documented on the class summary; per-method docs would be noise on a public helper surface.
+// IDE0350: 'use implicit lambda parameter type' would conflict with the explicit generic delegate signatures here.
 #pragma warning disable CS1591
 #pragma warning disable IDE0350
 
@@ -150,7 +153,7 @@ public static class FixedWidthUtf8BindingHelper
     {
         if (utf8.Length == 1)
         {
-#pragma warning disable IDE0010
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
             switch (utf8[0])
             {
                 case (byte)'1':

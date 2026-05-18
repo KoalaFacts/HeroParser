@@ -541,7 +541,8 @@ public class CoveragePushTests3
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvDataReader_EmptyFile_Empty()
     {
-        using var dr = Csv.CreateDataReader(new MemoryStream());
+        using var ms = new MemoryStream();
+        using var dr = Csv.CreateDataReader(ms);
         Assert.False(dr.Read());
     }
 
@@ -550,8 +551,9 @@ public class CoveragePushTests3
     public void CsvDataReader_NoHeaderRow()
     {
         string csv = "1,2\n3,4\n";
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var dr = Csv.CreateDataReader(
-            new MemoryStream(Encoding.UTF8.GetBytes(csv)),
+            ms,
             readerOptions: new SeparatedValues.Reading.Data.CsvDataReaderOptions { HasHeaderRow = false, ColumnNames = ["X", "Y"] });
         int n = 0;
         while (dr.Read()) n++;

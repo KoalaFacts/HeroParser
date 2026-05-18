@@ -211,7 +211,7 @@ public class CoveragePushTests26
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvWriter_NonGeneric_FluentChain()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = Csv.Write()
             .WithDelimiter(';')
             .WithQuote('\'')
@@ -276,7 +276,7 @@ public class CoveragePushTests26
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Csv_ReadFromStream_LeaveOpenFalse()
     {
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
         using (var reader = Csv.ReadFromStream(stream, out _, null, leaveOpen: false))
         {
             while (reader.MoveNext()) { }

@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace HeroParser.Validation;
 
 /// <summary>
@@ -18,4 +20,9 @@ public sealed record WritePropertyValidation(
         || MaxLength.HasValue || MinLength.HasValue
         || RangeMin.HasValue || RangeMax.HasValue
         || Pattern is not null;
+
+    // Compiled once per rule instance — avoids per-row Regex construction in the write hot path.
+    internal Regex? CompiledPattern { get; } = Pattern is null
+        ? null
+        : new Regex(Pattern, RegexOptions.Compiled, TimeSpan.FromMilliseconds(PatternTimeoutMs));
 }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml;
+using HeroParser.Excels.Core;
 
 namespace HeroParser.Excels.Xlsx;
 

@@ -263,7 +263,7 @@ public class AsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task CsvAsyncStreamWriter_DisposeAsync_FlushesAndReleases()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: true);
 
         await writer.WriteRowAsync(["test", "data"], TestContext.Current.CancellationToken);
@@ -285,7 +285,7 @@ public class AsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task CsvAsyncStreamWriter_LeaveOpenFalse_DisposesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await using (var writer = new CsvAsyncStreamWriter(ms, CsvWriteOptions.Default, Encoding.UTF8, leaveOpen: false))
         {
             await writer.WriteRowAsync(["test"], TestContext.Current.CancellationToken);
@@ -583,7 +583,7 @@ public class AsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CreateStreamWriter_Stream_LeaveOpenFalse_DisposesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         using (var writer = Csv.CreateStreamWriter(ms, leaveOpen: false))
         {
             writer.WriteRow(["Test"]);
@@ -668,7 +668,7 @@ public class AsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task CreateAsyncStreamWriter_LeaveOpenFalse_DisposesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await using (var writer = Csv.CreateAsyncStreamWriter(ms, leaveOpen: false))
         {
             await writer.WriteRowAsync(["Test"], TestContext.Current.CancellationToken);
@@ -811,7 +811,7 @@ public class AsyncWriterTests
             new TestRecord { Name = "Test", Age = 1, City = "City" }
         };
 
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await Csv.Write<TestRecord>()
             .ToStreamAsyncStreaming(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
 

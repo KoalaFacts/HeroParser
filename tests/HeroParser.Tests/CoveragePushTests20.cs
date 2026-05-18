@@ -189,7 +189,7 @@ public class CoveragePushTests20
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowReaderBuilder_FromStream_LeaveOpenFalse()
     {
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
         using (var reader = Csv.Read().FromStream(stream, out _, leaveOpen: false))
         {
             while (reader.MoveNext()) { }
@@ -202,7 +202,7 @@ public class CoveragePushTests20
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CsvRowReaderBuilder_FromStreamAsync_LeaveOpenFalse()
     {
-        var stream = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("a,b\n1,2\n"));
         await using (var reader = Csv.Read().FromStreamAsync(stream, leaveOpen: false))
         {
             while (await reader.MoveNextAsync(TestContext.Current.CancellationToken)) { }

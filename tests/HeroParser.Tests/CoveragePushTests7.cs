@@ -146,8 +146,9 @@ public class CoveragePushTests7
     {
         // With AllowMissingColumns, accessing the missing column returns DBNull.Value.
         string csv = "A,B,C\n1,2\n";
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var dr = Csv.CreateDataReader(
-            new MemoryStream(Encoding.UTF8.GetBytes(csv)),
+            ms,
             readerOptions: new SeparatedValues.Reading.Data.CsvDataReaderOptions { AllowMissingColumns = true });
         Assert.True(dr.Read());
         Assert.Equal(DBNull.Value, dr.GetValue(2));
@@ -159,7 +160,8 @@ public class CoveragePushTests7
     public void CsvDataReader_MissingColumnsAtReadTime_Throws()
     {
         string csv = "A,B,C\n1,2\n";
-        using var dr = Csv.CreateDataReader(new MemoryStream(Encoding.UTF8.GetBytes(csv)));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var dr = Csv.CreateDataReader(ms);
         Assert.Throws<CsvException>(() => dr.Read());
     }
 
@@ -170,8 +172,9 @@ public class CoveragePushTests7
         string csv = "A,B\n1,2\n";
         Assert.Throws<CsvException>(() =>
         {
+            using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
             using var dr = Csv.CreateDataReader(
-                new MemoryStream(Encoding.UTF8.GetBytes(csv)),
+                ms,
                 readerOptions: new SeparatedValues.Reading.Data.CsvDataReaderOptions { ColumnNames = ["X", "Y", "Z"] });
             dr.Read();
         });
@@ -182,8 +185,9 @@ public class CoveragePushTests7
     public void CsvDataReader_NoHeader_NoColumnNames_InfersFromFirstRow()
     {
         string csv = "1,2,3\n4,5,6\n";
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var dr = Csv.CreateDataReader(
-            new MemoryStream(Encoding.UTF8.GetBytes(csv)),
+            ms,
             readerOptions: new SeparatedValues.Reading.Data.CsvDataReaderOptions { HasHeaderRow = false });
         Assert.True(dr.Read());
         Assert.Equal(3, dr.FieldCount);
@@ -194,7 +198,8 @@ public class CoveragePushTests7
     public void CsvDataReader_AccessBeforeRead_Throws()
     {
         string csv = "A,B\n1,2\n";
-        using var dr = Csv.CreateDataReader(new MemoryStream(Encoding.UTF8.GetBytes(csv)));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var dr = Csv.CreateDataReader(ms);
         Assert.Throws<InvalidOperationException>(() => dr.GetValue(0));
     }
 
@@ -203,7 +208,8 @@ public class CoveragePushTests7
     public void CsvDataReader_BadOrdinal_Throws()
     {
         string csv = "A,B\n1,2\n";
-        using var dr = Csv.CreateDataReader(new MemoryStream(Encoding.UTF8.GetBytes(csv)));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var dr = Csv.CreateDataReader(ms);
         Assert.True(dr.Read());
         Assert.Throws<IndexOutOfRangeException>(() => dr.GetValue(99));
     }
@@ -213,7 +219,8 @@ public class CoveragePushTests7
     public void CsvDataReader_GetOrdinal_MissingColumn_Throws()
     {
         string csv = "A,B\n1,2\n";
-        using var dr = Csv.CreateDataReader(new MemoryStream(Encoding.UTF8.GetBytes(csv)));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var dr = Csv.CreateDataReader(ms);
         Assert.Throws<IndexOutOfRangeException>(() => dr.GetOrdinal("Missing"));
     }
 
@@ -222,7 +229,8 @@ public class CoveragePushTests7
     public void CsvDataReader_Depth_RecordsAffected()
     {
         string csv = "A\n1\n";
-        using var dr = Csv.CreateDataReader(new MemoryStream(Encoding.UTF8.GetBytes(csv)));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var dr = Csv.CreateDataReader(ms);
         Assert.Equal(0, dr.Depth);
         Assert.Equal(-1, dr.RecordsAffected);
     }
@@ -232,7 +240,8 @@ public class CoveragePushTests7
     public void CsvDataReader_HasRows_BeforeAndAfterRead()
     {
         string csv = "A\n1\n";
-        using var dr = Csv.CreateDataReader(new MemoryStream(Encoding.UTF8.GetBytes(csv)));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var dr = Csv.CreateDataReader(ms);
         Assert.True(dr.HasRows);
         dr.Read();
     }
@@ -242,7 +251,8 @@ public class CoveragePushTests7
     public void CsvDataReader_Close_DisposeAccessAfter_Throws()
     {
         string csv = "A\n1\n";
-        var dr = Csv.CreateDataReader(new MemoryStream(Encoding.UTF8.GetBytes(csv)));
+        using var ms = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var dr = Csv.CreateDataReader(ms);
         dr.Close();
         Assert.True(dr.IsClosed);
         Assert.Throws<InvalidOperationException>(() => dr.Read());

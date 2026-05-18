@@ -408,7 +408,7 @@ public class FixedWidthAsyncWriterTests
             new TestRecord { Name = "Test", Age = 1, City = "City" }
         };
 
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Stream should be disposed
@@ -542,7 +542,7 @@ public class FixedWidthAsyncWriterTests
             new TestRecord { Name = "Test", Age = 1, City = "City" }
         };
 
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await FixedWidth.Write<TestRecord>()
             .ToStreamAsyncStreaming(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -595,7 +595,7 @@ public class FixedWidthAsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CreateWriter_LeaveOpenTrue_DoesNotDisposeTextWriter()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = FixedWidth.CreateWriter(sw, leaveOpen: true))
         {
             writer.WriteField("Test", 10);
@@ -656,7 +656,7 @@ public class FixedWidthAsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CreateStreamWriter_Stream_LeaveOpenFalse_DisposesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         using (var writer = FixedWidth.CreateStreamWriter(ms, leaveOpen: false))
         {
             writer.WriteField("Test", 10);
@@ -767,7 +767,7 @@ public class FixedWidthAsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task CreateAsyncStreamWriter_LeaveOpenFalse_DisposesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await using (var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: false))
         {
             await writer.WriteFieldAsync("Test", 10, TestContext.Current.CancellationToken);

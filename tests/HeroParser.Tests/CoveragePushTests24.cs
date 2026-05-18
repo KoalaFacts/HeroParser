@@ -82,7 +82,7 @@ public class CoveragePushTests24
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Csv_CreateWriter_FromTextWriter()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = Csv.CreateWriter(sw))
         {
             writer.WriteRow(["a", "b"]);

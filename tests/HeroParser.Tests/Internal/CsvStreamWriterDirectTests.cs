@@ -14,6 +14,7 @@ public class CsvStreamWriterDirectTests
 {
     private static (StringWriter, CsvStreamWriter) Create(CsvWriteOptions? opts = null, bool leaveOpen = true)
     {
+        // sw is returned to the caller, which owns disposal — don't 'using' here.
         var sw = new StringWriter();
         return (sw, new CsvStreamWriter(sw, opts, leaveOpen));
     }
@@ -200,7 +201,7 @@ public class CsvStreamWriterDirectTests
     [Fact]
     public void Dispose_RespectsLeaveOpen()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         var w = new CsvStreamWriter(sw, leaveOpen: true);
         w.WriteRow("a");
         w.Dispose();
@@ -278,7 +279,7 @@ public class CsvStreamWriterDirectTests
     [Fact]
     public async Task DisposeAsync_FlushesAndCloses()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         var w = new CsvStreamWriter(sw, leaveOpen: true);
         w.WriteRow("a", "b");
         await w.DisposeAsync();

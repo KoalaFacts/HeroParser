@@ -218,7 +218,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToStreamAsync_SimpleRecords_WritesCorrectly()
     {
         // Arrange
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         var records = CreateAsyncEnumerable(
             new Person("Alice", 30, "New York"),
             new Person("Bob", 25, "London")
@@ -242,7 +242,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToStreamAsync_LeaveOpenFalse_DisposesStream()
     {
         // Arrange
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         var records = CreateAsyncEnumerable(
             new Person("Alice", 30, "New York")
         );
@@ -259,7 +259,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToStreamAsync_LeaveOpenTrue_KeepsStreamOpen()
     {
         // Arrange
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         var records = CreateAsyncEnumerable(
             new Person("Alice", 30, "New York")
         );
@@ -334,7 +334,7 @@ public class AsyncEnumerableWriterTests
     public async Task CsvWriterBuilder_ToStreamAsync_WritesCorrectly()
     {
         // Arrange
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         var records = CreateAsyncEnumerable(
             new Person("Alice", 30, "New York"),
             new Person("Bob", 25, "London")

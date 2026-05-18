@@ -89,16 +89,13 @@ public class CoveragePushTests25
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FixedWidth_Builder_IncludeEmptyLines()
     {
-        // Just exercise the path; empty rows may fail parsing depending on schema.
-        try
-        {
-            FixedWidth.Read<FixedAllTypes>()
-                .IncludeEmptyLines()
-                .AllowShortRows(true)
-                .FromText("9999999999" + "12345" + "200" + "3.140000" + "2.500000" + "true " + "1234.56000" + "\n")
-                .ToList();
-        }
-        catch (Exception) { /* tolerable */ }
+        // IncludeEmptyLines + AllowShortRows accepts a single populated row without throwing.
+        var rows = FixedWidth.Read<FixedAllTypes>()
+            .IncludeEmptyLines()
+            .AllowShortRows(true)
+            .FromText("9999999999" + "12345" + "200" + "3.140000" + "2.500000" + "true " + "1234.56000" + "\n")
+            .ToList();
+        Assert.Single(rows);
     }
 
     [Fact]
@@ -162,15 +159,14 @@ public class CoveragePushTests25
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FixedWidth_Builder_WithNullValues()
     {
-        // Just exercise the path - null-value handling for FW differs from CSV.
-        try
-        {
-            FixedWidth.Read<NullableFixedRow>()
-                .WithNullValues("NA")
-                .FromText("Alice\n")
-                .ToList();
-        }
-        catch (Exception) { /* tolerable */ }
+        // The fluent WithNullValues path is accepted; the literal "Alice" does not match "NA"
+        // and is parsed verbatim into the nullable string property.
+        var rows = FixedWidth.Read<NullableFixedRow>()
+            .WithNullValues("NA")
+            .FromText("Alice\n")
+            .ToList();
+        Assert.Single(rows);
+        Assert.Equal("Alice", rows[0].Name);
     }
 
     [Fact]
@@ -315,7 +311,10 @@ public class CoveragePushTests25
         await using var writer = Csv.CreateAsyncStreamWriter(ms);
         await writer.WriteRowAsync(["a", "b"], ct);
         await writer.FlushAsync(ct);
+        // Second flush is a no-op and must not throw; row content must already be on the stream.
         await writer.FlushAsync(ct);
+        Assert.True(ms.Length > 0);
+        Assert.Contains("a,b", Encoding.UTF8.GetString(ms.ToArray()));
     }
 
     [Fact]
@@ -327,7 +326,10 @@ public class CoveragePushTests25
         var writer = Csv.CreateAsyncStreamWriter(ms);
         await writer.WriteRowAsync(["a", "b"], ct);
         await writer.DisposeAsync();
+        // Second dispose must not throw and content must be flushed.
         await writer.DisposeAsync();
+        Assert.True(ms.ToArray().Length > 0);
+        Assert.Contains("a,b", Encoding.UTF8.GetString(ms.ToArray()));
     }
 
     // ---------- Excel writer additional cells / sheet ----------

@@ -425,8 +425,9 @@ public class CoveragePushTests
     public void CsvDataReader_AllowMissingColumns_ReturnsDBNull()
     {
         string csv = "A,B,C\n1,2\n";
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
         using var dr = Csv.CreateDataReader(
-            new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv)),
+            ms,
             new CsvReadOptions(),
             new SeparatedValues.Reading.Data.CsvDataReaderOptions { AllowMissingColumns = true });
         Assert.True(dr.Read());
@@ -438,7 +439,8 @@ public class CoveragePushTests
     public void CsvDataReader_GetSchemaTable_HasExpectedColumns()
     {
         string csv = "A,B\n1,2\n";
-        using var dr = Csv.CreateDataReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv)));
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
+        using var dr = Csv.CreateDataReader(ms);
         Assert.True(dr.Read());
         using var schema = dr.GetSchemaTable();
         Assert.Equal(2, schema.Rows.Count);
@@ -449,8 +451,9 @@ public class CoveragePushTests
     public void CsvDataReader_GetString_OnNullValue_Throws()
     {
         string csv = "A,B\nfoo,\n";
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
         using var dr = Csv.CreateDataReader(
-            new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv)),
+            ms,
             new CsvReadOptions(),
             new SeparatedValues.Reading.Data.CsvDataReaderOptions { NullValues = [""] });
         Assert.True(dr.Read());

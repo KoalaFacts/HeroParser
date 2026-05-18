@@ -393,7 +393,7 @@ public class CoveragePushTests4
     public async Task AsyncWriter_LeaveOpenFalse_DisposesStream()
     {
         var rows = new[] { new CoveragePerson { Name = "A", Age = 1 } };
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         await Csv.WriteToStreamAsync(
             stream,
             rows,

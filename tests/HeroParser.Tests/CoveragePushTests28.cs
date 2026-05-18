@@ -174,7 +174,7 @@ public class CoveragePushTests28
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CountingReadStream_LeaveOpenTrue_Dispose_DoesNotCloseInner()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
         var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         // Read so we exercise the Read path.
@@ -189,8 +189,8 @@ public class CoveragePushTests28
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_PositionSetter()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true)
         { Position = 7 };
         Assert.Equal(7, stream.Position);
@@ -200,8 +200,8 @@ public class CoveragePushTests28
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Seek_FromBeginCurrentEnd()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         Assert.Equal(5, stream.Seek(5, SeekOrigin.Begin));
         Assert.Equal(7, stream.Seek(2, SeekOrigin.Current));
@@ -212,8 +212,8 @@ public class CoveragePushTests28
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_CanProperties()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         // Exercise CanRead / CanSeek / CanWrite getters.
         _ = stream.CanRead;

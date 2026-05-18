@@ -191,7 +191,7 @@ public class CoveragePushTests31
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void StreamWriter_WriteField_Various()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = Csv.CreateWriter(sw))
         {
             writer.WriteField("plain");
@@ -206,7 +206,7 @@ public class CoveragePushTests31
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void StreamWriter_WriteField_DateTime_Direct()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = Csv.CreateWriter(sw, new CsvWriteOptions { DateTimeFormat = "yyyy-MM-dd" }))
         {
             writer.WriteField("date_col");

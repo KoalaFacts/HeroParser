@@ -18,7 +18,8 @@ public class CsvPipeReaderCoverageTests
     private static async Task<List<CsvPipeRowSnapshot>> ReadAll(string csv, CsvReadOptions? options = null, CancellationToken ct = default)
     {
         var bytes = Encoding.UTF8.GetBytes(csv);
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         var snapshots = new List<CsvPipeRowSnapshot>();
         await foreach (var row in HeroParser.Csv.ReadFromPipeReaderAsync(pipe, options, ct))
         {
@@ -239,7 +240,8 @@ public class CsvPipeReaderCoverageTests
     public async Task PipeRow_Span_AccessibleDuringIteration()
     {
         var bytes = Encoding.UTF8.GetBytes("A,B\nhello,world\n");
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         int? firstColLen = null;
         await foreach (var row in HeroParser.Csv.ReadFromPipeReaderAsync(pipe,
             cancellationToken: TestContext.Current.CancellationToken))
@@ -254,7 +256,8 @@ public class CsvPipeReaderCoverageTests
     public async Task PipeColumn_ToString_AndToUnquotedString_Match_OnUnquoted()
     {
         var bytes = Encoding.UTF8.GetBytes("A,B\nplain,text\n");
-        var pipe = PipeReader.Create(new MemoryStream(bytes));
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
         string? toStringValue = null, toUnquotedValue = null;
         await foreach (var row in HeroParser.Csv.ReadFromPipeReaderAsync(pipe,
             cancellationToken: TestContext.Current.CancellationToken))

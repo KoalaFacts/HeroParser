@@ -222,7 +222,7 @@ public class FixedWidthWriterBuilderTerminalTests
     [Fact]
     public void ToStream_LeaveOpenFalse_ClosesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         FixedWidth.Write<Record>().ToStream(ms, SampleRecords(), leaveOpen: false);
         Assert.False(ms.CanWrite);
     }
@@ -230,7 +230,7 @@ public class FixedWidthWriterBuilderTerminalTests
     [Fact]
     public void ToWriter_Writes_LeavesOpen()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         FixedWidth.Write<Record>().ToWriter(sw, SampleRecords(), leaveOpen: true);
         var output = sw.ToString();
         Assert.Contains("Alice", output);
@@ -312,7 +312,7 @@ public class FixedWidthWriterBuilderTerminalTests
     [Fact]
     public void NonGeneric_CreateWriter_ReturnsStreamWriter()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using var writer = FixedWidth.Write().CreateWriter(sw, leaveOpen: true);
         Assert.NotNull(writer);
     }
@@ -375,7 +375,7 @@ public class FixedWidthWriterBuilderTerminalTests
             .WithMaxOutputSize(null);
 
         // Smoke test: create a writer via the builder
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using var writer = builder.CreateWriter(sw);
         Assert.NotNull(writer);
     }

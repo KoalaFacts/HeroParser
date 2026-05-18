@@ -64,9 +64,8 @@ public class XlsxSharedStringsSecurityTests
 
         Assert.Throws<XmlException>(() =>
         {
-            using var reader = XmlReader.Create(
-                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xml)),
-                settings);
+            using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xml));
+            using var reader = XmlReader.Create(ms, settings);
             while (reader.Read()) { /* drain */ }
         });
     }

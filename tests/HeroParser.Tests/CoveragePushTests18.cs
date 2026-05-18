@@ -198,8 +198,8 @@ public class CoveragePushTests18
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Properties_LeaveOpen()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
 
         // CanRead inherits from inner.
@@ -211,16 +211,14 @@ public class CoveragePushTests18
         int read = stream.Read(buffer, 0, buffer.Length);
         Assert.True(read > 0);
         Assert.True(stream.BytesRead > 0);
-
-        stream.Dispose();
     }
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Properties_NoLeaveOpen()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: false);
         stream.Dispose();
         Assert.False(inner.CanRead);
@@ -230,8 +228,8 @@ public class CoveragePushTests18
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Position()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
 
         byte[] buf = new byte[5];
@@ -246,8 +244,8 @@ public class CoveragePushTests18
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CountingReadStream_ReadAsync_Buffer()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         byte[] buf = new byte[5];
         int read = await stream.ReadAsync(buf, 0, 5, TestContext.Current.CancellationToken);
@@ -258,8 +256,8 @@ public class CoveragePushTests18
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Flush_NoOp()
     {
-        var inner = new MemoryStream();
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream();
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         stream.Flush(); // Should not throw
     }
@@ -268,8 +266,8 @@ public class CoveragePushTests18
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CountingReadStream_FlushAsync()
     {
-        var inner = new MemoryStream();
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream();
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         await stream.FlushAsync(TestContext.Current.CancellationToken);
     }
@@ -278,8 +276,8 @@ public class CoveragePushTests18
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_Seek()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         long pos = stream.Seek(5, SeekOrigin.Begin);
         Assert.Equal(5, pos);
@@ -289,8 +287,8 @@ public class CoveragePushTests18
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CountingReadStream_SetLength_Throws()
     {
-        var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(Encoding.UTF8.GetBytes("Hello"));
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         Assert.Throws<NotSupportedException>(() => stream.SetLength(10));
     }
@@ -300,8 +298,8 @@ public class CoveragePushTests18
     public void CountingReadStream_Write_Behavior()
     {
         // Whether write throws or no-ops is implementation-defined; just exercise the call.
-        var inner = new MemoryStream(new byte[10]);
-        var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
+        using var inner = new MemoryStream(new byte[10]);
+        using var stream = new global::HeroParser.FixedWidths.Streaming.CountingReadStream(
             inner, global::HeroParser.FixedWidths.FixedWidthReadOptions.Default, leaveOpen: true);
         try { stream.Write([1, 2, 3], 0, 3); } catch { /* either is fine */ }
     }

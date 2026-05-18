@@ -16,7 +16,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void WriteField_String_PadsRight_ByDefault()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField("hi", 5);
@@ -28,7 +28,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void WriteField_String_RightAlignment_PadsLeft()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField("42", 5, FieldAlignment.Right, '0');
@@ -40,7 +40,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void WriteField_Span_AppendsField()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField("abc".AsSpan(), 5);
@@ -52,7 +52,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void WriteField_Object_FormatsValue()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(42, 5, FieldAlignment.Right, '0');
@@ -64,7 +64,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void WriteField_Object_WithFormat_AppliesFormat()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField(new DateTime(2024, 1, 15), 8, format: "yyyyMMdd");
@@ -76,7 +76,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void WriteField_OverflowTruncate_Default()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField("toolong", 4);
@@ -89,7 +89,7 @@ public class FixedWidthStreamWriterDirectTests
     public void WriteField_OverflowThrow_Throws()
     {
         var opts = new FixedWidthWriteOptions { OverflowBehavior = OverflowBehavior.Throw };
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using var w = new FixedWidthStreamWriter(sw, opts, leaveOpen: true);
         Assert.Throws<FixedWidthException>(() => w.WriteField("toolong", 4));
     }
@@ -97,7 +97,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void EndRow_AppendsNewLine()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var w = new FixedWidthStreamWriter(sw, leaveOpen: true))
         {
             w.WriteField("a", 1);
@@ -112,7 +112,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void Flush_PushesData()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using var w = new FixedWidthStreamWriter(sw, leaveOpen: true);
         w.WriteField("x", 1);
         w.EndRow();
@@ -123,7 +123,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public async Task FlushAsync_PushesData()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         await using var w = new FixedWidthStreamWriter(sw, leaveOpen: true);
         w.WriteField("x", 1);
         w.EndRow();
@@ -140,7 +140,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public void UseAfterDispose_Throws()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         var w = new FixedWidthStreamWriter(sw, leaveOpen: true);
         w.Dispose();
         Assert.Throws<ObjectDisposedException>(() => w.WriteField("x", 1));
@@ -149,7 +149,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public async Task DisposeAsync_Flushes()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         var w = new FixedWidthStreamWriter(sw, leaveOpen: true);
         w.WriteField("x", 5);
         w.EndRow();
@@ -241,7 +241,7 @@ public class FixedWidthStreamWriterDirectTests
     [Fact]
     public async Task AsyncWriter_LeaveOpenFalse_ClosesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await using (var w = new FixedWidthAsyncStreamWriter(ms, leaveOpen: false))
         {
             await w.WriteFieldAsync("x", 1, TestContext.Current.CancellationToken);

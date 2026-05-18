@@ -209,14 +209,14 @@ public class CsvAsyncStreamWriterDirectTests
     [Fact]
     public async Task DisposeAsync_FlushesAndCloses_RespectingLeaveOpen()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await using (var w = new CsvAsyncStreamWriter(ms, leaveOpen: true))
         {
             await w.WriteRowAsync(["a"], TestContext.Current.CancellationToken);
         }
         Assert.True(ms.CanWrite);
 
-        var ms2 = new MemoryStream();
+        using var ms2 = new MemoryStream();
         await using (var w2 = new CsvAsyncStreamWriter(ms2, leaveOpen: false))
         {
             await w2.WriteRowAsync(["a"], TestContext.Current.CancellationToken);

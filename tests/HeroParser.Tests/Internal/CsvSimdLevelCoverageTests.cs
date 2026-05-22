@@ -97,6 +97,17 @@ public class CsvSimdLevelCoverageTests
         }
     }
 
+    private static int CountRowsBytePath(string csv)
+    {
+        var reader = Csv.ReadFromByteSpan(Encoding.UTF8.GetBytes(csv));
+        int count = 0;
+        while (reader.MoveNext())
+        {
+            count++;
+        }
+        return count - 1;
+    }
+
     private static int CountRowsCharPath(string csv)
     {
         // Csv.ReadFromCharSpan drives the UTF-16 SIMD code path directly,
@@ -167,6 +178,63 @@ public class CsvSimdLevelCoverageTests
         using (HardwareCapabilities.Override(avx512BW: false, avx2: false))
         {
             Assert.Equal(20, CountRowsCharPath(Sample(20)));
+        }
+    }
+
+    [Fact]
+    public void Avx512_UTF8_Path_Unquoted()
+    {
+        Assert.Equal(64, CountRowsBytePath(Sample(64)));
+    }
+
+    [Fact]
+    public void Avx512_UTF8_Path_Quoted_WithPclmul()
+    {
+        Assert.Equal(64, CountRowsBytePath(SampleWithQuotes(64)));
+    }
+
+    [Fact]
+    public void Avx512_UTF8_Path_Quoted_WithoutPclmul()
+    {
+        using (HardwareCapabilities.Override(pclmulqdq: false))
+        {
+            Assert.Equal(64, CountRowsBytePath(SampleWithQuotes(64)));
+        }
+    }
+
+    [Fact]
+    public void Avx2_UTF8_Path_FallbackWhenAvx512Disabled_Unquoted()
+    {
+        using (HardwareCapabilities.Override(avx512BW: false))
+        {
+            Assert.Equal(64, CountRowsBytePath(Sample(64)));
+        }
+    }
+
+    [Fact]
+    public void Avx2_UTF8_Path_FallbackWhenAvx512Disabled_Quoted()
+    {
+        using (HardwareCapabilities.Override(avx512BW: false))
+        {
+            Assert.Equal(64, CountRowsBytePath(SampleWithQuotes(64)));
+        }
+    }
+
+    [Fact]
+    public void Avx2_UTF8_Path_QuotedWithoutPclmul()
+    {
+        using (HardwareCapabilities.Override(avx512BW: false, pclmulqdq: false))
+        {
+            Assert.Equal(64, CountRowsBytePath(SampleWithQuotes(64)));
+        }
+    }
+
+    [Fact]
+    public void Scalar_UTF8_Path_NoSimdAvailable()
+    {
+        using (HardwareCapabilities.Override(avx512BW: false, avx2: false))
+        {
+            Assert.Equal(20, CountRowsBytePath(Sample(20)));
         }
     }
 

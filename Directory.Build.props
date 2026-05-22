@@ -45,7 +45,7 @@
     Condition="$(MSBuildProjectName.Contains('Tests')) Or $(MSBuildProjectName.Contains('Benchmarks'))">
     <IsPackable>false</IsPackable>
     <!-- CS1591: Missing XML comment for publicly visible type or member -->
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;IDE1006</NoWarn>
   </PropertyGroup>
 
 </Project>

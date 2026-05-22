@@ -109,10 +109,11 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
                 null);
         }
 
+        int[]? rentedColumnByteLengths = null;
         // Use stackalloc for column byte lengths (typically < 128 columns)
         Span<int> columnByteLengths = columnCount <= MAX_STACK_ALLOC_COLUMNS
             ? stackalloc int[columnCount]
-            : new int[columnCount];
+            : (rentedColumnByteLengths = ArrayPool<int>.Shared.Rent(columnCount));
 
         // First pass: calculate byte lengths directly from char spans (no string allocation)
         int totalBytes = 0;
@@ -132,11 +133,8 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
         var rentedBuffer = ArrayPool<byte>.Shared.Rent(totalBytes);
         var buffer = rentedBuffer.AsSpan(0, totalBytes);
 
-        int[]? rentedColumnEnds = null;
-        var columnEndsArray = columnCount <= MAX_DIRECT_COLUMN_ENDS_COLUMNS
-            ? new int[columnCount + 1]
-            : rentedColumnEnds = ArrayPool<int>.Shared.Rent(columnCount + 1);
-        var columnEnds = columnEndsArray.AsSpan(0, columnCount + 1);
+        var rentedColumnEnds = ArrayPool<int>.Shared.Rent(columnCount + 1);
+        var columnEnds = rentedColumnEnds.AsSpan(0, columnCount + 1);
         columnEnds[0] = -1; // Sentinel
 
         // Second pass: encode directly from char spans to buffer
@@ -159,6 +157,11 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
                 // Last column: columnEnds points to position after last byte
                 columnEnds[i + 1] = offset;
             }
+        }
+
+        if (rentedColumnByteLengths != null)
+        {
+            ArrayPool<int>.Shared.Return(rentedColumnByteLengths);
         }
 
         // Create the byte row (uses the exact slice, not the full rented array)

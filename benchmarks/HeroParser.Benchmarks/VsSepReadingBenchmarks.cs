@@ -1,7 +1,12 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
+using CsvHelper;
+using CsvHelper.Configuration;
 using HeroParser.SeparatedValues.Core;
 using nietras.SeparatedValues;
+using Sylvan.Data.Csv;
+using System.Globalization;
+using System.IO;
 using System.Text;
 
 namespace HeroParser.Benchmarks;
@@ -13,10 +18,10 @@ public class VsSepReadingBenchmarks
     private string csv = null!;
     private byte[] utf8 = null!;
 
-    [Params(100, 1_000, 10_000, 100_000)]
+    [Params(10_000)]
     public int Rows { get; set; }
 
-    [Params(10, 25, 50, 100)]
+    [Params(25)]
     public int Columns { get; set; }
 
     [Params(false, true)]
@@ -64,6 +69,39 @@ public class VsSepReadingBenchmarks
         foreach (var row in reader)
         {
             total += row.ColCount;
+        }
+
+        return total;
+    }
+
+    [Benchmark(Description = "Sylvan")]
+    public int Sylvan_Parse()
+    {
+        using var reader = new StringReader(csv);
+        using var sylvan = Sylvan.Data.Csv.CsvDataReader.Create(reader);
+
+        int total = 0;
+        while (sylvan.Read())
+        {
+            total += sylvan.FieldCount;
+        }
+
+        return total;
+    }
+
+    [Benchmark(Description = "CsvHelper")]
+    public int CsvHelper_Parse()
+    {
+        using var reader = new StringReader(csv);
+        using var csvHelper = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            HasHeaderRecord = false
+        });
+
+        int total = 0;
+        while (csvHelper.Read())
+        {
+            total += csvHelper.Parser.Count;
         }
 
         return total;

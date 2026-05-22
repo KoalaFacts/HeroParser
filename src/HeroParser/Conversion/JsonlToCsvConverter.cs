@@ -35,13 +35,44 @@ public static class JsonlToCsvConverter
         ConvertCore(input, output, opt);
     }
 
+    /// <summary>Converts a JSONL stream to a CSV writer.</summary>
+    /// <param name="jsonlStream">The JSONL stream to read from.</param>
+    /// <param name="csvWriter">The CSV TextWriter to write to.</param>
+    /// <param name="options">Options control conversion, defaults to <see cref="JsonlToCsvOptions.Default"/>.</param>
+    public static void Convert(Stream jsonlStream, TextWriter csvWriter, JsonlToCsvOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(jsonlStream);
+        ArgumentNullException.ThrowIfNull(csvWriter);
+        JsonlToCsvOptions opt = options ?? JsonlToCsvOptions.Default;
+        ConvertCore(jsonlStream, csvWriter, opt);
+    }
+
+    /// <summary>Asynchronously converts a JSONL stream to a CSV stream.</summary>
+    /// <param name="jsonlStream">The JSONL stream to read from.</param>
+    /// <param name="csvStream">The CSV stream to write to.</param>
+    /// <param name="options">Options control conversion, defaults to <see cref="JsonlToCsvOptions.Default"/>.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <returns>A <see cref="ValueTask"/> representing the asynchronous operation.</returns>
+    public static async ValueTask ConvertAsync(
+        Stream jsonlStream,
+        Stream csvStream,
+        JsonlToCsvOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jsonlStream);
+        ArgumentNullException.ThrowIfNull(csvStream);
+        JsonlToCsvOptions opt = options ?? JsonlToCsvOptions.Default;
+        await ConvertCoreAsync(jsonlStream, csvStream, opt, cancellationToken).ConfigureAwait(false);
+    }
+
     private static void ConvertCore(Stream jsonlStream, TextWriter csvWriter, JsonlToCsvOptions options)
     {
         List<string> peekedLines = [];
         List<string> columns = [];
         HashSet<string> seenCols = new(StringComparer.Ordinal);
 
-        using (var reader = new StreamReader(jsonlStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true))
+        var reader = new StreamReader(jsonlStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        try
         {
             string? line;
             while (peekedLines.Count < options.SchemaInferencePeekRows && (line = reader.ReadLine()) is not null)
@@ -57,26 +88,70 @@ public static class JsonlToCsvConverter
                         columns.Add(prop.Name);
                 }
             }
-        }
 
-        CsvWriteOptions writeOpts = new() { Delimiter = options.Delimiter };
-        using var csv = new CsvStreamWriter(csvWriter, writeOpts, leaveOpen: true);
+            CsvWriteOptions writeOpts = new() { Delimiter = options.Delimiter };
+            using var csv = new CsvStreamWriter(csvWriter, writeOpts, leaveOpen: true);
 
-        csv.WriteRow(columns.ToArray());
+            csv.WriteRow([.. columns]);
 
-        foreach (string line in peekedLines)
-            EmitRow(csv, line, columns);
-
-        if (jsonlStream.CanSeek)
-        {
-            jsonlStream.Position = 0;
-            using var rereader = new StreamReader(jsonlStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-            for (int i = 0; i < peekedLines.Count; i++)
-                rereader.ReadLine();
+            foreach (string peeked in peekedLines)
+                EmitRow(csv, peeked, columns);
 
             string? next;
-            while ((next = rereader.ReadLine()) is not null)
+            while ((next = reader.ReadLine()) is not null)
                 EmitRow(csv, next, columns);
+        }
+        finally
+        {
+            reader.Dispose();
+        }
+    }
+
+    private static async ValueTask ConvertCoreAsync(
+        Stream jsonlStream,
+        Stream csvStream,
+        JsonlToCsvOptions options,
+        CancellationToken cancellationToken)
+    {
+        List<string> peekedLines = [];
+        List<string> columns = [];
+        HashSet<string> seenCols = new(StringComparer.Ordinal);
+
+        var reader = new StreamReader(jsonlStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        try
+        {
+            string? line;
+            while (peekedLines.Count < options.SchemaInferencePeekRows && (line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) is not null)
+            {
+                peekedLines.Add(line);
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                using JsonDocument doc = JsonDocument.Parse(line);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object) continue;
+                foreach (JsonProperty prop in doc.RootElement.EnumerateObject())
+                {
+                    if (seenCols.Add(prop.Name))
+                        columns.Add(prop.Name);
+                }
+            }
+
+            CsvWriteOptions writeOpts = new() { Delimiter = options.Delimiter };
+            await using var csv = new CsvAsyncStreamWriter(csvStream, writeOpts, Encoding.UTF8, leaveOpen: true);
+
+            await csv.WriteRowAsync([.. columns], cancellationToken).ConfigureAwait(false);
+
+            foreach (string peeked in peekedLines)
+                await EmitRowAsync(csv, peeked, columns, cancellationToken).ConfigureAwait(false);
+
+            string? next;
+            while ((next = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) is not null)
+                await EmitRowAsync(csv, next, columns, cancellationToken).ConfigureAwait(false);
+
+            await csv.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            reader.Dispose();
         }
     }
 
@@ -95,6 +170,27 @@ public static class JsonlToCsvConverter
                 : null;
         }
         csv.WriteRow(row);
+    }
+
+    private static async ValueTask EmitRowAsync(
+        CsvAsyncStreamWriter csv,
+        string line,
+        List<string> columns,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+
+        using JsonDocument doc = JsonDocument.Parse(line);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+
+        string?[] row = new string?[columns.Count];
+        for (int i = 0; i < columns.Count; i++)
+        {
+            row[i] = doc.RootElement.TryGetProperty(columns[i], out JsonElement value)
+                ? StringifyValue(value)
+                : null;
+        }
+        await csv.WriteRowAsync(row, cancellationToken).ConfigureAwait(false);
     }
 
     private static string? StringifyValue(JsonElement value) => value.ValueKind switch

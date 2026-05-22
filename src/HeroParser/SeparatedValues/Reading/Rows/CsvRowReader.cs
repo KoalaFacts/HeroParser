@@ -21,6 +21,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     private readonly ReadOnlySpan<T> data;
     private readonly CsvReadOptions options;
     private readonly PooledColumnEnds columnEndsBuffer;
+    private readonly int[] columnEnds;
     private readonly bool trackLineNumbers;
     private int position;
     private int rowCount;
@@ -37,6 +38,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         Current = default;
         // Ends-only storage: need maxColumns + 1 entries
         columnEndsBuffer = new PooledColumnEnds(options.MaxColumnCount + 1);
+        columnEnds = columnEndsBuffer.Buffer;
     }
 
     /// <summary>Gets the current row.</summary>
@@ -64,7 +66,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
             var result = CsvRowParser.ParseRow(
                 remaining,
                 options,
-                columnEndsBuffer.Span,
+                columnEnds.AsSpan(0, options.MaxColumnCount + 1),
                 trackLineNumbers);
 
             if (result.CharsConsumed == 0)
@@ -84,7 +86,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
             rowCount++;
             Current = new CsvRow<T>(
                 rowData,
-                columnEndsBuffer.Buffer,
+                columnEnds,
                 result.ColumnCount,
                 rowCount,
                 trackLineNumbers ? rowStartLine : rowCount, // Use rowCount as fallback when tracking disabled
@@ -106,7 +108,6 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     /// </summary>
     public readonly void Dispose()
     {
-        columnEndsBuffer.Return();
+        columnEndsBuffer.Dispose();
     }
 }
-

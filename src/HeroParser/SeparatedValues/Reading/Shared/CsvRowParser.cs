@@ -1763,15 +1763,23 @@ internal static class CsvRowParser
             }
 
             int startColCountSlow = columnCount;
+            ulong slowQuoteMask = typeof(TQuotePolicy) == typeof(QuotesEnabled)
+                ? quoteMatch1.ExtractMostSignificantBits() | (quoteMatch2.ExtractMostSignificantBits() << 32)
+                : 0ul;
+            ulong slowDelimMask = delimMatch1.ExtractMostSignificantBits() | (delimMatch2.ExtractMostSignificantBits() << 32);
+            ulong slowLfMask = lfMatch1.ExtractMostSignificantBits() | (lfMatch2.ExtractMostSignificantBits() << 32);
+            ulong slowCrMask = crMatch1.ExtractMostSignificantBits() | (crMatch2.ExtractMostSignificantBits() << 32);
+            ulong slowLineEndingMask = slowLfMask | slowCrMask;
+
             while (mask != 0)
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
                 mask &= mask - 1;
 
                 int absolute = position + bit;
-                char c = Unsafe.Add(ref mutableRef, absolute);
+                ulong bitMask = 1ul << bit;
 
-                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c == quote)
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && (slowQuoteMask & bitMask) != 0)
                 {
                     if (skipNextQuote)
                     {
@@ -1795,27 +1803,32 @@ internal static class CsvRowParser
                     continue;
                 }
 
-                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
-                {
-                    throw new CsvException(
-                        CsvErrorCode.ParseError,
-                        "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
-                }
-
                 if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
-                    UpdateNewlineCountInQuotes<char, TTrack>(c, lf, cr, ref pendingCrInQuotes, ref newlineCount);
+                    if ((slowLineEndingMask & bitMask) != 0)
+                    {
+                        char c = (slowLfMask & bitMask) != 0 ? lf : cr;
+                        if (!allowNewlinesInsideQuotes)
+                        {
+                            throw new CsvException(
+                                CsvErrorCode.ParseError,
+                                "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                        }
+
+                        UpdateNewlineCountInQuotes<char, TTrack>(c, lf, cr, ref pendingCrInQuotes, ref newlineCount);
+                    }
                     continue;
                 }
 
-                if (c == delimiter)
+                if ((slowDelimMask & bitMask) != 0)
                 {
                     AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     continue;
                 }
 
-                if (c == lf || c == cr)
+                // If it's not a quote, not inside quotes, and not a delimiter, it must be a line ending (lf or cr)
                 {
+                    char c = (slowLfMask & bitMask) != 0 ? lf : cr;
                     if (columnCount > maxColumns)
                         ThrowTooManyColumns(maxColumns);
 
@@ -2188,15 +2201,21 @@ internal static class CsvRowParser
 
             // Slow path
             int startColCountSlow = columnCount;
+            uint slowQuoteMask = typeof(TQuotePolicy) == typeof(QuotesEnabled) ? (uint)Avx2.MoveMask(quoteMatch) : 0u;
+            uint slowDelimMask = (uint)Avx2.MoveMask(delimMatch);
+            uint slowLfMask = (uint)Avx2.MoveMask(lfMatch);
+            uint slowCrMask = (uint)Avx2.MoveMask(crMatch);
+            uint slowLineEndingMask = slowLfMask | slowCrMask;
+
             while (mask != 0)
             {
                 int bit = BitOperations.TrailingZeroCount(mask);
                 mask &= mask - 1;
 
                 int absolute = position + bit;
-                char c = Unsafe.Add(ref mutableRef, absolute);
+                uint bitMask = 1u << bit;
 
-                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c == quote)
+                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && (slowQuoteMask & bitMask) != 0)
                 {
                     if (skipNextQuote)
                     {
@@ -2220,27 +2239,32 @@ internal static class CsvRowParser
                     continue;
                 }
 
-                if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes && !allowNewlinesInsideQuotes && (c == lf || c == cr))
-                {
-                    throw new CsvException(
-                        CsvErrorCode.ParseError,
-                        "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
-                }
-
                 if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && inQuotes)
                 {
-                    UpdateNewlineCountInQuotes<char, TTrack>(c, lf, cr, ref pendingCrInQuotes, ref newlineCount);
+                    if ((slowLineEndingMask & bitMask) != 0)
+                    {
+                        char c = (slowLfMask & bitMask) != 0 ? lf : cr;
+                        if (!allowNewlinesInsideQuotes)
+                        {
+                            throw new CsvException(
+                                CsvErrorCode.ParseError,
+                                "Newlines inside quoted fields are disabled. Enable AllowNewlinesInsideQuotes to parse them.");
+                        }
+
+                        UpdateNewlineCountInQuotes<char, TTrack>(c, lf, cr, ref pendingCrInQuotes, ref newlineCount);
+                    }
                     continue;
                 }
 
-                if (c == delimiter)
+                if ((slowDelimMask & bitMask) != 0)
                 {
                     AppendColumnUnchecked(absolute, ref columnCount, ref currentStart, columnEnds);
                     continue;
                 }
 
-                if (c == lf || c == cr)
+                // If it's not a quote, not inside quotes, and not a delimiter, it must be a line ending (lf or cr)
                 {
+                    char c = (slowLfMask & bitMask) != 0 ? lf : cr;
                     if (columnCount > maxColumns)
                         ThrowTooManyColumns(maxColumns);
 

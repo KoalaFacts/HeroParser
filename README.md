@@ -496,4 +496,4 @@ Special thanks to the .NET performance community for their research and open-sou
 
 ---
 
-**High-performance, zero-allocation, AOT-ready CSV, Fixed-Width & Excel parsing for .NET**
+**High-performance, zero-allocation, AOT-ready CSV, Fixed-Width, Excel & JSONL parsing for .NET**

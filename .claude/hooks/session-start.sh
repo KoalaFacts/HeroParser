@@ -1,11 +1,13 @@
 #!/bin/bash
-# SessionStart hook: installs the .NET 8, 9, and 10 SDKs in the background so
-# Claude Code on the web sessions can build, test, and run dotnet format across
-# every target framework before pushing.
+# SessionStart hook: installs the .NET 8, 9, and 10 SDKs plus the PowerShell
+# global tool (pwsh) in the background so Claude Code on the web sessions can
+# build, test, and run dotnet format across every target framework before
+# pushing. pwsh is required by the PowerShell-based PostToolUse/PreToolUse hooks
+# in settings.json — without it, those hooks cannot run in this Linux env.
 #
-# Async mode: the session starts immediately and the SDK install runs in the
-# background. Claude may briefly be unable to run dotnet during the first few
-# seconds of the session — wait or check for completion if needed.
+# Async mode: the session starts immediately and the install runs in the
+# background. Claude may briefly be unable to run dotnet or pwsh during the
+# first few seconds of the session — wait or check for completion if needed.
 set -euo pipefail
 
 echo '{"async": true, "asyncTimeout": 600000}'
@@ -23,7 +25,7 @@ CHANNELS=("8.0" "9.0" "10.0")
 # Persist env vars first so they're available even if the install is still running.
 {
   echo "export DOTNET_ROOT=\"${DOTNET_ROOT}\""
-  echo "export PATH=\"${DOTNET_ROOT}:\${PATH}\""
+  echo "export PATH=\"${DOTNET_ROOT}:${DOTNET_ROOT}/tools:\${PATH}\""
   echo "export DOTNET_CLI_TELEMETRY_OPTOUT=1"
   echo "export DOTNET_NOLOGO=1"
 } >> "${CLAUDE_ENV_FILE}"
@@ -45,5 +47,22 @@ for channel in "${CHANNELS[@]}"; do
   "${INSTALL_SCRIPT}" --channel "${channel}" --install-dir "${DOTNET_ROOT}" --no-path
 done
 
+# Install PowerShell (pwsh) as a .NET global tool so the PowerShell-based
+# PostToolUse/PreToolUse hooks can run here. Global tools install to
+# ${DOTNET_ROOT}/tools (already added to PATH above). Guarded for idempotency:
+# `dotnet tool install` exits non-zero if the tool already exists, which would
+# abort the script under `set -e`.
+if "${DOTNET_ROOT}/dotnet" tool list --global 2>/dev/null | grep -qi "powershell"; then
+  echo "[session-start] PowerShell global tool already installed"
+else
+  echo "[session-start] Installing PowerShell (pwsh) global tool"
+  "${DOTNET_ROOT}/dotnet" tool install --global PowerShell \
+    || echo "[session-start] WARNING: PowerShell tool install failed"
+fi
+
 echo "[session-start] Installed SDKs:"
 "${DOTNET_ROOT}/dotnet" --list-sdks
+
+echo "[session-start] pwsh version:"
+"${DOTNET_ROOT}/tools/pwsh" --version \
+  || echo "[session-start] WARNING: pwsh not found after install"

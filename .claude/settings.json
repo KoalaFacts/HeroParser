@@ -13,13 +13,26 @@
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "dotnet format --include \"$CLAUDE_FILE_PATH\" --verbosity quiet 2>/dev/null || true"
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "timeout": 120,
+            "command": "try{$f=([Console]::In.ReadToEnd()|ConvertFrom-Json).tool_input.file_path; if($f -and $f.EndsWith('.cs') -and (Test-Path $f)){dotnet format --include $f --verbosity quiet *> $null}}catch{}; exit 0"
+          }
+        ]
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "echo \"$CLAUDE_FILE_PATH\" | grep -qE '(packages\\.lock\\.json|\\.editorconfig|Directory\\.Build\\.props)$' && echo 'BLOCK: Protected file - requires explicit user approval' && exit 1 || exit 0"
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "try{$f=([Console]::In.ReadToEnd()|ConvertFrom-Json).tool_input.file_path; if($f){$n=Split-Path $f -Leaf; if($n -in @('packages.lock.json','.editorconfig','Directory.Build.props')){@{hookSpecificOutput=@{hookEventName='PreToolUse';permissionDecision='deny';permissionDecisionReason='Protected file - requires explicit user approval'}}|ConvertTo-Json -Compress}}}catch{}; exit 0"
+          }
+        ]
       }
     ]
   }

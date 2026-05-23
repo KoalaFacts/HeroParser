@@ -851,7 +851,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Dispose_FlushesBuffer()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
 
         writer.WriteRow("a", "b", "c");
@@ -864,7 +864,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Dispose_LeaveOpenTrue_DoesNotDisposeUnderlying()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true))
         {
             writer.WriteRow("test");
@@ -879,7 +879,7 @@ public class WriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void WriteAfterDispose_Throws()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         var writer = new CsvStreamWriter(sw, CsvWriteOptions.Default, leaveOpen: true);
         writer.Dispose();
 

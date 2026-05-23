@@ -39,6 +39,38 @@ public static partial class Excel
     }
 
     /// <summary>
+    /// Creates an <see cref="System.Data.IDataReader"/> over an Excel .xlsx stream using the specified options.
+    /// </summary>
+    /// <param name="stream">A seekable stream containing .xlsx data.</param>
+    /// <param name="options">Options controlling how the data reader exposes data.</param>
+    /// <param name="sheetName">Optional sheet name. When null, the first sheet is read.</param>
+    /// <returns>A data reader that exposes all cell values as strings.</returns>
+    public static ExcelDataReader CreateDataReader(
+        Stream stream,
+        ExcelDataReaderOptions options,
+        string? sheetName = null)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var xlsxReader = new XlsxReader(stream);
+        try
+        {
+            var sheet = sheetName is not null
+                ? xlsxReader.Workbook.GetSheetByName(sheetName)
+                : xlsxReader.Workbook.GetFirstSheet();
+            var sheetReader = xlsxReader.OpenSheet(sheet);
+
+            return new ExcelDataReader(xlsxReader, sheetReader, options);
+        }
+        catch
+        {
+            xlsxReader.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Creates an <see cref="System.Data.IDataReader"/> over an Excel .xlsx file on disk.
     /// </summary>
     /// <param name="path">The path to the .xlsx file.</param>
@@ -58,6 +90,33 @@ public static partial class Excel
         try
         {
             return CreateDataReader(stream, sheetName, hasHeaderRow, skipRows);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Creates an <see cref="System.Data.IDataReader"/> over an Excel .xlsx file on disk using the specified options.
+    /// </summary>
+    /// <param name="path">The path to the .xlsx file.</param>
+    /// <param name="options">Options controlling how the data reader exposes data.</param>
+    /// <param name="sheetName">Optional sheet name. When null, the first sheet is read.</param>
+    /// <returns>A data reader that exposes all cell values as strings.</returns>
+    public static ExcelDataReader CreateDataReader(
+        string path,
+        ExcelDataReaderOptions options,
+        string? sheetName = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            return CreateDataReader(stream, options, sheetName);
         }
         catch
         {

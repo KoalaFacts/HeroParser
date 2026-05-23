@@ -20,6 +20,11 @@ internal sealed class XlsxSharedStrings
     /// <summary>Gets the shared string at the specified index.</summary>
     public string this[int index] => strings[index];
 
+    // Cap for the pre-allocation capacity derived from the attacker-controlled `uniqueCount`
+    // attribute. Excel's own limit on distinct strings per workbook is well below this; values
+    // above the cap let the List grow naturally instead of pre-reserving gigabytes of pointers.
+    private const int MAX_PREALLOCATED_CAPACITY = 65_536;
+
     /// <summary>
     /// Parses the shared string table from the given stream.
     /// </summary>
@@ -35,7 +40,11 @@ internal sealed class XlsxSharedStrings
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "sst")
             {
                 var uniqueCountAttr = reader.GetAttribute("uniqueCount");
-                int capacity = uniqueCountAttr is not null && int.TryParse(uniqueCountAttr, out int uc) && uc > 0 ? uc : 0;
+                int capacity = 0;
+                if (uniqueCountAttr is not null && int.TryParse(uniqueCountAttr, out int uc) && uc > 0)
+                {
+                    capacity = Math.Min(uc, MAX_PREALLOCATED_CAPACITY);
+                }
                 result = new List<string>(capacity);
                 continue;
             }
@@ -62,47 +71,14 @@ internal sealed class XlsxSharedStrings
     /// </summary>
     public IReadOnlyList<string> ToList() => strings;
 
-    private static string ReadStringItem(XmlReader subtree)
+    private static string ReadStringItem(XmlReader reader)
     {
-        using var reader = subtree;
-
-        // <si> can contain:
-        //   <t>plain text</t>          — simple string
-        //   <r><t>run1</t></r><r>...   — rich text (concatenate all <t> elements within <r> runs)
-
-        string? simpleText = null;
-        List<string>? runs = null;
-
-        while (reader.Read())
-        {
-            if (reader.NodeType != XmlNodeType.Element)
-                continue;
-
-            if (reader.LocalName == "t")
-            {
-                simpleText = reader.IsEmptyElement ? string.Empty : reader.ReadElementContentAsString();
-            }
-            else if (reader.LocalName == "r")
-            {
-                var runText = ReadRichTextRun(reader);
-                runs ??= [];
-                runs.Add(runText);
-            }
-        }
-
-        if (runs is not null)
-            return string.Concat(runs);
-
-        return simpleText ?? string.Empty;
-    }
-
-    private static string ReadRichTextRun(XmlReader reader)
-    {
-        // Navigate within <r> to find <t>
         if (reader.IsEmptyElement)
             return string.Empty;
 
         int depth = reader.Depth;
+        string? simpleText = null;
+        List<string>? runs = null;
 
         while (reader.Read())
         {
@@ -111,10 +87,35 @@ internal sealed class XlsxSharedStrings
 
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "t")
             {
-                return reader.IsEmptyElement ? string.Empty : reader.ReadElementContentAsString();
+                string text = string.Empty;
+                if (!reader.IsEmptyElement)
+                {
+                    while (reader.Read())
+                    {
+                        if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "t")
+                            break;
+                        if (reader.NodeType == XmlNodeType.Text || reader.NodeType == XmlNodeType.SignificantWhitespace)
+                        {
+                            text += reader.Value;
+                        }
+                    }
+                }
+
+                if (simpleText is null)
+                {
+                    simpleText = text;
+                }
+                else
+                {
+                    runs ??= [simpleText];
+                    runs.Add(text);
+                }
             }
         }
 
-        return string.Empty;
+        if (runs is not null)
+            return string.Concat(runs);
+
+        return simpleText ?? string.Empty;
     }
 }

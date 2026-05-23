@@ -264,6 +264,7 @@ secrets.json
 .specify/
 tmp/
 dist/
+superpowers/
 
 # Windows null device files
 nul

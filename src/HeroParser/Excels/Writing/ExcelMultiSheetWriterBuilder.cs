@@ -73,7 +73,7 @@ public sealed class ExcelMultiSheetWriterBuilder
 
         var effectiveOptions = options ?? ExcelWriteOptions.Default;
 
-        using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen);
+        using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen, injectionProtection: effectiveOptions.InjectionProtection);
         foreach (var sheet in sheets)
             sheet.Write(xlsxWriter, effectiveOptions);
     }

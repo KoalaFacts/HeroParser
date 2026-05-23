@@ -76,7 +76,7 @@ public class ExcelRecordWriterTests
             new() { Name = "A", Price = 1m, Quantity = 1 },
         };
 
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         using (var xlsxWriter = new XlsxWriter(ms, leaveOpen: true))
         {
             using var sheet = xlsxWriter.StartSheet("Sheet1");

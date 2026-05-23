@@ -11,5 +11,7 @@ var runner = new TestRunner();
 
 CsvAotTests.Run(runner);
 FixedWidthAotTests.Run(runner);
+ExcelAotTests.Run(runner);
+JsonlAotTests.Run(runner);
 
 return runner.PrintSummary();

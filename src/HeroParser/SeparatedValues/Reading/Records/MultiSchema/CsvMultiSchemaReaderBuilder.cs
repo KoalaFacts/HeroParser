@@ -526,7 +526,8 @@ public sealed class CsvMultiSchemaReaderBuilder
     {
         ArgumentNullException.ThrowIfNull(filePath);
 
-        await using var reader = FromFile(filePath, encoding);
+        var reader = FromFile(filePath, encoding);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
             yield return reader.Current!;
@@ -549,7 +550,8 @@ public sealed class CsvMultiSchemaReaderBuilder
     {
         ArgumentNullException.ThrowIfNull(stream);
 
-        await using var reader = FromStream(stream, encoding, leaveOpen);
+        var reader = FromStream(stream, encoding, leaveOpen);
+        await using var readerDisposal = reader.ConfigureAwait(false);
         while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
             yield return reader.Current!;

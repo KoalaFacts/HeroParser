@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -19,6 +20,8 @@ public sealed class FixedWidthRecordWriter<T>
     /// Creates a new record writer with reflection-based field discovery.
     /// </summary>
     /// <param name="options">The writer options.</param>
+    [RequiresUnreferencedCode("Reflection-based writing may not work with trimming. Use [GenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Reflection-based writing requires dynamic code. Use [GenerateBinder] attribute for AOT support.")]
     public FixedWidthRecordWriter(FixedWidthWriteOptions options)
     {
         this.options = options;
@@ -437,6 +440,8 @@ public sealed class FixedWidthRecordWriter<T>
         return value.ToString() ?? string.Empty;
     }
 
+    [RequiresUnreferencedCode("Uses typeof(T).GetProperties; only reached via the [RequiresUnreferencedCode] constructor.")]
+    [RequiresDynamicCode("Compiles property getters with Expression.Compile; only reached via the [RequiresDynamicCode] constructor.")]
     private static FieldDefinition[] BuildFieldDefinitions()
     {
         var type = typeof(T);
@@ -493,6 +498,7 @@ public sealed class FixedWidthRecordWriter<T>
         return fields;
     }
 
+    [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
     private static Func<T, object?> BuildGetter(PropertyInfo prop)
     {
         // Use compiled expression for better performance
@@ -536,6 +542,22 @@ public static partial class FixedWidthRecordWriterFactory
     /// Creates a new record writer for the specified type and options.
     /// Prefers generated writers when available, falling back to reflection-based writers.
     /// </summary>
+    /// <remarks>
+    /// Under Native AOT or aggressive trimming, callers are expected to decorate <typeparamref name="T"/>
+    /// with <c>[GenerateBinder]</c> so the registry fast-path is hit. The reflection fallback below exists
+    /// for the non-AOT runtime case and will throw at construction time if trimming has removed the
+    /// required members. The IL2026/IL3050 warnings are suppressed here to avoid noise at every call site
+    /// of <see cref="FixedWidth"/>.WriteToText / ToFile / ToStream — those facades work correctly for any
+    /// type decorated with <c>[GenerateBinder]</c>.
+    /// </remarks>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:Members attributed with RequiresUnreferencedCode may break when trimming",
+        Justification = "Reflection fallback only runs when no [GenerateBinder] is registered for T. Users under AOT are expected to decorate T.")]
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling.",
+        Justification = "Reflection fallback only runs when no [GenerateBinder] is registered for T. Users under AOT are expected to decorate T.")]
     public static FixedWidthRecordWriter<T> GetWriter<T>(FixedWidthWriteOptions options)
     {
         // Try generated writer first (not cached - each call creates new instance with options)

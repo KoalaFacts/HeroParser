@@ -55,9 +55,9 @@ public static partial class Excel
         var recordWriter = ExcelRecordWriterFactory.GetWriter<T>(options);
 
         using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var xlsxWriter = new XlsxWriter(fileStream, leaveOpen: false);
+        using var xlsxWriter = new XlsxWriter(fileStream, leaveOpen: false, injectionProtection: options.InjectionProtection);
         using var sheetWriter = xlsxWriter.StartSheet(sheetName);
-        recordWriter.WriteRecords(sheetWriter, records, options);
+        recordWriter.WriteRecords(sheetWriter, records, options, sheetName);
     }
 
     /// <summary>
@@ -79,9 +79,9 @@ public static partial class Excel
         options ??= ExcelWriteOptions.Default;
         var recordWriter = ExcelRecordWriterFactory.GetWriter<T>(options);
 
-        using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen);
+        using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen, injectionProtection: options.InjectionProtection);
         using var sheetWriter = xlsxWriter.StartSheet(sheetName);
-        recordWriter.WriteRecords(sheetWriter, records, options);
+        recordWriter.WriteRecords(sheetWriter, records, options, sheetName);
     }
 
     /// <summary>
@@ -101,5 +101,62 @@ public static partial class Excel
         using var ms = new MemoryStream();
         WriteToStream(ms, records, options, leaveOpen: true, sheetName: sheetName);
         return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Asynchronously writes records to an Excel file at the specified path using default options.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="path">The file path to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="options">Optional writer configuration; uses <see cref="ExcelWriteOptions.Default"/> when <see langword="null"/>.</param>
+    /// <param name="sheetName">Optional worksheet name; defaults to "Sheet1".</param>
+    /// <param name="ct">A cancellation token.</param>
+    [RequiresUnreferencedCode("Falls back to reflection when no generated writer is registered. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Falls back to reflection when no generated writer is registered. Use [GenerateBinder] for AOT support.")]
+    public static Task WriteToFileAsync<T>(string path, IEnumerable<T> records, ExcelWriteOptions? options = null, string sheetName = "Sheet1", CancellationToken ct = default) where T : new()
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentNullException.ThrowIfNull(records);
+
+        return Task.Run(() => WriteToFile(path, records, options, sheetName), ct);
+    }
+
+    /// <summary>
+    /// Asynchronously writes records to a stream as an Excel (.xlsx) file using default options.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="options">Optional writer configuration; uses <see cref="ExcelWriteOptions.Default"/> when <see langword="null"/>.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, the stream is not closed after writing.</param>
+    /// <param name="sheetName">Optional worksheet name; defaults to "Sheet1".</param>
+    /// <param name="ct">A cancellation token.</param>
+    [RequiresUnreferencedCode("Falls back to reflection when no generated writer is registered. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Falls back to reflection when no generated writer is registered. Use [GenerateBinder] for AOT support.")]
+    public static Task WriteToStreamAsync<T>(Stream stream, IEnumerable<T> records, ExcelWriteOptions? options = null, bool leaveOpen = true, string sheetName = "Sheet1", CancellationToken ct = default) where T : new()
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+
+        return Task.Run(() => WriteToStream(stream, records, options, leaveOpen, sheetName), ct);
+    }
+
+    /// <summary>
+    /// Asynchronously serializes records to an in-memory Excel (.xlsx) file and returns the bytes.
+    /// </summary>
+    /// <typeparam name="T">The record type.</typeparam>
+    /// <param name="records">The records to serialize.</param>
+    /// <param name="options">Optional writer configuration; uses <see cref="ExcelWriteOptions.Default"/> when <see langword="null"/>.</param>
+    /// <param name="sheetName">Optional worksheet name; defaults to "Sheet1".</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A task that returns the .xlsx file content as a byte array.</returns>
+    [RequiresUnreferencedCode("Falls back to reflection when no generated writer is registered. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Falls back to reflection when no generated writer is registered. Use [GenerateBinder] for AOT support.")]
+    public static Task<byte[]> SerializeRecordsAsync<T>(IEnumerable<T> records, ExcelWriteOptions? options = null, string sheetName = "Sheet1", CancellationToken ct = default) where T : new()
+    {
+        ArgumentNullException.ThrowIfNull(records);
+
+        return Task.Run(() => SerializeRecords(records, options, sheetName), ct);
     }
 }

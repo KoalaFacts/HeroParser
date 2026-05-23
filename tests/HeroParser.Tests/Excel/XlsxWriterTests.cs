@@ -11,7 +11,7 @@ public class XlsxWriterTests
     [Fact]
     public void RoundTrip_StringAndNumberCells_ValuesPreserved()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
 
         using (var writer = new XlsxWriter(ms, leaveOpen: true))
         {
@@ -59,7 +59,7 @@ public class XlsxWriterTests
     [Fact]
     public void RoundTrip_EmptySheet_ReturnsNoRows()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
 
         using (var writer = new XlsxWriter(ms, leaveOpen: true))
         {
@@ -99,7 +99,7 @@ public class XlsxWriterTests
     [Fact]
     public void RoundTrip_DuplicateStrings_ReadBackCorrectly()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
 
         using (var writer = new XlsxWriter(ms, leaveOpen: true))
         {

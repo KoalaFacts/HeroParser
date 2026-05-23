@@ -126,12 +126,19 @@ public sealed class ExcelRecordWriter<T>
     /// <param name="options">
     /// Optional options override. When <see langword="null"/>, the options passed to the constructor are used.
     /// </param>
+    /// <param name="sheetName">The name of the worksheet, used in progress reports and error contexts.</param>
     internal void WriteRecords(
         XlsxWriter.SheetWriter sheetWriter,
         IEnumerable<T> records,
-        ExcelWriteOptions? options = null)
+        ExcelWriteOptions? options = null,
+        string sheetName = "Sheet1")
     {
         var effectiveOptions = options ?? writerOptions;
+        effectiveOptions.Validate();
+        var progress = effectiveOptions.WriteProgress;
+        int intervalRows = effectiveOptions.WriteProgressIntervalRows > 0
+            ? effectiveOptions.WriteProgressIntervalRows
+            : 1000;
 
         // Row 1 is header (if enabled); data starts at row 2 when header is written, else row 1.
         int rowNumber = 0;
@@ -149,17 +156,34 @@ public sealed class ExcelRecordWriter<T>
                 throw new ExcelException(
                     $"Maximum row count of {effectiveOptions.MaxRowCount.Value} exceeded.");
 
+            if (effectiveOptions.MaxOutputSize.HasValue && sheetWriter.BytesWritten > effectiveOptions.MaxOutputSize.Value)
+                throw new ExcelException(
+                    $"Maximum output size of {effectiveOptions.MaxOutputSize.Value} bytes exceeded.");
+
             rowNumber++;
-            dataRowCount++;
-            WriteRecordInternal(sheetWriter, record, rowNumber, effectiveOptions);
+            bool written = WriteRecordInternal(sheetWriter, record, rowNumber, effectiveOptions, sheetName, dataRowCount + 1);
+            if (written)
+                dataRowCount++;
+            else
+                rowNumber--; // row was skipped — undo the increment so the next row gets the same number
+
+            if (progress is not null && dataRowCount > 0 && dataRowCount % intervalRows == 0)
+                progress.Report(new ExcelWriteProgress { RowsWritten = dataRowCount, SheetName = sheetName });
         }
+
+        // Report final progress (skip if already reported at interval boundary)
+        if (progress is not null && (dataRowCount == 0 || dataRowCount % intervalRows != 0))
+            progress.Report(new ExcelWriteProgress { RowsWritten = dataRowCount, SheetName = sheetName });
     }
 
-    private void WriteRecordInternal(
+    // Returns true if the row was written, false if it was skipped via SkipRow error action.
+    private bool WriteRecordInternal(
         XlsxWriter.SheetWriter sheetWriter,
         T record,
         int rowNumber,
-        ExcelWriteOptions options)
+        ExcelWriteOptions options,
+        string sheetName,
+        int dataRow)
     {
         if (record is null)
         {
@@ -168,7 +192,7 @@ public sealed class ExcelRecordWriter<T>
             for (int i = 0; i < accessors.Length; i++)
                 sheetWriter.WriteCellEmpty(i + 1);
             sheetWriter.EndRow();
-            return;
+            return true;
         }
 
         // Validate before writing when in Strict mode (both generated and reflection paths)
@@ -189,21 +213,63 @@ public sealed class ExcelRecordWriter<T>
                 throw new ValidationException(validationErrors);
         }
 
-        // Source-generated direct writer: avoids boxing value-type properties
+        // Source-generated direct writer: avoids boxing value-type properties.
+        // Error handling is not supported in the generated path (no try/catch overhead).
         if (directRecordWriter is not null)
         {
             directRecordWriter(sheetWriter, record, rowNumber, options);
-            return;
+            return true;
         }
 
-        // Reflection path: extract values into buffer (boxes value types)
-        for (int i = 0; i < accessors.Length; i++)
-            valuesBuffer[i] = accessors[i].GetValue(record);
+        // Reflection path: extract values into buffer (boxes value types), with optional error handling
+        var errorHandler = options.OnSerializeError;
+        if (errorHandler is null)
+        {
+            for (int i = 0; i < accessors.Length; i++)
+                valuesBuffer[i] = accessors[i].GetValue(record);
+        }
+        else
+        {
+            for (int i = 0; i < accessors.Length; i++)
+            {
+                try
+                {
+                    valuesBuffer[i] = accessors[i].GetValue(record);
+                }
+                catch (Exception ex)
+                {
+                    var ctx = new ExcelSerializeErrorContext
+                    {
+                        Row = dataRow,
+                        Column = i + 1,
+                        MemberName = accessors[i].MemberName,
+                        SourceType = accessors[i].SourceType,
+                        Value = null,
+                        Exception = ex,
+                        SheetName = sheetName,
+                    };
+                    var action = errorHandler(ctx);
+                    switch (action)
+                    {
+                        case ExcelSerializeErrorAction.SkipRow:
+                            return false;
+                        case ExcelSerializeErrorAction.WriteEmpty:
+                            valuesBuffer[i] = null;
+                            break;
+                        case ExcelSerializeErrorAction.Throw:
+                        default:
+                            throw new ExcelException(
+                                $"Serialization error at row {dataRow}, column {i} ({accessors[i].MemberName}).", ex);
+                    }
+                }
+            }
+        }
 
         sheetWriter.StartRow(rowNumber);
         for (int i = 0; i < accessors.Length; i++)
             WriteCellValue(sheetWriter, i + 1, valuesBuffer[i], accessors[i].Format, options);
         sheetWriter.EndRow();
+        return true;
     }
 
     private static void WriteCellValue(
@@ -346,11 +412,14 @@ public sealed class ExcelRecordWriter<T>
                 t.HeaderName,
                 t.Format,
                 obj => t.Getter((T)obj),
+                t.SourceType,
                 t.Validation);
         }
         return result;
     }
 
+    [RequiresUnreferencedCode("Uses reflection over T.GetProperties; only reached via the [RequiresUnreferencedCode] constructor.")]
+    [RequiresDynamicCode("Compiles property getters with Expression.Compile; only reached via the [RequiresDynamicCode] constructor.")]
     private static PropertyAccessor[] BuildAccessors(Type type)
     {
         var properties = type
@@ -390,12 +459,14 @@ public sealed class ExcelRecordWriter<T>
                 headerName,
                 format,
                 CreateGetter(property),
+                property.PropertyType,
                 validation);
         }
 
         return accessors;
     }
 
+    [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
     private static Func<object, object?> CreateGetter(PropertyInfo property)
     {
         // Compiled expression tree for ~10x faster access than MethodInfo.Invoke
@@ -415,11 +486,13 @@ public sealed class ExcelRecordWriter<T>
         string headerName,
         string? format,
         Func<object, object?> getter,
+        Type sourceType,
         WritePropertyValidation? validation = null)
     {
         public string MemberName { get; } = memberName;
         public string HeaderName { get; } = headerName;
         public string? Format { get; } = format;
+        public Type SourceType { get; } = sourceType;
         public WritePropertyValidation? Validation { get; } = validation;
         private readonly Func<object, object?> getter = getter;
 

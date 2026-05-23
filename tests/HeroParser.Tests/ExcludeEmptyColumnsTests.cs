@@ -358,7 +358,8 @@ public class ExcludeEmptyColumnsTests
         using var stream = new MemoryStream();
         await Csv.WriteToStreamAsync(stream, records, options, cancellationToken: TestContext.Current.CancellationToken);
         stream.Position = 0;
-        var result = await new StreamReader(stream).ReadToEndAsync(TestContext.Current.CancellationToken);
+        using var sr = new StreamReader(stream);
+        var result = await sr.ReadToEndAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("Name,Phone\r\nAlice,123\r\nBob,456\r\n", result);
     }
@@ -378,7 +379,8 @@ public class ExcludeEmptyColumnsTests
         using var stream = new MemoryStream();
         await Csv.WriteToStreamAsync(stream, records, options, cancellationToken: TestContext.Current.CancellationToken);
         stream.Position = 0;
-        var result = await new StreamReader(stream).ReadToEndAsync(TestContext.Current.CancellationToken);
+        using var sr = new StreamReader(stream);
+        var result = await sr.ReadToEndAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("Name,Phone\r\nAlice,123\r\nBob,456\r\n", result);
     }

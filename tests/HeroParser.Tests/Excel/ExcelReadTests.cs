@@ -89,6 +89,16 @@ public class ExcelReadTests
         Assert.Equal(9.99m, records[0].Price);
         Assert.Equal(100, records[0].Quantity);
     }
+
+    [Fact]
+    public void Verify_GeneratedCharBinder_IsResolved()
+    {
+        var binder = HeroParser.SeparatedValues.Reading.Binders.CsvRecordBinderFactory.GetCharBinder<SimpleProduct>();
+        Assert.NotNull(binder);
+        var binderTypeName = binder.GetType().Name;
+        Assert.Contains("CsvInlineCharBinder", binderTypeName);
+        Assert.DoesNotContain("CsvCharToByteBinderAdapter", binderTypeName);
+    }
 }
 
 [GenerateBinder]

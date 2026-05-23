@@ -20,6 +20,7 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
     private readonly int skipRows;
     private readonly IProgress<ExcelProgress>? progress;
     private readonly ValidationMode validationMode;
+    private readonly ExcelDeserializeErrorHandler? onDeserializeError;
 
     internal ExcelAllSheetsBuilder(
         bool hasHeaderRow,
@@ -30,7 +31,8 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
         int? maxRows,
         int skipRows,
         IProgress<ExcelProgress>? progress,
-        ValidationMode validationMode = ValidationMode.Strict)
+        ValidationMode validationMode = ValidationMode.Strict,
+        ExcelDeserializeErrorHandler? onDeserializeError = null)
     {
         this.hasHeaderRow = hasHeaderRow;
         this.caseSensitiveHeaders = caseSensitiveHeaders;
@@ -41,6 +43,7 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
         this.skipRows = skipRows;
         this.progress = progress;
         this.validationMode = validationMode;
+        this.onDeserializeError = onDeserializeError;
     }
 
     /// <summary>
@@ -50,7 +53,7 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
     /// <returns>This builder for method chaining.</returns>
     public ExcelAllSheetsBuilder<T> WithValidationMode(ValidationMode mode)
     {
-        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, caseSensitiveHeaders, allowMissingColumns, nullValues, culture, maxRows, skipRows, progress, mode);
+        return new ExcelAllSheetsBuilder<T>(hasHeaderRow, caseSensitiveHeaders, allowMissingColumns, nullValues, culture, maxRows, skipRows, progress, mode, onDeserializeError);
     }
 
     /// <summary>
@@ -108,5 +111,7 @@ public sealed class ExcelAllSheetsBuilder<T> where T : new()
         if (progress is not null)
             builder.WithProgress(progress);
         builder.WithValidationMode(validationMode);
+        if (onDeserializeError is not null)
+            builder.OnError(onDeserializeError);
     }
 }

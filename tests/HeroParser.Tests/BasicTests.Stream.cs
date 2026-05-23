@@ -466,7 +466,7 @@ public class BasicTestsStream
         IndexOutOfRangeException? ex1 = null;
         try
         {
-            var _ = reader.Current[-1];
+            _ = reader.Current[-1];
         }
         catch (IndexOutOfRangeException e)
         {
@@ -479,7 +479,7 @@ public class BasicTestsStream
         IndexOutOfRangeException? ex2 = null;
         try
         {
-            var _ = reader.Current[3];
+            _ = reader.Current[3];
         }
         catch (IndexOutOfRangeException e)
         {

@@ -408,7 +408,7 @@ public class FixedWidthAsyncWriterTests
             new TestRecord { Name = "Test", Age = 1, City = "City" }
         };
 
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Stream should be disposed
@@ -542,7 +542,7 @@ public class FixedWidthAsyncWriterTests
             new TestRecord { Name = "Test", Age = 1, City = "City" }
         };
 
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await FixedWidth.Write<TestRecord>()
             .ToStreamAsyncStreaming(ms, records, leaveOpen: false, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -595,7 +595,7 @@ public class FixedWidthAsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CreateWriter_LeaveOpenTrue_DoesNotDisposeTextWriter()
     {
-        var sw = new StringWriter();
+        using var sw = new StringWriter();
         using (var writer = FixedWidth.CreateWriter(sw, leaveOpen: true))
         {
             writer.WriteField("Test", 10);
@@ -656,7 +656,7 @@ public class FixedWidthAsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CreateStreamWriter_Stream_LeaveOpenFalse_DisposesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         using (var writer = FixedWidth.CreateStreamWriter(ms, leaveOpen: false))
         {
             writer.WriteField("Test", 10);
@@ -767,7 +767,7 @@ public class FixedWidthAsyncWriterTests
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task CreateAsyncStreamWriter_LeaveOpenFalse_DisposesStream()
     {
-        var ms = new MemoryStream();
+        using var ms = new MemoryStream();
         await using (var writer = FixedWidth.CreateAsyncStreamWriter(ms, leaveOpen: false))
         {
             await writer.WriteFieldAsync("Test", 10, TestContext.Current.CancellationToken);
@@ -953,7 +953,7 @@ public class FixedWidthAsyncWriterTests
     public async Task WriteToTextAsync_CancellationMidStream_ThrowsOperationCanceledException()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
         var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);
 
@@ -968,7 +968,7 @@ public class FixedWidthAsyncWriterTests
     public async Task WriteToStreamAsync_CancellationMidStream_ThrowsOperationCanceledException()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
         var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);
         using var ms = new MemoryStream();
@@ -1074,7 +1074,7 @@ public class FixedWidthAsyncWriterTests
     public async Task WriteToTextAsync_WithCancellation_ThrowsWhenCancelled()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         var records = CreateAsyncEnumerableWithDelay(
             new TestRecord { Name = "Alice", Age = 30, City = "NYC" },
             new TestRecord { Name = "Bob", Age = 25, City = "LA" }
@@ -1188,7 +1188,7 @@ public class FixedWidthAsyncWriterTests
     {
         foreach (var item in items)
         {
-            await Task.Delay(50);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
             yield return item;
         }
     }
@@ -1223,7 +1223,7 @@ public class FixedWidthAsyncWriterTests
         // Simulate database query with async delay
         for (int i = 1; i <= 10; i++)
         {
-            await Task.Delay(1); // Simulate database latency
+            await Task.Delay(1, TestContext.Current.CancellationToken); // Simulate database latency
             yield return new ProductRecord { Id = i, Name = $"Product {i}", Price = i * 10.5m };
         }
     }
@@ -1232,7 +1232,7 @@ public class FixedWidthAsyncWriterTests
     {
         for (int i = 0; i < 1000; i++)
         {
-            await Task.Delay(10);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
             yield return new TestRecord { Name = $"Name{i}", Age = i, City = $"City{i}" };
         }
     }

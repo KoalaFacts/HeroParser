@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO.Pipelines;
+using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths.Mapping;
@@ -43,6 +44,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     private bool allowShortRows = false;
     private char? commentCharacter = null;
     private bool hasHeaderRow = false;
+    private bool caseSensitiveHeaders = false;
     private int skipRows = 0;
     private long? maxInputSize = 100 * 1024 * 1024; // 100 MB default
 
@@ -220,6 +222,19 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
     public FixedWidthReaderBuilder<T> WithoutHeader()
     {
         hasHeaderRow = false;
+        InvalidateCache();
+        return this;
+    }
+
+    /// <summary>
+    /// Enables case-sensitive header name matching when inline <c>Map&lt;TProperty&gt;()</c>
+    /// with <c>WithHeaderName</c> is used alongside <see cref="WithHeader"/>.
+    /// By default, header name matching is case-insensitive.
+    /// </summary>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthReaderBuilder<T> CaseSensitiveHeaders()
+    {
+        caseSensitiveHeaders = true;
         InvalidateCache();
         return this;
     }
@@ -414,6 +429,39 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         return this;
     }
 
+    /// <summary>
+    /// Maps a property to a fixed-width field using inline fluent configuration.
+    /// </summary>
+    /// <typeparam name="TProperty">The property type.</typeparam>
+    /// <param name="property">An expression selecting the property to map (e.g., <c>t =&gt; t.Name</c>).</param>
+    /// <param name="configure">Optional configuration action. When null, uses field defaults with no position set.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <remarks>
+    /// Cannot be combined with <see cref="WithMap"/>. Calling both throws <see cref="InvalidOperationException"/>.
+    /// </remarks>
+    [RequiresUnreferencedCode("Inline mapping uses reflection and expression compilation. Use [GenerateBinder] for AOT/trimming support.")]
+    [RequiresDynamicCode("Inline mapping uses expression compilation. Use [GenerateBinder] for AOT/trimming support.")]
+    public FixedWidthReaderBuilder<T> Map<TProperty>(
+        Expression<Func<T, TProperty>> property,
+        Action<FixedWidthFieldBuilder>? configure = null)
+    {
+        if (readMapSource is not null and not InlineFixedWidthMapWrapper<T>)
+            throw new InvalidOperationException("Cannot call Map() after WithMap(). Use one approach or the other.");
+
+        var wrapper = (readMapSource as InlineFixedWidthMapWrapper<T>) ?? CreateInlineWrapper();
+        wrapper.Map(property, configure);
+        return this;
+    }
+
+    [RequiresUnreferencedCode("Inline mapping uses reflection and expression compilation.")]
+    [RequiresDynamicCode("Inline mapping uses expression compilation.")]
+    private InlineFixedWidthMapWrapper<T> CreateInlineWrapper()
+    {
+        var wrapper = new InlineFixedWidthMapWrapper<T>();
+        readMapSource = wrapper;
+        return wrapper;
+    }
+
     #endregion
 
     #region Terminal Methods
@@ -431,7 +479,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
 
         if (readMapSource is not null)
         {
-            var descriptor = readMapSource.BuildReadDescriptor();
+            var descriptor = BuildDescriptorFromText(text, options);
             var binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
             return FixedWidthRecordBinder<T>.Bind(
                 FixedWidthFactory.ReadFromText(text, options), binder, progress, progressIntervalRows, validationMode);
@@ -446,6 +494,62 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             progress,
             progressIntervalRows,
             validationMode);
+    }
+
+    private FixedWidthRecordDescriptor<T> BuildDescriptorFromText(string text, FixedWidthReadOptions options)
+    {
+        if (readMapSource is InlineFixedWidthMapWrapper<T> inlineWrapper && inlineWrapper.HasHeaderNames && options.HasHeaderRow)
+        {
+            var headerRow = ExtractHeaderRowText(text, options);
+            return inlineWrapper.BuildReadDescriptor(headerRow, options.CaseSensitiveHeaders);
+        }
+
+        return readMapSource!.BuildReadDescriptor();
+    }
+
+    private static string? ExtractHeaderRowText(string text, FixedWidthReadOptions options)
+    {
+        // Advance past SkipRows lines, then return the next line as the header
+        var span = text.AsSpan();
+        int pos = 0;
+
+        for (int i = 0; i < options.SkipRows; i++)
+        {
+            pos = AdvancePastLine(span, pos);
+            if (pos >= span.Length) return null;
+        }
+
+        // Skip empty lines if configured
+        while (pos < span.Length && options.SkipEmptyLines)
+        {
+            int lineEnd = span[pos..].IndexOfAny('\n', '\r');
+            if (lineEnd < 0) lineEnd = span.Length - pos;
+            if (lineEnd > 0) break; // Non-empty line found
+            pos = AdvancePastLine(span, pos);
+        }
+
+        if (pos >= span.Length) return null;
+
+        // Extract the header line (without the line ending)
+        int end = span[pos..].IndexOfAny('\n', '\r');
+        return end < 0
+            ? span[pos..].ToString()
+            : span.Slice(pos, end).ToString();
+    }
+
+    private static int AdvancePastLine(ReadOnlySpan<char> span, int pos)
+    {
+        int newline = span[pos..].IndexOfAny('\n', '\r');
+        if (newline < 0) return span.Length;
+
+        pos += newline;
+        // Handle \r\n
+        if (pos + 1 < span.Length && span[pos] == '\r' && span[pos + 1] == '\n')
+            pos += 2;
+        else
+            pos += 1;
+
+        return pos;
     }
 
     /// <summary>
@@ -549,7 +653,8 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         ArgumentNullException.ThrowIfNull(reader);
 
         var options = GetOptions();
-        await using var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
+        var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
+        await using var sequenceReaderDisposal = sequenceReader.ConfigureAwait(false);
 
         if (readMapSource is not null)
         {
@@ -659,6 +764,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             AllowShortRows = allowShortRows,
             CommentCharacter = commentCharacter,
             HasHeaderRow = hasHeaderRow,
+            CaseSensitiveHeaders = caseSensitiveHeaders,
             SkipRows = skipRows,
             MaxInputSize = maxInputSize,
             ValidationMode = validationMode

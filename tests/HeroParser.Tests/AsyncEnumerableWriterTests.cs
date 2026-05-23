@@ -82,7 +82,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToTextAsync_WithCancellation_ThrowsWhenCancelled()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         var records = CreateAsyncEnumerableWithDelay(
             new Person("Alice", 30, "New York"),
             new Person("Bob", 25, "London")
@@ -160,7 +160,7 @@ public class AsyncEnumerableWriterTests
         var tempFile = Path.GetTempFileName();
         try
         {
-            var cts = new CancellationTokenSource();
+            using var cts = new CancellationTokenSource();
             var records = CreateAsyncEnumerableWithDelay(
                 new Person("Alice", 30, "New York"),
                 new Person("Bob", 25, "London")
@@ -218,7 +218,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToStreamAsync_SimpleRecords_WritesCorrectly()
     {
         // Arrange
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         var records = CreateAsyncEnumerable(
             new Person("Alice", 30, "New York"),
             new Person("Bob", 25, "London")
@@ -242,7 +242,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToStreamAsync_LeaveOpenFalse_DisposesStream()
     {
         // Arrange
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         var records = CreateAsyncEnumerable(
             new Person("Alice", 30, "New York")
         );
@@ -259,7 +259,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToStreamAsync_LeaveOpenTrue_KeepsStreamOpen()
     {
         // Arrange
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         var records = CreateAsyncEnumerable(
             new Person("Alice", 30, "New York")
         );
@@ -334,7 +334,7 @@ public class AsyncEnumerableWriterTests
     public async Task CsvWriterBuilder_ToStreamAsync_WritesCorrectly()
     {
         // Arrange
-        var stream = new MemoryStream();
+        using var stream = new MemoryStream();
         var records = CreateAsyncEnumerable(
             new Person("Alice", 30, "New York"),
             new Person("Bob", 25, "London")
@@ -397,7 +397,7 @@ public class AsyncEnumerableWriterTests
     public async Task WriteToTextAsync_CancellationMidStream_ThrowsOperationCanceledException()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         // Link our CTS with test context token for proper test framework cancellation support
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, TestContext.Current.CancellationToken);
         var records = CreateAsyncEnumerableWithCancellationTrigger(cts, cancelAfterCount: 5, linkedCts.Token);
@@ -499,7 +499,7 @@ public class AsyncEnumerableWriterTests
     {
         foreach (var item in items)
         {
-            await Task.Delay(50);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
             yield return item;
         }
     }
@@ -534,7 +534,7 @@ public class AsyncEnumerableWriterTests
         // Simulate database query with async delay
         for (int i = 1; i <= 10; i++)
         {
-            await Task.Delay(1); // Simulate database latency
+            await Task.Delay(1, TestContext.Current.CancellationToken); // Simulate database latency
             yield return new Product(i, $"Product {i}", i * 10.5m);
         }
     }

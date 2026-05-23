@@ -1,11 +1,5 @@
 # HeroParser Development Guidelines
 
-## gstack
-
-- **Web browsing**: Always use the `/browse` skill from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools.
-- **Available skills**: `/plan-ceo-review`, `/plan-eng-review`, `/review`, `/ship`, `/browse`, `/qa`, `/setup-browser-cookies`, `/retro`
-- **Troubleshooting**: If gstack skills aren't working, run `cd .claude/skills/gstack && ./setup` to build the binary and register skills.
-
 ## Active Technologies
 - C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 
@@ -84,9 +78,10 @@ Convention-based mapping: unmarked properties default to `TabularMap(Name = prop
 
 A single record can have both `[TabularMap]` and `[PositionalMap]` to be read from CSV, Excel, and FixedWidth.
 
-## Excel (.xlsx) Reading
-Read Excel files with zero extra dependencies (uses `System.IO.Compression` + `System.Xml`):
+## Excel (.xlsx) Reading and Writing
+Read and write Excel files with zero extra dependencies (uses `System.IO.Compression` + `System.Xml`):
 ```csharp
+// --- Reading ---
 // Typed record reading
 var records = Excel.Read<MyRecord>().FromFile("data.xlsx");
 var records = Excel.Read<MyRecord>().FromSheet("Sheet2").FromStream(stream);
@@ -105,9 +100,30 @@ var result = Excel.Read()
 
 // DataReader for database bulk loading
 using var reader = Excel.CreateDataReader("data.xlsx");
+
+// --- Writing ---
+// Typed record writing (fluent builder)
+Excel.Write<MyRecord>().ToFile("out.xlsx", records);
+Excel.Write<MyRecord>().WithSheetName("Sheet1").ToStream(stream, records);
+
+// Static convenience
+Excel.WriteToFile("out.xlsx", records);
+Excel.WriteToStream(stream, records);
+byte[] bytes = Excel.SerializeRecords(records);
+
+// Async variants (IEnumerable or IAsyncEnumerable)
+await Excel.Write<MyRecord>().ToFileAsync("out.xlsx", records);
+await Excel.Write<MyRecord>().ToStreamAsync(stream, records);
+await Excel.WriteToFileAsync("out.xlsx", records);
+
+// Multi-sheet output
+Excel.WriteMultiSheet()
+    .WithSheet("Orders", orderRecords)
+    .WithSheet("Customers", customerRecords)
+    .ToFile("out.xlsx");
 ```
 
-Key files in `src/HeroParser/Excel/` (internal namespace uses `HeroParser.Excels` to avoid conflict with the `Excel` static class).
+Key files in `src/HeroParser/Excels/` (internal namespace uses `HeroParser.Excels` to avoid conflict with the `Excel` static class).
 
 ## Multi-Schema CSV Parsing
 Supports mapping rows to different record types via a discriminator column.
@@ -144,6 +160,30 @@ CSV, Fixed-Width, and Excel support `DbDataReader` for streaming large files int
 - Use `ReadOnlySpan<char>` or `ReadOnlySpan<byte>` comparisons instead of converting to strings
 - For integer discriminator keys, compare numeric values directly rather than calling `ToString()`
 - Prefer `stackalloc` or `ArrayPool` over heap allocations in tight loops
+
+### Minimum CodeQL / Static-Analysis Standards (always follow)
+These are the patterns CodeQL flags as `cs/useless-assignment-to-local` and
+`cs/local-not-disposed`. Apply them everywhere — `src/`, `tests/`,
+`benchmarks/`, and example projects:
+
+1. **Dispose every locally-created `IDisposable` deterministically.** Use
+   `using var x = new T()` (or `await using var` for `IAsyncDisposable`)
+   instead of bare `var x = new T()`. This includes `CancellationTokenSource`
+   — even in tests where the process is about to exit.
+2. **For locally-created streams in `IAsyncEnumerable` methods, prefer
+   `await using` at the declaration site** rather than disposing in a
+   `finally` block. CodeQL cannot trace disposal through iterator state
+   machines, and the `await using` form also guarantees disposal if a later
+   constructor (e.g. `PipeReader.Create`) throws before the `try` block.
+3. **Never write `var _ = expr;`.** If the value is genuinely discarded,
+   write `_ = expr;` (no `var`). If the value is used, name it.
+4. **Never write `foreach (var _name in source)` for an unused loop
+   variable.** Use `foreach (var _ in source)` — the discard pattern.
+5. **Don't write redundant null assertions after the variable has already
+   been dereferenced.** `Assert.True(x is not null)` *after* `x.ToList()`
+   tells CodeQL that `x` could have been null at the prior dereference; it
+   either adds nothing (the dereference would have NRE'd) or it masks the
+   real bug. Assert on the actual outcome (`Assert.Equal(5, result.Count)`).
 
 ## Performance Optimization Lessons
 

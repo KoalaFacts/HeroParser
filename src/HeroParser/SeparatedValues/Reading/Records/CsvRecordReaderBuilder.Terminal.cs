@@ -1,3 +1,5 @@
+using System.IO.Pipelines;
+using System.Runtime.CompilerServices;
 using HeroParser.SeparatedValues.Reading.Binders;
 using System.Text;
 
@@ -46,7 +48,11 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(csvText);
         ThrowIfMapConfigured();
         var (parserOptions, recordOptions) = GetOptions();
-        return Csv.DeserializeRecords<T>(csvText, out textBytes, recordOptions, parserOptions);
+        var reader = Csv.ReadFromText(csvText, out textBytes, parserOptions);
+        var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
+        return new CsvRecordReader<byte, T>(reader, binder, recordOptions.SkipRows,
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode,
+            recordOptions.OnDeserializeError);
     }
 
     /// <summary>
@@ -63,6 +69,7 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(path);
         ThrowIfMapNotConfigured();
         var (parserOptions, _) = GetOptions();
+        parserOptions.ValidateInputSize(new FileInfo(path).Length);
         _ = Csv.ReadFromFile(path, out var fileBytes, parserOptions);
         return FromTextWithMap(DecodeBufferedCsvBytes(fileBytes));
     }
@@ -88,11 +95,12 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(path);
         ThrowIfMapConfigured();
         var (parserOptions, recordOptions) = GetOptions();
-
+        parserOptions.ValidateInputSize(new FileInfo(path).Length);
         var rowReader = Csv.ReadFromFile(path, out fileBytes, parserOptions);
         var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
         return new CsvRecordReader<byte, T>(rowReader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode,
+            recordOptions.OnDeserializeError);
     }
 
     /// <summary>
@@ -110,6 +118,8 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(stream);
         ThrowIfMapNotConfigured();
         var (parserOptions, _) = GetOptions();
+        if (stream.CanSeek)
+            parserOptions.ValidateInputSize(stream.Length);
         _ = Csv.ReadFromStream(stream, out var streamBytes, parserOptions, leaveOpen);
         return FromTextWithMap(DecodeBufferedCsvBytes(streamBytes));
     }
@@ -135,10 +145,89 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(stream);
         ThrowIfMapConfigured();
         var (parserOptions, recordOptions) = GetOptions();
+        if (stream.CanSeek)
+            parserOptions.ValidateInputSize(stream.Length);
         var rowReader = Csv.ReadFromStream(stream, out streamBytes, parserOptions, leaveOpen);
         var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
         return new CsvRecordReader<byte, T>(rowReader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode,
+            recordOptions.OnDeserializeError);
+    }
+
+    /// <summary>
+    /// Asynchronously reads records from a CSV file without loading the entire file into memory.
+    /// </summary>
+    /// <param name="path">Filesystem path to the CSV file.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>An async sequence of deserialized records.</returns>
+    /// <remarks>
+    /// Unlike <see cref="FromFile(string, out byte[])"/>, this method does not load the entire file
+    /// into memory. Use this for large files.
+    /// </remarks>
+    public async IAsyncEnumerable<T> FromFileAsync(
+        string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ThrowIfMapConfigured();
+        ThrowIfOnErrorConfiguredForAsync();
+        var (parserOptions, recordOptions) = GetOptions();
+        parserOptions.ValidateInputSize(new FileInfo(path).Length);
+        // Declare the FileStream with await using here (not in a finally) so CodeQL can prove
+        // disposal across the iterator state machine and so it's released if a later
+        // construction (e.g. PipeReader.Create) throws.
+        var fileStream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
+        var pipeReader = PipeReader.Create(fileStream);
+        try
+        {
+            await foreach (var record in Csv.DeserializeRecordsAsync<T>(pipeReader, recordOptions, parserOptions, cancellationToken).ConfigureAwait(false))
+                yield return record;
+        }
+        finally
+        {
+            await pipeReader.CompleteAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously reads records from a stream without loading the entire stream into memory.
+    /// </summary>
+    /// <param name="stream">The stream containing UTF-8 CSV data.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, the stream remains open after enumeration completes.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>An async sequence of deserialized records.</returns>
+    /// <remarks>
+    /// Unlike <see cref="FromStream(Stream, out byte[], bool)"/>, this method does not load the entire
+    /// stream into memory. Use this for large streams.
+    /// </remarks>
+    public async IAsyncEnumerable<T> FromStreamAsync(
+        Stream stream,
+        bool leaveOpen = true,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ThrowIfMapConfigured();
+        ThrowIfOnErrorConfiguredForAsync();
+        var (parserOptions, recordOptions) = GetOptions();
+        if (stream.CanSeek)
+            parserOptions.ValidateInputSize(stream.Length);
+        var pipeReader = PipeReader.Create(stream, new StreamPipeReaderOptions(leaveOpen: leaveOpen));
+        try
+        {
+            await foreach (var record in Csv.DeserializeRecordsAsync<T>(pipeReader, recordOptions, parserOptions, cancellationToken).ConfigureAwait(false))
+                yield return record;
+        }
+        finally
+        {
+            await pipeReader.CompleteAsync().ConfigureAwait(false);
+        }
     }
 
     private CsvRecordReader<char, T> FromTextWithMap(string csvText)
@@ -148,7 +237,8 @@ public sealed partial class CsvRecordReaderBuilder<T>
         var binder = new CsvDescriptorBinder<T>(descriptor, recordOptions);
         var rowReader = Csv.ReadFromCharSpan(csvText.AsSpan(), parserOptions);
         return new CsvRecordReader<char, T>(rowReader, binder, recordOptions.SkipRows,
-            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode);
+            recordOptions.Progress, recordOptions.ProgressIntervalRows, recordOptions.ValidationMode,
+            recordOptions.OnDeserializeError);
     }
 
     private void ThrowIfMapConfigured()
@@ -159,6 +249,18 @@ public sealed partial class CsvRecordReaderBuilder<T>
                 "Byte-based overloads are not supported when a fluent map is configured. " +
                 "Fluent maps use char-based descriptor binding. Use FromText(string), FromFile(string), " +
                 "or FromStream(Stream, bool) instead.");
+        }
+    }
+
+    private void ThrowIfOnErrorConfiguredForAsync()
+    {
+        if (onDeserializeError is not null)
+        {
+            throw new NotSupportedException(
+                "OnError is not supported with FromFileAsync/FromStreamAsync. " +
+                "The async pipe reader path does not support per-row error handling. " +
+                "Use the synchronous FromFile/FromStream methods with OnError, or use " +
+                "FromPipeReaderAsync without OnError.");
         }
     }
 

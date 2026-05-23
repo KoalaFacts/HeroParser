@@ -1,4 +1,5 @@
 using System.Globalization;
+using HeroParser.Excels.Writing;
 using HeroParser.Validation;
 
 namespace HeroParser.Excels.Core;
@@ -84,6 +85,45 @@ public sealed record ExcelWriteOptions
     public bool WriteHeader { get; init; } = true;
 
     /// <summary>
+    /// Gets or sets the callback invoked when a serialization error occurs while writing a record.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="null"/> (the default), serialization exceptions propagate as-is.
+    /// </remarks>
+    public ExcelSerializeErrorHandler? OnSerializeError { get; init; }
+
+    /// <summary>
+    /// Gets or sets the maximum number of uncompressed worksheet XML bytes to write.
+    /// </summary>
+    /// <remarks>
+    /// When set, writing throws <see cref="ExcelException"/> if the output exceeds this size (DoS protection).
+    /// When <see langword="null"/> (the default), no limit is enforced.
+    /// </remarks>
+    public long? MaxOutputSize { get; init; }
+
+    /// <summary>
+    /// Gets or sets how spreadsheet-formula injection is handled when writing string cells.
+    /// </summary>
+    /// <remarks>
+    /// <para>Default is <see cref="ExcelInjectionProtection.EscapeWithApostrophe"/>, which prefixes any
+    /// value starting with <c>=</c>/<c>+</c>/<c>-</c>/<c>@</c>/<c>\t</c>/<c>\r</c> with an apostrophe so the
+    /// receiving spreadsheet treats it as literal text instead of a formula.</para>
+    /// <para>Set to <see cref="ExcelInjectionProtection.None"/> only when the data source is fully trusted.</para>
+    /// </remarks>
+    public ExcelInjectionProtection InjectionProtection { get; init; } = ExcelInjectionProtection.EscapeWithApostrophe;
+
+    /// <summary>
+    /// Gets or sets the progress reporter notified during writing.
+    /// </summary>
+    public IProgress<ExcelWriteProgress>? WriteProgress { get; init; }
+
+    /// <summary>
+    /// Gets or sets the interval in rows at which progress is reported.
+    /// Default is 1000.
+    /// </summary>
+    public int WriteProgressIntervalRows { get; init; } = 1000;
+
+    /// <summary>
     /// Gets a singleton representing the default configuration.
     /// </summary>
     /// <remarks>
@@ -91,4 +131,16 @@ public sealed record ExcelWriteOptions
     /// Thread-Safety: This is an immutable singleton and is safe to access from multiple threads.
     /// </remarks>
     public static ExcelWriteOptions Default { get; } = new();
+
+    internal void Validate()
+    {
+        if (MaxRowCount is <= 0)
+            throw new ExcelException("MaxRowCount must be a positive integer when specified.");
+
+        if (MaxOutputSize is <= 0)
+            throw new ExcelException("MaxOutputSize must be a positive integer when specified.");
+
+        if (WriteProgressIntervalRows <= 0)
+            throw new ExcelException("WriteProgressIntervalRows must be a positive integer.");
+    }
 }

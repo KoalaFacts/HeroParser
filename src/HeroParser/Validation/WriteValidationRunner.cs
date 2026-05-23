@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace HeroParser.Validation;
 
 /// <summary>
@@ -136,13 +134,8 @@ internal static class WriteValidationRunner
                 }
             }
 
-            if (rules.Pattern is not null)
+            if (rules.CompiledPattern is { } regex)
             {
-                var regex = new Regex(
-                    rules.Pattern,
-                    RegexOptions.None,
-                    TimeSpan.FromMilliseconds(rules.PatternTimeoutMs));
-
                 if (!regex.IsMatch(str))
                 {
                     errors.Add(new ValidationError

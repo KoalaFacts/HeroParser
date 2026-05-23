@@ -29,7 +29,8 @@ public static partial class FixedWidth
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
-        await using var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
+        var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
+        await using var sequenceReaderDisposal = sequenceReader.ConfigureAwait(false);
         while (await sequenceReader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
         {
             yield return sequenceReader.Current.ToOwnedRow();
@@ -244,7 +245,7 @@ public readonly struct FixedWidthPipeRow
         if (length < 0)
             throw new ArgumentOutOfRangeException(nameof(length), length, "Field length cannot be negative.");
 
-        var fieldEnd = start + length;
+        long fieldEnd = (long)start + length;
         if (fieldEnd > data.Length)
         {
             if (!options.AllowShortRows)

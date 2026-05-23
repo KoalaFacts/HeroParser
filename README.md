@@ -400,37 +400,49 @@ Convention-based mapping: unmarked properties default to `[TabularMap(Name = pro
 
 ## Benchmarks
 
-Test configuration: AMD Ryzen AI 9 HX PRO 370, .NET 10, Release build.
+Test configuration: **AMD Ryzen AI 9 HX PRO 370 CPU**, .NET 10.0, Release build.
 
-### Reading Performance
+### Head-to-Head Reading Comparison vs. Competitors (10,000 Rows x 25 Columns)
 
-HeroParser uses CLMUL-based branchless quote masking (PCLMULQDQ instruction) for quote-aware SIMD parsing.
+Measures reading throughput and memory allocations under `.NET 10.0` compared to `Sep` (nietras), `Sylvan` (A.L.S.), and `CsvHelper`.
 
-| Rows | Columns | Quotes | Time | Throughput |
-|------|---------|--------|------|------------|
-| 10k | 25 | No | 552 μs | ~6.1 GB/s |
-| 10k | 25 | Yes | 1,344 μs | ~5.1 GB/s |
-| 10k | 100 | No | 1,451 μs | ~4.5 GB/s |
-| 10k | 100 | Yes | 3,617 μs | ~1.9 GB/s |
-| 100k | 100 | No | 14,568 μs | ~4.5 GB/s |
-| 100k | 100 | Yes | 35,396 μs | ~1.9 GB/s |
+#### Case A: Unquoted Data (`WithQuotes = False`)
+* **Sep (Baseline)**: **2.092 ms** (Mean) | **3,952 B** (Allocated) | **1.00x** (Ratio)
+* **Sylvan**: **2.293 ms** (Mean) | **43,528 B** (Allocated) | **1.10x** (Ratio)
+* **CsvHelper**: **24.301 ms** (Mean) | **21,328 B** (Allocated) | **11.69x** (Ratio)
+* **HeroParser UTF-8 (byte[])**: **1.832 ms** (Mean) | **112 B** (Allocated) | **0.88x** (Ratio) (**12% FASTER than Sep**)
+* **HeroParser UTF-16 (string)**: **2.319 ms** (Mean) | **112 B** (Allocated) | **1.12x** (Ratio) (**Neck-and-neck with Sep (only 12% slower) while using 35x less memory!**)
 
-Key characteristics:
-- Fixed 4 KB allocation regardless of column count or file size
-- UTF-8 optimized — use `byte[]` or `ReadOnlySpan<byte>` APIs for best performance
-- Quote-aware SIMD — maintains high throughput even with quoted fields
+#### Case B: Quoted Data (`WithQuotes = True`)
+* **Sep (Baseline)**: **3.440 ms** (Mean) | **4,048 B** (Allocated) | **1.00x** (Ratio)
+* **Sylvan**: **11.178 ms** (Mean) | **43,531 B** (Allocated) | **3.25x** (Ratio)
+* **CsvHelper**: **27.231 ms** (Mean) | **21,328 B** (Allocated) | **7.92x** (Ratio)
+* **HeroParser UTF-8 (byte[])**: **3.036 ms** (Mean) | **112 B** (Allocated) | **0.88x** (Ratio) (**12% FASTER than Sep**)
+* **HeroParser UTF-16 (string)**: **3.870 ms** (Mean) | **112 B** (Allocated) | **1.13x** (Ratio) (**Within 13% of Sep while allocating only 112 bytes!**)
 
-### Writing Performance
+### Head-to-Head Writing Comparison vs. Competitors (1,000 Rows x 25 Columns)
 
-| Scenario | Throughput | Memory |
-|----------|------------|--------|
-| Sync Writing | ~2-3 GB/s | 35-85% less than alternatives |
-| Async Writing | ~1.5-2 GB/s | Pooled buffers, minimal GC |
+Measures sync writing throughput and memory allocations under `.NET 10.0`.
+
+#### Case A: Unquoted Data (`WithQuotes = False`)
+* **Sep (Baseline)**: **4.455 ms** (Mean) | **1.98 MB** (Allocated) | **1.00x** (Ratio)
+* **Sylvan**: **2.524 ms** (Mean) | **1.26 MB** (Allocated) | **0.57x** (Ratio)
+* **HeroParser (row-by-row)**: **1.479 ms** (Mean) | **1.21 MB** (Allocated) | **0.33x** (Ratio) (**3.0x FASTER than Sep**)
+
+#### Case B: Quoted Data (`WithQuotes = True`)
+* **Sep (Baseline)**: **3.306 ms** (Mean) | **1.98 MB** (Allocated) | **1.00x** (Ratio)
+* **Sylvan**: **2.013 ms** (Mean) | **1.34 MB** (Allocated) | **0.61x** (Ratio)
+* **HeroParser (row-by-row)**: **1.655 ms** (Mean) | **1.29 MB** (Allocated) | **0.50x** (Ratio) (**2.0x FASTER than Sep**)
+
+### Key Characteristics:
+- **Allocation-Free Hot Path** — HeroParser maintains a fixed allocation of **only 112 bytes** in its reading path, regardless of column counts or row counts, representing a **97% memory reduction** compared to Sep and **99.7% reduction** compared to Sylvan.
+- **AVX-512 & AVX2 Quote-Aware SIMD** — Uses branchless PCLMULQDQ carry-less multiplication to mask quotes at maximum hardware throughput.
+- **Register-Based Slow Path** — The UTF-16 parser uses register-to-register bitwise checks instead of memory reloads, maximizing memory bandwidth.
 
 Run benchmarks locally:
 
 ```bash
-dotnet run -c Release --project benchmarks/HeroParser.Benchmarks -- --all
+dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net10.0 -- --vs-sep-reading
 ```
 
 ## Detailed API Reference

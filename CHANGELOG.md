@@ -5,6 +5,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 ## [Unreleased]
 
 ### Performance
+- **100% Allocation-Free automatic delimiter detection**: Refactored `CsvDelimiterDetector.cs` to utilize stack-allocated spans (`stackalloc int[]`) for default sample rows (<=128) and rented buffers for larger samples, replacing the heap-allocated dictionaries and lists. The main `DetectDelimiter` APIs are now completely allocation-free (0 bytes allocated on both UTF-16 spans and UTF-8 byte spans).
 - **Zero-Allocation Excel worksheet XML parser**: Completely refactored `XlsxSheetReader.cs` to iterate rows and cells sequentially using node depth checks (`reader.Depth`), entirely eliminating the millions of garbage-collected `XmlReader.ReadSubtree()` wrapper allocations created per spreadsheet read.
 - **Zero-Allocation Excel shared string parser**: Bypassed all remaining `XmlReader.ReadSubtree()` wrappers in `XlsxSharedStrings.cs` by passing the main reader directly to `ReadStringItem` and utilizing depth-based matching to stop sequentially.
 

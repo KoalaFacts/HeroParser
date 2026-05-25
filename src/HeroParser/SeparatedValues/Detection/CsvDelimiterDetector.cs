@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 
 namespace HeroParser.SeparatedValues.Detection;
@@ -43,16 +44,10 @@ public static class CsvDelimiterDetector
     /// <param name="data">The CSV data to analyze (UTF-16).</param>
     /// <param name="sampleRows">Number of rows to sample (default 10).</param>
     /// <returns>The detected delimiter character.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when data is null.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when no suitable delimiter could be detected.
     /// </exception>
-    /// <example>
-    /// <code>
-    /// var csv = "Name;Age;City\nJohn;30;NYC\nJane;25;LA";
-    /// char delimiter = CsvDelimiterDetector.DetectDelimiter(csv);
-    /// // Returns ';'
-    /// </code>
-    /// </example>
     public static char DetectDelimiter(string data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -70,8 +65,14 @@ public static class CsvDelimiterDetector
     /// </exception>
     public static char DetectDelimiter(ReadOnlySpan<char> data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
-        var result = Detect(data, sampleRows);
-        return result.DetectedDelimiter;
+        Span<int> totalCounts = stackalloc int[4];
+        if (!DetectInternal(data, sampleRows, totalCounts, out char detectedDelimiter, out _, out _, out _))
+        {
+            throw new InvalidOperationException(
+                "Cannot detect delimiter: no consistent delimiter pattern found. " +
+                "The data may not be properly delimited or may require manual delimiter specification.");
+        }
+        return detectedDelimiter;
     }
 
     /// <summary>
@@ -92,13 +93,25 @@ public static class CsvDelimiterDetector
             data = data[..MAX_DETECTION_BYTES];
         }
 
-        var charCount = Encoding.UTF8.GetCharCount(data);
+        int charCount = Encoding.UTF8.GetCharCount(data);
+        char[]? rentedArray = null;
         Span<char> chars = charCount <= 4096
             ? stackalloc char[charCount]
-            : new char[charCount];
+            : (rentedArray = ArrayPool<char>.Shared.Rent(charCount));
 
         Encoding.UTF8.GetChars(data, chars);
-        return DetectDelimiter(chars, sampleRows);
+
+        char detected;
+        try
+        {
+            detected = DetectDelimiter(chars[..charCount], sampleRows);
+        }
+        finally
+        {
+            if (rentedArray is not null)
+                ArrayPool<char>.Shared.Return(rentedArray);
+        }
+        return detected;
     }
 
     /// <summary>
@@ -107,18 +120,10 @@ public static class CsvDelimiterDetector
     /// <param name="data">The CSV data to analyze.</param>
     /// <param name="sampleRows">Number of rows to sample (default 10).</param>
     /// <returns>Detailed detection results including confidence and candidate counts.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when data is null.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when no suitable delimiter could be detected.
     /// </exception>
-    /// <example>
-    /// <code>
-    /// var result = CsvDelimiterDetector.Detect(csvData);
-    /// if (result.Confidence &lt; 50)
-    /// {
-    ///     Console.WriteLine($"Low confidence ({result.Confidence}%), manual verification recommended");
-    /// }
-    /// </code>
-    /// </example>
     public static CsvDelimiterDetectionResult Detect(string data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -136,136 +141,179 @@ public static class CsvDelimiterDetector
     /// </exception>
     public static CsvDelimiterDetectionResult Detect(ReadOnlySpan<char> data, int sampleRows = DEFAULT_SAMPLE_ROWS)
     {
-        if (sampleRows < 1)
-            throw new ArgumentOutOfRangeException(nameof(sampleRows), "Sample rows must be at least 1");
-
-        if (data.IsEmpty)
-        {
-            throw new InvalidOperationException(
-                "Cannot detect delimiter from empty data");
-        }
-
-        // Analyze delimiters in a single pass without allocating row storage
-        var (delimiterStats, rowCount) = AnalyzeDelimitersInSinglePass(data, sampleRows);
-
-        if (rowCount == 0)
-        {
-            throw new InvalidOperationException(
-                "Cannot detect delimiter: no rows found in data");
-        }
-
-        // Select the best delimiter based on consistency
-        var bestDelimiter = SelectBestDelimiter(delimiterStats, rowCount);
-
-        if (!bestDelimiter.HasValue)
+        Span<int> totalCounts = stackalloc int[4];
+        if (!DetectInternal(data, sampleRows, totalCounts, out char detectedDelimiter, out int confidence, out double avgCount, out int sampledRows))
         {
             throw new InvalidOperationException(
                 "Cannot detect delimiter: no consistent delimiter pattern found. " +
                 "The data may not be properly delimited or may require manual delimiter specification.");
         }
 
-        // Calculate confidence and prepare result
-        var stats = delimiterStats[bestDelimiter.Value];
-        var confidence = CalculateConfidence(stats.CountsPerRow);
-        var avgCount = stats.CountsPerRow.Count > 0
-            ? stats.CountsPerRow.Average()
-            : 0;
-
-        // Build candidate counts dictionary
-        var candidateCounts = new Dictionary<char, int>();
-        foreach (var kvp in delimiterStats)
+        // Build candidate counts dictionary (only allocated when details are requested)
+        var candidateCounts = new Dictionary<char, int>(4);
+        for (int d = 0; d < 4; d++)
         {
-            candidateCounts[kvp.Key] = kvp.Value.TotalCount;
+            candidateCounts[candidateDelimiters[d]] = totalCounts[d];
         }
 
         return new CsvDelimiterDetectionResult
         {
-            DetectedDelimiter = bestDelimiter.Value,
+            DetectedDelimiter = detectedDelimiter,
             Confidence = confidence,
             AverageDelimiterCount = avgCount,
-            SampledRows = rowCount,
+            SampledRows = sampledRows,
             CandidateCounts = candidateCounts
         };
     }
 
-    private static (Dictionary<char, DelimiterStats> stats, int rowCount) AnalyzeDelimitersInSinglePass(
+    private static bool DetectInternal(
         ReadOnlySpan<char> data,
-        int maxRows)
+        int sampleRows,
+        Span<int> totalCounts,
+        out char detectedDelimiter,
+        out int confidence,
+        out double averageDelimiterCount,
+        out int sampledRows)
     {
-        var stats = new Dictionary<char, DelimiterStats>();
+        if (sampleRows < 1)
+            throw new ArgumentOutOfRangeException(nameof(sampleRows), "Sample rows must be at least 1");
 
-        // Initialize stats for each candidate
-        foreach (var delimiter in candidateDelimiters)
-        {
-            stats[delimiter] = new DelimiterStats();
-        }
+        if (data.IsEmpty)
+            throw new InvalidOperationException("Cannot detect delimiter from empty data");
+
+        // Stack-allocate or rent row counts buffer
+        int bufferSize = 4 * sampleRows;
+        int[]? rentedArray = null;
+        Span<int> countsPerRow = bufferSize <= 512
+            ? stackalloc int[bufferSize]
+            : (rentedArray = ArrayPool<int>.Shared.Rent(bufferSize));
+
+        countsPerRow.Clear();
+        totalCounts.Clear();
 
         int rowStart = 0;
         int rowCount = 0;
 
-        for (int i = 0; i < data.Length && rowCount < maxRows; i++)
+        for (int i = 0; i < data.Length && rowCount < sampleRows; i++)
         {
             bool isLineEnd = false;
             int rowEnd = i;
 
-            // Check for line ending (LF, CR, or CRLF)
             if (data[i] == '\n')
             {
                 rowEnd = i;
-                // Trim trailing CR if present (CRLF case)
                 if (rowEnd > rowStart && data[rowEnd - 1] == '\r')
                     rowEnd--;
                 isLineEnd = true;
             }
             else if (data[i] == '\r' && (i + 1 >= data.Length || data[i + 1] != '\n'))
             {
-                // CR without LF (old Mac format)
                 rowEnd = i;
                 isLineEnd = true;
             }
 
             if (isLineEnd)
             {
-                var rowLength = rowEnd - rowStart;
-                if (rowLength > 0) // Skip empty lines
+                int rowLength = rowEnd - rowStart;
+                if (rowLength > 0)
                 {
-                    var row = data.Slice(rowStart, rowLength);
-
-                    // Count each candidate delimiter in this row
-                    foreach (var delimiter in candidateDelimiters)
+                    ReadOnlySpan<char> row = data.Slice(rowStart, rowLength);
+                    for (int d = 0; d < 4; d++)
                     {
-                        int count = CountOccurrences(row, delimiter);
-                        stats[delimiter].CountsPerRow.Add(count);
-                        stats[delimiter].TotalCount += count;
+                        int count = CountOccurrences(row, candidateDelimiters[d]);
+                        countsPerRow[d * sampleRows + rowCount] = count;
+                        totalCounts[d] += count;
                     }
-
                     rowCount++;
                 }
-
                 rowStart = i + 1;
             }
         }
 
-        // Process last row if data doesn't end with newline
-        if (rowStart < data.Length && rowCount < maxRows)
+        if (rowStart < data.Length && rowCount < sampleRows)
         {
-            var rowLength = data.Length - rowStart;
+            int rowLength = data.Length - rowStart;
             if (rowLength > 0)
             {
-                var row = data.Slice(rowStart, rowLength);
-
-                foreach (var delimiter in candidateDelimiters)
+                ReadOnlySpan<char> row = data.Slice(rowStart, rowLength);
+                for (int d = 0; d < 4; d++)
                 {
-                    int count = CountOccurrences(row, delimiter);
-                    stats[delimiter].CountsPerRow.Add(count);
-                    stats[delimiter].TotalCount += count;
+                    int count = CountOccurrences(row, candidateDelimiters[d]);
+                    countsPerRow[d * sampleRows + rowCount] = count;
+                    totalCounts[d] += count;
                 }
-
                 rowCount++;
             }
         }
 
-        return (stats, rowCount);
+        sampledRows = rowCount;
+        if (rowCount == 0)
+        {
+            if (rentedArray is not null)
+                ArrayPool<int>.Shared.Return(rentedArray);
+            detectedDelimiter = default;
+            confidence = 0;
+            averageDelimiterCount = 0;
+            return false;
+        }
+
+        // Select the best delimiter based on consistency
+        int bestDelimiterIndex = -1;
+        double bestScore = double.MinValue;
+
+        for (int d = 0; d < 4; d++)
+        {
+            int totalCount = totalCounts[d];
+            if (totalCount == 0)
+                continue;
+
+            // Counts for delimiter d
+            Span<int> rowCounts = countsPerRow.Slice(d * sampleRows, rowCount);
+
+            // Skip delimiters that don't appear in all rows (inconsistent)
+            int nonZeroRows = 0;
+            for (int r = 0; r < rowCount; r++)
+            {
+                if (rowCounts[r] > 0)
+                    nonZeroRows++;
+            }
+
+            if (nonZeroRows < rowCount * 0.8)
+                continue;
+
+            double avg = CalculateAverage(rowCounts);
+            double stdDev = CalculateStandardDeviation(rowCounts, avg);
+
+            double consistencyFactor = avg > 0 ? avg / (stdDev + 1.0) : 0;
+            double score = avg * 0.3 + consistencyFactor * 0.7;
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestDelimiterIndex = d;
+            }
+        }
+
+        if (bestDelimiterIndex == -1)
+        {
+            if (rentedArray is not null)
+                ArrayPool<int>.Shared.Return(rentedArray);
+            detectedDelimiter = default;
+            confidence = 0;
+            averageDelimiterCount = 0;
+            return false;
+        }
+
+        detectedDelimiter = candidateDelimiters[bestDelimiterIndex];
+        Span<int> bestRowCounts = countsPerRow.Slice(bestDelimiterIndex * sampleRows, rowCount);
+        double bestAvg = CalculateAverage(bestRowCounts);
+        confidence = CalculateConfidence(bestRowCounts, bestAvg);
+        averageDelimiterCount = bestAvg;
+
+        if (rentedArray is not null)
+            ArrayPool<int>.Shared.Return(rentedArray);
+
+        return true;
     }
 
     private static int CountOccurrences(ReadOnlySpan<char> data, char character)
@@ -279,87 +327,54 @@ public static class CsvDelimiterDetector
         return count;
     }
 
-    private static char? SelectBestDelimiter(Dictionary<char, DelimiterStats> stats, int rowCount)
+    private static double CalculateAverage(ReadOnlySpan<int> values)
     {
-        char? bestDelimiter = null;
-        double bestScore = double.MinValue;
+        if (values.Length == 0)
+            return 0;
 
-        foreach (var kvp in stats)
+        long sum = 0;
+        for (int i = 0; i < values.Length; i++)
         {
-            var delimiter = kvp.Key;
-            var delimiterStats = kvp.Value;
-
-            // Skip delimiters that never appear
-            if (delimiterStats.TotalCount == 0)
-                continue;
-
-            // Skip delimiters that don't appear in all rows (inconsistent)
-            var nonZeroRows = delimiterStats.CountsPerRow.Count(c => c > 0);
-            if (nonZeroRows < rowCount * 0.8) // Allow 20% tolerance for header/footer rows
-                continue;
-
-            // Calculate consistency score
-            // Score = average count * consistency factor
-            // Higher average count is better (more columns)
-            // Lower standard deviation is better (more consistent)
-            var avg = delimiterStats.CountsPerRow.Average();
-            var stdDev = CalculateStandardDeviation(delimiterStats.CountsPerRow);
-
-            // Avoid division by zero
-            var consistencyFactor = avg > 0 ? avg / (stdDev + 1.0) : 0;
-
-            // Weighted score: favor consistency over count
-            var score = avg * 0.3 + consistencyFactor * 0.7;
-
-            if (score > bestScore)
-            {
-                bestScore = score;
-                bestDelimiter = delimiter;
-            }
+            sum += values[i];
         }
-
-        return bestDelimiter;
+        return (double)sum / values.Length;
     }
 
-    private static int CalculateConfidence(List<int> counts)
+    private static double CalculateStandardDeviation(ReadOnlySpan<int> values, double avg)
     {
-        if (counts.Count <= 1)
+        if (values.Length <= 1)
+            return 0;
+
+        double sumOfSquaredDifferences = 0;
+        for (int i = 0; i < values.Length; i++)
+        {
+            sumOfSquaredDifferences += Math.Pow(values[i] - avg, 2);
+        }
+        double variance = sumOfSquaredDifferences / values.Length;
+
+        return Math.Sqrt(variance);
+    }
+
+    private static int CalculateConfidence(ReadOnlySpan<int> counts, double avg)
+    {
+        if (counts.Length <= 1)
             return 100; // Single row = 100% confidence by default
 
-        var avg = counts.Average();
         if (avg == 0)
             return 0;
 
-        var stdDev = CalculateStandardDeviation(counts);
+        double stdDev = CalculateStandardDeviation(counts, avg);
 
         // Confidence = 100% when stdDev is 0 (perfect consistency)
         // Confidence decreases as stdDev increases relative to average
-        var variationCoefficient = stdDev / avg;
+        double variationCoefficient = stdDev / avg;
 
         // Map variation coefficient to confidence (0-100)
         // 0.0 variation = 100% confidence
         // 0.5 variation = 50% confidence
         // 1.0+ variation = 0% confidence
-        var confidence = Math.Max(0, 100 - (int)(variationCoefficient * 100));
+        int confidence = Math.Max(0, 100 - (int)(variationCoefficient * 100));
 
         return Math.Clamp(confidence, 0, 100);
-    }
-
-    private static double CalculateStandardDeviation(List<int> values)
-    {
-        if (values.Count <= 1)
-            return 0;
-
-        var avg = values.Average();
-        var sumOfSquaredDifferences = values.Sum(val => Math.Pow(val - avg, 2));
-        var variance = sumOfSquaredDifferences / values.Count;
-
-        return Math.Sqrt(variance);
-    }
-
-    private sealed class DelimiterStats
-    {
-        public List<int> CountsPerRow { get; } = [];
-        public int TotalCount { get; set; }
     }
 }

@@ -94,24 +94,24 @@ internal sealed class XlsxSheetReader : IDisposable
 
         cellBuffer.Clear();
         int maxColumnIndex = -1;
+        int rowDepth = reader.Depth;
 
-        // Use ReadSubtree to safely iterate cells within this row
-        using var rowReader = reader.ReadSubtree();
-        rowReader.Read(); // move to the <row> element itself
-
-        while (rowReader.Read())
+        while (reader.Read())
         {
-            if (rowReader.NodeType == XmlNodeType.Element && rowReader.LocalName == "c")
+            if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == rowDepth && reader.LocalName == "row")
+                break;
+
+            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "c")
             {
-                var cellRef = rowReader.GetAttribute("r");
-                var typeAttr = rowReader.GetAttribute("t");
-                var styleAttr = rowReader.GetAttribute("s");
+                var cellRef = reader.GetAttribute("r");
+                var typeAttr = reader.GetAttribute("t");
+                var styleAttr = reader.GetAttribute("s");
 
                 int columnIndex = cellRef is not null ? ParseColumnIndex(cellRef) : cellBuffer.Count;
                 var cellType = ParseCellType(typeAttr);
                 int styleIndex = styleAttr is not null && int.TryParse(styleAttr, out int si) ? si : -1;
 
-                var value = ReadCellValue(rowReader, cellType, styleIndex);
+                var value = ReadCellValue(cellType, styleIndex);
 
                 cellBuffer.Add((columnIndex, value));
                 if (columnIndex > maxColumnIndex)
@@ -134,30 +134,42 @@ internal sealed class XlsxSheetReader : IDisposable
         return result;
     }
 
-    private string ReadCellValue(XmlReader cellReader, XlsxCellType cellType, int styleIndex)
+    private string ReadCellValue(XlsxCellType cellType, int styleIndex)
     {
-        if (cellReader.IsEmptyElement)
+        if (reader.IsEmptyElement)
             return "";
 
         string? rawValue = null;
         string? inlineText = null;
+        int cellDepth = reader.Depth;
 
-        // Use ReadSubtree to safely read within this cell
-        using var subtree = cellReader.ReadSubtree();
-        subtree.Read(); // move to the <c> element itself
-
-        while (subtree.Read())
+        while (reader.Read())
         {
-            if (subtree.NodeType != XmlNodeType.Element)
+            if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == cellDepth && reader.LocalName == "c")
+                break;
+
+            if (reader.NodeType != XmlNodeType.Element)
                 continue;
 
-            if (subtree.LocalName == "v")
+            if (reader.LocalName == "v")
             {
-                rawValue = subtree.IsEmptyElement ? "" : subtree.ReadElementContentAsString();
+                rawValue = "";
+                if (!reader.IsEmptyElement)
+                {
+                    while (reader.Read())
+                    {
+                        if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "v")
+                            break;
+                        if (reader.NodeType == XmlNodeType.Text || reader.NodeType == XmlNodeType.SignificantWhitespace)
+                        {
+                            rawValue += reader.Value;
+                        }
+                    }
+                }
             }
-            else if (subtree.LocalName == "is")
+            else if (reader.LocalName == "is")
             {
-                inlineText = ReadInlineString(subtree);
+                inlineText = ReadInlineString();
             }
         }
 
@@ -173,24 +185,38 @@ internal sealed class XlsxSheetReader : IDisposable
         };
     }
 
-    private static string ReadInlineString(XmlReader isReader)
+    private string ReadInlineString()
     {
         // <is><t>text</t></is>
-        if (isReader.IsEmptyElement)
+        if (reader.IsEmptyElement)
             return "";
 
-        using var subtree = isReader.ReadSubtree();
-        subtree.Read(); // move to <is>
+        int isDepth = reader.Depth;
+        string result = "";
 
-        while (subtree.Read())
+        while (reader.Read())
         {
-            if (subtree.NodeType == XmlNodeType.Element && subtree.LocalName == "t")
+            if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == isDepth && reader.LocalName == "is")
+                break;
+
+            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "t")
             {
-                return subtree.IsEmptyElement ? "" : subtree.ReadElementContentAsString();
+                if (!reader.IsEmptyElement)
+                {
+                    while (reader.Read())
+                    {
+                        if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "t")
+                            break;
+                        if (reader.NodeType == XmlNodeType.Text || reader.NodeType == XmlNodeType.SignificantWhitespace)
+                        {
+                            result += reader.Value;
+                        }
+                    }
+                }
             }
         }
 
-        return "";
+        return result;
     }
 
     private string ResolveSharedString(string? rawValue)

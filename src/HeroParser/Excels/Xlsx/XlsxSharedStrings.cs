@@ -52,7 +52,7 @@ internal sealed class XlsxSharedStrings
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "si")
             {
                 result ??= [];
-                result.Add(ReadStringItem(reader.ReadSubtree()));
+                result.Add(ReadStringItem(reader));
             }
         }
 

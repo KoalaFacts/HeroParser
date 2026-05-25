@@ -4,7 +4,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Performance
+- **Zero-Allocation Excel worksheet XML parser**: Completely refactored `XlsxSheetReader.cs` to iterate rows and cells sequentially using node depth checks (`reader.Depth`), entirely eliminating the millions of garbage-collected `XmlReader.ReadSubtree()` wrapper allocations created per spreadsheet read.
+- **Zero-Allocation Excel shared string parser**: Bypassed all remaining `XmlReader.ReadSubtree()` wrappers in `XlsxSharedStrings.cs` by passing the main reader directly to `ReadStringItem` and utilizing depth-based matching to stop sequentially.
 
 ## [2.2.0] - 2026-05-23
 

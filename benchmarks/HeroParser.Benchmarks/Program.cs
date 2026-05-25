@@ -37,7 +37,8 @@ public class Program
         typeof(FixedWidthPipeReaderBenchmarks),
         typeof(FixedWidthTypedPipeReaderBenchmarks),
         typeof(ExcelWriteBenchmarks),
-        typeof(ExcelReadBenchmarks)
+        typeof(ExcelReadBenchmarks),
+        typeof(JsonlBenchmark)
     ];
 
     private static readonly Dictionary<string, Type[]> benchmarkGroups = new(StringComparer.Ordinal)
@@ -114,7 +115,8 @@ public class Program
             typeof(FixedWidthTypedPipeReaderBenchmarks)
         ],
         ["--excel-write"] = [typeof(ExcelWriteBenchmarks)],
-        ["--excel-read"] = [typeof(ExcelReadBenchmarks)]
+        ["--excel-read"] = [typeof(ExcelReadBenchmarks)],
+        ["--jsonl"] = [typeof(JsonlBenchmark)]
     };
 
     public static void Main(string[] args)
@@ -179,6 +181,7 @@ public class Program
         Console.WriteLine("  --fixed-width-pipe       Run fixed-width PipeReader benchmarks");
         Console.WriteLine("  --excel-write         Run Excel (.xlsx) writing benchmarks");
         Console.WriteLine("  --excel-read          Run Excel (.xlsx) reading benchmarks");
+        Console.WriteLine("  --jsonl               Run JSONL reading, writing, and conversion benchmarks");
         Console.WriteLine("  --all                 Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");

@@ -252,7 +252,9 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8Parser.TryParse(GetByteSpan(), out result, out int consumed) && consumed == data.Length;
+            if (Utf8Parser.TryParse(GetByteSpan(), out result, out int consumed) && consumed == data.Length)
+                return true;
+            return DateTime.TryParse(Decode(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -271,7 +273,8 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         {
             if (IsInvariant(provider) && styles == DateTimeStyles.None)
             {
-                return Utf8Parser.TryParse(GetByteSpan(), out result, out int consumed) && consumed == data.Length;
+                if (Utf8Parser.TryParse(GetByteSpan(), out result, out int consumed) && consumed == data.Length)
+                    return true;
             }
             return DateTime.TryParse(Decode(), provider, styles, out result);
         }

@@ -1,10 +1,17 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.Conversion;
 
 namespace HeroParser.Benchmarks;
+
+[JsonSerializable(typeof(JsonlBenchmark.FlatRow))]
+[JsonSerializable(typeof(List<JsonlBenchmark.FlatRow>))]
+internal partial class FlatRowJsonContext : JsonSerializerContext
+{
+}
 
 [MemoryDiagnoser]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
@@ -114,8 +121,47 @@ public class JsonlBenchmark
     }
 
     [Benchmark]
+    public int ReadFromText_SourceGenerated()
+    {
+        int total = 0;
+        foreach (FlatRow row in Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromText(jsonl))
+        {
+            total += row.Id;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int ReadFromStream_SourceGenerated()
+    {
+        using var ms = new MemoryStream(jsonlUtf8, writable: false);
+        int total = 0;
+        foreach (FlatRow row in Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromStream(ms))
+        {
+            total += row.Id;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public string WriteToText_SourceGenerated()
+        => Jsonl.Write<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).ToText(rows);
+
+    [Benchmark]
+    public long WriteToStream_SourceGenerated()
+    {
+        using var ms = new MemoryStream(capacity: jsonlUtf8.Length);
+        Jsonl.Write<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).ToStream(ms, rows, leaveOpen: true);
+        return ms.Length;
+    }
+
+    [Benchmark]
     public string ConvertCsvToJsonlFlat()
         => CsvToJsonlConverter.Convert(csv, CsvToJsonlShape.FlatObject());
+
+    [Benchmark]
+    public string ConvertJsonlToCsv()
+        => JsonlToCsvConverter.Convert(jsonl);
 
     public sealed class FlatRow
     {

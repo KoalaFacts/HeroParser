@@ -82,7 +82,7 @@ public class ExcelReadBenchmarks
 
         // Manually retrieve the byte binder and wrap it in the fallback adapter
         var byteBinder = CsvRecordBinderFactory.GetByteBinder<BenchmarkExcelReadRecord>();
-        var fallbackAdapter = new CsvCharToByteBinderAdapter<BenchmarkExcelReadRecord>(byteBinder, ',');
+        var fallbackAdapter = new CsvCharToByteBinderAdapter<BenchmarkExcelReadRecord>(byteBinder, '\x01');
 
         // We run the excel typed reader but bypass the factory cache to force adapter use
         int count = 0;

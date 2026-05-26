@@ -13,7 +13,11 @@ internal static class CsvWriterQuoting
         char delimiter,
         char quote)
     {
-        if (Avx2.IsSupported && value.Length >= Vector256<ushort>.Count)
+        if (global::HeroParser.SeparatedValues.Reading.Shared.HardwareCapabilities.Avx512BWIsSupported && value.Length >= Vector512<ushort>.Count)
+        {
+            return AnalyzeFieldSimd512(value, delimiter, quote);
+        }
+        else if (Avx2.IsSupported && value.Length >= Vector256<ushort>.Count)
         {
             return AnalyzeFieldSimd256(value, delimiter, quote);
         }
@@ -23,6 +27,64 @@ internal static class CsvWriterQuoting
         }
 
         return AnalyzeFieldScalar(value, delimiter, quote);
+    }
+
+    private static (bool needsQuoting, int quoteCount) AnalyzeFieldSimd512(
+        ReadOnlySpan<char> value,
+        char delimiter,
+        char quote)
+    {
+        var delimiterVec = Vector512.Create((ushort)delimiter);
+        var quoteVec = Vector512.Create((ushort)quote);
+        var crVec = Vector512.Create((ushort)'\r');
+        var lfVec = Vector512.Create((ushort)'\n');
+
+        bool needsQuoting = false;
+        int quoteCount = 0;
+        int i = 0;
+        int vectorLength = Vector512<ushort>.Count;
+        int lastVectorStart = value.Length - vectorLength;
+
+        while (i <= lastVectorStart)
+        {
+            var chars = Vector512.LoadUnsafe(ref Unsafe.As<char, ushort>(ref Unsafe.AsRef(in value[i])));
+
+            var matchDelimiter = Vector512.Equals(chars, delimiterVec);
+            var matchQuote = Vector512.Equals(chars, quoteVec);
+            var matchCr = Vector512.Equals(chars, crVec);
+            var matchLf = Vector512.Equals(chars, lfVec);
+
+            var combined = Vector512.BitwiseOr(
+                Vector512.BitwiseOr(matchDelimiter, matchQuote),
+                Vector512.BitwiseOr(matchCr, matchLf));
+
+            if (combined != Vector512<ushort>.Zero)
+            {
+                needsQuoting = true;
+                if (matchQuote != Vector512<ushort>.Zero)
+                {
+                    quoteCount += BitOperations.PopCount(matchQuote.ExtractMostSignificantBits());
+                }
+            }
+
+            i += vectorLength;
+        }
+
+        for (; i < value.Length; i++)
+        {
+            char c = value[i];
+            if (c == quote)
+            {
+                needsQuoting = true;
+                quoteCount++;
+            }
+            else if (c == delimiter || c == '\r' || c == '\n')
+            {
+                needsQuoting = true;
+            }
+        }
+
+        return (needsQuoting, quoteCount);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

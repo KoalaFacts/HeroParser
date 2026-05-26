@@ -25,4 +25,22 @@ internal sealed class XlsxSharedStringTable
         lookup[value] = index;
         return index;
     }
+
+    // Returns the shared-string index for <paramref name="value"/>, adding it if not present.
+    public int GetOrAdd(ReadOnlySpan<char> value)
+    {
+#if NET9_0_OR_GREATER
+        var alternateLookup = lookup.GetAlternateLookup<ReadOnlySpan<char>>();
+        if (alternateLookup.TryGetValue(value, out var index))
+            return index;
+
+        var str = value.ToString();
+        index = strings.Count;
+        strings.Add(str);
+        alternateLookup[str] = index;
+        return index;
+#else
+        return GetOrAdd(value.ToString());
+#endif
+    }
 }

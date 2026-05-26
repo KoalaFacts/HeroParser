@@ -4,10 +4,18 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-05-26
+
+Performance, zero-allocation, and multi-schema modernization release. Introduces zero-allocation Excel alternate lookups, modernized reflection-free multi-schema generated dispatching with dynamic header resolution, and AVX-512 write-path character scanning. Fully backward compatible and Native AOT compliant.
+
 ### Added
 - **JSONL source-generated binders — high-performance reflection-free parsing**: Implemented `IJsonlBinder<T>` and `JsonlRecordBinderFactory` registries to support ultra-high performance JSONL deserialization via modern incremental source generation (`JsonlRecordBinderGenerator`). Emits sequential `Utf8JsonReader` parsing blocks that map keys via `SequenceEqual` against static `ReadOnlySpan<byte>` property name UTF-8 spans with case-insensitive, camelCase, lowercase, and custom `TabularMap`/`JsonPropertyName` override support. Prioritizes the generated binder automatically inside both synchronous and asynchronous `Jsonl` reading loops.
+- **Span-based Excel Writing API**: Added a new public `WriteCellString(int columnIndex, ReadOnlySpan<char> value)` cell writer API to `SheetWriter` in `XlsxWriter.cs` to write text from character spans with zero heap overhead and automatic Excel injection protection checks.
+- **Modernized Multi-Schema Generated Dispatcher**: Enhanced `CsvMultiSchemaDispatcherGenerator.cs` to dynamically resolve discriminator column indices from the header row via allocation-free byte-span comparison (`SpanEqualsBYTE`). Emits header-binding propagation (`BindHeaderBytes`) to all underlying record binders, eliminating all potential reflection or dynamic resolution overheads.
 
 ### Performance
+- **Zero-Allocation Excel alternate lookup**: Added a `GetOrAdd(ReadOnlySpan<char> value)` overload to `XlsxSharedStringTable.cs` leveraging .NET 9+'s `.GetAlternateLookup<ReadOnlySpan<char>>()` to map spans directly to existing shared string indices with **zero managed string allocations** during cell writing.
+- **AVX-512 Write-Path SIMD Quoting**: Implemented `AnalyzeFieldSimd512` in `CsvWriterQuoting.cs` using a 512-bit vector (`Vector512<ushort>`) to scan 32 characters (64 bytes) in a single CPU instruction, matching the performance of the read-path SIMD scanner.
 - **2.3x Faster JSONL Reading & 70%+ Heap Allocation Reductions**: Integrating the generated `IJsonlBinder<T>` into the core `Jsonl` reading loops yields a massive **2.3x throughput speedup** and up to **72% fewer managed heap allocations** (saving 12 MB of allocations on 100,000 rows) compared to `System.Text.Json`'s baseline reflection pipeline. Fully trim-safe and Native AOT compatible.
 - **100% Allocation-Free automatic delimiter detection**: Refactored `CsvDelimiterDetector.cs` to utilize stack-allocated spans (`stackalloc int[]`) for default sample rows (<=128) and rented buffers for larger samples, replacing the heap-allocated dictionaries and lists. The main `DetectDelimiter` APIs are now completely allocation-free (0 bytes allocated on both UTF-16 spans and UTF-8 byte spans).
 - **Zero-Allocation Excel worksheet XML parser**: Completely refactored `XlsxSheetReader.cs` to iterate rows and cells sequentially using node depth checks (`reader.Depth`), entirely eliminating the millions of garbage-collected `XmlReader.ReadSubtree()` wrapper allocations created per spreadsheet read.

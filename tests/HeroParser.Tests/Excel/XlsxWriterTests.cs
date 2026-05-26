@@ -140,4 +140,75 @@ public class XlsxWriterTests
     {
         Assert.Equal(expected, XlsxWriter.GetColumnLetter(index));
     }
+
+    // Verifies that duplicate spans written to the shared string table are deduplicated.
+    [Fact]
+    public void SharedStringTable_DuplicateSpans_StoredOnce()
+    {
+        var table = new XlsxSharedStringTable();
+
+        int idx1 = table.GetOrAdd("Hello".AsSpan());
+        int idx2 = table.GetOrAdd("World".AsSpan());
+        int idx3 = table.GetOrAdd("Hello".AsSpan()); // duplicate span
+
+        Assert.Equal(0, idx1);
+        Assert.Equal(1, idx2);
+        Assert.Equal(0, idx3); // same index as first "Hello"
+        Assert.Equal(2, table.Count);
+        Assert.Equal(["Hello", "World"], table.Strings);
+    }
+
+    // Verifies that cell values written as ReadOnlySpan<char> are successfully preserved in round-trip.
+    [Fact]
+    public void RoundTrip_SpanStrings_ValuesPreserved()
+    {
+        using var ms = new MemoryStream();
+
+        using (var writer = new XlsxWriter(ms, leaveOpen: true))
+        {
+            using var sheet = writer.StartSheet("Sheet1");
+            sheet.StartRow(1);
+            sheet.WriteCellString(1, "SpanValue1".AsSpan());
+            sheet.WriteCellString(2, "SpanValue2".AsSpan());
+            sheet.EndRow();
+            sheet.Close();
+        }
+
+        ms.Position = 0;
+
+        using var reader = new XlsxReader(ms);
+        var sheetInfo = reader.Workbook.Sheets[0];
+        using var sheetReader = reader.OpenSheet(sheetInfo);
+
+        var dataRow = sheetReader.ReadNextRow();
+        Assert.NotNull(dataRow);
+        Assert.Equal("SpanValue1", dataRow[0]);
+        Assert.Equal("SpanValue2", dataRow[1]);
+    }
+
+    // Verifies that Excel injection protection is correctly applied when writing spans.
+    [Fact]
+    public void RoundTrip_SpanStrings_InjectionProtection()
+    {
+        using var ms = new MemoryStream();
+
+        using (var writer = new XlsxWriter(ms, leaveOpen: true, injectionProtection: HeroParser.Excels.Core.ExcelInjectionProtection.EscapeWithApostrophe))
+        {
+            using var sheet = writer.StartSheet("Sheet1");
+            sheet.StartRow(1);
+            sheet.WriteCellString(1, "=SUM(A1)".AsSpan()); // dangerous span
+            sheet.EndRow();
+            sheet.Close();
+        }
+
+        ms.Position = 0;
+
+        using var reader = new XlsxReader(ms);
+        var sheetInfo = reader.Workbook.Sheets[0];
+        using var sheetReader = reader.OpenSheet(sheetInfo);
+
+        var dataRow = sheetReader.ReadNextRow();
+        Assert.NotNull(dataRow);
+        Assert.Equal("'=SUM(A1)", dataRow[0]); // Escaped with apostrophe
+    }
 }

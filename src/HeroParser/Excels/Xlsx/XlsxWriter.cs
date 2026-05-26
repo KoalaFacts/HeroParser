@@ -455,6 +455,48 @@ public sealed class XlsxWriter : IDisposable
             WriteRaw(cellValueClose);              // </v></c>
         }
 
+        /// <summary>Writes a shared-string cell from a span of characters.</summary>
+        /// <param name="columnIndex">The 1-based column index.</param>
+        /// <param name="value">The character span value.</param>
+        public void WriteCellString(int columnIndex, ReadOnlySpan<char> value)
+        {
+            int ssIndex;
+            if (injectionProtection != ExcelInjectionProtection.None && IsDangerousLeadingChar(value))
+            {
+                string sanitised = ApplyInjectionProtectionSpan(value);
+                ssIndex = sharedStrings.GetOrAdd(sanitised);
+            }
+            else
+            {
+                ssIndex = sharedStrings.GetOrAdd(value);
+            }
+
+            WriteRaw(cellStringOpen);              // <c r="
+            WriteCellRef(columnIndex);             // B3
+            WriteRaw(cellStringTypeAttr);          // " t="s"><v>
+            WriteInt(ssIndex);                     // 42
+            WriteRaw(cellValueClose);              // </v></c>
+        }
+
+        private string ApplyInjectionProtectionSpan(ReadOnlySpan<char> value)
+        {
+            if (injectionProtection == ExcelInjectionProtection.None || value.IsEmpty)
+                return value.ToString();
+
+            if (!IsDangerousLeadingChar(value))
+                return value.ToString();
+
+            return injectionProtection switch
+            {
+                ExcelInjectionProtection.EscapeWithApostrophe => "'" + value.ToString(),
+                ExcelInjectionProtection.Sanitize => StripDangerousPrefix(value.ToString()),
+                ExcelInjectionProtection.Reject => throw new ExcelException(
+                    $"Excel injection detected: cell value starts with dangerous character '{value[0]}'."),
+                ExcelInjectionProtection.None => value.ToString(),
+                _ => value.ToString(),
+            };
+        }
+
         // Applies the configured injection protection. The check is a single character comparison
         // for non-dangerous values, so the cost on the common path is negligible.
         private string ApplyInjectionProtection(string value)

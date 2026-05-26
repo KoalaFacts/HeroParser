@@ -175,6 +175,10 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         builder.AppendLine("{");
         builder.Indent();
 
+        // Emit discriminator index field (starts at configured index, or -1 if mapped by column name)
+        builder.AppendLine($"private static int _discriminatorIndex = {descriptor.DiscriminatorIndex};");
+        builder.AppendLine();
+
         // Emit byte binder fields (cached for performance) - UTF-8 is the primary path
         foreach (var mapping in descriptor.Mappings)
         {
@@ -191,8 +195,54 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
             builder.AppendLine();
         }
 
+        // Emit BindHeaderBytes method
+        builder.AppendLine($"public static void BindHeaderBytes({BYTE_ROW_TYPE} headerRow, int rowNumber)");
+        builder.AppendLine("{");
+        builder.Indent();
+        if (descriptor.DiscriminatorIndex < 0 && !string.IsNullOrEmpty(descriptor.DiscriminatorColumn))
+        {
+            builder.AppendLine("if (_discriminatorIndex < 0)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("for (int i = 0; i < headerRow.ColumnCount; i++)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine($"if (SpanEqualsBYTE(headerRow[i].Span, \"{EscapeString(descriptor.DiscriminatorColumn!)}\"u8))");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("_discriminatorIndex = i;");
+            builder.AppendLine("break;");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+        foreach (var mapping in descriptor.Mappings)
+        {
+            builder.AppendLine($"_byteBinder_{mapping.SafeTypeName}.BindHeader(headerRow, rowNumber);");
+        }
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
+
         // Emit optimized DispatchBytes method (UTF-8 only)
         EmitDispatchMethod(builder, descriptor);
+
+        // Emit same length helpers if needed
+        var byLength = descriptor.Mappings.GroupBy(m => m.DiscriminatorValue.Length).OrderBy(g => g.Key).ToList();
+        bool allSingleChar = descriptor.Mappings.All(m => m.DiscriminatorValue.Length == 1 && m.DiscriminatorValue[0] < 128);
+        if (!allSingleChar)
+        {
+            foreach (var group in byLength.Where(g => g.Count() > 1))
+            {
+                EmitSameLengthDispatcher(builder, group.Key, [.. group]);
+            }
+        }
+
+        // Always emit SpanEquals helper
+        EmitSpanEqualsHelper(builder, descriptor.CaseInsensitive);
 
         builder.Unindent();
         builder.AppendLine("}");
@@ -215,12 +265,12 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         // Check if all discriminators are single ASCII chars
         bool allSingleChar = descriptor.Mappings.All(m => m.DiscriminatorValue.Length == 1 && m.DiscriminatorValue[0] < 128);
 
-        if (allSingleChar && descriptor.DiscriminatorIndex >= 0)
+        if (allSingleChar)
         {
             // Ultra-fast path: single char dispatch via column span
-            builder.AppendLine($"if ((uint){descriptor.DiscriminatorIndex} >= (uint)row.ColumnCount)");
+            builder.AppendLine("if ((uint)_discriminatorIndex >= (uint)row.ColumnCount)");
             builder.AppendLine("    return null;");
-            builder.AppendLine($"var discSpan = row[{descriptor.DiscriminatorIndex}].Span;");
+            builder.AppendLine("var discSpan = row[_discriminatorIndex].Span;");
             builder.AppendLine("int length = discSpan.Length;");
             builder.AppendLine("int charCode = length > 0 ? discSpan[0] : 0;");
             builder.AppendLine();
@@ -257,9 +307,9 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         else
         {
             // Multi-char path: get column span for string comparison
-            builder.AppendLine($"if ((uint){descriptor.DiscriminatorIndex} >= (uint)row.ColumnCount)");
+            builder.AppendLine("if ((uint)_discriminatorIndex >= (uint)row.ColumnCount)");
             builder.AppendLine("    return null;");
-            builder.AppendLine($"var span = row[{descriptor.DiscriminatorIndex}].Span;");
+            builder.AppendLine("var span = row[_discriminatorIndex].Span;");
             builder.AppendLine();
 
             // Group mappings by length for efficient comparison
@@ -290,22 +340,6 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
             builder.AppendLine("_ => null");
             builder.Unindent();
             builder.AppendLine("};");
-
-            // Emit helper methods for same-length groups
-            builder.Unindent();
-            builder.AppendLine("}");
-            builder.AppendLine();
-
-            foreach (var group in byLength.Where(g => g.Count() > 1))
-            {
-                EmitSameLengthDispatcher(builder, group.Key, [.. group]);
-            }
-
-            // Emit SpanEquals helper
-            EmitSpanEqualsHelper(builder, descriptor.CaseInsensitive);
-
-            // Re-open class for proper formatting
-            return;
         }
 
         builder.Unindent();

@@ -271,4 +271,218 @@ public class CsvPipeReaderCoverageTests
         Assert.Equal("plain", toStringValue);
         Assert.Equal("plain", toUnquotedValue);
     }
+
+    [Fact]
+    public async Task SequenceReader_ThrowBeforeRead()
+    {
+        var bytes = Encoding.UTF8.GetBytes("A,B\n1,2\n");
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe);
+        Assert.Throws<InvalidOperationException>(() => { var _ = reader.Current; });
+    }
+
+    [Fact]
+    public async Task SequenceReader_ThrowAfterDispose()
+    {
+        var bytes = Encoding.UTF8.GetBytes("A,B\n1,2\n");
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
+        var reader = Csv.CreatePipeSequenceReader(pipe);
+        await reader.DisposeAsync();
+        Assert.Throws<ObjectDisposedException>(() => { var _ = reader.Current; });
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () => await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SequenceReader_WithCommentCharacter_ShortTryReadRow()
+    {
+        var opts = new CsvReadOptions { CommentCharacter = '#', EnableQuotedFields = true };
+        var pipe = await CreateMultiSegmentPipeReader("A,B\n#comment here\n1,2\n", TestContext.Current.CancellationToken);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("A", reader.Current[0].ToUnquotedString());
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("1", reader.Current[0].ToUnquotedString());
+    }
+
+    [Fact]
+    public async Task SequenceReader_ShortTryReadRow_Escape()
+    {
+        var opts = new CsvReadOptions { CommentCharacter = '#', EscapeCharacter = '\\', EnableQuotedFields = true };
+        var pipe = await CreateMultiSegmentPipeReader("A,B\n#comment\n\"a\\\"b\",c\n", TestContext.Current.CancellationToken);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("a\"b", reader.Current[0].ToUnquotedString());
+    }
+
+    [Fact]
+    public async Task SequenceReader_ShortTryReadRow_DoubledQuote()
+    {
+        var opts = new CsvReadOptions { CommentCharacter = '#', EnableQuotedFields = true };
+        var pipe = await CreateMultiSegmentPipeReader("A,B\n#comment\n\"a\"\"b\",c\n", TestContext.Current.CancellationToken);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("a\"b", reader.Current[0].ToUnquotedString());
+    }
+
+    [Fact]
+    public async Task SequenceReader_ShortTryReadRow_CrOnly()
+    {
+        var opts = new CsvReadOptions { CommentCharacter = '#', EnableQuotedFields = true };
+        var pipe = await CreateMultiSegmentPipeReader("A,B\r#comment\r1,2\r", TestContext.Current.CancellationToken);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("1", reader.Current[0].ToUnquotedString());
+    }
+
+    [Fact]
+    public async Task SequenceReader_ShortTryReadRow_LfOnly()
+    {
+        var opts = new CsvReadOptions { CommentCharacter = '#', EnableQuotedFields = true };
+        var pipe = await CreateMultiSegmentPipeReader("A,B\n#comment\n1,2\n", TestContext.Current.CancellationToken);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("1", reader.Current[0].ToUnquotedString());
+    }
+
+    [Fact]
+    public async Task SequenceReader_ShortTryReadRow_Incomplete()
+    {
+        var opts = new CsvReadOptions { CommentCharacter = '#', EnableQuotedFields = true };
+        var pipe = await CreateMultiSegmentPipeReader("A,B\n#comment\n1,2", TestContext.Current.CancellationToken);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("1", reader.Current[0].ToUnquotedString());
+    }
+
+    [Fact]
+    public async Task PipeReader_MaxRowCount_Throws()
+    {
+        var opts = new CsvReadOptions { MaxRowCount = 1 };
+        var bytes = Encoding.UTF8.GetBytes("A,B\n1,2\n3,4\n");
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        var ex = await Assert.ThrowsAsync<CsvException>(async () => await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(CsvErrorCode.TooManyRows, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task PipeReader_MaxRowSize_Throws()
+    {
+        var opts = new CsvReadOptions { MaxRowSize = 5 };
+        var bytes = Encoding.UTF8.GetBytes("A,B\n123456,7\n");
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        var ex = await Assert.ThrowsAsync<CsvException>(async () => await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task PipeReader_TrimFields_SpaceOnly()
+    {
+        var opts = new CsvReadOptions { TrimFields = true };
+        var bytes = Encoding.UTF8.GetBytes("A,B\n  ,  \n");
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
+        await using var reader = Csv.CreatePipeSequenceReader(pipe, opts);
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("", reader.Current[0].ToUnquotedString());
+        Assert.Equal("", reader.Current[1].ToUnquotedString());
+    }
+
+    [Fact]
+    public async Task PipeReader_CancellationCombinations()
+    {
+        var bytes = Encoding.UTF8.GetBytes("A,B\n1,2\n");
+
+        // 1. methodCancellationToken.CanBeCanceled is false
+        using (var ms = new MemoryStream(bytes))
+        {
+            var pipe = PipeReader.Create(ms);
+            var method = typeof(Csv).GetMethod(nameof(Csv.ReadFromPipeReaderAsync), [typeof(PipeReader), typeof(CsvReadOptions), typeof(CancellationToken)]);
+            Assert.NotNull(method);
+            var enumerable = (IAsyncEnumerable<CsvPipeRow>)method.Invoke(null, [pipe, null, default(CancellationToken)])!;
+            await foreach (var row in enumerable.WithCancellation(TestContext.Current.CancellationToken))
+            {
+                Assert.NotEmpty(row[0].ToUnquotedString());
+            }
+        }
+
+        // 2. Both tokens are cancelable (linked source)
+        using (var ms = new MemoryStream(bytes))
+        {
+            var pipe = PipeReader.Create(ms);
+            using var ctsEnum = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+            var enumerable = Csv.ReadFromPipeReaderAsync(pipe, options: null, cancellationToken: TestContext.Current.CancellationToken);
+            await foreach (var row in enumerable.WithCancellation(ctsEnum.Token))
+            {
+                Assert.NotEmpty(row[0].ToUnquotedString());
+            }
+        }
+    }
+
+    [Fact]
+    public async Task PipeReader_MoveNextAfterCompleted()
+    {
+        var bytes = Encoding.UTF8.GetBytes("A,B\n1,2\n");
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
+        var enumerable = Csv.ReadFromPipeReaderAsync(pipe, options: null, cancellationToken: TestContext.Current.CancellationToken);
+        var enumerator = enumerable.GetAsyncEnumerator(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.True(await enumerator.MoveNextAsync());
+            Assert.True(await enumerator.MoveNextAsync());
+            Assert.False(await enumerator.MoveNextAsync());
+            // MoveNextAsync after completion should return false
+            Assert.False(await enumerator.MoveNextAsync());
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task PipeRow_IndexOutOfBounds_Throws()
+    {
+        var bytes = Encoding.UTF8.GetBytes("A,B\n1,2\n");
+        using var ms = new MemoryStream(bytes);
+        var pipe = PipeReader.Create(ms);
+        var enumerable = Csv.ReadFromPipeReaderAsync(pipe, options: null, cancellationToken: TestContext.Current.CancellationToken);
+        await foreach (var row in enumerable)
+        {
+            Assert.Throws<IndexOutOfRangeException>(() => { var _ = row[-1]; });
+            Assert.Throws<IndexOutOfRangeException>(() => { var _ = row[row.ColumnCount]; });
+        }
+    }
+
+    private static async Task<PipeReader> CreateMultiSegmentPipeReader(string csv, CancellationToken ct)
+    {
+        var pipe = new Pipe(new PipeOptions(minimumSegmentSize: 4));
+        var bytes = Encoding.UTF8.GetBytes(csv);
+        int written = 0;
+        while (written < bytes.Length)
+        {
+            int chunk = Math.Min(2, bytes.Length - written);
+            bytes.AsSpan(written, chunk).CopyTo(pipe.Writer.GetSpan(chunk));
+            pipe.Writer.Advance(chunk);
+            await pipe.Writer.FlushAsync(ct);
+            written += chunk;
+        }
+        await pipe.Writer.CompleteAsync();
+        return pipe.Reader;
+    }
 }
+

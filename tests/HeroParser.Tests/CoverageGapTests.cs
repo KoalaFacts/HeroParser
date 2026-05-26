@@ -127,4 +127,15 @@ public class CoverageGapTests
         // Set max buffer to 1 byte, which is less than stream length
         Assert.Throws<CsvException>(() => Csv.ReadFromStream(ms, out _, options: null, leaveOpen: true, maxBytesToBuffer: 1));
     }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DetectDelimiterWithDetails_CharSpan_Works()
+    {
+        var csv = "A;B;C\n1;2;3";
+        // Hits: public static CsvDelimiterDetectionResult DetectDelimiterWithDetails(ReadOnlySpan<char> data, int sampleRows)
+        var result = Csv.DetectDelimiterWithDetails(csv.AsSpan());
+        Assert.Equal(';', result.DetectedDelimiter);
+        Assert.True(result.Confidence > 80);
+    }
 }

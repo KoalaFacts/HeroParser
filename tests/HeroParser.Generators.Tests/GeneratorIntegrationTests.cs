@@ -191,6 +191,27 @@ public class GeneratorIntegrationTests
         Assert.Equal(25, parsed[1].Age);
     }
 
+    [Fact]
+    [Trait(CATEGORY, UNIT)]
+    public void GeneratedSchema_PreRendersCorrectJson()
+    {
+        var schema = HeroParser.AI.SchemaMetadata.ToLlmSchema<GeneratedAiModel>();
+        Assert.NotNull(schema);
+
+        Assert.Contains("\"Username\":", schema);
+        Assert.Contains("\"type\": \"string\"", schema);
+        Assert.Contains("\"description\": \"Mapped from column 'user_name'\"", schema);
+        Assert.Contains("\"pattern\": \"^[A-Za-z0-9]+$\"", schema);
+
+        Assert.Contains("\"Age\":", schema);
+        Assert.Contains("\"type\": \"integer\"", schema);
+        Assert.Contains("\"description\": \"Mapped from column 'user_age'\"", schema);
+        Assert.Contains("\"minimum\": 18", schema);
+        Assert.Contains("\"maximum\": 120", schema);
+
+        Assert.Contains("\"required\": [\"Username\"]", schema);
+    }
+
     #endregion
 
     #region Test Types

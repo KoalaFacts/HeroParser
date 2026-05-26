@@ -14,6 +14,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
     private readonly JsonlLineReader lineReader;
     private readonly JsonlReadOptions options;
     private readonly JsonTypeInfo<T>? typeInfo;
+    private readonly Binders.IJsonlBinder<T>? binder;
     private bool enumerated;
     private bool disposed;
 
@@ -27,6 +28,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         this.options = options ?? JsonlReadOptions.Default;
         this.options.Validate();
         this.typeInfo = typeInfo;
+        Binders.JsonlRecordBinderFactory.TryGetBinder<T>(out binder);
         lineReader = new JsonlLineReader(stream, this.options, leaveOpen);
     }
 
@@ -42,6 +44,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         this.options = options ?? JsonlReadOptions.Default;
         this.options.Validate();
         typeInfo = null;
+        Binders.JsonlRecordBinderFactory.TryGetBinder<T>(out binder);
         lineReader = new JsonlLineReader(stream, this.options, leaveOpen);
     }
 
@@ -140,6 +143,9 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
 
     private T? Deserialize(ReadOnlySpan<byte> utf8)
     {
+        if (binder is not null)
+            return binder.Bind(utf8);
+
         if (typeInfo is not null)
             return JsonSerializer.Deserialize(utf8, typeInfo);
 

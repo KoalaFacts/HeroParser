@@ -7,6 +7,7 @@ namespace HeroParser.Tests;
 
 public class JsonlReaderBuilderTests
 {
+    [GenerateBinder]
     public class Person
     {
         public string? Name { get; set; }

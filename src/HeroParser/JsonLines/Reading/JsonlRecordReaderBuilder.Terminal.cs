@@ -119,6 +119,8 @@ public sealed partial class JsonlRecordReaderBuilder<T>
         long recordIndex = 0;
         int skipped = 0;
 
+        Binders.JsonlRecordBinderFactory.TryGetBinder<T>(out var binder);
+
         await foreach (JsonlLine line in JsonlPipeLineReader.ReadLinesAsync(reader, options, cancellationToken).ConfigureAwait(false))
         {
             ReadOnlySpan<byte> bytes = line.Utf8.Span;
@@ -143,9 +145,11 @@ public sealed partial class JsonlRecordReaderBuilder<T>
             T? value;
             try
             {
-                value = typeInfo is not null
-                    ? JsonSerializer.Deserialize(bytes, typeInfo)
-                    : DeserializeReflectionInstance(bytes, options.SerializerOptions);
+                value = binder is not null
+                    ? binder.Bind(bytes)
+                    : (typeInfo is not null
+                        ? JsonSerializer.Deserialize(bytes, typeInfo)
+                        : DeserializeReflectionInstance(bytes, options.SerializerOptions));
             }
             catch (Exception ex) when (options.OnError is not null)
             {

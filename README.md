@@ -377,6 +377,112 @@ A single record class can carry both `[TabularMap]` and `[PositionalMap]` attrib
 
 Convention-based mapping: unmarked properties default to `[TabularMap(Name = propertyName)]` for CSV/Excel. Fixed-Width requires explicit `[PositionalMap]`.
 
+## AI-Native Tabular Capabilities
+
+HeroParser v2.3.0 introduces deep integration with Large Language Models (LLMs) and vector embedding pipelines, providing zero-dependency, ultra-high-performance tabular operations for AI agents, RAG systems, and structured code generation:
+
+### 1. LLM Structured Output Repair Binder (`LlmRepair`)
+When streaming structured output (like CSV) from an LLM, the model might wrap the output in markdown code blocks or truncate midway due to token limit cutoffs, leaving unclosed quotes on the final row. `LlmRepair` repairs unbalanced quotes and strips markdown block wrappers automatically, allowing direct parsing into strongly-typed records.
+
+```csharp
+using HeroParser.AI;
+
+string rawLlmResponse = """
+```csv
+Id,Name,Role
+1,"Alice","Lead Developer"
+2,"Bob","AI Eng
+```
+""";
+
+// Automatically strips ```csv and repairs "AI Eng to "AI Eng"
+await foreach (var developer in LlmRepair.ReadFromTextAsync<Developer>(rawLlmResponse))
+{
+    Console.WriteLine($"{developer.Id}: {developer.Name} ({developer.Role})");
+}
+```
+
+### 2. Tabular Vector Embedding Pipeline (`ToLlmEmbeddingsAsync`)
+Stream record chunks, batch them, and pair them with high-performance vector embeddings (e.g., OpenAI, Voyage, Cohere) with a zero-allocation, token-budgeted streaming wrapper.
+
+```csharp
+using HeroParser.AI;
+
+IAsyncEnumerable<Developer> developers = GetDeveloperStream();
+
+// Batch and pair semantic chunks with float vector embeddings
+await foreach (var chunkWithEmbed in developers.ToLlmEmbeddingsAsync(
+    async (texts, ct) => await GetEmbeddingsFromApiAsync(texts, ct),
+    options: new LlmChunkOptions { MaxTokensPerChunk = 250 },
+    batchSize: 16))
+{
+    Console.WriteLine($"Chunk of {chunkWithEmbed.Chunk.EndRow - chunkWithEmbed.Chunk.StartRow + 1} rows. Vector Dimensions: {chunkWithEmbed.Embedding.Length}");
+}
+```
+
+### 3. AI-Driven Tabular Context Profiler (`TabularContextProfiler`)
+Provide AI prompts with rich statistical cards summarizing the shape, nullability distributions, range/density metrics, and category counts of a dataset to enhance system prompt instructions.
+
+```csharp
+using HeroParser.AI;
+
+IEnumerable<Developer> developers = GetDevelopersList();
+
+// Generates a beautiful, complete markdown description of your tabular dataset
+string contextPromptCard = developers.GenerateContextCard(datasetName: "Engineering Team");
+Console.WriteLine(contextPromptCard);
+```
+Outputs a pristine markdown profile card:
+```markdown
+### Dataset Profile: Engineering Team (2 rows)
+- **Id** (Integer, 0% Null): Numeric range [1.00 to 2.00], Avg: 1.50.
+- **Name** (String, 0% Null): 2 distinct categories. Top values: "Alice" (50.0%), "Bob" (50.0%).
+- **Role** (String, 0% Null): 2 distinct categories. Top values: "Lead Developer" (50.0%), "AI Engineer" (50.0%).
+```
+
+### 4. Agent Tool Argument Mapper (`SchemaMetadata.MapFromToolCall`)
+Map a case-insensitive, flat dictionary of tool call arguments delivered by an LLM function/tool invocation into a strongly-typed record model, performing all validation constraints and raising rich, typed verification failures.
+
+```csharp
+using HeroParser.AI;
+
+var arguments = new Dictionary<string, object?>
+{
+    { "id", 3 },
+    { "name", "Charlie" },
+    { "salary", 150000.00 }
+};
+
+try
+{
+    // Reflection-free mapping and validation of tool call inputs
+    Developer developer = SchemaMetadata.MapFromToolCall<Developer>(arguments);
+}
+catch (LlmToolCallValidationException ex)
+{
+    Console.WriteLine($"AI parameter '{ex.PropertyName}' violated constraint: {ex.Message}");
+}
+```
+
+### 5. Token-Bounded JSON Chunker (`JsonLlmChunker`)
+Stream records directly into token-bounded, well-formed JSON array blocks. Fully trim-safe and AOT-compliant, enforcing precise LLM context limits with custom token count heuristics.
+
+```csharp
+using HeroParser.AI;
+
+IAsyncEnumerable<Developer> developers = GetDeveloperStream();
+
+await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(new LlmChunkOptions
+{
+    MaxTokensPerChunk = 500, // Token budget limit
+    TokenCounter = s => s.Length / 4 // Heuristic or TikToken
+}))
+{
+    Console.WriteLine($"Start Row: {jsonChunk.StartRow}, End Row: {jsonChunk.EndRow}, Tokens: {jsonChunk.TokenCount}");
+    Console.WriteLine(jsonChunk.Content); // Well-formed JSON Array block: [{"Id":1,...},{"Id":2,...}]
+}
+```
+
 ## Key Features
 
 - **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking

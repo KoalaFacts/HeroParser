@@ -7,13 +7,14 @@ using Xunit;
 
 namespace HeroParser.Tests.AI;
 
+public sealed class ChunkerRecord
+{
+    public string Name { get; set; } = string.Empty;
+    public int Age { get; set; }
+}
+
 public class JsonLlmChunkerTests
 {
-    private sealed class ChunkerRecord
-    {
-        public string Name { get; set; } = string.Empty;
-        public int Age { get; set; }
-    }
 
     [Fact]
     public async Task ToJsonLlmChunksAsync_CreatesValidJsonArray()
@@ -110,6 +111,36 @@ public class JsonLlmChunkerTests
         });
     }
 
+    [Fact]
+    public async Task ToJsonLlmChunksAsync_WithJsonTypeInfo_WorksCleanly()
+    {
+        // Arrange
+        var records = new List<ChunkerRecord>
+        {
+            new() { Name = "Alice", Age = 30 },
+            new() { Name = "Bob", Age = 25 }
+        };
+        var source = ToAsyncEnumerable(records);
+
+        // Act
+        var chunks = await source.ToJsonLlmChunksAsync(
+            TestJsonContext.Default.ChunkerRecord,
+            new LlmChunkOptions { MaxTokensPerChunk = 1000 }
+        ).ToListAsync();
+
+        // Assert
+        Assert.Single(chunks);
+        var chunk = chunks[0];
+        Assert.Equal(1, chunk.StartRow);
+        Assert.Equal(2, chunk.EndRow);
+
+        var parsed = JsonSerializer.Deserialize(chunk.Content, TestJsonContext.Default.ListChunkerRecord);
+        Assert.NotNull(parsed);
+        Assert.Equal(2, parsed.Count);
+        Assert.Equal("Alice", parsed[0].Name);
+        Assert.Equal(30, parsed[0].Age);
+    }
+
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> items)
     {
         foreach (var item in items)
@@ -119,3 +150,7 @@ public class JsonLlmChunkerTests
         }
     }
 }
+
+[System.Text.Json.Serialization.JsonSerializable(typeof(ChunkerRecord))]
+[System.Text.Json.Serialization.JsonSerializable(typeof(List<ChunkerRecord>))]
+internal partial class TestJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

@@ -74,23 +74,13 @@ public static class SchemaMetadata
         var type = typeof(T);
         var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
+        var dict = arguments is Dictionary<string, object?> d && d.Comparer == StringComparer.OrdinalIgnoreCase
+            ? arguments
+            : new Dictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase);
+
         foreach (var prop in properties)
         {
-            object? val = null;
-            bool keyFound = false;
-
-            // Try to find case-insensitive match for property name
-            foreach (var key in arguments.Keys)
-            {
-                if (string.Equals(key, prop.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    val = arguments[key];
-                    keyFound = true;
-                    break;
-                }
-            }
-
-            if (keyFound)
+            if (dict.TryGetValue(prop.Name, out var val))
             {
                 if (val != null)
                 {
@@ -144,7 +134,7 @@ public static class SchemaMetadata
                     }
 
                     // 5. RangeMin validation
-                    if (validate.RangeMin > double.MinValue)
+                    if (!double.IsNaN(validate.RangeMin))
                     {
                         double numericVal = Convert.ToDouble(finalVal);
                         if (numericVal < validate.RangeMin)
@@ -154,7 +144,7 @@ public static class SchemaMetadata
                     }
 
                     // 6. RangeMax validation
-                    if (validate.RangeMax < double.MaxValue)
+                    if (!double.IsNaN(validate.RangeMax))
                     {
                         double numericVal = Convert.ToDouble(finalVal);
                         if (numericVal > validate.RangeMax)

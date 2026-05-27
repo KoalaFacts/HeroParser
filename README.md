@@ -511,7 +511,7 @@ HeroParser is engineered for extreme performance and ultra-low memory footprints
 - **2x to 3x faster writing** than Sep.
 - **97% memory reduction** compared to Sep, maintaining a fixed **112-byte allocation** throughout parsing regardless of dataset size.
 
-For complete head-to-head comparisons, CPU architectural details, and memory allocation profiles, refer to the [HeroParser Benchmarks & Performance Guide](docs/benchmarks.md).
+For complete head-to-head comparisons, CPU architectural details, and memory allocation profiles, refer to the [HeroParser Benchmarks & Performance Guide](docs/benchmarks.md) or view our live public page showcasing the last 3 versions: [HeroParser Performance Portal](https://KoalaFacts.github.io/HeroParser/).
 
 Run benchmarks locally:
 

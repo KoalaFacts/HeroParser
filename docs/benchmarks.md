@@ -56,6 +56,27 @@ Measures sync writing throughput and memory allocations under `.NET 10.0`.
 
 ---
 
+## Public Versioned Benchmark Portal
+
+We host our benchmark results publicly to ensure complete transparency. The portal maintains reports for the **last 3 stable releases** so that consumers can track performance evolution:
+
+* **Live URL**: [HeroParser Performance Portal](https://KoalaFacts.github.io/HeroParser/)
+
+---
+
+## How to Trigger the Benchmark Pages Deploy Manually
+
+While the benchmarks deploy automatically upon successful release creation, you can trigger the pipeline manually at any time to update or republish reports:
+
+1. Navigate to your **GitHub Repository** page on GitHub.
+2. Click on the **Actions** tab at the top.
+3. In the left-side workflow navigation list, click **"Deploy Performance Benchmarks to Pages"**.
+4. Click the **"Run workflow"** dropdown button on the right.
+5. *(Optional)* Provide a specific version tag in the **"Override version to deploy"** field (e.g. `2.3.0`), or leave it blank to auto-detect from the current version.
+6. Click the green **"Run workflow"** button to start execution.
+
+---
+
 ## How to Run Benchmarks Locally
 
 To execute these benchmarks on your local hardware:

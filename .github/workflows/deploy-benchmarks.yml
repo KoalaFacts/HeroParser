@@ -1,0 +1,357 @@
+name: Deploy Performance Benchmarks to Pages
+
+on:
+  # Trigger when create-release workflow completes successfully
+  workflow_run:
+    workflows: ["Create Release"]
+    types: [completed]
+    branches: [main]
+  # Keep manual trigger for emergency runs
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Override version to deploy (e.g. 2.3.0). If empty, will auto-detect from latest tag or csproj.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CI: true
+
+jobs:
+  build-and-deploy:
+    name: Run and Deploy Benchmarks
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Extract configuration
+        id: extract
+        uses: ./.github/actions/extract-build-config
+
+      - name: Setup all .NET SDKs
+        uses: ./.github/actions/setup-dotnet-sdks
+        with:
+          dotnet-version: ${{ steps.extract.outputs.versions }}
+
+      - name: Determine version
+        id: determine-version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
+            TAG=$(gh api repos/${GITHUB_REPOSITORY}/releases --jq ".[0].tag_name" | head -n 1)
+            if [ -z "${TAG}" ]; then
+              echo "Error: Could not find any releases"
+              exit 1
+            fi
+            VERSION="${TAG#v}"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+          else
+            # Fallback to extracting from csproj
+            VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/HeroParser/HeroParser.csproj)
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version determined: $VERSION"
+
+      - name: Restore dependencies
+        run: dotnet restore --force-evaluate
+
+      - name: Build benchmarks
+        run: |
+          dotnet build benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj \
+            --configuration Release \
+            --framework net10.0 \
+            --no-restore
+
+      - name: Run benchmarks
+        run: |
+          cd benchmarks/HeroParser.Benchmarks
+          dotnet run -c Release \
+            --framework net10.0 \
+            --no-build \
+            -- --throughput
+
+      - name: Temporarily stash results
+        run: |
+          mkdir -p /tmp/benchmark-results
+          cp -r benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts/results/* /tmp/benchmark-results/
+          echo "Stashed reports:"
+          ls -lh /tmp/benchmark-results/
+
+      - name: Checkout gh-pages branch
+        run: |
+          # Configure Git credentials
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fetch gh-pages or initialize it if non-existent
+          if git fetch origin gh-pages; then
+            git checkout gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf .
+            mkdir -p versions
+            echo "Initialized gh-pages branch"
+          fi
+
+      - name: Deploy versioned reports
+        run: |
+          VERSION="${{ steps.determine-version.outputs.VERSION }}"
+          TARGET_DIR="versions/v$VERSION"
+          mkdir -p "$TARGET_DIR"
+
+          # Copy stashed HTML and markdown results
+          cp -r /tmp/benchmark-results/* "$TARGET_DIR"/
+          echo "Copied results to $TARGET_DIR"
+
+      - name: Prune old versions and generate landing page
+        run: |
+          # Get list of all directories starting with 'versions/v' and sort semantically in reverse
+          versions=$(ls -d versions/v* 2>/dev/null | sed 's|versions/v||' | sort -V -r)
+
+          # Keep only the last 3 versions
+          count=0
+          active_versions=""
+          for v in $versions; do
+            count=$((count+1))
+            if [ $count -gt 3 ]; then
+              echo "Pruning older historical version: v$v"
+              rm -rf "versions/v$v"
+            else
+              active_versions="$active_versions $v"
+            fi
+          done
+
+          echo "Active versions to showcase: $active_versions"
+
+          # Dynamically build index.html landing page
+          cat << 'EOF' > index.html
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>HeroParser - Performance Benchmarks Portal</title>
+              <link rel="preconnect" href="https://fonts.googleapis.com">
+              <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+              <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+              <style>
+                  :root {
+                      --bg-color: #0f172a;
+                      --card-bg: #1e293b;
+                      --text-color: #f1f5f9;
+                      --text-muted: #94a3b8;
+                      --accent: #38bdf8;
+                      --accent-hover: #0ea5e9;
+                      --border-color: #334155;
+                  }
+                  body {
+                      font-family: 'Inter', sans-serif;
+                      background-color: var(--bg-color);
+                      color: var(--text-color);
+                      margin: 0;
+                      padding: 0;
+                      display: flex;
+                      flex-direction: column;
+                      min-height: 100vh;
+                  }
+                  header {
+                      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                      border-bottom: 1px solid var(--border-color);
+                      padding: 3.5rem 1.5rem;
+                      text-align: center;
+                  }
+                  h1 {
+                      font-family: 'Outfit', sans-serif;
+                      font-size: 2.8rem;
+                      margin: 0 0 0.5rem 0;
+                      font-weight: 700;
+                      letter-spacing: -0.025em;
+                      background: linear-gradient(to right, #38bdf8, #818cf8);
+                      -webkit-background-clip: text;
+                      -webkit-text-fill-color: transparent;
+                  }
+                  .subtitle {
+                      font-size: 1.15rem;
+                      color: var(--text-muted);
+                      margin: 0 auto;
+                      max-width: 600px;
+                      line-height: 1.6;
+                  }
+                  main {
+                      flex: 1;
+                      max-width: 1000px;
+                      width: 100%;
+                      margin: 0 auto;
+                      padding: 3rem 1.5rem;
+                      box-sizing: border-box;
+                  }
+                  h2 {
+                      font-family: 'Outfit', sans-serif;
+                      font-size: 1.6rem;
+                      border-bottom: 2px solid var(--border-color);
+                      padding-bottom: 0.5rem;
+                      margin-top: 0;
+                      margin-bottom: 2rem;
+                  }
+                  .grid {
+                      display: grid;
+                      grid-template-columns: 1fr;
+                      gap: 2rem;
+                      margin-bottom: 3rem;
+                  }
+                  @media (min-width: 768px) {
+                      .grid {
+                          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                      }
+                  }
+                  .card {
+                      background-color: var(--card-bg);
+                      border: 1px solid var(--border-color);
+                      border-radius: 14px;
+                      padding: 2rem;
+                      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+                      display: flex;
+                      flex-direction: column;
+                  }
+                  .card:hover {
+                      transform: translateY(-4px);
+                      border-color: var(--accent);
+                      box-shadow: 0 12px 24px -10px rgba(56, 189, 248, 0.25);
+                  }
+                  .version-tag {
+                      font-size: 0.85rem;
+                      background-color: rgba(56, 189, 248, 0.1);
+                      color: var(--accent);
+                      padding: 0.3rem 0.6rem;
+                      border-radius: 6px;
+                      align-self: flex-start;
+                      font-weight: 600;
+                      margin-bottom: 1.2rem;
+                      letter-spacing: 0.05em;
+                  }
+                  .card h3 {
+                      margin: 0 0 1rem 0;
+                      font-size: 1.35rem;
+                      font-weight: 600;
+                  }
+                  .card p {
+                      color: var(--text-muted);
+                      font-size: 0.95rem;
+                      margin: 0 0 1.8rem 0;
+                      flex: 1;
+                      line-height: 1.6;
+                  }
+                  .links-container {
+                      display: grid;
+                      grid-template-columns: 1fr;
+                      gap: 0.6rem;
+                  }
+                  .btn {
+                      background-color: #1e293b;
+                      color: var(--text-color);
+                      text-decoration: none;
+                      padding: 0.8rem 1rem;
+                      border-radius: 8px;
+                      font-weight: 500;
+                      font-size: 0.9rem;
+                      text-align: center;
+                      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+                      border: 1px solid var(--border-color);
+                  }
+                  .btn:hover {
+                      background-color: #334155;
+                      border-color: var(--accent);
+                      color: #fff;
+                  }
+                  footer {
+                      background-color: #0b0f19;
+                      border-top: 1px solid var(--border-color);
+                      padding: 2.5rem 1.5rem;
+                      text-align: center;
+                      color: var(--text-muted);
+                      font-size: 0.85rem;
+                      line-height: 1.5;
+                  }
+                  footer a {
+                      color: var(--accent);
+                      text-decoration: none;
+                  }
+                  footer a:hover {
+                      text-decoration: underline;
+                  }
+              </style>
+          </head>
+          <body>
+              <header>
+                  <h1>HeroParser</h1>
+                  <p class="subtitle">Performance & Benchmark Portal</p>
+                  <p class="subtitle" style="font-size: 1rem; margin-top: 0.5rem; color: #64748b;">Versioned, zero-allocation, SIMD-accelerated head-to-head performance benchmarks across our latest 3 releases.</p>
+              </header>
+              <main>
+                  <h2>Release Benchmarks</h2>
+                  <div class="grid">
+          EOF
+
+          # Output cards for each active version
+          for v in $active_versions; do
+            cat << CARD_EOF >> index.html
+                      <div class="card">
+                          <span class="version-tag">v$v</span>
+                          <h3>Benchmark Reports</h3>
+                          <p>Detailed performance benchmarks mapping throughput metrics, CPU hardware-acceleration instructions and memory allocation savings.</p>
+                          <div class="links-container">
+          CARD_EOF
+
+            # Copy report files list dynamically
+            for report in $(find versions/v$v -type f -name "*.html" | sort); do
+              report_name=$(basename "$report")
+              # Extract clean name: HeroParser.Benchmarks.CsvReadingBenchmarks-report.html -> Csv Reading
+              clean_name=$(echo "$report_name" | sed 's/HeroParser\.Benchmarks\.//' | sed 's/Benchmarks-report\.html//' | sed 's/Benchmarks_net10.0-report.html//' | sed 's/\([A-Z]\)/ \1/g' | xargs)
+              cat << LINK_EOF >> index.html
+                              <a class="btn" href="versions/v$v/$report_name">$clean_name</a>
+          LINK_EOF
+            done
+
+            cat << CARD_END_EOF >> index.html
+                          </div>
+                      </div>
+          CARD_END_EOF
+          done
+
+          cat << 'EOF' >> index.html
+                  </div>
+              </main>
+              <footer>
+                  <p>&copy; 2026 HeroParser Contributors. Released under the MIT License.</p>
+                  <p>Generated automatically with <a href="https://github.com/dotnet/BenchmarkDotNet" target="_blank" rel="noopener noreferrer">BenchmarkDotNet</a>. Hosted on GitHub Pages.</p>
+              </footer>
+          </body>
+          </html>
+          EOF
+
+      - name: Commit and push to gh-pages
+        run: |
+          git add versions/ index.html
+          
+          # Only commit and push if there are changes
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "chore: deploy benchmarks report for v${{ steps.determine-version.outputs.VERSION }}"
+            git push origin gh-pages --force
+            echo "Successfully pushed benchmark updates to gh-pages branch"
+          else
+            echo "No benchmark changes detected. Skipping git push."
+          fi

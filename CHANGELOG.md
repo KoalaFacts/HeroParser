@@ -4,6 +4,22 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-05-27
+
+AI-Native tabular capabilities release. Introduces five high-performance, Native AOT-compliant features linking C# tabular streams to LLM and vector embedding pipelines, along with 100% unit test coverage and high-impact micro-optimizations.
+
+### Added
+- **LLM Structured Output Repair Binder (`LlmRepair`)**: Strips markdown formatting block wraps and repairs unbalanced quotes or truncation on final rows for stream cutoff recovery. Streams directly into strongly-typed records.
+- **Tabular Vector Embedding Batching Pipeline (`ToLlmEmbeddingsAsync`)**: Semantic chunking batched vector generator pipeline pairing record chunks with vectors with a zero-allocation, token-budgeted streaming pipeline.
+- **AI-Driven Tabular Context Profiler (`TabularContextProfiler`)**: Zero-allocation, reflection-safe statistics profiling generating rich markdown card summaries for system prompt injection.
+- **Agent Tool Argument Mapper (`SchemaMetadata.MapFromToolCall`)**: Reflection-free, case-insensitive parameter binder mapping tool arguments to records and enforcing all `[Validate]` constraints with detailed error reports.
+- **Token-Bounded JSON Chunker (`JsonLlmChunker`)**: Streams records into token-bounded JSON arrays. Includes a Native AOT-safe overload accepting `JsonTypeInfo<T>` to eliminate reflection trim warnings entirely.
+
+### Performance & Optimizations
+- **O(1) Dictionary Mapping**: Shifted the key-value matching logic in `MapFromToolCall` to use O(1) case-insensitive dictionary lookups, eliminating nested search loops completely.
+- **Explicit NaN Boundaries**: Replaced implicit double comparative checks with explicit `double.IsNaN` checks to protect constraint validation against missing default bounds.
+- **100% Test Coverage**: Expanded testing to ensure 100% test coverage across all five features.
+
 ## [2.2.1] - 2026-05-26
 
 Performance, zero-allocation, and multi-schema modernization release. Introduces zero-allocation Excel alternate lookups, modernized reflection-free multi-schema generated dispatching with dynamic header resolution, and AVX-512 write-path character scanning. Fully backward compatible and Native AOT compliant.

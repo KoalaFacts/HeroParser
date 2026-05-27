@@ -1,6 +1,9 @@
 # HeroParser Benchmarks & Performance Guide
 
-This document details the performance benchmarks, memory profile characteristics, and head-to-head comparisons of **HeroParser** against leading .NET tabular libraries (`Sep`, `Sylvan`, and `CsvHelper`).
+This document details the performance benchmarks, memory profile characteristics, and head-to-head comparisons of **HeroParser** against leading .NET tabular libraries:
+- **Sep** v0.14.1
+- **Sylvan.Data.Csv** v1.4.4
+- **CsvHelper** v33.1.0
 
 ---
 
@@ -14,7 +17,7 @@ This document details the performance benchmarks, memory profile characteristics
 
 ## 1. Head-to-Head Reading Comparison (10,000 Rows x 25 Columns)
 
-Measures throughput and memory allocations under `.NET 10.0`.
+Measures throughput and memory allocations under `.NET 10.0` compared to **Sep v0.14.1**, **Sylvan.Data.Csv v1.4.4**, and **CsvHelper v33.1.0**.
 
 ### Case A: Unquoted Data (`WithQuotes = False`)
 * **Sep (Baseline)**: **2.092 ms** (Mean) | **3,952 B** (Allocated) | **1.00x** (Ratio)
@@ -34,7 +37,7 @@ Measures throughput and memory allocations under `.NET 10.0`.
 
 ## 2. Head-to-Head Writing Comparison (1,000 Rows x 25 Columns)
 
-Measures sync writing throughput and memory allocations under `.NET 10.0`.
+Measures sync writing throughput and memory allocations under `.NET 10.0` compared to **Sep v0.14.1** and **Sylvan.Data.Csv v1.4.4**.
 
 ### Case A: Unquoted Data (`WithQuotes = False`)
 * **Sep (Baseline)**: **4.455 ms** (Mean) | **1.98 MB** (Allocated) | **1.00x** (Ratio)

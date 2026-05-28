@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>HeroParser.Benchmarks.ThroughputBenchmarks-20260528-030109</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.4 LTS (Noble Numbat)
+Intel Xeon Platinum 8370C CPU 2.80GHz (Max: 2.86GHz), 1 CPU, 4 logical and 2 physical cores
+.NET SDK 10.0.300
+  [Host]     : .NET 10.0.8 (10.0.8, 10.0.826.23019), X64 RyuJIT x86-64-v4
+  Job-INMAZI : .NET 10.0.8 (10.0.8, 10.0.826.23019), X64 RyuJIT x86-64-v4
+</code></pre>
+<pre><code>IterationCount=5  RunStrategy=Throughput  WarmupCount=3  
+</code></pre>
+
+<table>
+<thead><tr><th>Method       </th><th>Rows</th><th>Columns</th><th>Mean  </th><th>Error  </th><th>StdDev</th><th>Ratio</th><th>RatioSD</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>ParseCsvUtf8</td><td>1000</td><td>10</td><td>66.85 &mu;s</td><td>0.379 &mu;s</td><td>0.059 &mu;s</td><td>1.00</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>1000</td><td>10</td><td>77.04 &mu;s</td><td>0.167 &mu;s</td><td>0.043 &mu;s</td><td>1.15</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf8</td><td>1000</td><td>25</td><td>116.62 &mu;s</td><td>0.186 &mu;s</td><td>0.029 &mu;s</td><td>1.00</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>1000</td><td>25</td><td>127.31 &mu;s</td><td>1.166 &mu;s</td><td>0.303 &mu;s</td><td>1.09</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf8</td><td>1000</td><td>100</td><td>367.37 &mu;s</td><td>14.402 &mu;s</td><td>3.740 &mu;s</td><td>1.00</td><td>0.01</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>1000</td><td>100</td><td>400.74 &mu;s</td><td>6.288 &mu;s</td><td>1.633 &mu;s</td><td>1.09</td><td>0.01</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf8</td><td>10000</td><td>10</td><td>634.09 &mu;s</td><td>7.771 &mu;s</td><td>2.018 &mu;s</td><td>1.00</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>10000</td><td>10</td><td>780.29 &mu;s</td><td>14.307 &mu;s</td><td>2.214 &mu;s</td><td>1.23</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf8</td><td>10000</td><td>25</td><td>1,232.12 &mu;s</td><td>6.535 &mu;s</td><td>1.011 &mu;s</td><td>1.00</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>10000</td><td>25</td><td>1,329.93 &mu;s</td><td>13.877 &mu;s</td><td>2.147 &mu;s</td><td>1.08</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf8</td><td>10000</td><td>100</td><td>4,082.72 &mu;s</td><td>288.715 &mu;s</td><td>44.679 &mu;s</td><td>1.00</td><td>0.01</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>10000</td><td>100</td><td>5,559.90 &mu;s</td><td>200.268 &mu;s</td><td>30.992 &mu;s</td><td>1.36</td><td>0.02</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf8</td><td>100000</td><td>10</td><td>6,484.72 &mu;s</td><td>48.586 &mu;s</td><td>12.618 &mu;s</td><td>1.00</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>100000</td><td>10</td><td>8,663.02 &mu;s</td><td>87.218 &mu;s</td><td>22.650 &mu;s</td><td>1.34</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf8</td><td>100000</td><td>25</td><td>13,152.08 &mu;s</td><td>284.075 &mu;s</td><td>43.961 &mu;s</td><td>1.00</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>100000</td><td>25</td><td>16,265.66 &mu;s</td><td>59.035 &mu;s</td><td>15.331 &mu;s</td><td>1.24</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf8</td><td>100000</td><td>100</td><td>41,933.57 &mu;s</td><td>547.383 &mu;s</td><td>84.708 &mu;s</td><td>1.00</td><td>0.00</td><td>32 B</td><td>1.00</td>
+</tr><tr><td>ParseCsvUtf16Scalar</td><td>100000</td><td>100</td><td>64,538.23 &mu;s</td><td>15,288.845 &mu;s</td><td>3,970.464 &mu;s</td><td>1.54</td><td>0.09</td><td>32 B</td><td>1.00</td>
+</tr></tbody></table>
+</body>
+</html>

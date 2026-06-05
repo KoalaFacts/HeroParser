@@ -332,7 +332,7 @@ jobs:
             for report in $(find versions/v$v -type f -name "*.html" | sort); do
               report_name=$(basename "$report")
               # Extract clean name: HeroParser.Benchmarks.CsvReadingBenchmarks-report.html -> Csv Reading
-              clean_name=$(echo "$report_name" | sed 's/HeroParser\.Benchmarks\.//' | sed 's/Benchmarks-report\.html//' | sed 's/Benchmarks_net10.0-report.html//' | sed 's/\([A-Z]\)/ \1/g' | xargs)
+              clean_name=$(echo "$report_name" | sed 's/HeroParser\.Benchmarks\.//' | sed -E 's/Benchmarks?-report\.html//' | sed 's/Benchmarks_net10.0-report.html//' | sed 's/\([A-Z]\)/ \1/g' | xargs)
               cat << LINK_EOF >> index.html
                               <a class="btn" href="versions/v$v/$report_name">$clean_name</a>
           LINK_EOF

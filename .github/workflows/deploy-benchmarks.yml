@@ -81,10 +81,11 @@ jobs:
       - name: Run benchmarks
         run: |
           cd benchmarks/HeroParser.Benchmarks
-          dotnet run -c Release \
-            --framework net10.0 \
-            --no-build \
-            -- --throughput
+          dotnet run -c Release --framework net10.0 --no-build -- --throughput
+          dotnet run -c Release --framework net10.0 --no-build -- --vs-sep-reading
+          dotnet run -c Release --framework net10.0 --no-build -- --fixed-width-streaming
+          dotnet run -c Release --framework net10.0 --no-build -- --excel-read
+          dotnet run -c Release --framework net10.0 --no-build -- --jsonl
 
       - name: Temporarily stash results
         run: |

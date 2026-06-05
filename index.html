@@ -43,6 +43,14 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+        h1 a {
+            text-decoration: none;
+            color: inherit;
+            transition: opacity 0.2s ease;
+        }
+        h1 a:hover {
+            opacity: 0.85;
+        }
         .subtitle {
             font-size: 1.15rem;
             color: var(--text-muted);
@@ -156,7 +164,7 @@
 </head>
 <body>
     <header>
-        <h1>HeroParser</h1>
+        <h1><a href="https://github.com/KoalaFacts/HeroParser">HeroParser</a></h1>
         <p class="subtitle">Performance & Benchmark Portal</p>
         <p class="subtitle" style="font-size: 1rem; margin-top: 0.5rem; color: #64748b;">Versioned, zero-allocation, SIMD-accelerated head-to-head performance benchmarks across our latest 3 releases.</p>
     </header>
@@ -176,7 +184,11 @@
                 <h3>Benchmark Reports</h3>
                 <p>Detailed performance benchmarks mapping throughput metrics, CPU hardware-acceleration instructions and memory allocation savings.</p>
                 <div class="links-container">
+                    <a class="btn" href="versions/v2.3.0/HeroParser.Benchmarks.ExcelReadBenchmarks-report.html">Excel Read</a>
+                    <a class="btn" href="versions/v2.3.0/HeroParser.Benchmarks.FixedWidthStreamingBenchmarks-report.html">Fixed Width Streaming</a>
+                    <a class="btn" href="versions/v2.3.0/HeroParser.Benchmarks.JsonlBenchmark-report.html">Jsonl Benchmark-report.html</a>
                     <a class="btn" href="versions/v2.3.0/HeroParser.Benchmarks.ThroughputBenchmarks-report.html">Throughput</a>
+                    <a class="btn" href="versions/v2.3.0/HeroParser.Benchmarks.VsSepReadingBenchmarks-report.html">Vs Sep Reading</a>
                 </div>
             </div>
         </div>

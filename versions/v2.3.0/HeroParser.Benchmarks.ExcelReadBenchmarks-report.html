@@ -2,7 +2,7 @@
 <html lang='en'>
 <head>
 <meta charset='utf-8' />
-<title>HeroParser.Benchmarks.ExcelReadBenchmarks-20260605-132753</title>
+<title>HeroParser.Benchmarks.ExcelReadBenchmarks-20260605-134814</title>
 
 <style type="text/css">
 	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
@@ -14,7 +14,7 @@
 <body>
 <pre><code>
 BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.4 LTS (Noble Numbat)
-AMD EPYC 9V74 2.86GHz, 1 CPU, 4 logical and 2 physical cores
+AMD EPYC 7763 2.45GHz, 1 CPU, 4 logical and 2 physical cores
 .NET SDK 10.0.300
   [Host]     : .NET 10.0.8 (10.0.8, 10.0.826.23019), X64 RyuJIT x86-64-v3
   Job-INMAZI : .NET 10.0.8 (10.0.8, 10.0.826.23019), X64 RyuJIT x86-64-v3
@@ -23,10 +23,10 @@ AMD EPYC 9V74 2.86GHz, 1 CPU, 4 logical and 2 physical cores
 </code></pre>
 
 <table>
-<thead><tr><th>Method                     </th><th>Mean</th><th>Error</th><th>StdDev</th><th>Ratio</th><th>Gen0</th><th>Gen1</th><th>Gen2</th><th>Allocated</th><th>Alloc Ratio</th>
+<thead><tr><th>Method                     </th><th>Mean</th><th>Error</th><th>StdDev</th><th>Ratio</th><th>Gen0</th><th>Gen1</th><th>Allocated</th><th>Alloc Ratio</th>
 </tr>
-</thead><tbody><tr><td>ReadWithGeneratedCharBinder</td><td>48.64 ms</td><td>1.794 ms</td><td>0.278 ms</td><td>1.00</td><td>1363.6364</td><td>545.4545</td><td>272.7273</td><td>14.32 MB</td><td>1.00</td>
-</tr><tr><td>ReadWithFallbackCharToByteAdapter</td><td>52.04 ms</td><td>2.635 ms</td><td>0.684 ms</td><td>1.07</td><td>1000.0000</td><td>333.3333</td><td>-</td><td>15.9 MB</td><td>1.11</td>
+</thead><tbody><tr><td>ReadWithGeneratedCharBinder</td><td>50.96 ms</td><td>2.068 ms</td><td>0.320 ms</td><td>1.00</td><td>1000.0000</td><td>333.3333</td><td>14.32 MB</td><td>1.00</td>
+</tr><tr><td>ReadWithFallbackCharToByteAdapter</td><td>56.60 ms</td><td>2.413 ms</td><td>0.627 ms</td><td>1.11</td><td>1000.0000</td><td>333.3333</td><td>15.9 MB</td><td>1.11</td>
 </tr></tbody></table>
 </body>
 </html>

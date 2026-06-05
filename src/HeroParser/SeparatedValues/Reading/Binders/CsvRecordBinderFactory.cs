@@ -25,7 +25,7 @@ public static class CsvRecordBinderFactory
     /// </summary>
     /// <typeparam name="T">The record type the binder handles.</typeparam>
     /// <param name="factory">Factory that creates binder instances.</param>
-    public static void RegisterCharBinder<T>(Func<CsvRecordOptions?, ICsvBinder<char, T>> factory)
+    public static void RegisterCharBinder<T>(Func<CsvRecordOptions?, ICsvSourceBinder<char, T>> factory)
         where T : new()
     {
         ArgumentNullException.ThrowIfNull(factory);
@@ -49,12 +49,12 @@ public static class CsvRecordBinderFactory
     /// Use [GenerateBinder] on record types to ensure the ultra-high performance generated char binder is used.
     /// </para>
     /// </remarks>
-    public static ICsvBinder<char, T> GetCharBinder<T>(CsvRecordOptions? options = null, char delimiter = ',')
+    public static ICsvSourceBinder<char, T> GetCharBinder<T>(CsvRecordOptions? options = null, char delimiter = ',')
         where T : new()
     {
         if (charBinderFactories.TryGetValue(typeof(T), out var binderFactory))
         {
-            if (binderFactory is not Func<CsvRecordOptions?, ICsvBinder<char, T>> typedFactory)
+            if (binderFactory is not Func<CsvRecordOptions?, ICsvSourceBinder<char, T>> typedFactory)
                 throw new InvalidOperationException($"Char binder factory for type {typeof(T).Name} was registered with incorrect delegate type.");
             return typedFactory(options);
         }
@@ -73,7 +73,7 @@ public static class CsvRecordBinderFactory
     /// </summary>
     /// <typeparam name="T">The record type the binder handles.</typeparam>
     /// <param name="factory">Factory that creates binder instances.</param>
-    public static void RegisterByteBinder<T>(Func<CsvRecordOptions?, ICsvBinder<byte, T>> factory)
+    public static void RegisterByteBinder<T>(Func<CsvRecordOptions?, ICsvSourceBinder<byte, T>> factory)
         where T : new()
     {
         ArgumentNullException.ThrowIfNull(factory);
@@ -83,12 +83,12 @@ public static class CsvRecordBinderFactory
     /// <summary>
     /// Gets a byte binder for the specified type, or throws if not found.
     /// </summary>
-    public static ICsvBinder<byte, T> GetByteBinder<T>(CsvRecordOptions? options = null)
+    public static ICsvSourceBinder<byte, T> GetByteBinder<T>(CsvRecordOptions? options = null)
         where T : new()
     {
         if (byteBinderFactories.TryGetValue(typeof(T), out var binderFactory))
         {
-            if (binderFactory is not Func<CsvRecordOptions?, ICsvBinder<byte, T>> typedFactory)
+            if (binderFactory is not Func<CsvRecordOptions?, ICsvSourceBinder<byte, T>> typedFactory)
                 throw new InvalidOperationException($"Byte binder factory for type {typeof(T).Name} was registered with incorrect delegate type.");
             return typedFactory(options);
         }
@@ -97,12 +97,12 @@ public static class CsvRecordBinderFactory
             $"No byte binder found for type {typeof(T).Name}. Add [GenerateBinder] attribute to the type.");
     }
 
-    internal static bool TryGetByteBinder<T>(CsvRecordOptions? options, out ICsvBinder<byte, T>? binder)
+    internal static bool TryGetByteBinder<T>(CsvRecordOptions? options, out ICsvSourceBinder<byte, T>? binder)
         where T : new()
     {
         if (byteBinderFactories.TryGetValue(typeof(T), out var binderFactory))
         {
-            if (binderFactory is not Func<CsvRecordOptions?, ICsvBinder<byte, T>> typedFactory)
+            if (binderFactory is not Func<CsvRecordOptions?, ICsvSourceBinder<byte, T>> typedFactory)
             {
                 throw new InvalidOperationException(
                     $"Byte binder factory for type {typeof(T).Name} was registered with incorrect delegate type.");

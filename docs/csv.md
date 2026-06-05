@@ -1323,7 +1323,7 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
 
 - **Row Scanner**: Uses SIMD to find delimiters and newlines in parallel. Uses the PCLMULQDQ instruction for branchless prefix-XOR quote tracking.
 - **Column Extraction**: `AppendColumn` tracks column boundaries via a `columnEnds[]` array (stackalloc for ≤128 columns).
-- **Binding**: `ICsvBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
+- **Binding**: `ICsvSourceBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
 - **UTF-16 fallback**: `CsvCharToByteBinderAdapter` converts char data to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
 
 **Write path:**
@@ -1342,7 +1342,7 @@ Records → PropertyAccessor (compiled expression trees) → CsvStreamWriter (bu
 | `CsvRecordReader<TElement, T>` | ref struct wrapping row reader + binder |
 | `CsvStreamWriter` | Buffered writer with `ArrayPool<char>` management |
 | `CsvAsyncStreamWriter` | Async variant with dual `char[]` + `byte[]` buffers |
-| `ICsvBinder<TElement, T>` | Interface for source-generated and reflection binders |
+| `ICsvSourceBinder<TElement, T>` | Interface for source-generated and reflection binders |
 
 **Performance characteristics (AMD Ryzen AI 9 HX PRO 370, .NET 10):**
 

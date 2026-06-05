@@ -182,7 +182,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         // Emit byte binder fields (cached for performance) - UTF-8 is the primary path
         foreach (var mapping in descriptor.Mappings)
         {
-            var binderClass = $"global::{BINDER_NAMESPACE}.CsvInlineByteBinder_{mapping.SafeTypeName}";
+            var binderClass = $"global::{BINDER_NAMESPACE}.CsvInlineByteSourceBinder_{mapping.SafeTypeName}";
             builder.AppendLine($"private static readonly {binderClass} _byteBinder_{mapping.SafeTypeName} = new(null);");
         }
         builder.AppendLine();

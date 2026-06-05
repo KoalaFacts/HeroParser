@@ -371,8 +371,8 @@ internal static class CsvRowParser
         uint crlfMask = crInsideQuotes & (lfInsideQuotes >> 1);
         count -= BitOperations.PopCount(crlfMask);
 
-        if (pendingCrInQuotes && (lfInsideQuotes & 1u) != 0)
-            count--;
+        int adjustment = (pendingCrInQuotes ? 1 : 0) & (int)(lfInsideQuotes & 1u);
+        count -= adjustment;
 
         pendingCrInQuotes = (crInsideQuotes & lastBitMask) != 0;
         return count;
@@ -402,8 +402,8 @@ internal static class CsvRowParser
         ulong crlfMask = crInsideQuotes & (lfInsideQuotes >> 1);
         count -= BitOperations.PopCount(crlfMask);
 
-        if (pendingCrInQuotes && (lfInsideQuotes & 1ul) != 0)
-            count--;
+        int adjustment = (pendingCrInQuotes ? 1 : 0) & (int)(lfInsideQuotes & 1ul);
+        count -= adjustment;
 
         pendingCrInQuotes = (crInsideQuotes & lastBitMask) != 0;
         return count;

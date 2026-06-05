@@ -9,13 +9,6 @@ namespace HeroParser.Excels.Xlsx;
 /// </summary>
 internal sealed class XlsxReader : IDisposable
 {
-    // Zip-bomb mitigation: reject entries whose decompressed-to-compressed ratio exceeds this
-    // threshold AND whose declared uncompressed size is non-trivial. XLSX shared-strings and
-    // sheets routinely hit 10-30x compression on repeated text, so the cap is generous.
-    private const long MAX_ENTRY_DECOMPRESSED_BYTES = 512L * 1024 * 1024; // 512 MB
-    private const int MAX_COMPRESSION_RATIO = 200;
-    private const long RATIO_CHECK_MIN_COMPRESSED_BYTES = 1024;
-
     private readonly ZipArchive archive;
     private readonly XlsxSharedStrings sharedStrings;
     private readonly XlsxStylesheet stylesheet;
@@ -56,7 +49,7 @@ internal sealed class XlsxReader : IDisposable
         var entry = archive.GetEntry(sheet.Path)
             ?? throw new ExcelException($"Sheet file '{sheet.Path}' not found in .xlsx archive.");
 
-        ValidateEntrySize(entry);
+        XlsxXml.ValidateEntrySize(entry);
         var stream = entry.Open();
         return new XlsxSheetReader(stream, sharedStrings, stylesheet);
     }
@@ -74,7 +67,7 @@ internal sealed class XlsxReader : IDisposable
         if (entry is null)
             return XlsxSharedStrings.Empty;
 
-        ValidateEntrySize(entry);
+        XlsxXml.ValidateEntrySize(entry);
         using var stream = entry.Open();
         return XlsxSharedStrings.Parse(stream);
     }
@@ -85,26 +78,8 @@ internal sealed class XlsxReader : IDisposable
         if (entry is null)
             return XlsxStylesheet.Parse(null);
 
-        ValidateEntrySize(entry);
+        XlsxXml.ValidateEntrySize(entry);
         using var stream = entry.Open();
         return XlsxStylesheet.Parse(stream);
-    }
-
-    private static void ValidateEntrySize(ZipArchiveEntry entry)
-    {
-        if (entry.Length > MAX_ENTRY_DECOMPRESSED_BYTES)
-        {
-            throw new ExcelException(
-                $"Refusing to open .xlsx entry '{entry.FullName}': declared uncompressed size " +
-                $"{entry.Length} exceeds limit of {MAX_ENTRY_DECOMPRESSED_BYTES} bytes (possible zip bomb).");
-        }
-
-        if (entry.CompressedLength >= RATIO_CHECK_MIN_COMPRESSED_BYTES
-            && entry.Length / entry.CompressedLength > MAX_COMPRESSION_RATIO)
-        {
-            throw new ExcelException(
-                $"Refusing to open .xlsx entry '{entry.FullName}': compression ratio " +
-                $"{entry.Length}/{entry.CompressedLength} exceeds {MAX_COMPRESSION_RATIO}:1 (possible zip bomb).");
-        }
     }
 }

@@ -158,8 +158,8 @@ public class ExcelValidationTests
     {
         // With "N/A" declared as a null value, the cell is treated as absent rather than
         // parsed — no CsvException is thrown, and Amount defaults to 0m.
-        // Because the cell is skipped entirely (treated as null), the NotNull validator
-        // is also bypassed — the row returns with Amount = 0.
+        // Because the cell is skipped entirely (treated as null), standard validation rules (like RangeMin = 10)
+        // are also bypassed — the row returns with Amount = 0.
         using var xlsx = ExcelTestHelper.CreateXlsx("Sheet1", [
             ["Id", "Amount", "Currency", "Reference"],
             ["TXN001", "N/A", "USD", "AB1234"]
@@ -167,7 +167,7 @@ public class ExcelValidationTests
 
         // In Lenient mode the row is included (even though Amount ends up as 0 since the
         // field is treated as absent); no exception is thrown.
-        var records = HeroParser.Excel.Read<ValidatedTransaction>()
+        var records = HeroParser.Excel.Read<NullValueValidationTransaction>()
             .WithValidationMode(ValidationMode.Lenient)
             .WithNullValues("N/A")
             .FromStream(xlsx);
@@ -190,7 +190,7 @@ public class ExcelValidationTests
             ["TXN002", "100.00", "GBP", "CD5678"]
         ]);
 
-        var records = HeroParser.Excel.Read<ValidatedTransaction>()
+        var records = HeroParser.Excel.Read<NullValueValidationTransaction>()
             .WithValidationMode(ValidationMode.Lenient)
             .WithNullValues("NULL")
             .FromStream(xlsx);

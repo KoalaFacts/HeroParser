@@ -38,7 +38,9 @@ public class Program
         typeof(FixedWidthTypedPipeReaderBenchmarks),
         typeof(ExcelWriteBenchmarks),
         typeof(ExcelReadBenchmarks),
-        typeof(JsonlBenchmark)
+        typeof(JsonlBenchmark),
+        typeof(HtbBenchmark),
+        typeof(WriteGeneratorBenchmarks)
     ];
 
     private static readonly Dictionary<string, Type[]> benchmarkGroups = new(StringComparer.Ordinal)
@@ -116,7 +118,9 @@ public class Program
         ],
         ["--excel-write"] = [typeof(ExcelWriteBenchmarks)],
         ["--excel-read"] = [typeof(ExcelReadBenchmarks)],
-        ["--jsonl"] = [typeof(JsonlBenchmark)]
+        ["--jsonl"] = [typeof(JsonlBenchmark)],
+        ["--htb"] = [typeof(HtbBenchmark)],
+        ["--write-generator"] = [typeof(WriteGeneratorBenchmarks)]
     };
 
     public static void Main(string[] args)
@@ -161,6 +165,7 @@ public class Program
         Console.WriteLine("  --writer              Run all CSV writer benchmarks");
         Console.WriteLine("  --sync-writer         Run sync CSV writer benchmarks");
         Console.WriteLine("  --async-writer        Run async CSV writer benchmarks");
+        Console.WriteLine("  --write-generator     Run CSV/FW source generator vs reflection writer benchmarks");
         Console.WriteLine("  --quotes              Run quoted vs unquoted parsing benchmarks");
         Console.WriteLine("  --simd                Run SIMD vs scalar CSV parsing benchmarks");
         Console.WriteLine("  --features            Run CSV feature overhead benchmarks");
@@ -182,6 +187,7 @@ public class Program
         Console.WriteLine("  --excel-write         Run Excel (.xlsx) writing benchmarks");
         Console.WriteLine("  --excel-read          Run Excel (.xlsx) reading benchmarks");
         Console.WriteLine("  --jsonl               Run JSONL reading, writing, and conversion benchmarks");
+        Console.WriteLine("  --htb                 Run HTB reading and writing benchmarks");
         Console.WriteLine("  --all                 Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");

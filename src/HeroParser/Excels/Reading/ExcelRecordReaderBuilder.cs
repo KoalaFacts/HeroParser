@@ -387,7 +387,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
                 recordOptions = registration(recordOptions);
         }
 
-        ICsvBinder<char, T> binder;
+        ICsvSourceBinder<char, T> binder;
         if (mapSource is not null)
         {
             var descriptor = mapSource.BuildReadDescriptor();

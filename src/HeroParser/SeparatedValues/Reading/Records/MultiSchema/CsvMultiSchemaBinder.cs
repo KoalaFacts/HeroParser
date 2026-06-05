@@ -20,15 +20,15 @@ internal interface IMultiSchemaBinderWrapper<TElement>
 }
 
 /// <summary>
-/// Typed wrapper that adapts an ICsvBinder to IMultiSchemaBinderWrapper.
+/// Typed wrapper that adapts an ICsvSourceBinder to IMultiSchemaBinderWrapper.
 /// </summary>
 internal sealed class MultiSchemaBinderWrapper<TElement, T> : IMultiSchemaBinderWrapper<TElement>
     where TElement : unmanaged, IEquatable<TElement>
     where T : new()
 {
-    private readonly ICsvBinder<TElement, T> binder;
+    private readonly ICsvSourceBinder<TElement, T> binder;
 
-    public MultiSchemaBinderWrapper(ICsvBinder<TElement, T> binder)
+    public MultiSchemaBinderWrapper(ICsvSourceBinder<TElement, T> binder)
     {
         this.binder = binder;
     }
@@ -561,7 +561,7 @@ internal sealed class CsvMultiSchemaBinder<TElement>
     /// <summary>
     /// Creates a binder entry for a typed binder.
     /// </summary>
-    public static BinderEntry CreateEntry<T>(ICsvBinder<TElement, T> binder)
+    public static BinderEntry CreateEntry<T>(ICsvSourceBinder<TElement, T> binder)
         where T : new()
     {
         return new BinderEntry(

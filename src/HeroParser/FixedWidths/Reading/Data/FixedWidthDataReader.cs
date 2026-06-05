@@ -187,6 +187,51 @@ public sealed class FixedWidthDataReader : DbDataReader
     }
 
     /// <inheritdoc />
+    public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
+    {
+        EnsureNotClosed();
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+
+        if (hasPendingRow)
+        {
+            hasPendingRow = false;
+            hasCurrentRow = true;
+            return true;
+        }
+
+        if (!await AdvanceAsync(cancellationToken).ConfigureAwait(false))
+        {
+            hasCurrentRow = false;
+            return false;
+        }
+
+        ValidateRow(reader.Current);
+        hasCurrentRow = true;
+        return true;
+    }
+
+    private async Task<bool> AdvanceAsync(CancellationToken cancellationToken)
+    {
+        return await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public override async Task<bool> IsDBNullAsync(int ordinal, CancellationToken cancellationToken)
+    {
+        EnsureNotClosed();
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        return IsDBNull(ordinal);
+    }
+
+    /// <inheritdoc />
+    public override async Task<T> GetFieldValueAsync<T>(int ordinal, CancellationToken cancellationToken)
+    {
+        EnsureNotClosed();
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        return await base.GetFieldValueAsync<T>(ordinal, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public override bool NextResult() => false;
 
     /// <inheritdoc />
@@ -464,6 +509,17 @@ public sealed class FixedWidthDataReader : DbDataReader
         base.Dispose(disposing);
     }
 
+    /// <inheritdoc />
+    public override async ValueTask DisposeAsync()
+    {
+        if (closed)
+            return;
+
+        closed = true;
+        await reader.DisposeAsync().ConfigureAwait(false);
+        await base.DisposeAsync().ConfigureAwait(false);
+    }
+
     private void EnsureInitialized()
     {
         if (initialized)
@@ -503,6 +559,54 @@ public sealed class FixedWidthDataReader : DbDataReader
         }
 
         if (Advance())
+        {
+            ValidateRow(reader.Current);
+            hasPendingRow = true;
+            hasAnyRow = true;
+        }
+
+        BuildOrdinalMap();
+    }
+
+    private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
+    {
+        if (initialized)
+            return;
+
+        initialized = true;
+
+        if (options.HasHeaderRow)
+        {
+            if (!await AdvanceAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (!hasExplicitColumnNames)
+                    FillDefaultNames();
+                BuildOrdinalMap();
+                return;
+            }
+
+            var headerRow = reader.Current;
+            ValidateRow(headerRow);
+            if (!hasExplicitColumnNames)
+            {
+                for (int i = 0; i < fieldCount; i++)
+                {
+                    if (!string.IsNullOrEmpty(columnNames[i]))
+                        continue;
+
+                    columnNames[i] = TryGetColumnSpan(headerRow, i, out var span) && !span.IsEmpty
+                        ? new string(span)
+                        : $"Column{i + 1}";
+                }
+            }
+        }
+        else
+        {
+            if (!hasExplicitColumnNames)
+                FillDefaultNames();
+        }
+
+        if (await AdvanceAsync(cancellationToken).ConfigureAwait(false))
         {
             ValidateRow(reader.Current);
             hasPendingRow = true;

@@ -151,6 +151,7 @@ public static partial class Csv
         byte? escape,
         bool enableQuotes,
         Span<int> columnEnds,
+        bool isCompleted,
         out ReadOnlySequence<byte> rowData,
         out int columnCount,
         out int newlineCount)
@@ -206,16 +207,27 @@ public static partial class Csv
                 }
             }
 
-            if (escape.HasValue && current == escape.Value && reader.Remaining > 0)
+            if (escape.HasValue && current == escape.Value)
             {
-                skipNext = true;
-                continue;
+                if (reader.Remaining == 0 && !isCompleted)
+                {
+                    return false;
+                }
+                if (reader.Remaining > 0)
+                {
+                    skipNext = true;
+                    continue;
+                }
             }
 
             if (isCommentLine)
             {
                 if (current == cr)
                 {
+                    if (reader.Remaining == 0 && !isCompleted)
+                    {
+                        return false;
+                    }
                     long consumed = reader.Consumed;
                     bool hasLf = reader.TryPeek(out byte next) && next == lf;
                     if (hasLf)
@@ -246,10 +258,17 @@ public static partial class Csv
 
             if (enableQuotes && current == quote)
             {
-                if (inQuotes && reader.TryPeek(out byte next) && next == quote)
+                if (inQuotes)
                 {
-                    reader.Advance(1);
-                    continue;
+                    if (reader.Remaining == 0 && !isCompleted)
+                    {
+                        return false;
+                    }
+                    if (reader.TryPeek(out byte next) && next == quote)
+                    {
+                        reader.Advance(1);
+                        continue;
+                    }
                 }
 
                 inQuotes = !inQuotes;
@@ -297,6 +316,10 @@ public static partial class Csv
 
             if (current == cr)
             {
+                if (reader.Remaining == 0 && !isCompleted)
+                {
+                    return false;
+                }
                 long consumed = reader.Consumed;
                 bool hasLf = reader.TryPeek(out byte next) && next == lf;
                 if (hasLf)
@@ -347,6 +370,7 @@ public static partial class Csv
         byte quote,
         byte? escape,
         bool enableQuotes,
+        bool isCompleted,
         out ReadOnlySequence<byte> rowData)
     {
         var reader = new SequenceReader<byte>(buffer);
@@ -364,18 +388,34 @@ public static partial class Csv
                 continue;
             }
 
-            if (escape.HasValue && current == escape.Value && reader.Remaining > 0)
+            if (escape.HasValue && current == escape.Value)
             {
-                skipNext = true;
-                continue;
+                if (reader.Remaining == 0 && !isCompleted)
+                {
+                    rowData = default;
+                    return false;
+                }
+                if (reader.Remaining > 0)
+                {
+                    skipNext = true;
+                    continue;
+                }
             }
 
             if (enableQuotes && current == quote)
             {
-                if (inQuotes && reader.TryPeek(out byte next) && next == quote)
+                if (inQuotes)
                 {
-                    reader.Advance(1);
-                    continue;
+                    if (reader.Remaining == 0 && !isCompleted)
+                    {
+                        rowData = default;
+                        return false;
+                    }
+                    if (reader.TryPeek(out byte next) && next == quote)
+                    {
+                        reader.Advance(1);
+                        continue;
+                    }
                 }
 
                 inQuotes = !inQuotes;
@@ -384,6 +424,11 @@ public static partial class Csv
 
             if (!inQuotes && current == (byte)'\r')
             {
+                if (reader.Remaining == 0 && !isCompleted)
+                {
+                    rowData = default;
+                    return false;
+                }
                 long consumed = reader.Consumed;
                 bool hasLf = reader.TryPeek(out byte next) && next == (byte)'\n';
                 if (hasLf)

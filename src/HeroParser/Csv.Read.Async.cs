@@ -33,7 +33,7 @@ public static partial class Csv
 
     internal static void BindPipeSequenceHeader<T>(
         CsvPipeSequenceRow row,
-        ICsvBinder<byte, T> binder,
+        ICsvSourceBinder<byte, T> binder,
         ref byte[]? scratchBuffer)
         where T : new()
     {
@@ -60,7 +60,7 @@ public static partial class Csv
 
     internal static bool TryBindPipeSequenceRow<T>(
         CsvPipeSequenceRow row,
-        ICsvBinder<byte, T> binder,
+        ICsvSourceBinder<byte, T> binder,
         ref byte[]? scratchBuffer,
         out T result)
         where T : new()
@@ -143,7 +143,7 @@ internal sealed class CsvPipeRecordAsyncEnumerable<T> : IAsyncEnumerable<T>
         private readonly int progressInterval;
 
         private CsvPipeSequenceReader? pipeReader;
-        private ICsvBinder<byte, T>? binder;
+        private ICsvSourceBinder<byte, T>? binder;
         private byte[]? scratchBuffer;
         private bool completed;
         private int dataRowCount;

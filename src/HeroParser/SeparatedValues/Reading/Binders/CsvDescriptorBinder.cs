@@ -13,7 +13,7 @@ namespace HeroParser.SeparatedValues.Reading.Binders;
 /// High-performance binder that uses pre-compiled property descriptors.
 /// </summary>
 /// <typeparam name="T">The record type.</typeparam>
-public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
+public sealed class CsvDescriptorBinder<T> : ICsvSourceBinder<char, T> where T : new()
 {
     private readonly CsvRecordDescriptor<T> descriptor;
     private readonly CultureInfo culture;
@@ -121,24 +121,28 @@ public sealed class CsvDescriptorBinder<T> : ICsvBinder<char, T> where T : new()
             if ((uint)idx < (uint)columnCount)
             {
                 var span = row[idx].Span;
-                if (nullVals is null || !IsNullValue(span, nullVals))
+                bool isNullVal = nullVals is not null && IsNullValue(span, nullVals);
+                string? colName = !descriptor.UsesHeaderBinding ? null : prop.Name;
+                bool isWhiteSpace = span.IsWhiteSpace();
+
+                if ((prop.IsNotNull || prop.Validation is { NotEmpty: true }) && (isNullVal || isWhiteSpace))
                 {
-                    string? colName = !descriptor.UsesHeaderBinding ? null : prop.Name;
+                    string rule = prop.IsNotNull ? "NotNull" : "NotEmpty";
+                    string message = rule == "NotNull" ? "Value is required" : "Value must not be empty or whitespace";
+                    hasErrors |= AddValidationError(
+                        errors,
+                        prop.Name,
+                        rowNumber,
+                        idx,
+                        colName,
+                        rule,
+                        message,
+                        isNullVal ? new string(span) : string.Empty);
+                    continue;
+                }
 
-                    if (prop.IsNotNull && span.IsWhiteSpace())
-                    {
-                        hasErrors |= AddValidationError(
-                            errors,
-                            prop.Name,
-                            rowNumber,
-                            idx,
-                            colName,
-                            "NotNull",
-                            "Value is required",
-                            string.Empty);
-                        continue;
-                    }
-
+                if (!isNullVal)
+                {
                     try
                     {
                         prop.Setter(ref instance, span, cultureLocal);

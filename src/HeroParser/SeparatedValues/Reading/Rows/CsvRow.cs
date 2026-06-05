@@ -49,6 +49,9 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     /// <summary>Gets the number of parsed columns in the row.</summary>
     public int ColumnCount => columnCount;
 
+    internal ReadOnlySpan<T> Line => line;
+
+
     /// <summary>
     /// Gets the 1-based logical row number in the CSV data.
     /// </summary>

@@ -20,7 +20,18 @@ public static partial class Jsonl
     public static string WriteToText<T>(IEnumerable<T> records, JsonlWriteOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(records);
-        using var stream = new MemoryStream();
+
+        int capacity = 4096;
+        if (records is System.Collections.ICollection collection)
+        {
+            capacity = collection.Count * 128;
+        }
+        else if (records is IReadOnlyCollection<T> readOnlyCollection)
+        {
+            capacity = readOnlyCollection.Count * 128;
+        }
+
+        using var stream = new MemoryStream(capacity);
         using (var writer = new JsonlStreamWriter(stream, options, leaveOpen: true))
         {
             foreach (T record in records)
@@ -37,7 +48,18 @@ public static partial class Jsonl
     {
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(typeInfo);
-        using var stream = new MemoryStream();
+
+        int capacity = 4096;
+        if (records is System.Collections.ICollection collection)
+        {
+            capacity = collection.Count * 128;
+        }
+        else if (records is IReadOnlyCollection<T> readOnlyCollection)
+        {
+            capacity = readOnlyCollection.Count * 128;
+        }
+
+        using var stream = new MemoryStream(capacity);
         using (var writer = new JsonlStreamWriter(stream, options, leaveOpen: true))
         {
             foreach (T record in records)

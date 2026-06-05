@@ -100,13 +100,25 @@ public static partial class Csv
 
         options.Validate();
 
-        using var stringWriter = new StringWriter();
+        // Pre-allocate capacity using an estimated average CSV row size (e.g. 64 characters)
+        int capacity = 4096;
+        if (records is System.Collections.ICollection collection)
+        {
+            capacity = collection.Count * 64;
+        }
+        else if (records is IReadOnlyCollection<T> readOnlyCollection)
+        {
+            capacity = readOnlyCollection.Count * 64;
+        }
+
+        var sb = new StringBuilder(capacity);
+        using var stringWriter = new StringWriter(sb);
         using var writer = new CsvStreamWriter(stringWriter, options);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
         recordWriter.WriteRecords(writer, records, options.WriteHeader);
         writer.Flush();
 
-        return stringWriter.ToString();
+        return sb.ToString();
     }
 
     /// <summary>

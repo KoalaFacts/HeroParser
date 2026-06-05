@@ -20,7 +20,7 @@ internal sealed class JsonlLineReader : IDisposable
     private int bufferStart;
     private int bufferLen;
     private long lineNumber;
-    private bool firstChunk = true;
+
     private bool eof;
     private bool disposed;
 
@@ -41,7 +41,7 @@ internal sealed class JsonlLineReader : IDisposable
     /// Reads the next non-EOF line. <paramref name="line"/> aliases an internal buffer.
     /// </summary>
     /// <returns><see langword="true"/> when a line was produced; <see langword="false"/> at end of stream.</returns>
-    public bool TryReadLine(out ReadOnlySpan<byte> line, out long lineNumberOut)
+    public bool TryReadLine(out ReadOnlyMemory<byte> line, out long lineNumberOut)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
@@ -61,7 +61,12 @@ internal sealed class JsonlLineReader : IDisposable
                         $"A single line exceeds the configured MaxLineSizeBytes of {maxLineSizeBytes:N0} bytes.",
                         lineNumber + 1);
                 }
-                line = buffer.AsSpan(bufferStart, lineEnd);
+
+                line = (lineNumber == 0 && lineEnd >= 3 &&
+                        buffer[bufferStart] == 0xEF && buffer[bufferStart + 1] == 0xBB && buffer[bufferStart + 2] == 0xBF)
+                    ? buffer.AsMemory(bufferStart + 3, lineEnd - 3)
+                    : buffer.AsMemory(bufferStart, lineEnd);
+
                 lineNumber++;
                 lineNumberOut = lineNumber;
                 bufferStart += newlineIdx + 1;
@@ -80,7 +85,12 @@ internal sealed class JsonlLineReader : IDisposable
                             $"A single line exceeds the configured MaxLineSizeBytes of {maxLineSizeBytes:N0} bytes.",
                             lineNumber + 1);
                     }
-                    line = buffer.AsSpan(bufferStart, bufferLen);
+
+                    line = (lineNumber == 0 && bufferLen >= 3 &&
+                            buffer[bufferStart] == 0xEF && buffer[bufferStart + 1] == 0xBB && buffer[bufferStart + 2] == 0xBF)
+                        ? buffer.AsMemory(bufferStart + 3, bufferLen - 3)
+                        : buffer.AsMemory(bufferStart, bufferLen);
+
                     lineNumber++;
                     lineNumberOut = lineNumber;
                     bufferStart += bufferLen;
@@ -127,18 +137,6 @@ internal sealed class JsonlLineReader : IDisposable
         {
             eof = true;
             return;
-        }
-
-        if (firstChunk)
-        {
-            firstChunk = false;
-            if (bufferLen == 0 && read >= 3 &&
-                buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
-            {
-                Buffer.BlockCopy(buffer, 3, buffer, 0, read - 3);
-                read -= 3;
-                BytesRead += 3;
-            }
         }
 
         bufferLen += read;

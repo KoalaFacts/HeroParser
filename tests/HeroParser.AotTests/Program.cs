@@ -13,5 +13,6 @@ CsvAotTests.Run(runner);
 FixedWidthAotTests.Run(runner);
 ExcelAotTests.Run(runner);
 JsonlAotTests.Run(runner);
+HtbAotTests.Run(runner);
 
 return runner.PrintSummary();

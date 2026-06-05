@@ -35,38 +35,47 @@ internal sealed class XlsxSheetReader : IDisposable
         if (finished)
             return null;
 
-        // Navigate to sheetData if not already there
-        if (!inSheetData)
+        try
         {
-            if (!AdvanceToSheetData())
+            // Navigate to sheetData if not already there
+            if (!inSheetData)
             {
-                finished = true;
-                return null;
+                if (!AdvanceToSheetData())
+                {
+                    finished = true;
+                    return null;
+                }
+                inSheetData = true;
             }
-            inSheetData = true;
-        }
 
-        // Find the next <row> element
-        while (reader.Read())
+            // Find the next <row> element
+            while (reader.Read())
+            {
+                if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "sheetData")
+                {
+                    finished = true;
+                    return null;
+                }
+
+                if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "row")
+                {
+                    var rowNumStr = reader.GetAttribute("r");
+                    if (rowNumStr is not null && int.TryParse(rowNumStr, out int rowNum))
+                        CurrentRowNumber = rowNum;
+                    else
+                        CurrentRowNumber++;
+
+                    return ReadRowCells();
+                }
+            }
+
+            finished = true;
+            return null;
+        }
+        catch (XmlException ex)
         {
-            if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "sheetData")
-            {
-                finished = true;
-                return null;
-            }
-
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "row")
-            {
-                var rowNumStr = reader.GetAttribute("r");
-                if (rowNumStr is not null && int.TryParse(rowNumStr, out int rowNum))
-                    CurrentRowNumber = rowNum;
-
-                return ReadRowCells();
-            }
+            throw new ExcelException("Failed to read Excel worksheet due to XML corruption.", ex);
         }
-
-        finished = true;
-        return null;
     }
 
     /// <inheritdoc />
@@ -108,6 +117,10 @@ internal sealed class XlsxSheetReader : IDisposable
                 var styleAttr = reader.GetAttribute("s");
 
                 int columnIndex = cellRef is not null ? ParseColumnIndex(cellRef) : cellBuffer.Count;
+                if (columnIndex < 0)
+                {
+                    throw new ExcelException($"Invalid column index '{columnIndex}' in cell reference '{cellRef}'.");
+                }
                 var cellType = ParseCellType(typeAttr);
                 int styleIndex = styleAttr is not null && int.TryParse(styleAttr, out int si) ? si : -1;
 
@@ -177,7 +190,7 @@ internal sealed class XlsxSheetReader : IDisposable
         {
             XlsxCellType.SharedString => ResolveSharedString(rawValue),
             XlsxCellType.InlineString => inlineText ?? "",
-            XlsxCellType.Boolean => rawValue == "1" ? "TRUE" : "FALSE",
+            XlsxCellType.Boolean => rawValue is null ? "" : (rawValue == "1" || string.Equals(rawValue, "true", StringComparison.OrdinalIgnoreCase) ? "TRUE" : "FALSE"),
             XlsxCellType.Error => "",
             XlsxCellType.String => rawValue ?? "",
             XlsxCellType.Number => ConvertNumber(rawValue, styleIndex),
@@ -249,6 +262,13 @@ internal sealed class XlsxSheetReader : IDisposable
 
     private static string ConvertOleDate(double oleDate)
     {
+        if (double.IsNaN(oleDate) || double.IsInfinity(oleDate) || oleDate < -657435.0 || oleDate >= 2958466.0)
+        {
+            // OLE Automation Date limits: -657435.0 (Jan 1, 0100) to 2958465.9999884 (Dec 31, 9999)
+            // Degrade gracefully by returning the raw float string in invariant culture
+            return oleDate.ToString(CultureInfo.InvariantCulture);
+        }
+
         // Time-only values (< 1.0) are converted to TimeSpan string
         if (oleDate < 1.0 && oleDate >= 0.0)
         {
@@ -296,6 +316,11 @@ internal sealed class XlsxSheetReader : IDisposable
                     $"Cell reference '{cellRef}' exceeds Excel's maximum column 'XFD' ({MAX_ONE_BASED_COLUMN}).");
             }
             i++;
+        }
+
+        if (i == 0)
+        {
+            throw new ExcelException($"Cell reference '{cellRef}' is invalid: it does not start with any letters.");
         }
 
         return columnIndex - 1; // Convert from 1-based to 0-based

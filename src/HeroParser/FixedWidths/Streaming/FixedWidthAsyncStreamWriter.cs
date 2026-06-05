@@ -314,6 +314,59 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteFieldValue(ReadOnlySpan<char> valueSpan, int width, FieldAlignment alignment, char padChar)
+    {
+        var bufferSpan = charBuffer.AsSpan(charBufferPosition);
+        if (valueSpan.Length >= width)
+        {
+            if (valueSpan.Length > width && overflowBehavior == OverflowBehavior.Throw)
+            {
+                throw new FixedWidthException(FixedWidthErrorCode.FieldOverflow, $"Field value length {valueSpan.Length} exceeds width {width}");
+            }
+            if (alignment == FieldAlignment.Right)
+            {
+                valueSpan[(valueSpan.Length - width)..].CopyTo(bufferSpan);
+            }
+            else
+            {
+                valueSpan[..width].CopyTo(bufferSpan);
+            }
+            charBufferPosition += width;
+        }
+        else
+        {
+            int paddingNeeded = width - valueSpan.Length;
+            switch (alignment)
+            {
+                case FieldAlignment.Right:
+                    bufferSpan[..paddingNeeded].Fill(padChar);
+                    charBufferPosition += paddingNeeded;
+                    valueSpan.CopyTo(charBuffer.AsSpan(charBufferPosition));
+                    charBufferPosition += valueSpan.Length;
+                    break;
+                case FieldAlignment.Center:
+                    int leftPad = paddingNeeded / 2;
+                    int rightPad = paddingNeeded - leftPad;
+                    bufferSpan[..leftPad].Fill(padChar);
+                    charBufferPosition += leftPad;
+                    valueSpan.CopyTo(charBuffer.AsSpan(charBufferPosition));
+                    charBufferPosition += valueSpan.Length;
+                    charBuffer.AsSpan(charBufferPosition, rightPad).Fill(padChar);
+                    charBufferPosition += rightPad;
+                    break;
+                case FieldAlignment.Left:
+                case FieldAlignment.None:
+                default:
+                    valueSpan.CopyTo(bufferSpan);
+                    charBufferPosition += valueSpan.Length;
+                    charBuffer.AsSpan(charBufferPosition, paddingNeeded).Fill(padChar);
+                    charBufferPosition += paddingNeeded;
+                    break;
+            }
+        }
+    }
+
 #if NET6_0_OR_GREATER
     [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
 #endif
@@ -422,15 +475,16 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
     private async ValueTask WriteSpanFormattableAsync<T>(T value, int width, FieldAlignment alignment, char padChar, string? format, CancellationToken cancellationToken)
         where T : ISpanFormattable
     {
+        await EnsureCapacityAsync(width, cancellationToken).ConfigureAwait(false);
         Span<char> stackBuffer = stackalloc char[MAX_STACK_ALLOC_SIZE];
 
         if (value.TryFormat(stackBuffer, out int charsWritten, format, culture))
         {
-            await WriteFieldValueAsync(stackBuffer[..charsWritten].ToArray().AsMemory(), width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+            WriteFieldValue(stackBuffer[..charsWritten], width, alignment, padChar);
         }
         else
         {
-            await WriteFieldValueAsync(value.ToString(format, culture).AsMemory(), width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+            WriteFieldValue(value.ToString(format, culture), width, alignment, padChar);
         }
     }
 
@@ -439,15 +493,16 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
 #endif
     private async ValueTask WriteSpanFormattableInterfaceAsync(ISpanFormattable value, int width, FieldAlignment alignment, char padChar, string? format, CancellationToken cancellationToken)
     {
+        await EnsureCapacityAsync(width, cancellationToken).ConfigureAwait(false);
         Span<char> stackBuffer = stackalloc char[MAX_STACK_ALLOC_SIZE];
 
         if (value.TryFormat(stackBuffer, out int charsWritten, format, culture))
         {
-            await WriteFieldValueAsync(stackBuffer[..charsWritten].ToArray().AsMemory(), width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+            WriteFieldValue(stackBuffer[..charsWritten], width, alignment, padChar);
         }
         else
         {
-            await WriteFieldValueAsync(value.ToString(format, culture).AsMemory(), width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+            WriteFieldValue(value.ToString(format, culture), width, alignment, padChar);
         }
     }
 
@@ -565,9 +620,7 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
 
     private char[] RentCharBuffer(int minimumLength)
     {
-        var rented = charPool.Rent(minimumLength);
-        Array.Clear(rented);
-        return rented;
+        return charPool.Rent(minimumLength);
     }
 
     private byte[] RentByteBuffer(int minimumLength)

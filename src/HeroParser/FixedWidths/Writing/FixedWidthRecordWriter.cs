@@ -15,6 +15,7 @@ public sealed class FixedWidthRecordWriter<T>
 {
     private readonly FieldDefinition[] fields;
     private readonly FixedWidthWriteOptions options;
+    private readonly IFixedWidthSourceWriter<T>? directWriter;
 
     /// <summary>
     /// Creates a new record writer with reflection-based field discovery.
@@ -26,6 +27,11 @@ public sealed class FixedWidthRecordWriter<T>
     {
         this.options = options;
         fields = BuildFieldDefinitions();
+
+        if (FixedWidthRecordWriterFactory.TryGetDirectWriter<T>(out var dw))
+        {
+            directWriter = dw;
+        }
 
         // Calculate total record length from field definitions
         RecordLength = fields.Length > 0
@@ -40,6 +46,11 @@ public sealed class FixedWidthRecordWriter<T>
     {
         this.options = options;
         fields = InstantiateFieldDefinitions(templates);
+
+        if (FixedWidthRecordWriterFactory.TryGetDirectWriter<T>(out var dw))
+        {
+            directWriter = dw;
+        }
 
         // Calculate total record length from field definitions
         RecordLength = fields.Length > 0
@@ -214,57 +225,76 @@ public sealed class FixedWidthRecordWriter<T>
 
     private bool WriteRecord(FixedWidthStreamWriter writer, T record, int rowNumber)
     {
-        // Pre-allocate buffer for the entire record
-        Span<char> recordBuffer = RecordLength <= 256
-            ? stackalloc char[RecordLength]
-            : new char[RecordLength];
-
-        // Fill with default pad char
-        recordBuffer.Fill(options.DefaultPadChar);
-
-        // Write each field into the buffer
-        for (int i = 0; i < fields.Length; i++)
+        if (directWriter is not null && options.ValidationMode != ValidationMode.Strict)
         {
-            var field = fields[i];
-            var value = field.GetValue(record);
-
-            // Validate field value before writing
-            if (options.ValidationMode == ValidationMode.Strict && field.Validation is { HasAnyRule: true } rules)
-            {
-                List<ValidationError> validationErrors = [];
-                WriteValidationRunner.Validate(value, field.Name, rowNumber, i, rules, validationErrors);
-                if (validationErrors.Count > 0)
-                    throw new ValidationException(validationErrors);
-            }
-
-            try
-            {
-                WriteFieldToBuffer(recordBuffer, field, value);
-            }
-            catch (Exception ex) when (options.OnSerializeError is not null)
-            {
-                var context = new FixedWidthSerializeErrorContext
-                {
-                    Row = rowNumber,
-                    Column = i,
-                    MemberName = field.Name,
-                    SourceType = field.PropertyType,
-                    Value = value,
-                    Exception = ex
-                };
-
-                var action = options.OnSerializeError(context);
-                if (action == FixedWidthSerializeErrorAction.Throw)
-                    throw;
-                if (action == FixedWidthSerializeErrorAction.SkipRow)
-                    return false; // Don't write this row
-                // FixedWidthSerializeErrorAction.WriteEmpty: Already filled with pad chars
-            }
+            directWriter.WriteRecord(writer, record, options);
+            return true;
         }
 
-        // Write the complete record buffer
-        writer.WriteField(recordBuffer, RecordLength);
-        return true;
+        // Rent or stackalloc buffer for the entire record
+        char[]? rentedBuffer = null;
+        Span<char> recordBuffer = RecordLength <= 256
+            ? stackalloc char[RecordLength]
+            : (rentedBuffer = System.Buffers.ArrayPool<char>.Shared.Rent(RecordLength));
+
+        try
+        {
+            var recordSpan = recordBuffer[..RecordLength];
+
+            // Fill with default pad char
+            recordSpan.Fill(options.DefaultPadChar);
+
+            // Write each field into the buffer
+            for (int i = 0; i < fields.Length; i++)
+            {
+                var field = fields[i];
+                var value = field.GetValue(record);
+
+                // Validate field value before writing
+                if (options.ValidationMode == ValidationMode.Strict && field.Validation is { HasAnyRule: true } rules)
+                {
+                    List<ValidationError> validationErrors = [];
+                    WriteValidationRunner.Validate(value, field.Name, rowNumber, i, rules, validationErrors);
+                    if (validationErrors.Count > 0)
+                        throw new ValidationException(validationErrors);
+                }
+
+                try
+                {
+                    WriteFieldToBuffer(recordSpan, field, value);
+                }
+                catch (Exception ex) when (options.OnSerializeError is not null)
+                {
+                    var context = new FixedWidthSerializeErrorContext
+                    {
+                        Row = rowNumber,
+                        Column = i,
+                        MemberName = field.Name,
+                        SourceType = field.PropertyType,
+                        Value = value,
+                        Exception = ex
+                    };
+
+                    var action = options.OnSerializeError(context);
+                    if (action == FixedWidthSerializeErrorAction.Throw)
+                        throw;
+                    if (action == FixedWidthSerializeErrorAction.SkipRow)
+                        return false; // Don't write this row
+                    // FixedWidthSerializeErrorAction.WriteEmpty: Already filled with pad chars
+                }
+            }
+
+            // Write the complete record buffer
+            writer.WriteField(recordSpan, RecordLength);
+            return true;
+        }
+        finally
+        {
+            if (rentedBuffer is not null)
+            {
+                System.Buffers.ArrayPool<char>.Shared.Return(rentedBuffer);
+            }
+        }
     }
 
     private void WriteFieldToBuffer(Span<char> recordBuffer, FieldDefinition field, object? value)
@@ -569,6 +599,32 @@ public static partial class FixedWidthRecordWriterFactory
         // Fall back to reflection-based writer (cached)
         var key = (typeof(T), options);
         return (FixedWidthRecordWriter<T>)reflectionCache.GetOrAdd(key, _ => new FixedWidthRecordWriter<T>(options));
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, object> directWriters = new();
+
+    /// <summary>
+    /// Registers a strongly-typed direct source writer.
+    /// </summary>
+    public static void RegisterDirectWriter<T>(IFixedWidthSourceWriter<T> directWriter) where T : new()
+    {
+        ArgumentNullException.ThrowIfNull(directWriter);
+        directWriters[typeof(T)] = directWriter;
+    }
+
+    /// <summary>
+    /// Tries to get a registered direct source writer.
+    /// </summary>
+    public static bool TryGetDirectWriter<T>([NotNullWhen(true)] out IFixedWidthSourceWriter<T>? directWriter)
+    {
+        if (directWriters.TryGetValue(typeof(T), out var obj))
+        {
+            directWriter = (IFixedWidthSourceWriter<T>)obj;
+            return true;
+        }
+
+        directWriter = null;
+        return false;
     }
 
     /// <summary>

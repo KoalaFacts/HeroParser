@@ -33,6 +33,7 @@ public static class JsonLlmChunker
         var currentBatch = new List<string>();
         int startRow = 1;
         int currentRow = 0;
+        int currentTokens = 0;
 
         await foreach (var record in source)
         {
@@ -41,30 +42,48 @@ public static class JsonLlmChunker
 
             if (currentBatch.Count > 0)
             {
-                // Build proposed JSON array to check token count
-                string proposedJson = BuildJsonArray(currentBatch, recordJson);
-                int proposedTokens = tokenCounter(proposedJson);
+                // Estimate proposed tokens using a conservative 2 chars per token ratio
+                int estimatedTokens = currentTokens + (recordJson.Length + 2) / 2;
 
-                if (proposedTokens > options.MaxTokensPerChunk)
+                if (estimatedTokens > options.MaxTokensPerChunk)
                 {
-                    // Yield current chunk
-                    string currentJson = BuildJsonArray(currentBatch, null);
-                    int currentTokens = tokenCounter(currentJson);
+                    // Confirm exact token count
+                    string proposedJson = BuildJsonArray(currentBatch, recordJson);
+                    int proposedTokens = tokenCounter(proposedJson);
 
-                    yield return new LlmChunk
+                    if (proposedTokens > options.MaxTokensPerChunk)
                     {
-                        Content = currentJson,
-                        TokenCount = currentTokens,
-                        StartRow = startRow,
-                        EndRow = currentRow - 1
-                    };
+                        string currentJson = BuildJsonArray(currentBatch, null);
+                        int exactCurrentTokens = tokenCounter(currentJson);
 
-                    currentBatch.Clear();
-                    startRow = currentRow;
+                        yield return new LlmChunk
+                        {
+                            Content = currentJson,
+                            TokenCount = exactCurrentTokens,
+                            StartRow = startRow,
+                            EndRow = currentRow - 1
+                        };
+
+                        currentBatch.Clear();
+                        startRow = currentRow;
+                        currentTokens = 0;
+                    }
+                    else
+                    {
+                        currentTokens = proposedTokens;
+                    }
+                }
+                else
+                {
+                    currentTokens = estimatedTokens;
                 }
             }
 
             currentBatch.Add(recordJson);
+            if (currentBatch.Count == 1)
+            {
+                currentTokens = tokenCounter($"[{recordJson}]");
+            }
         }
 
         if (currentBatch.Count > 0)
@@ -102,6 +121,7 @@ public static class JsonLlmChunker
         var currentBatch = new List<string>();
         int startRow = 1;
         int currentRow = 0;
+        int currentTokens = 0;
 
         await foreach (var record in source)
         {
@@ -110,31 +130,48 @@ public static class JsonLlmChunker
 
             if (currentBatch.Count > 0)
             {
-                // Build proposed JSON array to check token count
-                // Proposed format: [r1,r2,...,rn,recordJson]
-                string proposedJson = BuildJsonArray(currentBatch, recordJson);
-                int proposedTokens = tokenCounter(proposedJson);
+                // Estimate proposed tokens using a conservative 2 chars per token ratio
+                int estimatedTokens = currentTokens + (recordJson.Length + 2) / 2;
 
-                if (proposedTokens > options.MaxTokensPerChunk)
+                if (estimatedTokens > options.MaxTokensPerChunk)
                 {
-                    // Yield current chunk
-                    string currentJson = BuildJsonArray(currentBatch, null);
-                    int currentTokens = tokenCounter(currentJson);
+                    // Confirm exact token count
+                    string proposedJson = BuildJsonArray(currentBatch, recordJson);
+                    int proposedTokens = tokenCounter(proposedJson);
 
-                    yield return new LlmChunk
+                    if (proposedTokens > options.MaxTokensPerChunk)
                     {
-                        Content = currentJson,
-                        TokenCount = currentTokens,
-                        StartRow = startRow,
-                        EndRow = currentRow - 1
-                    };
+                        string currentJson = BuildJsonArray(currentBatch, null);
+                        int exactCurrentTokens = tokenCounter(currentJson);
 
-                    currentBatch.Clear();
-                    startRow = currentRow;
+                        yield return new LlmChunk
+                        {
+                            Content = currentJson,
+                            TokenCount = exactCurrentTokens,
+                            StartRow = startRow,
+                            EndRow = currentRow - 1
+                        };
+
+                        currentBatch.Clear();
+                        startRow = currentRow;
+                        currentTokens = 0;
+                    }
+                    else
+                    {
+                        currentTokens = proposedTokens;
+                    }
+                }
+                else
+                {
+                    currentTokens = estimatedTokens;
                 }
             }
 
             currentBatch.Add(recordJson);
+            if (currentBatch.Count == 1)
+            {
+                currentTokens = tokenCounter($"[{recordJson}]");
+            }
         }
 
         if (currentBatch.Count > 0)

@@ -39,3 +39,20 @@ public class NonRequiredValueTypeRecord
     [TabularMap(Name = "Active")]
     public bool Active { get; set; }
 }
+
+[GenerateBinder]
+public class NullValueValidationTransaction
+{
+    [TabularMap(Name = "Id")]
+    public string TransactionId { get; set; } = "";
+
+    [TabularMap(Name = "Amount", Index = 1)]
+    [Validate(RangeMin = 10, RangeMax = 100000)]
+    public decimal Amount { get; set; }
+
+    [TabularMap(Name = "Currency", Index = 2)]
+    public string Currency { get; set; } = "";
+
+    [TabularMap(Name = "Reference", Index = 3)]
+    public string Reference { get; set; } = "";
+}

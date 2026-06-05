@@ -297,13 +297,26 @@ public sealed class FixedWidthWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        using var stringWriter = new StringWriter();
-        using var writer = new FixedWidthStreamWriter(stringWriter, options, leaveOpen: true);
         var recordWriter = GetRecordWriter(options);
+
+        // Pre-allocate capacity to eliminate StringBuilder resizing overhead
+        int capacity = 4096;
+        if (records is System.Collections.ICollection collection)
+        {
+            capacity = collection.Count * (recordWriter.RecordLength + Environment.NewLine.Length);
+        }
+        else if (records is IReadOnlyCollection<T> readOnlyCollection)
+        {
+            capacity = readOnlyCollection.Count * (recordWriter.RecordLength + Environment.NewLine.Length);
+        }
+
+        var sb = new StringBuilder(capacity);
+        using var stringWriter = new StringWriter(sb);
+        using var writer = new FixedWidthStreamWriter(stringWriter, options, leaveOpen: true);
         recordWriter.WriteRecords(writer, records);
         writer.Flush();
 
-        return stringWriter.ToString();
+        return sb.ToString();
     }
 
     /// <summary>

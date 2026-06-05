@@ -352,9 +352,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
 
     private char[] RentBuffer(int minimumLength)
     {
-        var rented = charPool.Rent(minimumLength);
-        Array.Clear(rented);
-        return rented;
+        return charPool.Rent(minimumLength);
     }
 
     private void ReturnBuffer(char[] toReturn)

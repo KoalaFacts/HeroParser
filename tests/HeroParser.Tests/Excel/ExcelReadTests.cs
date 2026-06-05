@@ -96,7 +96,7 @@ public class ExcelReadTests
         var binder = HeroParser.SeparatedValues.Reading.Binders.CsvRecordBinderFactory.GetCharBinder<SimpleProduct>();
         Assert.NotNull(binder);
         var binderTypeName = binder.GetType().Name;
-        Assert.Contains("CsvInlineCharBinder", binderTypeName);
+        Assert.Contains("CsvInlineCharSourceBinder", binderTypeName);
         Assert.DoesNotContain("CsvCharToByteBinderAdapter", binderTypeName);
     }
 }

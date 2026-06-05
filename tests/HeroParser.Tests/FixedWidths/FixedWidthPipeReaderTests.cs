@@ -466,7 +466,7 @@ public class FixedWidthPipeReaderTests
     {
         var descriptor = new PipeMappedRecordMap().BuildReadDescriptor();
         var binder = new FixedWidthDescriptorBinder<PipeMappedRecord>(descriptor);
-        var byteBinder = Assert.IsAssignableFrom<IFixedWidthByteBinder<PipeMappedRecord>>(binder);
+        var byteBinder = Assert.IsAssignableFrom<IFixedWidthByteSourceBinder<PipeMappedRecord>>(binder);
         var row = new FixedWidthByteSpanRow(
             Encoding.UTF8.GetBytes("0001Alice "),
             recordNumber: 1,

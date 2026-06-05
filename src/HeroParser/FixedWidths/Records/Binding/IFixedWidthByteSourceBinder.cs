@@ -1,4 +1,3 @@
-using HeroParser.FixedWidths;
 using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Records.Binding;
@@ -7,7 +6,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// Interface for fixed-width binders that operate directly on UTF-8 byte rows.
 /// </summary>
 /// <typeparam name="T">The record type to bind to.</typeparam>
-public interface IFixedWidthByteBinder<T> where T : new()
+public interface IFixedWidthByteSourceBinder<T> where T : new()
 {
     /// <summary>
     /// Binds a fixed-width UTF-8 row to a new record instance.

@@ -61,7 +61,7 @@ public static class FixedWidthRecordBinderFactory
     public static bool TryCreateDescriptorBinder<T>(
         CultureInfo? culture,
         IReadOnlyList<string>? nullValues,
-        out IFixedWidthBinder<T>? binder)
+        out IFixedWidthSourceBinder<T>? binder)
         where T : new()
     {
         if (TryGetDescriptor<T>(out var descriptor) && descriptor is not null)
@@ -81,7 +81,7 @@ public static class FixedWidthRecordBinderFactory
     /// <typeparam name="T">The record type the binder handles.</typeparam>
     /// <param name="factory">Factory that creates a binder given culture and null values.</param>
     public static void RegisterGeneratedBinder<T>(
-        Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthBinder<T>> factory)
+        Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthSourceBinder<T>> factory)
         where T : new()
     {
         ArgumentNullException.ThrowIfNull(factory);
@@ -92,7 +92,7 @@ public static class FixedWidthRecordBinderFactory
     /// Registers a source-generated UTF-8 byte binder factory for a record type.
     /// </summary>
     public static void RegisterGeneratedByteBinder<T>(
-        Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthByteBinder<T>> factory)
+        Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthByteSourceBinder<T>> factory)
         where T : new()
     {
         ArgumentNullException.ThrowIfNull(factory);
@@ -111,12 +111,12 @@ public static class FixedWidthRecordBinderFactory
     public static bool TryCreateGeneratedBinder<T>(
         CultureInfo? culture,
         IReadOnlyList<string>? nullValues,
-        out IFixedWidthBinder<T>? binder)
+        out IFixedWidthSourceBinder<T>? binder)
         where T : new()
     {
         if (generatedBinderFactories.TryGetValue(typeof(T), out var factory))
         {
-            binder = ((Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthBinder<T>>)factory)(culture, nullValues);
+            binder = ((Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthSourceBinder<T>>)factory)(culture, nullValues);
             return true;
         }
 
@@ -130,12 +130,12 @@ public static class FixedWidthRecordBinderFactory
     public static bool TryCreateGeneratedByteBinder<T>(
         CultureInfo? culture,
         IReadOnlyList<string>? nullValues,
-        out IFixedWidthByteBinder<T>? binder)
+        out IFixedWidthByteSourceBinder<T>? binder)
         where T : new()
     {
         if (generatedByteBinderFactories.TryGetValue(typeof(T), out var factory))
         {
-            binder = ((Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthByteBinder<T>>)factory)(culture, nullValues);
+            binder = ((Func<CultureInfo?, IReadOnlyList<string>?, IFixedWidthByteSourceBinder<T>>)factory)(culture, nullValues);
             return true;
         }
 

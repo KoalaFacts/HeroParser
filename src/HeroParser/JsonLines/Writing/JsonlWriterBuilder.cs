@@ -95,13 +95,89 @@ public sealed class JsonlWriterBuilder<T>
         OnError = onError
     };
 
+    /// <summary>Serializes records to an in-memory UTF-8 string using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public string ToText(IEnumerable<T> records, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+
+        int capacity = 4096;
+        if (records is System.Collections.ICollection collection)
+        {
+            capacity = collection.Count * 128;
+        }
+        else if (records is IReadOnlyCollection<T> readOnlyCollection)
+        {
+            capacity = readOnlyCollection.Count * 128;
+        }
+
+        using var stream = new MemoryStream(capacity);
+        WriteToStreamInternal(stream, records, leaveOpen: true);
+        return Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
+    }
+
+    /// <summary>Serializes records to a file using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public void ToFile(string path, IEnumerable<T> records, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        WriteToStreamInternal(stream, records, leaveOpen: false);
+    }
+
+    /// <summary>Serializes records to an existing stream using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public void ToStream(Stream stream, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, bool leaveOpen = true)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        WriteToStreamInternal(stream, records, leaveOpen);
+    }
+
+    /// <summary>Asynchronously serializes records to a file using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public async ValueTask ToFileAsync(string path, IAsyncEnumerable<T> records, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, FileOptions.Asynchronous);
+        await using var streamDisposal = stream.ConfigureAwait(false);
+        await WriteToStreamInternalAsync(stream, records, leaveOpen: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Asynchronously serializes records to an existing stream using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public ValueTask ToStreamAsync(Stream stream, IAsyncEnumerable<T> records, JsonTypeInfo<T> typeInfo, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        return WriteToStreamInternalAsync(stream, records, leaveOpen, cancellationToken);
+    }
+
     /// <summary>Serializes records to an in-memory UTF-8 string.</summary>
     [RequiresUnreferencedCode("JSONL serialization without WithTypeInfo uses reflection. Call WithTypeInfo for AOT/trimming support.")]
     [RequiresDynamicCode("JSONL serialization without WithTypeInfo uses runtime code generation.")]
     public string ToText(IEnumerable<T> records)
     {
         ArgumentNullException.ThrowIfNull(records);
-        using var stream = new MemoryStream();
+
+        int capacity = 4096;
+        if (records is System.Collections.ICollection collection)
+        {
+            capacity = collection.Count * 128;
+        }
+        else if (records is IReadOnlyCollection<T> readOnlyCollection)
+        {
+            capacity = readOnlyCollection.Count * 128;
+        }
+
+        using var stream = new MemoryStream(capacity);
         WriteToStreamInternal(stream, records, leaveOpen: true);
         return Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
     }

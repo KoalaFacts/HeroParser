@@ -14,7 +14,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
     private readonly JsonlLineReader lineReader;
     private readonly JsonlReadOptions options;
     private readonly JsonTypeInfo<T>? typeInfo;
-    private readonly Binders.IJsonlBinder<T>? binder;
+    private readonly Binders.IJsonlSourceBinder<byte, T>? binder;
     private bool enumerated;
     private bool disposed;
 
@@ -28,7 +28,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         this.options = options ?? JsonlReadOptions.Default;
         this.options.Validate();
         this.typeInfo = typeInfo;
-        Binders.JsonlRecordBinderFactory.TryGetBinder<T>(out binder);
+        Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out binder);
         lineReader = new JsonlLineReader(stream, this.options, leaveOpen);
     }
 
@@ -44,7 +44,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         this.options = options ?? JsonlReadOptions.Default;
         this.options.Validate();
         typeInfo = null;
-        Binders.JsonlRecordBinderFactory.TryGetBinder<T>(out binder);
+        Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out binder);
         lineReader = new JsonlLineReader(stream, this.options, leaveOpen);
     }
 
@@ -69,8 +69,9 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         long recordIndex = 0;
         int skipped = 0;
 
-        while (lineReader.TryReadLine(out ReadOnlySpan<byte> line, out long lineNumber))
+        while (lineReader.TryReadLine(out ReadOnlyMemory<byte> lineMemory, out long lineNumber))
         {
+            var line = lineMemory.Span;
             if (options.SkipEmptyLines && IsWhitespace(line))
                 continue;
 

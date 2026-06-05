@@ -71,6 +71,15 @@ internal static class JsonlPipeLineReader
                 yield break;
             }
 
+            if (buffer.Length > options.MaxLineSizeBytes)
+            {
+                reader.AdvanceTo(buffer.Start, buffer.End);
+                throw new JsonlException(
+                    JsonlErrorCode.LineTooLong,
+                    $"A single line exceeds the configured MaxLineSizeBytes of {options.MaxLineSizeBytes:N0} bytes.",
+                    lineNumber + 1);
+            }
+
             reader.AdvanceTo(buffer.Start, buffer.End);
         }
     }

@@ -46,6 +46,7 @@ public static class LlmChunker
         }
 
         var currentChunkBuilder = new StringBuilder();
+        var rowBuilder = new StringBuilder();
         int currentChunkTokens = 0;
         int startRow = 1;
         int currentRow = 0;
@@ -61,11 +62,19 @@ public static class LlmChunker
         {
             currentRow++;
 
-            // Format this row
-            string rowText = compiledTemplate != null
-                ? compiledTemplate.Evaluate(record) + "\n"
-                : FormatMarkdownRow(record, cache.Accessors) + "\n";
+            // Format this row using reusable rowBuilder
+            rowBuilder.Clear();
+            if (compiledTemplate != null)
+            {
+                compiledTemplate.Evaluate(rowBuilder, record);
+            }
+            else
+            {
+                FormatMarkdownRow(rowBuilder, record, cache.Accessors);
+            }
+            rowBuilder.Append('\n');
 
+            string rowText = rowBuilder.ToString();
             int rowTokens = tokenCounter(rowText);
 
             // Check if adding this row would overflow the current chunk budget
@@ -124,31 +133,54 @@ public static class LlmChunker
         }
     }
 
-    private static string FormatMarkdownRow<T>(T record, List<PropertyAccessor<T>> accessors)
+    private static void FormatMarkdownRow<T>(StringBuilder sb, T record, List<PropertyAccessor<T>> accessors)
     {
-        var sb = new StringBuilder();
         sb.Append("| ");
         for (int i = 0; i < accessors.Count; i++)
         {
             var value = accessors[i].Getter(record);
-            sb.Append(EscapeMarkdown(value));
+            EscapeMarkdown(sb, value);
             if (i < accessors.Count - 1)
             {
                 sb.Append(" | ");
             }
         }
         sb.Append(" |");
-        return sb.ToString();
     }
 
-    private static string EscapeMarkdown(object? val)
+    private static void EscapeMarkdown(StringBuilder sb, object? val)
     {
-        if (val == null) return string.Empty;
-        var str = val.ToString() ?? string.Empty;
+        if (val == null) return;
+        var str = val.ToString();
+        if (string.IsNullOrEmpty(str)) return;
+
         // Escape pipeline characters and collapse newlines for clean tables
-        return str.Replace("|", "\\|")
-                  .Replace("\r\n", " ")
-                  .Replace("\n", " ");
+        var span = str.AsSpan();
+        for (int i = 0; i < span.Length; i++)
+        {
+            char c = span[i];
+            if (c == '|')
+            {
+                sb.Append('\\');
+                sb.Append('|');
+            }
+            else if (c == '\r')
+            {
+                if (i + 1 < span.Length && span[i + 1] == '\n')
+                {
+                    i++;
+                }
+                sb.Append(' ');
+            }
+            else if (c == '\n')
+            {
+                sb.Append(' ');
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
     }
 
     private static int DefaultTokenCounter(string text)
@@ -259,14 +291,12 @@ public static class LlmChunker
             }
         }
 
-        public string Evaluate(T instance)
+        public void Evaluate(StringBuilder sb, T instance)
         {
-            var sb = new StringBuilder();
             foreach (var segment in segments)
             {
                 sb.Append(segment(instance));
             }
-            return sb.ToString();
         }
     }
 }

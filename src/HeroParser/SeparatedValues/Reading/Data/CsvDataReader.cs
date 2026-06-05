@@ -113,6 +113,57 @@ public sealed class CsvDataReader : DbDataReader
     public override bool NextResult() => false;
 
     /// <inheritdoc />
+    public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
+    {
+        EnsureNotClosed();
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+
+        if (hasPendingRow)
+        {
+            hasPendingRow = false;
+            hasCurrentRow = true;
+            return true;
+        }
+
+        if (!await AdvanceAsync(cancellationToken).ConfigureAwait(false))
+        {
+            hasCurrentRow = false;
+            return false;
+        }
+
+        ValidateRow(reader.Current);
+        hasCurrentRow = true;
+        return true;
+    }
+
+    /// <inheritdoc />
+    public override async Task<bool> IsDBNullAsync(int ordinal, CancellationToken cancellationToken)
+    {
+        EnsureNotClosed();
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        return IsDBNull(ordinal);
+    }
+
+    /// <inheritdoc />
+    public override async Task<T> GetFieldValueAsync<T>(int ordinal, CancellationToken cancellationToken)
+    {
+        EnsureNotClosed();
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        return await base.GetFieldValueAsync<T>(ordinal, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public override async ValueTask DisposeAsync()
+    {
+        if (closed)
+            return;
+
+        closed = true;
+        await reader.DisposeAsync().ConfigureAwait(false);
+        await base.DisposeAsync().ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public override string GetName(int ordinal)
     {
         EnsureInitialized();
@@ -475,6 +526,81 @@ public sealed class CsvDataReader : DbDataReader
         }
 
         BuildOrdinalMap();
+    }
+
+    private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
+    {
+        if (initialized)
+            return;
+
+        initialized = true;
+
+        if (options.HasHeaderRow)
+        {
+            if (!await AdvanceAsync(cancellationToken).ConfigureAwait(false))
+            {
+                fieldCount = columnNames.Length;
+                BuildOrdinalMap();
+                return;
+            }
+
+            var headerRow = reader.Current;
+            fieldCount = headerRow.ColumnCount;
+
+            if (columnNames.Length == 0)
+            {
+                columnNames = new string[fieldCount];
+                for (int i = 0; i < fieldCount; i++)
+                {
+                    columnNames[i] = headerRow.GetString(i);
+                }
+            }
+            else if (columnNames.Length != fieldCount)
+            {
+                throw new CsvException(
+                    CsvErrorCode.ParseError,
+                    $"Header contains {fieldCount} columns but ColumnNames defines {columnNames.Length}.",
+                    headerRow.LineNumber,
+                    0);
+            }
+        }
+        else if (columnNames.Length > 0)
+        {
+            fieldCount = columnNames.Length;
+        }
+
+        if (fieldCount == 0)
+        {
+            if (!await AdvanceAsync(cancellationToken).ConfigureAwait(false))
+            {
+                BuildOrdinalMap();
+                return;
+            }
+
+            fieldCount = reader.Current.ColumnCount;
+            columnNames = columnNames.Length > 0
+                ? columnNames
+                : CreateDefaultNames(fieldCount);
+
+            hasPendingRow = true;
+            hasAnyRow = true;
+            BuildOrdinalMap();
+            return;
+        }
+
+        if (await AdvanceAsync(cancellationToken).ConfigureAwait(false))
+        {
+            ValidateRow(reader.Current);
+            hasPendingRow = true;
+            hasAnyRow = true;
+        }
+
+        BuildOrdinalMap();
+    }
+
+    private async Task<bool> AdvanceAsync(CancellationToken cancellationToken)
+    {
+        return await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private void EnsureCurrentRow()

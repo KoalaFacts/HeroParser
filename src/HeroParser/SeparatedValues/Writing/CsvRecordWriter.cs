@@ -36,6 +36,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
     private readonly PropertyAccessor[] accessors;
     private readonly CsvWriteOptions writerOptions;
     private readonly bool needsEmptyColumnScan;
+    private readonly ICsvSourceWriter<T>? directWriter;
 
     // Reusable arrays to eliminate per-record allocations
     private readonly object?[] valuesBuffer;
@@ -53,6 +54,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         writerOptions = options ?? CsvWriteOptions.Default;
         accessors = propertyCache.GetOrAdd(typeof(T), BuildAccessors);
         needsEmptyColumnScan = ComputeNeedsEmptyColumnScan();
+        directWriter = CsvRecordWriterFactory.GetDirectWriter<T>();
 
         // Pre-allocate buffers based on accessor count
         int count = accessors.Length;
@@ -76,6 +78,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         writerOptions = options;
         accessors = InstantiateAccessors(templates);
         needsEmptyColumnScan = ComputeNeedsEmptyColumnScan();
+        directWriter = CsvRecordWriterFactory.GetDirectWriter<T>();
 
         // Pre-allocate buffers based on accessor count
         int count = accessors.Length;
@@ -405,6 +408,12 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             return;
         }
 
+        if (directWriter is not null && writerOptions.ValidationMode != ValidationMode.Strict)
+        {
+            directWriter.WriteRecord(writer, record);
+            return;
+        }
+
         // Use pre-allocated buffers instead of allocating per-record
         for (int i = 0; i < accessors.Length; i++)
         {
@@ -476,6 +485,12 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
         {
             // Write empty row for null record
             await writer.EndRowAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (directWriter is not null && writerOptions.ValidationMode != ValidationMode.Strict)
+        {
+            await directWriter.WriteRecordAsync(writer, record, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -1113,10 +1128,32 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
 public static partial class CsvRecordWriterFactory
 {
     private static readonly ConcurrentDictionary<Type, Func<CsvWriteOptions?, object>> generatedFactories = new();
+    private static readonly ConcurrentDictionary<Type, object> directWriters = new();
 
     static CsvRecordWriterFactory()
     {
         RegisterGeneratedWriters(generatedFactories);
+    }
+
+    /// <summary>
+    /// Registers a direct writer for a record type.
+    /// </summary>
+    public static void RegisterDirectWriter<T>(ICsvSourceWriter<T> directWriter)
+    {
+        ArgumentNullException.ThrowIfNull(directWriter);
+        directWriters[typeof(T)] = directWriter;
+    }
+
+    /// <summary>
+    /// Resolves a registered direct writer for a record type, if any.
+    /// </summary>
+    internal static ICsvSourceWriter<T>? GetDirectWriter<T>()
+    {
+        if (directWriters.TryGetValue(typeof(T), out var writerObj))
+        {
+            return (ICsvSourceWriter<T>)writerObj;
+        }
+        return null;
     }
 
     /// <summary>

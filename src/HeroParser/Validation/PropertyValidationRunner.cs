@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -9,6 +10,19 @@ namespace HeroParser.Validation;
 /// </summary>
 internal static class PropertyValidationRunner
 {
+    private static readonly ConcurrentDictionary<Regex, Regex> safeRegexCache = new();
+
+    private static Regex GetSafeRegex(Regex regex)
+    {
+        if (regex.MatchTimeout != Regex.InfiniteMatchTimeout)
+        {
+            return regex;
+        }
+
+        return safeRegexCache.GetOrAdd(regex, r =>
+            new Regex(r.ToString(), r.Options, TimeSpan.FromMilliseconds(1000)));
+    }
+
     /// <summary>
     /// Validates a field value against the given rules and appends any errors.
     /// Returns true if any validation errors were added (caller should exclude the row).
@@ -110,19 +124,48 @@ internal static class PropertyValidationRunner
             }
         }
 
-        if (pattern is { } regex && !regex.IsMatch(value))
+        if (pattern is { } regex)
         {
-            AddError(
-                errors,
-                propertyName,
-                rowNumber,
-                columnIndex,
-                columnName,
-                "Pattern",
-                $"Field '{propertyName}' value '{GetOrCreateRawValue(value, ref rawValue)}' does not match pattern '{regex}'.",
-                value,
-                ref rawValue);
-            hasErrors = true;
+            var safeRegex = GetSafeRegex(regex);
+            bool isMatch = false;
+            bool timedOut = false;
+            try
+            {
+                isMatch = safeRegex.IsMatch(value);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                timedOut = true;
+            }
+
+            if (timedOut)
+            {
+                AddError(
+                    errors,
+                    propertyName,
+                    rowNumber,
+                    columnIndex,
+                    columnName,
+                    "Pattern",
+                    $"Field '{propertyName}' pattern evaluation timed out.",
+                    value,
+                    ref rawValue);
+                hasErrors = true;
+            }
+            else if (!isMatch)
+            {
+                AddError(
+                    errors,
+                    propertyName,
+                    rowNumber,
+                    columnIndex,
+                    columnName,
+                    "Pattern",
+                    $"Field '{propertyName}' value '{GetOrCreateRawValue(value, ref rawValue)}' does not match pattern '{regex}'.",
+                    value,
+                    ref rawValue);
+                hasErrors = true;
+            }
         }
 
         return hasErrors;
@@ -193,9 +236,28 @@ internal static class PropertyValidationRunner
             }
         }
 
-        if (pattern is { } regex && !regex.IsMatch(value))
+        if (pattern is { } regex)
         {
-            AddError("Pattern", $"Field '{propertyName}' value '{value}' does not match pattern '{regex}'.");
+            var safeRegex = GetSafeRegex(regex);
+            bool isMatch = false;
+            bool timedOut = false;
+            try
+            {
+                isMatch = safeRegex.IsMatch(value);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                timedOut = true;
+            }
+
+            if (timedOut)
+            {
+                AddError("Pattern", $"Field '{propertyName}' pattern evaluation timed out.");
+            }
+            else if (!isMatch)
+            {
+                AddError("Pattern", $"Field '{propertyName}' value '{value}' does not match pattern '{regex}'.");
+            }
         }
 
         return hasErrors;

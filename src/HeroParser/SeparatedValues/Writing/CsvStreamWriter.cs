@@ -54,6 +54,11 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// </summary>
     public long CharsWritten => totalCharsWritten + bufferPosition;
 
+    /// <summary>
+    /// Gets the CultureInfo used by the writer.
+    /// </summary>
+    public CultureInfo Culture => options.Culture;
+
     // Default dangerous characters for CSV injection (always dangerous)
     // Note: '-' and '+' are handled separately with smart detection
     private static ReadOnlySpan<char> AlwaysDangerousChars => ['=', '@', '\t', '\r'];
@@ -112,7 +117,14 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// <param name="value">The field value to write.</param>
     public void WriteField(string? value)
     {
-        WriteField(value.AsSpan());
+        if (value is null)
+        {
+            WriteField([]);
+        }
+        else
+        {
+            WriteField(value.AsSpan());
+        }
     }
 
     /// <summary>
@@ -139,6 +151,190 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         isFirstFieldInRow = false;
 
         WriteFieldValue(value);
+    }
+
+    /// <summary>Writes an Int32 field directly to the CSV output without boxing.</summary>
+    public void WriteField(int value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            WriteFieldValue(value.ToString(null, culture).AsSpan());
+        }
+    }
+
+    /// <summary>Writes an Int64 field directly to the CSV output without boxing.</summary>
+    public void WriteField(long value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            WriteFieldValue(value.ToString(null, culture).AsSpan());
+        }
+    }
+
+    /// <summary>Writes a Double field directly to the CSV output without boxing.</summary>
+    public void WriteField(double value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            WriteFieldValue(value.ToString(null, culture).AsSpan());
+        }
+    }
+
+    /// <summary>Writes a Float field directly to the CSV output without boxing.</summary>
+    public void WriteField(float value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            WriteFieldValue(value.ToString(null, culture).AsSpan());
+        }
+    }
+
+    /// <summary>Writes a Decimal field directly to the CSV output without boxing.</summary>
+    public void WriteField(decimal value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            WriteFieldValue(value.ToString(null, culture).AsSpan());
+        }
+    }
+
+    /// <summary>Writes a Boolean field directly to the CSV output without boxing.</summary>
+    public void WriteField(bool value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        WriteUnquotedField(value ? "True".AsSpan() : "False".AsSpan());
+    }
+
+    /// <summary>Writes a DateTime field directly to the CSV output without boxing.</summary>
+    public void WriteField(DateTime value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, dateTimeFormat, culture))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            WriteFieldValue(value.ToString(dateTimeFormat, culture).AsSpan());
+        }
+    }
+
+    /// <summary>Writes a Guid field directly to the CSV output without boxing.</summary>
+    public void WriteField(Guid value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            WriteFieldValue(value.ToString(null, culture).AsSpan());
+        }
     }
 
     /// <summary>

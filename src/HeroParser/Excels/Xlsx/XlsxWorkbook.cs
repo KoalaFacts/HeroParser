@@ -87,6 +87,7 @@ internal sealed class XlsxWorkbook
         if (relsEntry is null)
             return [];
 
+        XlsxXml.ValidateEntrySize(relsEntry);
         var relationships = new Dictionary<string, string>(StringComparer.Ordinal);
 
         using var stream = relsEntry.Open();
@@ -111,6 +112,7 @@ internal sealed class XlsxWorkbook
         var workbookEntry = archive.GetEntry("xl/workbook.xml")
             ?? throw new ExcelException("Missing xl/workbook.xml in .xlsx archive.");
 
+        XlsxXml.ValidateEntrySize(workbookEntry);
         var sheets = new List<(string Name, string RId)>();
 
         using var stream = workbookEntry.Open();
@@ -121,8 +123,9 @@ internal sealed class XlsxWorkbook
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "sheet")
             {
                 var name = reader.GetAttribute("name");
-                // r:id attribute — namespace-aware lookup
-                var rId = reader.GetAttribute("id", "http://schemas.openxmlformats.org/officeDocument/2006/relationships");
+                // r:id attribute — namespace-aware lookup supporting both Transitional and Strict OpenXML namespaces
+                var rId = reader.GetAttribute("id", "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+                    ?? reader.GetAttribute("id", "http://purl.oclc.org/ooxml/officeDocument/relationships");
 
                 if (name is not null && rId is not null)
                     sheets.Add((name, rId));

@@ -28,20 +28,36 @@ public static class LlmRepair
             return string.Empty;
         }
 
-        // 1. Strip Markdown Block Wrappers (e.g., ```csv ... ```)
+        // 0. Sanitize unpaired UTF-16 surrogates to prevent tokenizer/parser crashes
+        text = SanitizeSurrogates(text);
+
+        // 1. Strip Markdown Block Wrappers (e.g., ```csv ... ```) and conversational text
         var trimmed = text.Trim();
-        if (trimmed.StartsWith("```"))
+        int blockStart = trimmed.IndexOf("```");
+        if (blockStart != -1)
         {
-            int index = trimmed.IndexOf('\n');
+            int index = trimmed.IndexOf('\n', blockStart);
             if (index != -1)
             {
-                trimmed = trimmed[(index + 1)..];
+                int blockEnd = trimmed.IndexOf("```", index);
+                trimmed = blockEnd != -1
+                    ? trimmed[index..blockEnd].Trim()
+                    : trimmed[index..].Trim();
             }
-            if (trimmed.EndsWith("```"))
+        }
+
+        // Trim trailing escapes on cutoff streams to prevent escaping the closing quote we append
+        if (escape.HasValue)
+        {
+            int escapeCount = 0;
+            while (trimmed.Length - 1 - escapeCount >= 0 && trimmed[trimmed.Length - 1 - escapeCount] == escape.Value)
             {
-                trimmed = trimmed[..^3];
+                escapeCount++;
             }
-            trimmed = trimmed.TrimEnd();
+            if (escapeCount % 2 != 0)
+            {
+                trimmed = trimmed[..^1];
+            }
         }
 
         // 2. Scan and repair unbalanced quotes (cutoff stream)
@@ -69,6 +85,62 @@ public static class LlmRepair
         }
 
         return trimmed;
+    }
+
+    /// <summary>
+    /// Replaces unpaired high or low UTF-16 surrogates in a string with the Unicode replacement character (\uFFFD) to prevent tokenizer or JSON serialization crashes.
+    /// </summary>
+    public static string SanitizeSurrogates(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        char[]? rented = null;
+        try
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (char.IsSurrogate(c))
+                {
+                    bool isUnpaired = false;
+                    if (char.IsHighSurrogate(c))
+                    {
+                        if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                        {
+                            i++; // Skip low surrogate as it forms a valid pair
+                        }
+                        else
+                        {
+                            isUnpaired = true;
+                        }
+                    }
+                    else // Must be low surrogate (since isSurrogate is true)
+                    {
+                        isUnpaired = true;
+                    }
+
+                    if (isUnpaired)
+                    {
+                        if (rented == null)
+                        {
+                            rented = System.Buffers.ArrayPool<char>.Shared.Rent(text.Length);
+                            text.CopyTo(0, rented, 0, text.Length);
+                        }
+                        rented[i] = '\uFFFD';
+                    }
+                }
+            }
+
+            return rented != null ? new string(rented, 0, text.Length) : text;
+        }
+        finally
+        {
+            if (rented != null)
+            {
+                System.Buffers.ArrayPool<char>.Shared.Return(rented);
+            }
+        }
     }
 
     /// <summary>

@@ -31,6 +31,7 @@ public sealed class LlmToolCallValidationException : Exception
 public static class SchemaMetadata
 {
     private static readonly ConcurrentDictionary<Type, string> schemas = new();
+    private static readonly ConcurrentDictionary<(string Pattern, int TimeoutMs), Regex> regexCache = new();
 
     /// <summary>
     /// Registers a JSON Schema for a specific type.
@@ -87,7 +88,15 @@ public static class SchemaMetadata
                     try
                     {
                         var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                        val = propType.IsEnum
+                        val = propType == typeof(Guid)
+                            ? (val is string sGuid ? Guid.Parse(sGuid) : val)
+                            : propType == typeof(DateTime)
+                            ? (val is string sDt ? DateTime.Parse(sDt, System.Globalization.CultureInfo.InvariantCulture) : Convert.ToDateTime(val))
+                            : propType == typeof(DateTimeOffset)
+                            ? (val is string sDto ? DateTimeOffset.Parse(sDto, System.Globalization.CultureInfo.InvariantCulture) : val)
+                            : propType == typeof(TimeSpan)
+                            ? (val is string sTs ? TimeSpan.Parse(sTs, System.Globalization.CultureInfo.InvariantCulture) : val)
+                            : propType.IsEnum
                             ? (val is string strVal
                                 ? Enum.Parse(propType, strVal, ignoreCase: true)
                                 : Enum.ToObject(propType, Convert.ChangeType(val, Enum.GetUnderlyingType(propType))))
@@ -156,9 +165,9 @@ public static class SchemaMetadata
                     // 7. Pattern validation
                     if (!string.IsNullOrEmpty(validate.Pattern) && finalVal is string sPat)
                     {
-                        var regex = validate.PatternTimeoutMs > 0
-                            ? new Regex(validate.Pattern, RegexOptions.None, TimeSpan.FromMilliseconds(validate.PatternTimeoutMs))
-                            : new Regex(validate.Pattern);
+                        var timeoutMs = validate.PatternTimeoutMs > 0 ? validate.PatternTimeoutMs : 1000;
+                        var key = (validate.Pattern, timeoutMs);
+                        var regex = regexCache.GetOrAdd(key, k => new Regex(k.Pattern, RegexOptions.None, TimeSpan.FromMilliseconds(k.TimeoutMs)));
 
                         if (!regex.IsMatch(sPat))
                         {

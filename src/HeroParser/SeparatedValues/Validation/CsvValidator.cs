@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using System.Text;
+using System.Runtime.InteropServices;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Reading.Rows;
@@ -29,21 +32,6 @@ public static class CsvValidator
     /// <param name="data">The CSV data to validate.</param>
     /// <param name="options">Validation options. If null, default options are used.</param>
     /// <returns>A validation result containing any errors found.</returns>
-    /// <example>
-    /// <code>
-    /// var options = new CsvValidationOptions
-    /// {
-    ///     RequiredHeaders = new[] { "Name", "Age", "Email" },
-    ///     ExpectedColumnCount = 3
-    /// };
-    /// var result = CsvValidator.Validate(csvData, options);
-    /// if (!result.IsValid)
-    /// {
-    ///     foreach (var error in result.Errors)
-    ///         Console.WriteLine($"Row {error.RowNumber}: {error.Message}");
-    /// }
-    /// </code>
-    /// </example>
     public static CsvValidationResult Validate(string data, CsvValidationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -88,7 +76,9 @@ public static class CsvValidator
         {
             try
             {
-                delimiter = CsvDelimiterDetector.DetectDelimiter(data);
+                delimiter = options.ExpectedColumnCount == 1
+                    ? ','
+                    : CsvDelimiterDetector.DetectDelimiter(data);
             }
             catch (InvalidOperationException ex)
             {
@@ -119,10 +109,10 @@ public static class CsvValidator
         return ValidateStructure(data, parseOptions, options, errors);
     }
 
-    // Maximum size of UTF-8 input accepted by the byte-overload of Validate. The overload must
-    // fully decode the input into UTF-16 before parsing, so the worst-case heap allocation is
-    // 2 * this value. Callers with larger inputs should use a stream-based validation entry point.
-    internal const int MAX_UTF8_INPUT_BYTES = 16 * 1024 * 1024;
+    /// <summary>
+    /// The maximum size of UTF-8 input accepted for in-memory validation.
+    /// </summary>
+    public const int MAX_UTF8_INPUT_BYTES = 16 * 1024 * 1024;
 
     /// <summary>
     /// Validates UTF-8 encoded CSV data according to the specified options.
@@ -130,7 +120,6 @@ public static class CsvValidator
     /// <param name="data">The CSV data to validate (UTF-8).</param>
     /// <param name="options">Validation options. If null, default options are used.</param>
     /// <returns>A validation result containing any errors found.</returns>
-    /// <exception cref="ArgumentException">The input exceeds the maximum supported size.</exception>
     public static CsvValidationResult Validate(ReadOnlySpan<byte> data, CsvValidationOptions? options = null)
     {
         if (data.Length > MAX_UTF8_INPUT_BYTES)
@@ -140,22 +129,75 @@ public static class CsvValidator
                 "Use a stream-based validation API for larger inputs.",
                 nameof(data));
         }
+        options ??= new CsvValidationOptions();
+        var errors = new List<CsvValidationError>();
 
-        // Decode UTF-8 to UTF-16 for validation
-        var charCount = Encoding.UTF8.GetCharCount(data);
-        Span<char> chars = charCount <= 8192
-            ? stackalloc char[charCount]
-            : new char[charCount];
+        // Check for empty data
+        if (data.IsEmpty || IsWhiteSpaceOnly(data))
+        {
+            if (!options.AllowEmptyFile)
+            {
+                errors.Add(new CsvValidationError
+                {
+                    ErrorType = CsvValidationErrorType.EmptyFile,
+                    Message = "CSV file is empty"
+                });
+            }
 
-        Encoding.UTF8.GetChars(data, chars);
-        return Validate(chars, options);
+            return new CsvValidationResult
+            {
+                Errors = errors,
+                TotalRows = 0,
+                ColumnCount = 0,
+                Delimiter = options.Delimiter ?? ','
+            };
+        }
+
+        // Detect delimiter if not specified
+        char delimiter = options.Delimiter ?? ',';
+        if (!options.Delimiter.HasValue)
+        {
+            try
+            {
+                delimiter = options.ExpectedColumnCount == 1
+                    ? ','
+                    : CsvDelimiterDetector.DetectDelimiter(data);
+            }
+            catch (InvalidOperationException ex)
+            {
+                errors.Add(new CsvValidationError
+                {
+                    ErrorType = CsvValidationErrorType.DelimiterDetectionFailed,
+                    Message = $"Could not detect delimiter: {ex.Message}"
+                });
+
+                return new CsvValidationResult
+                {
+                    Errors = errors,
+                    TotalRows = 0,
+                    ColumnCount = 0,
+                    Delimiter = delimiter
+                };
+            }
+        }
+
+        // Create parse options
+        var parseOptions = options.GetEffectiveParseOptions();
+        if (!options.Delimiter.HasValue)
+        {
+            parseOptions = parseOptions with { Delimiter = delimiter };
+        }
+
+        // Validate the CSV structure directly without decoding first
+        return ValidateStructure(data, parseOptions, options, errors);
     }
 
-    private static CsvValidationResult ValidateStructure(
-        ReadOnlySpan<char> data,
+    private static CsvValidationResult ValidateStructure<T>(
+        ReadOnlySpan<T> data,
         CsvReadOptions parseOptions,
         CsvValidationOptions validationOptions,
         List<CsvValidationError> errors)
+        where T : unmanaged, IEquatable<T>
     {
         var headers = new List<string>();
         int totalRows = 0;
@@ -164,7 +206,7 @@ public static class CsvValidator
 
         try
         {
-            using var reader = new CsvRowReader<char>(data, parseOptions);
+            using var reader = new CsvRowReader<T>(data, parseOptions);
 
             // Skip initial rows if configured
             for (int i = 0; i < validationOptions.SkipRows && reader.MoveNext(); i++)
@@ -182,7 +224,7 @@ public static class CsvValidator
                 // Extract header names
                 for (int i = 0; i < headerRow.ColumnCount; i++)
                 {
-                    headers.Add(headerRow[i].ToString());
+                    headers.Add(headerRow.GetString(i));
                 }
 
                 // Check required headers
@@ -247,7 +289,7 @@ public static class CsvValidator
                 }
 
                 // Check row count limit
-                if (totalRows > validationOptions.MaxRows)
+                if (validationOptions.MaxRows > 0 && totalRows > validationOptions.MaxRows)
                 {
                     errors.Add(new CsvValidationError
                     {
@@ -294,12 +336,26 @@ public static class CsvValidator
         };
     }
 
-    private static bool IsWhiteSpaceOnly(ReadOnlySpan<char> data)
+    private static bool IsWhiteSpaceOnly<T>(ReadOnlySpan<T> data) where T : unmanaged, IEquatable<T>
     {
-        for (int i = 0; i < data.Length; i++)
+        if (typeof(T) == typeof(char))
         {
-            if (!char.IsWhiteSpace(data[i]))
-                return false;
+            var chars = MemoryMarshal.Cast<T, char>(data);
+            for (int i = 0; i < chars.Length; i++)
+            {
+                if (!char.IsWhiteSpace(chars[i]))
+                    return false;
+            }
+        }
+        else if (typeof(T) == typeof(byte))
+        {
+            var bytes = MemoryMarshal.Cast<T, byte>(data);
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                byte b = bytes[i];
+                if (b != (byte)' ' && b != (byte)'\t' && b != (byte)'\r' && b != (byte)'\n')
+                    return false;
+            }
         }
         return true;
     }

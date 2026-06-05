@@ -3,11 +3,116 @@ using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace HeroParser.JsonLines.Reading;
 
 public sealed partial class JsonlRecordReaderBuilder<T>
 {
+    /// <summary>
+    /// Reads records from a JSONL string using a <see cref="JsonTypeInfo{T}"/> for AOT-safe deserialization.
+    /// </summary>
+    public JsonlRecordReader<T> FromText(string jsonl, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(jsonl);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        byte[] utf8 = Encoding.UTF8.GetBytes(jsonl);
+        return CreateReader(new MemoryStream(utf8, writable: false), leaveOpen: false);
+    }
+
+    /// <summary>
+    /// Reads records from a JSONL file using a <see cref="JsonTypeInfo{T}"/> for AOT-safe deserialization.
+    /// </summary>
+    public JsonlRecordReader<T> FromFile(string path, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return CreateReader(stream, leaveOpen: false);
+    }
+
+    /// <summary>
+    /// Reads records from a UTF-8 JSONL stream using a <see cref="JsonTypeInfo{T}"/> for AOT-safe deserialization.
+    /// </summary>
+    public JsonlRecordReader<T> FromStream(Stream stream, JsonTypeInfo<T> typeInfo, bool leaveOpen = true)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        return CreateReader(stream, leaveOpen);
+    }
+
+    /// <summary>
+    /// Asynchronously reads records from a JSONL file without loading the entire file into memory using a <see cref="JsonTypeInfo{T}"/> for AOT-safe deserialization.
+    /// </summary>
+    public async IAsyncEnumerable<T> FromFileAsync(
+        string path,
+        JsonTypeInfo<T> typeInfo,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+
+        FileStream stream = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var streamDisposal = stream.ConfigureAwait(false);
+
+        PipeReader pipe = PipeReader.Create(stream);
+        try
+        {
+            await foreach (T record in EnumeratePipeAsync(pipe, cancellationToken).ConfigureAwait(false))
+                yield return record;
+        }
+        finally
+        {
+            await pipe.CompleteAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously reads records from a stream without loading the entire stream into memory using a <see cref="JsonTypeInfo{T}"/> for AOT-safe deserialization.
+    /// </summary>
+    public async IAsyncEnumerable<T> FromStreamAsync(
+        Stream stream,
+        JsonTypeInfo<T> typeInfo,
+        bool leaveOpen = true,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+
+        PipeReader pipe = PipeReader.Create(stream, new StreamPipeReaderOptions(leaveOpen: leaveOpen));
+        try
+        {
+            await foreach (T record in EnumeratePipeAsync(pipe, cancellationToken).ConfigureAwait(false))
+                yield return record;
+        }
+        finally
+        {
+            await pipe.CompleteAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously reads records from a <see cref="PipeReader"/> using a <see cref="JsonTypeInfo{T}"/> for AOT-safe deserialization.
+    /// </summary>
+    public IAsyncEnumerable<T> FromPipeReaderAsync(PipeReader reader, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        return EnumeratePipeAsync(reader, cancellationToken);
+    }
+
     /// <summary>
     /// Reads records from a JSONL string.
     /// </summary>
@@ -119,7 +224,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
         long recordIndex = 0;
         int skipped = 0;
 
-        Binders.JsonlRecordBinderFactory.TryGetBinder<T>(out var binder);
+        Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out var binder);
 
         await foreach (JsonlLine line in JsonlPipeLineReader.ReadLinesAsync(reader, options, cancellationToken).ConfigureAwait(false))
         {

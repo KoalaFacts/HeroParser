@@ -51,7 +51,15 @@ Measures sync writing throughput and memory allocations under `.NET 10.0` compar
 
 ---
 
-## 3. Core Architectural Pillars & Memory Profile
+## 3. Write-Path Capacity Pre-allocation Optimization (ToText Facades)
+
+To eliminate GC allocations and backing buffer copy-doubling cycles when generating strings in memory, we implement backing capacity pre-allocation when writing collections:
+- **CSV & Fixed-Width (`ToText`)**: Uses pre-allocated backing `StringBuilder` sizes based on estimated record counts. Delivers **35% to 64% throughput improvements** depending on column count and record volume.
+- **JSONL (`ToText`)**: Uses pre-allocated backing `MemoryStream` sizes (`count * 128`). Delivers up to **1.9x speedup** on 100k records (taking only **17.01 ms** vs **32.73 ms** for standard reflection-based writing) with highly stable, predictable memory footprints.
+
+---
+
+## 4. Core Architectural Pillars & Memory Profile
 
 - **Allocation-Free Hot Path**: HeroParser maintains a fixed allocation of **only 112 bytes** in its reading path, regardless of column counts or row counts, representing a **97% memory reduction** compared to Sep and **99.7% reduction** compared to Sylvan.
 - **AVX-512 & AVX2 Quote-Aware SIMD**: Uses branchless PCLMULQDQ carry-less multiplication to mask quotes at maximum hardware throughput.

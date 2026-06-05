@@ -12,7 +12,7 @@ namespace HeroParser.SeparatedValues.Reading.Binders;
 /// <remarks>
 /// Implemented by both reflection-based, descriptor-based, and source-generated binders.
 /// </remarks>
-public interface ICsvBinder<TElement, T>
+public interface ICsvSourceBinder<TElement, T>
     where TElement : unmanaged, IEquatable<TElement>
     where T : new()
 {

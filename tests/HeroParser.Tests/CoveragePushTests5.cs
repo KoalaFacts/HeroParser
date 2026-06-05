@@ -235,6 +235,7 @@ public class CoveragePushTests5
         Assert.Throws<ValidationException>(() => Csv.WriteToText(rows, options: new CsvWriteOptions { ValidationMode = ValidationMode.Strict }));
     }
 
+
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task RecordWriter_Async_Validation_Lenient()
@@ -410,7 +411,6 @@ public class RequiredFieldRow
     public string? Name { get; set; }
 }
 
-// No [GenerateBinder] → reflection write path.
 public class ReflectionWriteRow
 {
     public string? Name { get; set; }

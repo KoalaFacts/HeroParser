@@ -319,10 +319,25 @@ public static class CsvDelimiterDetector
     private static int CountOccurrences(ReadOnlySpan<char> data, char character)
     {
         int count = 0;
+        bool insideQuotes = false;
         for (int i = 0; i < data.Length; i++)
         {
-            if (data[i] == character)
+            char c = data[i];
+            if (c == '"')
+            {
+                if (i + 1 < data.Length && data[i + 1] == '"')
+                {
+                    i++;
+                }
+                else
+                {
+                    insideQuotes = !insideQuotes;
+                }
+            }
+            else if (c == character && !insideQuotes)
+            {
                 count++;
+            }
         }
         return count;
     }

@@ -16,7 +16,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// Binds fixed-width row data to typed record instances.
 /// </summary>
 /// <typeparam name="T">The record type to bind to.</typeparam>
-internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T : new()
+internal sealed class FixedWidthRecordBinder<T> : IFixedWidthSourceBinder<T> where T : new()
 {
     private static readonly ConcurrentDictionary<Type, List<BindingTemplate>> bindingCache = new();
 
@@ -269,7 +269,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// </summary>
     public static FixedWidthReadResult<T> Bind(
         FixedWidthCharSpanReader reader,
-        IFixedWidthBinder<T> binder,
+        IFixedWidthSourceBinder<T> binder,
         IProgress<FixedWidthProgress>? progress = null,
         int progressIntervalRows = 1000,
         ValidationMode validationMode = ValidationMode.Strict)
@@ -340,7 +340,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// </summary>
     internal static async IAsyncEnumerable<T> BindAsync(
         FixedWidthPipeSequenceReader reader,
-        IFixedWidthByteBinder<T> binder,
+        IFixedWidthByteSourceBinder<T> binder,
         IProgress<FixedWidthProgress>? progress = null,
         int progressIntervalRows = 1000,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -415,7 +415,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
     /// </summary>
     internal static async IAsyncEnumerable<T> BindAsync(
         FixedWidthPipeSequenceReader reader,
-        IFixedWidthBinder<T> binder,
+        IFixedWidthSourceBinder<T> binder,
         FixedWidthReadOptions options,
         Encoding encoding,
         IProgress<FixedWidthProgress>? progress = null,
@@ -426,7 +426,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
         ArgumentNullException.ThrowIfNull(binder);
         ArgumentNullException.ThrowIfNull(encoding);
 
-        if (FixedWidthUtf8BindingHelper.IsUtf8Encoding(encoding) && binder is IFixedWidthByteBinder<T> byteBinder)
+        if (FixedWidthUtf8BindingHelper.IsUtf8Encoding(encoding) && binder is IFixedWidthByteSourceBinder<T> byteBinder)
         {
             await foreach (var record in BindAsync(
                 reader,
@@ -530,7 +530,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
 
     private static List<T> BindWithTypedBinder(
         FixedWidthCharSpanReader reader,
-        IFixedWidthBinder<T> binder,
+        IFixedWidthSourceBinder<T> binder,
         int estimatedCapacity,
         IProgress<FixedWidthProgress>? progress,
         int progressIntervalRows,
@@ -617,7 +617,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthBinder<T> where T :
 
     private static void ForEachWithTypedBinder(
         FixedWidthCharSpanReader reader,
-        IFixedWidthBinder<T> binder,
+        IFixedWidthSourceBinder<T> binder,
         Action<T> callback)
     {
         var instance = new T();
@@ -1081,8 +1081,7 @@ internal static class ConverterFactory
             }
 
             // Try by name (case-insensitive)
-            var name = new string(span);
-            if (Enum.TryParse(enumType, name, ignoreCase: true, out var result))
+            if (Enum.TryParse(enumType, span, ignoreCase: true, out var result))
             {
                 value = result;
                 return true;

@@ -46,7 +46,7 @@ public static partial class Jsonl
     [RequiresDynamicCode("JSONL deserialization without a JsonTypeInfo<T> uses runtime code generation.")]
     public static IEnumerable<T> DeserializeRecordsFromBytes<T>(ReadOnlyMemory<byte> utf8, JsonlReadOptions? options = null)
     {
-        var stream = new MemoryStream(utf8.ToArray(), writable: false);
+        var stream = new ReadOnlyMemoryStream(utf8);
         return EnumerateAndDispose(new JsonlRecordReader<T>(stream, options));
     }
 
@@ -56,7 +56,7 @@ public static partial class Jsonl
     public static IEnumerable<T> DeserializeRecordsFromBytes<T>(ReadOnlyMemory<byte> utf8, JsonTypeInfo<T> typeInfo, JsonlReadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(typeInfo);
-        var stream = new MemoryStream(utf8.ToArray(), writable: false);
+        var stream = new ReadOnlyMemoryStream(utf8);
         return EnumerateAndDispose(new JsonlRecordReader<T>(stream, typeInfo, options));
     }
 
@@ -77,4 +77,76 @@ public static partial class Jsonl
     /// Provides a <see cref="JsonSerializerOptions"/> tuned for permissive JSONL parsing (case-insensitive properties).
     /// </summary>
     internal static JsonSerializerOptions DefaultSerializerOptions { get; } = new(JsonSerializerDefaults.Web);
+
+    private sealed class ReadOnlyMemoryStream : Stream
+    {
+        private readonly ReadOnlyMemory<byte> memory;
+        private int position;
+
+        public ReadOnlyMemoryStream(ReadOnlyMemory<byte> memory)
+        {
+            this.memory = memory;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => true;
+        public override bool CanWrite => false;
+        public override long Length => memory.Length;
+
+        public override long Position
+        {
+            get => position;
+            set
+            {
+                if (value < 0 || value > memory.Length)
+                    throw new ArgumentOutOfRangeException(nameof(value));
+                position = (int)value;
+            }
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int remaining = memory.Length - position;
+            if (remaining <= 0)
+                return 0;
+
+            int toRead = Math.Min(count, remaining);
+            memory.Span.Slice(position, toRead).CopyTo(buffer.AsSpan(offset, toRead));
+            position += toRead;
+            return toRead;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            int remaining = memory.Length - position;
+            if (remaining <= 0)
+                return 0;
+
+            int toRead = Math.Min(buffer.Length, remaining);
+            memory.Span.Slice(position, toRead).CopyTo(buffer[..toRead]);
+            position += toRead;
+            return toRead;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            long newPos = origin switch
+            {
+                SeekOrigin.Begin => offset,
+                SeekOrigin.Current => position + offset,
+                SeekOrigin.End => memory.Length + offset,
+                _ => throw new ArgumentException("Invalid seek origin.", nameof(origin))
+            };
+
+            if (newPos < 0 || newPos > memory.Length)
+                throw new ArgumentOutOfRangeException(nameof(offset));
+
+            position = (int)newPos;
+            return position;
+        }
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() { }
+    }
 }

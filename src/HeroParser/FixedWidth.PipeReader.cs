@@ -98,6 +98,12 @@ public static partial class FixedWidth
 
             if (current == (byte)'\r')
             {
+                if (reader.Remaining == 0 && !isCompleted)
+                {
+                    rowData = default;
+                    return false;
+                }
+
                 long delimiterLength = 1;
                 if (reader.IsNext((byte)'\n', advancePast: true))
                 {

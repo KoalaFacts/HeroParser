@@ -118,6 +118,90 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
+    /// Writes an integer value with the specified width without boxing.
+    /// </summary>
+    public void WriteField(int value, int width, FieldAlignment? alignment = null, char? padChar = null, string? format = null)
+    {
+        ThrowIfDisposed();
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        var align = alignment ?? defaultAlignment;
+        var pad = padChar ?? defaultPadChar;
+        WriteSpanFormattableDirectly(value, width, align, pad, format ?? numberFormat);
+    }
+
+    /// <summary>
+    /// Writes a long value with the specified width without boxing.
+    /// </summary>
+    public void WriteField(long value, int width, FieldAlignment? alignment = null, char? padChar = null, string? format = null)
+    {
+        ThrowIfDisposed();
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        var align = alignment ?? defaultAlignment;
+        var pad = padChar ?? defaultPadChar;
+        WriteSpanFormattableDirectly(value, width, align, pad, format ?? numberFormat);
+    }
+
+    /// <summary>
+    /// Writes a double value with the specified width without boxing.
+    /// </summary>
+    public void WriteField(double value, int width, FieldAlignment? alignment = null, char? padChar = null, string? format = null)
+    {
+        ThrowIfDisposed();
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        var align = alignment ?? defaultAlignment;
+        var pad = padChar ?? defaultPadChar;
+        WriteSpanFormattableDirectly(value, width, align, pad, format ?? numberFormat);
+    }
+
+    /// <summary>
+    /// Writes a decimal value with the specified width without boxing.
+    /// </summary>
+    public void WriteField(decimal value, int width, FieldAlignment? alignment = null, char? padChar = null, string? format = null)
+    {
+        ThrowIfDisposed();
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        var align = alignment ?? defaultAlignment;
+        var pad = padChar ?? defaultPadChar;
+        WriteSpanFormattableDirectly(value, width, align, pad, format ?? numberFormat);
+    }
+
+    /// <summary>
+    /// Writes a boolean value with the specified width without boxing.
+    /// </summary>
+    public void WriteField(bool value, int width, FieldAlignment? alignment = null, char? padChar = null)
+    {
+        ThrowIfDisposed();
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        var align = alignment ?? defaultAlignment;
+        var pad = padChar ?? defaultPadChar;
+        WriteFieldValue(value ? "True".AsSpan() : "False".AsSpan(), width, align, pad);
+    }
+
+    /// <summary>
+    /// Writes a DateTime value with the specified width without boxing.
+    /// </summary>
+    public void WriteField(DateTime value, int width, FieldAlignment? alignment = null, char? padChar = null, string? format = null)
+    {
+        ThrowIfDisposed();
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        var align = alignment ?? defaultAlignment;
+        var pad = padChar ?? defaultPadChar;
+        WriteSpanFormattableDirectly(value, width, align, pad, format ?? dateTimeFormat);
+    }
+
+    /// <summary>
+    /// Writes a Guid value with the specified width without boxing.
+    /// </summary>
+    public void WriteField(Guid value, int width, FieldAlignment? alignment = null, char? padChar = null, string? format = null)
+    {
+        ThrowIfDisposed();
+        if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        var align = alignment ?? defaultAlignment;
+        var pad = padChar ?? defaultPadChar;
+        WriteSpanFormattableDirectly(value, width, align, pad, format);
+    }
+
+    /// <summary>
     /// Writes a formatted value with the specified width.
     /// </summary>
     /// <param name="value">The value to write.</param>
@@ -513,9 +597,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
 
     private char[] RentBuffer(int minimumLength)
     {
-        var rented = charPool.Rent(minimumLength);
-        Array.Clear(rented);
-        return rented;
+        return charPool.Rent(minimumLength);
     }
 
     private void ReturnBuffer(char[] toReturn)

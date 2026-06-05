@@ -63,8 +63,9 @@ public sealed class JsonlDataReader : DbDataReader
         currentDoc?.Dispose();
         currentDoc = null;
 
-        while (lineReader.TryReadLine(out ReadOnlySpan<byte> line, out long ln))
+        while (lineReader.TryReadLine(out ReadOnlyMemory<byte> lineMemory, out long ln))
         {
+            var line = lineMemory.Span;
             lineNumber = ln;
 
             if (readOptions.SkipEmptyLines && IsAllWhitespace(line))
@@ -79,7 +80,7 @@ public sealed class JsonlDataReader : DbDataReader
             JsonDocument doc;
             try
             {
-                doc = JsonDocument.Parse(line.ToArray());
+                doc = JsonDocument.Parse(lineMemory);
             }
             catch (Exception ex)
             {

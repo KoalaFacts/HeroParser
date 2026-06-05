@@ -26,4 +26,29 @@ internal static class XlsxXml
         MaxCharactersInDocument = MAX_CHARACTERS_IN_DOCUMENT,
         MaxCharactersFromEntities = MAX_CHARACTERS_FROM_ENTITIES
     };
+
+    /// <summary>
+    /// Zip-bomb mitigation: rejects entries whose decompressed size or compression ratio exceeds safe limits.
+    /// </summary>
+    internal static void ValidateEntrySize(System.IO.Compression.ZipArchiveEntry entry)
+    {
+        const long MAX_ENTRY_DECOMPRESSED_BYTES = 512L * 1024 * 1024; // 512 MB
+        const int MAX_COMPRESSION_RATIO = 200;
+        const long RATIO_CHECK_MIN_COMPRESSED_BYTES = 1024;
+
+        if (entry.Length > MAX_ENTRY_DECOMPRESSED_BYTES)
+        {
+            throw new HeroParser.Excels.Core.ExcelException(
+                $"Refusing to open .xlsx entry '{entry.FullName}': declared uncompressed size " +
+                $"{entry.Length} exceeds limit of {MAX_ENTRY_DECOMPRESSED_BYTES} bytes (possible zip bomb).");
+        }
+
+        if (entry.CompressedLength >= RATIO_CHECK_MIN_COMPRESSED_BYTES
+            && entry.Length / entry.CompressedLength > MAX_COMPRESSION_RATIO)
+        {
+            throw new HeroParser.Excels.Core.ExcelException(
+                $"Refusing to open .xlsx entry '{entry.FullName}': compression ratio " +
+                $"{entry.Length}/{entry.CompressedLength} exceeds {MAX_COMPRESSION_RATIO}:1 (possible zip bomb).");
+        }
+    }
 }

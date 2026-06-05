@@ -10,7 +10,7 @@ namespace HeroParser.FixedWidths.Records.Binding;
 /// High-performance binder that uses pre-compiled property descriptors.
 /// </summary>
 /// <typeparam name="T">The record type.</typeparam>
-public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T>, IFixedWidthByteBinder<T> where T : new()
+public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, IFixedWidthByteSourceBinder<T> where T : new()
 {
     private readonly FixedWidthRecordDescriptor<T> descriptor;
     private readonly CultureInfo culture;
@@ -65,22 +65,27 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T>, IFixed
             var field = row.GetField(prop.Start, prop.Length, prop.PadChar, prop.Alignment);
             var span = field.CharSpan;
 
-            if (nullVals is null || !IsNullValue(span, nullVals))
-            {
-                if (prop.IsNotNull && (span.IsEmpty || span.Trim().IsEmpty))
-                {
-                    hasErrors |= AddValidationError(
-                        errors,
-                        prop.Name,
-                        row.RecordNumber,
-                        prop.Start,
-                        columnName: null,
-                        "NotNull",
-                        "Value is required",
-                        new string(span));
-                    continue;
-                }
+            bool isNull = nullVals is not null && IsNullValue(span, nullVals);
+            bool isEmptyOrWhitespace = span.IsEmpty || span.Trim().IsEmpty;
 
+            if ((prop.IsNotNull || prop.Validation is { NotEmpty: true }) && (isNull || isEmptyOrWhitespace))
+            {
+                string rule = prop.IsNotNull ? "NotNull" : "NotEmpty";
+                string message = rule == "NotNull" ? "Value is required" : "Value must not be empty or whitespace";
+                hasErrors |= AddValidationError(
+                    errors,
+                    prop.Name,
+                    row.RecordNumber,
+                    prop.Start,
+                    columnName: null,
+                    rule,
+                    message,
+                    new string(span));
+                continue;
+            }
+
+            if (!isNull)
+            {
                 try
                 {
                     prop.Setter(ref instance, span, cultureLocal);
@@ -140,22 +145,27 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthBinder<T>, IFixed
             var field = row.GetField(prop.Start, prop.Length, (byte)prop.PadChar, prop.Alignment);
             var span = field.ByteSpan;
 
-            if (nullValsUtf8 is null || !IsNullValue(span, nullValsUtf8))
-            {
-                if (prop.IsNotNull && FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(span))
-                {
-                    hasErrors |= AddValidationError(
-                        errors,
-                        prop.Name,
-                        row.RecordNumber,
-                        prop.Start,
-                        columnName: null,
-                        "NotNull",
-                        "Value is required",
-                        errors is null ? null : FixedWidthUtf8BindingHelper.Decode(span));
-                    continue;
-                }
+            bool isNull = nullValsUtf8 is not null && IsNullValue(span, nullValsUtf8);
+            bool isEmptyOrWhitespace = FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(span);
 
+            if ((prop.IsNotNull || prop.Validation is { NotEmpty: true }) && (isNull || isEmptyOrWhitespace))
+            {
+                string rule = prop.IsNotNull ? "NotNull" : "NotEmpty";
+                string message = rule == "NotNull" ? "Value is required" : "Value must not be empty or whitespace";
+                hasErrors |= AddValidationError(
+                    errors,
+                    prop.Name,
+                    row.RecordNumber,
+                    prop.Start,
+                    columnName: null,
+                    rule,
+                    message,
+                    errors is null ? null : FixedWidthUtf8BindingHelper.Decode(span));
+                continue;
+            }
+
+            if (!isNull)
+            {
                 try
                 {
                     if (prop.ByteSetter is not null)

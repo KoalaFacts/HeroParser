@@ -24,7 +24,7 @@ namespace HeroParser.SeparatedValues.Reading.Binders;
 /// New code should prefer the UTF-8 byte APIs for SIMD-accelerated parsing.
 /// </para>
 /// </remarks>
-internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where T : new()
+internal sealed class CsvCharToByteBinderAdapter<T> : ICsvSourceBinder<char, T> where T : new()
 {
     /// <summary>
     /// Maximum columns to use stackalloc for column byte lengths.
@@ -35,10 +35,10 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvBinder<char, T> where 
     private static readonly byte[] emptyBuffer = [];
     private static readonly int[] emptyColumnEnds = [-1];
 
-    private readonly ICsvBinder<byte, T> byteBinder;
+    private readonly ICsvSourceBinder<byte, T> byteBinder;
     private readonly byte delimiterByte;
 
-    public CsvCharToByteBinderAdapter(ICsvBinder<byte, T> byteBinder, char delimiter)
+    public CsvCharToByteBinderAdapter(ICsvSourceBinder<byte, T> byteBinder, char delimiter)
     {
         this.byteBinder = byteBinder ?? throw new ArgumentNullException(nameof(byteBinder));
 

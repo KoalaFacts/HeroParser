@@ -1,7 +1,12 @@
+using System;
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace HeroParser.JsonLines.Writing;
 
@@ -12,6 +17,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
 {
     private readonly Stream stream;
     private readonly bool leaveOpen;
+    private readonly ArrayBufferWriter<byte> bufferWriter = new();
     private readonly Utf8JsonWriter writer;
     private readonly byte[] newlineBytes;
     private readonly JsonlWriteOptions options;
@@ -37,7 +43,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         Encoding encoding = this.options.Encoding ?? new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         newlineBytes = encoding.GetBytes(this.options.NewLine);
 
-        writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+        writer = new Utf8JsonWriter(bufferWriter, new JsonWriterOptions
         {
             Indented = false,
             SkipValidation = false,
@@ -61,9 +67,13 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         EnforcePreWriteLimits();
         EmitPendingNewline();
 
+        bufferWriter.Clear();
+        writer.Reset(bufferWriter);
+
         try
         {
             JsonSerializer.Serialize(writer, value, typeInfo);
+            writer.Flush();
         }
         catch (Exception ex)
         {
@@ -85,9 +95,13 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         EnforcePreWriteLimits();
         EmitPendingNewline();
 
+        bufferWriter.Clear();
+        writer.Reset(bufferWriter);
+
         try
         {
             JsonSerializer.Serialize(writer, value, options.SerializerOptions);
+            writer.Flush();
         }
         catch (Exception ex)
         {
@@ -108,9 +122,13 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         EnforcePreWriteLimits();
         await EmitPendingNewlineAsync(cancellationToken).ConfigureAwait(false);
 
+        bufferWriter.Clear();
+        writer.Reset(bufferWriter);
+
         try
         {
             JsonSerializer.Serialize(writer, value, typeInfo);
+            writer.Flush();
         }
         catch (Exception ex)
         {
@@ -132,9 +150,13 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         EnforcePreWriteLimits();
         await EmitPendingNewlineAsync(cancellationToken).ConfigureAwait(false);
 
+        bufferWriter.Clear();
+        writer.Reset(bufferWriter);
+
         try
         {
             JsonSerializer.Serialize(writer, value, options.SerializerOptions);
+            writer.Flush();
         }
         catch (Exception ex)
         {
@@ -211,10 +233,9 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
 
     private void CommitRecord()
     {
-        long recordBytes = writer.BytesPending + writer.BytesCommitted;
-        writer.Flush();
-        jsonBytesCommitted += recordBytes;
-        writer.Reset();
+        ReadOnlySpan<byte> data = bufferWriter.WrittenSpan;
+        stream.Write(data);
+        jsonBytesCommitted += data.Length;
         RecordsWritten++;
         needsTrailingNewline = true;
         EnforceMaxOutputSize();
@@ -222,10 +243,9 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
 
     private async ValueTask CommitRecordAsync(CancellationToken cancellationToken)
     {
-        long recordBytes = writer.BytesPending + writer.BytesCommitted;
-        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-        jsonBytesCommitted += recordBytes;
-        writer.Reset();
+        ReadOnlyMemory<byte> data = bufferWriter.WrittenMemory;
+        await stream.WriteAsync(data, cancellationToken).ConfigureAwait(false);
+        jsonBytesCommitted += data.Length;
         RecordsWritten++;
         needsTrailingNewline = true;
         EnforceMaxOutputSize();
@@ -233,7 +253,8 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
 
     private void HandleSerializeFailure(Exception ex)
     {
-        writer.Reset();
+        bufferWriter.Clear();
+        writer.Reset(bufferWriter);
         if (options.OnError is not null)
         {
             var ctx = new JsonlSerializeErrorContext

@@ -1,10 +1,30 @@
-# HeroParser - A .NET High-Performance CSV, Fixed-Width, Excel (.xlsx) & JSONL Parser
+# HeroParser - High-Performance, AI-Native CSV, Fixed-Width, Excel (.xlsx) & JSONL Parser
 
 [![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-High-performance SIMD-accelerated CSV, Fixed-Width, Excel (.xlsx), and JSONL parsing and writing for .NET 8, 9, and 10. Zero extra dependencies, AOT/trimming ready, source-generated binding, with first-class support for AI/ML pipelines (CSV → JSONL fine-tuning data, embedding-API batching, inline vector columns).
+**HeroParser** is a zero-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, and 10. Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
+
+### Why Choose HeroParser?
+* **Extreme Performance**: Engineered with AVX-512, AVX2, and ARM NEON SIMD optimizations to deliver ultra-high-throughput reading and writing.
+* **AI-Native integrations**: Built-in support for token-budgeted chunking, LLM output structured repair, vector embedding pipelines, and agent tool mapping.
+* **Zero Dependencies & Low Footprint**: Operates with zero external packages. Employs a fixed **112-byte heap memory footprint** on the reading hot-path regardless of file size.
+* **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, and Fixed-Width APIs.
+
+---
+
+## Performance & Memory
+
+Tested under **.NET 10.0** on an **AMD Ryzen AI 9 HX PRO 370 CPU**:
+* **Read Throughput**: SIMD-accelerated UTF-8 (`byte[]`) read paths on both quoted and unquoted data.
+* **Write Throughput**: Highly optimized CSV/JSONL serialization achieving massive throughput.
+* **GC Allocations**: Fixed 112-byte allocation throughout parsing, representing a **97% memory reduction** compared to traditional reflection-based parsers.
+* **String Generation**: **Up to 64% speedup** on synchronous text generation via pre-allocated capacities.
+
+View live performance graphs and history on the [HeroParser Performance Portal](https://KoalaFacts.github.io/HeroParser/).
+
+---
 
 ## Install
 
@@ -12,154 +32,63 @@ High-performance SIMD-accelerated CSV, Fixed-Width, Excel (.xlsx), and JSONL par
 dotnet add package HeroParser
 ```
 
-## Quick Start: CSV
+---
 
-Define a record — `[GenerateBinder]` enables source-generated, reflection-free binding. Unmarked properties auto-map by name.
+## Simple Quick Starts
+
+Define your record type. Decorate it with `[GenerateBinder]` to enable source-generated, reflection-free, and Native AOT-safe binding:
 
 ```csharp
+using HeroParser;
+
 [GenerateBinder]
-public class Order
+public class Product
 {
     public int Id { get; set; }
-    public string Customer { get; set; } = "";
-
-    [Validate(NotEmpty = true, RangeMin = 0)]
-    public decimal Amount { get; set; }
-
+    public string Name { get; set; } = "";
+    
+    [Validate(RangeMin = 0)]
+    public decimal Price { get; set; }
+    
     [Parse(Format = "yyyy-MM-dd")]
-    public DateTime OrderDate { get; set; }
+    public DateTime ReleaseDate { get; set; }
 }
 ```
 
-### Read
+### CSV
 
 ```csharp
-// Full fluent chain — delimiter, culture, validation, progress, error handling
-var orders = Csv.Read<Order>()
-    .WithDelimiter(';')
-    .TrimFields()
-    .WithCulture("de-DE")
-    .WithNullValues("N/A", "NULL", "")
-    .SkipRows(2)
-    .WithValidationMode(ValidationMode.Lenient)
-    .OnError((ctx, ex) =>
-    {
-        Console.WriteLine($"Row {ctx.Row}: {ex.Message}");
-        return CsvDeserializeErrorAction.SkipRecord;
-    })
-    .WithProgress(new Progress<CsvProgress>(p =>
-        Console.WriteLine($"{p.RowsProcessed:N0} rows ({p.ProgressPercentage:P0})")))
-    .FromFile("orders.csv")
-    .ToList();
+// Read a file in one line (zero-allocation binding)
+List<Product> products = Csv.Read<Product>().FromFile("products.csv").ToList();
 
-// Async streaming — process millions of rows without buffering
-await foreach (var order in Csv.Read<Order>().FromFileAsync("orders.csv"))
-    Console.WriteLine($"{order.Id}: {order.Customer}");
-
-// Zero-alloc row-level — no record type, no heap allocations
-foreach (var row in Csv.ReadFromText(csv))
+// Async stream millions of rows without buffering
+await foreach (Product p in Csv.Read<Product>().FromFileAsync("products.csv"))
 {
-    var id    = row[0].Parse<int>();
-    var name  = row[1].CharSpan;      // ReadOnlySpan<char>
-    var price = row[2].Parse<decimal>();
+    Console.WriteLine($"{p.Name}: {p.Price:C}");
 }
+
+// Write collection to a file
+Csv.Write<Product>().ToFile("out.csv", products);
 ```
 
-### Write
+### Excel (.xlsx)
+
+Reads and writes Excel workbooks with zero external dependencies (utilizes only standard `.NET` compression and XML packages).
 
 ```csharp
-Csv.Write<Order>()
-    .WithDelimiter(';')
-    .WithDateTimeFormat("yyyy-MM-dd")
-    .WithNumberFormat("N2")
-    .WithCulture("en-US")
-    .AlwaysQuote()
-    .WithInjectionProtection(CsvInjectionProtection.EscapeWithTab)
-    .WithMaxRowCount(100_000)
-    .OnError(ctx =>
-    {
-        Console.WriteLine($"Row {ctx.Row}, {ctx.MemberName}: {ctx.Exception.Message}");
-        return SerializeErrorAction.SkipRow;
-    })
-    .WithProgress(new Progress<CsvWriteProgress>(p =>
-        Console.WriteLine($"{p.RowsWritten:N0} rows written")))
-    .ToFile("out.csv", orders);
+// Read Excel files
+List<Product> products = Excel.Read<Product>().FromFile("products.xlsx");
 
-// Async — same chain, different terminal
-await Csv.Write<Order>()
-    .WithDateTimeFormat("O")
-    .ToFileAsync("out.csv", orders);
+// Read specific sheet
+var sheetData = Excel.Read<Product>().FromSheet("Sales").FromFile("workbook.xlsx");
+
+// Write Excel workbook
+Excel.Write<Product>().ToFile("out.xlsx", products);
 ```
 
-## Quick Start: Excel
+### Fixed-Width
 
-### Read
-
-```csharp
-// Full chain — sheet selection, culture, validation, error handling
-var orders = Excel.Read<Order>()
-    .FromSheet("Sales")
-    .WithCulture("en-US")
-    .WithNullValues("N/A", "")
-    .SkipRows(1)
-    .CaseSensitiveHeaders()
-    .WithValidationMode(ValidationMode.Lenient)
-    .OnError((ctx, ex) =>
-    {
-        Console.WriteLine($"Sheet '{ctx.SheetName}', row {ctx.Row}: {ex.Message}");
-        return ExcelDeserializeErrorAction.SkipRecord;
-    })
-    .WithProgress(new Progress<ExcelProgress>(p =>
-        Console.WriteLine($"Sheet '{p.SheetName}': {p.RowsRead:N0} rows")))
-    .FromFile("orders.xlsx");
-
-// Multi-sheet — different types per sheet
-var result = Excel.Read()
-    .WithSheet<Order>("Orders")
-    .WithSheet<Customer>("Customers")
-    .FromFile("workbook.xlsx");
-
-var orders    = result.Get<Order>();
-var customers = result.Get<Customer>();
-
-// All sheets, same type
-var allSheets = Excel.Read<Order>().AllSheets().FromFile("orders.xlsx");
-// allSheets: Dictionary<string, List<Order>>
-```
-
-### Write
-
-```csharp
-// Full chain — formatting, error handling, progress, output limits
-Excel.Write<Order>()
-    .WithSheetName("Sales Q1")
-    .WithDateTimeFormat("yyyy-MM-dd")
-    .WithNumberFormat("N2")
-    .WithCulture("en-US")
-    .WithMaxRowCount(1_000_000)
-    .WithMaxOutputSize(500 * 1024 * 1024)  // 500 MB limit
-    .OnError(ctx =>
-    {
-        Console.WriteLine($"Row {ctx.Row}, {ctx.MemberName}: {ctx.Exception.Message}");
-        return ExcelSerializeErrorAction.SkipRow;
-    })
-    .WithProgress(new Progress<ExcelWriteProgress>(p =>
-        Console.WriteLine($"Sheet '{p.SheetName}': {p.RowsWritten:N0} rows")))
-    .ToFile("out.xlsx", orders);
-
-// Multi-sheet write
-Excel.WriteMultiSheet()
-    .WithSheet("Orders", orders)
-    .WithSheet("Customers", customers)
-    .ToFile("workbook.xlsx");
-
-// Async (offloads to thread pool — ZIP format requires sync I/O internally)
-await Excel.Write<Order>().ToFileAsync("out.xlsx", orders);
-```
-
-## Quick Start: Fixed-Width
-
-Define a record — `[PositionalMap]` declares character-position boundaries.
+Map properties to specific character boundaries using the `[PositionalMap]` attribute:
 
 ```csharp
 [GenerateBinder]
@@ -171,361 +100,133 @@ public class Employee
     [PositionalMap(Start = 10, Length = 30)]
     public string Name { get; set; } = "";
 
-    [PositionalMap(Start = 40, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
-    [Validate(RangeMin = 0)]
+    [PositionalMap(Start = 40, Length = 10, Alignment = FieldAlignment.Right)]
     public decimal Salary { get; set; }
-
-    [PositionalMap(Start = 50, Length = 8)]
-    [Parse(Format = "yyyyMMdd")]
-    public DateTime HireDate { get; set; }
 }
 ```
-
-### Read
-
 ```csharp
-// Full chain — padding, alignment, validation, error handling
-var result = FixedWidth.Read<Employee>()
-    .WithDefaultPadChar(' ')
-    .WithDefaultAlignment(FieldAlignment.Left)
-    .AllowShortRows()
-    .CaseSensitiveHeaders()
-    .WithValidationMode(ValidationMode.Lenient)
-    .OnError((ctx, ex) =>
-    {
-        Console.WriteLine($"Row {ctx.RecordNumber}: {ex.Message}");
-        return FixedWidthDeserializeErrorAction.SkipRecord;
-    })
-    .WithProgress(new Progress<FixedWidthProgress>(p =>
-        Console.WriteLine($"{p.RecordsProcessed:N0} records")))
-    .FromFile("employees.dat");
+// Read positional records
+var employees = FixedWidth.Read<Employee>().FromFile("employees.dat").Records;
 
-var employees = result.Records;
-
-// Async streaming
-await foreach (var emp in FixedWidth.Read<Employee>().FromFileAsync("employees.dat"))
-    Console.WriteLine($"{emp.Name}: {emp.Salary:C}");
-
-// Inline mapping — no attributes needed
-var records = FixedWidth.Read<Employee>()
-    .Map(e => e.Id, f => f.Start(0).Length(10))
-    .Map(e => e.Name, f => f.Start(10).Length(30))
-    .Map(e => e.Salary, f => f.Start(40).Length(10).Alignment(FieldAlignment.Right).PadChar('0'))
-    .Map(e => e.HireDate, f => f.Start(50).Length(8))
-    .FromText(fixedWidthData);
+// Write positional records
+FixedWidth.Write<Employee>().ToFile("out.dat", employees);
 ```
 
-### Write
+### JSON Lines (JSONL)
+
+Perfect for AI fine-tuning datasets, streamed LLM responses, and database bulk loading.
 
 ```csharp
-FixedWidth.Write<Employee>()
-    .WithPadChar(' ')
-    .AlignLeft()
-    .WithDateTimeFormat("yyyyMMdd")
-    .TruncateOnOverflow()
-    .WithMaxRowCount(500_000)
-    .OnError(ctx =>
-    {
-        Console.WriteLine($"Row {ctx.Row}: {ctx.Exception.Message}");
-        return FixedWidthSerializeErrorAction.SkipRow;
-    })
-    .ToFile("out.dat", employees);
+// Read JSONL files (AOT-safe)
+var records = Jsonl.Read<Product>().FromFile("products.jsonl").ToList();
 
-// Async
-await FixedWidth.Write<Employee>()
-    .WithNewLine("\r\n")
-    .ToFileAsync("out.dat", employees);
+// Write JSONL files
+Jsonl.Write<Product>().ToFile("out.jsonl", records);
 ```
 
-## Quick Start: JSONL
-
-JSONL (JSON Lines) is the de-facto format for LLM fine-tuning datasets (OpenAI, Anthropic, HuggingFace), model evaluations, synthetic data, and streamed AI responses. HeroParser ships a JSONL reader/writer that mirrors the `Csv` and `Excel` builder pattern, plus a `DbDataReader` adapter, CSV↔JSONL converters, an inline `VectorParser`, and an async `BatchAsync` extension for embedding-API pipelines.
-
-```csharp
-public sealed class ChatExample
-{
-    public List<ChatMessage>? Messages { get; set; }
-}
-public sealed class ChatMessage
-{
-    public string? Role { get; set; }
-    public string? Content { get; set; }
-}
-```
-
-### Read
-
-```csharp
-// Sync — full builder
-var examples = Jsonl.Read<ChatExample>()
-    .WithJsonOptions(new JsonSerializerOptions(JsonSerializerDefaults.Web))
-    .SkipEmptyLines(true)
-    .WithMaxLineSize(4 * 1024 * 1024)
-    .WithMaxRowCount(5_000_000)
-    .OnError((ctx, ex) =>
-    {
-        Console.WriteLine($"line {ctx.LineNumber}: {ex.Message}");
-        return JsonlDeserializeErrorAction.SkipRecord;
-    })
-    .FromFile("training.jsonl")
-    .ToList();
-
-// Async streaming — process millions of records without buffering
-await foreach (var example in Jsonl.Read<ChatExample>().FromFileAsync("training.jsonl"))
-    Console.WriteLine(example.Messages?[^1].Content);
-
-// PipeReader (network sockets, HTTP responses)
-PipeReader pipe = PipeReader.Create(socketStream);
-await foreach (var r in Jsonl.DeserializeRecordsAsync<ChatExample>(pipe)) { /* ... */ }
-
-// DataReader — drop straight into SqlBulkCopy
-using var reader = Jsonl.CreateDataReader("inputs.jsonl");
-using var bulk = new SqlBulkCopy(conn) { DestinationTableName = "Inputs" };
-bulk.WriteToServer(reader);
-```
-
-### Write
-
-```csharp
-Jsonl.Write<ChatExample>()
-    .WithNewLine("\n")
-    .WithFinalNewline()
-    .WithMaxRowCount(100_000)
-    .ToFile("out.jsonl", examples);
-
-// Async — from an IAsyncEnumerable source
-await Jsonl.Write<ChatExample>().ToFileAsync("out.jsonl", asyncExamples);
-```
-
-### CSV → JSONL (fine-tuning data)
-
-`CsvToJsonlConverter` projects a CSV into JSONL in the shape an LLM fine-tuning API expects:
-
-```csharp
-string jsonl = CsvToJsonlConverter.Convert(
-    csv,
-    CsvToJsonlShape.OpenAiChat(systemColumn: "System", userColumn: "Question", assistantColumn: "Answer"));
-
-// {"messages":[
-//   {"role":"system","content":"You are a math tutor."},
-//   {"role":"user","content":"What is 2+2?"},
-//   {"role":"assistant","content":"4"}
-// ]}
-
-// Also: CsvToJsonlShape.FlatObject() / AnthropicMessages(userCol, assistantCol)
-// And the reverse direction: JsonlToCsvConverter.Convert(jsonl)
-```
-
-### BatchAsync — embedding-API pipelines
-
-```csharp
-using HeroParser.Streaming;
-
-await foreach (IReadOnlyList<ChatExample> batch in
-    Jsonl.Read<ChatExample>()
-        .FromFileAsync("inputs.jsonl")
-        .BatchAsync(100))               // OpenAI/Voyage/Cohere/Anthropic embedding batch size
-{
-    var vectors = await embeddings.EmbedAsync(batch.Select(x => x.Messages![^1].Content!));
-    await vectorDb.UpsertAsync(batch.Zip(vectors));
-}
-```
-
-`BatchAsync` works on any `IAsyncEnumerable<T>` — pair with `Csv.Read<T>().FromFileAsync(...)` or `Excel.Read<T>().FromFileAsync(...)` just as easily.
-
-### VectorParser — inline embedding columns
-
-```csharp
-using HeroParser.Vectors;
-
-float[] embedding = VectorParser.ParseFloats(row[3].CharSpan);
-// Accepted: "[0.1, 0.2, 0.3]", "0.1,0.2,0.3", "0.1 0.2 0.3", "[]"
-// Culture-aware: VectorParser.ParseFloats("1,5;2,5", CultureInfo.GetCultureInfo("de-DE"))
-```
-
-### AOT / trimming
-
-Pass a `JsonTypeInfo<T>` from a source-generated `JsonSerializerContext` to bypass reflection entirely:
-
-```csharp
-[JsonSerializable(typeof(ChatExample))]
-[JsonSerializable(typeof(ChatMessage))]
-public partial class TrainingContext : JsonSerializerContext;
-
-var records = Jsonl.Read<ChatExample>()
-    .WithTypeInfo(TrainingContext.Default.ChatExample)
-    .FromFile("training.jsonl")
-    .ToList();
-```
-
-The reflection-based overloads carry `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` so AOT/trim users get a clear build warning. The `JsonTypeInfo<T>` path is fully trim/AOT-safe.
+---
 
 ## Unified Attribute System
 
-HeroParser v2 uses concern-separated attributes that work across all formats:
+Annotate a single record class once, and read or write it across multiple formats:
 
-| Attribute | Purpose |
-|-----------|---------|
-| `[GenerateBinder]` | Triggers source generator — emits a compile-time binder for AOT/trimming compatibility |
-| `[TabularMap(Name, Index)]` | Column mapping for CSV and Excel |
-| `[PositionalMap(Start, Length, End, PadChar, Alignment)]` | Position mapping for Fixed-Width |
-| `[Parse(Format)]` | Read-side type conversion (e.g., date format string) |
-| `[Format(WriteFormat, ExcludeIfAllEmpty)]` | Write-side formatting |
-| `[Validate(NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern)]` | Bidirectional field validation |
+| Attribute | Purpose | CSV | Excel | Fixed-Width |
+|-----------|---------|:---:|:---:|:---:|
+| `[GenerateBinder]` | Emits Roslyn source-generated, reflection-free mapping binder | Yes | Yes | Yes |
+| `[TabularMap(Name, Index)]` | Maps property to column header or index | Yes | Yes | No |
+| `[PositionalMap(Start, Length...)]` | Declares character position, alignment, and pad characters | No | No | Yes |
+| `[Parse(Format)]` | Converts raw values to custom types (e.g. DateTime format) | Yes | Yes | Yes |
+| `[Format(WriteFormat...)]` | Customizes output formatting during serialization | Yes | Yes | Yes |
+| `[Validate(Range, Pattern...)]` | Validates properties bidirectionally (Strict/Lenient modes) | Yes | Yes | Yes |
 
-A single record class can carry both `[TabularMap]` and `[PositionalMap]` attributes, allowing it to be used with CSV, Excel, and Fixed-Width APIs simultaneously.
-
-Convention-based mapping: unmarked properties default to `[TabularMap(Name = propertyName)]` for CSV/Excel. Fixed-Width requires explicit `[PositionalMap]`.
+---
 
 ## AI-Native Tabular Capabilities
 
-HeroParser v2.3.0 introduces deep integration with Large Language Models (LLMs) and vector embedding pipelines, providing zero-dependency, ultra-high-performance tabular operations for AI agents, RAG systems, and structured code generation:
+HeroParser includes first-class support for LLM, vector search, and RAG pipelines:
 
-### 1. LLM Structured Output Repair Binder (`LlmRepair`)
-When streaming structured output (like CSV) from an LLM, the model might wrap the output in markdown code blocks or truncate midway due to token limit cutoffs, leaving unclosed quotes on the final row. `LlmRepair` repairs unbalanced quotes and strips markdown block wrappers automatically, allowing direct parsing into strongly-typed records.
-
+### 1. LLM Structured Output Repair (`LlmRepair`)
+Repairs truncated final rows (unclosed quotes/escapes) and strips markdown code blocks from raw LLM text streams.
 ```csharp
 using HeroParser.AI;
 
-string rawLlmResponse = """
-```csv
-Id,Name,Role
-1,"Alice","Lead Developer"
-2,"Bob","AI Eng
-```
-""";
-
-// Automatically strips ```csv and repairs "AI Eng to "AI Eng"
-await foreach (var developer in LlmRepair.ReadFromTextAsync<Developer>(rawLlmResponse))
+// Repaired on-the-fly and parsed directly into strongly-typed records
+await foreach (var dev in LlmRepair.ReadFromTextAsync<Developer>(rawLlmResponse))
 {
-    Console.WriteLine($"{developer.Id}: {developer.Name} ({developer.Role})");
+    Console.WriteLine($"{dev.Name} is a {dev.Role}");
 }
 ```
 
-### 2. Tabular Vector Embedding Pipeline (`ToLlmEmbeddingsAsync`)
-Stream record chunks, batch them, and pair them with high-performance vector embeddings (e.g., OpenAI, Voyage, Cohere) with a zero-allocation, token-budgeted streaming wrapper.
-
+### 2. Tabular Embedding Pipeline (`ToLlmEmbeddingsAsync`)
+Batches streamed records and pairs them with vector embeddings with a zero-allocation, token-budgeted streaming wrapper.
 ```csharp
 using HeroParser.AI;
 
-IAsyncEnumerable<Developer> developers = GetDeveloperStream();
-
-// Batch and pair semantic chunks with float vector embeddings
-await foreach (var chunkWithEmbed in developers.ToLlmEmbeddingsAsync(
+await foreach (var chunk in developers.ToLlmEmbeddingsAsync(
     async (texts, ct) => await GetEmbeddingsFromApiAsync(texts, ct),
     options: new LlmChunkOptions { MaxTokensPerChunk = 250 },
     batchSize: 16))
 {
-    Console.WriteLine($"Chunk of {chunkWithEmbed.Chunk.EndRow - chunkWithEmbed.Chunk.StartRow + 1} rows. Vector Dimensions: {chunkWithEmbed.Embedding.Length}");
+    Console.WriteLine($"Chunk of {chunk.Chunk.EndRow - chunk.Chunk.StartRow + 1} rows embedded.");
 }
 ```
 
-### 3. AI-Driven Tabular Context Profiler (`TabularContextProfiler`)
-Provide AI prompts with rich statistical cards summarizing the shape, nullability distributions, range/density metrics, and category counts of a dataset to enhance system prompt instructions.
-
+### 3. Agent Tool Argument Mapper (`SchemaMetadata.MapFromToolCall`)
+Maps flat dictionaries of case-insensitive arguments returned by tool calling models into typed record models, executing validation constraints and raising rich validation feedback.
 ```csharp
 using HeroParser.AI;
 
-IEnumerable<Developer> developers = GetDevelopersList();
-
-// Generates a beautiful, complete markdown description of your tabular dataset
-string contextPromptCard = developers.GenerateContextCard(datasetName: "Engineering Team");
-Console.WriteLine(contextPromptCard);
-```
-Outputs a pristine markdown profile card:
-```markdown
-### Dataset Profile: Engineering Team (2 rows)
-- **Id** (Integer, 0% Null): Numeric range [1.00 to 2.00], Avg: 1.50.
-- **Name** (String, 0% Null): 2 distinct categories. Top values: "Alice" (50.0%), "Bob" (50.0%).
-- **Role** (String, 0% Null): 2 distinct categories. Top values: "Lead Developer" (50.0%), "AI Engineer" (50.0%).
+Developer dev = SchemaMetadata.MapFromToolCall<Developer>(arguments);
 ```
 
-### 4. Agent Tool Argument Mapper (`SchemaMetadata.MapFromToolCall`)
-Map a case-insensitive, flat dictionary of tool call arguments delivered by an LLM function/tool invocation into a strongly-typed record model, performing all validation constraints and raising rich, typed verification failures.
-
+### 4. Tabular Context Profiler (`TabularContextProfiler`)
+Generates structured statistical profile cards in markdown directly from datasets to inject into LLM system prompts.
 ```csharp
-using HeroParser.AI;
-
-var arguments = new Dictionary<string, object?>
-{
-    { "id", 3 },
-    { "name", "Charlie" },
-    { "salary", 150000.00 }
-};
-
-try
-{
-    // Reflection-free mapping and validation of tool call inputs
-    Developer developer = SchemaMetadata.MapFromToolCall<Developer>(arguments);
-}
-catch (LlmToolCallValidationException ex)
-{
-    Console.WriteLine($"AI parameter '{ex.PropertyName}' violated constraint: {ex.Message}");
-}
+string contextCard = developers.GenerateContextCard(datasetName: "Engineering Team");
 ```
 
 ### 5. Token-Bounded JSON Chunker (`JsonLlmChunker`)
-Stream records directly into token-bounded, well-formed JSON array blocks. Fully trim-safe and AOT-compliant, enforcing precise LLM context limits with custom token count heuristics.
-
+Chunks datasets into valid, token-bounded JSON array blocks, optimized for ingestion into RAG context windows.
 ```csharp
-using HeroParser.AI;
-
-IAsyncEnumerable<Developer> developers = GetDeveloperStream();
-
-await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(new LlmChunkOptions
-{
-    MaxTokensPerChunk = 500, // Token budget limit
-    TokenCounter = s => s.Length / 4 // Heuristic or TikToken
-}))
-{
-    Console.WriteLine($"Start Row: {jsonChunk.StartRow}, End Row: {jsonChunk.EndRow}, Tokens: {jsonChunk.TokenCount}");
-    Console.WriteLine(jsonChunk.Content); // Well-formed JSON Array block: [{"Id":1,...},{"Id":2,...}]
-}
+await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(options)) { ... }
 ```
+
+---
 
 ## Key Features
 
-- **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking
-- **Zero allocations** — fixed 4 KB stack footprint regardless of column count or file size; `ArrayPool` for buffers
-- **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
-- **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, and JSONL; true non-blocking I/O with sync fast paths
-- **Excel without extra dependencies** — reads and writes `.xlsx` using only `System.IO.Compression` and `System.Xml`
-- **JSONL for AI/ML pipelines** — `Jsonl.Read<T>()` / `Jsonl.Write<T>()` mirror the CSV builder pattern; AOT-safe via `JsonTypeInfo<T>`; `CsvToJsonlConverter` projects tabular data into OpenAI/Anthropic fine-tuning shapes
-- **Embedding-API batching** — `IAsyncEnumerable<T>.BatchAsync(size)` groups streamed records into fixed-size batches for OpenAI/Voyage/Cohere/Anthropic embedding calls
-- **Inline vector parser** — `VectorParser.ParseFloats(span)` handles pre-computed embeddings (`"[0.1,0.2,…]"`, comma/semicolon/whitespace separators, culture-aware)
-- **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()` for database bulk loading via `SqlBulkCopy`
-- **PipeReader integration** — `Csv.ReadFromPipeReaderAsync(pipe)` for network streaming without buffering the entire payload
-- **Multi-schema CSV** — discriminator-based row routing to different record types; source-generated dispatch for ~2.85x faster throughput
-- **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score
-- **CSV validation** — pre-flight structural checks with detailed per-row error reporting
-- **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; `result.ThrowIfAnyError()` for fail-fast
-- **CSV injection protection** — configurable sanitization modes for user-data exports
-- **Progress reporting** — row/byte callbacks for large-file UX
-- **Custom type converters** — register converters for domain types on any reader or writer
-- **Multi-framework** — .NET 8, 9, 10; CI validates all three on Windows, Linux, and macOS
+* **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking
+* **Zero allocations** — fixed 4 KB stack footprint regardless of column count or file size; `ArrayPool` for buffers
+* **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
+* **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, and JSONL; true non-blocking I/O with sync fast paths
+* **Excel without extra dependencies** — reads and writes `.xlsx` using only `System.IO.Compression` and `System.Xml`
+* **JSONL for AI/ML pipelines** — `Jsonl.Read<T>()` / `Jsonl.Write<T>()` mirror the CSV builder pattern; AOT-safe via `JsonTypeInfo<T>`; `CsvToJsonlConverter` projects tabular data into OpenAI/Anthropic fine-tuning shapes
+* **Embedding-API batching** — `IAsyncEnumerable<T>.BatchAsync(size)` groups streamed records into fixed-size batches for OpenAI/Voyage/Cohere/Anthropic embedding calls
+* **Inline vector parser** — `VectorParser.ParseFloats(span)` handles pre-computed embeddings (`"[0.1,0.2,…]"`, comma/semicolon/whitespace separators, culture-aware)
+* **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()` for database bulk loading via `SqlBulkCopy`
+* **PipeReader integration** — `Csv.ReadFromPipeReaderAsync(pipe)` for network streaming without buffering the entire payload
+* **Multi-schema CSV** — discriminator-based row routing to different record types; source-generated dispatch for ~2.85x faster throughput
+* **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score
+* **CSV validation** — pre-flight structural checks with detailed per-row error reporting
+* **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; `result.ThrowIfAnyError()` for fail-fast
+* **CSV injection protection** — configurable sanitization modes for user-data exports
+* **Progress reporting** — row/byte callbacks for large-file UX
+* **Custom type converters** — register converters for domain types on any reader or writer
+* **Write capacity pre-allocation** — backing buffer capacity is pre-allocated via estimated record counts when writing collections to strings, yielding up to 64% speedup and completely eliminating buffer resize copy overhead
+* **Multi-framework** — .NET 8, 9, 10; CI validates all three on Windows, Linux, and macOS
 
-## Benchmarks
+---
 
-HeroParser is engineered for extreme performance and ultra-low memory footprints. Tested under **.NET 10.0** on an **AMD Ryzen AI 9 HX PRO 370 CPU**, it achieves:
-- **12% faster reading** than Sep (UTF-8 `byte[]` path) for both quoted and unquoted data.
-- **2x to 3x faster writing** than Sep.
-- **97% memory reduction** compared to Sep, maintaining a fixed **112-byte allocation** throughout parsing regardless of dataset size.
+## Detailed Documentation
 
-For complete head-to-head comparisons, CPU architectural details, and memory allocation profiles, refer to the [HeroParser Benchmarks & Performance Guide](docs/benchmarks.md) or view our live public page showcasing the last 3 versions: [HeroParser Performance Portal](https://KoalaFacts.github.io/HeroParser/).
+For advanced features and full API guides, see the files under the `docs` folder:
+* [CSV Guide](docs/csv.md) — Fluent readers/writers, validation, PipeReader, and multi-schema dispatching.
+* [Excel Guide](docs/excel.md) — Multi-sheet workbooks, custom formatting, and progress tracking.
+* [Fixed-Width Guide](docs/fixed-width.md) — Positional mapping, alignment, padding, and custom type converters.
+* [JSONL Guide](docs/jsonl.md) — Fine-tuning templates, vector parsing, and Native AOT setups.
+* [Benchmarks Guide](docs/benchmarks.md) — Execution environments, detailed CPU metrics, and comparisons.
 
-Run benchmarks locally:
-
-```bash
-dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net10.0 -- --vs-sep-reading
-```
-
-## Detailed API Reference
-
-- [Benchmarks & Performance Guide](docs/benchmarks.md) — Complete head-to-head comparisons, JIT optimization specs, and memory allocation profiles
-- [CSV API Reference](docs/csv.md) — Full CSV reading, writing, options, delimiter detection, validation, multi-schema, security, PipeReader, DataReader
-- [Excel API Reference](docs/excel.md) — Full Excel reading, writing, multi-sheet, DataReader, options
-- [Fixed-Width API Reference](docs/fixed-width.md) — Full fixed-width reading, writing, fluent mapping, options, converters, PipeReader
-- [JSONL API Reference](docs/jsonl.md) — Full JSONL reading, writing, DataReader, AOT support, CSV↔JSONL conversion (OpenAI/Anthropic fine-tuning shapes), BatchAsync, VectorParser
+---
 
 ## Building & Testing
 
@@ -547,28 +248,10 @@ dotnet format --verify-no-changes
 
 # Run benchmarks
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
-
-# Regenerate NuGet lock files after adding/updating packages
-dotnet restore --force-evaluate
 ```
 
-CI builds Release configuration across .NET 8, 9, and 10 on Windows, Linux, and macOS.
+---
 
 ## License
 
 MIT
-
-## Acknowledgments
-
-HeroParser was inspired by the excellent work in the .NET CSV parsing ecosystem:
-
-- **[simdjson](https://github.com/simdjson/simdjson)** by Geoff Langdale & Daniel Lemire — The PCLMULQDQ carry-less multiplication technique for branchless prefix-XOR quote tracking
-- **[Sep](https://github.com/nietras/Sep)** by nietras — Pioneering SIMD-based CSV parsing techniques for .NET
-- **Sylvan.Data.Csv** — High-performance CSV parsing patterns
-- **SimdUnicode** — SIMD text processing techniques
-
-Special thanks to the .NET performance community for their research and open-source contributions.
-
----
-
-**High-performance, zero-allocation, AOT-ready CSV, Fixed-Width, Excel & JSONL parsing for .NET**

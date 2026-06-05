@@ -50,13 +50,18 @@ public static class TabularContextProfiler
     {
         ArgumentNullException.ThrowIfNull(source);
 
-        var list = new List<T>();
+        var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        var statsList = InitializeStats(properties);
+
+        int totalRows = 0;
         await foreach (var item in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            list.Add(item);
+            if (item == null) continue;
+            totalRows++;
+            ProcessItem(item, properties, statsList);
         }
 
-        return GenerateContextCard(list, datasetName);
+        return RenderContextCard<T>(totalRows, statsList, datasetName);
     }
 
     /// <summary>
@@ -73,16 +78,28 @@ public static class TabularContextProfiler
         ArgumentNullException.ThrowIfNull(source);
 
         var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
-        var statsList = new List<ColumnStats>();
+        var statsList = InitializeStats(properties);
 
+        int totalRows = 0;
+        foreach (var item in source)
+        {
+            if (item == null) continue;
+            totalRows++;
+            ProcessItem(item, properties, statsList);
+        }
+
+        return RenderContextCard<T>(totalRows, statsList, datasetName);
+    }
+
+    private static List<ColumnStats> InitializeStats(PropertyInfo[] properties)
+    {
+        var statsList = new List<ColumnStats>();
         foreach (var prop in properties)
         {
             // Resolve column name from TabularMap or fallback to property name
-            string name = prop.Name;
-            if (prop.GetCustomAttribute<TabularMapAttribute>() is { } map && !string.IsNullOrWhiteSpace(map.Name))
-            {
-                name = map.Name;
-            }
+            string name = prop.GetCustomAttribute<TabularMapAttribute>() is { } map && !string.IsNullOrWhiteSpace(map.Name)
+                ? map.Name
+                : prop.Name;
 
             var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
             bool isNumeric = type == typeof(int) || type == typeof(long) || type == typeof(double) ||
@@ -99,45 +116,45 @@ public static class TabularContextProfiler
                 IsCategorical = isCategorical
             });
         }
+        return statsList;
+    }
 
-        int totalRows = 0;
-        foreach (var item in source)
+    private static void ProcessItem<T>(T item, PropertyInfo[] properties, List<ColumnStats> statsList)
+    {
+        for (int i = 0; i < properties.Length; i++)
         {
-            if (item == null) continue;
-            totalRows++;
+            var prop = properties[i];
+            var stats = statsList[i];
+            var val = prop.GetValue(item);
 
-            for (int i = 0; i < properties.Length; i++)
+            if (val == null)
             {
-                var prop = properties[i];
-                var stats = statsList[i];
-                var val = prop.GetValue(item);
+                stats.NullCount++;
+                continue;
+            }
 
-                if (val == null)
-                {
-                    stats.NullCount++;
-                    continue;
-                }
-
-                if (stats.IsNumeric)
-                {
-                    double numVal = Convert.ToDouble(val);
-                    if (numVal < stats.Min) stats.Min = numVal;
-                    if (numVal > stats.Max) stats.Max = numVal;
-                    stats.Sum += numVal;
-                }
-                else if (stats.IsBoolean)
-                {
-                    if ((bool)val) stats.TrueCount++;
-                    else stats.FalseCount++;
-                }
-                else if (stats.IsCategorical)
-                {
-                    string strVal = val.ToString() ?? string.Empty;
-                    stats.ValueCounts[strVal] = stats.ValueCounts.TryGetValue(strVal, out int count) ? count + 1 : 1;
-                }
+            if (stats.IsNumeric)
+            {
+                double numVal = Convert.ToDouble(val);
+                if (numVal < stats.Min) stats.Min = numVal;
+                if (numVal > stats.Max) stats.Max = numVal;
+                stats.Sum += numVal;
+            }
+            else if (stats.IsBoolean)
+            {
+                if ((bool)val) stats.TrueCount++;
+                else stats.FalseCount++;
+            }
+            else if (stats.IsCategorical)
+            {
+                string strVal = val.ToString() ?? string.Empty;
+                stats.ValueCounts[strVal] = stats.ValueCounts.TryGetValue(strVal, out int count) ? count + 1 : 1;
             }
         }
+    }
 
+    private static string RenderContextCard<T>(int totalRows, List<ColumnStats> statsList, string? datasetName)
+    {
         // Render Markdown Context Card
         var sb = new StringBuilder();
         datasetName ??= typeof(T).Name;

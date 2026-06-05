@@ -35,8 +35,8 @@ public class FixedWidthRecordBinderGeneratorTests
         var result = RunGenerator(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        // Generator produces: 1 descriptor file + 1 registration file
-        Assert.Equal(2, result.GeneratedSources.Length);
+        // Generator produces: 1 descriptor file + 1 writer file + 1 registration file
+        Assert.Equal(3, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("TestNamespace.PersonStruct", allGeneratedCode);
@@ -75,8 +75,8 @@ public class FixedWidthRecordBinderGeneratorTests
 
         // Both descriptor class and generated binder should be emitted
         Assert.Contains("FixedWidthDescriptor_", descriptorSource);
-        Assert.Contains("FixedWidthGeneratedBinder_", descriptorSource);
-        Assert.Contains("IFixedWidthBinder<global::TestNamespace.Employee>", descriptorSource);
+        Assert.Contains("FixedWidthInlineCharSourceBinder_", descriptorSource);
+        Assert.Contains("IFixedWidthSourceBinder<global::TestNamespace.Employee>", descriptorSource);
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public class FixedWidthRecordBinderGeneratorTests
         Assert.Contains("_pattern_Code", generatedCode);
         Assert.Contains("IsMatch", generatedCode);
         // Static Regex field with compiled option
-        Assert.Contains("RegexOptions.Compiled", generatedCode);
+        Assert.Contains("RegexOptions.None", generatedCode);
     }
 
     [Fact]
@@ -434,7 +434,7 @@ public class FixedWidthRecordBinderGeneratorTests
         // Both descriptor and generated binder should be registered
         Assert.Contains("RegisterDescriptor", registrationSource);
         Assert.Contains("RegisterGeneratedBinder", registrationSource);
-        Assert.Contains("FixedWidthGeneratedBinder_", registrationSource);
+        Assert.Contains("FixedWidthInlineCharSourceBinder_", registrationSource);
     }
 
     [Fact]

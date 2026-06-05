@@ -71,6 +71,11 @@ public sealed record CsvToFixedWidthOptions
     public string NewLine { get; init; } = "\r\n";
 
     /// <summary>
+    /// Gets or sets whether header matching should be case-sensitive (default: false).
+    /// </summary>
+    public bool CaseSensitiveHeaders { get; init; }
+
+    /// <summary>
     /// Gets the default options.
     /// </summary>
     public static CsvToFixedWidthOptions Default { get; } = new();
@@ -111,18 +116,29 @@ public static class CsvToFixedWidthConverter
 
         // Read header to build column index mapping
         if (!reader.MoveNext())
+        {
+            if (options.IncludeHeader)
+            {
+                var sbHeader = new System.Text.StringBuilder();
+                WriteFixedWidthRow(sbHeader, columns, [.. columns.Select(c => c.Name)]);
+                sbHeader.Append(options.NewLine);
+                return sbHeader.ToString();
+            }
             return "";
+        }
 
         var headerRow = reader.Current;
         var headerNames = new string[headerRow.ColumnCount];
         for (int i = 0; i < headerRow.ColumnCount; i++)
-            headerNames[i] = headerRow[i].ToString();
+            headerNames[i] = headerRow[i].ToString().Trim();
 
         // Map field definitions to CSV column indices
+        var comparison = options.CaseSensitiveHeaders ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var columnMap = new int[columns.Count];
         for (int i = 0; i < columns.Count; i++)
         {
-            columnMap[i] = Array.IndexOf(headerNames, columns[i].Name);
+            var targetName = columns[i].Name.Trim();
+            columnMap[i] = Array.FindIndex(headerNames, h => string.Equals(h, targetName, comparison));
         }
 
         int recordLength = 0;
@@ -157,7 +173,7 @@ public static class CsvToFixedWidthConverter
             sb.Append(options.NewLine);
         }
 
-        return hasData ? sb.ToString() : "";
+        return (hasData || options.IncludeHeader) ? sb.ToString() : "";
     }
 
     private static void WriteFixedWidthRow(System.Text.StringBuilder sb, IReadOnlyList<FixedWidthFieldDefinition> columns, string[] values)

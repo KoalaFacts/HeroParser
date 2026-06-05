@@ -282,7 +282,7 @@ public class CustomRow2
     public string? Value { get; set; }
 }
 
-internal sealed class CustomBinder : global::HeroParser.SeparatedValues.Reading.Binders.ICsvBinder<byte, CustomRow>
+internal sealed class CustomBinder : global::HeroParser.SeparatedValues.Reading.Binders.ICsvSourceBinder<byte, CustomRow>
 {
     public bool NeedsHeaderResolution => false;
     public void BindHeader(global::HeroParser.SeparatedValues.Reading.Rows.CsvRow<byte> headerRow, int rowNumber) { }

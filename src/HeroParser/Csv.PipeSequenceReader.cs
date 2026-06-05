@@ -492,6 +492,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                         escape,
                         enableQuotes,
                         columnEndsBuffer.Span,
+                        bufferedIsCompleted,
                         out rowData,
                         out columnCount,
                         out newlineCount))
@@ -501,7 +502,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 }
                 else
                 {
-                    if (!Csv.TryReadRow(ref buffer, quote, escape, enableQuotes, out rowData))
+                    if (!Csv.TryReadRow(ref buffer, quote, escape, enableQuotes, bufferedIsCompleted, out rowData))
                     {
                         break;
                     }

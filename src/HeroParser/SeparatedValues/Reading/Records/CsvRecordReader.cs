@@ -17,8 +17,8 @@ public ref struct CsvRecordReader<TElement, T>
 {
     private CsvRowReader<TElement> reader;
     private CsvRowReader<byte> byteReader;
-    private readonly ICsvBinder<TElement, T>? binder;
-    private readonly ICsvBinder<byte, T>? byteBinder;
+    private readonly ICsvSourceBinder<TElement, T>? binder;
+    private readonly ICsvSourceBinder<byte, T>? byteBinder;
     // Keeps encoded text alive for byte-backed string readers.
     private readonly byte[]? ownedBuffer;
     private readonly bool useByteReader;
@@ -32,7 +32,7 @@ public ref struct CsvRecordReader<TElement, T>
     private int dataRowCount;
     private readonly List<ValidationError> errors = [];
 
-    internal CsvRecordReader(CsvRowReader<TElement> reader, ICsvBinder<TElement, T> binder, int skipRows = 0,
+    internal CsvRecordReader(CsvRowReader<TElement> reader, ICsvSourceBinder<TElement, T> binder, int skipRows = 0,
         IProgress<CsvProgress>? progress = null, int progressInterval = 1000,
         ValidationMode validationMode = ValidationMode.Strict,
         CsvDeserializeErrorHandler? onDeserializeError = null)
@@ -56,7 +56,7 @@ public ref struct CsvRecordReader<TElement, T>
 
     private CsvRecordReader(
         CsvRowReader<byte> byteReader,
-        ICsvBinder<byte, T> byteBinder,
+        ICsvSourceBinder<byte, T> byteBinder,
         byte[] ownedBuffer,
         int skipRows = 0,
         IProgress<CsvProgress>? progress = null,
@@ -83,7 +83,7 @@ public ref struct CsvRecordReader<TElement, T>
 
     internal static CsvRecordReader<char, T> CreateByteBacked(
         CsvRowReader<byte> byteReader,
-        ICsvBinder<byte, T> byteBinder,
+        ICsvSourceBinder<byte, T> byteBinder,
         byte[] ownedBuffer,
         int skipRows = 0,
         IProgress<CsvProgress>? progress = null,

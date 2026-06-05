@@ -66,6 +66,11 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     /// </summary>
     public long CharsWritten => totalCharsWritten + charBufferPosition;
 
+    /// <summary>
+    /// Gets the CultureInfo used by the writer.
+    /// </summary>
+    public CultureInfo Culture => options.Culture;
+
     // Default dangerous characters for CSV injection (always dangerous)
     // Note: '-' and '+' are handled separately with smart detection
     private static ReadOnlySpan<char> AlwaysDangerousChars => ['=', '@', '\t', '\r'];
@@ -134,7 +139,14 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
 #endif
     public async ValueTask WriteFieldAsync(string? value, CancellationToken cancellationToken = default)
     {
-        await WriteFieldAsync(value.AsMemory(), cancellationToken).ConfigureAwait(false);
+        if (value is null)
+        {
+            await WriteFieldAsync(ReadOnlyMemory<char>.Empty, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await WriteFieldAsync(value.AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -166,6 +178,475 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
         isFirstFieldInRow = false;
 
         await WriteFieldValueAsync(value, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Asynchronously writes an Int32 field directly without boxing.</summary>
+    public ValueTask WriteFieldAsync(int value, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            if (charBufferPosition + 1 <= charBuffer.Length)
+            {
+                charBuffer[charBufferPosition++] = delimiter;
+            }
+            else
+            {
+                return WriteFieldSlowAsync(value, cancellationToken);
+            }
+        }
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+                return ValueTask.CompletedTask;
+            }
+            return WriteFieldValueFromBufferAsync(charsWritten, cancellationToken);
+        }
+
+        return WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken);
+    }
+
+    private async ValueTask WriteFieldSlowAsync(int value, CancellationToken cancellationToken)
+    {
+        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+            }
+            else
+            {
+                await WriteFieldValueFromBufferAsync(charsWritten, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Asynchronously writes an Int64 field directly without boxing.</summary>
+    public ValueTask WriteFieldAsync(long value, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            if (charBufferPosition + 1 <= charBuffer.Length)
+            {
+                charBuffer[charBufferPosition++] = delimiter;
+            }
+            else
+            {
+                return WriteFieldSlowAsync(value, cancellationToken);
+            }
+        }
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+                return ValueTask.CompletedTask;
+            }
+            return WriteFieldValueFromBufferAsync(charsWritten, cancellationToken);
+        }
+
+        return WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken);
+    }
+
+    private async ValueTask WriteFieldSlowAsync(long value, CancellationToken cancellationToken)
+    {
+        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+            }
+            else
+            {
+                await WriteFieldValueFromBufferAsync(charsWritten, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Asynchronously writes a Double field directly without boxing.</summary>
+    public ValueTask WriteFieldAsync(double value, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            if (charBufferPosition + 1 <= charBuffer.Length)
+            {
+                charBuffer[charBufferPosition++] = delimiter;
+            }
+            else
+            {
+                return WriteFieldSlowAsync(value, cancellationToken);
+            }
+        }
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+                return ValueTask.CompletedTask;
+            }
+            return WriteFieldValueFromBufferAsync(charsWritten, cancellationToken);
+        }
+
+        return WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken);
+    }
+
+    private async ValueTask WriteFieldSlowAsync(double value, CancellationToken cancellationToken)
+    {
+        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+            }
+            else
+            {
+                await WriteFieldValueFromBufferAsync(charsWritten, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Asynchronously writes a Float field directly without boxing.</summary>
+    public ValueTask WriteFieldAsync(float value, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            if (charBufferPosition + 1 <= charBuffer.Length)
+            {
+                charBuffer[charBufferPosition++] = delimiter;
+            }
+            else
+            {
+                return WriteFieldSlowAsync(value, cancellationToken);
+            }
+        }
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+                return ValueTask.CompletedTask;
+            }
+            return WriteFieldValueFromBufferAsync(charsWritten, cancellationToken);
+        }
+
+        return WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken);
+    }
+
+    private async ValueTask WriteFieldSlowAsync(float value, CancellationToken cancellationToken)
+    {
+        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
+        Span<char> stackBuffer = stackalloc char[32];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+            }
+            else
+            {
+                await WriteFieldValueFromBufferAsync(charsWritten, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Asynchronously writes a Decimal field directly without boxing.</summary>
+    public ValueTask WriteFieldAsync(decimal value, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            if (charBufferPosition + 1 <= charBuffer.Length)
+            {
+                charBuffer[charBufferPosition++] = delimiter;
+            }
+            else
+            {
+                return WriteFieldSlowAsync(value, cancellationToken);
+            }
+        }
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+                return ValueTask.CompletedTask;
+            }
+            return WriteFieldValueFromBufferAsync(charsWritten, cancellationToken);
+        }
+
+        return WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken);
+    }
+
+    private async ValueTask WriteFieldSlowAsync(decimal value, CancellationToken cancellationToken)
+    {
+        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+            }
+            else
+            {
+                await WriteFieldValueFromBufferAsync(charsWritten, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Asynchronously writes a Boolean field directly without boxing.</summary>
+    public ValueTask WriteFieldAsync(bool value, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            if (charBufferPosition + 1 <= charBuffer.Length)
+            {
+                charBuffer[charBufferPosition++] = delimiter;
+            }
+            else
+            {
+                return WriteFieldSlowAsync(value, cancellationToken);
+            }
+        }
+        isFirstFieldInRow = false;
+
+        ReadOnlySpan<char> boolStr = value ? "True" : "False";
+        if (charBufferPosition + boolStr.Length <= charBuffer.Length)
+        {
+            boolStr.CopyTo(charBuffer.AsSpan(charBufferPosition));
+            charBufferPosition += boolStr.Length;
+            return ValueTask.CompletedTask;
+        }
+
+        return WriteFieldValueAsync(value ? "True".AsMemory() : "False".AsMemory(), cancellationToken);
+    }
+
+    private async ValueTask WriteFieldSlowAsync(bool value, CancellationToken cancellationToken)
+    {
+        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
+        ReadOnlySpan<char> boolStr = value ? "True" : "False";
+        if (charBufferPosition + boolStr.Length <= charBuffer.Length)
+        {
+            boolStr.CopyTo(charBuffer.AsSpan(charBufferPosition));
+            charBufferPosition += boolStr.Length;
+        }
+        else
+        {
+            await WriteFieldValueAsync(value ? "True".AsMemory() : "False".AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Asynchronously writes a DateTime field directly without boxing.</summary>
+    public ValueTask WriteFieldAsync(DateTime value, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            if (charBufferPosition + 1 <= charBuffer.Length)
+            {
+                charBuffer[charBufferPosition++] = delimiter;
+            }
+            else
+            {
+                return WriteFieldSlowAsync(value, cancellationToken);
+            }
+        }
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, dateTimeFormat, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+                return ValueTask.CompletedTask;
+            }
+            return WriteFieldValueFromBufferAsync(charsWritten, cancellationToken);
+        }
+
+        return WriteFieldValueAsync(value.ToString(dateTimeFormat, culture).AsMemory(), cancellationToken);
+    }
+
+    private async ValueTask WriteFieldSlowAsync(DateTime value, CancellationToken cancellationToken)
+    {
+        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, dateTimeFormat, culture))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+            }
+            else
+            {
+                await WriteFieldValueFromBufferAsync(charsWritten, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await WriteFieldValueAsync(value.ToString(dateTimeFormat, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Asynchronously writes a Guid field directly without boxing.</summary>
+    public ValueTask WriteFieldAsync(Guid value, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            if (charBufferPosition + 1 <= charBuffer.Length)
+            {
+                charBuffer[charBufferPosition++] = delimiter;
+            }
+            else
+            {
+                return WriteFieldSlowAsync(value, cancellationToken);
+            }
+        }
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+                return ValueTask.CompletedTask;
+            }
+            return WriteFieldValueFromBufferAsync(charsWritten, cancellationToken);
+        }
+
+        return WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken);
+    }
+
+    private async ValueTask WriteFieldSlowAsync(Guid value, CancellationToken cancellationToken)
+    {
+        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
+        Span<char> stackBuffer = stackalloc char[64];
+        if (value.TryFormat(stackBuffer, out int charsWritten, null))
+        {
+            if (charBufferPosition + charsWritten <= charBuffer.Length)
+            {
+                stackBuffer[..charsWritten].CopyTo(charBuffer.AsSpan(charBufferPosition));
+                charBufferPosition += charsWritten;
+            }
+            else
+            {
+                await WriteFieldValueFromBufferAsync(charsWritten, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await WriteFieldValueAsync(value.ToString(null, culture).AsMemory(), cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

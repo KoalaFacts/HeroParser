@@ -18,7 +18,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
 {
     private const string GENERATED_NAMESPACE = "HeroParser.JsonLines.Reading.Binding";
     private const string BINDER_FACTORY_TYPE = "global::HeroParser.JsonLines.Reading.Binders.JsonlRecordBinderFactory";
-    private const string BINDER_INTERFACE_TYPE = "global::HeroParser.JsonLines.Reading.Binders.IJsonlBinder<";
+    private const string BINDER_INTERFACE_TYPE = "global::HeroParser.JsonLines.Reading.Binders.IJsonlSourceBinder<";
 
     private static readonly string[] generateAttributeNames =
     [
@@ -101,8 +101,8 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"namespace {GENERATED_NAMESPACE};");
         builder.AppendLine();
 
-        var binderClassName = $"JsonlBinder_{descriptor.SafeClassName}";
-        builder.AppendLine($"internal sealed class {binderClassName} : {BINDER_INTERFACE_TYPE}{descriptor.FullyQualifiedName}>");
+        var binderClassName = $"JsonlInlineByteSourceBinder_{descriptor.SafeClassName}";
+        builder.AppendLine($"internal sealed class {binderClassName} : {BINDER_INTERFACE_TYPE}byte, {descriptor.FullyQualifiedName}>");
         builder.AppendLine("{");
         builder.Indent();
 
@@ -119,7 +119,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         }
         builder.AppendLine();
 
-        builder.AppendLine($"internal static {BINDER_INTERFACE_TYPE}{descriptor.FullyQualifiedName}> Instance {{ get; }} = new {binderClassName}();");
+        builder.AppendLine($"internal static {BINDER_INTERFACE_TYPE}byte, {descriptor.FullyQualifiedName}> Instance {{ get; }} = new {binderClassName}();");
         builder.AppendLine();
 
         builder.AppendLine($"public {descriptor.FullyQualifiedName} Bind(ReadOnlySpan<byte> line)");
@@ -177,14 +177,53 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         builder.Unindent();
         builder.AppendLine("}"); // end of loop
         builder.AppendLine();
-        builder.AppendLine("return record;");
+        builder.AppendLine("throw new JsonException(\"JSON object was truncated or malformed.\");");
         builder.Unindent();
         builder.AppendLine("}"); // end of Bind method
 
         builder.Unindent();
-        builder.AppendLine("}"); // end of class
+        builder.AppendLine("}"); // end of byte class
 
-        context.AddSource($"JsonlBinder.{descriptor.SafeClassName}.g.cs", builder.ToString());
+        // Emit Char Source Binder implementing IJsonlSourceBinder<char, T>
+        var charBinderClassName = $"JsonlInlineCharSourceBinder_{descriptor.SafeClassName}";
+        builder.AppendLine();
+        builder.AppendLine($"internal sealed class {charBinderClassName} : {BINDER_INTERFACE_TYPE}char, {descriptor.FullyQualifiedName}>");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine($"internal static {BINDER_INTERFACE_TYPE}char, {descriptor.FullyQualifiedName}> Instance {{ get; }} = new {charBinderClassName}();");
+        builder.AppendLine();
+        builder.AppendLine($"public {descriptor.FullyQualifiedName} Bind(ReadOnlySpan<char> line)");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("if (line.IsEmpty)");
+        builder.AppendLine($"    return {binderClassName}.Instance.Bind(ReadOnlySpan<byte>.Empty);");
+        builder.AppendLine();
+        builder.AppendLine("int maxByteCount = global::System.Text.Encoding.UTF8.GetMaxByteCount(line.Length);");
+        builder.AppendLine("byte[]? rented = null;");
+        builder.AppendLine("Span<byte> buffer = maxByteCount <= 512");
+        builder.AppendLine("    ? stackalloc byte[maxByteCount]");
+        builder.AppendLine("    : (rented = global::System.Buffers.ArrayPool<byte>.Shared.Rent(maxByteCount));");
+        builder.AppendLine();
+        builder.AppendLine("try");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("int bytesWritten = global::System.Text.Encoding.UTF8.GetBytes(line, buffer);");
+        builder.AppendLine($"return {binderClassName}.Instance.Bind(buffer[..bytesWritten]);");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine("finally");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("if (rented is not null)");
+        builder.AppendLine("    global::System.Buffers.ArrayPool<byte>.Shared.Return(rented);");
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.Unindent();
+        builder.AppendLine("}"); // end of Bind
+        builder.Unindent();
+        builder.AppendLine("}"); // end of char class
+
+        context.AddSource($"JsonlInlineSourceBinder.{descriptor.SafeClassName}.g.cs", builder.ToString());
     }
 
     private static List<string> GetKeyCandidates(MemberDescriptor member)
@@ -353,7 +392,10 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                     builder.AppendLine("{");
                     builder.Indent();
                     builder.AppendLine("string s = reader.GetString()!;");
-                    builder.AppendLine($"record.{propertyName} = ({member.TypeOfTypeName})Enum.Parse(typeof({member.TypeOfTypeName}), s);");
+                    builder.AppendLine($"if (Enum.TryParse<{member.TypeOfTypeName}>(s, ignoreCase: true, out var enumVal))");
+                    builder.AppendLine($"    record.{propertyName} = enumVal;");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    throw new JsonException($\"Failed to parse value '{{s}}' as enum {member.TypeOfTypeName}.\");");
                     builder.Unindent();
                     builder.AppendLine("}");
                 }
@@ -394,8 +436,11 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
             var binderMembers = GetMembersWithSetters(descriptor.Members);
             if (binderMembers.Count > 0)
             {
-                var binderClassName = $"global::{GENERATED_NAMESPACE}.JsonlBinder_{descriptor.SafeClassName}";
-                builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterBinder<{descriptor.FullyQualifiedName}>({binderClassName}.Instance);");
+                var byteBinderClassName = $"global::{GENERATED_NAMESPACE}.JsonlInlineByteSourceBinder_{descriptor.SafeClassName}";
+                builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterByteBinder<{descriptor.FullyQualifiedName}>({byteBinderClassName}.Instance);");
+
+                var charBinderClassName = $"global::{GENERATED_NAMESPACE}.JsonlInlineCharSourceBinder_{descriptor.SafeClassName}";
+                builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterCharBinder<{descriptor.FullyQualifiedName}>({charBinderClassName}.Instance);");
             }
         }
 

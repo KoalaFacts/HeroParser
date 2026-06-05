@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Extract configuration
         id: extract
@@ -97,20 +99,20 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Fetch gh-pages or initialize it if non-existent
-          if git fetch origin gh-pages; then
-            git checkout gh-pages
-          else
+          # Clone the gh-pages branch to a separate directory /tmp/gh-pages-repo
+          git clone --branch gh-pages https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git /tmp/gh-pages-repo || {
+            # If the branch doesn't exist, clone the repo and create an orphan branch
+            git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git /tmp/gh-pages-repo
+            cd /tmp/gh-pages-repo
             git checkout --orphan gh-pages
             git rm -rf .
             mkdir -p versions
-            echo "Initialized gh-pages branch"
-          fi
+          }
 
       - name: Deploy versioned reports
         run: |
           VERSION="${{ steps.determine-version.outputs.VERSION }}"
-          TARGET_DIR="versions/v$VERSION"
+          TARGET_DIR="/tmp/gh-pages-repo/versions/v$VERSION"
           mkdir -p "$TARGET_DIR"
 
           # Copy stashed HTML and markdown results
@@ -119,6 +121,7 @@ jobs:
 
       - name: Prune old versions and generate landing page
         run: |
+          cd /tmp/gh-pages-repo
           # Get list of all directories starting with 'versions/v' and sort semantically in reverse
           versions=$(ls -d versions/v* 2>/dev/null | sed 's|versions/v||' | sort -V -r)
 
@@ -345,7 +348,12 @@ jobs:
 
       - name: Commit and push to gh-pages
         run: |
-          git add versions/ index.html
+          cd /tmp/gh-pages-repo
+          
+          # Create .nojekyll file to bypass Jekyll processing
+          touch .nojekyll
+          
+          git add versions/ index.html .nojekyll
           
           # Only commit and push if there are changes
           if ! git diff-index --quiet HEAD; then

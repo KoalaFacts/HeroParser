@@ -452,7 +452,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             var binderClassName = $"global::{GENERATED_NAMESPACE}.HtbInlineBinder_{descriptor.SafeClassName}";
             builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterBinder<{descriptor.FullyQualifiedName}>(schema => new {binderClassName}(schema));");
             builder.AppendLine($"{WRITER_FACTORY_TYPE}.RegisterWriter<{descriptor.FullyQualifiedName}>(() => new {binderClassName}());");
-            
+
             builder.AppendLine($"global::HeroParser.Htbs.Records.HtbSchema.RegisterSchemaProvider<{descriptor.FullyQualifiedName}>(() => new global::HeroParser.Htbs.Records.HtbSchema(");
             builder.AppendLine("    new global::HeroParser.Htbs.Records.HtbColumn[]");
             builder.AppendLine("    {");

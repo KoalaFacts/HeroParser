@@ -1,4 +1,4 @@
-# HeroParser - High-Performance, AI-Native CSV, Fixed-Width, Excel (.xlsx) & JSONL Parser
+# HeroParser - High-Performance, AI-Native CSV, Fixed-Width, Excel (.xlsx), JSONL & HTB Parser
 
 [![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
@@ -10,7 +10,7 @@
 * **Extreme Performance**: Engineered with AVX-512, AVX2, and ARM NEON SIMD optimizations to deliver ultra-high-throughput reading and writing.
 * **AI-Native integrations**: Built-in support for token-budgeted chunking, LLM output structured repair, vector embedding pipelines, and agent tool mapping.
 * **Zero Dependencies & Low Footprint**: Operates with zero external packages. Employs a fixed **112-byte heap memory footprint** on the reading hot-path regardless of file size.
-* **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, and Fixed-Width APIs.
+* **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, Fixed-Width, and HTB APIs.
 
 ---
 
@@ -124,20 +124,48 @@ var records = Jsonl.Read<Product>().FromFile("products.jsonl").ToList();
 Jsonl.Write<Product>().ToFile("out.jsonl", records);
 ```
 
+### High-Throughput Tabular Binary (HTB)
+
+A custom, high-speed binary serialization format optimized for zero allocations, platform independence, and vector embedding storage (supporting `float[]` arrays).
+
+#### Why HTB?
+* **Zero Heap Allocations**: Utilizes Roslyn source generators (`[GenerateBinder]`) to map properties directly with zero-boxing and zero-reflection overhead.
+* **Vector Embedding Native**: Natively supports floating-point arrays (`float[]`), enabling ultra-fast vector embedding serialization without string parsing overhead.
+* **Platform-Independent Endianness**: Automatically handles big-endian byte-order reversal for floats, doubles, and ints for cross-architecture safety.
+* **Allocation-Free CSV ↔ HTB Conversion**: Stream-convert CSV directly to HTB (and vice-versa) with zero heap allocation overhead.
+* **AOT & Trim Ready**: Fully compatible with Native AOT compilation out-of-the-box.
+
+```csharp
+// Read HTB binary files (AOT-safe)
+List<Product> products = Htb.Read<Product>().FromFile("products.htb").ToList();
+
+// Async stream HTB records
+await foreach (Product p in Htb.Read<Product>().FromFileAsync("products.htb"))
+{
+    Console.WriteLine($"{p.Name}: {p.Price:C}");
+}
+
+// Write records to an HTB file
+Htb.Write<Product>().ToFile("out.htb", products);
+
+// Direct, allocation-free CSV ↔ HTB conversions
+Htb.ConvertFromCsv("products.csv", "products.htb", HtbSchema.FromType<Product>());
+```
+
 ---
 
 ## Unified Attribute System
 
 Annotate a single record class once, and read or write it across multiple formats:
 
-| Attribute | Purpose | CSV | Excel | Fixed-Width |
-|-----------|---------|:---:|:---:|:---:|
-| `[GenerateBinder]` | Emits Roslyn source-generated, reflection-free mapping binder | Yes | Yes | Yes |
-| `[TabularMap(Name, Index)]` | Maps property to column header or index | Yes | Yes | No |
-| `[PositionalMap(Start, Length...)]` | Declares character position, alignment, and pad characters | No | No | Yes |
-| `[Parse(Format)]` | Converts raw values to custom types (e.g. DateTime format) | Yes | Yes | Yes |
-| `[Format(WriteFormat...)]` | Customizes output formatting during serialization | Yes | Yes | Yes |
-| `[Validate(Range, Pattern...)]` | Validates properties bidirectionally (Strict/Lenient modes) | Yes | Yes | Yes |
+| Attribute | Purpose | CSV | Excel | Fixed-Width | HTB |
+|-----------|---------|:---:|:---:|:---:|:---:|
+| `[GenerateBinder]` | Emits Roslyn source-generated, reflection-free mapping binder | Yes | Yes | Yes | Yes |
+| `[TabularMap(Name, Index)]` | Maps property to column header or index | Yes | Yes | No | Yes |
+| `[PositionalMap(Start, Length...)]` | Declares character position, alignment, and pad characters | No | No | Yes | No |
+| `[Parse(Format)]` | Converts raw values to custom types (e.g. DateTime format) | Yes | Yes | Yes | No |
+| `[Format(WriteFormat...)]` | Customizes output formatting during serialization | Yes | Yes | Yes | No |
+| `[Validate(Range, Pattern...)]` | Validates properties bidirectionally (Strict/Lenient modes) | Yes | Yes | Yes | Yes |
 
 ---
 
@@ -198,9 +226,10 @@ await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(options)) { ... 
 * **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking
 * **Zero allocations** — fixed 4 KB stack footprint regardless of column count or file size; `ArrayPool` for buffers
 * **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
-* **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, and JSONL; true non-blocking I/O with sync fast paths
+* **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, JSONL, and HTB; true non-blocking I/O with sync fast paths
 * **Excel without extra dependencies** — reads and writes `.xlsx` using only `System.IO.Compression` and `System.Xml`
 * **JSONL for AI/ML pipelines** — `Jsonl.Read<T>()` / `Jsonl.Write<T>()` mirror the CSV builder pattern; AOT-safe via `JsonTypeInfo<T>`; `CsvToJsonlConverter` projects tabular data into OpenAI/Anthropic fine-tuning shapes
+* **HTB binary format** — custom, high-speed, zero-allocation binary format featuring float-array embedding support, big-endian byte-order reversal, and direct CSV ↔ HTB conversion
 * **Embedding-API batching** — `IAsyncEnumerable<T>.BatchAsync(size)` groups streamed records into fixed-size batches for OpenAI/Voyage/Cohere/Anthropic embedding calls
 * **Inline vector parser** — `VectorParser.ParseFloats(span)` handles pre-computed embeddings (`"[0.1,0.2,…]"`, comma/semicolon/whitespace separators, culture-aware)
 * **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()` for database bulk loading via `SqlBulkCopy`
@@ -224,6 +253,7 @@ For advanced features and full API guides, see the files under the `docs` folder
 * [Excel Guide](docs/excel.md) — Multi-sheet workbooks, custom formatting, and progress tracking.
 * [Fixed-Width Guide](docs/fixed-width.md) — Positional mapping, alignment, padding, and custom type converters.
 * [JSONL Guide](docs/jsonl.md) — Fine-tuning templates, vector parsing, and Native AOT setups.
+* [HTB Guide](docs/htb.md) — High-Throughput Tabular Binary format, fluent APIs, CSV ↔ HTB conversion, and Native AOT support.
 * [Benchmarks Guide](docs/benchmarks.md) — Execution environments, detailed CPU metrics, and comparisons.
 
 ---

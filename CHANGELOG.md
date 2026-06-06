@@ -4,9 +4,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-## [2.4.1] - 2026-06-05
+## [2.4.1] - 2026-06-06
 
-Security hardening, streaming robustness, and agentic validation release. Delivers global Excel XML Zip-bomb/XXE mitigations, ReDoS timeout guards, buffer-boundary split streaming safety, endianness corrections for HTB binary files, and memory-optimized zero-allocation JSONL parsers.
+Security hardening, streaming robustness, agentic validation, and HTB documentation release. Delivers global Excel XML Zip-bomb/XXE mitigations, ReDoS timeout guards, buffer-boundary split streaming safety, endianness corrections for HTB binary files, memory-optimized zero-allocation JSONL parsers, and dedicated HTB documentation.
 
 ### Added
 - **Security Hardening & XXE Mitigations**:
@@ -25,6 +25,11 @@ Security hardening, streaming robustness, and agentic validation release. Delive
   - Synchronized ordinal properties sorting in both source generator and reflection-based schema builders to prevent dynamic schema desyncs.
 - **Agent parameter binding**:
   - Expanded type mapping support for `Guid`, `DateTime`, `DateTimeOffset`, and `TimeSpan` parameters in `SchemaMetadata.MapFromToolCall`.
+
+### Documentation
+- **HTB Format Promotion & References**:
+  - Created a comprehensive API reference at `docs/htb.md` covering fluent reader/writer builders, direct CSV ↔ HTB conversions, option specs, and AOT compiler integration guidelines.
+  - Integrated HTB quick starts, features, and layout definitions directly into `README.md`.
 
 ## [2.4.0] - 2026-05-29
 

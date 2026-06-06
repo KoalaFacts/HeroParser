@@ -452,6 +452,21 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             var binderClassName = $"global::{GENERATED_NAMESPACE}.HtbInlineBinder_{descriptor.SafeClassName}";
             builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterBinder<{descriptor.FullyQualifiedName}>(schema => new {binderClassName}(schema));");
             builder.AppendLine($"{WRITER_FACTORY_TYPE}.RegisterWriter<{descriptor.FullyQualifiedName}>(() => new {binderClassName}());");
+            
+            builder.AppendLine($"global::HeroParser.Htbs.Records.HtbSchema.RegisterSchemaProvider<{descriptor.FullyQualifiedName}>(() => new global::HeroParser.Htbs.Records.HtbSchema(");
+            builder.AppendLine("    new global::HeroParser.Htbs.Records.HtbColumn[]");
+            builder.AppendLine("    {");
+            for (int i = 0; i < descriptor.Members.Count; i++)
+            {
+                var member = descriptor.Members[i];
+                var isNullable = member.IsNullable || member.BaseTypeName == "string" || member.BaseTypeName == "float[]";
+                var isNullableStr = isNullable ? "true" : "false";
+                var typeNameStr = GetHtbDataTypeName(member.BaseTypeName);
+                var comma = i == descriptor.Members.Count - 1 ? "" : ",";
+                builder.AppendLine($"        new global::HeroParser.Htbs.Records.HtbColumn(\"{member.HeaderName}\", global::HeroParser.Htbs.Records.HtbDataType.{typeNameStr}, {isNullableStr}){comma}");
+            }
+            builder.AppendLine("    }");
+            builder.AppendLine("));");
         }
 
         builder.Unindent();
@@ -460,6 +475,24 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("}");
 
         context.AddSource("HtbRecordBinderFactory.Registration.g.cs", builder.ToString());
+    }
+
+    private static string GetHtbDataTypeName(string baseTypeName)
+    {
+        return baseTypeName switch
+        {
+            "int" or "System.Int32" => "Int32",
+            "long" or "System.Int64" => "Int64",
+            "float" or "System.Single" => "Float",
+            "double" or "System.Double" => "Double",
+            "decimal" or "System.Decimal" => "Decimal",
+            "bool" or "System.Boolean" => "Boolean",
+            "System.DateTime" => "DateTime",
+            "string" or "System.String" => "String",
+            "System.Guid" => "Guid",
+            "float[]" or "System.Single[]" => "FloatArray",
+            _ => "Unknown"
+        };
     }
 
     private static TypeDescriptor? BuildDescriptor(INamedTypeSymbol type, CancellationToken ct)

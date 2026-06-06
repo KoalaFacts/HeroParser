@@ -95,20 +95,26 @@ public sealed class HtbRecordWriter<T> : HtbStreamWriter where T : new()
     [RequiresUnreferencedCode("Reflection schema extraction is not safe for Native AOT.")]
     private void WriteRecordHeader()
     {
+        generatedWriter = HtbRecordWriterFactory.GetWriter<T>();
         var targetSchema = HtbSchema.FromType<T>();
         WriteHeader(targetSchema);
-        binder = new HtbRecordBinder<T>(targetSchema);
-        generatedWriter = HtbRecordWriterFactory.GetWriter<T>();
+        if (generatedWriter == null)
+        {
+            binder = new HtbRecordBinder<T>(targetSchema);
+        }
         recordHeaderWritten = true;
     }
 
     [RequiresUnreferencedCode("Reflection schema extraction is not safe for Native AOT.")]
     private async Task WriteRecordHeaderAsync()
     {
+        generatedWriter = HtbRecordWriterFactory.GetWriter<T>();
         var targetSchema = HtbSchema.FromType<T>();
         await WriteHeaderAsync(targetSchema).ConfigureAwait(false);
-        binder = new HtbRecordBinder<T>(targetSchema);
-        generatedWriter = HtbRecordWriterFactory.GetWriter<T>();
+        if (generatedWriter == null)
+        {
+            binder = new HtbRecordBinder<T>(targetSchema);
+        }
         recordHeaderWritten = true;
     }
 

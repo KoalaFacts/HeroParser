@@ -98,12 +98,28 @@ public sealed class HtbSchema
         Columns = columns;
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<HtbSchema>> registeredSchemaProviders = new();
+
+    /// <summary>
+    /// Registers a compile-time schema provider for a type, making schema retrieval trim-safe.
+    /// </summary>
+    public static void RegisterSchemaProvider<T>(Func<HtbSchema> provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        registeredSchemaProviders[typeof(T)] = provider;
+    }
+
     /// <summary>
     /// Resolves the HTB schema for the specified record type using reflection.
     /// </summary>
     [RequiresUnreferencedCode("Schema extraction via reflection requires unreferenced code and is not safe for Native AOT.")]
     public static HtbSchema FromType<T>()
     {
+        if (registeredSchemaProviders.TryGetValue(typeof(T), out var provider))
+        {
+            return provider();
+        }
+
         var type = typeof(T);
         var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
         var columns = new List<HtbColumn>();

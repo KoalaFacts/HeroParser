@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks\HeroParser.Benchmarks\HeroParser.Benchmarks.csproj" />
+    <Project Path="benchmarks\HeroParser.Console.Benchmarks\HeroParser.Console.Benchmarks.csproj" />
   </Folder>
   <Folder Name="/examples/">
     <Project Path="examples\HeroParser.Examples.AiPipeline\HeroParser.Examples.AiPipeline.csproj" />
@@ -8,7 +9,10 @@
   <Folder Name="/tests/">
     <Project Path="tests\HeroParser.Tests\HeroParser.Tests.csproj" />
     <Project Path="tests\HeroParser.Generators.Tests\HeroParser.Generators.Tests.csproj" />
+    <Project Path="tests\HeroParser.Console.Tests\HeroParser.Console.Tests.csproj" />
   </Folder>
   <Project Path="src\HeroParser.Generators\HeroParser.Generators.csproj" />
   <Project Path="src\HeroParser\HeroParser.csproj" />
+  <Project Path="src\HeroParser.Cli\HeroParser.Cli.csproj" />
+  <Project Path="src\HeroParser.Console\HeroParser.Console.csproj" />
 </Solution>

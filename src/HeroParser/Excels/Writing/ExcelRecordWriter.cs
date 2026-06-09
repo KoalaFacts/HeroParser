@@ -127,11 +127,21 @@ public sealed class ExcelRecordWriter<T>
     /// Optional options override. When <see langword="null"/>, the options passed to the constructor are used.
     /// </param>
     /// <param name="sheetName">The name of the worksheet, used in progress reports and error contexts.</param>
+    /// <param name="xlsxWriter">The optional spreadsheet package writer to register custom styles.</param>
+    /// <param name="headerStyle">The optional style for the header row.</param>
+    /// <param name="columnStyles">The optional dictionary mapping properties to column styles.</param>
+    /// <param name="mergedCellRanges">The optional list of explicit cell ranges to merge.</param>
+    /// <param name="autoMergeColumns">The optional list of property names whose duplicate contiguous values should be auto-merged.</param>
     internal void WriteRecords(
         XlsxWriter.SheetWriter sheetWriter,
         IEnumerable<T> records,
         ExcelWriteOptions? options = null,
-        string sheetName = "Sheet1")
+        string sheetName = "Sheet1",
+        XlsxWriter? xlsxWriter = null,
+        ExcelStyle? headerStyle = null,
+        Dictionary<string, ExcelStyle>? columnStyles = null,
+        List<ExcelMergeRange>? mergedCellRanges = null,
+        List<string>? autoMergeColumns = null)
     {
         var effectiveOptions = options ?? writerOptions;
         effectiveOptions.Validate();
@@ -140,12 +150,66 @@ public sealed class ExcelRecordWriter<T>
             ? effectiveOptions.WriteProgressIntervalRows
             : 1000;
 
+        int? headerStyleIndex = null;
+        int?[]? columnStyleIndices = null;
+
+        if (xlsxWriter is not null)
+        {
+            if (headerStyle is not null)
+                headerStyleIndex = xlsxWriter.RegisterStyle(headerStyle);
+
+            if (columnStyles is not null && columnStyles.Count > 0)
+            {
+                columnStyleIndices = new int?[accessors.Length];
+                for (int i = 0; i < accessors.Length; i++)
+                {
+                    if (columnStyles.TryGetValue(accessors[i].MemberName, out var style))
+                        columnStyleIndices[i] = xlsxWriter.RegisterStyle(style);
+                }
+            }
+        }
+
+        // Apply explicit merged cell ranges
+        if (mergedCellRanges is not null && mergedCellRanges.Count > 0)
+        {
+            foreach (var merge in mergedCellRanges)
+            {
+                if (merge.IsCoordinate)
+                    sheetWriter.MergeCells(merge.StartColumn, merge.StartRow, merge.EndColumn, merge.EndRow);
+                else if (merge.RangeString is not null)
+                    sheetWriter.MergeCells(merge.RangeString);
+            }
+        }
+
+        // Initialize trackers for auto-merging duplicate contiguous values
+        MergeTracker[]? trackers = null;
+        if (autoMergeColumns is not null && autoMergeColumns.Count > 0)
+        {
+            trackers = new MergeTracker[accessors.Length];
+            int startRow = effectiveOptions.WriteHeader ? 2 : 1;
+            for (int i = 0; i < accessors.Length; i++)
+            {
+                if (autoMergeColumns.Contains(accessors[i].MemberName))
+                {
+                    trackers[i] = new MergeTracker
+                    {
+                        Enabled = true,
+                        StartRow = startRow,
+                        HasValue = false
+                    };
+                }
+            }
+        }
+
         // Row 1 is header (if enabled); data starts at row 2 when header is written, else row 1.
         int rowNumber = 0;
 
         if (effectiveOptions.WriteHeader)
         {
-            sheetWriter.WriteHeaderRow(headerBuffer);
+            sheetWriter.StartRow(1);
+            for (int col = 0; col < headerBuffer.Length; col++)
+                sheetWriter.WriteCellString(col + 1, headerBuffer[col], headerStyleIndex);
+            sheetWriter.EndRow();
             rowNumber = 1;
         }
 
@@ -161,7 +225,7 @@ public sealed class ExcelRecordWriter<T>
                     $"Maximum output size of {effectiveOptions.MaxOutputSize.Value} bytes exceeded.");
 
             rowNumber++;
-            bool written = WriteRecordInternal(sheetWriter, record, rowNumber, effectiveOptions, sheetName, dataRowCount + 1);
+            bool written = WriteRecordInternal(sheetWriter, record, rowNumber, effectiveOptions, sheetName, dataRowCount + 1, columnStyleIndices, trackers);
             if (written)
                 dataRowCount++;
             else
@@ -169,6 +233,21 @@ public sealed class ExcelRecordWriter<T>
 
             if (progress is not null && dataRowCount > 0 && dataRowCount % intervalRows == 0)
                 progress.Report(new ExcelWriteProgress { RowsWritten = dataRowCount, SheetName = sheetName });
+        }
+
+        // Close any pending auto-merges at the end of the sheet
+        if (trackers is not null && rowNumber > 0)
+        {
+            for (int i = 0; i < trackers.Length; i++)
+            {
+                if (trackers[i].Enabled && trackers[i].HasValue)
+                {
+                    if (rowNumber > trackers[i].StartRow)
+                    {
+                        sheetWriter.MergeCells(i + 1, trackers[i].StartRow, i + 1, rowNumber);
+                    }
+                }
+            }
         }
 
         // Report final progress (skip if already reported at interval boundary)
@@ -183,14 +262,19 @@ public sealed class ExcelRecordWriter<T>
         int rowNumber,
         ExcelWriteOptions options,
         string sheetName,
-        int dataRow)
+        int dataRow,
+        int?[]? columnStyleIndices,
+        MergeTracker[]? trackers)
     {
         if (record is null)
         {
             // Write a row of empty cells for null records
             sheetWriter.StartRow(rowNumber);
             for (int i = 0; i < accessors.Length; i++)
-                sheetWriter.WriteCellEmpty(i + 1);
+            {
+                int? styleIdx = columnStyleIndices?[i];
+                sheetWriter.WriteCellEmpty(i + 1, styleIdx);
+            }
             sheetWriter.EndRow();
             return true;
         }
@@ -214,8 +298,8 @@ public sealed class ExcelRecordWriter<T>
         }
 
         // Source-generated direct writer: avoids boxing value-type properties.
-        // Error handling is not supported in the generated path (no try/catch overhead).
-        if (directRecordWriter is not null)
+        // Bypassed if we are tracking/auto-merging duplicate contiguous values in columns.
+        if (directRecordWriter is not null && trackers is null)
         {
             directRecordWriter(sheetWriter, record, rowNumber, options);
             return true;
@@ -267,7 +351,42 @@ public sealed class ExcelRecordWriter<T>
 
         sheetWriter.StartRow(rowNumber);
         for (int i = 0; i < accessors.Length; i++)
-            WriteCellValue(sheetWriter, i + 1, valuesBuffer[i], accessors[i].Format, options);
+        {
+            int? styleIdx = columnStyleIndices?[i];
+            object? val = valuesBuffer[i];
+
+            if (trackers is not null && trackers[i].Enabled)
+            {
+                ref var tracker = ref trackers[i];
+                if (!tracker.HasValue)
+                {
+                    tracker.LastValue = val;
+                    tracker.HasValue = true;
+                    WriteCellValue(sheetWriter, i + 1, val, accessors[i].Format, options, styleIdx);
+                }
+                else if (object.Equals(val, tracker.LastValue))
+                {
+                    // Contiguous duplicate value: write empty cell
+                    sheetWriter.WriteCellEmpty(i + 1, styleIdx);
+                }
+                else
+                {
+                    // Value changed: merge the completed contiguous block
+                    int endRow = rowNumber - 1;
+                    if (endRow > tracker.StartRow)
+                    {
+                        sheetWriter.MergeCells(i + 1, tracker.StartRow, i + 1, endRow);
+                    }
+                    tracker.StartRow = rowNumber;
+                    tracker.LastValue = val;
+                    WriteCellValue(sheetWriter, i + 1, val, accessors[i].Format, options, styleIdx);
+                }
+            }
+            else
+            {
+                WriteCellValue(sheetWriter, i + 1, val, accessors[i].Format, options, styleIdx);
+            }
+        }
         sheetWriter.EndRow();
         return true;
     }
@@ -277,11 +396,12 @@ public sealed class ExcelRecordWriter<T>
         int columnIndex,
         object? value,
         string? format,
-        ExcelWriteOptions options)
+        ExcelWriteOptions options,
+        int? styleIndex)
     {
         if (value is null)
         {
-            sheetWriter.WriteCellEmpty(columnIndex);
+            sheetWriter.WriteCellEmpty(columnIndex, styleIndex);
             return;
         }
 
@@ -291,96 +411,96 @@ public sealed class ExcelRecordWriter<T>
         {
             case string s:
                 if (s.Length == 0 || s == options.NullValue)
-                    sheetWriter.WriteCellEmpty(columnIndex);
+                    sheetWriter.WriteCellEmpty(columnIndex, styleIndex);
                 else
-                    sheetWriter.WriteCellString(columnIndex, s);
+                    sheetWriter.WriteCellString(columnIndex, s, styleIndex);
                 return;
 
             case bool b:
                 if (format is not null)
-                    sheetWriter.WriteCellString(columnIndex, b.ToString(culture));
+                    sheetWriter.WriteCellString(columnIndex, b.ToString(culture), styleIndex);
                 else
-                    sheetWriter.WriteCellBoolean(columnIndex, b);
+                    sheetWriter.WriteCellBoolean(columnIndex, b, styleIndex);
                 return;
 
             case DateTime dt:
                 if (format is not null || options.DateTimeFormat is not null)
-                    sheetWriter.WriteCellString(columnIndex, dt.ToString(format ?? options.DateTimeFormat, culture));
+                    sheetWriter.WriteCellString(columnIndex, dt.ToString(format ?? options.DateTimeFormat, culture), styleIndex);
                 else
-                    sheetWriter.WriteCellDate(columnIndex, dt);
+                    sheetWriter.WriteCellDate(columnIndex, dt, styleIndex);
                 return;
 
             case DateTimeOffset dto:
                 // Default to ISO 8601 round-trip format ("O") to preserve UTC offset.
                 // When an explicit format is provided, use that instead.
-                sheetWriter.WriteCellString(columnIndex, dto.ToString(format ?? options.DateTimeFormat ?? "O", culture));
+                sheetWriter.WriteCellString(columnIndex, dto.ToString(format ?? options.DateTimeFormat ?? "O", culture), styleIndex);
                 return;
 
             case DateOnly d:
                 {
                     var dtValue = d.ToDateTime(TimeOnly.MinValue);
                     if (format is not null || options.DateOnlyFormat is not null)
-                        sheetWriter.WriteCellString(columnIndex, d.ToString(format ?? options.DateOnlyFormat, culture));
+                        sheetWriter.WriteCellString(columnIndex, d.ToString(format ?? options.DateOnlyFormat, culture), styleIndex);
                     else
-                        sheetWriter.WriteCellDate(columnIndex, dtValue);
+                        sheetWriter.WriteCellDate(columnIndex, dtValue, styleIndex);
                 }
                 return;
 
             case TimeOnly t:
-                sheetWriter.WriteCellString(columnIndex, t.ToString(format ?? options.TimeOnlyFormat ?? "HH:mm:ss", culture));
+                sheetWriter.WriteCellString(columnIndex, t.ToString(format ?? options.TimeOnlyFormat ?? "HH:mm:ss", culture), styleIndex);
                 return;
 
             case Guid g:
-                sheetWriter.WriteCellString(columnIndex, g.ToString());
+                sheetWriter.WriteCellString(columnIndex, g.ToString(), styleIndex);
                 return;
 
             case int i:
-                WriteNumericCell(sheetWriter, columnIndex, i, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, i, format, options, culture, styleIndex);
                 return;
             case long l:
-                WriteNumericCell(sheetWriter, columnIndex, l, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, l, format, options, culture, styleIndex);
                 return;
             case short s16:
-                WriteNumericCell(sheetWriter, columnIndex, s16, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, s16, format, options, culture, styleIndex);
                 return;
             case byte b8:
-                WriteNumericCell(sheetWriter, columnIndex, b8, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, b8, format, options, culture, styleIndex);
                 return;
             case uint u:
-                WriteNumericCell(sheetWriter, columnIndex, u, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, u, format, options, culture, styleIndex);
                 return;
             case ulong ul:
-                WriteNumericCell(sheetWriter, columnIndex, ul, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, ul, format, options, culture, styleIndex);
                 return;
             case ushort u16:
-                WriteNumericCell(sheetWriter, columnIndex, u16, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, u16, format, options, culture, styleIndex);
                 return;
             case sbyte sb8:
-                WriteNumericCell(sheetWriter, columnIndex, sb8, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, sb8, format, options, culture, styleIndex);
                 return;
             case double d:
-                WriteNumericCell(sheetWriter, columnIndex, d, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, d, format, options, culture, styleIndex);
                 return;
             case float f:
-                WriteNumericCell(sheetWriter, columnIndex, f, format, options, culture);
+                WriteNumericCell(sheetWriter, columnIndex, f, format, options, culture, styleIndex);
                 return;
 
             case decimal dec:
                 // Always write decimal as string to preserve full precision (double cast loses >15 significant digits)
-                sheetWriter.WriteCellString(columnIndex, dec.ToString(format ?? options.NumberFormat, culture));
+                sheetWriter.WriteCellString(columnIndex, dec.ToString(format ?? options.NumberFormat, culture), styleIndex);
                 return;
 
             default:
                 // Fallback: use IFormattable if format specified, otherwise ToString
                 if (format is not null && value is IFormattable formattable)
-                    sheetWriter.WriteCellString(columnIndex, formattable.ToString(format, culture));
+                    sheetWriter.WriteCellString(columnIndex, formattable.ToString(format, culture), styleIndex);
                 else
                 {
                     var str = value.ToString();
                     if (str is null || str.Length == 0)
-                        sheetWriter.WriteCellEmpty(columnIndex);
+                        sheetWriter.WriteCellEmpty(columnIndex, styleIndex);
                     else
-                        sheetWriter.WriteCellString(columnIndex, str);
+                        sheetWriter.WriteCellString(columnIndex, str, styleIndex);
                 }
                 return;
         }
@@ -392,13 +512,14 @@ public sealed class ExcelRecordWriter<T>
         TNum value,
         string? format,
         ExcelWriteOptions options,
-        CultureInfo culture)
+        CultureInfo culture,
+        int? styleIndex)
         where TNum : INumber<TNum>
     {
         if (format is not null || options.NumberFormat is not null)
-            sheetWriter.WriteCellString(columnIndex, value.ToString(format ?? options.NumberFormat, culture));
+            sheetWriter.WriteCellString(columnIndex, value.ToString(format ?? options.NumberFormat, culture), styleIndex);
         else
-            sheetWriter.WriteCellNumber(columnIndex, double.CreateChecked(value));
+            sheetWriter.WriteCellNumber(columnIndex, double.CreateChecked(value), styleIndex);
     }
 
     private static PropertyAccessor[] InstantiateAccessors(IReadOnlyList<WriterTemplate> templates)
@@ -497,5 +618,13 @@ public sealed class ExcelRecordWriter<T>
         private readonly Func<object, object?> getter = getter;
 
         public object? GetValue(object instance) => getter(instance);
+    }
+
+    private struct MergeTracker
+    {
+        public bool Enabled;
+        public object? LastValue;
+        public int StartRow;
+        public bool HasValue;
     }
 }

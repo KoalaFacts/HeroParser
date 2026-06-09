@@ -72,18 +72,24 @@ Csv.Write<Product>().ToFile("out.csv", products);
 ```
 
 ### Excel (.xlsx)
-
+ 
 Reads and writes Excel workbooks with zero external dependencies (utilizes only standard `.NET` compression and XML packages).
-
+ 
 ```csharp
+using HeroParser.Excels.Core;
+
 // Read Excel files
 List<Product> products = Excel.Read<Product>().FromFile("products.xlsx");
 
-// Read specific sheet
-var sheetData = Excel.Read<Product>().FromSheet("Sales").FromFile("workbook.xlsx");
+// Write Excel workbook with custom header styles, column styles, and auto-merged duplicate values
+var headerStyle = ExcelStyle.Create()
+    .WithFont(f => f.WithName("Arial").WithSize(12).WithBold().WithColor("FFFFFF"))
+    .WithFill(fill => fill.WithSolidColor("007ACC")); // Blue background
 
-// Write Excel workbook
-Excel.Write<Product>().ToFile("out.xlsx", products);
+Excel.Write<Product>()
+    .WithHeaderStyle(headerStyle)
+    .WithMergeDuplicates(p => p.Category) // Vertically merge contiguous duplicate Categories
+    .ToFile("out.xlsx", products);
 ```
 
 ### Fixed-Width

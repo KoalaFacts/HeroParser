@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
+    <!-- Native AOT compilation support -->
+    <PublishAot>true</PublishAot>
+    <!-- Package and Tool Metadata -->
+    <PackageId>HeroParser.Cli</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>HeroParser Contributors</Authors>
+    <Description>High-performance, cross-platform CLI tool for parsing, converting, formatting, and profiling CSV, Fixed-Width, Excel, JSONL, and HTB (High-Throughput Tabular Binary) files. Powered by HeroParser.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>heroparser</ToolCommandName>
+  </PropertyGroup>
+
+  <!-- Aggressive size optimizations for Release/AOT publishing -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StackTraceSupport>false</StackTraceSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <DebuggerSupport>false</DebuggerSupport>
+    <MetadataValidatorSupport>false</MetadataValidatorSupport>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HeroParser\HeroParser.csproj" />
+    <ProjectReference Include="..\HeroParser.Console\HeroParser.Console.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HeroParser.Tests" />
+  </ItemGroup>
+
+</Project>

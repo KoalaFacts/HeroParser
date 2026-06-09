@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Linq.Expressions;
+using System.Reflection;
 using HeroParser.Excels.Core;
 using HeroParser.Excels.Xlsx;
 using HeroParser.SeparatedValues.Mapping;
@@ -24,12 +26,15 @@ public sealed class ExcelWriterBuilder<T> where T : new()
     private bool writeHeader = true;
     private string sheetName = "Sheet1";
 
-    // New parity features
     private ExcelSerializeErrorHandler? onSerializeError;
     private long? maxOutputSize;
     private IProgress<ExcelWriteProgress>? writeProgress;
     private int writeProgressIntervalRows = 1000;
     private ICsvWriteMapSource<T>? writeMapSource;
+    private ExcelStyle? headerStyle;
+    private readonly Dictionary<string, ExcelStyle> columnStyles = new(StringComparer.Ordinal);
+    private readonly List<ExcelMergeRange> mergedCellRanges = [];
+    private readonly List<string> autoMergeColumns = [];
 
     // Cached options — invalidated when any setting changes
     private ExcelWriteOptions? cachedOptions;
@@ -243,6 +248,124 @@ public sealed class ExcelWriterBuilder<T> where T : new()
         return this;
     }
 
+    /// <summary>
+    /// Configures the header row styling.
+    /// </summary>
+    /// <param name="style">The styling configuration to apply.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelWriterBuilder<T> WithHeaderStyle(ExcelStyle style)
+    {
+        headerStyle = style;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the header row styling using a builder delegate.
+    /// </summary>
+    /// <param name="configure">A delegate that configures the style.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelWriterBuilder<T> WithHeaderStyle(Func<ExcelStyle, ExcelStyle> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        headerStyle = configure(headerStyle ?? ExcelStyle.Create());
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures styling for a specific column/property.
+    /// </summary>
+    /// <typeparam name="TProperty">The property type.</typeparam>
+    /// <param name="propertySelector">Expression selecting the property (e.g., p => p.Price).</param>
+    /// <param name="style">The styling configuration to apply.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelWriterBuilder<T> WithColumnStyle<TProperty>(Expression<Func<T, TProperty>> propertySelector, ExcelStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(style);
+        string propName = GetPropertyName(propertySelector);
+        columnStyles[propName] = style;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures styling for a specific column/property using a builder delegate.
+    /// </summary>
+    /// <typeparam name="TProperty">The property type.</typeparam>
+    /// <param name="propertySelector">Expression selecting the property (e.g., p => p.Price).</param>
+    /// <param name="configure">A delegate that configures the style.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelWriterBuilder<T> WithColumnStyle<TProperty>(Expression<Func<T, TProperty>> propertySelector, Func<ExcelStyle, ExcelStyle> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        string propName = GetPropertyName(propertySelector);
+        columnStyles[propName] = configure(columnStyles.TryGetValue(propName, out var existing) ? existing : ExcelStyle.Create());
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Explicitly merges a range of cells (e.g., "A1:B2") on the sheet.
+    /// </summary>
+    /// <param name="range">The cell range in A1 notation.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelWriterBuilder<T> WithMergeCells(string range)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(range);
+        mergedCellRanges.Add(new ExcelMergeRange(range));
+        return this;
+    }
+
+    /// <summary>
+    /// Explicitly merges a range of cells specified by 1-based start/end columns and rows.
+    /// </summary>
+    /// <param name="startColumn">The 1-based starting column index.</param>
+    /// <param name="startRow">The 1-based starting row number.</param>
+    /// <param name="endColumn">The 1-based ending column index.</param>
+    /// <param name="endRow">The 1-based ending row number.</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelWriterBuilder<T> WithMergeCells(int startColumn, int startRow, int endColumn, int endRow)
+    {
+        if (startColumn <= 0 || startRow <= 0 || endColumn <= 0 || endRow <= 0)
+            throw new ArgumentException("Column and row numbers must be 1-based and positive.");
+
+        mergedCellRanges.Add(new ExcelMergeRange(startColumn, startRow, endColumn, endRow));
+        return this;
+    }
+
+    /// <summary>
+    /// Automatically merges duplicate contiguous values vertically in the column for the selected property.
+    /// </summary>
+    /// <typeparam name="TProperty">The property type.</typeparam>
+    /// <param name="propertySelector">Expression selecting the property (e.g., p => p.Category).</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelWriterBuilder<T> WithMergeDuplicates<TProperty>(Expression<Func<T, TProperty>> propertySelector)
+    {
+        string propName = GetPropertyName(propertySelector);
+        if (!autoMergeColumns.Contains(propName))
+            autoMergeColumns.Add(propName);
+        return this;
+    }
+
+    private static string GetPropertyName<TProperty>(Expression<Func<T, TProperty>> propertySelector)
+    {
+        ArgumentNullException.ThrowIfNull(propertySelector);
+
+        Expression body = propertySelector.Body;
+        if (body is UnaryExpression unaryExpr && unaryExpr.NodeType == ExpressionType.Convert)
+        {
+            body = unaryExpr.Operand;
+        }
+
+        if (body is MemberExpression memberExpr && memberExpr.Member is PropertyInfo propInfo)
+        {
+            return propInfo.Name;
+        }
+
+        throw new ArgumentException("Expression must select a property on the record type.", nameof(propertySelector));
+    }
+
     #region Terminal Methods
 
     /// <summary>
@@ -279,7 +402,7 @@ public sealed class ExcelWriterBuilder<T> where T : new()
 
         using var xlsxWriter = new XlsxWriter(stream, leaveOpen: leaveOpen, injectionProtection: options.InjectionProtection);
         using var sheetWriter = xlsxWriter.StartSheet(sheetName);
-        recordWriter.WriteRecords(sheetWriter, records, options, sheetName);
+        recordWriter.WriteRecords(sheetWriter, records, options, sheetName, xlsxWriter, headerStyle, columnStyles, mergedCellRanges, autoMergeColumns);
     }
 
     /// <summary>
@@ -459,4 +582,34 @@ public sealed class ExcelWriterBuilder<T> where T : new()
     }
 
     #endregion
+}
+
+internal readonly record struct ExcelMergeRange
+{
+    public string? RangeString { get; }
+    public int StartColumn { get; }
+    public int StartRow { get; }
+    public int EndColumn { get; }
+    public int EndRow { get; }
+    public bool IsCoordinate { get; }
+
+    public ExcelMergeRange(string rangeString)
+    {
+        RangeString = rangeString;
+        IsCoordinate = false;
+        StartColumn = 0;
+        StartRow = 0;
+        EndColumn = 0;
+        EndRow = 0;
+    }
+
+    public ExcelMergeRange(int startColumn, int startRow, int endColumn, int endRow)
+    {
+        RangeString = null;
+        StartColumn = startColumn;
+        StartRow = startRow;
+        EndColumn = endColumn;
+        EndRow = endRow;
+        IsCoordinate = true;
+    }
 }

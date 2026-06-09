@@ -33,6 +33,7 @@ public sealed class XlsxWriter : IDisposable
 
     private readonly ZipArchive archive;
     private readonly XlsxSharedStringTable sharedStrings = new();
+    private readonly XlsxStyleRegistry styleRegistry = new();
     private readonly List<string> sheetNames = [];
     private readonly ExcelInjectionProtection injectionProtection;
     private bool disposed;
@@ -55,6 +56,15 @@ public sealed class XlsxWriter : IDisposable
 
     // Characters not allowed in Excel sheet names.
     private static ReadOnlySpan<char> IllegalSheetNameChars => ['\\', '/', '?', '*', '[', ']', ':'];
+
+    /// <summary>Registers a style in the stylesheet registry and returns its index.</summary>
+    /// <param name="style">The cell style to register.</param>
+    /// <returns>The resolved 0-based style index.</returns>
+    public int RegisterStyle(ExcelStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(style);
+        return styleRegistry.RegisterStyle(style);
+    }
 
     /// <summary>Starts a new sheet and returns a writer for it.</summary>
     /// <param name="name">The worksheet name (max 31 chars, no illegal characters).</param>
@@ -244,26 +254,251 @@ public sealed class XlsxWriter : IDisposable
         xmlWriter.WriteStartDocument(standalone: true);
         xmlWriter.WriteStartElement("styleSheet", ns);
 
-        // Style index 1 = built-in date format (numFmtId 14 = "m/d/yyyy").
-        // No custom numFmts entry needed because 14 is a built-in Excel format.
+        // 1. Custom Number Formats
+        var numFmts = styleRegistry.NumberFormats;
+        if (numFmts.Count > 0)
+        {
+            xmlWriter.WriteStartElement("numFmts", ns);
+            xmlWriter.WriteAttributeString("count", numFmts.Count.ToString());
+            for (int i = 0; i < numFmts.Count; i++)
+            {
+                xmlWriter.WriteStartElement("numFmt", ns);
+                xmlWriter.WriteAttributeString("numFmtId", (164 + i).ToString());
+                xmlWriter.WriteAttributeString("formatCode", numFmts[i]);
+                xmlWriter.WriteEndElement();
+            }
+            xmlWriter.WriteEndElement(); // numFmts
+        }
 
-        // cellXfs: index 0 = General, index 1 = date
-        xmlWriter.WriteStartElement("cellXfs", ns);
-        xmlWriter.WriteAttributeString("count", "2");
+        // 2. Fonts
+        var fonts = styleRegistry.Fonts;
+        xmlWriter.WriteStartElement("fonts", ns);
+        xmlWriter.WriteAttributeString("count", fonts.Count.ToString());
+        foreach (var font in fonts)
+        {
+            xmlWriter.WriteStartElement("font", ns);
 
-        // style index 0: General
+            if (font.Bold)
+            {
+                xmlWriter.WriteStartElement("b", ns);
+                xmlWriter.WriteEndElement();
+            }
+            if (font.Italic)
+            {
+                xmlWriter.WriteStartElement("i", ns);
+                xmlWriter.WriteEndElement();
+            }
+
+            if (font.Size.HasValue)
+            {
+                xmlWriter.WriteStartElement("sz", ns);
+                xmlWriter.WriteAttributeString("val", font.Size.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                xmlWriter.WriteEndElement();
+            }
+
+            if (!string.IsNullOrEmpty(font.Name))
+            {
+                xmlWriter.WriteStartElement("name", ns);
+                xmlWriter.WriteAttributeString("val", font.Name);
+                xmlWriter.WriteEndElement();
+            }
+
+            if (!string.IsNullOrEmpty(font.Color))
+            {
+                var colorHex = font.Color;
+                if (colorHex.Length == 6)
+                    colorHex = "FF" + colorHex; // Prepend alpha channel
+                xmlWriter.WriteStartElement("color", ns);
+                xmlWriter.WriteAttributeString("rgb", colorHex);
+                xmlWriter.WriteEndElement();
+            }
+
+            xmlWriter.WriteEndElement(); // font
+        }
+        xmlWriter.WriteEndElement(); // fonts
+
+        // 3. Fills
+        var fills = styleRegistry.Fills;
+        xmlWriter.WriteStartElement("fills", ns);
+        xmlWriter.WriteAttributeString("count", fills.Count.ToString());
+        foreach (var fill in fills)
+        {
+            xmlWriter.WriteStartElement("fill", ns);
+            xmlWriter.WriteStartElement("patternFill", ns);
+            xmlWriter.WriteAttributeString("patternType", fill.PatternType);
+
+            if (!string.IsNullOrEmpty(fill.ForegroundColor))
+            {
+                var colorHex = fill.ForegroundColor;
+                if (colorHex.Length == 6)
+                    colorHex = "FF" + colorHex;
+                xmlWriter.WriteStartElement("fgColor", ns);
+                xmlWriter.WriteAttributeString("rgb", colorHex);
+                xmlWriter.WriteEndElement();
+            }
+
+            if (!string.IsNullOrEmpty(fill.BackgroundColor))
+            {
+                var colorHex = fill.BackgroundColor;
+                if (colorHex.Length == 6)
+                    colorHex = "FF" + colorHex;
+                xmlWriter.WriteStartElement("bgColor", ns);
+                xmlWriter.WriteAttributeString("rgb", colorHex);
+                xmlWriter.WriteEndElement();
+            }
+
+            xmlWriter.WriteEndElement(); // patternFill
+            xmlWriter.WriteEndElement(); // fill
+        }
+        xmlWriter.WriteEndElement(); // fills
+
+        // 4. Borders
+        var borders = styleRegistry.Borders;
+        xmlWriter.WriteStartElement("borders", ns);
+        xmlWriter.WriteAttributeString("count", borders.Count.ToString());
+        foreach (var border in borders)
+        {
+            xmlWriter.WriteStartElement("border", ns);
+
+            WriteBorderSide(xmlWriter, ns, "left", border.Left);
+            WriteBorderSide(xmlWriter, ns, "right", border.Right);
+            WriteBorderSide(xmlWriter, ns, "top", border.Top);
+            WriteBorderSide(xmlWriter, ns, "bottom", border.Bottom);
+            xmlWriter.WriteStartElement("diagonal", ns);
+            xmlWriter.WriteEndElement();
+
+            xmlWriter.WriteEndElement(); // border
+        }
+        xmlWriter.WriteEndElement(); // borders
+
+        // 5. cellStyleXfs (default Normal style xf)
+        xmlWriter.WriteStartElement("cellStyleXfs", ns);
+        xmlWriter.WriteAttributeString("count", "1");
         xmlWriter.WriteStartElement("xf", ns);
         xmlWriter.WriteAttributeString("numFmtId", "0");
+        xmlWriter.WriteAttributeString("fontId", "0");
+        xmlWriter.WriteAttributeString("fillId", "0");
+        xmlWriter.WriteAttributeString("borderId", "0");
         xmlWriter.WriteEndElement();
+        xmlWriter.WriteEndElement(); // cellStyleXfs
 
-        // style index 1: date (m/d/yyyy)
-        xmlWriter.WriteStartElement("xf", ns);
-        xmlWriter.WriteAttributeString("numFmtId", DATE_NUM_FMT_ID.ToString());
-        xmlWriter.WriteEndElement();
+        // 6. cellXfs
+        var xfs = styleRegistry.Xfs;
+        xmlWriter.WriteStartElement("cellXfs", ns);
+        xmlWriter.WriteAttributeString("count", xfs.Count.ToString());
+        foreach (var xf in xfs)
+        {
+            xmlWriter.WriteStartElement("xf", ns);
+            xmlWriter.WriteAttributeString("numFmtId", xf.NumFmtId.ToString());
+            xmlWriter.WriteAttributeString("fontId", xf.FontId.ToString());
+            xmlWriter.WriteAttributeString("fillId", xf.FillId.ToString());
+            xmlWriter.WriteAttributeString("borderId", xf.BorderId.ToString());
+            xmlWriter.WriteAttributeString("xfId", "0");
 
+            if (xf.NumFmtId > 0)
+                xmlWriter.WriteAttributeString("applyNumberFormat", "1");
+            if (xf.FontId > 0)
+                xmlWriter.WriteAttributeString("applyFont", "1");
+            if (xf.FillId > 0)
+                xmlWriter.WriteAttributeString("applyFill", "1");
+            if (xf.BorderId > 0)
+                xmlWriter.WriteAttributeString("applyBorder", "1");
+
+            if (xf.Alignment is not null)
+            {
+                xmlWriter.WriteAttributeString("applyAlignment", "1");
+                xmlWriter.WriteStartElement("alignment", ns);
+
+                if (xf.Alignment.Horizontal.HasValue && xf.Alignment.Horizontal.Value != ExcelHorizontalAlignment.General)
+                {
+                    var horizStr = xf.Alignment.Horizontal.Value switch
+                    {
+                        ExcelHorizontalAlignment.Left => "left",
+                        ExcelHorizontalAlignment.Center => "center",
+                        ExcelHorizontalAlignment.Right => "right",
+                        ExcelHorizontalAlignment.Fill => "fill",
+                        ExcelHorizontalAlignment.Justify => "justify",
+                        ExcelHorizontalAlignment.CenterContinuous => "centerContinuous",
+                        ExcelHorizontalAlignment.Distributed => "distributed",
+                        _ => "general"
+                    };
+                    xmlWriter.WriteAttributeString("horizontal", horizStr);
+                }
+
+                if (xf.Alignment.Vertical.HasValue && xf.Alignment.Vertical.Value != ExcelVerticalAlignment.Bottom)
+                {
+                    var vertStr = xf.Alignment.Vertical.Value switch
+                    {
+                        ExcelVerticalAlignment.Top => "top",
+                        ExcelVerticalAlignment.Center => "center",
+                        ExcelVerticalAlignment.Justify => "justify",
+                        ExcelVerticalAlignment.Distributed => "distributed",
+                        _ => "bottom"
+                    };
+                    xmlWriter.WriteAttributeString("vertical", vertStr);
+                }
+
+                if (xf.Alignment.WrapText.HasValue)
+                {
+                    xmlWriter.WriteAttributeString("wrapText", xf.Alignment.WrapText.Value ? "1" : "0");
+                }
+
+                xmlWriter.WriteEndElement(); // alignment
+            }
+
+            xmlWriter.WriteEndElement(); // xf
+        }
         xmlWriter.WriteEndElement(); // cellXfs
+
+        // 7. cellStyles
+        xmlWriter.WriteStartElement("cellStyles", ns);
+        xmlWriter.WriteAttributeString("count", "1");
+        xmlWriter.WriteStartElement("cellStyle", ns);
+        xmlWriter.WriteAttributeString("name", "Normal");
+        xmlWriter.WriteAttributeString("xfId", "0");
+        xmlWriter.WriteAttributeString("builtinId", "0");
+        xmlWriter.WriteEndElement();
+        xmlWriter.WriteEndElement(); // cellStyles
+
         xmlWriter.WriteEndElement(); // styleSheet
         xmlWriter.WriteEndDocument();
+    }
+
+    private static void WriteBorderSide(XmlWriter w, string ns, string name, ExcelBorderItem? borderItem)
+    {
+        w.WriteStartElement(name, ns);
+        if (borderItem is not null && borderItem.Style != ExcelBorderStyle.None)
+        {
+            var styleStr = borderItem.Style switch
+            {
+                ExcelBorderStyle.Thin => "thin",
+                ExcelBorderStyle.Medium => "medium",
+                ExcelBorderStyle.Dashed => "dashed",
+                ExcelBorderStyle.Dotted => "dotted",
+                ExcelBorderStyle.Thick => "thick",
+                ExcelBorderStyle.Double => "double",
+                ExcelBorderStyle.Hair => "hair",
+                ExcelBorderStyle.MediumDashed => "mediumDashed",
+                ExcelBorderStyle.DashDot => "dashDot",
+                ExcelBorderStyle.MediumDashDot => "mediumDashDot",
+                ExcelBorderStyle.DashDotDot => "dashDotDot",
+                ExcelBorderStyle.MediumDashDotDot => "mediumDashDotDot",
+                ExcelBorderStyle.SlantedDashDot => "slantedDashDot",
+                _ => "none"
+            };
+            w.WriteAttributeString("style", styleStr);
+
+            if (!string.IsNullOrEmpty(borderItem.Color))
+            {
+                var colorHex = borderItem.Color;
+                if (colorHex.Length == 6)
+                    colorHex = "FF" + colorHex;
+                w.WriteStartElement("color", ns);
+                w.WriteAttributeString("rgb", colorHex);
+                w.WriteEndElement();
+            }
+        }
+        w.WriteEndElement();
     }
 
     // Opens a ZipArchive entry and wraps it in an XmlWriter with UTF-8 encoding.
@@ -376,7 +611,8 @@ public sealed class XlsxWriter : IDisposable
     {
         // Pre-encoded XML fragments as UTF-8 byte literals
         private static readonly byte[] xmlHeader = "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>"u8.ToArray();
-        private static readonly byte[] xmlFooter = "</sheetData></worksheet>"u8.ToArray();
+        private static readonly byte[] xmlFooterSheetDataClose = "</sheetData>"u8.ToArray();
+        private static readonly byte[] xmlFooterWorksheetClose = "</worksheet>"u8.ToArray();
         private static readonly byte[] rowOpen = "<row r=\""u8.ToArray();
         private static readonly byte[] rowClose = "</row>"u8.ToArray();
         private static readonly byte[] cellStringOpen = "<c r=\""u8.ToArray();
@@ -399,6 +635,7 @@ public sealed class XlsxWriter : IDisposable
         private bool rowIsOpen;
         private bool closed;
         private int currentRowNumber;
+        private List<string>? mergedCells;
 
         /// <summary>Gets the total number of uncompressed bytes written to the worksheet stream so far.</summary>
         public long BytesWritten => totalBytesWritten + bufferPos;
@@ -427,9 +664,10 @@ public sealed class XlsxWriter : IDisposable
             EndRow();
         }
 
-        /// <summary>Opens a new row element.</summary>
+        /// <summary>Opens a new row element with an optional outline level.</summary>
         /// <param name="rowNumber">The 1-based row number.</param>
-        public void StartRow(int rowNumber)
+        /// <param name="outlineLevel">The outline level (group nesting depth) for this row, 0 to 7. Defaults to 0 (no outlining).</param>
+        public void StartRow(int rowNumber, int outlineLevel = 0)
         {
             if (rowIsOpen)
                 EndRow();
@@ -437,6 +675,12 @@ public sealed class XlsxWriter : IDisposable
             currentRowNumber = rowNumber;
             WriteRaw(rowOpen);                     // <row r="
             WriteInt(rowNumber);                   // 123
+            if (outlineLevel > 0)
+            {
+                WriteRaw(" outlineLevel=\""u8);
+                WriteInt(outlineLevel);
+                WriteRaw("\""u8);
+            }
             WriteRaw(quoteClose);                  // ">
             rowIsOpen = true;
         }
@@ -444,13 +688,23 @@ public sealed class XlsxWriter : IDisposable
         /// <summary>Writes a shared-string cell.</summary>
         /// <param name="columnIndex">The 1-based column index.</param>
         /// <param name="value">The string value.</param>
-        public void WriteCellString(int columnIndex, string value)
+        /// <param name="styleIndex">The optional style index.</param>
+        public void WriteCellString(int columnIndex, string value, int? styleIndex = null)
         {
             string sanitised = ApplyInjectionProtection(value);
             int ssIndex = sharedStrings.GetOrAdd(sanitised);
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
-            WriteRaw(cellStringTypeAttr);          // " t="s"><v>
+            if (styleIndex is not null)
+            {
+                WriteRaw("\" s=\""u8);
+                WriteInt(styleIndex.Value);
+                WriteRaw("\" t=\"s\"><v>"u8);
+            }
+            else
+            {
+                WriteRaw(cellStringTypeAttr);          // " t="s"><v>
+            }
             WriteInt(ssIndex);                     // 42
             WriteRaw(cellValueClose);              // </v></c>
         }
@@ -458,7 +712,8 @@ public sealed class XlsxWriter : IDisposable
         /// <summary>Writes a shared-string cell from a span of characters.</summary>
         /// <param name="columnIndex">The 1-based column index.</param>
         /// <param name="value">The character span value.</param>
-        public void WriteCellString(int columnIndex, ReadOnlySpan<char> value)
+        /// <param name="styleIndex">The optional style index.</param>
+        public void WriteCellString(int columnIndex, ReadOnlySpan<char> value, int? styleIndex = null)
         {
             int ssIndex;
             if (injectionProtection != ExcelInjectionProtection.None && IsDangerousLeadingChar(value))
@@ -473,7 +728,16 @@ public sealed class XlsxWriter : IDisposable
 
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
-            WriteRaw(cellStringTypeAttr);          // " t="s"><v>
+            if (styleIndex is not null)
+            {
+                WriteRaw("\" s=\""u8);
+                WriteInt(styleIndex.Value);
+                WriteRaw("\" t=\"s\"><v>"u8);
+            }
+            else
+            {
+                WriteRaw(cellStringTypeAttr);          // " t="s"><v>
+            }
             WriteInt(ssIndex);                     // 42
             WriteRaw(cellValueClose);              // </v></c>
         }
@@ -553,11 +817,21 @@ public sealed class XlsxWriter : IDisposable
         /// <summary>Writes a numeric cell.</summary>
         /// <param name="columnIndex">The 1-based column index.</param>
         /// <param name="value">The numeric value.</param>
-        public void WriteCellNumber(int columnIndex, double value)
+        /// <param name="styleIndex">The optional style index.</param>
+        public void WriteCellNumber(int columnIndex, double value, int? styleIndex = null)
         {
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
-            WriteRaw(cellNumOpen);                 // " ><v>
+            if (styleIndex is not null)
+            {
+                WriteRaw("\" s=\""u8);
+                WriteInt(styleIndex.Value);
+                WriteRaw("\"><v>"u8);
+            }
+            else
+            {
+                WriteRaw(cellNumOpen);                 // " ><v>
+            }
             WriteDouble(value);                    // 3.14159
             WriteRaw(cellValueClose);              // </v></c>
         }
@@ -565,11 +839,21 @@ public sealed class XlsxWriter : IDisposable
         /// <summary>Writes a boolean cell (1 for true, 0 for false).</summary>
         /// <param name="columnIndex">The 1-based column index.</param>
         /// <param name="value">The boolean value.</param>
-        public void WriteCellBoolean(int columnIndex, bool value)
+        /// <param name="styleIndex">The optional style index.</param>
+        public void WriteCellBoolean(int columnIndex, bool value, int? styleIndex = null)
         {
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
-            WriteRaw(cellBoolOpen);                // " t="b"><v>
+            if (styleIndex is not null)
+            {
+                WriteRaw("\" s=\""u8);
+                WriteInt(styleIndex.Value);
+                WriteRaw("\" t=\"b\"><v>"u8);
+            }
+            else
+            {
+                WriteRaw(cellBoolOpen);                // " t="b"><v>
+            }
             buffer[bufferPos++] = value ? (byte)'1' : (byte)'0';
             WriteRaw(cellValueClose);              // </v></c>
         }
@@ -577,22 +861,67 @@ public sealed class XlsxWriter : IDisposable
         /// <summary>Writes a date cell as an OA date serial number with a date style.</summary>
         /// <param name="columnIndex">The 1-based column index.</param>
         /// <param name="value">The date/time value.</param>
-        public void WriteCellDate(int columnIndex, DateTime value)
+        /// <param name="styleIndex">The optional style index. Defaults to 1 (date style).</param>
+        public void WriteCellDate(int columnIndex, DateTime value, int? styleIndex = null)
         {
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
-            WriteRaw(cellDateOpen);                // " s="1"><v>
+
+            int actualStyleIndex = styleIndex ?? 1;
+            WriteRaw("\" s=\""u8);
+            WriteInt(actualStyleIndex);
+            WriteRaw("\"><v>"u8);
+
             WriteDouble(value.ToOADate());         // 45123.5
             WriteRaw(cellValueClose);              // </v></c>
         }
 
         /// <summary>Writes an empty cell (no value element).</summary>
         /// <param name="columnIndex">The 1-based column index.</param>
-        public void WriteCellEmpty(int columnIndex)
+        /// <param name="styleIndex">The optional style index.</param>
+        public void WriteCellEmpty(int columnIndex, int? styleIndex = null)
         {
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
-            WriteRaw(cellEmptyClose);              // " />
+            if (styleIndex is not null)
+            {
+                WriteRaw("\" s=\""u8);
+                WriteInt(styleIndex.Value);
+                WriteRaw("\" />"u8);
+            }
+            else
+            {
+                WriteRaw(cellEmptyClose);              // " />
+            }
+        }
+
+        /// <summary>Merges a range of cells (e.g., "A1:B2").</summary>
+        /// <param name="range">The cell range in A1 notation.</param>
+        public void MergeCells(string range)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(range);
+            mergedCells ??= [];
+            mergedCells.Add(range);
+        }
+
+        /// <summary>Merges a range of cells specified by 1-based start/end columns and rows.</summary>
+        /// <param name="startColumn">The 1-based starting column index.</param>
+        /// <param name="startRow">The 1-based starting row number.</param>
+        /// <param name="endColumn">The 1-based ending column index.</param>
+        /// <param name="endRow">The 1-based ending row number.</param>
+        public void MergeCells(int startColumn, int startRow, int endColumn, int endRow)
+        {
+            if (startColumn <= 0 || startRow <= 0 || endColumn <= 0 || endRow <= 0)
+                throw new ArgumentException("Column and row numbers must be 1-based and positive.");
+
+            Span<char> startBuf = stackalloc char[15];
+            int startLen = FormatCellRef(startBuf, startColumn - 1, startRow);
+
+            Span<char> endBuf = stackalloc char[15];
+            int endLen = FormatCellRef(endBuf, endColumn - 1, endRow);
+
+            var range = $"{startBuf[..startLen]}:{endBuf[..endLen]}";
+            MergeCells(range);
         }
 
         /// <summary>Closes the current row element.</summary>
@@ -616,7 +945,40 @@ public sealed class XlsxWriter : IDisposable
             if (rowIsOpen)
                 EndRow();
 
-            WriteRaw(xmlFooter);
+            WriteRaw(xmlFooterSheetDataClose);
+
+            if (mergedCells is not null && mergedCells.Count > 0)
+            {
+                WriteRaw("<mergeCells count=\""u8);
+                WriteInt(mergedCells.Count);
+                WriteRaw("\">"u8);
+
+                Span<byte> rangeBytes = stackalloc byte[32];
+
+                foreach (var range in mergedCells)
+                {
+                    WriteRaw("<mergeCell ref=\""u8);
+
+                    var len = range.Length;
+                    if (len <= rangeBytes.Length)
+                    {
+                        for (int i = 0; i < len; i++)
+                            rangeBytes[i] = (byte)range[i];
+                        WriteRaw(rangeBytes[..len]);
+                    }
+                    else
+                    {
+                        var bytes = Encoding.UTF8.GetBytes(range);
+                        WriteRaw(bytes);
+                    }
+
+                    WriteRaw("\"/>"u8);
+                }
+
+                WriteRaw("</mergeCells>"u8);
+            }
+
+            WriteRaw(xmlFooterWorksheetClose);
             Flush();
         }
 

@@ -31,6 +31,8 @@ HeroParser reads and writes `.xlsx` files with zero extra dependencies — only 
   - [Output Size Limit](#output-size-limit)
   - [Fluent Column Mapping (Writing)](#fluent-column-mapping-writing)
   - [Write Formatting Options](#write-formatting-options)
+  - [Cell Styling](#cell-styling)
+  - [Cell Merging](#cell-merging)
 - [Options Reference](#options-reference)
   - [ExcelReadOptions](#excelreadoptions)
   - [ExcelWriteOptions](#excelwriteoptions)
@@ -517,6 +519,63 @@ Excel.Write<OrderRecord>()
 ```
 
 When `WithDateTimeFormat` / `WithDateOnlyFormat` is **not** set, date values are stored as OA date serial numbers with an Excel date style applied, which allows Excel to render them as native dates. When a format string **is** set, the value is written as a formatted string in the shared string table.
+
+### Cell Styling
+
+HeroParser includes a comprehensive cell styling engine. Styles are declared using the fluent `ExcelStyle` builder and registered automatically with the worksheet's stylesheet registry.
+
+```csharp
+using HeroParser.Excels.Core;
+
+// 1. Create a reusable style
+var headerStyle = ExcelStyle.Create()
+    .WithFont(f => f.WithName("Arial").WithSize(12).WithBold().WithColor("FFFFFF"))
+    .WithFill(fill => fill.WithSolidColor("007ACC")) // Solid blue background
+    .WithAlignment(a => a.WithHorizontal(ExcelHorizontalAlignment.Center).WithVertical(ExcelVerticalAlignment.Center));
+
+var salaryStyle = ExcelStyle.Create()
+    .WithFont(f => f.WithItalic())
+    .WithNumberFormat("$#,##0.00")
+    .WithAlignment(a => a.WithHorizontal(ExcelHorizontalAlignment.Right));
+
+// 2. Apply styling via the fluent Excel writer builder
+Excel.Write<Employee>()
+    .WithHeaderStyle(headerStyle)
+    .WithColumnStyle(x => x.Salary, salaryStyle)
+    .ToFile("employees.xlsx", employees);
+```
+
+#### Styling Options:
+- **`ExcelFont`**: Configure `WithName(string)`, `WithSize(double)`, `WithBold()`, `WithItalic()`, and `WithColor(string hexARGB)`.
+- **`ExcelFill`**: Configure patterns using `WithPatternType(string)`, `WithForegroundColor(string)`, `WithBackgroundColor(string)`, or create a solid fill using `WithSolidColor(string hexARGB)`.
+- **`ExcelBorder`**: Apply borders using `WithLeft()`, `WithRight()`, `WithTop()`, and `WithBottom()` specifying `ExcelBorderStyle` (e.g., `Thin`, `Medium`, `Double`) and colors.
+- **`ExcelAlignment`**: Configure text alignment using `WithHorizontal(ExcelHorizontalAlignment)`, `WithVertical(ExcelVerticalAlignment)`, and `WithWrapText(bool)`.
+
+### Cell Merging
+
+HeroParser supports two forms of cell merging when exporting records:
+
+#### 1. Explicit Cell Merging
+Merge specific ranges (such as title headers or structural layouts) using either A1 notation or 1-based coordinates:
+
+```csharp
+Excel.Write<OrderRecord>()
+    .WithMergeCells("A2:B2") // Explicitly merge cells A2 through B2
+    .WithMergeCells(1, 3, 2, 3) // Explicitly merge columns 1 to 2 at row 3 (A3:B3)
+    .ToFile("orders.xlsx", orders);
+```
+
+#### 2. Auto-Merge Consecutive Duplicate Column Values
+Group contiguous rows together by vertically merging adjacent cells in a column that share the same value (e.g. merging repeating categories or countries):
+
+```csharp
+Excel.Write<OrderRecord>()
+    .WithMergeDuplicates(x => x.Category) // Merges A2:A3 if both have "Electronics"
+    .ToFile("orders.xlsx", orders);
+```
+
+> [!NOTE]
+> To comply with OpenXML standards, HeroParser automatically writes the value **only** in the top-left cell of the merged block and leaves subsequent merged cells empty.
 
 ---
 

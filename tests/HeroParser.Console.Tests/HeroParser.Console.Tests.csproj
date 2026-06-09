@@ -4,14 +4,7 @@
     <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- JSON002: "Probable JSON string detected" — tests intentionally contain JSONL string fixtures
-         and we don't want the embedded-JSON analyzer to validate them against a schema. -->
-    <NoWarn>$(NoWarn);JSON002</NoWarn>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
@@ -27,10 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
-    <ProjectReference Include="../../src/HeroParser.Cli/HeroParser.Cli.csproj" />
-    <!-- Reference as analyzer for runtime integration tests -->
-    <ProjectReference Include="../../src/HeroParser.Generators/HeroParser.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../src/HeroParser.Console/HeroParser.Console.csproj" />
   </ItemGroup>
 
 </Project>

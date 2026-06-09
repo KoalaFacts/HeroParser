@@ -16,35 +16,35 @@ public sealed class TestRunner
         try
         {
             test();
-            Console.WriteLine($"  [PASS] {name}");
+            System.Console.WriteLine($"  [PASS] {name}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  [FAIL] {name}: {ex.Message}");
+            System.Console.WriteLine($"  [FAIL] {name}: {ex.Message}");
             failures.Add(name);
         }
     }
 
     public void PrintSection(string name)
     {
-        Console.WriteLine($"\n--- {name} ---");
+        System.Console.WriteLine($"\n--- {name} ---");
     }
 
     public int PrintSummary()
     {
-        Console.WriteLine();
-        Console.WriteLine("===================================");
+        System.Console.WriteLine();
+        System.Console.WriteLine("===================================");
 
         if (failures.Count == 0)
         {
-            Console.WriteLine("All AOT tests PASSED!");
+            System.Console.WriteLine("All AOT tests PASSED!");
             return 0;
         }
 
-        Console.WriteLine($"{failures.Count} test(s) FAILED:");
+        System.Console.WriteLine($"{failures.Count} test(s) FAILED:");
         foreach (var failure in failures)
         {
-            Console.WriteLine($"  - {failure}");
+            System.Console.WriteLine($"  - {failure}");
         }
 
         return 1;

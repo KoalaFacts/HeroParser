@@ -64,7 +64,7 @@ jobs:
         run: dotnet restore --force-evaluate
 
       - name: Publish Native AOT CLI
-        run: dotnet publish src/HeroParser.Cli/HeroParser.Cli.csproj -c Release -r ${{ matrix.rid }} -f net10.0 --self-contained -p:PublishAot=true -p:Version=${{ github.event.inputs.version || inputs.version }}
+        run: dotnet publish src/HeroParser.Cli/HeroParser.Cli.csproj -c Release -r ${{ matrix.rid }} -f net10.0 --self-contained -p:Version=${{ github.event.inputs.version || inputs.version }}
 
       - name: Package CLI binary (Windows)
         if: matrix.os == 'windows-latest'

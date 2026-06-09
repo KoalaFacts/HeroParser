@@ -294,7 +294,20 @@ jobs:
 
       - name: Create GitHub Release
         run: |
-          echo "Creating release v${{ github.event.inputs.version || inputs.version }}..."
+          TAG="v${{ github.event.inputs.version || inputs.version }}"
+          echo "Creating release $TAG..."
+
+          # Delete existing release if it exists to allow re-runs
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists. Deleting existing release..."
+            gh release delete "$TAG" --yes
+          fi
+
+          # Delete existing remote tag if it exists to allow re-runs
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
+            echo "Remote tag $TAG already exists. Deleting remote tag..."
+            git push origin :refs/tags/$TAG || true
+          fi
 
           # Prepare assets list
           ASSETS="packages/HeroParser.${{ github.event.inputs.version || inputs.version }}.nupkg packages/HeroParser.${{ github.event.inputs.version || inputs.version }}.snupkg cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.zip cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.tar.gz"
@@ -304,8 +317,8 @@ jobs:
             ASSETS="$ASSETS release-sboms/*.json"
           fi
 
-          gh release create v${{ github.event.inputs.version || inputs.version }} \
-            --title "Release v${{ github.event.inputs.version || inputs.version }}" \
+          gh release create "$TAG" \
+            --title "Release $TAG" \
             --generate-notes \
             --notes-file release-footer.md \
             $ASSETS

@@ -69,12 +69,16 @@ jobs:
       - name: Package CLI binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: Compress-Archive -Path src/HeroParser.Cli/bin/Release/net10.0/win-x64/publish/heroparser.exe -DestinationPath heroparser-v${{ github.event.inputs.version || inputs.version }}-win-x64.zip
+        run: |
+          Rename-Item -Path src/HeroParser.Cli/bin/Release/net10.0/win-x64/publish/HeroParser.Cli.exe -NewName heroparser.exe
+          Compress-Archive -Path src/HeroParser.Cli/bin/Release/net10.0/win-x64/publish/heroparser.exe -DestinationPath heroparser-v${{ github.event.inputs.version || inputs.version }}-win-x64.zip
 
       - name: Package CLI binary (Unix)
         if: matrix.os != 'windows-latest'
         shell: bash
-        run: tar -czvf heroparser-v${{ github.event.inputs.version || inputs.version }}-${{ matrix.rid }}.tar.gz -C src/HeroParser.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish heroparser
+        run: |
+          mv src/HeroParser.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/HeroParser.Cli src/HeroParser.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish/heroparser
+          tar -czvf heroparser-v${{ github.event.inputs.version || inputs.version }}-${{ matrix.rid }}.tar.gz -C src/HeroParser.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish heroparser
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

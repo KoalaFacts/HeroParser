@@ -27,24 +27,16 @@ jobs:
         include:
           - os: windows-latest
             rid: win-x64
-            archive_cmd: Compress-Archive -Path src/HeroParser.Cli/bin/Release/net10.0/win-x64/publish/heroparser.exe -DestinationPath heroparser-v${{ github.event.inputs.version || inputs.version }}-win-x64.zip
             archive_file: heroparser-v${{ github.event.inputs.version || inputs.version }}-win-x64.zip
-            shell: pwsh
           - os: ubuntu-latest
             rid: linux-x64
-            archive_cmd: tar -czvf heroparser-v${{ github.event.inputs.version || inputs.version }}-linux-x64.tar.gz -C src/HeroParser.Cli/bin/Release/net10.0/linux-x64/publish heroparser
             archive_file: heroparser-v${{ github.event.inputs.version || inputs.version }}-linux-x64.tar.gz
-            shell: bash
           - os: macos-latest
             rid: osx-x64
-            archive_cmd: tar -czvf heroparser-v${{ github.event.inputs.version || inputs.version }}-osx-x64.tar.gz -C src/HeroParser.Cli/bin/Release/net10.0/osx-x64/publish heroparser
             archive_file: heroparser-v${{ github.event.inputs.version || inputs.version }}-osx-x64.tar.gz
-            shell: bash
           - os: macos-latest
             rid: osx-arm64
-            archive_cmd: tar -czvf heroparser-v${{ github.event.inputs.version || inputs.version }}-osx-arm64.tar.gz -C src/HeroParser.Cli/bin/Release/net10.0/osx-arm64/publish heroparser
             archive_file: heroparser-v${{ github.event.inputs.version || inputs.version }}-osx-arm64.tar.gz
-            shell: bash
     steps:
       - name: Validate version format
         shell: bash
@@ -74,9 +66,15 @@ jobs:
       - name: Publish Native AOT CLI
         run: dotnet publish src/HeroParser.Cli/HeroParser.Cli.csproj -c Release -r ${{ matrix.rid }} -f net10.0 --self-contained -p:PublishAot=true -p:Version=${{ github.event.inputs.version || inputs.version }}
 
-      - name: Package CLI binary
-        shell: ${{ matrix.shell }}
-        run: ${{ matrix.archive_cmd }}
+      - name: Package CLI binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Compress-Archive -Path src/HeroParser.Cli/bin/Release/net10.0/win-x64/publish/heroparser.exe -DestinationPath heroparser-v${{ github.event.inputs.version || inputs.version }}-win-x64.zip
+
+      - name: Package CLI binary (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: tar -czvf heroparser-v${{ github.event.inputs.version || inputs.version }}-${{ matrix.rid }}.tar.gz -C src/HeroParser.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish heroparser
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -353,17 +351,18 @@ jobs:
     name: Publish to WinGet
     runs-on: windows-latest
     needs: create-release
-    # Only run if WINGET_GITHUB_TOKEN secret is configured
-    if: ${{ secrets.WINGET_GITHUB_TOKEN != '' }}
     steps:
       - name: Checkout code
+        if: ${{ secrets.WINGET_GITHUB_TOKEN != '' }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install wingetcreate
+        if: ${{ secrets.WINGET_GITHUB_TOKEN != '' }}
         run: |
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
       - name: Update manifest and submit PR
+        if: ${{ secrets.WINGET_GITHUB_TOKEN != '' }}
         shell: pwsh
         env:
           TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}

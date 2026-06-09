@@ -28,8 +28,22 @@ View live performance graphs and history on the [HeroParser Performance Portal](
 
 ## Install
 
+### Core Library
+
 ```bash
 dotnet add package HeroParser
+```
+
+### High-Performance Console Engine (Alternative to Spectre.Console)
+
+```bash
+dotnet add package HeroParser.Console
+```
+
+### Command-Line Utility (CLI)
+
+```bash
+dotnet tool install --global HeroParser.Cli --version 2.5.0
 ```
 
 ---
@@ -158,6 +172,27 @@ Htb.Write<Product>().ToFile("out.htb", products);
 Htb.ConvertFromCsv("products.csv", "products.htb", HtbSchema.FromType<Product>());
 ```
 
+### Console (High-Performance Terminal Widget Engine)
+
+A zero-allocation, reflection-free, and 100% Native AOT-compatible library designed to replace or drop-in substitute `Spectre.Console` in high-performance terminal applications.
+
+```csharp
+using HeroParser.Console;
+
+// Render styled ANSI markup
+AnsiConsole.MarkupLine("[bold green]Success:[/] Row validation completed in [yellow]4.2ms[/].");
+
+// Render highly styled tables and panels with zero allocations
+var table = new Table().Border(TableBorder.Rounded);
+table.AddColumn("[blue]Filename[/]");
+table.AddColumn("[blue]Records[/]");
+
+table.AddRow("data.csv", "10,240");
+table.AddRow("data.jsonl", "102,400");
+
+AnsiConsole.Write(table);
+```
+
 ---
 
 ## Unified Attribute System
@@ -260,6 +295,8 @@ For advanced features and full API guides, see the files under the `docs` folder
 * [Fixed-Width Guide](docs/fixed-width.md) — Positional mapping, alignment, padding, and custom type converters.
 * [JSONL Guide](docs/jsonl.md) — Fine-tuning templates, vector parsing, and Native AOT setups.
 * [HTB Guide](docs/htb.md) — High-Throughput Tabular Binary format, fluent APIs, CSV ↔ HTB conversion, and Native AOT support.
+* [Console Guide](docs/console.md) — Standard rendering, markup, widgets (Table, Panel, Rule), interactive prompts, and Spectre.Console compatibility.
+* [CLI Guide](docs/cli.md) — Global installation, interactive wizard mode, validation, conversion, and AI-native query/translate commands.
 * [Benchmarks Guide](docs/benchmarks.md) — Execution environments, detailed CPU metrics, and comparisons.
 
 ---

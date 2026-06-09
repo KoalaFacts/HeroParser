@@ -4,6 +4,26 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-06-09
+
+This release introduces two major packages to the HeroParser ecosystem: `HeroParser.Console`, a zero-allocation, reflection-free, and Native AOT-compatible terminal widget library replacing `Spectre.Console`, and `heroparser` CLI, a global command-line utility for tabular and AI-native data processing.
+
+### Added
+- **`HeroParser.Console` (Zero-allocation terminal library)**:
+  - Built-in BBCode-like styled ANSI parser running on stack-allocated character spans.
+  - Zero-allocation interactive selection prompts (`SelectionPrompt<T>`) and text inputs (`TextPrompt<T>`).
+  - Standard terminal widgets: `Table`, `Panel`, `Rule`, `FigletText`, `Text`, and `Markup`.
+  - Live console panels: `Status` (loading spinners) and `Progress` (multi-task progress bars).
+  - Built-in compatibility layer/stubs for seamless migrations from `Spectre.Console`.
+- **`HeroParser.Cli` (AI-native CLI Tool)**:
+  - Globally installable dotnet tool (`heroparser`).
+  - Interactive wizard mode for browsing, validating, and converting files.
+  - Built-in subcommands for delimiter detection (`detect`), structural verification (`validate`), statistical profiling (`profile`), and file conversion (`convert`).
+  - Advanced AI-native commands for cleaning/fixing LLM output streams (`repair`), schema model generation (`schema --ai`), prompt-driven dataset queries (`query`), and batch row-level transformations (`translate`).
+- **Release Automation**:
+  - Configured multi-runner GitHub Release workflows compiling Native AOT binaries for Windows, Linux, and macOS.
+  - Configured automated WinGet Community Repository pull request submissions for the CLI tool.
+
 ## [2.4.1] - 2026-06-06
 
 Security hardening, streaming robustness, agentic validation, and HTB documentation release. Delivers global Excel XML Zip-bomb/XXE mitigations, ReDoS timeout guards, buffer-boundary split streaming safety, endianness corrections for HTB binary files, memory-optimized zero-allocation JSONL parsers, and dedicated HTB documentation.

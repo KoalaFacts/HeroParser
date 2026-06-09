@@ -134,5 +134,22 @@ public class ReadmeExamplesTests
 
         Assert.Equal(2, rowCount);
     }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
+    public void Console_Example()
+    {
+        // Example from README: Console (High-Performance Terminal Widget Engine)
+        HeroParser.Console.AnsiConsole.MarkupLine("[bold green]Success:[/] Row validation completed in [yellow]4.2ms[/].");
+
+        var table = new HeroParser.Console.Table().Border(HeroParser.Console.TableBorder.Rounded);
+        table.AddColumn("[blue]Filename[/]");
+        table.AddColumn("[blue]Records[/]");
+
+        table.AddRow("data.csv", "10,240");
+        table.AddRow("data.jsonl", "102,400");
+
+        HeroParser.Console.AnsiConsole.Write(table);
+    }
 }
 

@@ -381,3 +381,10 @@ jobs:
             -v $version `
             -t $Env:TOKEN `
             --submit
+
+          if ($LastExitCode -ne 0) {
+            Write-Warning "WinGet update failed (exit code $LastExitCode)."
+            Write-Warning "If this is the first release of HeroParser.Cli to WinGet, you must submit the initial package manifest to the Microsoft Community Repository manually."
+            Write-Warning "Once the package exists on WinGet, subsequent release workflows will automatically update it."
+            exit 0
+          }

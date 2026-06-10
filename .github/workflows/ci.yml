@@ -96,6 +96,7 @@ jobs:
       with:
         files: 'TestResults/**/*.trx'
         check_name: 'Test Results (${{ matrix.os }} - ${{ matrix.framework }})'
+        github_token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload test results
       if: always()

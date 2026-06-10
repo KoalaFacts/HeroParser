@@ -71,6 +71,27 @@ This directory contains automated CI/CD workflows for HeroParser.
 
 ---
 
+### 🚀 [publish-winget.yml](./publish-winget.yml) - Publish to WinGet
+
+**Triggers:**
+- When the "Create Release" workflow completes successfully on `main`
+- Manual workflow dispatch (for retrying or submitting custom versions)
+
+**What it does:**
+1. Determines the target release version (defaults to the latest release or manual input)
+2. Validates the version format
+3. Installs the official `wingetcreate` CLI tool on a Windows runner
+4. Submits the updated release manifest to the `microsoft/winget-pkgs` repository, automatically opening a pull request
+
+**Requirements:**
+- GitHub secret: `WINGET_GITHUB_TOKEN` (Personal Access Token with `public_repo` scope)
+
+**Usage:**
+- Automatically triggers upon successful execution of the release workflow.
+- Manual trigger: Actions → Publish to WinGet → Run workflow → (Optional) enter specific version
+
+---
+
 ### 📊 [benchmarks.yml](./benchmarks.yml) - Performance Benchmarks
 
 **Triggers:**

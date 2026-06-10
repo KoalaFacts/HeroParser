@@ -360,44 +360,7 @@ jobs:
           fi
 
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "The **publish-nuget** workflow will automatically trigger to publish packages to NuGet.org" >> $GITHUB_STEP_SUMMARY
+          echo "The **publish-nuget** and **publish-winget** workflows will automatically trigger to publish packages to NuGet.org and WinGet." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Monitor progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-nuget.yml" >> $GITHUB_STEP_SUMMARY
-
-  publish-winget:
-    name: Publish to WinGet
-    runs-on: windows-latest
-    needs: create-release
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Install wingetcreate
-        run: |
-          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-
-      - name: Update manifest and submit PR
-        shell: pwsh
-        env:
-          TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
-        run: |
-          if (-not $Env:TOKEN) {
-            Write-Host "WINGET_GITHUB_TOKEN secret is not set. Skipping WinGet submission."
-            exit 0
-          }
-          $version = "${{ github.event.inputs.version || inputs.version }}"
-          $url = "https://github.com/${{ github.repository }}/releases/download/v$version/heroparser-v$version-win-x64.zip"
-          
-          # Run wingetcreate update command to submit the PR
-          .\wingetcreate.exe update KoalaFacts.HeroParser `
-            -u $url `
-            -v $version `
-            -t $Env:TOKEN `
-            --submit
-
-          if ($LastExitCode -ne 0) {
-            Write-Warning "WinGet update failed (exit code $LastExitCode)."
-            Write-Warning "If this is the first release of HeroParser.Cli to WinGet, you must submit the initial package manifest to the Microsoft Community Repository manually."
-            Write-Warning "Once the package exists on WinGet, subsequent release workflows will automatically update it."
-            exit 0
-          }
+          echo "Monitor NuGet progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-nuget.yml" >> $GITHUB_STEP_SUMMARY
+          echo "Monitor WinGet progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-winget.yml" >> $GITHUB_STEP_SUMMARY

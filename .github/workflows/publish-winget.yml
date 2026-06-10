@@ -1,0 +1,132 @@
+name: Publish to WinGet
+
+on:
+  # Trigger when create-release workflow completes successfully
+  workflow_run:
+    workflows: ["Create Release"]
+    types: [completed]
+    branches: [main]
+  # Keep manual trigger for retrying or custom version submissions
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g., 2.5.1)'
+        required: false
+        type: string
+
+# Prevent concurrent publishes
+concurrency:
+  group: publish-winget
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CI: true
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    # Only run if create-release workflow succeeded (or if manually triggered)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      tag: ${{ steps.version.outputs.TAG }}
+    steps:
+      - name: Determine version from release
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            # Get the latest release (most recently created)
+            echo "Finding latest release from create-release workflow..."
+
+            TAG=$(gh api repos/${GITHUB_REPOSITORY}/releases \
+              --jq ".[0].tag_name" | head -n 1)
+
+            if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
+              echo "Error: Could not find any releases"
+              exit 1
+            fi
+
+            VERSION="${TAG#v}"
+            echo "Using latest release: ${TAG}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG="v${VERSION}"
+          else
+            # Try to fetch latest release from GitHub API
+            TAG=$(gh api repos/${GITHUB_REPOSITORY}/releases \
+              --jq ".[0].tag_name" | head -n 1)
+            if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
+              echo "Error: No version specified and could not find any releases"
+              exit 1
+            fi
+            VERSION="${TAG#v}"
+            echo "Using latest release: ${TAG}"
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION (tag: $TAG)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    runs-on: windows-latest
+    needs: get-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Record version in summary
+        run: |
+          echo "## Publishing WinGet package" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "- Detected version: ${{ needs.get-version.outputs.version }}" >> $env:GITHUB_STEP_SUMMARY
+          echo "- Tag: ${{ needs.get-version.outputs.tag }}" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Validate version format
+        run: |
+          $version = "${{ needs.get-version.outputs.version }}"
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$') {
+            Write-Error "Error: Invalid version format: $version"
+            exit 1
+          }
+          Write-Host "Version format validated: $version"
+
+      - name: Install wingetcreate
+        run: |
+          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+
+      - name: Update manifest and submit PR
+        shell: pwsh
+        env:
+          TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          if (-not $Env:TOKEN) {
+            Write-Error "WINGET_GITHUB_TOKEN secret is not set. Submission cannot proceed."
+            exit 1
+          }
+          $version = "${{ needs.get-version.outputs.version }}"
+          $url = "https://github.com/${{ github.repository }}/releases/download/v$version/heroparser-v$version-win-x64.zip"
+          
+          # Run wingetcreate update command to submit the PR
+          .\wingetcreate.exe update KoalaFacts.HeroParser `
+            -u $url `
+            -v $version `
+            -t $Env:TOKEN `
+            --submit
+
+          if ($LastExitCode -ne 0) {
+            Write-Warning "WinGet update failed (exit code $LastExitCode)."
+            Write-Warning "If this is the first release of HeroParser.Cli to WinGet, you must submit the initial package manifest to the Microsoft Community Repository manually."
+            Write-Warning "Once the package exists on WinGet, subsequent release workflows will automatically update it."
+            exit $LastExitCode
+          }
+
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Publish WinGet v{0}', inputs.version || 'latest') || 'Publish WinGet' }}

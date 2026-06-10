@@ -4,10 +4,10 @@
     <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
     <!-- Package metadata -->
     <PackageId>HeroParser</PackageId>
-    <Version>2.5.0</Version>
+    <Version>2.5.1</Version>
     <Authors>HeroParser Contributors</Authors>
     <Description>Ultra high-performance CSV, Fixed-Width, Excel (.xlsx), JSONL, and HTB (High-Throughput Tabular Binary) file parser and writer for .NET 8+. SIMD-accelerated parsing (AVX-512/AVX2/NEON) with a zero-allocation, fixed-112-byte read hot path: UTF-8 reading is ~12% faster than Sep and CSV writing is 2-3x faster, both at a fraction of the memory. RFC 4180 compliant with fluent read/write APIs. Fixed-Width support includes field alignment, padding, overflow handling, and async streaming. Excel reading and writing with zero extra dependencies. JSONL targets AI/ML pipelines: OpenAI/Anthropic LLM fine-tuning shapes, CSV-to-JSONL conversion, embedding-API batching, an inline vector parser, and AOT-safe JsonTypeInfo. HTB binary format natively supports float[] arrays for vector embedding serialization with endianness safety. Includes async I/O, source generators for native AOT, IDataReader/DbDataReader bridges, PipeReader streaming, LINQ-style extensions, progress reporting, and custom type converters.</Description>
-    <PackageReleaseNotes>v2.5.0 introduces HeroParser.Console (a zero-allocation, reflection-free, 100% Native AOT compatible terminal widget library replacing Spectre.Console) and the heroparser CLI tool for validating, profiling, converting, and translating datasets with full LLM and WinGet integration. Full changelog: https://github.com/KoalaFacts/HeroParser/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>v2.5.1 introduces HeroParser.Console (a zero-allocation, reflection-free, 100% Native AOT compatible terminal widget library replacing Spectre.Console) and the heroparser CLI tool for validating, profiling, converting, and translating datasets with full LLM and WinGet integration. Full changelog: https://github.com/KoalaFacts/HeroParser/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <PackageTags>csv;csvhelper;csv parser;csv reader;csv writer;fixed-width;fixedwidth;fixed-length;mainframe;excel;xlsx;excel reader;excel writer;delimited;tsv;parser;writer;rfc4180;jsonl;json;ndjson;simd;aot;high-performance;llm;embeddings;dataset;fine-tuning;openai;anthropic;vector;ai</PackageTags>
     <RepositoryUrl>https://github.com/KoalaFacts/HeroParser</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

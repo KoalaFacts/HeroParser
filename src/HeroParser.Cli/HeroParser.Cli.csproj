@@ -7,7 +7,7 @@
     <PublishAot>true</PublishAot>
     <!-- Package and Tool Metadata -->
     <PackageId>HeroParser.Cli</PackageId>
-    <Version>2.5.0</Version>
+    <Version>2.5.1</Version>
     <Authors>HeroParser Contributors</Authors>
     <Description>High-performance, cross-platform CLI tool for parsing, converting, formatting, and profiling CSV, Fixed-Width, Excel, JSONL, and HTB (High-Throughput Tabular Binary) files. Powered by HeroParser.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

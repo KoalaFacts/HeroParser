@@ -43,7 +43,7 @@ dotnet add package HeroParser.Console
 ### Command-Line Utility (CLI)
 
 ```bash
-dotnet tool install --global HeroParser.Cli --version 2.5.0
+dotnet tool install --global HeroParser.Cli --version 2.5.1
 ```
 
 ---

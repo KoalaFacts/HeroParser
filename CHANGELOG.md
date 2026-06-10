@@ -4,7 +4,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-## [2.5.0] - 2026-06-09
+## [2.5.1] - 2026-06-10
 
 This release introduces two major packages to the HeroParser ecosystem: `HeroParser.Console`, a zero-allocation, reflection-free, and Native AOT-compatible terminal widget library replacing `Spectre.Console`, and `heroparser` CLI, a global command-line utility for tabular and AI-native data processing.
 

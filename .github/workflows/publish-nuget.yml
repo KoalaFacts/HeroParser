@@ -116,13 +116,13 @@ jobs:
           # Create packages directory
           mkdir -p ./packages
 
-          # Download NuGet packages from the release
+          # Download NuGet packages from the release using wildcards
           gh release download "$TAG" \
-            --pattern "HeroParser.${VERSION}.nupkg" \
+            --pattern "*.nupkg" \
             --dir ./packages
 
           gh release download "$TAG" \
-            --pattern "HeroParser.${VERSION}.snupkg" \
+            --pattern "*.snupkg" \
             --dir ./packages
 
           echo "Downloaded packages:"
@@ -134,16 +134,17 @@ jobs:
         run: |
           VERSION="${{ needs.get-version.outputs.version }}"
 
-          # Verify both packages exist
-          if [ ! -f "./packages/HeroParser.${VERSION}.nupkg" ]; then
-            echo "Error: Main package not found: HeroParser.${VERSION}.nupkg"
-            exit 1
-          fi
-
-          if [ ! -f "./packages/HeroParser.${VERSION}.snupkg" ]; then
-            echo "Error: Symbol package not found: HeroParser.${VERSION}.snupkg"
-            exit 1
-          fi
+          # Verify all three packages and symbols exist
+          for id in HeroParser HeroParser.Console HeroParser.Cli; do
+            if [ ! -f "./packages/${id}.${VERSION}.nupkg" ]; then
+              echo "Error: Main package not found: ${id}.${VERSION}.nupkg"
+              exit 1
+            fi
+            if [ ! -f "./packages/${id}.${VERSION}.snupkg" ]; then
+              echo "Error: Symbol package not found: ${id}.${VERSION}.snupkg"
+              exit 1
+            fi
+          done
 
           echo "Package contents:"
           for pkg in ./packages/*.nupkg; do

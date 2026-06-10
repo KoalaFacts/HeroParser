@@ -177,27 +177,33 @@ jobs:
 
       - name: Pack NuGet packages
         run: |
-          dotnet pack src/HeroParser/HeroParser.csproj \
-            --configuration Release \
-            --no-build \
-            --output ./packages \
-            -p:PackageVersion=${{ github.event.inputs.version || inputs.version }} \
-            -p:Version=${{ github.event.inputs.version || inputs.version }} \
-            -p:IncludeSymbols=true \
-            -p:SymbolPackageFormat=snupkg
+          for project in src/HeroParser/HeroParser.csproj src/HeroParser.Console/HeroParser.Console.csproj src/HeroParser.Cli/HeroParser.Cli.csproj; do
+            echo "Packing $project..."
+            dotnet pack "$project" \
+              --configuration Release \
+              --no-build \
+              --output ./packages \
+              -p:PackageVersion=${{ github.event.inputs.version || inputs.version }} \
+              -p:Version=${{ github.event.inputs.version || inputs.version }} \
+              -p:IncludeSymbols=true \
+              -p:SymbolPackageFormat=snupkg
+          done
 
       - name: Verify packages were created
         run: |
-          if [ ! -f "packages/HeroParser.${{ github.event.inputs.version || inputs.version }}.nupkg" ]; then
-            echo "Error: Main package not found"
-            exit 1
-          fi
-          if [ ! -f "packages/HeroParser.${{ github.event.inputs.version || inputs.version }}.snupkg" ]; then
-            echo "Error: Symbol package not found"
-            exit 1
-          fi
+          VERSION="${{ github.event.inputs.version || inputs.version }}"
+          for id in HeroParser HeroParser.Console HeroParser.Cli; do
+            if [ ! -f "packages/${id}.${VERSION}.nupkg" ]; then
+              echo "Error: Package ${id}.${VERSION}.nupkg not found"
+              exit 1
+            fi
+            if [ ! -f "packages/${id}.${VERSION}.snupkg" ]; then
+              echo "Error: Symbols package ${id}.${VERSION}.snupkg not found"
+              exit 1
+            fi
+          done
           echo "Packages verified:"
-          ls -lh packages/HeroParser.${{ github.event.inputs.version || inputs.version }}.*
+          ls -lh packages/
 
       - name: Generate package provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
@@ -310,7 +316,7 @@ jobs:
           fi
 
           # Prepare assets list
-          ASSETS="packages/HeroParser.${{ github.event.inputs.version || inputs.version }}.nupkg packages/HeroParser.${{ github.event.inputs.version || inputs.version }}.snupkg cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.zip cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.tar.gz"
+          ASSETS="packages/*.nupkg packages/*.snupkg cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.zip cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.tar.gz"
 
           # Add SBOMs if they exist
           if [ -d "release-sboms" ] && [ "$(ls -A release-sboms)" ]; then

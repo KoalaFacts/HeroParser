@@ -126,50 +126,55 @@ jobs:
           git clone "https://x-access-token:${TOKEN}@github.com/KoalaFacts/homebrew-tap.git" tap
 
       - name: Update Formula
+        shell: python
         run: |
-          VERSION="${{ needs.get-version.outputs.version }}"
-          OSX_X64_SHA="${{ steps.checksums.outputs.osx_x64 }}"
-          OSX_ARM64_SHA="${{ steps.checksums.outputs.osx_arm64 }}"
-          LINUX_X64_SHA="${{ steps.checksums.outputs.linux_x64 }}"
+          import os
+          import textwrap
           
-          mkdir -p tap/Formula
+          version = "${{ needs.get-version.outputs.version }}"
+          osx_x64_sha = "${{ steps.checksums.outputs.osx_x64 }}"
+          osx_arm64_sha = "${{ steps.checksums.outputs.osx_arm64 }}"
+          linux_x64_sha = "${{ steps.checksums.outputs.linux_x64 }}"
           
-          cat << EOF > tap/Formula/heroparser.rb
-class Heroparser < Formula
-  desc "High-performance, AI-native CLI tool for tabular data processing"
-  homepage "https://github.com/KoalaFacts/HeroParser"
-  version "$VERSION"
-  license "MIT"
-
-  on_macos do
-    if Hardware::CPU.intel?
-      url "https://github.com/KoalaFacts/HeroParser/releases/download/v$VERSION/heroparser-v$VERSION-osx-x64.tar.gz"
-      sha256 "$OSX_X64_SHA"
-    elsif Hardware::CPU.arm?
-      url "https://github.com/KoalaFacts/HeroParser/releases/download/v$VERSION/heroparser-v$VERSION-osx-arm64.tar.gz"
-      sha256 "$OSX_ARM64_SHA"
-    end
-  end
-
-  on_linux do
-    if Hardware::CPU.intel?
-      url "https://github.com/KoalaFacts/HeroParser/releases/download/v$VERSION/heroparser-v$VERSION-linux-x64.tar.gz"
-      sha256 "$LINUX_X64_SHA"
-    end
-  end
-
-  def install
-    bin.install "heroparser"
-  end
-
-  test do
-    system "#{bin}/heroparser", "--help"
-  end
-end
-EOF
+          formula = textwrap.dedent(f"""\
+              class Heroparser < Formula
+                desc "High-performance, AI-native CLI tool for tabular data processing"
+                homepage "https://github.com/KoalaFacts/HeroParser"
+                version "{version}"
+                license "MIT"
+              
+                on_macos do
+                  if Hardware::CPU.intel?
+                    url "https://github.com/KoalaFacts/HeroParser/releases/download/v{version}/heroparser-v{version}-osx-x64.tar.gz"
+                    sha256 "{osx_x64_sha}"
+                  elsif Hardware::CPU.arm?
+                    url "https://github.com/KoalaFacts/HeroParser/releases/download/v{version}/heroparser-v{version}-osx-arm64.tar.gz"
+                    sha256 "{osx_arm64_sha}"
+                  end
+                end
+              
+                on_linux do
+                  if Hardware::CPU.intel?
+                    url "https://github.com/KoalaFacts/HeroParser/releases/download/v{version}/heroparser-v{version}-linux-x64.tar.gz"
+                    sha256 "{linux_x64_sha}"
+                  end
+                end
+              
+                def install
+                  bin.install "heroparser"
+                end
+              
+                test do
+                  system "#{{bin}}/heroparser", "--help"
+                end
+              end
+          """)
           
-          echo "Formula file updated:"
-          cat tap/Formula/heroparser.rb
+          os.makedirs("tap/Formula", exist_ok=True)
+          with open("tap/Formula/heroparser.rb", "w", encoding="utf-8") as f:
+              f.write(formula)
+          
+          print("Formula file updated successfully.")
 
       - name: Commit and Push to Tap
         run: |

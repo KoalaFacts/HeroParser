@@ -119,13 +119,13 @@ jobs:
           cat snap/snapcraft.yaml
 
       - name: Build Snap
-        uses: snapcore/action-build@a1b1ec452778972e0d37e691456a0c25381ce38a # v1.1.2
+        uses: canonical/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1.3.0
         id: snapcraft
 
       - name: Publish Snap
         # Only attempt to publish if the store login secret is configured
         if: ${{ secrets.SNAPCRAFT_TOKEN != '' }}
-        uses: snapcore/action-publish@783510cbb2a281853f1d1fc6a0c25381ce38a # v1.1.2
+        uses: canonical/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
         with:
           snap: ${{ steps.snapcraft.outputs.snap }}
           store_login: ${{ secrets.SNAPCRAFT_TOKEN }}

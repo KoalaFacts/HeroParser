@@ -112,40 +112,43 @@ jobs:
           git clone "https://x-access-token:${TOKEN}@github.com/KoalaFacts/scoop-bucket.git" bucket-repo
 
       - name: Update Manifest
+        shell: python
         run: |
-          VERSION="${{ needs.get-version.outputs.version }}"
-          WIN_SHA="${{ steps.checksum.outputs.win_sha }}"
+          import os
+          import json
           
-          mkdir -p bucket-repo/bucket
+          version = "${{ needs.get-version.outputs.version }}"
+          win_sha = "${{ steps.checksum.outputs.win_sha }}"
           
-          cat << EOF > bucket-repo/bucket/heroparser.json
-{
-    "version": "$VERSION",
-    "description": "High-performance, AI-native CLI tool for tabular data processing",
-    "homepage": "https://github.com/KoalaFacts/HeroParser",
-    "license": "MIT",
-    "architecture": {
-        "64bit": {
-            "url": "https://github.com/KoalaFacts/HeroParser/releases/download/v$VERSION/heroparser-v$VERSION-win-x64.zip",
-            "hash": "$WIN_SHA"
-        }
-    },
-    "bin": "heroparser.exe",
-    "checkver": {
-        "github": "https://github.com/KoalaFacts/HeroParser"
-    },
-    "autoupdate": {
-        "architecture": {
-            "64bit": {
-                "url": "https://github.com/KoalaFacts/HeroParser/releases/download/v\$version/heroparser-v\$version-win-x64.zip"
-            }
-        }
-    }
-}
-EOF
+          manifest = {
+              "version": version,
+              "description": "High-performance, AI-native CLI tool for tabular data processing",
+              "homepage": "https://github.com/KoalaFacts/HeroParser",
+              "license": "MIT",
+              "architecture": {
+                  "64bit": {
+                      "url": f"https://github.com/KoalaFacts/HeroParser/releases/download/v{version}/heroparser-v{version}-win-x64.zip",
+                      "hash": win_sha
+                  }
+              },
+              "bin": "heroparser.exe",
+              "checkver": {
+                  "github": "https://github.com/KoalaFacts/HeroParser"
+              },
+              "autoupdate": {
+                  "architecture": {
+                      "64bit": {
+                          "url": "https://github.com/KoalaFacts/HeroParser/releases/download/v$version/heroparser-v$version-win-x64.zip"
+                      }
+                  }
+              }
+          }
           
-          echo "Manifest file updated:"
-          cat bucket-repo/bucket/heroparser.json
+          os.makedirs("bucket-repo/bucket", exist_ok=True)
+          with open("bucket-repo/bucket/heroparser.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, indent=4)
+          
+          print("Manifest file updated successfully.")
 
       - name: Commit and Push to Scoop Bucket
         run: |

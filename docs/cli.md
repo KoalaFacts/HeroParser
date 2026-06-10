@@ -8,6 +8,8 @@ The `heroparser` CLI is a high-performance, AI-native command-line utility for w
 
 ## 1. Installation
 
+### Option 1: Dotnet Global Tool (Cross-Platform)
+
 Install the CLI globally as a dotnet tool:
 
 ```bash
@@ -20,10 +22,22 @@ To update an existing installation:
 dotnet tool update --global HeroParser.Cli --version 2.5.1
 ```
 
-Once installed, verify the installation by running:
+### Option 2: Native AOT Binary (macOS & Linux)
+
+For users who want a standalone, high-performance binary without requiring the .NET SDK/Runtime installed, you can use our shell installer script:
 
 ```bash
-heroparser --help
+curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.sh | sh
+```
+
+This will automatically detect your operating system and architecture, download the correct release asset, extract the binary, and install it to `/usr/local/bin` (or `~/.local/bin` if `/usr/local/bin` is not writable).
+
+### Option 3: WinGet (Windows)
+
+On Windows, you can install the portable AOT-compiled executable via WinGet (pending community repository merge):
+
+```bash
+winget install KoalaFacts.HeroParser
 ```
 
 ---

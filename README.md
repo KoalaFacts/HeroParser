@@ -42,8 +42,20 @@ dotnet add package HeroParser.Console
 
 ### Command-Line Utility (CLI)
 
+#### Option 1: Dotnet Global Tool (Cross-Platform)
 ```bash
 dotnet tool install --global HeroParser.Cli --version 2.5.1
+```
+
+#### Option 2: Native AOT Binary (macOS & Linux)
+Install the standalone, high-performance Native AOT binary:
+```bash
+curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.sh | sh
+```
+
+On Windows, you can install via WinGet (pending registry merge):
+```bash
+winget install KoalaFacts.HeroParser
 ```
 
 ---

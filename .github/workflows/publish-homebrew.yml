@@ -96,11 +96,11 @@ jobs:
           echo "Downloading archives from release $TAG..."
           
           # Download files
-          gh release download "$TAG" --pattern "heroparser-v${VERSION}-osx-x64.tar.gz"
-          gh release download "$TAG" --pattern "heroparser-v${VERSION}-osx-arm64.tar.gz"
-          gh release download "$TAG" --pattern "heroparser-v${VERSION}-linux-x64.tar.gz"
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "heroparser-v${VERSION}-osx-x64.tar.gz"
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "heroparser-v${VERSION}-osx-arm64.tar.gz"
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "heroparser-v${VERSION}-linux-x64.tar.gz"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Calculate SHA-256 Checksums
         id: checksums

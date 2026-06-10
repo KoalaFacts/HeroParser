@@ -94,9 +94,9 @@ jobs:
           VERSION="${{ needs.get-version.outputs.version }}"
 
           echo "Downloading Linux archive from release $TAG..."
-          gh release download "$TAG" --pattern "heroparser-v${VERSION}-linux-x64.tar.gz"
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "heroparser-v${VERSION}-linux-x64.tar.gz"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Prepare build environment
         run: |

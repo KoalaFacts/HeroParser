@@ -94,9 +94,9 @@ jobs:
           VERSION="${{ needs.get-version.outputs.version }}"
 
           echo "Downloading Windows archive from release $TAG..."
-          gh release download "$TAG" --pattern "heroparser-v${VERSION}-win-x64.zip"
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "heroparser-v${VERSION}-win-x64.zip"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Calculate SHA-256 Checksum
         id: checksum

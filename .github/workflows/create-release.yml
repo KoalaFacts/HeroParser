@@ -360,7 +360,9 @@ jobs:
           fi
 
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "The **publish-nuget** and **publish-winget** workflows will automatically trigger to publish packages to NuGet.org and WinGet." >> $GITHUB_STEP_SUMMARY
+          echo "The **publish-nuget**, **publish-winget**, and **publish-homebrew** workflows will automatically trigger to publish packages to NuGet.org, WinGet, and Homebrew." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Monitor NuGet progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-nuget.yml" >> $GITHUB_STEP_SUMMARY
           echo "Monitor WinGet progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-winget.yml" >> $GITHUB_STEP_SUMMARY
+          echo "Monitor Homebrew progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-homebrew.yml" >> $GITHUB_STEP_SUMMARY
+

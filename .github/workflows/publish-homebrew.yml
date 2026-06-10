@@ -1,0 +1,188 @@
+name: Publish to Homebrew
+
+on:
+  # Trigger when create-release workflow completes successfully
+  workflow_run:
+    workflows: ["Create Release"]
+    types: [completed]
+    branches: [main]
+  # Keep manual trigger for retrying or custom version submissions
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g., 2.5.1)'
+        required: false
+        type: string
+
+# Prevent concurrent publishes
+concurrency:
+  group: publish-homebrew
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CI: true
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    # Only run if create-release workflow succeeded (or if manually triggered)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      tag: ${{ steps.version.outputs.TAG }}
+    steps:
+      - name: Determine version from release
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            # Get the latest release (most recently created)
+            echo "Finding latest release from create-release workflow..."
+
+            TAG=$(gh api repos/${GITHUB_REPOSITORY}/releases \
+              --jq ".[0].tag_name" | head -n 1)
+
+            if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
+              echo "Error: Could not find any releases"
+              exit 1
+            fi
+
+            VERSION="${TAG#v}"
+            echo "Using latest release: ${TAG}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG="v${VERSION}"
+          else
+            # Try to fetch latest release from GitHub API
+            TAG=$(gh api repos/${GITHUB_REPOSITORY}/releases \
+              --jq ".[0].tag_name" | head -n 1)
+            if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
+              echo "Error: No version specified and could not find any releases"
+              exit 1
+            fi
+            VERSION="${TAG#v}"
+            echo "Using latest release: ${TAG}"
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION (tag: $TAG)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: get-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Record version in summary
+        run: |
+          echo "## Publishing Homebrew formula" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Detected version: ${{ needs.get-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tag: ${{ needs.get-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Download release assets
+        run: |
+          TAG="${{ needs.get-version.outputs.tag }}"
+          VERSION="${{ needs.get-version.outputs.version }}"
+
+          echo "Downloading archives from release $TAG..."
+          
+          # Download files
+          gh release download "$TAG" --pattern "heroparser-v${VERSION}-osx-x64.tar.gz"
+          gh release download "$TAG" --pattern "heroparser-v${VERSION}-osx-arm64.tar.gz"
+          gh release download "$TAG" --pattern "heroparser-v${VERSION}-linux-x64.tar.gz"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate SHA-256 Checksums
+        id: checksums
+        run: |
+          VERSION="${{ needs.get-version.outputs.version }}"
+          
+          OSX_X64_SHA=$(sha256sum heroparser-v${VERSION}-osx-x64.tar.gz | cut -d' ' -f1)
+          OSX_ARM64_SHA=$(sha256sum heroparser-v${VERSION}-osx-arm64.tar.gz | cut -d' ' -f1)
+          LINUX_X64_SHA=$(sha256sum heroparser-v${VERSION}-linux-x64.tar.gz | cut -d' ' -f1)
+          
+          echo "osx_x64=$OSX_X64_SHA" >> $GITHUB_OUTPUT
+          echo "osx_arm64=$OSX_ARM64_SHA" >> $GITHUB_OUTPUT
+          echo "linux_x64=$LINUX_X64_SHA" >> $GITHUB_OUTPUT
+          
+          echo "SHA-256 for macOS x64: $OSX_X64_SHA"
+          echo "SHA-256 for macOS arm64: $OSX_ARM64_SHA"
+          echo "SHA-256 for Linux x64: $LINUX_X64_SHA"
+
+      - name: Clone Tap Repository
+        run: |
+          # Use WINGET_GITHUB_TOKEN or GITHUB_TOKEN (if write permissions configured for other repos)
+          TOKEN="${{ secrets.WINGET_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}"
+          git clone "https://x-access-token:${TOKEN}@github.com/KoalaFacts/homebrew-tap.git" tap
+
+      - name: Update Formula
+        run: |
+          VERSION="${{ needs.get-version.outputs.version }}"
+          OSX_X64_SHA="${{ steps.checksums.outputs.osx_x64 }}"
+          OSX_ARM64_SHA="${{ steps.checksums.outputs.osx_arm64 }}"
+          LINUX_X64_SHA="${{ steps.checksums.outputs.linux_x64 }}"
+          
+          mkdir -p tap/Formula
+          
+          cat << EOF > tap/Formula/heroparser.rb
+class Heroparser < Formula
+  desc "High-performance, AI-native CLI tool for tabular data processing"
+  homepage "https://github.com/KoalaFacts/HeroParser"
+  version "$VERSION"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.intel?
+      url "https://github.com/KoalaFacts/HeroParser/releases/download/v$VERSION/heroparser-v$VERSION-osx-x64.tar.gz"
+      sha256 "$OSX_X64_SHA"
+    elsif Hardware::CPU.arm?
+      url "https://github.com/KoalaFacts/HeroParser/releases/download/v$VERSION/heroparser-v$VERSION-osx-arm64.tar.gz"
+      sha256 "$OSX_ARM64_SHA"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.intel?
+      url "https://github.com/KoalaFacts/HeroParser/releases/download/v$VERSION/heroparser-v$VERSION-linux-x64.tar.gz"
+      sha256 "$LINUX_X64_SHA"
+    end
+  end
+
+  def install
+    bin.install "heroparser"
+  end
+
+  test do
+    system "#{bin}/heroparser", "--help"
+  end
+end
+EOF
+          
+          echo "Formula file updated:"
+          cat tap/Formula/heroparser.rb
+
+      - name: Commit and Push to Tap
+        run: |
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/heroparser.rb
+          
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "feat: bump heroparser formula to v${{ needs.get-version.outputs.version }}"
+            git push origin main
+          fi
+
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Publish Homebrew v{0}', inputs.version || 'latest') || 'Publish Homebrew' }}

@@ -92,6 +92,60 @@ This directory contains automated CI/CD workflows for HeroParser.
 
 ---
 
+### 🚀 [publish-homebrew.yml](./publish-homebrew.yml) - Publish to Homebrew
+
+**Triggers:**
+- When the "Create Release" workflow completes successfully on `main`
+- Manual workflow dispatch (for retrying or submitting custom versions)
+
+**What it does:**
+1. Determines the target release version
+2. Downloads the macOS (Intel/ARM) and Linux release tarballs
+3. Calculates their SHA-256 checksums
+4. Clones the `KoalaFacts/homebrew-tap` repository
+5. Generates the updated Homebrew formula `Formula/heroparser.rb` and pushes it
+
+**Requirements:**
+- GitHub secret: `WINGET_GITHUB_TOKEN` (or default `GITHUB_TOKEN` with write access to the tap repo)
+
+---
+
+### 🚀 [publish-scoop.yml](./publish-scoop.yml) - Publish to Scoop
+
+**Triggers:**
+- When the "Create Release" workflow completes successfully on `main`
+- Manual workflow dispatch (for retrying or submitting custom versions)
+
+**What it does:**
+1. Determines the target release version
+2. Downloads the Windows release zip file
+3. Calculates its SHA-256 checksum
+4. Clones the `KoalaFacts/scoop-bucket` repository
+5. Generates the updated Scoop JSON manifest `bucket/heroparser.json` and pushes it
+
+**Requirements:**
+- GitHub secret: `WINGET_GITHUB_TOKEN` (or default `GITHUB_TOKEN` with write access to the scoop bucket repo)
+
+---
+
+### 🚀 [publish-snap.yml](./publish-snap.yml) - Publish to Snap
+
+**Triggers:**
+- When the "Create Release" workflow completes successfully on `main`
+- Manual workflow dispatch (for retrying or submitting custom versions)
+
+**What it does:**
+1. Determines the target release version
+2. Downloads the Linux x64 release tarball and extracts the binary
+3. Prepares the build environment by dynamically inserting the version into `snap/snapcraft.yaml`
+4. Builds the Snap package using `snapcore/action-build`
+5. Publishes the Snap package to the Snap Store using `snapcore/action-publish` (if token is configured)
+
+**Requirements:**
+- GitHub secret: `SNAPCRAFT_TOKEN` (Snap Store login token exported from `snapcraft export-login`)
+
+---
+
 ### 📊 [benchmarks.yml](./benchmarks.yml) - Performance Benchmarks
 
 **Triggers:**

@@ -1,0 +1,133 @@
+name: Publish to Snap
+
+on:
+  # Trigger when create-release workflow completes successfully
+  workflow_run:
+    workflows: ["Create Release"]
+    types: [completed]
+    branches: [main]
+  # Keep manual trigger for retrying or custom version submissions
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g., 2.5.1)'
+        required: false
+        type: string
+
+# Prevent concurrent publishes
+concurrency:
+  group: publish-snap
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CI: true
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    # Only run if create-release workflow succeeded (or if manually triggered)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      tag: ${{ steps.version.outputs.TAG }}
+    steps:
+      - name: Determine version from release
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            # Get the latest release (most recently created)
+            echo "Finding latest release from create-release workflow..."
+
+            TAG=$(gh api repos/${GITHUB_REPOSITORY}/releases \
+              --jq ".[0].tag_name" | head -n 1)
+
+            if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
+              echo "Error: Could not find any releases"
+              exit 1
+            fi
+
+            VERSION="${TAG#v}"
+            echo "Using latest release: ${TAG}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            TAG="v${VERSION}"
+          else
+            # Try to fetch latest release from GitHub API
+            TAG=$(gh api repos/${GITHUB_REPOSITORY}/releases \
+              --jq ".[0].tag_name" | head -n 1)
+            if [ -z "${TAG}" ] || [ "${TAG}" = "null" ]; then
+              echo "Error: No version specified and could not find any releases"
+              exit 1
+            fi
+            VERSION="${TAG#v}"
+            echo "Using latest release: ${TAG}"
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION (tag: $TAG)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: get-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Record version in summary
+        run: |
+          echo "## Publishing Snap package" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Detected version: ${{ needs.get-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tag: ${{ needs.get-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Download release asset
+        run: |
+          TAG="${{ needs.get-version.outputs.tag }}"
+          VERSION="${{ needs.get-version.outputs.version }}"
+
+          echo "Downloading Linux archive from release $TAG..."
+          gh release download "$TAG" --pattern "heroparser-v${VERSION}-linux-x64.tar.gz"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare build environment
+        run: |
+          VERSION="${{ needs.get-version.outputs.version }}"
+          
+          # Extract the linux tarball to ./bin
+          mkdir -p ./bin
+          tar -xzf heroparser-v${VERSION}-linux-x64.tar.gz -C ./bin
+          
+          # Verify binary exists
+          if [ ! -f "./bin/heroparser" ]; then
+            echo "Error: Extracted archive did not contain 'heroparser' executable."
+            exit 1
+          fi
+          
+          # Replace version in snap/snapcraft.yaml
+          sed -i "s/version: '2.5.1'/version: '$VERSION'/g" snap/snapcraft.yaml
+          
+          echo "Updated snap/snapcraft.yaml:"
+          cat snap/snapcraft.yaml
+
+      - name: Build Snap
+        uses: snapcore/action-build@a1b1ec452778972e0d37e691456a0c25381ce38a # v1.1.2
+        id: snapcraft
+
+      - name: Publish Snap
+        # Only attempt to publish if the store login secret is configured
+        if: ${{ secrets.SNAPCRAFT_TOKEN != '' }}
+        uses: snapcore/action-publish@783510cbb2a281853f1d1fc6a0c25381ce38a # v1.1.2
+        with:
+          snap: ${{ steps.snapcraft.outputs.snap }}
+          store_login: ${{ secrets.SNAPCRAFT_TOKEN }}
+
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Publish Snap v{0}', inputs.version || 'latest') || 'Publish Snap' }}

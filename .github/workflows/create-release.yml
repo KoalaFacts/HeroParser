@@ -360,9 +360,13 @@ jobs:
           fi
 
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "The **publish-nuget**, **publish-winget**, and **publish-homebrew** workflows will automatically trigger to publish packages to NuGet.org, WinGet, and Homebrew." >> $GITHUB_STEP_SUMMARY
+          echo "The downstream publishing workflows (**publish-nuget**, **publish-winget**, **publish-homebrew**, **publish-scoop**, and **publish-snap**) will automatically trigger." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Monitor NuGet progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-nuget.yml" >> $GITHUB_STEP_SUMMARY
-          echo "Monitor WinGet progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-winget.yml" >> $GITHUB_STEP_SUMMARY
-          echo "Monitor Homebrew progress at: https://github.com/${{ github.repository }}/actions/workflows/publish-homebrew.yml" >> $GITHUB_STEP_SUMMARY
+          echo "Monitor progress at:" >> $GITHUB_STEP_SUMMARY
+          echo "- **NuGet**: https://github.com/${{ github.repository }}/actions/workflows/publish-nuget.yml" >> $GITHUB_STEP_SUMMARY
+          echo "- **WinGet**: https://github.com/${{ github.repository }}/actions/workflows/publish-winget.yml" >> $GITHUB_STEP_SUMMARY
+          echo "- **Homebrew**: https://github.com/${{ github.repository }}/actions/workflows/publish-homebrew.yml" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scoop**: https://github.com/${{ github.repository }}/actions/workflows/publish-scoop.yml" >> $GITHUB_STEP_SUMMARY
+          echo "- **Snap**: https://github.com/${{ github.repository }}/actions/workflows/publish-snap.yml" >> $GITHUB_STEP_SUMMARY
+
 

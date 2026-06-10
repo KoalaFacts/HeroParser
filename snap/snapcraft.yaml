@@ -1,0 +1,24 @@
+name: heroparser
+base: core22
+version: '2.5.1'
+summary: High-performance, AI-native CLI tool for tabular data processing
+description: |
+  HeroParser CLI is an AI-native, high-performance command-line utility for working with tabular datasets, powered by the HeroParser library. It supports validation, schema inference, converting between formats (CSV, Excel, Fixed-Width, JSONL, HTB), profiling, querying, and AI translation.
+
+grade: stable
+confinement: strict
+
+parts:
+  heroparser:
+    plugin: dump
+    source: ./bin
+    organize:
+      heroparser: bin/heroparser
+
+apps:
+  heroparser:
+    command: bin/heroparser
+    plugs:
+      - home
+      - network
+      - removable-media

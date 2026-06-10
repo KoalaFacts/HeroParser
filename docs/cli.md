@@ -22,9 +22,24 @@ To update an existing installation:
 dotnet tool update --global HeroParser.Cli --version 2.5.1
 ```
 
-### Option 2: Native AOT Binary (macOS & Linux)
+### Option 2: Homebrew Tap (macOS & Linux)
 
-For users who want a standalone, high-performance binary without requiring the .NET SDK/Runtime installed, you can use our shell installer script:
+For macOS and Linux users, you can install the native AOT-compiled binary using Homebrew via our custom tap:
+
+```bash
+brew tap KoalaFacts/tap
+brew install heroparser
+```
+
+To update:
+
+```bash
+brew upgrade heroparser
+```
+
+### Option 3: Shell Installer Script (macOS & Linux fallback)
+
+If you don't use Homebrew, you can install the standalone binary using our installer script:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.sh | sh
@@ -32,13 +47,14 @@ curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.
 
 This will automatically detect your operating system and architecture, download the correct release asset, extract the binary, and install it to `/usr/local/bin` (or `~/.local/bin` if `/usr/local/bin` is not writable).
 
-### Option 3: WinGet (Windows)
+### Option 4: WinGet (Windows)
 
 On Windows, you can install the portable AOT-compiled executable via WinGet (pending community repository merge):
 
 ```bash
 winget install KoalaFacts.HeroParser
 ```
+
 
 ---
 

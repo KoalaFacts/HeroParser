@@ -47,8 +47,15 @@ dotnet add package HeroParser.Console
 dotnet tool install --global HeroParser.Cli --version 2.5.1
 ```
 
-#### Option 2: Native AOT Binary (macOS & Linux)
-Install the standalone, high-performance Native AOT binary:
+#### Option 2: Homebrew Tap (macOS & Linux)
+Install the native binary using Homebrew:
+```bash
+brew tap KoalaFacts/tap
+brew install heroparser
+```
+
+#### Option 3: Shell Script (macOS & Linux fallback)
+Install the native binary without Homebrew:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.sh | sh
 ```
@@ -57,6 +64,7 @@ On Windows, you can install via WinGet (pending registry merge):
 ```bash
 winget install KoalaFacts.HeroParser
 ```
+
 
 ---
 

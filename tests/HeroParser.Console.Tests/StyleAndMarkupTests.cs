@@ -74,4 +74,32 @@ public class StyleAndMarkupTests
         Assert.Contains("\x1b[0m", result);
         Assert.Contains("world", result);
     }
+
+    [Fact]
+    public void GetMarkupVisualLength_ComputesLengthExcludingTags()
+    {
+        // Act & Assert
+        Assert.Equal(5, AnsiConsole.GetMarkupVisualLength("[bold red]Hello[/]"));
+        Assert.Equal(11, AnsiConsole.GetMarkupVisualLength("Hello [green]world[/]"));
+        Assert.Equal(0, AnsiConsole.GetMarkupVisualLength(""));
+    }
+
+    [Fact]
+    public void Markup_WithBaseStyle_InheritsBaseStyle()
+    {
+        // Arrange
+        Span<char> charBuf = stackalloc char[1024];
+        var buffer = new AnsiBuffer(charBuf);
+        var baseStyle = new Style(Color.Blue);
+
+        // Act
+        AnsiConsole.Markup("Hello [bold]world[/]", ref buffer, baseStyle);
+        var result = charBuf[..buffer.Position].ToString();
+
+        // Assert
+        // "Hello" should be styled with blue (94)
+        Assert.Contains("\x1b[94mHello", result);
+        // "world" should have bold and blue (1;94)
+        Assert.Contains("\x1b[1;94mworld", result);
+    }
 }

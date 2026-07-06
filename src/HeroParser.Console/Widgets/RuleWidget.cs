@@ -46,11 +46,11 @@ public class RuleWidget : IConsoleWidget
 
         // Render centered label e.g.: ───── Label ─────
         int padding = 2; // Spacing surrounding label text
-        int textLength = label.Length + padding * 2;
+        int textLength = AnsiConsole.GetMarkupVisualLength(label) + padding * 2;
 
         if (textLength >= maxWidth)
         {
-            buffer.WriteStyled(label.AsSpan(), style);
+            AnsiConsole.Markup(label.AsSpan(), ref buffer, style);
             buffer.Write(Environment.NewLine);
             return;
         }
@@ -68,7 +68,7 @@ public class RuleWidget : IConsoleWidget
 
         // Draw label
         buffer.Write("  ");
-        buffer.WriteStyled(label.AsSpan(), style);
+        AnsiConsole.Markup(label.AsSpan(), ref buffer, style);
         buffer.Write("  ");
 
         // Draw right side

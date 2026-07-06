@@ -69,13 +69,52 @@ public static class AnsiConsole
     }
 
     /// <summary>
+    /// Computes the visual length of a markup string, excluding formatting tags.
+    /// </summary>
+    public static int GetMarkupVisualLength(string markupText) => GetMarkupVisualLength(markupText.AsSpan());
+
+    /// <summary>
+    /// Computes the visual length of a markup string, excluding formatting tags.
+    /// </summary>
+    public static int GetMarkupVisualLength(ReadOnlySpan<char> markupText)
+    {
+        int length = 0;
+        int index = 0;
+        while (index < markupText.Length)
+        {
+            int nextOpen = markupText[index..].IndexOf('[');
+            if (nextOpen == -1)
+            {
+                length += markupText.Length - index;
+                break;
+            }
+
+            if (nextOpen > 0)
+            {
+                length += nextOpen;
+                index += nextOpen;
+            }
+
+            int nextClose = markupText[index..].IndexOf(']');
+            if (nextClose == -1)
+            {
+                length += markupText.Length - index;
+                break;
+            }
+
+            index += nextClose + 1;
+        }
+        return length;
+    }
+
+    /// <summary>
     /// Parses and renders markup text into an existing ANSI buffer.
     /// </summary>
-    public static void Markup(ReadOnlySpan<char> markupText, ref AnsiBuffer buffer)
+    public static void Markup(ReadOnlySpan<char> markupText, ref AnsiBuffer buffer, Style baseStyle = default)
     {
         Span<Style> styleStack = stackalloc Style[16];
         int stackPtr = 0;
-        styleStack[0] = Style.Default;
+        styleStack[0] = baseStyle;
 
         int index = 0;
         while (index < markupText.Length)

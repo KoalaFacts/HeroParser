@@ -78,9 +78,9 @@ public class PanelWidget : IConsoleWidget
         if (!string.IsNullOrEmpty(Title))
         {
             buffer.WriteStyled("─ ", BorderStyle);
-            buffer.WriteStyled(Title.AsSpan(), TitleStyle);
+            AnsiConsole.Markup(Title.AsSpan(), ref buffer, TitleStyle);
             buffer.WriteStyled(" ", BorderStyle);
-            int remainingTop = innerWidth - Title.Length - 2;
+            int remainingTop = innerWidth - AnsiConsole.GetMarkupVisualLength(Title) - 2;
             if (remainingTop > 0)
             {
                 borderLine[..remainingTop].Fill('─');

@@ -97,7 +97,7 @@ public class TableWidget : IConsoleWidget
         int[] colWidths = new int[columns.Count];
         for (int i = 0; i < columns.Count; i++)
         {
-            colWidths[i] = Math.Max(3, columns[i].Header.Length);
+            colWidths[i] = Math.Max(3, AnsiConsole.GetMarkupVisualLength(columns[i].Header));
         }
 
         int currentSum = colWidths.Sum();
@@ -106,7 +106,7 @@ public class TableWidget : IConsoleWidget
             // Grow columns up to their max cell widths
             for (int i = 0; i < columns.Count; i++)
             {
-                int maxCellLen = rows.Count > 0 ? rows.Max(r => r[i]?.Length ?? 0) : 0;
+                int maxCellLen = rows.Count > 0 ? rows.Max(r => AnsiConsole.GetMarkupVisualLength(r[i] ?? string.Empty)) : 0;
                 colWidths[i] = Math.Max(colWidths[i], maxCellLen);
             }
 
@@ -142,11 +142,10 @@ public class TableWidget : IConsoleWidget
             buffer.WriteStyled("│ ", BorderStyle);
             for (int i = 0; i < columns.Count; i++)
             {
-                var headerText = columns[i].Header.AsSpan();
-                var cellText = headerText[..Math.Min(headerText.Length, colWidths[i])];
-                buffer.WriteStyled(cellText, columns[i].HeaderStyle);
+                var headerText = columns[i].Header;
+                AnsiConsole.Markup(headerText.AsSpan(), ref buffer, columns[i].HeaderStyle);
 
-                int pad = colWidths[i] - cellText.Length;
+                int pad = colWidths[i] - AnsiConsole.GetMarkupVisualLength(headerText);
                 if (pad > 0)
                 {
                     buffer.Write(spaces[..pad]);
@@ -178,9 +177,9 @@ public class TableWidget : IConsoleWidget
                 for (int i = 0; i < columns.Count; i++)
                 {
                     var cellLine = GetWrappedLine(rowCells[i].AsSpan(), colWidths[i], l);
-                    buffer.WriteStyled(cellLine, columns[i].ColumnStyle);
+                    AnsiConsole.Markup(cellLine, ref buffer, columns[i].ColumnStyle);
 
-                    int pad = colWidths[i] - cellLine.Length;
+                    int pad = colWidths[i] - AnsiConsole.GetMarkupVisualLength(cellLine);
                     if (pad > 0)
                     {
                         buffer.Write(spaces[..pad]);

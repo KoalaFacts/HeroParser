@@ -3,8 +3,22 @@ name: "CodeQL"
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - '**.cs'
+      - '**.csproj'
+      - '**.sln'
+      - '**.slnx'
+      - 'Directory.Build.props'
+      - '.github/workflows/codeql.yml'
   pull_request:
     branches: [ "main" ]
+    paths:
+      - '**.cs'
+      - '**.csproj'
+      - '**.sln'
+      - '**.slnx'
+      - 'Directory.Build.props'
+      - '.github/workflows/codeql.yml'
   schedule:
     - cron: '30 13 * * 4'
 
@@ -34,6 +48,12 @@ jobs:
       with:
         languages: ${{ matrix.language }}
         build-mode: autobuild
+        queries: security-extended,security-and-quality
+        # Ignore test/benchmark/example paths
+        paths-ignore:
+          - 'tests/**'
+          - 'benchmarks/**'
+          - 'examples/**'
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2

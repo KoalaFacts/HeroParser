@@ -123,7 +123,7 @@ jobs:
         run: |
           # Use WINGET_GITHUB_TOKEN or GITHUB_TOKEN (if write permissions configured for other repos)
           TOKEN="${{ secrets.WINGET_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}"
-          git clone "https://x-access-token:${TOKEN}@github.com/KoalaFacts/heroparser-homebrew-tap.git" tap
+          git clone "https://x-access-token:${TOKEN}@github.com/KoalaFacts/homebrew-heroparser.git" tap
 
       - name: Update Formula
         shell: python

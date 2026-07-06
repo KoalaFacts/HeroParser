@@ -16,7 +16,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <!-- Source Generator Testing - only needs Roslyn compiler APIs -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -102,7 +102,7 @@ This directory contains automated CI/CD workflows for HeroParser.
 1. Determines the target release version
 2. Downloads the macOS (Intel/ARM) and Linux release tarballs
 3. Calculates their SHA-256 checksums
-4. Clones the `KoalaFacts/homebrew-tap` repository
+4. Clones the `KoalaFacts/heroparser-homebrew-tap` repository
 5. Generates the updated Homebrew formula `Formula/heroparser.rb` and pushes it
 
 **Requirements:**
@@ -120,7 +120,7 @@ This directory contains automated CI/CD workflows for HeroParser.
 1. Determines the target release version
 2. Downloads the Windows release zip file
 3. Calculates its SHA-256 checksum
-4. Clones the `KoalaFacts/scoop-bucket` repository
+4. Clones the `KoalaFacts/heroparser-scoop-bucket` repository
 5. Generates the updated Scoop JSON manifest `bucket/heroparser.json` and pushes it
 
 **Requirements:**

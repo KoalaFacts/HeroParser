@@ -109,7 +109,7 @@ jobs:
       - name: Clone Scoop Bucket Repository
         run: |
           TOKEN="${{ secrets.WINGET_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}"
-          git clone "https://x-access-token:${TOKEN}@github.com/KoalaFacts/heroparser-scoop.git" bucket-repo
+          git clone "https://x-access-token:${TOKEN}@github.com/KoalaFacts/scoop-heroparser.git" bucket-repo
 
       - name: Update Manifest
         shell: python

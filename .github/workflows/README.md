@@ -120,7 +120,7 @@ This directory contains automated CI/CD workflows for HeroParser.
 1. Determines the target release version
 2. Downloads the Windows release zip file
 3. Calculates its SHA-256 checksum
-4. Clones the `KoalaFacts/heroparser-scoop` repository
+4. Clones the `KoalaFacts/scoop-heroparser` repository
 5. Generates the updated Scoop JSON manifest `bucket/heroparser.json` and pushes it
 
 **Requirements:**

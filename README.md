@@ -34,7 +34,7 @@ View live performance graphs and history on the [HeroParser Performance Portal](
 dotnet add package HeroParser
 ```
 
-### High-Performance Console Engine (Alternative to Spectre.Console)
+### High-Performance Console Engine
 
 ```bash
 dotnet add package HeroParser.Console
@@ -194,7 +194,7 @@ Htb.ConvertFromCsv("products.csv", "products.htb", HtbSchema.FromType<Product>()
 
 ### Console (High-Performance Terminal Widget Engine)
 
-A zero-allocation, reflection-free, and 100% Native AOT-compatible library designed to replace or drop-in substitute `Spectre.Console` in high-performance terminal applications.
+A zero-allocation, reflection-free, and 100% Native AOT-compatible library designed for high-performance terminal applications.
 
 ```csharp
 using HeroParser.Console;
@@ -315,7 +315,7 @@ For advanced features and full API guides, see the files under the `docs` folder
 * [Fixed-Width Guide](docs/fixed-width.md) — Positional mapping, alignment, padding, and custom type converters.
 * [JSONL Guide](docs/jsonl.md) — Fine-tuning templates, vector parsing, and Native AOT setups.
 * [HTB Guide](docs/htb.md) — High-Throughput Tabular Binary format, fluent APIs, CSV ↔ HTB conversion, and Native AOT support.
-* [Console Guide](docs/console.md) — Standard rendering, markup, widgets (Table, Panel, Rule), interactive prompts, and Spectre.Console compatibility.
+* [Console Guide](docs/console.md) — Standard rendering, markup, widgets (Table, Panel, Rule), and interactive prompts.
 * [CLI Guide](docs/cli.md) — Local-First AI-native architecture, auto-detecting terminal CLIs (`agy`/`openai`/`claude`/`copilot`/`ollama`), stdin streaming, process management, and interactive query/translate wizard.
 * [Benchmarks Guide](docs/benchmarks.md) — Execution environments, detailed CPU metrics, and comparisons.
 

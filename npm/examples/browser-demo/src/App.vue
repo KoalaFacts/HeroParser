@@ -17,17 +17,63 @@ const switchTab = (tab) => {
 }
 
 // Load parsing states
-const csv = useCsv()
-const fw = useFixedWidth()
-const excel = useExcel()
-const ai = useAiCopilot()
+const {
+  csvInput,
+  csvDelimiter,
+  csvHasHeader,
+  csvOutput,
+  csvTime,
+  csvCount,
+  runCsvParse,
+  runCsvDelimiterDetect
+} = useCsv()
+
+const {
+  fwInput,
+  fwSpecs,
+  fwOutput,
+  fwTime,
+  fwCount,
+  runFixedWidthParse
+} = useFixedWidth()
+
+const {
+  excelSheetName,
+  excelHasHeader,
+  excelFileInfo,
+  excelError,
+  excelOutput,
+  excelTime,
+  excelCount,
+  handleExcelSelect,
+  handleExcelDrop,
+  runExcelParse
+} = useExcel()
+
+const {
+  aiModelLoaded,
+  aiLoading,
+  aiProgress,
+  aiProgressLabel,
+  aiInput,
+  aiOutput,
+  aiTime,
+  aiTokensPerSec,
+  showWarningModal,
+  triggerDownloadWarning,
+  cancelDownload,
+  startModelDownload,
+  runAiAgent,
+  clearAiCache,
+  checkCacheOnMount
+} = useAiCopilot()
 
 const faviconUrl = './favicon.svg'
 const iconsUrl = './icons.svg'
 
 onMounted(async () => {
   // Check local cache settings on startup
-  ai.checkCacheOnMount()
+  checkCacheOnMount()
   
   try {
     console.log("Bootstrapping WASM inside Vue Vapor SFC...")
@@ -84,31 +130,31 @@ onMounted(async () => {
         <div class="panel-title">CSV Input</div>
         <div class="form-group">
           <label for="csv-input">CSV Text Data</label>
-          <textarea id="csv-input" v-model="csv.csvInput" placeholder="Name,Age,Role"></textarea>
+          <textarea id="csv-input" v-model="csvInput" placeholder="Name,Age,Role"></textarea>
         </div>
         <div class="options-grid">
           <div class="form-group">
             <label for="csv-delimiter">Delimiter</label>
-            <input type="text" id="csv-delimiter" v-model="csv.csvDelimiter" maxlength="1">
+            <input type="text" id="csv-delimiter" v-model="csvDelimiter" maxlength="1">
           </div>
           <div class="flex-center-gap margin-top-large">
-            <input type="checkbox" id="csv-header" v-model="csv.csvHasHeader" class="checkbox-custom">
+            <input type="checkbox" id="csv-header" v-model="csvHasHeader" class="checkbox-custom">
             <label for="csv-header" class="cursor-pointer">Has Header Row</label>
           </div>
         </div>
         <div class="options-grid">
-          <button class="btn" @click="csv.runCsvParse">Parse CSV</button>
-          <button class="btn btn-secondary" @click="csv.runCsvDelimiterDetect">Detect Delimiter</button>
+          <button class="btn" @click="runCsvParse">Parse CSV</button>
+          <button class="btn btn-secondary" @click="runCsvDelimiterDetect">Detect Delimiter</button>
         </div>
       </div>
       <div class="panel">
         <div class="panel-title">JSON Output</div>
         <div class="output-container">
-          <pre id="csv-output" class="output-pre">{{ csv.csvOutput }}</pre>
+          <pre id="csv-output" class="output-pre">{{ csvOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>Parse Time: <span id="csv-metric-time" class="metric-value">{{ csv.csvTime }}</span></div>
-          <div>Records: <span id="csv-metric-count" class="metric-value">{{ csv.csvCount }}</span></div>
+          <div>Parse Time: <span id="csv-metric-time" class="metric-value">{{ csvTime }}</span></div>
+          <div>Records: <span id="csv-metric-count" class="metric-value">{{ csvCount }}</span></div>
         </div>
       </div>
     </div>
@@ -119,22 +165,22 @@ onMounted(async () => {
         <div class="panel-title">Fixed-Width Input</div>
         <div class="form-group">
           <label for="fw-input">Fixed-Width Text Data</label>
-          <textarea id="fw-input" v-model="fw.fwInput" placeholder="Alice     30        Developer"></textarea>
+          <textarea id="fw-input" v-model="fwInput" placeholder="Alice     30        Developer"></textarea>
         </div>
         <div class="form-group">
           <label for="fw-specs">Column Ranges (JSON Specification)</label>
-          <textarea id="fw-specs" v-model="fw.fwSpecs" style="min-height: 120px;"></textarea>
+          <textarea id="fw-specs" v-model="fwSpecs" style="min-height: 120px;"></textarea>
         </div>
-        <button class="btn" @click="fw.runFixedWidthParse">Parse Fixed-Width</button>
+        <button class="btn" @click="runFixedWidthParse">Parse Fixed-Width</button>
       </div>
       <div class="panel">
         <div class="panel-title">JSON Output</div>
         <div class="output-container">
-          <pre id="fw-output" class="output-pre">{{ fw.fwOutput }}</pre>
+          <pre id="fw-output" class="output-pre">{{ fwOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>Parse Time: <span id="fw-metric-time" class="metric-value">{{ fw.fwTime }}</span></div>
-          <div>Records: <span id="fw-metric-count" class="metric-value">{{ fw.fwCount }}</span></div>
+          <div>Parse Time: <span id="fw-metric-time" class="metric-value">{{ fwTime }}</span></div>
+          <div>Records: <span id="fw-metric-count" class="metric-value">{{ fwCount }}</span></div>
         </div>
       </div>
     </div>
@@ -143,33 +189,33 @@ onMounted(async () => {
     <div v-if="activeTab === 'excel'" id="tab-excel" class="tab-content active">
       <div class="panel">
         <div class="panel-title">Excel (.xlsx) Upload</div>
-        <div id="excel-dropzone" class="dropzone" @click="document.getElementById('excel-file').click()" @dragover.prevent @drop.prevent="excel.handleExcelDrop">
+        <div id="excel-dropzone" class="dropzone" @click="document.getElementById('excel-file').click()" @dragover.prevent @drop.prevent="handleExcelDrop">
           <span class="dropzone-icon">📥</span>
           <span class="dropzone-text">Drag and drop an Excel (.xlsx) file here, or click to browse</span>
-          <span v-if="excel.excelFileInfo" id="excel-file-info" class="dropzone-file-info" style="display: block;">{{ excel.excelFileInfo }}</span>
-          <input type="file" id="excel-file" accept=".xlsx" style="display: none;" @change="excel.handleExcelSelect">
+          <span v-if="excelFileInfo" id="excel-file-info" class="dropzone-file-info" style="display: block;">{{ excelFileInfo }}</span>
+          <input type="file" id="excel-file" accept=".xlsx" style="display: none;" @change="handleExcelSelect">
         </div>
         <div class="options-grid">
           <div class="form-group">
             <label for="excel-sheet">Sheet Name (leave empty for first sheet)</label>
-            <input type="text" id="excel-sheet" v-model="excel.excelSheetName" placeholder="Sheet1">
+            <input type="text" id="excel-sheet" v-model="excelSheetName" placeholder="Sheet1">
           </div>
           <div class="flex-center-gap margin-top-large">
-            <input type="checkbox" id="excel-header" v-model="excel.excelHasHeader" class="checkbox-custom">
+            <input type="checkbox" id="excel-header" v-model="excelHasHeader" class="checkbox-custom">
             <label for="excel-header" class="cursor-pointer">Has Header Row</label>
           </div>
         </div>
-        <button class="btn" id="btn-parse-excel" @click="excel.runExcelParse" :disabled="!excel.excelFileInfo">Parse Excel Sheet</button>
-        <div v-if="excel.excelError" id="excel-error" class="alert-error" style="display: block;">{{ excel.excelError }}</div>
+        <button class="btn" id="btn-parse-excel" @click="runExcelParse" :disabled="!excelFileInfo">Parse Excel Sheet</button>
+        <div v-if="excelError" id="excel-error" class="alert-error" style="display: block;">{{ excelError }}</div>
       </div>
       <div class="panel">
         <div class="panel-title">JSON Output</div>
         <div class="output-container">
-          <pre id="excel-output" class="output-pre">{{ excel.excelOutput }}</pre>
+          <pre id="excel-output" class="output-pre">{{ excelOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>Parse Time: <span id="excel-metric-time" class="metric-value">{{ excel.excelTime }}</span></div>
-          <div>Records: <span id="excel-metric-count" class="metric-value">{{ excel.excelCount }}</span></div>
+          <div>Parse Time: <span id="excel-metric-time" class="metric-value">{{ excelTime }}</span></div>
+          <div>Records: <span id="excel-metric-count" class="metric-value">{{ excelCount }}</span></div>
         </div>
       </div>
     </div>
@@ -187,51 +233,51 @@ onMounted(async () => {
 
           <div class="flex-column-gap">
             <div class="flex-between">
-              <span class="status-badge" :class="ai.aiModelLoaded ? 'ready' : (ai.aiLoading ? 'loading' : 'not-loaded')">
-                <span v-if="ai.aiModelLoaded">🟢 Loaded & Ready</span>
-                <span v-else-if="ai.aiLoading">🟡 Downloading...</span>
+              <span class="status-badge" :class="aiModelLoaded ? 'ready' : (aiLoading ? 'loading' : 'not-loaded')">
+                <span v-if="aiModelLoaded">🟢 Loaded & Ready</span>
+                <span v-else-if="aiLoading">🟡 Downloading...</span>
                 <span v-else>⚪ Not Loaded</span>
               </span>
-              <button v-if="!ai.aiModelLoaded" class="btn btn-secondary btn-small" @click="ai.triggerDownloadWarning" :disabled="ai.aiLoading">
+              <button v-if="!aiModelLoaded" class="btn btn-secondary btn-small" @click="triggerDownloadWarning" :disabled="aiLoading">
                 Load AI Model
               </button>
-              <button v-else class="btn btn-secondary btn-small btn-danger-outline" @click="ai.clearAiCache">
+              <button v-else class="btn btn-secondary btn-small btn-danger-outline" @click="clearAiCache">
                 Clear Cache
               </button>
             </div>
             
-            <div v-if="ai.aiLoading || ai.aiModelLoaded" class="progress-container">
-              <div class="progress-bar-fill" :style="{ width: ai.aiProgress + '%' }"></div>
+            <div v-if="aiLoading || aiModelLoaded" class="progress-container">
+              <div class="progress-bar-fill" :style="{ width: aiProgress + '%' }"></div>
             </div>
-            <div v-if="ai.aiProgressLabel" class="ai-progress-text">
-              {{ ai.aiProgressLabel }}
+            <div v-if="aiProgressLabel" class="ai-progress-text">
+              {{ aiProgressLabel }}
             </div>
           </div>
         </div>
 
         <div class="form-group margin-top-small">
           <label for="ai-input">Unstructured Data Input</label>
-          <textarea id="ai-input" v-model="ai.aiInput" placeholder="Enter unstructured text..."></textarea>
+          <textarea id="ai-input" v-model="aiInput" placeholder="Enter unstructured text..."></textarea>
         </div>
 
-        <button class="btn" @click="ai.runAiAgent" :disabled="!ai.aiModelLoaded">Run AI Agent</button>
+        <button class="btn" @click="runAiAgent" :disabled="!aiModelLoaded">Run AI Agent</button>
       </div>
 
       <div class="panel">
         <div class="panel-title">Extracted JSON Schema Output</div>
         <div class="output-container">
-          <pre id="ai-output" class="output-pre output-blue">{{ ai.aiOutput }}</pre>
+          <pre id="ai-output" class="output-pre output-blue">{{ aiOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>Inference Time: <span id="ai-metric-time" class="metric-value">{{ ai.aiTime }}</span></div>
-          <div>Speed: <span id="ai-metric-speed" class="metric-value">{{ ai.aiTokensPerSec }}</span></div>
+          <div>Inference Time: <span id="ai-metric-time" class="metric-value">{{ aiTime }}</span></div>
+          <div>Speed: <span id="ai-metric-speed" class="metric-value">{{ aiTokensPerSec }}</span></div>
         </div>
       </div>
     </div>
   </div>
 
   <!-- Custom Warning Modal Dialog -->
-  <div v-if="ai.showWarningModal" class="modal-overlay" @click.self="ai.cancelDownload">
+  <div v-if="showWarningModal" class="modal-overlay" @click.self="cancelDownload">
     <div class="modal-container">
       <div class="modal-header">
         <span class="modal-icon">⚠️</span>
@@ -243,8 +289,8 @@ onMounted(async () => {
         This model runs completely locally on your device via <strong>WebGPU</strong> (with automatic CPU fallback), ensuring 100% data privacy. However, the download requires a stable internet connection and may take a few minutes.
       </div>
       <div class="modal-actions">
-        <button class="btn btn-secondary" @click="ai.cancelDownload">Cancel</button>
-        <button class="btn" @click="ai.startModelDownload">Download Gemma 4</button>
+        <button class="btn btn-secondary" @click="cancelDownload">Cancel</button>
+        <button class="btn" @click="startModelDownload">Download Gemma 4</button>
       </div>
     </div>
   </div>

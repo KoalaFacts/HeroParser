@@ -57,6 +57,7 @@ export function useAiCopilot() {
           config,
           subfolder: 'onnx',
           model_file_name: 'decoder_model_merged',
+          use_external_data_format: true,
           progress_callback
         })
         aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebGPU memory!'
@@ -69,6 +70,7 @@ export function useAiCopilot() {
           config,
           subfolder: 'onnx',
           model_file_name: 'decoder_model_merged',
+          use_external_data_format: true,
           progress_callback
         })
         aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebAssembly (CPU) memory!'
@@ -104,6 +106,7 @@ export function useAiCopilot() {
             config,
             subfolder: 'onnx',
             model_file_name: 'decoder_model_merged',
+            use_external_data_format: true,
             local_files_only: true
           })
         } catch (gpuErr) {
@@ -114,6 +117,7 @@ export function useAiCopilot() {
             config,
             subfolder: 'onnx',
             model_file_name: 'decoder_model_merged',
+            use_external_data_format: true,
             local_files_only: true
           })
         }
@@ -128,7 +132,8 @@ export function useAiCopilot() {
             dtype: 'q4',
             config,
             subfolder: 'onnx',
-            model_file_name: 'decoder_model_merged'
+            model_file_name: 'decoder_model_merged',
+            use_external_data_format: true
           })
         } catch (gpuErr) {
           generator = await pipeline('text-generation', modelId, {
@@ -136,7 +141,8 @@ export function useAiCopilot() {
             dtype: 'q4',
             config,
             subfolder: 'onnx',
-            model_file_name: 'decoder_model_merged'
+            model_file_name: 'decoder_model_merged',
+            use_external_data_format: true
           })
         }
       }

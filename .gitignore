@@ -265,6 +265,7 @@ secrets.json
 tmp/
 dist/
 superpowers/
+_framework/
 
 # Windows null device files
 nul

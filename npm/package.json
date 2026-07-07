@@ -1,0 +1,9 @@
+{
+  "name": "heroparser-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*",
+    "tests"
+  ]
+}

@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HeroParser WASM — High-Performance Browser Tabular Engine</title>
+  <meta name="description" content="Playground for zero-allocation, SIMD-powered tabular parser compiled to WebAssembly.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090a0f;
+      --panel-bg: rgba(18, 20, 32, 0.7);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.2);
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --primary: #6366f1;
+      --primary-glow: rgba(99, 102, 241, 0.4);
+      --accent: #10b981;
+      --accent-glow: rgba(16, 185, 129, 0.4);
+      --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 40%);
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3.5rem;
+      position: relative;
+    }
+
+    h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 50%, #6366f1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.03em;
+    }
+
+    .tagline {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #a5b4fc;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      gap: 0.5rem;
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 var(--accent-glow);
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      }
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+      }
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+      }
+    }
+
+    /* Tabs Layout */
+    .tabs-nav {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      margin-bottom: 2rem;
+      background: rgba(18, 20, 32, 0.4);
+      padding: 0.375rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      max-width: fit-content;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.625rem 1.25rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      font-weight: 600;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .tab-btn.active {
+      color: #ffffff;
+      background: var(--primary);
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .tab-content.active {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.75rem;
+    }
+
+    @media (max-width: 900px) {
+      .tab-content.active {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Glass Panels */
+    .panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 1.75rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      transition: border-color 0.3s;
+    }
+
+    .panel:hover {
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .panel-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.75rem;
+    }
+
+    /* Form Controls */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    textarea, input[type="text"] {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      padding: 0.75rem;
+      width: 100%;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    textarea:focus, input[type="text"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-glow);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 180px;
+    }
+
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    /* Custom File Dropzone */
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.01);
+      transition: all 0.3s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background: rgba(99, 102, 241, 0.03);
+    }
+
+    .dropzone-icon {
+      font-size: 2.25rem;
+      color: var(--primary);
+    }
+
+    .dropzone-text {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    .dropzone-file-info {
+      font-size: 0.9rem;
+      color: var(--accent);
+      font-weight: 600;
+      display: none;
+    }
+
+    /* Buttons */
+    .btn {
+      background: var(--primary);
+      border: none;
+      color: #ffffff;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px var(--primary-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn:disabled {
+      background: var(--border);
+      color: var(--text-muted);
+      box-shadow: none;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Code & Output Blocks */
+    .output-container {
+      position: relative;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .output-pre {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #a7f3d0; /* light emerald */
+      overflow: auto;
+      max-height: 480px;
+      flex-grow: 1;
+      white-space: pre-wrap;
+    }
+
+    .metrics-bar {
+      display: flex;
+      gap: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      padding-top: 0.75rem;
+    }
+
+    .metric-value {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* Initialization overlay */
+    #init-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(9, 10, 15, 0.9);
+      backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      gap: 1.5rem;
+      transition: opacity 0.5s;
+    }
+
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border-left-color: var(--primary);
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    #init-status {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div id="init-overlay">
+    <div class="spinner"></div>
+    <div id="init-status">Initializing HeroParser WASM Engine...</div>
+  </div>
+
+  <div class="container">
+    <header>
+      <div class="badge">
+        <span class="pulse"></span>
+        WASM Native Sandbox Active
+      </div>
+      <h1>HeroParser WASM</h1>
+      <p class="tagline">High-performance, zero-allocation C# tabular parser running at native speed directly inside your browser sandbox.</p>
+    </header>
+
+    <!-- Tabs Nav -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('csv')">CSV Parser</button>
+      <button class="tab-btn" onclick="switchTab('fixedwidth')">Fixed-Width</button>
+      <button class="tab-btn" onclick="switchTab('excel')">Excel (.xlsx)</button>
+      <button class="tab-btn" onclick="switchTab('repair')">LLM Repair</button>
+    </div>
+
+    <!-- CSV Content -->
+    <div id="tab-csv" class="tab-content active">
+      <div class="panel">
+        <div class="panel-title">CSV Input</div>
+        <div class="form-group">
+          <label for="csv-input">CSV Text Data</label>
+          <textarea id="csv-input" placeholder="Name,Age,Role&#10;Alice,30,Developer&#10;Bob,25,Designer"></textarea>
+        </div>
+        <div class="options-grid">
+          <div class="form-group">
+            <label for="csv-delimiter">Delimiter</label>
+            <input type="text" id="csv-delimiter" value="," maxlength="1">
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1.5rem;">
+            <input type="checkbox" id="csv-header" checked style="width: 18px; height: 18px; accent-color: var(--primary);">
+            <label for="csv-header" style="cursor: pointer;">Has Header Row</label>
+          </div>
+        </div>
+        <div class="options-grid">
+          <button class="btn" onclick="runCsvParse()">Parse CSV</button>
+          <button class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); box-shadow: none;" onclick="runCsvDelimiterDetect()">Detect Delimiter</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">JSON Output</div>
+        <div class="output-container">
+          <pre id="csv-output" class="output-pre">Click "Parse CSV" to see results...</pre>
+        </div>
+        <div class="metrics-bar">
+          <div>Parse Time: <span id="csv-metric-time" class="metric-value">-</span></div>
+          <div>Records: <span id="csv-metric-count" class="metric-value">-</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fixed-Width Content -->
+    <div id="tab-fixedwidth" class="tab-content">
+      <div class="panel">
+        <div class="panel-title">Fixed-Width Input</div>
+        <div class="form-group">
+          <label for="fw-input">Fixed-Width Text Data</label>
+          <textarea id="fw-input" placeholder="Alice     30        Developer&#10;Bob       25        Designer"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="fw-specs">Column Ranges (JSON Specification)</label>
+          <textarea id="fw-specs" style="min-height: 120px;">[
+  { "name": "Name", "start": 0, "length": 10 },
+  { "name": "Age", "start": 10, "length": 10 },
+  { "name": "Role", "start": 20, "length": 11 }
+]</textarea>
+        </div>
+        <button class="btn" onclick="runFixedWidthParse()">Parse Fixed-Width</button>
+      </div>
+      <div class="panel">
+        <div class="panel-title">JSON Output</div>
+        <div class="output-container">
+          <pre id="fw-output" class="output-pre">Click "Parse Fixed-Width" to see results...</pre>
+        </div>
+        <div class="metrics-bar">
+          <div>Parse Time: <span id="fw-metric-time" class="metric-value">-</span></div>
+          <div>Records: <span id="fw-metric-count" class="metric-value">-</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excel Content -->
+    <div id="tab-excel" class="tab-content">
+      <div class="panel">
+        <div class="panel-title">Excel (.xlsx) Upload</div>
+        <div id="excel-dropzone" class="dropzone" onclick="document.getElementById('excel-file').click()">
+          <span class="dropzone-icon">📥</span>
+          <span class="dropzone-text">Drag and drop an Excel (.xlsx) file here, or click to browse</span>
+          <span id="excel-file-info" class="dropzone-file-info"></span>
+          <input type="file" id="excel-file" accept=".xlsx" style="display: none;" onchange="handleExcelSelect(event)">
+        </div>
+        <div class="options-grid">
+          <div class="form-group">
+            <label for="excel-sheet">Sheet Name (leave empty for first sheet)</label>
+            <input type="text" id="excel-sheet" placeholder="Sheet1">
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1.5rem;">
+            <input type="checkbox" id="excel-header" checked style="width: 18px; height: 18px; accent-color: var(--primary);">
+            <label for="excel-header" style="cursor: pointer;">Has Header Row</label>
+          </div>
+        </div>
+        <button class="btn" id="btn-parse-excel" onclick="runExcelParse()" disabled>Parse Excel Sheet</button>
+        <div id="excel-error" class="alert-error"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">JSON Output</div>
+        <div class="output-container">
+          <pre id="excel-output" class="output-pre">Upload an Excel workbook and click "Parse Excel" to inspect contents...</pre>
+        </div>
+        <div class="metrics-bar">
+          <div>Parse Time: <span id="excel-metric-time" class="metric-value">-</span></div>
+          <div>Records: <span id="excel-metric-count" class="metric-value">-</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LLM Repair Content -->
+    <div id="tab-repair" class="tab-content">
+      <div class="panel">
+        <div class="panel-title">LLM Output Input</div>
+        <div class="form-group">
+          <label for="repair-input">Cut-off or Conversational CSV</label>
+          <textarea id="repair-input" placeholder="Sure! Here is your CSV data:&#10;&#10;```csv&#10;Name,Age,Role&#10;Alice,30,Developer&#10;Bob,25,De"></textarea>
+        </div>
+        <button class="btn" onclick="runLlmRepair()">Repair Tabular Output</button>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Clean CSV Output</div>
+        <div class="output-container">
+          <pre id="repair-output" class="output-pre">Click "Repair Tabular Output" to run cleanup...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { init, parseCsv, detectCsvDelimiter, repairTabularOutput, parseFixedWidth, parseExcel } from '../../packages/heroparser-wasm/index.js';
+
+    // Global state
+    let loadedExcelBytes = null;
+
+    // Boot WASM
+    window.addEventListener('load', async () => {
+      try {
+        console.log("Bootstrapping WASM...");
+        await init();
+        console.log("WASM Initialized!");
+        document.getElementById('init-overlay').style.opacity = '0';
+        setTimeout(() => {
+          document.getElementById('init-overlay').style.display = 'none';
+        }, 500);
+      } catch (err) {
+        console.error("Initialization failed:", err);
+        document.getElementById('init-status').innerHTML = '<span style="color: #fca5a5;">Failed to load WASM engine. Check dev console logs.</span>';
+      }
+    });
+
+    // Tab Switching
+    window.switchTab = function(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      
+      const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.getAttribute('onclick').includes(tabName));
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const activeContent = document.getElementById(`tab-${tabName}`);
+      if (activeContent) activeContent.classList.add('active');
+    };
+
+    // CSV Parse Actions
+    window.runCsvParse = function() {
+      const csvText = document.getElementById('csv-input').value;
+      const delimiter = document.getElementById('csv-delimiter').value || ",";
+      const hasHeader = document.getElementById('csv-header').checked;
+
+      const t0 = performance.now();
+      const result = parseCsv(csvText, { delimiter, hasHeader });
+      const t1 = performance.now();
+
+      document.getElementById('csv-output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('csv-metric-time').textContent = `${(t1 - t0).toFixed(2)} ms`;
+      document.getElementById('csv-metric-count').textContent = result.length;
+    };
+
+    window.runCsvDelimiterDetect = function() {
+      const csvText = document.getElementById('csv-input').value;
+      const t0 = performance.now();
+      const delim = detectCsvDelimiter(csvText);
+      const t1 = performance.now();
+
+      document.getElementById('csv-output').textContent = `Detected delimiter character: "${delim}"\n(Found in ${(t1 - t0).toFixed(2)} ms)`;
+      document.getElementById('csv-metric-time').textContent = `${(t1 - t0).toFixed(2)} ms`;
+      document.getElementById('csv-metric-count').textContent = "-";
+    };
+
+    // Fixed-Width Parse Actions
+    window.runFixedWidthParse = function() {
+      const text = document.getElementById('fw-input').value;
+      const specsJson = document.getElementById('fw-specs').value;
+
+      let specs;
+      try {
+        specs = JSON.parse(specsJson);
+      } catch (err) {
+        document.getElementById('fw-output').textContent = `Error: Invalid specification JSON format.\n${err.message}`;
+        return;
+      }
+
+      const t0 = performance.now();
+      const result = parseFixedWidth(text, specs);
+      const t1 = performance.now();
+
+      document.getElementById('fw-output').textContent = JSON.stringify(result, null, 2);
+      document.getElementById('fw-metric-time').textContent = `${(t1 - t0).toFixed(2)} ms`;
+      document.getElementById('fw-metric-count').textContent = result.length;
+    };
+
+    // Excel Drag & Drop Actions
+    const dropzone = document.getElementById('excel-dropzone');
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropzone.classList.add('dragover');
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+      }, false);
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if (files.length > 0 && files[0].name.endsWith('.xlsx')) {
+        loadExcelFile(files[0]);
+      }
+    });
+
+    window.handleExcelSelect = function(e) {
+      const files = e.target.files;
+      if (files.length > 0) {
+        loadExcelFile(files[0]);
+      }
+    };
+
+    function loadExcelFile(file) {
+      document.getElementById('excel-error').style.display = 'none';
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        loadedExcelBytes = new Uint8Array(e.target.result);
+        document.getElementById('excel-file-info').textContent = `Loaded: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+        document.getElementById('excel-file-info').style.display = 'block';
+        document.getElementById('btn-parse-excel').removeAttribute('disabled');
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    window.runExcelParse = function() {
+      if (!loadedExcelBytes) return;
+
+      const sheetName = document.getElementById('excel-sheet').value || "";
+      const hasHeader = document.getElementById('excel-header').checked;
+
+      document.getElementById('excel-error').style.display = 'none';
+
+      try {
+        const t0 = performance.now();
+        const result = parseExcel(loadedExcelBytes, sheetName, hasHeader);
+        const t1 = performance.now();
+
+        document.getElementById('excel-output').textContent = JSON.stringify(result, null, 2);
+        document.getElementById('excel-metric-time').textContent = `${(t1 - t0).toFixed(2)} ms`;
+        document.getElementById('excel-metric-count').textContent = result.length;
+      } catch (err) {
+        console.error(err);
+        document.getElementById('excel-error').textContent = `WASM Parsing Error: ${err.message}`;
+        document.getElementById('excel-error').style.display = 'block';
+      }
+    };
+
+    // LLM Repair Actions
+    window.runLlmRepair = function() {
+      const rawText = document.getElementById('repair-input').value;
+      const t0 = performance.now();
+      const repaired = repairTabularOutput(rawText);
+      const t1 = performance.now();
+
+      document.getElementById('repair-output').textContent = repaired;
+    };
+  </script>
+</body>
+</html>

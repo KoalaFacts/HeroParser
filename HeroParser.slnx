@@ -6,6 +6,9 @@
   <Folder Name="/examples/">
     <Project Path="examples\HeroParser.Examples.AiPipeline\HeroParser.Examples.AiPipeline.csproj" />
   </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/HeroParser.Wasm/HeroParser.Wasm.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests\HeroParser.Tests\HeroParser.Tests.csproj" />
     <Project Path="tests\HeroParser.Generators.Tests\HeroParser.Generators.Tests.csproj" />

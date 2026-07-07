@@ -44,7 +44,7 @@ dotnet add package HeroParser.Console
 
 #### Option 1: Dotnet Global Tool (Cross-Platform)
 ```bash
-dotnet tool install --global HeroParser.Cli --version 2.5.2
+dotnet tool install --global HeroParser.Cli --version 2.6.0
 ```
 
 #### Option 2: Homebrew Tap (macOS & Linux)

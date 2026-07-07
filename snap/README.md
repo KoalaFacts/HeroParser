@@ -20,13 +20,13 @@ To build the snap package locally, you will need `snapcraft` and a supported vir
    ```bash
    snapcraft
    ```
-   This will produce a `.snap` package (e.g., `heroparser_2.5.2_amd64.snap`).
+   This will produce a `.snap` package (e.g., `heroparser_2.6.0_amd64.snap`).
 
 ## Testing the Snap Locally
 
 To install and test the generated snap package locally in strict confinement:
 ```bash
-sudo snap install heroparser_2.5.2_amd64.snap --dangerous
+sudo snap install heroparser_2.6.0_amd64.snap --dangerous
 ```
 
 ## Publishing to the Snap Store
@@ -40,5 +40,5 @@ Once tested, the package can be registered and pushed to the Snap Store:
 
 2. **Upload & Publish**:
    ```bash
-   snapcraft upload --release=stable heroparser_2.5.2_amd64.snap
+   snapcraft upload --release=stable heroparser_2.6.0_amd64.snap
    ```

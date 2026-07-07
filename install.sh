@@ -10,7 +10,7 @@ set -e
 
 OWNER="KoalaFacts"
 REPO="HeroParser"
-DEFAULT_VERSION="2.5.2"
+DEFAULT_VERSION="2.6.0"
 
 echo "=================================================="
 echo "          HeroParser CLI Native Installer          "

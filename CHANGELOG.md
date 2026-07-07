@@ -4,6 +4,13 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-07-07
+
+### Added
+- **WebAssembly Engine Support**: Compiled the high-performance HeroParser core engine to WebAssembly (via the `heroparser` NPM package) targeting Node.js and browser-based runtime sandboxes.
+- **Interactive Playground**: Built a responsive, modern playground demo using VoidZero Vite+ and Vue 3.6 (Vapor Mode) to parse, profile, and repair tabular data at native speeds in-browser.
+- **Vite+ / Rolldown Build**: Migrated browser-demo packaging toolchains to VoidZero Vite+ and Rolldown compilers.
+
 ## [2.5.2] - 2026-07-07
 
 ### Added

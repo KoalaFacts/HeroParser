@@ -1,6 +1,6 @@
 {
   "name": "heroparser",
-  "version": "2.5.2",
+  "version": "2.6.0",
   "description": "Ultra high-performance tabular CSV, Fixed-Width, and Excel (.xlsx) parser via WebAssembly",
   "main": "index.js",
   "types": "index.d.ts",

@@ -18,6 +18,11 @@ High-performance, zero-allocation tabular data parser (CSV, Fixed-Width, Excel) 
 npm install heroparser
 ```
 
+## Interactive Playground Demo
+
+Try the interactive, zero-allocation WebAssembly sandbox directly in your browser:
+👉 **[https://KoalaFacts.github.io/HeroParser/demo/](https://KoalaFacts.github.io/HeroParser/demo/)**
+
 ---
 
 ## Quick Start

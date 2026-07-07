@@ -50,16 +50,19 @@ const aiInput = ref("Raw conversational unstructured data:\n\nName: John Doe, Ag
 const aiOutput = ref('Click "Load AI Model" to download and initialize...')
 const aiTime = ref('-')
 const aiTokensPerSec = ref('-')
+const showWarningModal = ref(false)
 
-const loadAiModel = () => {
-  if (aiLoading.value) return
-  
-  const proceed = window.confirm(
-    "⚠️ Warning: You are about to download the Gemma 4 (E2B) AI model (~1.1 GB) directly to your browser's local cache. " +
-    "This requires a stable connection and may take a few minutes depending on your network. Proceed?"
-  )
-  if (!proceed) return
+const triggerDownloadWarning = () => {
+  if (aiLoading.value || aiModelLoaded.value) return
+  showWarningModal.value = true
+}
 
+const cancelDownload = () => {
+  showWarningModal.value = false
+}
+
+const startModelDownload = () => {
+  showWarningModal.value = false
   aiLoading.value = true
   aiProgress.value = 0
   aiProgressLabel.value = 'Preparing download pipelines...'
@@ -394,7 +397,7 @@ const iconsUrl = './icons.svg'
                 <span v-else-if="aiLoading">🟡 Downloading...</span>
                 <span v-else>⚪ Not Loaded</span>
               </span>
-              <button class="btn btn-secondary" @click="loadAiModel" :disabled="aiLoading || aiModelLoaded" style="padding: 0.5rem 1rem; font-size: 0.85rem; box-shadow: none;">
+              <button class="btn btn-secondary" @click="triggerDownloadWarning" :disabled="aiLoading || aiModelLoaded" style="padding: 0.5rem 1rem; font-size: 0.85rem; box-shadow: none;">
                 {{ aiModelLoaded ? 'Model Cached' : 'Load AI Model' }}
               </button>
             </div>
@@ -425,6 +428,25 @@ const iconsUrl = './icons.svg'
           <div>Inference Time: <span id="ai-metric-time" class="metric-value">{{ aiTime }}</span></div>
           <div>Speed: <span id="ai-metric-speed" class="metric-value">{{ aiTokensPerSec }}</span></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Warning Modal Dialog -->
+  <div v-if="showWarningModal" class="modal-overlay" @click.self="cancelDownload">
+    <div class="modal-container">
+      <div class="modal-header">
+        <span class="modal-icon">⚠️</span>
+        <span class="modal-title-text">Confirm Model Download</span>
+      </div>
+      <div class="modal-body">
+        You are about to download the <strong>Gemma 4 (E2B) AI model (~1.1 GB)</strong> directly to your local browser storage.
+        <br/><br/>
+        This model runs completely locally on your device via <strong>WebGPU</strong>, ensuring 100% data privacy. However, the download requires a stable internet connection and may take a few minutes.
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" @click="cancelDownload">Cancel</button>
+        <button class="btn" @click="startModelDownload" style="background: #e11d48; box-shadow: 0 4px 12px rgba(225, 29, 72, 0.4);">Download Gemma 4</button>
       </div>
     </div>
   </div>

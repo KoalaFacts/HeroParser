@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,10 +11,11 @@ namespace HeroParser.Cli.AI;
 
 internal enum LlmProvider
 {
-    ChatGpt,
-    Claude,
-    Antigravity,
-    Copilot
+    Google,
+    OpenAi,
+    Anthropic,
+    Microsoft,
+    GitHub
 }
 
 internal sealed class LlmClient
@@ -30,17 +32,18 @@ internal sealed class LlmClient
     public static LlmClient CreateFromEnvironment(string? overrideProvider = null, string? overrideKey = null, string? overrideModel = null)
     {
         _ = overrideKey; // Retained for API compatibility but unused since we call local CLI processes directly
-        LlmProvider resolvedProvider = LlmProvider.Antigravity;
+        LlmProvider resolvedProvider = LlmProvider.Google;
 
         if (!string.IsNullOrWhiteSpace(overrideProvider))
         {
             resolvedProvider = overrideProvider.ToLowerInvariant() switch
             {
-                "antigravity" or "agy" => LlmProvider.Antigravity,
-                "chatgpt" or "openai" or "codex" => LlmProvider.ChatGpt,
-                "claude" or "anthropic" => LlmProvider.Claude,
-                "copilot" or "github" => LlmProvider.Copilot,
-                _ => throw new ArgumentException($"Unknown AI provider: {overrideProvider}. Valid options: antigravity, chatgpt, claude, copilot")
+                "google" or "gemini" or "antigravity" or "agy" => LlmProvider.Google,
+                "openai" or "chatgpt" or "codex" => LlmProvider.OpenAi,
+                "anthropic" or "claude" => LlmProvider.Anthropic,
+                "microsoft" or "copilot" => LlmProvider.Microsoft,
+                "github" => LlmProvider.GitHub,
+                _ => throw new ArgumentException($"Unknown AI provider: {overrideProvider}. Valid options: google, openai, anthropic, microsoft, github")
             };
         }
         else
@@ -51,24 +54,25 @@ internal sealed class LlmClient
             {
                 resolvedProvider = envProvider.ToLowerInvariant() switch
                 {
-                    "antigravity" or "agy" => LlmProvider.Antigravity,
-                    "chatgpt" or "openai" or "codex" => LlmProvider.ChatGpt,
-                    "claude" or "anthropic" => LlmProvider.Claude,
-                    "copilot" or "github" => LlmProvider.Copilot,
+                    "google" or "gemini" or "antigravity" or "agy" => LlmProvider.Google,
+                    "openai" or "chatgpt" or "codex" => LlmProvider.OpenAi,
+                    "anthropic" or "claude" => LlmProvider.Anthropic,
+                    "microsoft" or "copilot" => LlmProvider.Microsoft,
+                    "github" => LlmProvider.GitHub,
                     _ => resolvedProvider
                 };
             }
             else
             {
-                // Auto detect by checking command availability in order: agy -> claude -> copilot -> codex
+                // Auto detect by checking command availability in order: agy -> claude -> copilot -> codex -> openai
                 if (IsCommandAvailable("agy"))
-                    resolvedProvider = LlmProvider.Antigravity;
+                    resolvedProvider = LlmProvider.Google;
                 else if (IsCommandAvailable("claude"))
-                    resolvedProvider = LlmProvider.Claude;
+                    resolvedProvider = LlmProvider.Anthropic;
                 else if (IsCommandAvailable("copilot"))
-                    resolvedProvider = LlmProvider.Copilot;
-                else if (IsCommandAvailable("codex"))
-                    resolvedProvider = LlmProvider.ChatGpt;
+                    resolvedProvider = LlmProvider.Microsoft;
+                else if (IsCommandAvailable("codex") || IsCommandAvailable("openai"))
+                    resolvedProvider = LlmProvider.OpenAi;
             }
         }
 
@@ -77,23 +81,43 @@ internal sealed class LlmClient
 
     public async Task<string> AskAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        string cmd = provider switch
-        {
-            LlmProvider.Antigravity => "agy",
-            LlmProvider.Claude => "claude",
-            LlmProvider.Copilot => "copilot",
-            LlmProvider.ChatGpt => "codex",
-            _ => throw new NotImplementedException()
-        };
+        string cmd;
+        string args;
 
-        string args = provider switch
+        switch (provider)
         {
-            LlmProvider.Antigravity => "-p - --dangerously-skip-permissions",
-            LlmProvider.Claude => "-p - --permission-mode dontAsk --no-session-persistence",
-            LlmProvider.Copilot => "-p - --allow-all -s",
-            LlmProvider.ChatGpt => "exec - --ephemeral --skip-git-repo-check -a never -s read-only",
-            _ => throw new NotImplementedException()
-        };
+            case LlmProvider.Google:
+                cmd = "agy";
+                args = "-p - --dangerously-skip-permissions";
+                break;
+
+            case LlmProvider.OpenAi:
+                if (IsCommandAvailable("openai") || ResolveCommandPath("openai") != "openai")
+                {
+                    cmd = "openai";
+                    args = "responses create --input -";
+                }
+                else
+                {
+                    cmd = "codex";
+                    args = "exec - --ephemeral --skip-git-repo-check -a never -s read-only";
+                }
+                break;
+
+            case LlmProvider.Anthropic:
+                cmd = "claude";
+                args = "-p - --permission-mode dontAsk --no-session-persistence";
+                break;
+
+            case LlmProvider.Microsoft:
+            case LlmProvider.GitHub:
+                cmd = "copilot";
+                args = "-p - --allow-all -s";
+                break;
+
+            default:
+                throw new NotImplementedException();
+        }
 
         if (!string.IsNullOrWhiteSpace(customModel))
         {
@@ -114,12 +138,23 @@ internal sealed class LlmClient
     private async Task<string> RunLocalCliAsync(string commandName, string arguments, string prompt, CancellationToken cancellationToken)
     {
         string resolvedCommand = ResolveCommandPath(commandName);
+        string finalFileName = resolvedCommand;
+        string finalArguments = arguments;
+
+        // If running a .cmd or .bat script on Windows, wrap it via cmd.exe
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+            (resolvedCommand.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
+             resolvedCommand.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)))
+        {
+            finalFileName = "cmd.exe";
+            finalArguments = $"/c \"\"{resolvedCommand}\" {arguments}\"";
+        }
 
         using var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
-            FileName = resolvedCommand,
-            Arguments = arguments,
+            FileName = finalFileName,
+            Arguments = finalArguments,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -273,6 +308,7 @@ internal sealed class LlmClient
 
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
         var candidatePaths = new List<string>();
 
@@ -280,18 +316,26 @@ internal sealed class LlmClient
         {
             candidatePaths.Add(Path.Combine(localAppData, "agy", "bin", "agy.exe"));
         }
+
         else if (command.Equals("claude", StringComparison.OrdinalIgnoreCase))
         {
             candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "claude.exe"));
         }
         else if (command.Equals("copilot", StringComparison.OrdinalIgnoreCase))
         {
+            candidatePaths.Add(Path.Combine(appData, "npm", "copilot.cmd"));
+            candidatePaths.Add(Path.Combine(appData, "npm", "copilot.ps1"));
             candidatePaths.Add(Path.Combine(localAppData, "Microsoft", "WindowsApps", "copilot.exe"));
         }
         else if (command.Equals("codex", StringComparison.OrdinalIgnoreCase))
         {
             candidatePaths.Add(Path.Combine(localAppData, "Programs", "codex.exe"));
             candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "codex.exe"));
+        }
+        else if (command.Equals("openai", StringComparison.OrdinalIgnoreCase))
+        {
+            candidatePaths.Add(Path.Combine(localAppData, "Programs", "openai.exe"));
+            candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "openai.exe"));
         }
 
         foreach (var path in candidatePaths)

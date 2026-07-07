@@ -79,6 +79,32 @@ scoop bucket add heroparser https://github.com/KoalaFacts/scoop-heroparser.git
 scoop install heroparser/heroparser
 ```
 
+### WebAssembly / JavaScript (Node.js & Browser)
+
+The high-performance core engine is also available as a compiled WebAssembly package for both Node.js and browser-based applications.
+
+```bash
+npm install heroparser
+```
+
+#### Interactive Playground Demo
+Try the interactive, zero-allocation WebAssembly sandbox directly in your browser:
+👉 **[https://KoalaFacts.github.io/HeroParser/demo/](https://KoalaFacts.github.io/HeroParser/demo/)**
+
+#### JS/TS Quick Start
+```javascript
+import { init, parseCsv } from 'heroparser';
+
+// Initialize the WebAssembly runtime
+await init();
+
+// Parse CSV text directly in the browser or Node.js
+const records = parseCsv("Name,Age,Role\nAlice,30,Developer\nBob,25,Designer", {
+    delimiter: ',',
+    hasHeader: true
+});
+console.log(records);
+```
 
 ---
 

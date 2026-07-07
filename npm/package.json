@@ -1,6 +1,10 @@
 {
   "name": "heroparser-workspace",
   "private": true,
+  "type": "module",
+  "scripts": {
+    "sync-version": "node scripts/sync-version.js"
+  },
   "workspaces": [
     "packages/*",
     "examples/*",

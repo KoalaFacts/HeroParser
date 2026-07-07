@@ -4,7 +4,6 @@
     <TargetFrameworks>$(SupportedTargetFrameworks)</TargetFrameworks>
     <!-- Package metadata -->
     <PackageId>HeroParser</PackageId>
-    <Version>2.5.2</Version>
     <Authors>HeroParser Contributors</Authors>
     <Description>Ultra high-performance CSV, Fixed-Width, Excel (.xlsx), JSONL, and HTB (High-Throughput Tabular Binary) file parser and writer for .NET 8+. SIMD-accelerated parsing (AVX-512/AVX2/NEON) with a zero-allocation, fixed-112-byte read hot path: UTF-8 reading is ~12% faster than Sep and CSV writing is 2-3x faster, both at a fraction of the memory. RFC 4180 compliant with fluent read/write APIs. Fixed-Width support includes field alignment, padding, overflow handling, and async streaming. Excel reading and writing with zero extra dependencies. JSONL targets AI/ML pipelines: OpenAI/Anthropic LLM fine-tuning shapes, CSV-to-JSONL conversion, embedding-API batching, an inline vector parser, and AOT-safe JsonTypeInfo. HTB binary format natively supports float[] arrays for vector embedding serialization with endianness safety. Includes async I/O, source generators for native AOT, IDataReader/DbDataReader bridges, PipeReader streaming, LINQ-style extensions, progress reporting, and custom type converters.</Description>
     <PackageReleaseNotes>v2.5.2 fixes CLI console widget markup rendering and improves CodeQL workflows. Full changelog: https://github.com/KoalaFacts/HeroParser/blob/main/CHANGELOG.md</PackageReleaseNotes>

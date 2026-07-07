@@ -69,7 +69,7 @@ const startModelDownload = async () => {
   aiProgressLabel.value = 'Initializing device and loading transformers library...'
 
   try {
-    const { pipeline, env } = await import('@huggingface/transformers')
+    const { pipeline, env, AutoConfig } = await import('@huggingface/transformers')
     
     // Disable local-only lookups initially to fetch from Hugging Face
     env.allowLocalModels = false
@@ -85,12 +85,20 @@ const startModelDownload = async () => {
 
     const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
 
+    aiProgressLabel.value = 'Loading model configuration...'
+    const config = await AutoConfig.from_pretrained(modelId)
+    // Override the model_type to point to gemma2 architecture to bypass multimodal loading and skip audio/vision encoders
+    config.model_type = 'gemma2'
+
     try {
       aiProgressLabel.value = 'Initializing WebGPU accelerator...'
       // Try WebGPU first
       generator = await pipeline('text-generation', modelId, {
         device: 'webgpu',
         dtype: 'q4f16',
+        config,
+        subfolder: 'onnx',
+        model_file_name: 'decoder_model_merged',
         progress_callback
       })
       aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebGPU memory!'
@@ -101,6 +109,9 @@ const startModelDownload = async () => {
       generator = await pipeline('text-generation', modelId, {
         device: 'wasm',
         dtype: 'q4',
+        config,
+        subfolder: 'onnx',
+        model_file_name: 'decoder_model_merged',
         progress_callback
       })
       aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebAssembly (CPU) memory!'
@@ -127,11 +138,16 @@ const runAiAgent = async () => {
     aiOutput.value = 'Restoring Gemma 4 model from browser Cache API...'
     const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
     try {
-      const { pipeline } = await import('@huggingface/transformers')
+      const { pipeline, AutoConfig } = await import('@huggingface/transformers')
+      const config = await AutoConfig.from_pretrained(modelId)
+      config.model_type = 'gemma2'
       try {
         generator = await pipeline('text-generation', modelId, {
           device: 'webgpu',
           dtype: 'q4f16',
+          config,
+          subfolder: 'onnx',
+          model_file_name: 'decoder_model_merged',
           local_files_only: true
         })
       } catch (gpuErr) {
@@ -139,21 +155,32 @@ const runAiAgent = async () => {
         generator = await pipeline('text-generation', modelId, {
           device: 'wasm',
           dtype: 'q4',
+          config,
+          subfolder: 'onnx',
+          model_file_name: 'decoder_model_merged',
           local_files_only: true
         })
       }
     } catch (e) {
       console.warn("Cache load failed, refetching...", e)
-      const { pipeline } = await import('@huggingface/transformers')
+      const { pipeline, AutoConfig } = await import('@huggingface/transformers')
+      const config = await AutoConfig.from_pretrained(modelId)
+      config.model_type = 'gemma2'
       try {
         generator = await pipeline('text-generation', modelId, {
           device: 'webgpu',
-          dtype: 'q4f16'
+          dtype: 'q4f16',
+          config,
+          subfolder: 'onnx',
+          model_file_name: 'decoder_model_merged'
         })
       } catch (gpuErr) {
         generator = await pipeline('text-generation', modelId, {
           device: 'wasm',
-          dtype: 'q4'
+          dtype: 'q4',
+          config,
+          subfolder: 'onnx',
+          model_file_name: 'decoder_model_merged'
         })
       }
     }

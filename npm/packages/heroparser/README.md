@@ -27,16 +27,16 @@ Try the interactive, zero-allocation WebAssembly sandbox directly in your browse
 
 ## Quick Start
 
-### 1. Basic CSV Parsing
+### 1. Basic CSV Reading
 
 ```javascript
-import { init, parseCsv } from 'heroparser';
+import { init, readCsv } from 'heroparser';
 
 // Initialize the WebAssembly runtime
 await init();
 
-// Parse CSV string with headers
-const records = parseCsv("Name,Age,Role\nAlice,30,Developer\nBob,25,Designer", {
+// Read CSV string with headers
+const records = readCsv("Name,Age,Role\nAlice,30,Developer\nBob,25,Designer", {
     delimiter: ',',
     hasHeader: true
 });
@@ -49,10 +49,10 @@ console.log(records);
 // ]
 ```
 
-### 2. Fixed-Width Parsing
+### 2. Fixed-Width Reading
 
 ```javascript
-import { init, parseFixedWidth } from 'heroparser';
+import { init, readFixedWidth } from 'heroparser';
 
 await init();
 
@@ -63,18 +63,18 @@ const specs = [
 ];
 
 const text = "Alice     30        Developer \nBob       25        Designer  ";
-const records = parseFixedWidth(text, specs);
+const records = readFixedWidth(text, specs);
 ```
 
-### 3. Excel (.xlsx) Parsing
+### 3. Excel (.xlsx) Reading
 
 ```javascript
-import { init, parseExcel } from 'heroparser';
+import { init, readExcel } from 'heroparser';
 
 await init();
 
 // Provide raw binary array (Uint8Array) of the .xlsx file
-const records = parseExcel(excelBytesArray, "Sheet1", true);
+const records = readExcel(excelBytesArray, "Sheet1", true);
 ```
 
 ### 4. Serializing & Writing (CSV, Fixed-Width, Excel)
@@ -109,19 +109,19 @@ const excelBytes = writeExcel(records, "Sheet1", true);
 ## API Reference
 
 ### `init(): Promise<void>`
-Initializes the underlying WebAssembly runtime. This must be awaited once before invoking other parsing methods.
+Initializes the underlying WebAssembly runtime. This must be awaited once before invoking other read/write methods.
 
-### `parseCsv(csvText: string, options?: WasmCsvOptions): any[]`
-Parses CSV text content into a JSON array.
+### `readCsv(csvText: string, options?: WasmCsvOptions): any[]`
+Reads CSV text content into a JSON array of objects or values.
 * `options.delimiter`: Column delimiter character (e.g. `","`, `";"`). Defaults to auto-detect.
 * `options.hasHeader`: Set `true` to map rows to object keys based on the header row, or `false` to return raw string arrays.
 
-### `parseFixedWidth(text: string, specs: WasmColumnSpec[]): any[]`
-Parses fixed-width column blocks based on the given boundaries.
+### `readFixedWidth(text: string, specs: WasmColumnSpec[]): any[]`
+Reads fixed-width column blocks into a JSON array based on the given boundaries.
 * `specs`: Array of `{ name: string, start: number, length: number }`.
 
-### `parseExcel(excelBytes: Uint8Array, sheetName?: string, hasHeader?: boolean): any[]`
-Reads Excel spreadsheet workbook byte arrays and parses rows.
+### `readExcel(excelBytes: Uint8Array, sheetName?: string, hasHeader?: boolean): any[]`
+Reads Excel spreadsheet workbook byte arrays and returns parsed rows.
 
 ### `detectCsvDelimiter(sampleRows: string): string`
 Analyzes a sample text chunk to identify the most confident CSV separator character.
@@ -138,11 +138,11 @@ Serializes a list of object records back to fixed-width format.
 ### `writeExcel(records: any[], sheetName?: string, hasHeader?: boolean): Uint8Array`
 Serializes a list of object records back to Excel (.xlsx) binary bytes.
 
-### Consistent Read/Write Aliases
-The package also exports semantic aliases for developers who prefer standard Read/Write terminology:
-* `readCsv` (alias for `parseCsv`)
-* `readFixedWidth` (alias for `parseFixedWidth`)
-* `readExcel` (alias for `parseExcel`)
+### Backward Compatibility Aliases
+The package also exports legacy aliases for backward compatibility:
+* `parseCsv` (alias for `readCsv`)
+* `parseFixedWidth` (alias for `readFixedWidth`)
+* `parseExcel` (alias for `readExcel`)
 
 ---
 

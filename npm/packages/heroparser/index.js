@@ -34,19 +34,19 @@ function ensureInitialized() {
     }
 }
 
-export function parseCsv(csvText, options = {}) {
+export function readCsv(csvText, options = {}) {
     ensureInitialized();
     const resultJson = exports.HeroParser.Wasm.HeroParserWasm.ParseCsvToJson(csvText, JSON.stringify(options));
     return JSON.parse(resultJson);
 }
 
-export function parseFixedWidth(text, specs = []) {
+export function readFixedWidth(text, specs = []) {
     ensureInitialized();
     const resultJson = exports.HeroParser.Wasm.HeroParserWasm.ParseFixedWidthToJson(text, JSON.stringify(specs));
     return JSON.parse(resultJson);
 }
 
-export function parseExcel(excelBytes, sheetName = "", hasHeader = true) {
+export function readExcel(excelBytes, sheetName = "", hasHeader = true) {
     ensureInitialized();
     // Uint8Array maps cleanly to C# byte[] in .NET WebAssembly interop
     const resultJson = exports.HeroParser.Wasm.HeroParserWasm.ParseExcelToJson(excelBytes, sheetName, hasHeader);
@@ -78,7 +78,7 @@ export function writeExcel(records, sheetName = "Sheet1", hasHeader = true) {
     return exports.HeroParser.Wasm.HeroParserWasm.WriteExcel(JSON.stringify(records), sheetName, hasHeader);
 }
 
-// Consistent Read/Write naming aliases
-export const readCsv = parseCsv;
-export const readFixedWidth = parseFixedWidth;
-export const readExcel = parseExcel;
+// Backward compatibility aliases
+export const parseCsv = readCsv;
+export const parseFixedWidth = readFixedWidth;
+export const parseExcel = readExcel;

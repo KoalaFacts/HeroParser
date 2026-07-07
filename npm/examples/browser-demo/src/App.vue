@@ -82,8 +82,8 @@ const startModelDownload = () => {
       
       setTimeout(() => {
         aiLoading.value = false
-
         aiModelLoaded.value = true
+        localStorage.setItem('gemma4_cached', 'true')
         aiProgressLabel.value = `Model loaded successfully! (${totalSize} MB cached in OPFS)`
         aiOutput.value = 'AI Assistant is ready. Enter unstructured text and click "Run AI Agent" to parse it locally via WebGPU.'
       }, 1000)
@@ -140,7 +140,20 @@ const runAiAgent = () => {
   }, 800)
 }
 
+const clearAiCache = () => {
+  localStorage.removeItem('gemma4_cached')
+  aiModelLoaded.value = false
+  aiProgress.value = 0
+  aiProgressLabel.value = ''
+  aiOutput.value = 'Click "Load AI Model" to download and initialize...'
+}
+
 onMounted(async () => {
+  if (localStorage.getItem('gemma4_cached') === 'true') {
+    aiModelLoaded.value = true
+    aiProgressLabel.value = 'Gemma 4 model loaded from local cache.'
+    aiOutput.value = 'AI Assistant is ready. Enter unstructured text and click "Run AI Agent" to parse it locally via WebGPU.'
+  }
   try {
     console.log("Bootstrapping WASM inside Vue Vapor SFC...")
     await init()
@@ -397,8 +410,11 @@ const iconsUrl = './icons.svg'
                 <span v-else-if="aiLoading">🟡 Downloading...</span>
                 <span v-else>⚪ Not Loaded</span>
               </span>
-              <button class="btn btn-secondary" @click="triggerDownloadWarning" :disabled="aiLoading || aiModelLoaded" style="padding: 0.5rem 1rem; font-size: 0.85rem; box-shadow: none;">
-                {{ aiModelLoaded ? 'Model Cached' : 'Load AI Model' }}
+              <button v-if="!aiModelLoaded" class="btn btn-secondary" @click="triggerDownloadWarning" :disabled="aiLoading" style="padding: 0.5rem 1rem; font-size: 0.85rem; box-shadow: none;">
+                Load AI Model
+              </button>
+              <button v-else class="btn btn-secondary" @click="clearAiCache" style="padding: 0.5rem 1rem; font-size: 0.85rem; box-shadow: none; border-color: rgba(239, 68, 68, 0.3); color: #fca5a5;">
+                Clear Cache
               </button>
             </div>
             

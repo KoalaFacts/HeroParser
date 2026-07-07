@@ -49,3 +49,35 @@ if (fs.existsSync(readmePath)) {
     fs.writeFileSync(readmePath, readmeContent);
     console.log(`Updated README.md version references to ${version}`);
 }
+
+// 6. Update docs/cli.md version references
+const docsCliPath = path.join(rootDir, 'docs/cli.md');
+if (fs.existsSync(docsCliPath)) {
+    let docsCliContent = fs.readFileSync(docsCliPath, 'utf8');
+    docsCliContent = docsCliContent.replace(/--version\s+\d+\.\d+\.\d+/g, `--version ${version}`);
+    fs.writeFileSync(docsCliPath, docsCliContent);
+    console.log(`Updated docs/cli.md version references to ${version}`);
+}
+
+// 7. Update snap/README.md snap package version references
+const snapReadmePath = path.join(rootDir, 'snap/README.md');
+if (fs.existsSync(snapReadmePath)) {
+    let snapReadmeContent = fs.readFileSync(snapReadmePath, 'utf8');
+    snapReadmeContent = snapReadmeContent.replace(/heroparser_\d+\.\d+\.\d+_amd64\.snap/g, `heroparser_${version}_amd64.snap`);
+    fs.writeFileSync(snapReadmePath, snapReadmeContent);
+    console.log(`Updated snap/README.md snap package references to ${version}`);
+}
+
+// 8. Update CHANGELOG.md (auto-insert release header under Unreleased if missing)
+const changelogPath = path.join(rootDir, 'CHANGELOG.md');
+if (fs.existsSync(changelogPath)) {
+    let changelogContent = fs.readFileSync(changelogPath, 'utf8');
+    const versionHeader = `## [${version}]`;
+    if (!changelogContent.includes(versionHeader)) {
+        const today = new Date().toISOString().split('T')[0];
+        const newHeader = `## [Unreleased]\n\n## [${version}] - ${today}`;
+        changelogContent = changelogContent.replace(/##\s*\[Unreleased\]/i, newHeader);
+        fs.writeFileSync(changelogPath, changelogContent);
+        console.log(`Updated CHANGELOG.md: Added release section for v${version}`);
+    }
+}

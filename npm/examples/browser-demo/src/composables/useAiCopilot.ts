@@ -45,8 +45,8 @@ export function useAiCopilot() {
 
       aiProgressLabel.value = 'Loading model configuration...'
       const config = await AutoConfig.from_pretrained(modelId)
-      // Override model_type to gemma2 so that transformers.js bypasses its unsupported gemma4_text check
-      config.model_type = 'gemma2'
+      // Override model_type to gemma4 so that transformers.js loads the correct native gemma4 architecture classes
+      config.model_type = 'gemma4'
 
       try {
         aiProgressLabel.value = 'Initializing WebGPU accelerator...'
@@ -102,7 +102,7 @@ export function useAiCopilot() {
       try {
         const { pipeline, AutoConfig } = await import('@huggingface/transformers')
         const config = await AutoConfig.from_pretrained(modelId)
-        config.model_type = 'gemma2'
+        config.model_type = 'gemma4'
         try {
           generator = await pipeline('text-generation', modelId, {
             device: 'webgpu',

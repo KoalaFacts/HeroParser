@@ -4,7 +4,20 @@ let initialized = false;
 export async function init() {
     if (initialized) return;
 
-    const { dotnet } = await import(/* @vite-ignore */ './_framework/dotnet.js');
+    const frameworkDir = '_framework';
+    const loaderName = 'dotnet.js';
+    let dotnetUrl = `./${frameworkDir}/${loaderName}`;
+
+    if (typeof document !== 'undefined') {
+        const base = document.baseURI || window.location.href;
+        dotnetUrl = new URL(`${frameworkDir}/${loaderName}`, base).href;
+    } else {
+        const metaUrl = import.meta.url;
+        dotnetUrl = new URL(`./${frameworkDir}/${loaderName}`, metaUrl).href;
+    }
+
+    const importShim = new Function('url', 'return import(url)');
+    const { dotnet } = await importShim(dotnetUrl);
 
     const { getAssemblyExports, getConfig } = await dotnet
         .withDiagnosticTracing(false)

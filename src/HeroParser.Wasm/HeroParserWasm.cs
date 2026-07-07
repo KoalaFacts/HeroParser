@@ -233,4 +233,128 @@ public partial class HeroParserWasm
     {
         return LlmRepair.RepairText(rawText);
     }
+
+    /// <summary>
+    /// Serializes a list of dictionaries to CSV format and returns it as a string.
+    /// </summary>
+    /// <param name="recordsJson">JSON-serialized list of dictionaries representing the records.</param>
+    /// <param name="optionsJson">JSON-serialized WasmCsvOptions configuration settings.</param>
+    /// <returns>The CSV content as a string.</returns>
+    [JSExport]
+    public static string WriteCsv(string recordsJson, string optionsJson)
+    {
+        if (string.IsNullOrWhiteSpace(recordsJson)) return string.Empty;
+        var list = JsonSerializer.Deserialize(recordsJson, WasmJsonContext.Default.ListDictionaryStringString);
+        if (list == null || list.Count == 0) return string.Empty;
+
+        var options = string.IsNullOrWhiteSpace(optionsJson)
+            ? null
+            : JsonSerializer.Deserialize(optionsJson, WasmJsonContext.Default.WasmCsvOptions);
+        options ??= new WasmCsvOptions();
+
+        char delim = (options.Delimiter != null && options.Delimiter.Length > 0) ? options.Delimiter[0] : ',';
+
+        var headers = new List<string>(list[0].Keys);
+
+        using var stringWriter = new StringWriter();
+        using var writer = Csv.CreateWriter(stringWriter, new SeparatedValues.Writing.CsvWriteOptions { Delimiter = delim });
+
+        if (options.HasHeader)
+        {
+            foreach (var header in headers)
+            {
+                writer.WriteField(header);
+            }
+            writer.EndRow();
+        }
+
+        foreach (var dict in list)
+        {
+            foreach (var header in headers)
+            {
+                writer.WriteField(dict.GetValueOrDefault(header, string.Empty));
+            }
+            writer.EndRow();
+        }
+
+        return stringWriter.ToString();
+    }
+
+    /// <summary>
+    /// Serializes a list of dictionaries to a fixed-width formatted string using the column specifications.
+    /// </summary>
+    /// <param name="recordsJson">JSON-serialized list of dictionaries representing the records.</param>
+    /// <param name="specsJson">JSON-serialized list of WasmColumnSpec ranges.</param>
+    /// <returns>The fixed-width content as a string.</returns>
+    [JSExport]
+    public static string WriteFixedWidth(string recordsJson, string specsJson)
+    {
+        if (string.IsNullOrWhiteSpace(recordsJson) || string.IsNullOrWhiteSpace(specsJson)) return string.Empty;
+        var list = JsonSerializer.Deserialize(recordsJson, WasmJsonContext.Default.ListDictionaryStringString);
+        if (list == null || list.Count == 0) return string.Empty;
+
+        var specs = JsonSerializer.Deserialize(specsJson, WasmJsonContext.Default.ListWasmColumnSpec);
+        if (specs == null || specs.Count == 0) return string.Empty;
+
+        using var stringWriter = new StringWriter();
+        using var writer = FixedWidth.CreateWriter(stringWriter);
+
+        foreach (var dict in list)
+        {
+            foreach (var spec in specs)
+            {
+                string val = dict.GetValueOrDefault(spec.Name, string.Empty);
+                writer.WriteField(val, spec.Length, FieldAlignment.Left);
+            }
+            writer.EndRow();
+        }
+
+        return stringWriter.ToString();
+    }
+
+    /// <summary>
+    /// Serializes a list of dictionaries to Excel (.xlsx) workbook bytes and returns the byte array.
+    /// </summary>
+    /// <param name="recordsJson">JSON-serialized list of dictionaries representing the records.</param>
+    /// <param name="sheetName">The name of the worksheet to write (defaulting to "Sheet1").</param>
+    /// <param name="hasHeader">A value indicating whether to write a header row.</param>
+    /// <returns>The binary bytes of the generated .xlsx workbook.</returns>
+    [JSExport]
+    public static byte[] WriteExcel(string recordsJson, string sheetName, bool hasHeader)
+    {
+        if (string.IsNullOrWhiteSpace(recordsJson)) return [];
+        var list = JsonSerializer.Deserialize(recordsJson, WasmJsonContext.Default.ListDictionaryStringString);
+        if (list == null || list.Count == 0) return [];
+
+        if (string.IsNullOrWhiteSpace(sheetName)) sheetName = "Sheet1";
+
+        var headers = new List<string>(list[0].Keys).ToArray();
+
+        using var memoryStream = new MemoryStream();
+        using (var xlsxWriter = new Excels.Xlsx.XlsxWriter(memoryStream, leaveOpen: true))
+        {
+            using var sheetWriter = xlsxWriter.StartSheet(sheetName);
+
+            if (hasHeader)
+            {
+                sheetWriter.WriteHeaderRow(headers);
+            }
+
+            int rowIndex = hasHeader ? 2 : 1;
+            foreach (var dict in list)
+            {
+                sheetWriter.StartRow(rowIndex++);
+                for (int i = 0; i < headers.Length; i++)
+                {
+                    string val = dict.GetValueOrDefault(headers[i], string.Empty);
+                    sheetWriter.WriteCellString(i + 1, val);
+                }
+                sheetWriter.EndRow();
+            }
+
+            sheetWriter.Close();
+        }
+
+        return memoryStream.ToArray();
+    }
 }

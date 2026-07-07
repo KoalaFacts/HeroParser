@@ -62,3 +62,23 @@ export function repairTabularOutput(rawText) {
     ensureInitialized();
     return exports.HeroParser.Wasm.HeroParserWasm.RepairTabularOutput(rawText);
 }
+
+export function writeCsv(records, options = {}) {
+    ensureInitialized();
+    return exports.HeroParser.Wasm.HeroParserWasm.WriteCsv(JSON.stringify(records), JSON.stringify(options));
+}
+
+export function writeFixedWidth(records, specs = []) {
+    ensureInitialized();
+    return exports.HeroParser.Wasm.HeroParserWasm.WriteFixedWidth(JSON.stringify(records), JSON.stringify(specs));
+}
+
+export function writeExcel(records, sheetName = "Sheet1", hasHeader = true) {
+    ensureInitialized();
+    return exports.HeroParser.Wasm.HeroParserWasm.WriteExcel(JSON.stringify(records), sheetName, hasHeader);
+}
+
+// Consistent Read/Write naming aliases
+export const readCsv = parseCsv;
+export const readFixedWidth = parseFixedWidth;
+export const readExcel = parseExcel;

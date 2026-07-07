@@ -77,6 +77,33 @@ await init();
 const records = parseExcel(excelBytesArray, "Sheet1", true);
 ```
 
+### 4. Serializing & Writing (CSV, Fixed-Width, Excel)
+
+```javascript
+import { init, writeCsv, writeFixedWidth, writeExcel } from 'heroparser';
+
+await init();
+
+const records = [
+    { Name: "Alice", Age: "30", Role: "Developer" },
+    { Name: "Bob", Age: "25", Role: "Designer" }
+];
+
+// Write to CSV format
+const csv = writeCsv(records, { delimiter: ',', hasHeader: true });
+
+// Write to Fixed-Width format
+const specs = [
+    { name: "Name", start: 0, length: 10 },
+    { name: "Age", start: 10, length: 5 },
+    { name: "Role", start: 15, length: 15 }
+];
+const fwText = writeFixedWidth(records, specs);
+
+// Write to Excel (.xlsx) file bytes (returns Uint8Array)
+const excelBytes = writeExcel(records, "Sheet1", true);
+```
+
 ---
 
 ## API Reference
@@ -101,6 +128,21 @@ Analyzes a sample text chunk to identify the most confident CSV separator charac
 
 ### `repairTabularOutput(rawText: string): string`
 Cleans up conversational and malformed LLM responses to extract valid raw CSV boundaries.
+
+### `writeCsv(records: any[], options?: WasmCsvOptions): string`
+Serializes a list of object records back to CSV format.
+
+### `writeFixedWidth(records: any[], specs: WasmColumnSpec[]): string`
+Serializes a list of object records back to fixed-width format.
+
+### `writeExcel(records: any[], sheetName?: string, hasHeader?: boolean): Uint8Array`
+Serializes a list of object records back to Excel (.xlsx) binary bytes.
+
+### Consistent Read/Write Aliases
+The package also exports semantic aliases for developers who prefer standard Read/Write terminology:
+* `readCsv` (alias for `parseCsv`)
+* `readFixedWidth` (alias for `parseFixedWidth`)
+* `readExcel` (alias for `parseExcel`)
 
 ---
 

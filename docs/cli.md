@@ -47,7 +47,15 @@ curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.
 
 This will automatically detect your operating system and architecture, download the correct release asset, extract the binary, and install it to `/usr/local/bin` (or `~/.local/bin` if `/usr/local/bin` is not writable).
 
-### Option 4: WinGet (Windows)
+### Option 4: Snap Store (Linux)
+
+For Linux systems, you can also install the strictly-confined package directly from the Snap Store:
+
+```bash
+sudo snap install heroparser
+```
+
+### Option 5: WinGet (Windows)
 
 On Windows, you can install the portable AOT-compiled executable via WinGet:
 
@@ -55,7 +63,7 @@ On Windows, you can install the portable AOT-compiled executable via WinGet:
 winget install KoalaFacts.HeroParser
 ```
 
-### Option 5: Scoop (Windows)
+### Option 6: Scoop (Windows)
 
 Alternatively, you can install the binary using Scoop by adding our custom bucket:
 

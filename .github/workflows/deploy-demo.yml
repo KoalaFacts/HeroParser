@@ -37,12 +37,12 @@ jobs:
 
       - name: Copy WASM assets to npm package
         run: |
-          mkdir -p npm/packages/heroparser-wasm/_framework
-          cp -r src/HeroParser.Wasm/bin/Release/net10.0/publish/wwwroot/_framework/* npm/packages/heroparser-wasm/_framework/
+          mkdir -p npm/packages/heroparser/_framework
+          cp -r src/HeroParser.Wasm/bin/Release/net10.0/publish/wwwroot/_framework/* npm/packages/heroparser/_framework/
           # Remove ICU databases and compressed duplicates to reduce package size
-          rm -f npm/packages/heroparser-wasm/_framework/*.dat
-          rm -f npm/packages/heroparser-wasm/_framework/*.br
-          rm -f npm/packages/heroparser-wasm/_framework/*.gz
+          rm -f npm/packages/heroparser/_framework/*.dat
+          rm -f npm/packages/heroparser/_framework/*.br
+          rm -f npm/packages/heroparser/_framework/*.gz
 
 
       - name: Setup Node.js

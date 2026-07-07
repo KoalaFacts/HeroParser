@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "heroparser": "file:../packages/heroparser-wasm"
+    "heroparser": "file:../packages/heroparser"
   }
 }

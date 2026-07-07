@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "vue": "^3.6.0-alpha.7",
-    "heroparser": "file:../../packages/heroparser-wasm"
+    "heroparser": "file:../../packages/heroparser"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",

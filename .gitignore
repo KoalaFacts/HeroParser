@@ -274,5 +274,5 @@ NUL
 # Allow npm workspaces packages
 !npm/packages/**
 
-# But ignore compiled WASM assets inside heroparser-wasm package
-npm/packages/heroparser-wasm/_framework/
+# But ignore compiled WASM assets inside heroparser package
+npm/packages/heroparser/_framework/

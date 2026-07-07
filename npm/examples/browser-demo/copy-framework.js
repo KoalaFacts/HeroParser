@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const srcDir = path.resolve('../../packages/heroparser-wasm/_framework');
+const srcDir = path.resolve('../../packages/heroparser/_framework');
 const destDir = path.resolve('dist/_framework');
 
 function copyDir(src, dest) {

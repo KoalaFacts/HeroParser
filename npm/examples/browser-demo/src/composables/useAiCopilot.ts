@@ -91,7 +91,11 @@ export function useAiCopilot() {
     if (!aiModelLoaded.value) return
     
     if (!generator) {
+      aiLoading.value = true
+      aiProgress.value = 100
       aiOutput.value = 'Restoring Gemma 4 model from browser Cache API...'
+      aiProgressLabel.value = 'Loading cached model files...'
+      
       const modelId = 'tss-deposium/gemma-4-E2B-text-only-onnx-int4'
       try {
         const { pipeline, AutoConfig } = await import('@huggingface/transformers')
@@ -119,31 +123,17 @@ export function useAiCopilot() {
             local_files_only: true
           })
         }
+        aiProgressLabel.value = 'Model restored successfully!'
       } catch (e) {
-        console.warn("Cache load failed, refetching...", e)
-        const { pipeline, AutoConfig } = await import('@huggingface/transformers')
-        const config = await AutoConfig.from_pretrained(modelId)
-        config.model_type = 'gemma2'
-        try {
-          generator = await pipeline('text-generation', modelId, {
-            device: 'webgpu',
-            dtype: 'q4',
-            config,
-            subfolder: 'onnx',
-            model_file_name: 'decoder_model_merged',
-            use_external_data_format: true
-          })
-        } catch (gpuErr) {
-          generator = await pipeline('text-generation', modelId, {
-            device: 'wasm',
-            dtype: 'q4',
-            config,
-            subfolder: 'onnx',
-            model_file_name: 'decoder_model_merged',
-            use_external_data_format: true
-          })
-        }
+        console.warn("Cache restore failed", e)
+        aiOutput.value = 'Failed to load model from browser cache. The model files might have been evicted by the browser. Please reload the model using the "Load AI Model" button.'
+        aiProgressLabel.value = 'Cache restore failed.'
+        aiModelLoaded.value = false
+        localStorage.removeItem('gemma4_cached')
+        aiLoading.value = false
+        return
       }
+      aiLoading.value = false
     }
 
     aiOutput.value = 'Running local LLM inference on WebGPU device...'
@@ -183,12 +173,31 @@ export function useAiCopilot() {
     }
   }
 
-  const clearAiCache = () => {
+  const clearAiCache = async () => {
     localStorage.removeItem('gemma4_cached')
     aiModelLoaded.value = false
     aiProgress.value = 0
     aiProgressLabel.value = ''
     aiOutput.value = 'Click "Load AI Model" to download and initialize...'
+    
+    // Dereference generator to allow GC
+    generator = null
+
+    // Delete model files from browser cache storage
+    if (typeof caches !== 'undefined') {
+      try {
+        aiOutput.value = 'Clearing model cache storage...'
+        const deleted = await caches.delete('transformers-cache')
+        if (deleted) {
+          aiOutput.value = 'Cache cleared successfully. All model files deleted from browser Cache storage.'
+        } else {
+          aiOutput.value = 'Cache metadata cleared. Storage was already empty.'
+        }
+      } catch (err: any) {
+        console.warn('Failed to delete cache storage:', err)
+        aiOutput.value = 'Metadata cleared, but failed to delete files from Cache Storage: ' + err.message
+      }
+    }
   }
 
   const checkCacheOnMount = () => {

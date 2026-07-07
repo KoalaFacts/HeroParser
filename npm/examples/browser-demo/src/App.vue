@@ -69,7 +69,7 @@ const startModelDownload = async () => {
   aiProgressLabel.value = 'Initializing device and loading transformers library...'
 
   try {
-    const { pipeline, env } = await import('@huggingface/transformers')
+    const { pipeline, env, AutoConfig, AutoModelForCausalLM, AutoTokenizer } = await import('@huggingface/transformers')
     
     // Disable local-only lookups initially to fetch from Hugging Face
     env.allowLocalModels = false
@@ -77,30 +77,47 @@ const startModelDownload = async () => {
     const progress_callback = (data) => {
       if (data.status === 'progress_total') {
         aiProgress.value = Math.floor(data.progress || 0)
-        aiProgressLabel.value = `Downloading Gemma 3 weights: ${Math.floor(data.progress || 0)}%`
+        aiProgressLabel.value = `Downloading Gemma 4 weights: ${Math.floor(data.progress || 0)}%`
       } else if (data.status === 'ready') {
         aiProgressLabel.value = 'Preparing execution environment...'
       }
     }
 
+    const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
+    
+    aiProgressLabel.value = 'Loading configuration and tokenizer...'
+    const config = await AutoConfig.from_pretrained(modelId)
+    // Override the model_type to point to gemma2 architecture to bypass transformers.js unsupported type check
+    config.model_type = 'gemma2'
+    
+    const tokenizer = await AutoTokenizer.from_pretrained(modelId)
+    let model;
+
     try {
       aiProgressLabel.value = 'Initializing WebGPU accelerator...'
       // Try WebGPU first
-      generator = await pipeline('text-generation', 'onnx-community/gemma-3-270m-it-ONNX', {
+      model = await AutoModelForCausalLM.from_pretrained(modelId, {
+        config,
         device: 'webgpu',
         progress_callback
       })
-      aiProgressLabel.value = 'Gemma 3 (270M) Model loaded successfully in WebGPU memory!'
+      aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebGPU memory!'
     } catch (gpuError) {
       console.warn("WebGPU initialization failed. Falling back to WebAssembly (CPU)...", gpuError)
       aiProgressLabel.value = 'WebGPU unsupported. Initializing WebAssembly CPU execution...'
       // Fallback to CPU (wasm)
-      generator = await pipeline('text-generation', 'onnx-community/gemma-3-270m-it-ONNX', {
+      model = await AutoModelForCausalLM.from_pretrained(modelId, {
+        config,
         device: 'wasm',
         progress_callback
       })
-      aiProgressLabel.value = 'Gemma 3 (270M) Model loaded successfully in WebAssembly (CPU) memory!'
+      aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebAssembly (CPU) memory!'
     }
+
+    // Build the generator pipeline around our preloaded model and tokenizer
+    generator = await pipeline('text-generation', model, {
+      tokenizer
+    })
 
     aiLoading.value = false
     aiModelLoaded.value = true
@@ -120,33 +137,55 @@ const runAiAgent = async () => {
   
   // Lazily restore pipeline if cached flag was set but generator wasn't initialized in memory yet
   if (!generator) {
-    aiOutput.value = 'Restoring Gemma 3 model from browser Cache API...'
+    aiOutput.value = 'Restoring Gemma 4 model from browser Cache API...'
     try {
-      const { pipeline } = await import('@huggingface/transformers')
+      const { pipeline, AutoConfig, AutoModelForCausalLM, AutoTokenizer } = await import('@huggingface/transformers')
+      const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
+      const config = await AutoConfig.from_pretrained(modelId)
+      config.model_type = 'gemma2'
+      
+      const tokenizer = await AutoTokenizer.from_pretrained(modelId)
+      let model;
       try {
-        generator = await pipeline('text-generation', 'onnx-community/gemma-3-270m-it-ONNX', {
+        model = await AutoModelForCausalLM.from_pretrained(modelId, {
+          config,
           device: 'webgpu',
           local_files_only: true
         })
       } catch (gpuErr) {
         console.warn("WebGPU restore failed, falling back to WebAssembly (CPU)...", gpuErr)
-        generator = await pipeline('text-generation', 'onnx-community/gemma-3-270m-it-ONNX', {
+        model = await AutoModelForCausalLM.from_pretrained(modelId, {
+          config,
           device: 'wasm',
           local_files_only: true
         })
       }
+      generator = await pipeline('text-generation', model, {
+        tokenizer
+      })
     } catch (e) {
       console.warn("Cache load failed, refetching...", e)
-      const { pipeline } = await import('@huggingface/transformers')
+      const { pipeline, AutoConfig, AutoModelForCausalLM, AutoTokenizer } = await import('@huggingface/transformers')
+      const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
+      const config = await AutoConfig.from_pretrained(modelId)
+      config.model_type = 'gemma2'
+      
+      const tokenizer = await AutoTokenizer.from_pretrained(modelId)
+      let model;
       try {
-        generator = await pipeline('text-generation', 'onnx-community/gemma-3-270m-it-ONNX', {
+        model = await AutoModelForCausalLM.from_pretrained(modelId, {
+          config,
           device: 'webgpu'
         })
       } catch (gpuErr) {
-        generator = await pipeline('text-generation', 'onnx-community/gemma-3-270m-it-ONNX', {
+        model = await AutoModelForCausalLM.from_pretrained(modelId, {
+          config,
           device: 'wasm'
         })
       }
+      generator = await pipeline('text-generation', model, {
+        tokenizer
+      })
     }
   }
 
@@ -447,8 +486,8 @@ const iconsUrl = './icons.svg'
         
         <div class="ai-card">
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 0.25rem;">
-            <span style="font-weight: 600; font-size: 0.95rem;">Gemma 3 (270M) AI Model</span>
-            <span style="color: var(--text-muted); font-size: 0.85rem;">~150 MB (Quantized)</span>
+            <span style="font-weight: 600; font-size: 0.95rem;">Gemma 4 (E2B) AI Model</span>
+            <span style="color: var(--text-muted); font-size: 0.85rem;">~1.1 GB (Quantized)</span>
           </div>
 
           <div style="display: flex; flex-direction: column; gap: 0.5rem;">
@@ -504,13 +543,13 @@ const iconsUrl = './icons.svg'
         <span class="modal-title-text">Confirm Model Download</span>
       </div>
       <div class="modal-body">
-        You are about to download the <strong>Gemma 3 (270M) AI model (~150 MB)</strong> directly to your local browser storage.
+        You are about to download the <strong>Gemma 4 (E2B) AI model (~1.1 GB)</strong> directly to your local browser storage.
         <br/><br/>
-        This model runs completely locally on your device via <strong>WebGPU</strong> (with automatic CPU fallback), ensuring 100% data privacy. However, the download requires a stable internet connection.
+        This model runs completely locally on your device via <strong>WebGPU</strong> (with automatic CPU fallback), ensuring 100% data privacy. However, the download requires a stable internet connection and may take a few minutes.
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" @click="cancelDownload">Cancel</button>
-        <button class="btn" @click="startModelDownload">Download Gemma 3</button>
+        <button class="btn" @click="startModelDownload">Download Gemma 4</button>
       </div>
     </div>
   </div>

@@ -1,0 +1,29 @@
+{
+  "name": "heroparser",
+  "version": "2.5.2",
+  "description": "Ultra high-performance tabular CSV, Fixed-Width, and Excel (.xlsx) parser via WebAssembly",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KoalaFacts/HeroParser.git"
+  },
+  "keywords": [
+    "csv",
+    "excel",
+    "xlsx",
+    "parser",
+    "wasm",
+    "webassembly",
+    "high-performance",
+    "llm",
+    "repair"
+  ],
+  "author": "HeroParser Contributors",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/KoalaFacts/HeroParser/issues"
+  },
+  "homepage": "https://github.com/KoalaFacts/HeroParser#readme"
+}

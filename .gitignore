@@ -270,3 +270,9 @@ _framework/
 # Windows null device files
 nul
 NUL
+
+# Allow npm workspaces packages
+!npm/packages/**
+
+# But ignore compiled WASM assets inside heroparser-wasm package
+npm/packages/heroparser-wasm/_framework/

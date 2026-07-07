@@ -260,3 +260,25 @@ var fixedWidth = CsvToFixedWidthConverter.Convert(csv, columns);
 var csv = FixedWidthToCsvConverter.Convert(fixedWidthData, columns);
 ```
 
+### WebAssembly (WASM) & JS Workspace
+
+#### Build & Compile WASM Engine
+Compiles C# assemblies to Webcil-wrapped `.wasm` binary modules and copies them directly to the NPM workspace:
+```bash
+dotnet publish src/HeroParser.Wasm/HeroParser.Wasm.csproj -c Release
+```
+
+#### Compile Browser Playground Demo
+Builds the client application bundle using Vite+ and Vue 3.6 Vapor:
+```bash
+# From workspace root
+npm install --prefix npm --legacy-peer-deps
+npm run build --workspace=browser-demo --legacy-peer-deps
+```
+
+#### Version Synchronization
+The version number is centrally defined in `Directory.Build.props`. To propagate bumps to NPM `package.json`, snap recipes, installers, and documentation files, run:
+```bash
+npm run sync-version --prefix npm
+```
+

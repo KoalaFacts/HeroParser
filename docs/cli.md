@@ -13,13 +13,13 @@ The `heroparser` CLI is a high-performance, AI-native command-line utility for w
 Install the CLI globally as a dotnet tool:
 
 ```bash
-dotnet tool install --global HeroParser.Cli --version 2.5.1
+dotnet tool install --global HeroParser.Cli --version 2.5.2
 ```
 
 To update an existing installation:
 
 ```bash
-dotnet tool update --global HeroParser.Cli --version 2.5.1
+dotnet tool update --global HeroParser.Cli --version 2.5.2
 ```
 
 ### Option 2: Homebrew Tap (macOS & Linux)
@@ -27,7 +27,7 @@ dotnet tool update --global HeroParser.Cli --version 2.5.1
 For macOS and Linux users, you can install the native AOT-compiled binary using Homebrew via our custom tap:
 
 ```bash
-brew tap KoalaFacts/tap
+brew tap KoalaFacts/heroparser
 brew install heroparser
 ```
 

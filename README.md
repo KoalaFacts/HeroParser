@@ -44,13 +44,13 @@ dotnet add package HeroParser.Console
 
 #### Option 1: Dotnet Global Tool (Cross-Platform)
 ```bash
-dotnet tool install --global HeroParser.Cli --version 2.5.1
+dotnet tool install --global HeroParser.Cli --version 2.5.2
 ```
 
 #### Option 2: Homebrew Tap (macOS & Linux)
 Install the native binary using Homebrew:
 ```bash
-brew tap KoalaFacts/tap
+brew tap KoalaFacts/heroparser
 brew install heroparser
 ```
 

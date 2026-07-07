@@ -113,7 +113,7 @@ jobs:
           fi
           
           # Replace version in snap/snapcraft.yaml
-          sed -i "s/version: '2.5.1'/version: '$VERSION'/g" snap/snapcraft.yaml
+          sed -i "s/version: '2.5.2'/version: '$VERSION'/g" snap/snapcraft.yaml
           
           echo "Updated snap/snapcraft.yaml:"
           cat snap/snapcraft.yaml

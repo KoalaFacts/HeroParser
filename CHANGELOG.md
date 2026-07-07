@@ -4,6 +4,19 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-07-07
+
+### Added
+- **CodeQL Security Hardening**: Upgraded CodeQL advanced scanning to analyze C# and GitHub Actions, using `build-mode: none` for faster runs, and ignoring tests, benchmarks, and examples.
+- **Repository Rename Integration**: Updated automated release pipelines to publish formulas and manifests to renamed public repositories (`homebrew-heroparser` and `scoop-heroparser`).
+
+### Fixed
+- **CLI Console Markup Parsing**: Fixed `Rule`, `Panel`, and `Table` console widgets in `HeroParser.Console` to correctly parse formatting markup (e.g., `[blue bold]`) and layout alignment based on visual string length rather than raw length.
+- **Base Style Inheritance**: Added support for passing and inheriting `baseStyle` inside `AnsiConsole.Markup`.
+
+### Changed
+- **Dependency Upgrades**: Merged Dependabot security and package updates across `Sep`, `System.IO.Pipelines`, `Spectre.Console`, `Microsoft.NET.Test.Sdk`, and various GitHub Actions dependencies.
+
 ## [2.5.1] - 2026-06-10
 
 This release introduces two major packages to the HeroParser ecosystem: `HeroParser.Console`, a zero-allocation, reflection-free, and Native AOT-compatible terminal widget library replacing `Spectre.Console`, and `heroparser` CLI, a global command-line utility for tabular and AI-native data processing.

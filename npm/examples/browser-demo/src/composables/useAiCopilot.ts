@@ -12,6 +12,7 @@ export function useAiCopilot() {
   const aiTime = ref('-')
   const aiTokensPerSec = ref('-')
   const showWarningModal = ref(false)
+  const aiInferenceActive = ref(false)
 
   const triggerDownloadWarning = () => {
     if (aiLoading.value || aiModelLoaded.value) return
@@ -89,6 +90,7 @@ export function useAiCopilot() {
 
   const runAiAgent = async () => {
     if (!aiModelLoaded.value) return
+    if (aiInferenceActive.value || aiLoading.value) return
     
     if (!generator) {
       aiLoading.value = true
@@ -136,12 +138,24 @@ export function useAiCopilot() {
       aiLoading.value = false
     }
 
-    aiOutput.value = 'Running local LLM inference on WebGPU device...'
+    aiInferenceActive.value = true
+    aiOutput.value = '' // Clear output box to stream in real-time
     aiTime.value = 'Calculating...'
     aiTokensPerSec.value = 'Calculating...'
 
     const t0 = performance.now()
     try {
+      const { TextStreamer } = await import('@huggingface/transformers')
+
+      // Instantiate a TextStreamer to output tokens as they are generated
+      const streamer = new TextStreamer(generator.tokenizer, {
+        skip_prompt: true,
+        skip_special_tokens: true,
+        callback_function: (text: string) => {
+          aiOutput.value += text
+        }
+      })
+
       const messages = [
         { role: 'system', content: 'You are a precise data parser. Convert the user input into a JSON array of objects. Each object must have keys: "Name", "Age" (as string or "Unknown"), and "Role" (as string or "Unknown"). Provide ONLY raw JSON inside the output, no markdown wrappers, no explanations.' },
         { role: 'user', content: aiInput.value }
@@ -150,7 +164,8 @@ export function useAiCopilot() {
       const output = await generator(messages, {
         max_new_tokens: 150,
         temperature: 0.1,
-        return_full_text: false
+        return_full_text: false,
+        streamer
       })
 
       const t1 = performance.now()
@@ -162,7 +177,9 @@ export function useAiCopilot() {
       aiOutput.value = responseText
       aiTime.value = `${inferenceTime.toFixed(2)} ms`
 
-      const tokenCount = responseText.length / 4
+      // Measure exact token count using the tokenizer
+      const tokens = generator.tokenizer.encode(responseText)
+      const tokenCount = tokens.length
       const tokensPerSec = (tokenCount / (inferenceTime / 1000)).toFixed(1)
       aiTokensPerSec.value = `${tokensPerSec} tok/sec`
     } catch (err: any) {
@@ -170,6 +187,8 @@ export function useAiCopilot() {
       aiOutput.value = `Inference failed: ${err.message}`
       aiTime.value = 'Error'
       aiTokensPerSec.value = 'Error'
+    } finally {
+      aiInferenceActive.value = false
     }
   }
 
@@ -218,6 +237,7 @@ export function useAiCopilot() {
     aiTime,
     aiTokensPerSec,
     showWarningModal,
+    aiInferenceActive,
     triggerDownloadWarning,
     cancelDownload,
     startModelDownload,

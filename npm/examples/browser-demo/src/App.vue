@@ -60,6 +60,7 @@ const {
   aiTime,
   aiTokensPerSec,
   showWarningModal,
+  aiInferenceActive,
   triggerDownloadWarning,
   cancelDownload,
   startModelDownload,
@@ -260,7 +261,11 @@ onMounted(async () => {
           <textarea id="ai-input" v-model="aiInput" placeholder="Enter unstructured text..."></textarea>
         </div>
 
-        <button class="btn" @click="runAiAgent" :disabled="!aiModelLoaded">Run AI Agent</button>
+        <button class="btn" @click="runAiAgent" :disabled="!aiModelLoaded || aiLoading || aiInferenceActive">
+          <span v-if="aiInferenceActive">Generating...</span>
+          <span v-else-if="aiLoading">Loading...</span>
+          <span v-else>Run AI Agent</span>
+        </button>
       </div>
 
       <div class="panel">

@@ -19,11 +19,11 @@
 
   <Target Name="CopyWasmAssetsToNpm" AfterTargets="Publish">
     <ItemGroup>
-      <WasmFiles Include="$(PublishDir)wwwroot\_framework\**\*.*" 
-                 Exclude="$(PublishDir)wwwroot\_framework\**\*.dat;$(PublishDir)wwwroot\_framework\**\*.br;$(PublishDir)wwwroot\_framework\**\*.gz" />
+      <WasmFiles Include="$(PublishDir)wwwroot/_framework/**/*.*" 
+                 Exclude="$(PublishDir)wwwroot/_framework/**/*.dat;$(PublishDir)wwwroot/_framework/**/*.br;$(PublishDir)wwwroot/_framework/**/*.gz" />
     </ItemGroup>
     <Copy SourceFiles="@(WasmFiles)"
-          DestinationFolder="$(MSBuildThisFileDirectory)..\..\npm\packages\heroparser-wasm\_framework\%(RecursiveDir)"
+          DestinationFolder="$(MSBuildThisFileDirectory)../../npm/packages/heroparser-wasm/_framework/%(RecursiveDir)"
           SkipUnchangedFiles="true" />
   </Target>
 

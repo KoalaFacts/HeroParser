@@ -446,7 +446,7 @@ const iconsUrl = './icons.svg'
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" @click="cancelDownload">Cancel</button>
-        <button class="btn" @click="startModelDownload" style="background: #e11d48; box-shadow: 0 4px 12px rgba(225, 29, 72, 0.4);">Download Gemma 4</button>
+        <button class="btn" @click="startModelDownload">Download Gemma 4</button>
       </div>
     </div>
   </div>

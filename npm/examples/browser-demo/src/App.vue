@@ -172,12 +172,8 @@ const runLlmRepair = () => {
 
   <div class="container">
     <header>
-      <div class="badge">
-        <span class="pulse"></span>
-        Vue Vapor + WASM Active
-      </div>
       <h1>HeroParser WASM</h1>
-      <p class="tagline">High-performance, zero-allocation C# tabular parser running at native speed directly inside a Vue Vapor compiled sandbox.</p>
+      <p class="tagline">High-performance, zero-allocation C# tabular parser running at native speed directly inside a browser.</p>
     </header>
 
     <!-- Tabs Nav -->

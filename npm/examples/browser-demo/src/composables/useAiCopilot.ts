@@ -29,9 +29,7 @@ export function useAiCopilot() {
     aiProgressLabel.value = 'Initializing device and loading transformers library...'
 
     try {
-      const { pipeline, env, AutoConfig } = await import('@huggingface/transformers')
-      
-      env.allowLocalModels = false
+      const { pipeline, AutoConfig } = await import('@huggingface/transformers')
       
       const progress_callback = (data: any) => {
         if (data.status === 'progress_total') {

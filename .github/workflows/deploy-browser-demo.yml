@@ -1,4 +1,4 @@
-name: pages-build-deployment
+name: Deploy Browser Demo
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     paths:
       - 'npm/**'
       - 'src/HeroParser.Wasm/**'
-      - '.github/workflows/pages-build-deployment.yml'
+      - '.github/workflows/deploy-browser-demo.yml'
   workflow_dispatch:
 
 permissions:

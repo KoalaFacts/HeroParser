@@ -66,7 +66,7 @@ const startModelDownload = async () => {
   showWarningModal.value = false
   aiLoading.value = true
   aiProgress.value = 0
-  aiProgressLabel.value = 'Initializing WebGPU device and loading transformers library...'
+  aiProgressLabel.value = 'Initializing device and loading transformers library...'
 
   try {
     const { pipeline, env } = await import('@huggingface/transformers')
@@ -74,29 +74,44 @@ const startModelDownload = async () => {
     // Disable local-only lookups initially to fetch from Hugging Face
     env.allowLocalModels = false
     
-    // Initialize pipeline with Gemma 4 E2B ONNX model
-    generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
-      device: 'webgpu',
-      progress_callback: (data) => {
-        if (data.status === 'progress_total') {
-          aiProgress.value = Math.floor(data.progress || 0)
-          aiProgressLabel.value = `Downloading Gemma 4 weights: ${Math.floor(data.progress || 0)}%`
-        } else if (data.status === 'ready') {
-          aiProgressLabel.value = 'Preparing WebGPU execution environment...'
-        }
+    const progress_callback = (data) => {
+      if (data.status === 'progress_total') {
+        aiProgress.value = Math.floor(data.progress || 0)
+        aiProgressLabel.value = `Downloading Gemma 4 weights: ${Math.floor(data.progress || 0)}%`
+      } else if (data.status === 'ready') {
+        aiProgressLabel.value = 'Preparing execution environment...'
       }
-    })
+    }
+
+    try {
+      aiProgressLabel.value = 'Initializing WebGPU accelerator...'
+      // Try WebGPU first
+      generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
+        device: 'webgpu',
+        progress_callback
+      })
+      aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebGPU memory!'
+    } catch (gpuError) {
+      console.warn("WebGPU initialization failed. Falling back to WebAssembly (CPU)...", gpuError)
+      aiProgressLabel.value = 'WebGPU unsupported. Initializing WebAssembly CPU execution...'
+      // Fallback to CPU (wasm)
+      generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
+        device: 'wasm',
+        progress_callback
+      })
+      aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebAssembly (CPU) memory!'
+    }
 
     aiLoading.value = false
     aiModelLoaded.value = true
     localStorage.setItem('gemma4_cached', 'true')
-    aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in browser WebGPU memory!'
     aiOutput.value = 'AI model initialized successfully. Type unstructured text and click "Run AI Agent" to parse it locally.'
   } catch (err) {
     console.error(err)
     aiLoading.value = false
-    aiProgressLabel.value = `Initialization failed: ${err.message}`
-    aiOutput.value = `Error loading WebGPU model: ${err.message}. Please check if WebGPU is supported and enabled in your browser.`
+    const errMsg = err.message || String(err)
+    aiProgressLabel.value = `Initialization failed: ${errMsg}`
+    aiOutput.value = `Error loading AI model: ${errMsg}. Please ensure you have a stable network connection.`
   }
 }
 
@@ -105,19 +120,33 @@ const runAiAgent = async () => {
   
   // Lazily restore pipeline if cached flag was set but generator wasn't initialized in memory yet
   if (!generator) {
-    aiOutput.value = 'Restoring WebGPU model from browser Cache API...'
+    aiOutput.value = 'Restoring Gemma 4 model from browser Cache API...'
     try {
       const { pipeline } = await import('@huggingface/transformers')
-      generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
-        device: 'webgpu',
-        local_files_only: true
-      })
+      try {
+        generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
+          device: 'webgpu',
+          local_files_only: true
+        })
+      } catch (gpuErr) {
+        console.warn("WebGPU restore failed, falling back to WebAssembly (CPU)...", gpuErr)
+        generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
+          device: 'wasm',
+          local_files_only: true
+        })
+      }
     } catch (e) {
       console.warn("Cache load failed, refetching...", e)
       const { pipeline } = await import('@huggingface/transformers')
-      generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
-        device: 'webgpu'
-      })
+      try {
+        generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
+          device: 'webgpu'
+        })
+      } catch (gpuErr) {
+        generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
+          device: 'wasm'
+        })
+      }
     }
   }
 

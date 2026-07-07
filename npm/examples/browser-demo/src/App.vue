@@ -69,7 +69,7 @@ const startModelDownload = async () => {
   aiProgressLabel.value = 'Initializing device and loading transformers library...'
 
   try {
-    const { pipeline, env, AutoConfig, AutoModelForCausalLM, AutoTokenizer } = await import('@huggingface/transformers')
+    const { pipeline, env } = await import('@huggingface/transformers')
     
     // Disable local-only lookups initially to fetch from Hugging Face
     env.allowLocalModels = false
@@ -84,20 +84,11 @@ const startModelDownload = async () => {
     }
 
     const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
-    
-    aiProgressLabel.value = 'Loading configuration and tokenizer...'
-    const config = await AutoConfig.from_pretrained(modelId)
-    // Override the model_type to point to gemma2 architecture to bypass transformers.js unsupported type check
-    config.model_type = 'gemma2'
-    
-    const tokenizer = await AutoTokenizer.from_pretrained(modelId)
-    let model;
 
     try {
       aiProgressLabel.value = 'Initializing WebGPU accelerator...'
       // Try WebGPU first
-      model = await AutoModelForCausalLM.from_pretrained(modelId, {
-        config,
+      generator = await pipeline('text-generation', modelId, {
         device: 'webgpu',
         progress_callback
       })
@@ -106,18 +97,12 @@ const startModelDownload = async () => {
       console.warn("WebGPU initialization failed. Falling back to WebAssembly (CPU)...", gpuError)
       aiProgressLabel.value = 'WebGPU unsupported. Initializing WebAssembly CPU execution...'
       // Fallback to CPU (wasm)
-      model = await AutoModelForCausalLM.from_pretrained(modelId, {
-        config,
+      generator = await pipeline('text-generation', modelId, {
         device: 'wasm',
         progress_callback
       })
       aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebAssembly (CPU) memory!'
     }
-
-    // Build the generator pipeline around our preloaded model and tokenizer
-    generator = await pipeline('text-generation', model, {
-      tokenizer
-    })
 
     aiLoading.value = false
     aiModelLoaded.value = true
@@ -138,54 +123,33 @@ const runAiAgent = async () => {
   // Lazily restore pipeline if cached flag was set but generator wasn't initialized in memory yet
   if (!generator) {
     aiOutput.value = 'Restoring Gemma 4 model from browser Cache API...'
+    const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
     try {
-      const { pipeline, AutoConfig, AutoModelForCausalLM, AutoTokenizer } = await import('@huggingface/transformers')
-      const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
-      const config = await AutoConfig.from_pretrained(modelId)
-      config.model_type = 'gemma2'
-      
-      const tokenizer = await AutoTokenizer.from_pretrained(modelId)
-      let model;
+      const { pipeline } = await import('@huggingface/transformers')
       try {
-        model = await AutoModelForCausalLM.from_pretrained(modelId, {
-          config,
+        generator = await pipeline('text-generation', modelId, {
           device: 'webgpu',
           local_files_only: true
         })
       } catch (gpuErr) {
         console.warn("WebGPU restore failed, falling back to WebAssembly (CPU)...", gpuErr)
-        model = await AutoModelForCausalLM.from_pretrained(modelId, {
-          config,
+        generator = await pipeline('text-generation', modelId, {
           device: 'wasm',
           local_files_only: true
         })
       }
-      generator = await pipeline('text-generation', model, {
-        tokenizer
-      })
     } catch (e) {
       console.warn("Cache load failed, refetching...", e)
-      const { pipeline, AutoConfig, AutoModelForCausalLM, AutoTokenizer } = await import('@huggingface/transformers')
-      const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
-      const config = await AutoConfig.from_pretrained(modelId)
-      config.model_type = 'gemma2'
-      
-      const tokenizer = await AutoTokenizer.from_pretrained(modelId)
-      let model;
+      const { pipeline } = await import('@huggingface/transformers')
       try {
-        model = await AutoModelForCausalLM.from_pretrained(modelId, {
-          config,
+        generator = await pipeline('text-generation', modelId, {
           device: 'webgpu'
         })
       } catch (gpuErr) {
-        model = await AutoModelForCausalLM.from_pretrained(modelId, {
-          config,
+        generator = await pipeline('text-generation', modelId, {
           device: 'wasm'
         })
       }
-      generator = await pipeline('text-generation', model, {
-        tokenizer
-      })
     }
   }
 

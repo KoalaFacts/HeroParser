@@ -1,12 +1,20 @@
-<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+<Project>
+  <!-- Conditional SDK Import to bypass wasm-tools check in non-Wasm build runners -->
+  <PropertyGroup>
+    <!-- By default, skip wasm if running in GitHub Actions unless explicitly compiling WASM -->
+    <SkipWasmBuild Condition="'$(SkipWasmBuild)' == '' And '$(GITHUB_ACTIONS)' == 'true' And '$(IsWasmBuildJob)' != 'true'">true</SkipWasmBuild>
+  </PropertyGroup>
+
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk.WebAssembly" Condition="'$(SkipWasmBuild)' != 'true'" />
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" Condition="'$(SkipWasmBuild)' == 'true'" />
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <WasmBuildNative>true</WasmBuildNative>
+    <WasmBuildNative Condition="'$(SkipWasmBuild)' != 'true'">true</WasmBuildNative>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>link</TrimMode>
-    <WasmMainJSPath>main.js</WasmMainJSPath>
+    <WasmMainJSPath Condition="'$(SkipWasmBuild)' != 'true'">main.js</WasmMainJSPath>
     <InvariantGlobalization>true</InvariantGlobalization>
     <WasmEnableTimeZoneSupport>false</WasmEnableTimeZoneSupport>
   </PropertyGroup>
@@ -15,7 +23,7 @@
     <ProjectReference Include="..\HeroParser\HeroParser.csproj" />
   </ItemGroup>
 
-  <Target Name="CopyWasmAssetsToNpm" AfterTargets="Publish">
+  <Target Name="CopyWasmAssetsToNpm" AfterTargets="Publish" Condition="'$(SkipWasmBuild)' != 'true'">
     <ItemGroup>
       <WasmFiles Include="$(PublishDir)wwwroot/_framework/**/*.*" 
                  Exclude="$(PublishDir)wwwroot/_framework/**/*.dat;$(PublishDir)wwwroot/_framework/**/*.br;$(PublishDir)wwwroot/_framework/**/*.gz" />
@@ -25,4 +33,6 @@
           SkipUnchangedFiles="true" />
   </Target>
 
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk.WebAssembly" Condition="'$(SkipWasmBuild)' != 'true'" />
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" Condition="'$(SkipWasmBuild)' == 'true'" />
 </Project>

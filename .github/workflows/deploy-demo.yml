@@ -33,7 +33,7 @@ jobs:
         run: dotnet workload install wasm-tools
 
       - name: Publish WASM project
-        run: dotnet publish src/HeroParser.Wasm/HeroParser.Wasm.csproj -c Release
+        run: dotnet publish src/HeroParser.Wasm/HeroParser.Wasm.csproj -c Release -p:IsWasmBuildJob=true
 
       - name: Copy WASM assets to npm package
         run: |

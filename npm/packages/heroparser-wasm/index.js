@@ -1,10 +1,10 @@
-import { dotnet } from './_framework/dotnet.js';
-
 let exports = null;
 let initialized = false;
 
 export async function init() {
     if (initialized) return;
+
+    const { dotnet } = await import(/* @vite-ignore */ './_framework/dotnet.js');
 
     const { getAssemblyExports, getConfig } = await dotnet
         .withDiagnosticTracing(false)

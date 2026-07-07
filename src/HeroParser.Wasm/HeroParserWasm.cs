@@ -12,16 +12,40 @@ using HeroParser.SeparatedValues.Detection;
 
 namespace HeroParser.Wasm;
 
+/// <summary>
+/// Options for parsing CSV data in the WebAssembly interop context.
+/// </summary>
 public class WasmCsvOptions
 {
+    /// <summary>
+    /// Gets or sets the column delimiter character (e.g. ",", ";").
+    /// </summary>
     public string? Delimiter { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the CSV has a header row.
+    /// </summary>
     public bool HasHeader { get; set; } = true;
 }
 
+/// <summary>
+/// Specification for mapping a single fixed-width column range.
+/// </summary>
 public class WasmColumnSpec
 {
+    /// <summary>
+    /// Gets or sets the name of the column.
+    /// </summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the starting index of the column range.
+    /// </summary>
     public int Start { get; set; }
+
+    /// <summary>
+    /// Gets or sets the length of the column range.
+    /// </summary>
     public int Length { get; set; }
 }
 
@@ -34,9 +58,18 @@ internal partial class WasmJsonContext : JsonSerializerContext
 {
 }
 
+/// <summary>
+/// Provides WebAssembly interop endpoints for HeroParser using JSExport.
+/// </summary>
 [SupportedOSPlatform("browser")]
 public partial class HeroParserWasm
 {
+    /// <summary>
+    /// Parses CSV text data and serializes the result list as a JSON string.
+    /// </summary>
+    /// <param name="csvText">The raw CSV text content.</param>
+    /// <param name="optionsJson">JSON-serialized WasmCsvOptions configuration settings.</param>
+    /// <returns>A JSON string representing the parsed records list.</returns>
     [JSExport]
     public static string ParseCsvToJson(string csvText, string optionsJson)
     {
@@ -90,6 +123,12 @@ public partial class HeroParserWasm
         }
     }
 
+    /// <summary>
+    /// Parses fixed-width text data using the specified column specifications and returns a JSON string.
+    /// </summary>
+    /// <param name="text">The raw fixed-width text content.</param>
+    /// <param name="specsJson">JSON-serialized list of WasmColumnSpec ranges.</param>
+    /// <returns>A JSON string representing the parsed records list.</returns>
     [JSExport]
     public static string ParseFixedWidthToJson(string text, string specsJson)
     {
@@ -121,6 +160,13 @@ public partial class HeroParserWasm
         return JsonSerializer.Serialize(list, WasmJsonContext.Default.ListDictionaryStringString);
     }
 
+    /// <summary>
+    /// Parses Excel (.xlsx) workbook bytes and returns the specified sheet data as a JSON string.
+    /// </summary>
+    /// <param name="excelBytes">The raw binary bytes of the Excel workbook.</param>
+    /// <param name="sheetName">The name of the sheet to parse, or empty for the first sheet.</param>
+    /// <param name="hasHeader">A value indicating whether the sheet has a header row.</param>
+    /// <returns>A JSON string representing the parsed rows.</returns>
     [JSExport]
     public static string ParseExcelToJson(byte[] excelBytes, string sheetName, bool hasHeader)
     {
@@ -164,6 +210,11 @@ public partial class HeroParserWasm
         }
     }
 
+    /// <summary>
+    /// Analyzes sample rows to detect and return the most probable CSV delimiter character.
+    /// </summary>
+    /// <param name="sampleRows">A sample string containing multiple rows of CSV data.</param>
+    /// <returns>The detected delimiter character as a string (defaulting to "," if none detected).</returns>
     [JSExport]
     public static string DetectCsvDelimiter(string sampleRows)
     {
@@ -172,6 +223,11 @@ public partial class HeroParserWasm
         return result.ToString();
     }
 
+    /// <summary>
+    /// Cleans and repairs incomplete, truncated, or markdown-wrapped tabular LLM output.
+    /// </summary>
+    /// <param name="rawText">The raw conversational text input from the LLM.</param>
+    /// <returns>A cleaned CSV text representation.</returns>
     [JSExport]
     public static string RepairTabularOutput(string rawText)
     {

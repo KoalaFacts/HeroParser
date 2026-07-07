@@ -54,7 +54,7 @@ brew tap KoalaFacts/heroparser
 brew install heroparser
 ```
 
-#### Option 3: Shell Script (macOS & Linux fallback)
+#### Option 3: Shell Installer Script (macOS & Linux fallback)
 Install the native binary without Homebrew:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.sh | sh
@@ -66,12 +66,14 @@ Install the strictly-confined package from the Snap Store:
 sudo snap install heroparser
 ```
 
-On Windows, you can install via WinGet:
+#### Option 5: WinGet (Windows)
+Install the portable binary via WinGet:
 ```bash
 winget install KoalaFacts.HeroParser
 ```
 
-Or via Scoop:
+#### Option 6: Scoop (Windows)
+Install via Scoop:
 ```bash
 scoop bucket add heroparser https://github.com/KoalaFacts/scoop-heroparser.git
 scoop install heroparser/heroparser

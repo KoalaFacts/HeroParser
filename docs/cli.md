@@ -181,10 +181,37 @@ heroparser translate customers.csv "Translate the Description field to Spanish a
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-ai, --ai` | Enables LLM assistance for schemas and validation parsing. | `false` |
-| `-p, --ai-provider <name>` | Select provider: `gemini`, `openai`, or `anthropic`. | `gemini` |
-| `-k, --ai-key <key>` | API key (falls back to environmental variables like `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). | Env value |
-| `-m, --model <name>` | Override default model name (e.g. `gemini-1.5-pro` or `gpt-4o`). | Provider default |
-| `-b, --batch-size <num>` | Record batch size sent to the LLM during translation. | `50` |
+| `-p, --ai-provider <name>` | Select local AI CLI provider: `google`, `openai`, `anthropic`, `microsoft`, `github`, or `ollama`. | `google` |
+| `-k, --ai-key <key>` | Not needed for local CLI providers (retained for compatibility). | None |
+| `-m, --model <name>` | Override default model name for the local CLI (e.g. `gpt-5.5` or `qwen3.5:latest`). | Local default |
+| `-b, --batch-size <num>` | Record batch size sent to the local CLI during translation. | `50` |
+
+---
+
+## 5. AI-Native Local-First Architecture
+
+Unlike traditional CLI tools that make direct HTTP API calls to cloud services (requiring developers to configure API keys, worry about token costs, and expose credentials), HeroParser CLI uses a **Local-First AI-Native approach**.
+
+### Key Differences & Benefits
+
+1. **Zero-Key, Credentials-Free Integration**
+   - By delegating queries directly to local AI developer CLI tools already authenticated on your system, you do not need to configure API keys or manage credentials inside HeroParser. It uses your active local sessions automatically.
+
+2. **Supported Local AI CLIs**
+   - **Google (`google` / `antigravity`)**: Runs on top of the Antigravity developer agent CLI (`agy -p - --dangerously-skip-permissions`).
+   - **OpenAI (`openai`)**: Interlaces with the official `openai` CLI (`openai responses create --input -`) or falls back to Codex (`codex exec -`).
+   - **Anthropic (`anthropic`)**: Leverages the Claude Code TUI (`claude -p - --permission-mode dontAsk --no-session-persistence`).
+   - **Microsoft & GitHub (`microsoft` / `github`)**: Integrates with the unified Copilot agent CLI (`copilot -p - --allow-all -s`).
+   - **Ollama (`ollama`)**: Runs fully local LLMs offline (defaulting to `qwen3.5:latest` or custom models) via `ollama run <model>`.
+
+3. **Secure Process Lifecycle Management**
+   - To prevent background resource leaks, HeroParser CLI strictly monitors spawned subprocesses. If a query is cancelled, interrupted, or times out (hard limit of 3 minutes), the CLI kills the entire spawned process tree (`process.Kill(entireProcessTree: true)`) immediately.
+
+4. **Infinite Stream Safety (Stdin Piping)**
+   - Instead of passing prompt content via command line arguments—which triggers the OS argument buffer limits (like the Windows 8,191-character command limit)—prompts are streamed into the CLI tools via standard input (stdin). This allows you to pass very large dataset profiles and samples safely.
+
+5. **Clean Structured Parsing**
+   - AI outputs can sometimes contain markdown code fences (e.g., ` ```csharp `) or chat preambles. HeroParser automatically cleans and strips conversational wrapping, extracting only the raw structured text or code for programmatic compilation.
 
 ---
 

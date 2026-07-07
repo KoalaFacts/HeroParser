@@ -316,7 +316,7 @@ For advanced features and full API guides, see the files under the `docs` folder
 * [JSONL Guide](docs/jsonl.md) — Fine-tuning templates, vector parsing, and Native AOT setups.
 * [HTB Guide](docs/htb.md) — High-Throughput Tabular Binary format, fluent APIs, CSV ↔ HTB conversion, and Native AOT support.
 * [Console Guide](docs/console.md) — Standard rendering, markup, widgets (Table, Panel, Rule), interactive prompts, and Spectre.Console compatibility.
-* [CLI Guide](docs/cli.md) — Global installation, interactive wizard mode, validation, conversion, and AI-native query/translate commands.
+* [CLI Guide](docs/cli.md) — Local-First AI-native architecture, auto-detecting terminal CLIs (`agy`/`openai`/`claude`/`copilot`/`ollama`), stdin streaming, process management, and interactive query/translate wizard.
 * [Benchmarks Guide](docs/benchmarks.md) — Execution environments, detailed CPU metrics, and comparisons.
 
 ---

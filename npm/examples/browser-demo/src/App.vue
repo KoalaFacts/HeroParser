@@ -46,19 +46,25 @@ const aiModelLoaded = ref(false)
 const aiLoading = ref(false)
 const aiProgress = ref(0)
 const aiProgressLabel = ref('')
-const aiSelectedModel = ref('gemma3')
 const aiInput = ref("Raw conversational unstructured data:\n\nName: John Doe, Age: 30, Occupation: Engineer\nName: Jane Smith, Age: 25, Occupation: Designer")
-const aiOutput = ref('Select a model and click "Load AI Model" to download and initialize...')
+const aiOutput = ref('Click "Load AI Model" to download and initialize...')
 const aiTime = ref('-')
 const aiTokensPerSec = ref('-')
 
 const loadAiModel = () => {
   if (aiLoading.value) return
+  
+  const proceed = window.confirm(
+    "⚠️ Warning: You are about to download the Gemma 4 (E2B) AI model (~1.1 GB) directly to your browser's local cache. " +
+    "This requires a stable connection and may take a few minutes depending on your network. Proceed?"
+  )
+  if (!proceed) return
+
   aiLoading.value = true
   aiProgress.value = 0
   aiProgressLabel.value = 'Preparing download pipelines...'
 
-  const totalSize = aiSelectedModel.value === 'gemma3' ? 150 : 1100 // 150MB or 1.1GB
+  const totalSize = 1100 // 1.1GB Gemma 4 E2B
   let downloaded = 0
 
   const interval = setInterval(() => {
@@ -73,6 +79,7 @@ const loadAiModel = () => {
       
       setTimeout(() => {
         aiLoading.value = false
+
         aiModelLoaded.value = true
         aiProgressLabel.value = `Model loaded successfully! (${totalSize} MB cached in OPFS)`
         aiOutput.value = 'AI Assistant is ready. Enter unstructured text and click "Run AI Agent" to parse it locally via WebGPU.'
@@ -375,12 +382,9 @@ const iconsUrl = './icons.svg'
         <div class="panel-title">Local AI Configuration (WebGPU)</div>
         
         <div class="ai-card">
-          <div class="form-group">
-            <label for="ai-model-select">Target AI Model</label>
-            <select id="ai-model-select" v-model="aiSelectedModel" :disabled="aiLoading" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 0.75rem; font-family: var(--font-sans); font-size: 0.9rem; outline: none; transition: border-color 0.2s;">
-              <option value="gemma3">Gemma 3 (270M) - ~150 MB INT4 (Quantized)</option>
-              <option value="gemma4">Gemma 4 (E2B) - ~1.1 GB INT4 (Quantized)</option>
-            </select>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 0.25rem;">
+            <span style="font-weight: 600; font-size: 0.95rem;">Gemma 4 (E2B) AI Model</span>
+            <span style="color: var(--text-muted); font-size: 0.85rem;">~1.1 GB (Quantized)</span>
           </div>
 
           <div style="display: flex; flex-direction: column; gap: 0.5rem;">

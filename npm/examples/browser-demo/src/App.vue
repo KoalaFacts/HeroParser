@@ -90,6 +90,7 @@ const startModelDownload = async () => {
       // Try WebGPU first
       generator = await pipeline('text-generation', modelId, {
         device: 'webgpu',
+        dtype: 'q4f16',
         progress_callback
       })
       aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebGPU memory!'
@@ -99,6 +100,7 @@ const startModelDownload = async () => {
       // Fallback to CPU (wasm)
       generator = await pipeline('text-generation', modelId, {
         device: 'wasm',
+        dtype: 'q4',
         progress_callback
       })
       aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebAssembly (CPU) memory!'
@@ -129,12 +131,14 @@ const runAiAgent = async () => {
       try {
         generator = await pipeline('text-generation', modelId, {
           device: 'webgpu',
+          dtype: 'q4f16',
           local_files_only: true
         })
       } catch (gpuErr) {
         console.warn("WebGPU restore failed, falling back to WebAssembly (CPU)...", gpuErr)
         generator = await pipeline('text-generation', modelId, {
           device: 'wasm',
+          dtype: 'q4',
           local_files_only: true
         })
       }
@@ -143,11 +147,13 @@ const runAiAgent = async () => {
       const { pipeline } = await import('@huggingface/transformers')
       try {
         generator = await pipeline('text-generation', modelId, {
-          device: 'webgpu'
+          device: 'webgpu',
+          dtype: 'q4f16'
         })
       } catch (gpuErr) {
         generator = await pipeline('text-generation', modelId, {
-          device: 'wasm'
+          device: 'wasm',
+          dtype: 'q4'
         })
       }
     }

@@ -483,8 +483,8 @@ internal static class Program
 
         SysConsole.WriteLine("\nAI-Native Options:");
         SysConsole.WriteLine("  -ai, --ai                    Enable AI optimizations (in 'schema' command)");
-        SysConsole.WriteLine("  -p, --ai-provider <name>     Select LLM provider: gemini (default), openai, anthropic");
-        SysConsole.WriteLine("  -k, --ai-key <key>           API key (falls back to environmental keys)");
+        SysConsole.WriteLine("  -p, --ai-provider <name>     Select local AI CLI provider: antigravity (default), chatgpt, claude, copilot");
+        SysConsole.WriteLine("  -k, --ai-key <key>           Not needed for local CLI providers (retained for compatibility)");
         SysConsole.WriteLine("  -m, --model <name>           Specify custom LLM model name");
         SysConsole.WriteLine("  -b, --batch-size <num>       Batch size of records sent to LLM in translation (default: 50)");
 

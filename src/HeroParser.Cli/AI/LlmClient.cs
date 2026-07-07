@@ -1,8 +1,8 @@
 using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Text;
-using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,193 +10,320 @@ namespace HeroParser.Cli.AI;
 
 internal enum LlmProvider
 {
-    Gemini,
-    OpenAi,
-    Anthropic
+    ChatGpt,
+    Claude,
+    Antigravity,
+    Copilot
 }
 
 internal sealed class LlmClient
 {
-    private readonly HttpClient httpClient;
     private readonly LlmProvider provider;
-    private readonly string apiKey;
     private readonly string? customModel;
 
-    public LlmClient(LlmProvider provider, string apiKey, string? customModel = null)
+    public LlmClient(LlmProvider provider, string? customModel = null)
     {
         this.provider = provider;
-        this.apiKey = apiKey;
         this.customModel = customModel;
-        httpClient = new HttpClient();
     }
 
     public static LlmClient CreateFromEnvironment(string? overrideProvider = null, string? overrideKey = null, string? overrideModel = null)
     {
-        LlmProvider resolvedProvider = LlmProvider.Gemini;
+        _ = overrideKey; // Retained for API compatibility but unused since we call local CLI processes directly
+        LlmProvider resolvedProvider = LlmProvider.Antigravity;
 
         if (!string.IsNullOrWhiteSpace(overrideProvider))
         {
             resolvedProvider = overrideProvider.ToLowerInvariant() switch
             {
-                "gemini" => LlmProvider.Gemini,
-                "openai" => LlmProvider.OpenAi,
-                "anthropic" => LlmProvider.Anthropic,
-                _ => throw new ArgumentException($"Unknown AI provider: {overrideProvider}. Valid options: gemini, openai, anthropic")
+                "antigravity" or "agy" => LlmProvider.Antigravity,
+                "chatgpt" or "openai" or "codex" => LlmProvider.ChatGpt,
+                "claude" or "anthropic" => LlmProvider.Claude,
+                "copilot" or "github" => LlmProvider.Copilot,
+                _ => throw new ArgumentException($"Unknown AI provider: {overrideProvider}. Valid options: antigravity, chatgpt, claude, copilot")
             };
         }
         else
         {
-            // Auto detect from environment keys
-            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GEMINI_API_KEY")))
-                resolvedProvider = LlmProvider.Gemini;
-            else if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY")))
-                resolvedProvider = LlmProvider.OpenAi;
-            else if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")) ||
-                     !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CLAUDE_API_KEY")))
-                resolvedProvider = LlmProvider.Anthropic;
+            // Auto detect from environment variables or local paths
+            var envProvider = Environment.GetEnvironmentVariable("HEROPARSER_AI_PROVIDER");
+            if (!string.IsNullOrWhiteSpace(envProvider))
+            {
+                resolvedProvider = envProvider.ToLowerInvariant() switch
+                {
+                    "antigravity" or "agy" => LlmProvider.Antigravity,
+                    "chatgpt" or "openai" or "codex" => LlmProvider.ChatGpt,
+                    "claude" or "anthropic" => LlmProvider.Claude,
+                    "copilot" or "github" => LlmProvider.Copilot,
+                    _ => resolvedProvider
+                };
+            }
+            else
+            {
+                // Auto detect by checking command availability in order: agy -> claude -> copilot -> codex
+                if (IsCommandAvailable("agy"))
+                    resolvedProvider = LlmProvider.Antigravity;
+                else if (IsCommandAvailable("claude"))
+                    resolvedProvider = LlmProvider.Claude;
+                else if (IsCommandAvailable("copilot"))
+                    resolvedProvider = LlmProvider.Copilot;
+                else if (IsCommandAvailable("codex"))
+                    resolvedProvider = LlmProvider.ChatGpt;
+            }
         }
 
-        string? resolvedKey = !string.IsNullOrWhiteSpace(overrideKey)
-            ? overrideKey
-            : resolvedProvider switch
-            {
-                LlmProvider.Gemini => Environment.GetEnvironmentVariable("GEMINI_API_KEY"),
-                LlmProvider.OpenAi => Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
-                LlmProvider.Anthropic => Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ??
-                                         Environment.GetEnvironmentVariable("CLAUDE_API_KEY"),
-                _ => null
-            };
-
-        if (string.IsNullOrWhiteSpace(resolvedKey))
-        {
-            string envVarName = resolvedProvider switch
-            {
-                LlmProvider.Gemini => "GEMINI_API_KEY",
-                LlmProvider.OpenAi => "OPENAI_API_KEY",
-                LlmProvider.Anthropic => "ANTHROPIC_API_KEY",
-                _ => "API_KEY"
-            };
-            throw new InvalidOperationException($"API key is missing for {resolvedProvider}. Please set the {envVarName} environment variable or pass the key using the --ai-key parameter.");
-        }
-
-        return new LlmClient(resolvedProvider, resolvedKey, overrideModel);
+        return new LlmClient(resolvedProvider, overrideModel);
     }
 
     public async Task<string> AskAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        return provider switch
+        string cmd = provider switch
         {
-            LlmProvider.Gemini => await CallGeminiAsync(prompt, cancellationToken).ConfigureAwait(false),
-            LlmProvider.OpenAi => await CallOpenAiAsync(prompt, cancellationToken).ConfigureAwait(false),
-            LlmProvider.Anthropic => await CallAnthropicAsync(prompt, cancellationToken).ConfigureAwait(false),
+            LlmProvider.Antigravity => "agy",
+            LlmProvider.Claude => "claude",
+            LlmProvider.Copilot => "copilot",
+            LlmProvider.ChatGpt => "codex",
             _ => throw new NotImplementedException()
         };
-    }
 
-    private async Task<string> CallGeminiAsync(string prompt, CancellationToken cancellationToken)
-    {
-        string model = customModel ?? "gemini-2.5-flash";
-        string url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
-
-        // AOT-safe JSON creation without generic Add<T> methods
-        var part = new JsonObject { ["text"] = prompt };
-        var parts = new JsonArray
+        string args = provider switch
         {
-            (JsonNode)part
+            LlmProvider.Antigravity => "-p - --dangerously-skip-permissions",
+            LlmProvider.Claude => "-p - --permission-mode dontAsk --no-session-persistence",
+            LlmProvider.Copilot => "-p - --allow-all -s",
+            LlmProvider.ChatGpt => "exec - --ephemeral --skip-git-repo-check -a never -s read-only",
+            _ => throw new NotImplementedException()
         };
-        var content = new JsonObject { ["parts"] = parts };
-        var contents = new JsonArray
+
+        if (!string.IsNullOrWhiteSpace(customModel))
         {
-            (JsonNode)content
-        };
-        var requestNode = new JsonObject { ["contents"] = contents };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Content = new StringContent(requestNode.ToJsonString(), Encoding.UTF8, "application/json");
-
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException($"Gemini API error ({response.StatusCode}): {responseText}");
+            args += $" --model \"{customModel}\"";
         }
 
-        var doc = JsonNode.Parse(responseText);
-        var text = doc?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.GetValue<string>();
-
-        return text ?? throw new InvalidOperationException($"Failed to extract text from Gemini response. Response: {responseText}");
-    }
-
-    private async Task<string> CallOpenAiAsync(string prompt, CancellationToken cancellationToken)
-    {
-        string model = customModel ?? "gpt-4o-mini";
-        const string Url = "https://api.openai.com/v1/chat/completions";
-
-        // AOT-safe JSON creation
-        var message = new JsonObject { ["role"] = "user", ["content"] = prompt };
-        var messages = new JsonArray
+        // Standardize structuring instructions to ensure deterministic response shape from the local agent
+        string structuredPrompt = prompt;
+        if (!prompt.Contains("Output ONLY", StringComparison.OrdinalIgnoreCase))
         {
-            (JsonNode)message
-        };
-        var requestNode = new JsonObject
-        {
-            ["model"] = model,
-            ["messages"] = messages
-        };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, Url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = new StringContent(requestNode.ToJsonString(), Encoding.UTF8, "application/json");
-
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException($"OpenAI API error ({response.StatusCode}): {responseText}");
+            structuredPrompt += "\n\nIMPORTANT: You must output ONLY the raw requested structured response. Do not include any conversational prefix, suffix, explanation, or chat formatting. Return the raw data directly.";
         }
 
-        var doc = JsonNode.Parse(responseText);
-        var text = doc?["choices"]?[0]?["message"]?["content"]?.GetValue<string>();
-
-        return text ?? throw new InvalidOperationException($"Failed to extract text from OpenAI response. Response: {responseText}");
+        string rawResponse = await RunLocalCliAsync(cmd, args, structuredPrompt, cancellationToken).ConfigureAwait(false);
+        return ExtractStructuredContent(rawResponse);
     }
 
-    private async Task<string> CallAnthropicAsync(string prompt, CancellationToken cancellationToken)
+    private async Task<string> RunLocalCliAsync(string commandName, string arguments, string prompt, CancellationToken cancellationToken)
     {
-        string model = customModel ?? "claude-3-5-haiku-20241022";
-        const string Url = "https://api.anthropic.com/v1/messages";
+        string resolvedCommand = ResolveCommandPath(commandName);
 
-        // AOT-safe JSON creation
-        var message = new JsonObject { ["role"] = "user", ["content"] = prompt };
-        var messages = new JsonArray
+        using var process = new Process();
+        process.StartInfo = new ProcessStartInfo
         {
-            (JsonNode)message
-        };
-        var requestNode = new JsonObject
-        {
-            ["model"] = model,
-            ["max_tokens"] = 4000,
-            ["messages"] = messages
+            FileName = resolvedCommand,
+            Arguments = arguments,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, Url);
-        request.Headers.Add("x-api-key", apiKey);
-        request.Headers.Add("anthropic-version", "2023-06-01");
-        request.Content = new StringContent(requestNode.ToJsonString(), Encoding.UTF8, "application/json");
+        var outputBuilder = new StringBuilder();
+        var errorBuilder = new StringBuilder();
 
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        using var outputWaitHandle = new SemaphoreSlim(0);
+        using var errorWaitHandle = new SemaphoreSlim(0);
 
-        if (!response.IsSuccessStatusCode)
+        process.OutputDataReceived += (sender, e) =>
         {
-            throw new HttpRequestException($"Anthropic API error ({response.StatusCode}): {responseText}");
+            if (e.Data == null)
+            {
+                outputWaitHandle.Release();
+            }
+            else
+            {
+                outputBuilder.AppendLine(e.Data);
+            }
+        };
+
+        process.ErrorDataReceived += (sender, e) =>
+        {
+            if (e.Data == null)
+            {
+                errorWaitHandle.Release();
+            }
+            else
+            {
+                errorBuilder.AppendLine(e.Data);
+            }
+        };
+
+        try
+        {
+            if (!process.Start())
+            {
+                throw new InvalidOperationException($"Failed to start local AI CLI process for {commandName}.");
+            }
+
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            // Set up cancellation token registration to kill process tree on cancellation
+            using var registration = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                    // Ignore errors during cancellation cleanup
+                }
+            });
+
+            // Write the prompt to the stdin of the process
+            try
+            {
+                await process.StandardInput.WriteAsync(prompt).ConfigureAwait(false);
+                await process.StandardInput.FlushAsync().ConfigureAwait(false);
+                process.StandardInput.Close();
+            }
+            catch (Exception ex)
+            {
+                errorBuilder.AppendLine($"[StdIn Write Error] {ex.Message}");
+            }
+
+            // Set a hard timeout of 3 minutes per invocation
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromMinutes(3));
+
+            try
+            {
+                await process.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw; // Cancelled by user
+                }
+                throw new TimeoutException($"The local AI CLI process for {commandName} timed out (limit: 3 minutes).");
+            }
+
+            // Wait briefly for stdout/stderr to drain completely
+            await Task.WhenAll(outputWaitHandle.WaitAsync(TimeSpan.FromSeconds(5)), errorWaitHandle.WaitAsync(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"Local AI CLI '{commandName}' exited with code {process.ExitCode}.\nError: {errorBuilder}");
+            }
+
+            return outputBuilder.ToString().Trim();
+        }
+        finally
+        {
+            // Safeguard: explicitly kill the process and its tree if it is still running
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+                // Ignore errors on cleanup
+            }
+        }
+    }
+
+    private static bool IsCommandAvailable(string command)
+    {
+        var pathEnv = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(pathEnv)) return false;
+
+        var extensions = new[] { "", ".exe", ".cmd", ".bat", ".lnk" };
+        var paths = pathEnv.Split(Path.PathSeparator);
+        foreach (var path in paths)
+        {
+            try
+            {
+                foreach (var ext in extensions)
+                {
+                    var fullPath = Path.Combine(path.Trim(), command + ext);
+                    if (File.Exists(fullPath)) return true;
+                }
+            }
+            catch
+            {
+                // Skip invalid paths
+            }
+        }
+        return false;
+    }
+
+    private static string ResolveCommandPath(string command)
+    {
+        if (IsCommandAvailable(command))
+        {
+            return command;
         }
 
-        var doc = JsonNode.Parse(responseText);
-        var text = doc?["content"]?[0]?["text"]?.GetValue<string>();
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-        return text ?? throw new InvalidOperationException($"Failed to extract text from Anthropic response. Response: {responseText}");
+        var candidatePaths = new List<string>();
+
+        if (command.Equals("agy", StringComparison.OrdinalIgnoreCase))
+        {
+            candidatePaths.Add(Path.Combine(localAppData, "agy", "bin", "agy.exe"));
+        }
+        else if (command.Equals("claude", StringComparison.OrdinalIgnoreCase))
+        {
+            candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "claude.exe"));
+        }
+        else if (command.Equals("copilot", StringComparison.OrdinalIgnoreCase))
+        {
+            candidatePaths.Add(Path.Combine(localAppData, "Microsoft", "WindowsApps", "copilot.exe"));
+        }
+        else if (command.Equals("codex", StringComparison.OrdinalIgnoreCase))
+        {
+            candidatePaths.Add(Path.Combine(localAppData, "Programs", "codex.exe"));
+            candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "codex.exe"));
+        }
+
+        foreach (var path in candidatePaths)
+        {
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return command;
+    }
+
+    private static string ExtractStructuredContent(string rawOutput)
+    {
+        if (string.IsNullOrWhiteSpace(rawOutput)) return string.Empty;
+
+        string trimmed = rawOutput.Trim();
+
+        if (trimmed.StartsWith("```"))
+        {
+            int firstNewLine = trimmed.IndexOf('\n');
+            if (firstNewLine >= 0)
+            {
+                int lastBlock = trimmed.LastIndexOf("```");
+                if (lastBlock > firstNewLine)
+                {
+                    return trimmed.Substring(firstNewLine + 1, lastBlock - firstNewLine - 1).Trim();
+                }
+            }
+        }
+
+        return trimmed;
     }
 }

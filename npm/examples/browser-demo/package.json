@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc -b && vite build && node copy-framework.js",
-    "preview": "vite preview"
+    "dev": "vp",
+    "build": "vue-tsc -b && vp build && node copy-framework.js",
+    "preview": "vp preview"
   },
   "dependencies": {
     "vue": "^3.6.0-alpha.7",
@@ -17,7 +17,7 @@
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1",
+    "vite-plus": "^0.2.2",
     "vue-tsc": "^3.3.5"
   }
 }

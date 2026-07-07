@@ -49,10 +49,19 @@ This will automatically detect your operating system and architecture, download 
 
 ### Option 4: WinGet (Windows)
 
-On Windows, you can install the portable AOT-compiled executable via WinGet (pending community repository merge):
+On Windows, you can install the portable AOT-compiled executable via WinGet:
 
 ```bash
 winget install KoalaFacts.HeroParser
+```
+
+### Option 5: Scoop (Windows)
+
+Alternatively, you can install the binary using Scoop by adding our custom bucket:
+
+```bash
+scoop bucket add heroparser https://github.com/KoalaFacts/scoop-heroparser.git
+scoop install heroparser/heroparser
 ```
 
 

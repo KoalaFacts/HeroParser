@@ -60,9 +60,15 @@ Install the native binary without Homebrew:
 curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.sh | sh
 ```
 
-On Windows, you can install via WinGet (pending registry merge):
+On Windows, you can install via WinGet:
 ```bash
 winget install KoalaFacts.HeroParser
+```
+
+Or via Scoop:
+```bash
+scoop bucket add heroparser https://github.com/KoalaFacts/scoop-heroparser.git
+scoop install heroparser/heroparser
 ```
 
 

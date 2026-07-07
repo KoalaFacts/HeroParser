@@ -161,6 +161,8 @@ const runLlmRepair = () => {
     repairOutput.value = `Repair Error: ${err.message}`
   }
 }
+const faviconUrl = './favicon.svg'
+const iconsUrl = './icons.svg'
 </script>
 
 <template>
@@ -171,8 +173,22 @@ const runLlmRepair = () => {
   </div>
 
   <div class="container">
+    <div style="display: flex; justify-content: flex-end; gap: 1.5rem; margin-bottom: 1.5rem; font-size: 0.95rem;">
+      <a href="https://github.com/KoalaFacts/HeroParser" target="_blank" style="display: flex; align-items: center; gap: 0.4rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">
+        <svg style="width: 18px; height: 18px; fill: currentColor;"><use :href="`${iconsUrl}#github-icon`"></use></svg>
+        GitHub
+      </a>
+      <a href="https://github.com/KoalaFacts/HeroParser#readme" target="_blank" style="display: flex; align-items: center; gap: 0.4rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">
+        <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor;"><use :href="`${iconsUrl}#documentation-icon`"></use></svg>
+        Documentation
+      </a>
+    </div>
+
     <header>
-      <h1>HeroParser WASM</h1>
+      <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 0.5rem;">
+        <img :src="faviconUrl" alt="HeroParser Logo" style="width: 48px; height: 48px;" />
+        <h1 style="margin: 0;">HeroParser WASM</h1>
+      </div>
       <p class="tagline">High-performance, zero-allocation C# tabular parser running at native speed directly inside a browser.</p>
     </header>
 

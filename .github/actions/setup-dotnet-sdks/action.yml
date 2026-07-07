@@ -17,3 +17,7 @@ runs:
         dotnet-version: ${{ inputs.dotnet-version }}
         cache: ${{ inputs.cache }}
         cache-dependency-path: '**/*.csproj'
+
+    - name: Install WebAssembly workload
+      run: dotnet workload install wasm-tools
+      shell: bash

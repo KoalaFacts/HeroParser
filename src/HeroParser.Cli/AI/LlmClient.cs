@@ -15,7 +15,8 @@ internal enum LlmProvider
     OpenAi,
     Anthropic,
     Microsoft,
-    GitHub
+    GitHub,
+    Ollama
 }
 
 internal sealed class LlmClient
@@ -43,7 +44,8 @@ internal sealed class LlmClient
                 "anthropic" or "claude" => LlmProvider.Anthropic,
                 "microsoft" or "copilot" => LlmProvider.Microsoft,
                 "github" => LlmProvider.GitHub,
-                _ => throw new ArgumentException($"Unknown AI provider: {overrideProvider}. Valid options: google, openai, anthropic, microsoft, github")
+                "ollama" => LlmProvider.Ollama,
+                _ => throw new ArgumentException($"Unknown AI provider: {overrideProvider}. Valid options: google, openai, anthropic, microsoft, github, ollama")
             };
         }
         else
@@ -59,12 +61,13 @@ internal sealed class LlmClient
                     "anthropic" or "claude" => LlmProvider.Anthropic,
                     "microsoft" or "copilot" => LlmProvider.Microsoft,
                     "github" => LlmProvider.GitHub,
+                    "ollama" => LlmProvider.Ollama,
                     _ => resolvedProvider
                 };
             }
             else
             {
-                // Auto detect by checking command availability in order: agy -> claude -> copilot -> codex -> openai
+                // Auto detect by checking command availability in order: agy -> claude -> copilot -> codex -> openai -> ollama
                 if (IsCommandAvailable("agy"))
                     resolvedProvider = LlmProvider.Google;
                 else if (IsCommandAvailable("claude"))
@@ -73,6 +76,8 @@ internal sealed class LlmClient
                     resolvedProvider = LlmProvider.Microsoft;
                 else if (IsCommandAvailable("codex") || IsCommandAvailable("openai"))
                     resolvedProvider = LlmProvider.OpenAi;
+                else if (IsCommandAvailable("ollama"))
+                    resolvedProvider = LlmProvider.Ollama;
             }
         }
 
@@ -115,11 +120,17 @@ internal sealed class LlmClient
                 args = "-p - --allow-all -s";
                 break;
 
+            case LlmProvider.Ollama:
+                cmd = "ollama";
+                var ollamaModel = !string.IsNullOrWhiteSpace(customModel) ? customModel : "qwen3.5:latest";
+                args = $"run {ollamaModel}";
+                break;
+
             default:
                 throw new NotImplementedException();
         }
 
-        if (!string.IsNullOrWhiteSpace(customModel))
+        if (!string.IsNullOrWhiteSpace(customModel) && provider != LlmProvider.Ollama)
         {
             args += $" --model \"{customModel}\"";
         }
@@ -336,6 +347,10 @@ internal sealed class LlmClient
         {
             candidatePaths.Add(Path.Combine(localAppData, "Programs", "openai.exe"));
             candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "openai.exe"));
+        }
+        else if (command.Equals("ollama", StringComparison.OrdinalIgnoreCase))
+        {
+            candidatePaths.Add(Path.Combine(localAppData, "Programs", "Ollama", "ollama.exe"));
         }
 
         foreach (var path in candidatePaths)

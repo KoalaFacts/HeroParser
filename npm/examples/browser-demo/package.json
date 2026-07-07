@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "vue": "^3.6.0-beta.17",
-    "heroparser": "file:../../packages/heroparser"
+    "heroparser": "file:../../packages/heroparser",
+    "@huggingface/transformers": "^3.0.2"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

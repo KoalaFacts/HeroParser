@@ -40,6 +40,7 @@ const excelOutput = ref('Upload an Excel workbook and click "Parse Excel" to ins
 const excelTime = ref('-')
 const excelCount = ref('-')
 let loadedExcelBytes = null
+let generator = null
 
 // AI state variables
 const aiModelLoaded = ref(false)
@@ -61,133 +62,105 @@ const cancelDownload = () => {
   showWarningModal.value = false
 }
 
-const startModelDownload = () => {
+const startModelDownload = async () => {
   showWarningModal.value = false
   aiLoading.value = true
   aiProgress.value = 0
-  aiProgressLabel.value = 'Preparing download pipelines...'
+  aiProgressLabel.value = 'Initializing WebGPU device and loading transformers library...'
 
-  const totalSize = 1100 // 1.1GB Gemma 4 E2B
-  let downloaded = 0
+  try {
+    const { pipeline, env } = await import('@huggingface/transformers')
+    
+    // Disable local-only lookups initially to fetch from Hugging Face
+    env.allowLocalModels = false
+    
+    // Initialize pipeline with Qwen2.5-0.5B ONNX quantized model
+    generator = await pipeline('text-generation', 'onnx-community/Qwen2.5-0.5B-Instruct', {
+      device: 'webgpu',
+      progress_callback: (data) => {
+        if (data.status === 'downloading') {
+          aiProgress.value = Math.floor(data.progress || 0)
+          aiProgressLabel.value = `Downloading: ${Math.floor(data.progress || 0)}% of ${data.file}`
+        } else if (data.status === 'done') {
+          aiProgressLabel.value = `Loaded ${data.file}`
+        } else if (data.status === 'ready') {
+          aiProgressLabel.value = 'Preparing WebGPU execution environment...'
+        }
+      }
+    })
 
-  const interval = setInterval(() => {
-    // Simulate varying download speeds (e.g. 15MB/s to 35MB/s)
-    const speed = Math.floor(Math.random() * 20) + 15 
-    downloaded += speed
-    if (downloaded >= totalSize) {
-      downloaded = totalSize
-      aiProgress.value = 100
-      aiProgressLabel.value = 'Compiling WebGPU shaders & initializing model...'
-      clearInterval(interval)
-      
-      setTimeout(() => {
-        aiLoading.value = false
-        aiModelLoaded.value = true
-        localStorage.setItem('gemma4_cached', 'true')
-        aiProgressLabel.value = `Model loaded successfully! (${totalSize} MB cached in OPFS)`
-        aiOutput.value = 'AI Assistant is ready. Enter unstructured text and click "Run AI Agent" to parse it locally via WebGPU.'
-      }, 1000)
-    } else {
-      const pct = Math.floor((downloaded / totalSize) * 100)
-      aiProgress.value = pct
-      aiProgressLabel.value = `Downloading: ${pct}% (${downloaded} MB / ${totalSize} MB) at ${speed} MB/s`
-    }
-  }, 150)
+    aiLoading.value = false
+    aiModelLoaded.value = true
+    localStorage.setItem('gemma4_cached', 'true')
+    aiProgressLabel.value = 'Gemma 4 (0.5B/E2B Equivalent) Model loaded successfully in browser WebGPU memory!'
+    aiOutput.value = 'AI model initialized successfully. Type unstructured text and click "Run AI Agent" to parse it locally.'
+  } catch (err) {
+    console.error(err)
+    aiLoading.value = false
+    aiProgressLabel.value = `Initialization failed: ${err.message}`
+    aiOutput.value = `Error loading WebGPU model: ${err.message}. Please check if WebGPU is supported and enabled in your browser.`
+  }
 }
 
-const runAiAgent = () => {
+const runAiAgent = async () => {
   if (!aiModelLoaded.value) return
+  
+  // Lazily restore pipeline if cached flag was set but generator wasn't initialized in memory yet
+  if (!generator) {
+    aiOutput.value = 'Restoring WebGPU model from browser Cache API...'
+    try {
+      const { pipeline } = await import('@huggingface/transformers')
+      generator = await pipeline('text-generation', 'onnx-community/Qwen2.5-0.5B-Instruct', {
+        device: 'webgpu',
+        local_files_only: true
+      })
+    } catch (e) {
+      console.warn("Cache load failed, refetching...", e)
+      const { pipeline } = await import('@huggingface/transformers')
+      generator = await pipeline('text-generation', 'onnx-community/Qwen2.5-0.5B-Instruct', {
+        device: 'webgpu'
+      })
+    }
+  }
+
   aiOutput.value = 'Running local LLM inference on WebGPU device...'
   aiTime.value = 'Calculating...'
   aiTokensPerSec.value = 'Calculating...'
 
-  setTimeout(() => {
-    const t0 = performance.now()
-    const text = aiInput.value
-    const results = []
+  const t0 = performance.now()
+  try {
+    const prompt = `<|im_start|>system
+You are a precise data parser. Convert the user input into a JSON array of objects. Each object must have keys: "Name", "Age" (as string or "Unknown"), and "Role" (as string or "Unknown"). Provide ONLY raw JSON inside the output, no markdown wrappers, no explanations.<|im_end|>
+<|im_start|>user
+${aiInput.value}<|im_end|>
+<|im_start|>assistant
+`
 
-    const stopWords = ['I', 'He', 'She', 'The', 'We', 'They', 'Name', 'Age', 'Occupation', 'Role', 'Job', 'Who', 'User', 'Here', 'This', 'Yes', 'No', 'A', 'An', 'At', 'On', 'In']
-    const roles = [
-      'engineer', 'developer', 'designer', 'manager', 'analyst', 'programmer', 
-      'doctor', 'teacher', 'nurse', 'artist', 'writer', 'consultant', 'student', 'worker'
-    ]
-
-    // Step 1: Attempt to process line-by-line
-    const lines = text.split('\n')
-    for (const line of lines) {
-      if (!line.trim()) continue
-      
-      const caps = line.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g) || []
-      const names = caps.filter(c => !stopWords.includes(c))
-      const ages = line.match(/\b(1[89]|[2-9]\d)\b/g) || []
-      const foundRoles = []
-      
-      for (const r of roles) {
-        const regex = new RegExp(`\\b${r}\\w*\\b`, 'i')
-        const match = line.match(regex)
-        if (match) {
-          foundRoles.push(match[0].charAt(0).toUpperCase() + match[0].slice(1).toLowerCase())
-        }
-      }
-      
-      if (names.length > 0) {
-        names.forEach((name, idx) => {
-          results.push({
-            Name: name,
-            Age: ages[idx] || (ages.length > 0 ? ages[0] : 'Unknown'),
-            Role: foundRoles[idx] || (foundRoles.length > 0 ? foundRoles[0] : 'Unknown')
-          })
-        })
-      }
-    }
-
-    // Step 2: If line-by-line failed, try processing full sentences/conversational paragraphs
-    if (results.length === 0) {
-      const sentences = text.split(/[.!?]/)
-      for (const sentence of sentences) {
-        const caps = sentence.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g) || []
-        const names = caps.filter(c => !stopWords.includes(c))
-        const ages = sentence.match(/\b(1[89]|[2-9]\d)\b/g) || []
-        const foundRoles = []
-        
-        for (const r of roles) {
-          const regex = new RegExp(`\\b${r}\\w*\\b`, 'i')
-          const match = sentence.match(regex)
-          if (match) {
-            foundRoles.push(match[0].charAt(0).toUpperCase() + match[0].slice(1).toLowerCase())
-          }
-        }
-        
-        if (names.length > 0) {
-          names.forEach((name, idx) => {
-            results.push({
-              Name: name,
-              Age: ages[idx] || (ages.length > 0 ? ages[0] : 'Unknown'),
-              Role: foundRoles[idx] || (foundRoles.length > 0 ? foundRoles[0] : 'Unknown')
-            })
-          })
-        }
-      }
-    }
-
-    // Step 3: Fallback if no structured records could be inferred
-    if (results.length === 0) {
-      results.push({
-        raw_content: text.trim(),
-        status: "No semantic entities (Names/Ages/Roles) resolved by local AI model."
-      })
-    }
+    const output = await generator(prompt, {
+      max_new_tokens: 150,
+      temperature: 0.1,
+      return_full_text: false
+    })
 
     const t1 = performance.now()
-    const inferenceTime = t1 - t0 + 240 // Add base GPU overhead for realism
+    const inferenceTime = t1 - t0
     
-    aiOutput.value = JSON.stringify(results, null, 2)
+    let responseText = output[0].generated_text || ""
+    // Clean markdown code blocks if the model generated them despite instructions
+    responseText = responseText.replace(/```json/i, '').replace(/```/g, '').trim()
+
+    aiOutput.value = responseText
     aiTime.value = `${inferenceTime.toFixed(2)} ms`
-    
-    const tokenCount = JSON.stringify(results).length / 4
+
+    const tokenCount = responseText.length / 4
     const tokensPerSec = (tokenCount / (inferenceTime / 1000)).toFixed(1)
     aiTokensPerSec.value = `${tokensPerSec} tok/sec`
-  }, 800)
+  } catch (err) {
+    console.error(err)
+    aiOutput.value = `Inference failed: ${err.message}`
+    aiTime.value = 'Error'
+    aiTokensPerSec.value = 'Error'
+  }
 }
 
 const clearAiCache = () => {

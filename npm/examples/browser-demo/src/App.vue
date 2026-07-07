@@ -74,15 +74,13 @@ const startModelDownload = async () => {
     // Disable local-only lookups initially to fetch from Hugging Face
     env.allowLocalModels = false
     
-    // Initialize pipeline with Qwen2.5-0.5B ONNX quantized model
-    generator = await pipeline('text-generation', 'onnx-community/Qwen2.5-0.5B-Instruct', {
+    // Initialize pipeline with Gemma 4 E2B ONNX model
+    generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
       device: 'webgpu',
       progress_callback: (data) => {
-        if (data.status === 'downloading') {
+        if (data.status === 'progress_total') {
           aiProgress.value = Math.floor(data.progress || 0)
-          aiProgressLabel.value = `Downloading: ${Math.floor(data.progress || 0)}% of ${data.file}`
-        } else if (data.status === 'done') {
-          aiProgressLabel.value = `Loaded ${data.file}`
+          aiProgressLabel.value = `Downloading Gemma 4 weights: ${Math.floor(data.progress || 0)}%`
         } else if (data.status === 'ready') {
           aiProgressLabel.value = 'Preparing WebGPU execution environment...'
         }
@@ -92,7 +90,7 @@ const startModelDownload = async () => {
     aiLoading.value = false
     aiModelLoaded.value = true
     localStorage.setItem('gemma4_cached', 'true')
-    aiProgressLabel.value = 'Gemma 4 (0.5B/E2B Equivalent) Model loaded successfully in browser WebGPU memory!'
+    aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in browser WebGPU memory!'
     aiOutput.value = 'AI model initialized successfully. Type unstructured text and click "Run AI Agent" to parse it locally.'
   } catch (err) {
     console.error(err)
@@ -110,14 +108,14 @@ const runAiAgent = async () => {
     aiOutput.value = 'Restoring WebGPU model from browser Cache API...'
     try {
       const { pipeline } = await import('@huggingface/transformers')
-      generator = await pipeline('text-generation', 'onnx-community/Qwen2.5-0.5B-Instruct', {
+      generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
         device: 'webgpu',
         local_files_only: true
       })
     } catch (e) {
       console.warn("Cache load failed, refetching...", e)
       const { pipeline } = await import('@huggingface/transformers')
-      generator = await pipeline('text-generation', 'onnx-community/Qwen2.5-0.5B-Instruct', {
+      generator = await pipeline('text-generation', 'onnx-community/gemma-4-E2B-it-ONNX', {
         device: 'webgpu'
       })
     }
@@ -129,14 +127,12 @@ const runAiAgent = async () => {
 
   const t0 = performance.now()
   try {
-    const prompt = `<|im_start|>system
-You are a precise data parser. Convert the user input into a JSON array of objects. Each object must have keys: "Name", "Age" (as string or "Unknown"), and "Role" (as string or "Unknown"). Provide ONLY raw JSON inside the output, no markdown wrappers, no explanations.<|im_end|>
-<|im_start|>user
-${aiInput.value}<|im_end|>
-<|im_start|>assistant
-`
+    const messages = [
+      { role: 'system', content: 'You are a precise data parser. Convert the user input into a JSON array of objects. Each object must have keys: "Name", "Age" (as string or "Unknown"), and "Role" (as string or "Unknown"). Provide ONLY raw JSON inside the output, no markdown wrappers, no explanations.' },
+      { role: 'user', content: aiInput.value }
+    ]
 
-    const output = await generator(prompt, {
+    const output = await generator(messages, {
       max_new_tokens: 150,
       temperature: 0.1,
       return_full_text: false

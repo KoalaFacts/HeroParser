@@ -108,9 +108,9 @@ const runAiAgent = () => {
     const results = []
     
     for (const line of lines) {
-      const nameMatch = line.match(/Name:\s*([^,]+)/i)
+      const nameMatch = line.match(/Name:\s*([^,;\t|]+)/i)
       const ageMatch = line.match(/Age:\s*(\d+)/i)
-      const occMatch = line.match(/Occupation:\s*([^,]+)/i) || line.match(/Job:\s*([^,]+)/i)
+      const occMatch = line.match(/Occupation:\s*([^,;\t|]+)/i) || line.match(/Job:\s*([^,;\t|]+)/i)
       
       if (nameMatch) {
         results.push({

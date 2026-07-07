@@ -223,16 +223,7 @@ public partial class HeroParserWasm
         return result.ToString();
     }
 
-    /// <summary>
-    /// Cleans and repairs incomplete, truncated, or markdown-wrapped tabular LLM output.
-    /// </summary>
-    /// <param name="rawText">The raw conversational text input from the LLM.</param>
-    /// <returns>A cleaned CSV text representation.</returns>
-    [JSExport]
-    public static string RepairTabularOutput(string rawText)
-    {
-        return LlmRepair.RepairText(rawText);
-    }
+
 
     /// <summary>
     /// Serializes a list of dictionaries to CSV format and returns it as a string.

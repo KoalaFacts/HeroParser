@@ -126,9 +126,6 @@ Reads Excel spreadsheet workbook byte arrays and returns parsed rows.
 ### `detectCsvDelimiter(sampleRows: string): string`
 Analyzes a sample text chunk to identify the most confident CSV separator character.
 
-### `repairTabularOutput(rawText: string): string`
-Cleans up conversational and malformed LLM responses to extract valid raw CSV boundaries.
-
 ### `writeCsv(records: any[], options?: WasmCsvOptions): string`
 Serializes a list of object records back to CSV format.
 
@@ -137,13 +134,6 @@ Serializes a list of object records back to fixed-width format.
 
 ### `writeExcel(records: any[], sheetName?: string, hasHeader?: boolean): Uint8Array`
 Serializes a list of object records back to Excel (.xlsx) binary bytes.
-
-### Backward Compatibility Aliases
-The package also exports legacy aliases for backward compatibility:
-* `parseCsv` (alias for `readCsv`)
-* `parseFixedWidth` (alias for `readFixedWidth`)
-* `parseExcel` (alias for `readExcel`)
-
 ---
 
 ## License

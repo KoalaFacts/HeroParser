@@ -58,10 +58,6 @@ export function detectCsvDelimiter(sampleRows) {
     return exports.HeroParser.Wasm.HeroParserWasm.DetectCsvDelimiter(sampleRows);
 }
 
-export function repairTabularOutput(rawText) {
-    ensureInitialized();
-    return exports.HeroParser.Wasm.HeroParserWasm.RepairTabularOutput(rawText);
-}
 
 export function writeCsv(records, options = {}) {
     ensureInitialized();
@@ -77,8 +73,3 @@ export function writeExcel(records, sheetName = "Sheet1", hasHeader = true) {
     ensureInitialized();
     return exports.HeroParser.Wasm.HeroParserWasm.WriteExcel(JSON.stringify(records), sheetName, hasHeader);
 }
-
-// Backward compatibility aliases
-export const parseCsv = readCsv;
-export const parseFixedWidth = readFixedWidth;
-export const parseExcel = readExcel;

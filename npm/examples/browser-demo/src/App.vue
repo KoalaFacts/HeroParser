@@ -1,6 +1,6 @@
 <script setup vapor>
 import { ref, onMounted } from 'vue'
-import { init, parseCsv, detectCsvDelimiter, repairTabularOutput, parseFixedWidth, parseExcel } from 'heroparser'
+import { init, readCsv, detectCsvDelimiter, readFixedWidth, readExcel } from 'heroparser'
 
 // Bootstrap state
 const initialized = ref(false)
@@ -41,10 +41,6 @@ const excelTime = ref('-')
 const excelCount = ref('-')
 let loadedExcelBytes = null
 
-// LLM Repair state
-const repairInput = ref("Sure! Here is your CSV data:\n\n```csv\nName,Age,Role\nAlice,30,Developer\nBob,25,De")
-const repairOutput = ref('Click "Repair Tabular Output" to run cleanup...')
-
 onMounted(async () => {
   try {
     console.log("Bootstrapping WASM inside Vue Vapor SFC...")
@@ -61,7 +57,7 @@ onMounted(async () => {
 const runCsvParse = () => {
   const t0 = performance.now()
   try {
-    const result = parseCsv(csvInput.value, { 
+    const result = readCsv(csvInput.value, { 
       delimiter: csvDelimiter.value || ",", 
       hasHeader: csvHasHeader.value 
     })
@@ -98,7 +94,7 @@ const runFixedWidthParse = () => {
 
   const t0 = performance.now()
   try {
-    const result = parseFixedWidth(fwInput.value, specs)
+    const result = readFixedWidth(fwInput.value, specs)
     const t1 = performance.now()
     fwOutput.value = JSON.stringify(result, null, 2)
     fwTime.value = `${(t1 - t0).toFixed(2)} ms`
@@ -140,7 +136,7 @@ const runExcelParse = () => {
 
   const t0 = performance.now()
   try {
-    const result = parseExcel(loadedExcelBytes, excelSheetName.value || "", excelHasHeader.value)
+    const result = readExcel(loadedExcelBytes, excelSheetName.value || "", excelHasHeader.value)
     const t1 = performance.now()
     excelOutput.value = JSON.stringify(result, null, 2)
     excelTime.value = `${(t1 - t0).toFixed(2)} ms`
@@ -148,17 +144,6 @@ const runExcelParse = () => {
   } catch (err) {
     console.error(err)
     excelError.value = `WASM Parsing Error: ${err.message}`
-  }
-}
-
-const runLlmRepair = () => {
-  const t0 = performance.now()
-  try {
-    const repaired = repairTabularOutput(repairInput.value)
-    const t1 = performance.now()
-    repairOutput.value = repaired
-  } catch (err) {
-    repairOutput.value = `Repair Error: ${err.message}`
   }
 }
 const faviconUrl = './favicon.svg'
@@ -197,7 +182,6 @@ const iconsUrl = './icons.svg'
       <button :class="['tab-btn', { active: activeTab === 'csv' }]" @click="switchTab('csv')">CSV Parser</button>
       <button :class="['tab-btn', { active: activeTab === 'fixedwidth' }]" @click="switchTab('fixedwidth')">Fixed-Width</button>
       <button :class="['tab-btn', { active: activeTab === 'excel' }]" @click="switchTab('excel')">Excel (.xlsx)</button>
-      <button :class="['tab-btn', { active: activeTab === 'repair' }]" @click="switchTab('repair')">LLM Repair</button>
     </div>
 
     <!-- CSV Content -->
@@ -296,22 +280,5 @@ const iconsUrl = './icons.svg'
       </div>
     </div>
 
-    <!-- LLM Repair Content -->
-    <div v-if="activeTab === 'repair'" id="tab-repair" class="tab-content active">
-      <div class="panel">
-        <div class="panel-title">LLM Output Input</div>
-        <div class="form-group">
-          <label for="repair-input">Cut-off or Conversational CSV</label>
-          <textarea id="repair-input" v-model="repairInput" placeholder="CSV data..."></textarea>
-        </div>
-        <button class="btn" @click="runLlmRepair">Repair Tabular Output</button>
-      </div>
-      <div class="panel">
-        <div class="panel-title">Clean CSV Output</div>
-        <div class="output-container">
-          <pre id="repair-output" class="output-pre">{{ repairOutput }}</pre>
-        </div>
-      </div>
-    </div>
   </div>
 </template>

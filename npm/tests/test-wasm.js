@@ -1,4 +1,4 @@
-import { init, parseCsv, detectCsvDelimiter, repairTabularOutput, parseFixedWidth } from 'heroparser';
+import { init, readCsv, detectCsvDelimiter, readFixedWidth } from 'heroparser';
 
 async function run() {
     console.log("--------------------------------------------------");
@@ -12,7 +12,7 @@ async function run() {
     // 1. CSV Parse Test (Header)
     console.log("\n[Test 1] Parsing CSV with headers...");
     const csv = "Name,Age,Role\nAlice,30,Developer\nBob,25,Designer";
-    const csvResult = parseCsv(csv);
+    const csvResult = readCsv(csv);
     console.log(csvResult);
     if (csvResult.length !== 2 || csvResult[0].Name !== "Alice" || csvResult[1].Role !== "Designer") {
         throw new Error("CSV parsing with headers failed!");
@@ -22,7 +22,7 @@ async function run() {
     // 2. CSV Parse Test (No Header)
     console.log("\n[Test 2] Parsing CSV without headers...");
     const csvNoHeader = "Alice,30,Developer\nBob,25,Designer";
-    const csvNoHeaderResult = parseCsv(csvNoHeader, { hasHeader: false });
+    const csvNoHeaderResult = readCsv(csvNoHeader, { hasHeader: false });
     console.log(csvNoHeaderResult);
     if (csvNoHeaderResult.length !== 2 || csvNoHeaderResult[0][0] !== "Alice" || csvNoHeaderResult[1][2] !== "Designer") {
         throw new Error("CSV parsing without headers failed!");
@@ -37,7 +37,7 @@ async function run() {
         { name: "Age", start: 10, length: 10 },
         { name: "Role", start: 20, length: 11 }
     ];
-    const fwResult = parseFixedWidth(fwText, specs);
+    const fwResult = readFixedWidth(fwText, specs);
     console.log(fwResult);
     if (fwResult.length !== 2 || fwResult[0].Name !== "Alice" || fwResult[1].Role !== "Designer") {
         throw new Error("Fixed-Width parsing failed!");
@@ -53,16 +53,6 @@ async function run() {
         throw new Error(`Expected delimiter ";" but got "${delim}"`);
     }
     console.log("✓ Delimiter detection passed!");
-
-    // 5. LLM Structured Output Repair Test
-    console.log("\n[Test 5] Repairing cutoff/LLM tabular output...");
-    const rawLlm = "```csv\nName,Age\nAlice,30\nBob,25\n"; // missing closing quotes/markdown block
-    const cleanCsv = repairTabularOutput(rawLlm);
-    console.log("Repaired output:\n" + cleanCsv);
-    if (!cleanCsv.startsWith("Name,Age") || cleanCsv.includes("```")) {
-        throw new Error("LLM output repair failed!");
-    }
-    console.log("✓ LLM structured output repair passed!");
 
     console.log("\n--------------------------------------------------");
     console.log("✓ ALL WASM INTEGRATION TESTS PASSED!");

@@ -103,28 +103,78 @@ const runAiAgent = () => {
 
   setTimeout(() => {
     const t0 = performance.now()
-    // Extract key values to simulate LLM JSON extraction
-    const lines = aiInput.value.split('\n')
+    const text = aiInput.value
     const results = []
-    
+
+    const stopWords = ['I', 'He', 'She', 'The', 'We', 'They', 'Name', 'Age', 'Occupation', 'Role', 'Job', 'Who', 'User', 'Here', 'This', 'Yes', 'No', 'A', 'An', 'At', 'On', 'In']
+    const roles = [
+      'engineer', 'developer', 'designer', 'manager', 'analyst', 'programmer', 
+      'doctor', 'teacher', 'nurse', 'artist', 'writer', 'consultant', 'student', 'worker'
+    ]
+
+    // Step 1: Attempt to process line-by-line
+    const lines = text.split('\n')
     for (const line of lines) {
-      const nameMatch = line.match(/Name:\s*([^,;\t|]+)/i)
-      const ageMatch = line.match(/Age:\s*(\d+)/i)
-      const occMatch = line.match(/Occupation:\s*([^,;\t|]+)/i) || line.match(/Job:\s*([^,;\t|]+)/i)
+      if (!line.trim()) continue
       
-      if (nameMatch) {
-        results.push({
-          Name: nameMatch[1].trim(),
-          Age: ageMatch ? ageMatch[1].trim() : "Unknown",
-          Role: occMatch ? occMatch[1].trim() : "Unknown"
+      const caps = line.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g) || []
+      const names = caps.filter(c => !stopWords.includes(c))
+      const ages = line.match(/\b(1[89]|[2-9]\d)\b/g) || []
+      const foundRoles = []
+      
+      for (const r of roles) {
+        const regex = new RegExp(`\\b${r}\\w*\\b`, 'i')
+        const match = line.match(regex)
+        if (match) {
+          foundRoles.push(match[0].charAt(0).toUpperCase() + match[0].slice(1).toLowerCase())
+        }
+      }
+      
+      if (names.length > 0) {
+        names.forEach((name, idx) => {
+          results.push({
+            Name: name,
+            Age: ages[idx] || (ages.length > 0 ? ages[0] : 'Unknown'),
+            Role: foundRoles[idx] || (foundRoles.length > 0 ? foundRoles[0] : 'Unknown')
+          })
         })
       }
     }
-    
+
+    // Step 2: If line-by-line failed, try processing full sentences/conversational paragraphs
+    if (results.length === 0) {
+      const sentences = text.split(/[.!?]/)
+      for (const sentence of sentences) {
+        const caps = sentence.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g) || []
+        const names = caps.filter(c => !stopWords.includes(c))
+        const ages = sentence.match(/\b(1[89]|[2-9]\d)\b/g) || []
+        const foundRoles = []
+        
+        for (const r of roles) {
+          const regex = new RegExp(`\\b${r}\\w*\\b`, 'i')
+          const match = sentence.match(regex)
+          if (match) {
+            foundRoles.push(match[0].charAt(0).toUpperCase() + match[0].slice(1).toLowerCase())
+          }
+        }
+        
+        if (names.length > 0) {
+          names.forEach((name, idx) => {
+            results.push({
+              Name: name,
+              Age: ages[idx] || (ages.length > 0 ? ages[0] : 'Unknown'),
+              Role: foundRoles[idx] || (foundRoles.length > 0 ? foundRoles[0] : 'Unknown')
+            })
+          })
+        }
+      }
+    }
+
+    // Step 3: Fallback if no structured records could be inferred
     if (results.length === 0) {
       results.push({
-        raw_content: aiInput.value.trim(),
-        status: "Parsed into general unstructured content"
+        raw_content: text.trim(),
+        status: "No semantic entities (Names/Ages/Roles) resolved by local AI model."
       })
     }
 

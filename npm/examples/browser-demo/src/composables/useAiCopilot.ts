@@ -2,6 +2,20 @@ import { ref } from 'vue'
 
 let generator: any = null
 
+// Real native fix: register the custom gemma4_text model type in the transformers.js class mappings
+const registerGemma4Text = (m: any) => {
+  if (m.AutoModel?.MODEL_CLASS_MAPPINGS) {
+    m.AutoModel.MODEL_CLASS_MAPPINGS[8]?.set('gemma4_text', 'Gemma4ForCausalLM')
+    m.AutoModel.MODEL_CLASS_MAPPINGS[13]?.set('gemma4_text', 'Gemma4ForConditionalGeneration')
+  }
+  if (m.AutoModelForCausalLM?.MODEL_CLASS_MAPPINGS) {
+    m.AutoModelForCausalLM.MODEL_CLASS_MAPPINGS[0]?.set('gemma4_text', 'Gemma4ForCausalLM')
+  }
+  if (m.AutoModelForImageTextToText?.MODEL_CLASS_MAPPINGS) {
+    m.AutoModelForImageTextToText.MODEL_CLASS_MAPPINGS[0]?.set('gemma4_text', 'Gemma4ForConditionalGeneration')
+  }
+}
+
 export function useAiCopilot() {
   const aiModelLoaded = ref(false)
   const aiLoading = ref(false)
@@ -30,7 +44,9 @@ export function useAiCopilot() {
     aiProgressLabel.value = 'Initializing device and loading transformers library...'
 
     try {
-      const { pipeline, AutoConfig } = await import('@huggingface/transformers')
+      const transformers = await import('@huggingface/transformers')
+      registerGemma4Text(transformers)
+      const { pipeline } = transformers
       
       const progress_callback = (data: any) => {
         if (data.status === 'progress_total') {
@@ -43,20 +59,11 @@ export function useAiCopilot() {
 
       const modelId = 'tss-deposium/gemma-4-E2B-text-only-onnx-int4'
 
-      aiProgressLabel.value = 'Loading model configuration...'
-      const config = await AutoConfig.from_pretrained(modelId, { force_download: true } as any)
-      if (!config) {
-        throw new Error('Failed to load model configuration from Hugging Face.')
-      }
-      // Override model_type to gemma4 so that transformers.js loads the correct native gemma4 architecture classes
-      config.model_type = 'gemma4'
-
       try {
         aiProgressLabel.value = 'Initializing WebGPU accelerator...'
         generator = await pipeline('text-generation', modelId, {
           device: 'webgpu',
           dtype: 'q4',
-          config,
           subfolder: 'onnx',
           model_file_name: 'decoder_model_merged',
           use_external_data_format: true,
@@ -69,7 +76,6 @@ export function useAiCopilot() {
         generator = await pipeline('text-generation', modelId, {
           device: 'wasm',
           dtype: 'q4',
-          config,
           subfolder: 'onnx',
           model_file_name: 'decoder_model_merged',
           use_external_data_format: true,
@@ -103,17 +109,13 @@ export function useAiCopilot() {
       
       const modelId = 'tss-deposium/gemma-4-E2B-text-only-onnx-int4'
       try {
-        const { pipeline, AutoConfig } = await import('@huggingface/transformers')
-        const config = await AutoConfig.from_pretrained(modelId, { local_files_only: true })
-        if (!config) {
-          throw new Error('Cached model configuration is missing.')
-        }
-        config.model_type = 'gemma4'
+        const transformers = await import('@huggingface/transformers')
+        registerGemma4Text(transformers)
+        const { pipeline } = transformers
         try {
           generator = await pipeline('text-generation', modelId, {
             device: 'webgpu',
             dtype: 'q4',
-            config,
             subfolder: 'onnx',
             model_file_name: 'decoder_model_merged',
             use_external_data_format: true,
@@ -124,7 +126,6 @@ export function useAiCopilot() {
           generator = await pipeline('text-generation', modelId, {
             device: 'wasm',
             dtype: 'q4',
-            config,
             subfolder: 'onnx',
             model_file_name: 'decoder_model_merged',
             use_external_data_format: true,

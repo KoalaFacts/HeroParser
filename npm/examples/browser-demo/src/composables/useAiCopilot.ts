@@ -44,7 +44,10 @@ export function useAiCopilot() {
       const modelId = 'tss-deposium/gemma-4-E2B-text-only-onnx-int4'
 
       aiProgressLabel.value = 'Loading model configuration...'
-      const config = await AutoConfig.from_pretrained(modelId)
+      const config = await AutoConfig.from_pretrained(modelId, { force_download: true } as any)
+      if (!config) {
+        throw new Error('Failed to load model configuration from Hugging Face.')
+      }
       // Override model_type to gemma4 so that transformers.js loads the correct native gemma4 architecture classes
       config.model_type = 'gemma4'
 
@@ -101,7 +104,10 @@ export function useAiCopilot() {
       const modelId = 'tss-deposium/gemma-4-E2B-text-only-onnx-int4'
       try {
         const { pipeline, AutoConfig } = await import('@huggingface/transformers')
-        const config = await AutoConfig.from_pretrained(modelId)
+        const config = await AutoConfig.from_pretrained(modelId, { local_files_only: true })
+        if (!config) {
+          throw new Error('Cached model configuration is missing.')
+        }
         config.model_type = 'gemma4'
         try {
           generator = await pipeline('text-generation', modelId, {

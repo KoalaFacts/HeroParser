@@ -78,7 +78,16 @@ const applyOrtPatch = (ortObj: any) => {
 
       if (isEmbedTokens) {
         console.log('[Routing] Routing embed_tokens session to WASM execution provider (CPU)...')
-        options.executionProviders = ['wasm']
+        // Clean session options specifically for WASM to prevent any WebGPU/GPU-specific configurations
+        // (like deviceId: "0" or gpuDeviceId: "0") from triggering parsing failures in the WASM engine.
+        const cleanOptions: any = {
+          executionProviders: ['wasm']
+        }
+        if (options) {
+          if (options.logSeverityLevel !== undefined) cleanOptions.logSeverityLevel = options.logSeverityLevel
+          if (options.logVerbosityLevel !== undefined) cleanOptions.logVerbosityLevel = options.logVerbosityLevel
+        }
+        options = cleanOptions
       } else {
         console.log('[Routing] Routing session to WebGPU execution provider...')
         options.executionProviders = ['webgpu']

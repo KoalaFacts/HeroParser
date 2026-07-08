@@ -14,6 +14,19 @@ const registerGemma4Text = (m: any) => {
   if (m.AutoModelForImageTextToText?.MODEL_CLASS_MAPPINGS) {
     m.AutoModelForImageTextToText.MODEL_CLASS_MAPPINGS[0]?.set('gemma4_text', 'Gemma4ForConditionalGeneration')
   }
+
+  // Intercept configuration loading to force textOnly = true natively
+  if (m.AutoConfig && !m.AutoConfig.patched) {
+    const originalFromPretrained = m.AutoConfig.from_pretrained
+    m.AutoConfig.from_pretrained = async function(modelId: string, options: any) {
+      const config = await originalFromPretrained.call(this, modelId, options)
+      if (config) {
+        config.architectures = ['Gemma4ForConditionalGeneration']
+      }
+      return config
+    }
+    m.AutoConfig.patched = true
+  }
 }
 
 export function useAiCopilot() {
@@ -65,7 +78,6 @@ export function useAiCopilot() {
           device: 'webgpu',
           dtype: 'q4',
           subfolder: 'onnx',
-          model_file_name: 'decoder_model_merged',
           use_external_data_format: true,
           progress_callback
         })
@@ -77,7 +89,6 @@ export function useAiCopilot() {
           device: 'wasm',
           dtype: 'q4',
           subfolder: 'onnx',
-          model_file_name: 'decoder_model_merged',
           use_external_data_format: true,
           progress_callback
         })
@@ -117,7 +128,6 @@ export function useAiCopilot() {
             device: 'webgpu',
             dtype: 'q4',
             subfolder: 'onnx',
-            model_file_name: 'decoder_model_merged',
             use_external_data_format: true,
             local_files_only: true
           })
@@ -127,7 +137,6 @@ export function useAiCopilot() {
             device: 'wasm',
             dtype: 'q4',
             subfolder: 'onnx',
-            model_file_name: 'decoder_model_merged',
             use_external_data_format: true,
             local_files_only: true
           })

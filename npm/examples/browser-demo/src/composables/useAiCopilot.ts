@@ -1,6 +1,21 @@
 import { ref } from 'vue'
 
 let generator: any = null
+ 
+// WebGPU buffer limit patch: Override GPUAdapter.prototype.requestDevice to query and request maximum buffer sizes
+if (typeof GPUAdapter !== 'undefined') {
+  const originalRequestDevice = GPUAdapter.prototype.requestDevice
+  GPUAdapter.prototype.requestDevice = function (descriptor: any) {
+    descriptor = descriptor || {}
+    const requiredLimits = descriptor.requiredLimits || {}
+    if (this.limits) {
+      requiredLimits.maxBufferSize = Math.min(this.limits.maxBufferSize || 256 * 1024 * 1024, 2147483648)
+      requiredLimits.maxStorageBufferBindingSize = Math.min(this.limits.maxStorageBufferBindingSize || 256 * 1024 * 1024, 2147483648)
+    }
+    descriptor.requiredLimits = requiredLimits
+    return originalRequestDevice.call(this, descriptor)
+  }
+}
 
 // Real native fix: register the custom gemma4_text model type in the transformers.js class mappings
 const registerGemma4Text = (m: any) => {
@@ -75,7 +90,7 @@ export function useAiCopilot() {
       try {
         aiProgressLabel.value = 'Initializing WebGPU accelerator...'
         generator = await pipeline('text-generation', modelId, {
-          device: { embed_tokens: 'wasm', decoder_model_merged: 'webgpu' },
+          device: 'webgpu',
           dtype: 'q4',
           subfolder: 'onnx',
           use_external_data_format: true,
@@ -125,7 +140,7 @@ export function useAiCopilot() {
         const { pipeline } = transformers
         try {
           generator = await pipeline('text-generation', modelId, {
-            device: { embed_tokens: 'wasm', decoder_model_merged: 'webgpu' },
+            device: 'webgpu',
             dtype: 'q4',
             subfolder: 'onnx',
             use_external_data_format: true,

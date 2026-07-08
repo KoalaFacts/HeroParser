@@ -48,8 +48,11 @@ export function useAiCopilot() {
         generator = await pipeline('text-generation', modelId, {
           device: 'webgpu',
           dtype: 'q4',
+          subfolder: 'onnx',
+          use_external_data_format: true,
+          textOnly: true,
           progress_callback
-        })
+        } as any)
         aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebGPU memory!'
       } catch (gpuError) {
         console.warn("WebGPU initialization failed. Falling back to WebAssembly (CPU)...", gpuError)
@@ -57,8 +60,11 @@ export function useAiCopilot() {
         generator = await pipeline('text-generation', modelId, {
           device: 'wasm',
           dtype: 'q4',
+          subfolder: 'onnx',
+          use_external_data_format: true,
+          textOnly: true,
           progress_callback
-        })
+        } as any)
         aiProgressLabel.value = 'Gemma 4 (E2B) Model loaded successfully in WebAssembly (CPU) memory!'
       }
 
@@ -92,15 +98,21 @@ export function useAiCopilot() {
           generator = await pipeline('text-generation', modelId, {
             device: 'webgpu',
             dtype: 'q4',
+            subfolder: 'onnx',
+            use_external_data_format: true,
+            textOnly: true,
             local_files_only: true
-          })
+          } as any)
         } catch (gpuErr) {
           console.warn("WebGPU restore failed, falling back to WebAssembly (CPU)...", gpuErr)
           generator = await pipeline('text-generation', modelId, {
             device: 'wasm',
             dtype: 'q4',
+            subfolder: 'onnx',
+            use_external_data_format: true,
+            textOnly: true,
             local_files_only: true
-          })
+          } as any)
         }
         aiProgressLabel.value = 'Model restored successfully!'
       } catch (e) {

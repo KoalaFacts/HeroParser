@@ -47,6 +47,67 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Session routing patch: Intercept global ORT InferenceSession creation to dynamically
+// load embed_tokens on CPU/WASM and decoder layers on WebGPU.
+const applyOrtPatch = (ortObj: any) => {
+  if (ortObj && ortObj.InferenceSession && !ortObj.InferenceSession.patched) {
+    const originalCreate = ortObj.InferenceSession.create
+    ortObj.InferenceSession.create = async function (modelData: any, options: any) {
+      options = options || {}
+      
+      let isEmbedTokens = false
+      if (modelData) {
+        try {
+          let bytes: Uint8Array | null = null
+          if (modelData instanceof Uint8Array) {
+            bytes = modelData.subarray(0, 4000)
+          } else if (modelData instanceof ArrayBuffer) {
+            bytes = new Uint8Array(modelData, 0, Math.min(modelData.byteLength, 4000))
+          }
+          if (bytes) {
+            const decoder = new TextDecoder('utf-8')
+            const text = decoder.decode(bytes)
+            if (text.includes('embed_tokens') || text.includes('GatherBlockQuantized') || text.includes('Gather_Quant')) {
+              isEmbedTokens = true
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse model bytes for session routing:', e)
+        }
+      }
+
+      if (isEmbedTokens) {
+        console.log('[Routing] Routing embed_tokens session to WASM execution provider (CPU)...')
+        options.executionProviders = ['wasm']
+      } else {
+        console.log('[Routing] Routing session to WebGPU execution provider...')
+        options.executionProviders = ['webgpu']
+      }
+      
+      return originalCreate.call(this, modelData, options)
+    }
+    ortObj.InferenceSession.patched = true
+    console.log('[Routing] ONNX Runtime InferenceSession successfully patched!')
+  }
+}
+
+if (typeof globalThis !== 'undefined') {
+  let currentOrt = (globalThis as any).ort
+  if (currentOrt) {
+    applyOrtPatch(currentOrt)
+  }
+  Object.defineProperty(globalThis, 'ort', {
+    get() {
+      return currentOrt
+    },
+    set(val) {
+      applyOrtPatch(val)
+      currentOrt = val
+    },
+    configurable: true
+  })
+}
+
 import { createVaporApp } from 'vue'
 import App from './App.vue'
 import './style.css'

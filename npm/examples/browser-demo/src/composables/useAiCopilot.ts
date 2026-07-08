@@ -47,7 +47,10 @@ export function useAiCopilot() {
         aiProgressLabel.value = 'Initializing WebGPU accelerator...'
         generator = await pipeline('text-generation', modelId, {
           device: 'webgpu',
-          dtype: 'q4',
+          dtype: {
+            embed_tokens: 'fp16',
+            decoder_model_merged: 'q4'
+          },
           subfolder: 'onnx',
           use_external_data_format: true,
           textOnly: true,
@@ -59,7 +62,10 @@ export function useAiCopilot() {
         aiProgressLabel.value = 'WebGPU unsupported. Initializing WebAssembly CPU execution...'
         generator = await pipeline('text-generation', modelId, {
           device: 'wasm',
-          dtype: 'q4',
+          dtype: {
+            embed_tokens: 'fp16',
+            decoder_model_merged: 'q4'
+          },
           subfolder: 'onnx',
           use_external_data_format: true,
           textOnly: true,
@@ -97,7 +103,10 @@ export function useAiCopilot() {
         try {
           generator = await pipeline('text-generation', modelId, {
             device: 'webgpu',
-            dtype: 'q4',
+            dtype: {
+              embed_tokens: 'fp16',
+              decoder_model_merged: 'q4'
+            },
             subfolder: 'onnx',
             use_external_data_format: true,
             textOnly: true,
@@ -107,7 +116,10 @@ export function useAiCopilot() {
           console.warn("WebGPU restore failed, falling back to WebAssembly (CPU)...", gpuErr)
           generator = await pipeline('text-generation', modelId, {
             device: 'wasm',
-            dtype: 'q4',
+            dtype: {
+              embed_tokens: 'fp16',
+              decoder_model_merged: 'q4'
+            },
             subfolder: 'onnx',
             use_external_data_format: true,
             textOnly: true,

@@ -75,7 +75,7 @@ export function useAiCopilot() {
       try {
         aiProgressLabel.value = 'Initializing WebGPU accelerator...'
         generator = await pipeline('text-generation', modelId, {
-          device: 'webgpu',
+          device: { embed_tokens: 'wasm', decoder_model_merged: 'webgpu' },
           dtype: 'q4',
           subfolder: 'onnx',
           use_external_data_format: true,
@@ -125,7 +125,7 @@ export function useAiCopilot() {
         const { pipeline } = transformers
         try {
           generator = await pipeline('text-generation', modelId, {
-            device: 'webgpu',
+            device: { embed_tokens: 'wasm', decoder_model_merged: 'webgpu' },
             dtype: 'q4',
             subfolder: 'onnx',
             use_external_data_format: true,

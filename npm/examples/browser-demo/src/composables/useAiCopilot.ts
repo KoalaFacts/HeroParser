@@ -30,7 +30,10 @@ export function useAiCopilot() {
     aiProgressLabel.value = 'Initializing device and loading transformers library...'
 
     try {
-      const { pipeline } = await import('@huggingface/transformers')
+      const { pipeline, env } = await import('@huggingface/transformers')
+      ;(env as any).backends.onnx.wasm.wasmPaths = '/assets/'
+      env.useBrowserCache = true
+      ;(env as any).backends.onnx.wasm.numThreads = 1
       
       const progress_callback = (data: any) => {
         if (data.status === 'progress_total') {
@@ -99,7 +102,10 @@ export function useAiCopilot() {
       
       const modelId = 'onnx-community/gemma-4-E2B-it-ONNX'
       try {
-        const { pipeline } = await import('@huggingface/transformers')
+        const { pipeline, env } = await import('@huggingface/transformers')
+        ;(env as any).backends.onnx.wasm.wasmPaths = '/assets/'
+        env.useBrowserCache = true
+        ;(env as any).backends.onnx.wasm.numThreads = 1
         try {
           generator = await pipeline('text-generation', modelId, {
             device: 'webgpu',

@@ -3,11 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "sync-version": "node scripts/sync-version.js"
+    "sync-version": "node scripts/sync-version.js",
+    "postinstall": "node scripts/apply-patches.js"
   },
   "workspaces": [
     "packages/*",
     "examples/*",
     "tests"
-  ]
+  ],
+  "overrides": {
+    "@huggingface/transformers": {
+      "onnxruntime-web": "1.20.1"
+    }
+  }
 }

@@ -9,4 +9,15 @@ export default defineConfig({
       vapor: true
     } as any)
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/onnxruntime-web/')) {
+            return 'onnxruntime-web'
+          }
+        }
+      }
+    }
+  }
 })

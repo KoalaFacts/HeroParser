@@ -18,7 +18,7 @@ This directory contains automated CI/CD workflows for HeroParser.
    - Builds in Release configuration
    - Runs all tests
    - Collects code coverage
-   - Uploads test results and coverage to Codecov
+   - Publishes a coverage summary to the run's job summary
 
 2. **Code Quality**
    - Verifies no build warnings (TreatWarningsAsErrors=true)
@@ -31,7 +31,7 @@ This directory contains automated CI/CD workflows for HeroParser.
 
 **Artifacts:**
 - Test results (30 days retention)
-- Code coverage reports (uploaded to Codecov)
+- Coverage report: cobertura XML + markdown summary (14 days retention)
 
 ---
 
@@ -192,7 +192,6 @@ Configure these in **Settings → Secrets and variables → Actions**:
 | Secret | Description | How to get |
 |--------|-------------|------------|
 | `NUGET_USERNAME` | Your NuGet.org username | Your NuGet.org account username |
-| `CODECOV_TOKEN` | (Optional) Codecov token | Sign up at https://codecov.io |
 
 **Note**: The `NuGet/login@v1` action uses your username + GitHub OIDC to get a temporary (1-hour) API key. No long-lived API keys stored!
 
@@ -284,7 +283,6 @@ Add to your README.md:
 ```markdown
 [![Build and Test](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml/badge.svg)](https://github.com/KoalaFacts/HeroParser/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
-[![codecov](https://codecov.io/gh/KoalaFacts/HeroParser/branch/main/graph/badge.svg)](https://codecov.io/gh/KoalaFacts/HeroParser)
 ```
 
 ---
@@ -378,7 +376,7 @@ When modifying workflows:
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [BenchmarkDotNet Guide](https://benchmarkdotnet.org/articles/guides/index.html)
 - [NuGet Publishing Guide](https://learn.microsoft.com/en-us/nuget/nuget-org/publish-a-package)
-- [Codecov Documentation](https://docs.codecov.com/)
+- [ReportGenerator Documentation](https://reportgenerator.io/)
 
 ---
 

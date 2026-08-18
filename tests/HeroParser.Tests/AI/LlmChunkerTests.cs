@@ -7,6 +7,7 @@ using Xunit;
 
 namespace HeroParser.Tests.AI;
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class LlmChunkerTests
 {
     private sealed class TestEmployee

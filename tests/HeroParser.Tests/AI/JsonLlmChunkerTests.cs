@@ -13,6 +13,7 @@ public sealed class ChunkerRecord
     public int Age { get; set; }
 }
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class JsonLlmChunkerTests
 {
 

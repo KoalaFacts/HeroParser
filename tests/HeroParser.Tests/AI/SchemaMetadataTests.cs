@@ -5,6 +5,7 @@ using Xunit;
 
 namespace HeroParser.Tests.AI;
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class SchemaMetadataTests
 {
     private enum AgentEnum

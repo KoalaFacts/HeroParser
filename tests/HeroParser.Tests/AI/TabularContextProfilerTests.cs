@@ -6,6 +6,7 @@ using Xunit;
 
 namespace HeroParser.Tests.AI;
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class TabularContextProfilerTests
 {
     private enum TestEnum

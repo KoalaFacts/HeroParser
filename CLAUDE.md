@@ -55,6 +55,8 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 - Runner arguments follow `--`: `--filter-trait` (not `--filter`), `--report-trx --report-trx-filename` (not `--logger trx`), `--coverage --coverage-output-format cobertura` (not `--collect "XPlat Code Coverage"`).
 - Each test binary is also directly runnable and accepts xunit's native single-dash options, which is handy for debugging: `./HeroParser.Tests -trait Category=Unit -list traits`.
 
+**Every test needs a Category trait**: CI runs this assembly once per category, so a test with no `Category` trait is discovered and reported but never executed by any job — green precisely because it never ran. Mark each test `[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]` or `INTEGRATION`, or put the trait on the class when the whole class is one category. `TestCategoryCoverageTests` enforces this and fails with the offending method names, so an untagged test breaks the build rather than disappearing.
+
 ## Code Style
 - **Nullable reference types**: Enabled (`<Nullable>enable</Nullable>`)
 - **Language version**: Latest (`<LangVersion>latest</LangVersion>`)

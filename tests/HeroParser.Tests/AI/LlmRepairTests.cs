@@ -16,6 +16,7 @@ public sealed class LlmTestRecord
     public int Age { get; set; }
 }
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class LlmRepairTests
 {
     [Fact]

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO.Pipelines;
@@ -165,12 +166,12 @@ public class FixedWidthRecordBinderAsyncCoverageTests
         var ct = TestContext.Current.CancellationToken;
         using var ms = new MemoryStream(Encoding.UTF8.GetBytes(Sample(50)));
         var pipe = PipeReader.Create(ms);
-        var reports = new List<FixedWidthProgress>();
+        var reports = new ConcurrentQueue<FixedWidthProgress>();
 
         var list = new List<ReflectionRow>();
         // Use the builder which supports progress reporter.
         await foreach (var r in FixedWidth.Read<ReflectionRow>()
-            .WithProgress(new Progress<FixedWidthProgress>(reports.Add), intervalRows: 10)
+            .WithProgress(new Progress<FixedWidthProgress>(reports.Enqueue), intervalRows: 10)
             .FromPipeReaderAsync(pipe, ct))
         {
             list.Add(r);

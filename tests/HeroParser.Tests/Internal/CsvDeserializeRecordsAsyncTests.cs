@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Pipelines;
 using System.Text;
 using HeroParser.SeparatedValues;
@@ -58,10 +59,10 @@ public class CsvDeserializeRecordsAsyncTests
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         using var ms = new MemoryStream(bytes);
         var pipe = PipeReader.Create(ms);
-        var reports = new List<CsvProgress>();
+        var reports = new ConcurrentQueue<CsvProgress>();
         var recordOptions = new CsvRecordOptions
         {
-            Progress = new Progress<CsvProgress>(reports.Add),
+            Progress = new Progress<CsvProgress>(reports.Enqueue),
             ProgressIntervalRows = 5
         };
 

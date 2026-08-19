@@ -66,27 +66,39 @@ public static class AnsiConsole
         int index = 0;
         while (index < markupText.Length)
         {
-            int nextOpen = markupText[index..].IndexOf('[');
-            if (nextOpen == -1)
+            char current = markupText[index];
+
+            if (current == '[')
             {
-                length += markupText.Length - index;
-                break;
+                // "[[" is an escaped literal bracket, not the start of a tag.
+                if (index + 1 < markupText.Length && markupText[index + 1] == '[')
+                {
+                    length++;
+                    index += 2;
+                    continue;
+                }
+
+                int nextClose = markupText[index..].IndexOf(']');
+                if (nextClose == -1)
+                {
+                    // An unterminated tag is not a tag: the rest of the text is visible.
+                    length += markupText.Length - index;
+                    break;
+                }
+
+                index += nextClose + 1;
+                continue;
             }
 
-            if (nextOpen > 0)
+            if (current == ']' && index + 1 < markupText.Length && markupText[index + 1] == ']')
             {
-                length += nextOpen;
-                index += nextOpen;
+                length++;
+                index += 2;
+                continue;
             }
 
-            int nextClose = markupText[index..].IndexOf(']');
-            if (nextClose == -1)
-            {
-                length += markupText.Length - index;
-                break;
-            }
-
-            index += nextClose + 1;
+            length++;
+            index++;
         }
         return length;
     }
@@ -103,51 +115,76 @@ public static class AnsiConsole
         int index = 0;
         while (index < markupText.Length)
         {
-            int nextOpen = markupText[index..].IndexOf('[');
-            if (nextOpen == -1)
-            {
-                buffer.WriteStyled(markupText[index..], styleStack[stackPtr]);
-                break;
-            }
+            char current = markupText[index];
 
-            if (nextOpen > 0)
+            if (current == '[')
             {
-                buffer.WriteStyled(markupText.Slice(index, nextOpen), styleStack[stackPtr]);
-                index += nextOpen;
-            }
-
-            int nextClose = markupText[index..].IndexOf(']');
-            if (nextClose == -1)
-            {
-                buffer.WriteStyled(markupText[index..], styleStack[stackPtr]);
-                break;
-            }
-
-            ReadOnlySpan<char> tag = markupText.Slice(index + 1, nextClose - 1);
-            if (tag.SequenceEqual("/"))
-            {
-                if (stackPtr > 0)
+                // "[[" is an escaped literal bracket — this is what Markup.Escape emits,
+                // so text carrying brackets survives a round trip through the parser.
+                if (index + 1 < markupText.Length && markupText[index + 1] == '[')
                 {
-                    stackPtr--;
+                    buffer.WriteStyled(markupText.Slice(index, 1), styleStack[stackPtr]);
+                    index += 2;
+                    continue;
                 }
-            }
-            else
-            {
-                Style newStyle = ParseStyle(tag);
-                Style parent = styleStack[stackPtr];
 
-                Color fore = newStyle.Foreground.IsDefault ? parent.Foreground : newStyle.Foreground;
-                Color back = newStyle.Background.IsDefault ? parent.Background : newStyle.Background;
-                Decoration dec = parent.Decorations | newStyle.Decorations;
-
-                if (stackPtr < styleStack.Length - 1)
+                int nextClose = markupText[index..].IndexOf(']');
+                if (nextClose == -1)
                 {
-                    stackPtr++;
-                    styleStack[stackPtr] = new Style(fore, back, dec);
+                    // An unterminated tag is not a tag: write the rest as visible text.
+                    buffer.WriteStyled(markupText[index..], styleStack[stackPtr]);
+                    break;
                 }
+
+                ReadOnlySpan<char> tag = markupText.Slice(index + 1, nextClose - 1);
+                if (tag.SequenceEqual("/"))
+                {
+                    if (stackPtr > 0)
+                    {
+                        stackPtr--;
+                    }
+                }
+                else
+                {
+                    Style newStyle = ParseStyle(tag);
+                    Style parent = styleStack[stackPtr];
+
+                    Color fore = newStyle.Foreground.IsDefault ? parent.Foreground : newStyle.Foreground;
+                    Color back = newStyle.Background.IsDefault ? parent.Background : newStyle.Background;
+                    Decoration dec = parent.Decorations | newStyle.Decorations;
+
+                    if (stackPtr < styleStack.Length - 1)
+                    {
+                        stackPtr++;
+                        styleStack[stackPtr] = new Style(fore, back, dec);
+                    }
+                }
+
+                index += nextClose + 1;
+                continue;
             }
 
-            index += nextClose + 1;
+            if (current == ']' && index + 1 < markupText.Length && markupText[index + 1] == ']')
+            {
+                buffer.WriteStyled(markupText.Slice(index, 1), styleStack[stackPtr]);
+                index += 2;
+                continue;
+            }
+
+            // Emit the run of ordinary characters up to the next bracket in one write.
+            int runEnd = index;
+            while (runEnd < markupText.Length && markupText[runEnd] != '[' && markupText[runEnd] != ']')
+            {
+                runEnd++;
+            }
+            if (runEnd == index)
+            {
+                // A lone ']' with no opening tag is ordinary text.
+                runEnd++;
+            }
+
+            buffer.WriteStyled(markupText[index..runEnd], styleStack[stackPtr]);
+            index = runEnd;
         }
     }
 

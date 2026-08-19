@@ -400,7 +400,7 @@ internal static class CliCommands
         }
     }
 
-    public static async Task SchemaAsync(string path, char? delimiter, bool useAi, string? providerName, string? apiKey, string? model)
+    public static async Task SchemaAsync(string path, char? delimiter, bool useAi, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
     {
         if (!File.Exists(path))
         {
@@ -492,7 +492,7 @@ internal static class CliCommands
             var (headers, rows) = ReadTabularData(path, delimiter, null);
             var contextCard = DynamicProfiler.GenerateContextCard(filename, headers, [.. rows.Take(10)]);
 
-            var aiClient = LlmClient.CreateFromEnvironment(providerName, apiKey, model);
+            var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
 
             string prompt = $"""
 You are an expert compiler engineer and software architect.
@@ -536,7 +536,7 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
         }
     }
 
-    public static async Task QueryAsync(string path, char? delimiter, string? sheet, string userQuery, string? providerName, string? apiKey, string? model)
+    public static async Task QueryAsync(string path, char? delimiter, string? sheet, string userQuery, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
     {
         if (!File.Exists(path))
         {
@@ -561,7 +561,7 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
                 sampleSb.AppendLine("| " + string.Join(" | ", r.Select(c => c?.Replace("|", "\\|") ?? "")) + " |");
             }
 
-            var aiClient = LlmClient.CreateFromEnvironment(providerName, apiKey, model);
+            var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
 
             string prompt = $"""
 You are a helpful data analyst querying a tabular dataset.
@@ -597,7 +597,7 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
         }
     }
 
-    public static async Task TranslateAsync(string path, char? delimiter, string? sheet, string transformPrompt, string outputPath, int batchSize, string? providerName, string? apiKey, string? model)
+    public static async Task TranslateAsync(string path, char? delimiter, string? sheet, string transformPrompt, string outputPath, int batchSize, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
     {
         if (!File.Exists(path))
         {
@@ -611,7 +611,7 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
         try
         {
             var (headers, rows) = ReadTabularData(path, delimiter, sheet);
-            var aiClient = LlmClient.CreateFromEnvironment(providerName, apiKey, model);
+            var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
 
             var headersJoined = string.Join(",", headers);
 

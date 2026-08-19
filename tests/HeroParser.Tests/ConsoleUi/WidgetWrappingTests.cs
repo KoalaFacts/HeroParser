@@ -17,6 +17,7 @@ namespace HeroParser.Tests.ConsoleUi;
 /// rather than through a reader.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(AnsiConsoleCurrentCollection.NAME)]
 public class WidgetWrappingTests
 {
     private static string Render(HeroParser.Console.Widgets.IConsoleWidget widget, int maxWidth)

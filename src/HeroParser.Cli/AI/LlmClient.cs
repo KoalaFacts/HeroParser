@@ -1,9 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -21,70 +16,106 @@ internal enum LlmProvider
 
 internal sealed class LlmClient
 {
+    /// <summary>Default model used when talking to Ollama and none was requested.</summary>
+    private const string DEFAULT_OLLAMA_MODEL = "qwen3.5:latest";
+
+    /// <summary>
+    /// Appended unless the caller's prompt already pins the output shape, so a chatty
+    /// agent does not wrap the structured answer in prose the caller has to strip.
+    /// </summary>
+    private const string STRUCTURED_OUTPUT_INSTRUCTION =
+        "\n\nIMPORTANT: You must output ONLY the raw requested structured response. Do not include any conversational prefix, suffix, explanation, or chat formatting. Return the raw data directly.";
+
     private readonly LlmProvider provider;
     private readonly string? customModel;
+    private readonly ILlmCliRunner runner;
 
-    public LlmClient(LlmProvider provider, string? customModel = null)
+    public LlmClient(LlmProvider provider, string? customModel = null, ILlmCliRunner? runner = null)
     {
         this.provider = provider;
         this.customModel = customModel;
+        this.runner = runner ?? new ProcessLlmCliRunner();
     }
 
-    public static LlmClient CreateFromEnvironment(string? overrideProvider = null, string? overrideKey = null, string? overrideModel = null)
+    public static LlmClient CreateFromEnvironment(
+        string? overrideProvider = null,
+        string? overrideKey = null,
+        string? overrideModel = null,
+        ILlmCliRunner? runner = null)
     {
         _ = overrideKey; // Retained for API compatibility but unused since we call local CLI processes directly
-        LlmProvider resolvedProvider = LlmProvider.Google;
 
         if (!string.IsNullOrWhiteSpace(overrideProvider))
         {
-            resolvedProvider = overrideProvider.ToLowerInvariant() switch
+            if (!TryParseProvider(overrideProvider, out var requested))
             {
-                "google" or "gemini" or "antigravity" or "agy" => LlmProvider.Google,
-                "openai" or "chatgpt" or "codex" => LlmProvider.OpenAi,
-                "anthropic" or "claude" => LlmProvider.Anthropic,
-                "microsoft" or "copilot" => LlmProvider.Microsoft,
-                "github" => LlmProvider.GitHub,
-                "ollama" => LlmProvider.Ollama,
-                _ => throw new ArgumentException($"Unknown AI provider: {overrideProvider}. Valid options: google, openai, anthropic, microsoft, github, ollama")
-            };
-        }
-        else
-        {
-            // Auto detect from environment variables or local paths
-            var envProvider = Environment.GetEnvironmentVariable("HEROPARSER_AI_PROVIDER");
-            if (!string.IsNullOrWhiteSpace(envProvider))
-            {
-                resolvedProvider = envProvider.ToLowerInvariant() switch
-                {
-                    "google" or "gemini" or "antigravity" or "agy" => LlmProvider.Google,
-                    "openai" or "chatgpt" or "codex" => LlmProvider.OpenAi,
-                    "anthropic" or "claude" => LlmProvider.Anthropic,
-                    "microsoft" or "copilot" => LlmProvider.Microsoft,
-                    "github" => LlmProvider.GitHub,
-                    "ollama" => LlmProvider.Ollama,
-                    _ => resolvedProvider
-                };
+                throw new ArgumentException($"Unknown AI provider: {overrideProvider}. Valid options: google, openai, anthropic, microsoft, github, ollama");
             }
-            else
-            {
-                // Auto detect by checking command availability in order: agy -> claude -> copilot -> codex -> openai -> ollama
-                if (IsCommandAvailable("agy"))
-                    resolvedProvider = LlmProvider.Google;
-                else if (IsCommandAvailable("claude"))
-                    resolvedProvider = LlmProvider.Anthropic;
-                else if (IsCommandAvailable("copilot"))
-                    resolvedProvider = LlmProvider.Microsoft;
-                else if (IsCommandAvailable("codex") || IsCommandAvailable("openai"))
-                    resolvedProvider = LlmProvider.OpenAi;
-                else if (IsCommandAvailable("ollama"))
-                    resolvedProvider = LlmProvider.Ollama;
-            }
+
+            return new LlmClient(requested, overrideModel, runner);
         }
 
-        return new LlmClient(resolvedProvider, overrideModel);
+        return new LlmClient(DetectProvider(), overrideModel, runner);
+    }
+
+    /// <summary>
+    /// Maps a provider name — or one of its common aliases — onto a <see cref="LlmProvider"/>.
+    /// </summary>
+    private static bool TryParseProvider(string name, out LlmProvider provider)
+    {
+        switch (name.ToLowerInvariant())
+        {
+            case "google" or "gemini" or "antigravity" or "agy": provider = LlmProvider.Google; return true;
+            case "openai" or "chatgpt" or "codex": provider = LlmProvider.OpenAi; return true;
+            case "anthropic" or "claude": provider = LlmProvider.Anthropic; return true;
+            case "microsoft" or "copilot": provider = LlmProvider.Microsoft; return true;
+            case "github": provider = LlmProvider.GitHub; return true;
+            case "ollama": provider = LlmProvider.Ollama; return true;
+            default: provider = LlmProvider.Google; return false;
+        }
+    }
+
+    /// <summary>
+    /// Picks a provider from the environment variable when set, otherwise from whichever
+    /// agent CLI is actually installed.
+    /// </summary>
+    private static LlmProvider DetectProvider()
+    {
+        var envProvider = Environment.GetEnvironmentVariable("HEROPARSER_AI_PROVIDER");
+        if (!string.IsNullOrWhiteSpace(envProvider) && TryParseProvider(envProvider, out var fromEnv))
+        {
+            return fromEnv;
+        }
+
+        // Auto detect by checking command availability in order: agy -> claude -> copilot -> codex -> openai -> ollama
+        if (LocalCliLocator.IsCommandAvailable("agy")) return LlmProvider.Google;
+        if (LocalCliLocator.IsCommandAvailable("claude")) return LlmProvider.Anthropic;
+        if (LocalCliLocator.IsCommandAvailable("copilot")) return LlmProvider.Microsoft;
+        if (LocalCliLocator.IsCommandAvailable("codex") || LocalCliLocator.IsCommandAvailable("openai")) return LlmProvider.OpenAi;
+        if (LocalCliLocator.IsCommandAvailable("ollama")) return LlmProvider.Ollama;
+
+        return LlmProvider.Google;
     }
 
     public async Task<string> AskAsync(string prompt, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+
+        (string cmd, string args) = ResolveCommandLine();
+
+        // Standardize structuring instructions to ensure deterministic response shape from the local agent
+        string structuredPrompt = prompt.Contains("Output ONLY", StringComparison.OrdinalIgnoreCase)
+            ? prompt
+            : prompt + STRUCTURED_OUTPUT_INSTRUCTION;
+
+        string rawResponse = await runner.RunAsync(cmd, args, structuredPrompt, cancellationToken).ConfigureAwait(false);
+        return ExtractStructuredContent(rawResponse);
+    }
+
+    /// <summary>
+    /// Returns the command and arguments that drive this provider's CLI in headless mode.
+    /// </summary>
+    private (string Command, string Arguments) ResolveCommandLine()
     {
         string cmd;
         string args;
@@ -97,7 +128,7 @@ internal sealed class LlmClient
                 break;
 
             case LlmProvider.OpenAi:
-                if (IsCommandAvailable("openai") || ResolveCommandPath("openai") != "openai")
+                if (LocalCliLocator.IsCommandAvailable("openai") || LocalCliLocator.ResolveCommandPath("openai") != "openai")
                 {
                     cmd = "openai";
                     args = "responses create --input -";
@@ -122,260 +153,38 @@ internal sealed class LlmClient
 
             case LlmProvider.Ollama:
                 cmd = "ollama";
-                var ollamaModel = !string.IsNullOrWhiteSpace(customModel) ? customModel : "qwen3.5:latest";
+                var ollamaModel = !string.IsNullOrWhiteSpace(customModel) ? customModel : DEFAULT_OLLAMA_MODEL;
                 args = $"run {ollamaModel}";
                 break;
 
             default:
-                throw new NotImplementedException();
+                throw new NotSupportedException($"Provider {provider} has no local CLI mapping.");
         }
 
+        // Ollama already carries the model as its run target, so a second flag would be rejected.
         if (!string.IsNullOrWhiteSpace(customModel) && provider != LlmProvider.Ollama)
         {
             args += $" --model \"{customModel}\"";
         }
 
-        // Standardize structuring instructions to ensure deterministic response shape from the local agent
-        string structuredPrompt = prompt;
-        if (!prompt.Contains("Output ONLY", StringComparison.OrdinalIgnoreCase))
-        {
-            structuredPrompt += "\n\nIMPORTANT: You must output ONLY the raw requested structured response. Do not include any conversational prefix, suffix, explanation, or chat formatting. Return the raw data directly.";
-        }
-
-        string rawResponse = await RunLocalCliAsync(cmd, args, structuredPrompt, cancellationToken).ConfigureAwait(false);
-        return ExtractStructuredContent(rawResponse);
+        return (cmd, args);
     }
 
-    private async Task<string> RunLocalCliAsync(string commandName, string arguments, string prompt, CancellationToken cancellationToken)
-    {
-        string resolvedCommand = ResolveCommandPath(commandName);
-        string finalFileName = resolvedCommand;
-        string finalArguments = arguments;
-
-        // If running a .cmd or .bat script on Windows, wrap it via cmd.exe
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
-            (resolvedCommand.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
-             resolvedCommand.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)))
-        {
-            finalFileName = "cmd.exe";
-            finalArguments = $"/c \"\"{resolvedCommand}\" {arguments}\"";
-        }
-
-        using var process = new Process();
-        process.StartInfo = new ProcessStartInfo
-        {
-            FileName = finalFileName,
-            Arguments = finalArguments,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        var outputBuilder = new StringBuilder();
-        var errorBuilder = new StringBuilder();
-
-        using var outputWaitHandle = new SemaphoreSlim(0);
-        using var errorWaitHandle = new SemaphoreSlim(0);
-
-        process.OutputDataReceived += (sender, e) =>
-        {
-            if (e.Data == null)
-            {
-                outputWaitHandle.Release();
-            }
-            else
-            {
-                outputBuilder.AppendLine(e.Data);
-            }
-        };
-
-        process.ErrorDataReceived += (sender, e) =>
-        {
-            if (e.Data == null)
-            {
-                errorWaitHandle.Release();
-            }
-            else
-            {
-                errorBuilder.AppendLine(e.Data);
-            }
-        };
-
-        try
-        {
-            if (!process.Start())
-            {
-                throw new InvalidOperationException($"Failed to start local AI CLI process for {commandName}.");
-            }
-
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            // Set up cancellation token registration to kill process tree on cancellation
-            using var registration = cancellationToken.Register(() =>
-            {
-                try
-                {
-                    if (!process.HasExited)
-                    {
-                        process.Kill(entireProcessTree: true);
-                    }
-                }
-                catch
-                {
-                    // Ignore errors during cancellation cleanup
-                }
-            });
-
-            // Write the prompt to the stdin of the process
-            try
-            {
-                await process.StandardInput.WriteAsync(prompt).ConfigureAwait(false);
-                await process.StandardInput.FlushAsync().ConfigureAwait(false);
-                process.StandardInput.Close();
-            }
-            catch (Exception ex)
-            {
-                errorBuilder.AppendLine($"[StdIn Write Error] {ex.Message}");
-            }
-
-            // Set a hard timeout of 3 minutes per invocation
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromMinutes(3));
-
-            try
-            {
-                await process.WaitForExitAsync(cts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    throw; // Cancelled by user
-                }
-                throw new TimeoutException($"The local AI CLI process for {commandName} timed out (limit: 3 minutes).");
-            }
-
-            // Wait briefly for stdout/stderr to drain completely
-            await Task.WhenAll(outputWaitHandle.WaitAsync(TimeSpan.FromSeconds(5)), errorWaitHandle.WaitAsync(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
-
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException($"Local AI CLI '{commandName}' exited with code {process.ExitCode}.\nError: {errorBuilder}");
-            }
-
-            return outputBuilder.ToString().Trim();
-        }
-        finally
-        {
-            // Safeguard: explicitly kill the process and its tree if it is still running
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-            }
-            catch
-            {
-                // Ignore errors on cleanup
-            }
-        }
-    }
-
-    private static bool IsCommandAvailable(string command)
-    {
-        var pathEnv = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrEmpty(pathEnv)) return false;
-
-        var extensions = new[] { "", ".exe", ".cmd", ".bat", ".lnk" };
-        var paths = pathEnv.Split(Path.PathSeparator);
-        foreach (var path in paths)
-        {
-            try
-            {
-                foreach (var ext in extensions)
-                {
-                    var fullPath = Path.Combine(path.Trim(), command + ext);
-                    if (File.Exists(fullPath)) return true;
-                }
-            }
-            catch
-            {
-                // Skip invalid paths
-            }
-        }
-        return false;
-    }
-
-    private static string ResolveCommandPath(string command)
-    {
-        if (IsCommandAvailable(command))
-        {
-            return command;
-        }
-
-        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-
-        var candidatePaths = new List<string>();
-
-        if (command.Equals("agy", StringComparison.OrdinalIgnoreCase))
-        {
-            candidatePaths.Add(Path.Combine(localAppData, "agy", "bin", "agy.exe"));
-        }
-
-        else if (command.Equals("claude", StringComparison.OrdinalIgnoreCase))
-        {
-            candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "claude.exe"));
-        }
-        else if (command.Equals("copilot", StringComparison.OrdinalIgnoreCase))
-        {
-            candidatePaths.Add(Path.Combine(appData, "npm", "copilot.cmd"));
-            candidatePaths.Add(Path.Combine(appData, "npm", "copilot.ps1"));
-            candidatePaths.Add(Path.Combine(localAppData, "Microsoft", "WindowsApps", "copilot.exe"));
-        }
-        else if (command.Equals("codex", StringComparison.OrdinalIgnoreCase))
-        {
-            candidatePaths.Add(Path.Combine(localAppData, "Programs", "codex.exe"));
-            candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "codex.exe"));
-        }
-        else if (command.Equals("openai", StringComparison.OrdinalIgnoreCase))
-        {
-            candidatePaths.Add(Path.Combine(localAppData, "Programs", "openai.exe"));
-            candidatePaths.Add(Path.Combine(userProfile, ".local", "bin", "openai.exe"));
-        }
-        else if (command.Equals("ollama", StringComparison.OrdinalIgnoreCase))
-        {
-            candidatePaths.Add(Path.Combine(localAppData, "Programs", "Ollama", "ollama.exe"));
-        }
-
-        foreach (var path in candidatePaths)
-        {
-            if (File.Exists(path))
-            {
-                return path;
-            }
-        }
-
-        return command;
-    }
-
+    /// <summary>
+    /// Strips a fenced code block, which agents wrap structured output in even when told not to.
+    /// </summary>
     private static string ExtractStructuredContent(string rawOutput)
     {
         if (string.IsNullOrWhiteSpace(rawOutput)) return string.Empty;
 
         string trimmed = rawOutput.Trim();
 
-        if (trimmed.StartsWith("```"))
+        if (trimmed.StartsWith("```", StringComparison.Ordinal))
         {
             int firstNewLine = trimmed.IndexOf('\n');
             if (firstNewLine >= 0)
             {
-                int lastBlock = trimmed.LastIndexOf("```");
+                int lastBlock = trimmed.LastIndexOf("```", StringComparison.Ordinal);
                 if (lastBlock > firstNewLine)
                 {
                     return trimmed.Substring(firstNewLine + 1, lastBlock - firstNewLine - 1).Trim();

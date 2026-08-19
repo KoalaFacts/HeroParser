@@ -20,6 +20,7 @@ namespace HeroParser.Tests.ConsoleUi;
 /// reachable in-process.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(AnsiConsoleCurrentCollection.NAME)]
 public class PromptTests
 {
     /// <summary>Builds a console whose output is captured and whose input is scripted.</summary>

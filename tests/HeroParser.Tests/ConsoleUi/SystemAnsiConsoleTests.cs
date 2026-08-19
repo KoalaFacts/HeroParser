@@ -14,6 +14,7 @@ namespace HeroParser.Tests.ConsoleUi;
 /// static <see cref="AnsiConsoleApi"/> facade that forwards to it.
 /// </summary>
 [Trait("Category", "Unit")]
+[Collection(AnsiConsoleCurrentCollection.NAME)]
 public class SystemAnsiConsoleTests
 {
     private static (IHeroConsole Console, StringWriter Output) Redirected(string input = "", int width = 80)

@@ -95,7 +95,7 @@ internal sealed class InteractiveWizard
                 ? Prompt(
                     new TextPrompt<string>("Enter path to the file:")
                         .Validate(f => File.Exists(f) ? ValidationResult.Success() : ValidationResult.Error("[red]File does not exist.[/]")))
-                : Path.Combine(cwd, selectedFile);
+                : Path.Join(cwd, selectedFile);
         }
 
         bool running = true;
@@ -155,7 +155,7 @@ internal sealed class InteractiveWizard
                     case "7. Translate or transform columns (AI)":
                         var prompt = Prompt(
                             new TextPrompt<string>("Enter transform instruction (e.g. 'Translate Category to French'):"));
-                        var defaultOut = Path.Combine(
+                        var defaultOut = Path.Join(
                             Path.GetDirectoryName(file) ?? "",
                             Path.GetFileNameWithoutExtension(file) + "_transformed" + Path.GetExtension(file));
                         var outPath = Prompt(
@@ -173,7 +173,7 @@ internal sealed class InteractiveWizard
                                 .Title("Select target format:")
                                 .AddChoices([".csv", ".jsonl", ".txt (Fixed Width)"]));
 
-                        string convertedOut = Path.Combine(
+                        string convertedOut = Path.Join(
                             Path.GetDirectoryName(file) ?? "",
                             Path.GetFileNameWithoutExtension(file) + "_converted" + (targetExt == ".txt (Fixed Width)" ? ".txt" : targetExt));
 
@@ -214,6 +214,10 @@ internal sealed class InteractiveWizard
             }
             catch (Exception ex)
             {
+                // Deliberately broad: this is the menu loop's error boundary. Any command
+                // can fail for any reason (unreadable file, malformed data, no disk space),
+                // and none of those should drop the user out of an interactive session —
+                // report it and offer the menu again.
                 ConsoleUtils.Error($"Operation failed: {ex.Message}");
             }
 

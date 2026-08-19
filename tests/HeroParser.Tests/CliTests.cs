@@ -3,10 +3,12 @@ using System.IO;
 using System.Threading.Tasks;
 using Xunit;
 using HeroParser.Cli;
+using HeroParser.Tests.ConsoleUi;
 
 namespace HeroParser.Tests;
 
 [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+[Collection(AnsiConsoleCurrentCollection.NAME)]
 public sealed class CliTests
 {
     [Fact]

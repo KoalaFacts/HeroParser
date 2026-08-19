@@ -59,13 +59,34 @@ public class ProcessLlmCliRunnerTests
     [Fact]
     public async Task Timeout_IsReportedAsATimeout()
     {
-        // A hung agent must not block the CLI forever. A zero-length window expires before
-        // the child can exit, which is exactly the condition the timeout guards against.
-        var runner = new ProcessLlmCliRunner { Timeout = TimeSpan.Zero };
+        // A hung agent must not block the CLI forever. Sleeping far longer than the window
+        // makes the expiry the only possible outcome rather than a race with process exit.
+        var runner = new ProcessLlmCliRunner { Timeout = TimeSpan.FromMilliseconds(250) };
+        (string command, string arguments) = Sleeper();
 
         var ex = await Assert.ThrowsAsync<TimeoutException>(
-            () => runner.RunAsync("dotnet", "--version", "prompt", TestContext.Current.CancellationToken));
+            () => runner.RunAsync(command, arguments, "prompt", TestContext.Current.CancellationToken));
 
         Assert.Contains("timed out", ex.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task CancellingAHungProcess_ReportsCancellationNotAnExitCode()
+    {
+        // Cancelling kills the child, so its exit code reflects the signal. That must not
+        // be mistaken for the agent failing.
+        (string command, string arguments) = Sleeper();
+        using var cts = new CancellationTokenSource();
+        var run = Runner.RunAsync(command, arguments, "prompt", cts.Token);
+
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+    }
+
+    /// <summary>A command that outlives any test timeout, named per platform.</summary>
+    private static (string Command, string Arguments) Sleeper()
+        => System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)
+            ? ("ping", "-n 30 127.0.0.1")
+            : ("sleep", "30");
 }

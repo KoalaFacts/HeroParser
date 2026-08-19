@@ -115,10 +115,18 @@ internal sealed class ProcessLlmCliRunner : ILlmCliRunner
             }
             catch (OperationCanceledException)
             {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    throw; // Cancelled by user
-                }
+                // Handled below, alongside the case where the kill won the race.
+            }
+
+            // The cancellation callback kills the child, so WaitForExitAsync can return
+            // normally even though this run was abandoned — the process really did exit,
+            // just because we killed it. Deciding on the token rather than on which of the
+            // two finished first is what stops cancellation surfacing as "exited with code
+            // 137" whenever the kill lands first.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (cts.IsCancellationRequested)
+            {
                 throw new TimeoutException($"The local AI CLI process for {commandName} timed out (limit: {Timeout.TotalMinutes:0.##} minutes).");
             }
 

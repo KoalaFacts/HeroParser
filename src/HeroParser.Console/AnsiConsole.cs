@@ -7,66 +7,50 @@ namespace HeroParser.Console;
 /// </summary>
 public static class AnsiConsole
 {
-    static AnsiConsole()
+    /// <summary>
+    /// Gets or sets the console every static entry point on this class writes to.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to a <see cref="SystemAnsiConsole"/> over the process console. Assigning
+    /// another implementation redirects all console UI, which is how a host embeds this
+    /// output somewhere other than a terminal. Setting <see langword="null"/> restores
+    /// the default.
+    /// </remarks>
+    public static IAnsiConsole Current
     {
-        Terminal.EnableVirtualTerminalProcessing();
-    }
+        get;
+        set => field = value ?? new SystemAnsiConsole();
+    } = new SystemAnsiConsole();
 
     /// <summary>
-    /// Writes text to stdout with the default style.
+    /// Writes text to the current console with the default style.
     /// </summary>
-    public static void Write(string text) => System.Console.Write(text);
+    public static void Write(string text) => Current.Write(text);
 
     /// <summary>
-    /// Writes text followed by a newline to stdout with the default style.
+    /// Writes text followed by a newline to the current console with the default style.
     /// </summary>
-    public static void WriteLine(string text) => System.Console.WriteLine(text);
+    public static void WriteLine(string text) => Current.WriteLine(text);
 
     /// <summary>
-    /// Writes styled text to stdout.
+    /// Writes styled text to the current console.
     /// </summary>
-    public static void Write(string text, Style style)
-    {
-        Span<char> charBuf = stackalloc char[4096];
-        var buffer = new AnsiBuffer(charBuf);
-        buffer.WriteStyled(text.AsSpan(), style);
-        buffer.Flush();
-    }
+    public static void Write(string text, Style style) => Current.Write(text, style);
 
     /// <summary>
-    /// Writes styled text followed by a newline to stdout.
+    /// Writes styled text followed by a newline to the current console.
     /// </summary>
-    public static void WriteLine(string text, Style style)
-    {
-        Span<char> charBuf = stackalloc char[4096];
-        var buffer = new AnsiBuffer(charBuf);
-        buffer.WriteStyled(text.AsSpan(), style);
-        buffer.Write(Environment.NewLine);
-        buffer.Flush();
-    }
+    public static void WriteLine(string text, Style style) => Current.WriteLine(text, style);
 
     /// <summary>
-    /// Renders markup text (e.g., "[bold red]text[/]") to standard output.
+    /// Renders markup text (e.g., "[bold red]text[/]") to the current console.
     /// </summary>
-    public static void Markup(string markupText)
-    {
-        Span<char> charBuf = stackalloc char[4096];
-        var buffer = new AnsiBuffer(charBuf);
-        Markup(markupText.AsSpan(), ref buffer);
-        buffer.Flush();
-    }
+    public static void Markup(string markupText) => Current.Markup(markupText);
 
     /// <summary>
-    /// Renders markup text followed by a newline to standard output.
+    /// Renders markup text followed by a newline to the current console.
     /// </summary>
-    public static void MarkupLine(string markupText)
-    {
-        Span<char> charBuf = stackalloc char[4096];
-        var buffer = new AnsiBuffer(charBuf);
-        Markup(markupText.AsSpan(), ref buffer);
-        buffer.Write(Environment.NewLine);
-        buffer.Flush();
-    }
+    public static void MarkupLine(string markupText) => Current.MarkupLine(markupText);
 
     /// <summary>
     /// Computes the visual length of a markup string, excluding formatting tags.
@@ -252,33 +236,17 @@ public static class AnsiConsole
     /// <summary>
     /// Renders a widget directly to the standard output.
     /// </summary>
-    public static void Write(Widgets.IConsoleWidget widget)
-    {
-        Span<char> charBuf = stackalloc char[16384];
-        var buffer = new AnsiBuffer(charBuf);
-        int width = 80;
-        try
-        {
-            width = System.Console.WindowWidth;
-            if (width <= 0) width = 80;
-        }
-        catch
-        {
-            width = 80;
-        }
-        widget.Render(ref buffer, width);
-        buffer.Flush();
-    }
+    public static void Write(Widgets.IConsoleWidget widget) => Current.Write(widget);
 
     /// <summary>
     /// Prompts the user with a selection menu.
     /// </summary>
-    public static T Prompt<T>(Prompts.SelectionPrompt<T> prompt) where T : notnull => prompt.Show();
+    public static T Prompt<T>(Prompts.SelectionPrompt<T> prompt) where T : notnull => prompt.Show(Current);
 
     /// <summary>
     /// Prompts the user with a text input field.
     /// </summary>
-    public static T Prompt<T>(Prompts.TextPrompt<T> prompt) => prompt.Show();
+    public static T Prompt<T>(Prompts.TextPrompt<T> prompt) => prompt.Show(Current);
 
     /// <summary>
     /// Creates a status runner for background spinner animations.

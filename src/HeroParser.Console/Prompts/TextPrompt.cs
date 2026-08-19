@@ -101,8 +101,16 @@ public class TextPrompt<T>
     /// <summary>
     /// Renders the prompt and collects/validates user input.
     /// </summary>
-    public T Show()
+    public T Show() => Show(AnsiConsole.Current);
+
+    /// <summary>
+    /// Shows the prompt on the supplied console and returns the converted value.
+    /// </summary>
+    /// <param name="console">Console to render to and read input from.</param>
+    public T Show(IAnsiConsole console)
     {
+        ArgumentNullException.ThrowIfNull(console);
+
         // Statically map common primitive types if no converter was provided
         converter ??= typeof(T) == typeof(string)
             ? ((input) => (T)(object)input)
@@ -125,14 +133,14 @@ public class TextPrompt<T>
         {
             if (hasDefaultValue)
             {
-                AnsiConsole.Markup($"{title} [[grey](default: {defaultValue})[/]]: ");
+                console.Markup($"{title} [[grey](default: {defaultValue})[/]]: ");
             }
             else
             {
-                AnsiConsole.Markup($"{title}: ");
+                console.Markup($"{title}: ");
             }
 
-            string input = System.Console.ReadLine() ?? string.Empty;
+            string input = console.ReadLine() ?? string.Empty;
 
             // Return default value if empty
             if (string.IsNullOrWhiteSpace(input) && hasDefaultValue)
@@ -148,7 +156,7 @@ public class TextPrompt<T>
                     var validationResult = validationFunc(converted);
                     if (!validationResult.Successful)
                     {
-                        AnsiConsole.MarkupLine(string.IsNullOrEmpty(validationResult.Message) ? "[red]Invalid input.[/]" : validationResult.Message);
+                        console.MarkupLine(string.IsNullOrEmpty(validationResult.Message) ? "[red]Invalid input.[/]" : validationResult.Message);
                         continue;
                     }
                 }
@@ -156,7 +164,7 @@ public class TextPrompt<T>
             }
             catch
             {
-                AnsiConsole.MarkupLine("[red]Invalid input format.[/]");
+                console.MarkupLine("[red]Invalid input format.[/]");
             }
         }
     }

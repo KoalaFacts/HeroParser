@@ -21,7 +21,9 @@ public class TableRenderingBenchmarks
         public override void Write(ReadOnlySpan<char> buffer) { }
     }
 
-    private IAnsiConsole spectreConsole = null!;
+    // Fully qualified: HeroParser.Console now also defines IAnsiConsole, and members of
+    // the enclosing HeroParser.Console.* namespace win over the Spectre using-directive.
+    private Spectre.Console.IAnsiConsole spectreConsole = null!;
 
     [GlobalSetup]
     public void Setup()

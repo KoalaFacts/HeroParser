@@ -205,7 +205,9 @@ public class CsvToJsonlConverterTests
     [Fact]
     public void Convert_FileToFile_WritesJsonlFile()
     {
-        string csvPath = Path.Combine(Path.GetTempPath(), $"hero-c2j-{Guid.NewGuid():N}.csv");
+        // Path.Join rather than Path.Combine: Combine silently discards earlier arguments
+        // if a later one is rooted, which static analysis flags.
+        string csvPath = Path.Join(Path.GetTempPath(), $"hero-c2j-{Guid.NewGuid():N}.csv");
         string jsonlPath = Path.ChangeExtension(csvPath, ".jsonl");
         try
         {

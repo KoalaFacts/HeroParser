@@ -251,10 +251,10 @@ public static class AnsiConsole
     /// <summary>
     /// Creates a status runner for background spinner animations.
     /// </summary>
-    public static StatusRunner Status() => new();
+    public static StatusRunner Status() => new(Current);
 
     /// <summary>
     /// Creates a progress runner for live progress bars.
     /// </summary>
-    public static ProgressRunner Progress() => new();
+    public static ProgressRunner Progress() => new(Current);
 }

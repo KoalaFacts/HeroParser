@@ -139,21 +139,32 @@ public class TableWidget : IConsoleWidget
         // 3. Draw Headers
         if (ShowHeaders)
         {
-            buffer.WriteStyled("│ ", BorderStyle);
+            // Headers wrap exactly like cells do. Writing them unwrapped let a header
+            // wider than its (possibly shrunk) column run past the table's own frame.
+            int headerLines = 1;
             for (int i = 0; i < columns.Count; i++)
             {
-                var headerText = columns[i].Header;
-                AnsiConsole.Markup(headerText.AsSpan(), ref buffer, columns[i].HeaderStyle);
-
-                int pad = colWidths[i] - AnsiConsole.GetMarkupVisualLength(headerText);
-                if (pad > 0)
-                {
-                    buffer.Write(spaces[..pad]);
-                }
-
-                buffer.WriteStyled(i == columns.Count - 1 ? " │" : " │ ", BorderStyle);
+                headerLines = Math.Max(headerLines, GetLineCount(columns[i].Header.AsSpan(), colWidths[i]));
             }
-            buffer.Write(Environment.NewLine);
+
+            for (int l = 0; l < headerLines; l++)
+            {
+                buffer.WriteStyled("│ ", BorderStyle);
+                for (int i = 0; i < columns.Count; i++)
+                {
+                    var headerLine = GetWrappedLine(columns[i].Header.AsSpan(), colWidths[i], l);
+                    AnsiConsole.Markup(headerLine, ref buffer, columns[i].HeaderStyle);
+
+                    int pad = colWidths[i] - AnsiConsole.GetMarkupVisualLength(headerLine);
+                    if (pad > 0)
+                    {
+                        buffer.Write(spaces[..pad]);
+                    }
+
+                    buffer.WriteStyled(i == columns.Count - 1 ? " │" : " │ ", BorderStyle);
+                }
+                buffer.Write(Environment.NewLine);
+            }
 
             // Header separator: ├───┼───┤
             DrawSeparator(ref buffer, colWidths, '├', '─', '┼', '┤');

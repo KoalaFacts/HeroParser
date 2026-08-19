@@ -9,6 +9,42 @@ namespace HeroParser.Console;
 /// </summary>
 public class StatusRunner
 {
+    private readonly IAnsiConsole? console;
+
+    /// <summary>
+    /// Initializes a runner that renders to <see cref="AnsiConsole.Current"/>.
+    /// </summary>
+    public StatusRunner()
+    {
+    }
+
+    /// <summary>
+    /// Initializes a runner that renders to the supplied console.
+    /// </summary>
+    /// <param name="console">Console the spinner is drawn on.</param>
+    public StatusRunner(IAnsiConsole console)
+    {
+        ArgumentNullException.ThrowIfNull(console);
+        this.console = console;
+    }
+
+    /// <summary>
+    /// Gets or sets how often the spinner advances to its next frame.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not positive.</exception>
+    public TimeSpan RefreshInterval
+    {
+        get;
+        set
+        {
+            if (value <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value, "The refresh interval must be positive.");
+            }
+            field = value;
+        }
+    } = TimeSpan.FromMilliseconds(80);
+
     /// <summary>
     /// Stubs the spinner configuration to maintain API compatibility.
     /// </summary>
@@ -23,11 +59,15 @@ public class StatusRunner
     /// </summary>
     public async Task<T> StartAsync<T>(string message, Func<StatusContext, Task<T>> action)
     {
+        ArgumentNullException.ThrowIfNull(action);
+
         using var cts = new CancellationTokenSource();
         var context = new StatusContext(message);
+        var output = console ?? AnsiConsole.Current;
+        var interval = RefreshInterval;
 
         // Hide terminal cursor
-        System.Console.Write("\x1b[?25l");
+        output.Write("\x1b[?25l");
 
         var renderTask = Task.Run(async () =>
         {
@@ -35,15 +75,15 @@ public class StatusRunner
             int frame = 0;
 
             // Render first frame
-            System.Console.Write("\x1b[2K\r");
-            AnsiConsole.Markup($"[cyan]{spinnerFrames[frame]}[/] {context.Message}");
-            System.Console.Write("\r");
+            output.Write("\x1b[2K\r");
+            output.Markup($"[cyan]{spinnerFrames[frame]}[/] {context.Message}");
+            output.Write("\r");
 
             while (!cts.Token.IsCancellationRequested)
             {
                 try
                 {
-                    await Task.Delay(80, cts.Token).ConfigureAwait(false);
+                    await Task.Delay(interval, cts.Token).ConfigureAwait(false);
                 }
                 catch (TaskCanceledException)
                 {
@@ -55,9 +95,9 @@ public class StatusRunner
                 frame = (frame + 1) % spinnerFrames.Length;
 
                 // Clear current line and rewrite spinner frame
-                System.Console.Write("\x1b[2K\r");
-                AnsiConsole.Markup($"[cyan]{spinnerFrames[frame]}[/] {context.Message}");
-                System.Console.Write("\r");
+                output.Write("\x1b[2K\r");
+                output.Markup($"[cyan]{spinnerFrames[frame]}[/] {context.Message}");
+                output.Write("\r");
             }
         });
 
@@ -79,10 +119,10 @@ public class StatusRunner
             }
 
             // Clear the status line
-            System.Console.Write("\x1b[2K\r");
+            output.Write("\x1b[2K\r");
 
             // Restore terminal cursor visibility
-            System.Console.Write("\x1b[?25h");
+            output.Write("\x1b[?25h");
         }
     }
 }

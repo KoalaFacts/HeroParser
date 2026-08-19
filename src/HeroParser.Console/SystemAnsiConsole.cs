@@ -52,9 +52,14 @@ public sealed class SystemAnsiConsole : IAnsiConsole
                 int width = System.Console.WindowWidth;
                 return width > 0 ? width : 80;
             }
-            catch
+            catch (IOException)
             {
-                // No console attached (redirected or service host): fall back to a sane default.
+                // No terminal behind stdout (redirected, or a service host): use a sane default.
+                return 80;
+            }
+            catch (PlatformNotSupportedException)
+            {
+                // Some hosts (single-file/WASI, certain sandboxes) have no window metrics.
                 return 80;
             }
         }
@@ -127,6 +132,25 @@ public sealed class SystemAnsiConsole : IAnsiConsole
         if (read < 0) return new ConsoleKeyInfo('\0', ConsoleKey.Enter, false, false, false);
 
         char c = (char)read;
+        if (c == '\x1b' && reader.Peek() == '[')
+        {
+            // A redirected host sends arrows as CSI sequences rather than key events;
+            // without this, ESC would swallow the '[' and the direction character.
+            reader.Read();
+            int final = reader.Read();
+            ConsoleKey arrow = final switch
+            {
+                'A' => ConsoleKey.UpArrow,
+                'B' => ConsoleKey.DownArrow,
+                'C' => ConsoleKey.RightArrow,
+                'D' => ConsoleKey.LeftArrow,
+                'H' => ConsoleKey.Home,
+                'F' => ConsoleKey.End,
+                _ => ConsoleKey.NoName,
+            };
+            return new ConsoleKeyInfo('\0', arrow, false, false, false);
+        }
+
         ConsoleKey key = c switch
         {
             '\r' or '\n' => ConsoleKey.Enter,

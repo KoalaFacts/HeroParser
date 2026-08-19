@@ -226,63 +226,115 @@ public class TableWidget : IConsoleWidget
         buffer.Write(Environment.NewLine);
     }
 
+    /// <summary>
+    /// Finds where the line starting at <paramref name="start"/> ends, allowing at most
+    /// <paramref name="width"/> visible characters and preferring a word boundary.
+    /// </summary>
+    /// <remarks>
+    /// Markup tags cost no visible width and are never cut: measuring raw characters
+    /// instead would both wrap styled text far too early and slice a "[red]" tag in half,
+    /// which then renders as literal text in the middle of the table.
+    /// </remarks>
+    /// <param name="text">The full cell text.</param>
+    /// <param name="start">Index this line starts at.</param>
+    /// <param name="width">Maximum visible characters on the line.</param>
+    /// <param name="nextStart">Index the following line starts at.</param>
+    /// <returns>The exclusive end index of this line's content.</returns>
+    private static int MeasureLine(ReadOnlySpan<char> text, int start, int width, out int nextStart)
+    {
+        if (width < 1) width = 1;
+
+        int index = start;
+        int visible = 0;
+        int lastSpace = -1;
+
+        while (index < text.Length && visible < width)
+        {
+            char current = text[index];
+
+            if (current == '[')
+            {
+                if (index + 1 < text.Length && text[index + 1] == '[')
+                {
+                    visible++;
+                    index += 2;
+                    continue;
+                }
+
+                int close = text[index..].IndexOf(']');
+                if (close < 0)
+                {
+                    // Unterminated tag: the rest is ordinary visible text.
+                    visible++;
+                    index++;
+                    continue;
+                }
+
+                index += close + 1;
+                continue;
+            }
+
+            if (current == ']' && index + 1 < text.Length && text[index + 1] == ']')
+            {
+                visible++;
+                index += 2;
+                continue;
+            }
+
+            if (current == ' ') lastSpace = index;
+            visible++;
+            index++;
+        }
+
+        // Tags sitting right after the last visible character (a closing "[/]", say) belong
+        // to the line they close rather than to the start of the next one.
+        while (index < text.Length && text[index] == '[' && !(index + 1 < text.Length && text[index + 1] == '['))
+        {
+            int close = text[index..].IndexOf(']');
+            if (close < 0) break;
+            index += close + 1;
+        }
+
+        if (index < text.Length && lastSpace > start)
+        {
+            nextStart = lastSpace + 1;
+            return lastSpace;
+        }
+
+        nextStart = index;
+        return index;
+    }
+
     private static int GetLineCount(ReadOnlySpan<char> text, int width)
     {
         if (text.IsEmpty) return 1;
+
         int count = 0;
         int index = 0;
         while (index < text.Length)
         {
-            int remaining = text.Length - index;
-            int take = Math.Min(remaining, width);
-            if (take < remaining)
-            {
-                int lastSpace = text[index..(index + take)].LastIndexOf(' ');
-                if (lastSpace > 0)
-                {
-                    take = lastSpace;
-                }
-            }
+            MeasureLine(text, index, width, out int next);
             count++;
-            index += take;
-            if (index < text.Length && text[index] == ' ')
-            {
-                index++;
-            }
+            if (next <= index) break;
+            index = next;
         }
-        return count;
+        return count == 0 ? 1 : count;
     }
 
     private static ReadOnlySpan<char> GetWrappedLine(ReadOnlySpan<char> text, int width, int lineIndex)
     {
         if (text.IsEmpty) return [];
 
-        int currentLine = 0;
         int index = 0;
+        int currentLine = 0;
         while (index < text.Length)
         {
-            int remaining = text.Length - index;
-            int take = Math.Min(remaining, width);
-            if (take < remaining)
-            {
-                int lastSpace = text[index..(index + take)].LastIndexOf(' ');
-                if (lastSpace > 0)
-                {
-                    take = lastSpace;
-                }
-            }
+            int end = MeasureLine(text, index, width, out int next);
+            if (currentLine == lineIndex) return text[index..end];
 
-            if (currentLine == lineIndex)
-            {
-                return text[index..(index + take)];
-            }
-
-            index += take;
-            if (index < text.Length && text[index] == ' ')
-            {
-                index++;
-            }
             currentLine++;
+            if (next <= index) break;
+            index = next;
         }
         return [];
     }

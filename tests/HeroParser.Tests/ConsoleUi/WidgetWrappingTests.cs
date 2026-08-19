@@ -107,6 +107,67 @@ public class WidgetWrappingTests
     }
 
     [Fact]
+    public void TableWidget_StyledHeaders_AreNotSplitAcrossLines()
+    {
+        // Wrapping used to measure raw characters, so "[red bold]Row[/]" counted as 16 and
+        // was cut mid-tag — the CLI's validation table printed "[re / d / bol / d]R" down
+        // its first column instead of the word.
+        var table = new HeroParser.Console.Table();
+        table.AddColumn("[red bold]Row[/]");
+        table.AddColumn("[blue]Validation Error Description[/]");
+        table.AddRow("[red]2[/]", "Row has 2 columns, expected 3");
+
+        string visible = Visible(Render(table, maxWidth: 80));
+
+        Assert.Contains("Row", visible, StringComparison.Ordinal);
+        Assert.DoesNotContain("[re", visible, StringComparison.Ordinal);
+        Assert.DoesNotContain("[/]", visible, StringComparison.Ordinal);
+        Assert.DoesNotContain("bold", visible, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TableWidget_StyledCells_KeepTheirColour()
+    {
+        var table = new HeroParser.Console.Table();
+        table.AddColumn("Value");
+        table.AddRow("[green]ok[/]");
+
+        string ansi = Render(table, maxWidth: 40);
+
+        Assert.Contains("\x1b[92m", ansi, StringComparison.Ordinal);
+        Assert.Contains("ok", Visible(ansi), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TableWidget_StyledContentWiderThanItsColumn_WrapsOnVisibleWidth()
+    {
+        var table = new HeroParser.Console.Table();
+        table.AddColumn("A");
+        table.AddColumn("B");
+        table.AddRow("[green]alpha beta gamma delta epsilon[/]", "x");
+
+        string visible = Visible(Render(table, maxWidth: 30));
+
+        Assert.DoesNotContain("[green]", visible, StringComparison.Ordinal);
+        Assert.Contains("alpha", visible, StringComparison.Ordinal);
+        Assert.Contains("epsilon", visible, StringComparison.Ordinal);
+        foreach (string line in visible.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
+        {
+            Assert.True(line.Length <= 30, $"line of length {line.Length} exceeded the render width");
+        }
+    }
+
+    [Fact]
+    public void TableWidget_EscapedBracketsInACell_SurviveWrapping()
+    {
+        var table = new HeroParser.Console.Table();
+        table.AddColumn("Value");
+        table.AddRow("a[[b]]c");
+
+        Assert.Contains("a[b]c", Visible(Render(table, maxWidth: 40)), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SelectionPrompt_DownArrow_MovesToTheNextChoice()
     {
         var console = new RecordingConsole([Key(ConsoleKey.DownArrow), Key(ConsoleKey.Enter)]);

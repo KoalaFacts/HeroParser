@@ -7,6 +7,7 @@ namespace HeroParser.Tests.FixedWidths;
 /// <summary>
 /// Tests for FixedWidthReaderBuilder inline Map&lt;TProperty&gt;() and CaseSensitiveHeaders() features.
 /// </summary>
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class FixedWidthReaderBuilderNewFeaturesTests
 {
     // "Alice     030Chicago   "

@@ -28,7 +28,7 @@ internal static class Program
                 PrintHelp();
                 return 0;
             }
-            await RunInteractiveWizardAsync(null);
+            await new InteractiveWizard(AnsiConsole.Current).RunAsync(null);
             return 0;
         }
 
@@ -45,7 +45,7 @@ internal static class Program
                 CliCommands.Profile(args[0], null, null);
                 return 0;
             }
-            await RunInteractiveWizardAsync(args[0]);
+            await new InteractiveWizard(AnsiConsole.Current).RunAsync(args[0]);
             return 0;
         }
 
@@ -276,188 +276,6 @@ internal static class Program
         }
 
         return 0;
-    }
-
-    private static async Task RunInteractiveWizardAsync(string? targetFile)
-    {
-        try
-        {
-            SysConsole.Clear();
-        }
-        catch (IOException)
-        {
-            // Ignore if console handle is not available (e.g. redirected output in tests)
-        }
-        AnsiConsole.Write(
-            new FigletText("HeroParser")
-                .Color(Color.Aqua));
-
-        AnsiConsole.MarkupLine("[bold blue]========================================================[/]");
-        AnsiConsole.MarkupLine("[bold white]    HeroParser CLI — High-Performance & AI-Native       [/]");
-        AnsiConsole.MarkupLine("[bold blue]========================================================[/]");
-        SysConsole.WriteLine();
-
-        string file = targetFile ?? "";
-        if (string.IsNullOrWhiteSpace(file))
-        {
-            // Scan current directory for files
-            var cwd = Directory.GetCurrentDirectory();
-            var searchExtensions = new[] { "*.csv", "*.tsv", "*.xlsx", "*.jsonl", "*.txt" };
-            var foundFiles = new List<string>();
-            foreach (var ext in searchExtensions)
-            {
-                foundFiles.AddRange(Directory.GetFiles(cwd, ext));
-            }
-
-            var choices = foundFiles.Select(f => Path.GetFileName(f) ?? "").Where(name => !string.IsNullOrEmpty(name)).ToList();
-            choices.Add("[Enter custom file path...]");
-            choices.Add("[Exit]");
-
-            var selectedFile = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Select a tabular file in the current directory:")
-                    .PageSize(10)
-                    .MoreChoicesText("[grey](Move up and down to reveal more files)[/]")
-                    .AddChoices(choices));
-
-            if (selectedFile == "[Exit]")
-            {
-                return;
-            }
-
-            file = selectedFile == "[Enter custom file path...]"
-                ? AnsiConsole.Prompt(
-                    new TextPrompt<string>("Enter path to the file:")
-                        .Validate(f => File.Exists(f) ? ValidationResult.Success() : ValidationResult.Error("[red]File does not exist.[/]")))
-                : Path.Combine(cwd, selectedFile);
-        }
-
-        bool running = true;
-        while (running)
-        {
-            var fileName = Path.GetFileName(file);
-            SysConsole.WriteLine();
-            AnsiConsole.Write(new Rule($"[yellow]Managing File: {fileName}[/]").LeftJustified());
-            SysConsole.WriteLine();
-
-            var action = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("Select an operation:")
-                    .AddChoices([
-                        "1. Detect delimiter & encoding",
-                        "2. Validate structure & health",
-                        "3. Profile statistics & values",
-                        "4. Generate C# record schema (Local)",
-                        "5. Generate C# record schema (AI)",
-                        "6. Ask AI a question about dataset (Query)",
-                        "7. Translate or transform columns (AI)",
-                        "8. Convert file format",
-                        "9. Change active file",
-                        "10. Exit"
-                    ]));
-
-            try
-            {
-                switch (action)
-                {
-                    case "1. Detect delimiter & encoding":
-                        CliCommands.Detect(file);
-                        break;
-
-                    case "2. Validate structure & health":
-                        CliCommands.Validate(file, null);
-                        break;
-
-                    case "3. Profile statistics & values":
-                        CliCommands.Profile(file, null, null);
-                        break;
-
-                    case "4. Generate C# record schema (Local)":
-                        await CliCommands.SchemaAsync(file, null, useAi: false, null, null, null);
-                        break;
-
-                    case "5. Generate C# record schema (AI)":
-                        await CliCommands.SchemaAsync(file, null, useAi: true, null, null, null);
-                        break;
-
-                    case "6. Ask AI a question about dataset (Query)":
-                        var query = AnsiConsole.Prompt(
-                            new TextPrompt<string>("Enter your question for the dataset:"));
-                        await CliCommands.QueryAsync(file, null, null, query, null, null, null);
-                        break;
-
-                    case "7. Translate or transform columns (AI)":
-                        var prompt = AnsiConsole.Prompt(
-                            new TextPrompt<string>("Enter transform instruction (e.g. 'Translate Category to French'):"));
-                        var defaultOut = Path.Combine(
-                            Path.GetDirectoryName(file) ?? "",
-                            Path.GetFileNameWithoutExtension(file) + "_transformed" + Path.GetExtension(file));
-                        var outPath = AnsiConsole.Prompt(
-                            new TextPrompt<string>("Enter output file path:")
-                                .DefaultValue(defaultOut));
-                        var batch = AnsiConsole.Prompt(
-                            new TextPrompt<int>("Enter batch size:")
-                                .DefaultValue(50));
-                        await CliCommands.TranslateAsync(file, null, null, prompt, outPath, batch, null, null, null);
-                        break;
-
-                    case "8. Convert file format":
-                        var targetExt = AnsiConsole.Prompt(
-                            new SelectionPrompt<string>()
-                                .Title("Select target format:")
-                                .AddChoices([".csv", ".jsonl", ".txt (Fixed Width)"]));
-
-                        string convertedOut = Path.Combine(
-                            Path.GetDirectoryName(file) ?? "",
-                            Path.GetFileNameWithoutExtension(file) + "_converted" + (targetExt == ".txt (Fixed Width)" ? ".txt" : targetExt));
-
-                        var finalOut = AnsiConsole.Prompt(
-                            new TextPrompt<string>("Enter output path:")
-                                .DefaultValue(convertedOut));
-
-                        string? shape = null;
-                        if (targetExt == ".jsonl")
-                        {
-                            var selectedShape = AnsiConsole.Prompt(
-                                new SelectionPrompt<string>()
-                                    .Title("Select JSONL shape:")
-                                    .AddChoices(["Flat (default)", "OpenAI Fine-Tuning Chat", "Anthropic Fine-Tuning Message"]));
-                            shape = selectedShape switch
-                            {
-                                "OpenAI Fine-Tuning Chat" => "openai",
-                                "Anthropic Fine-Tuning Message" => "anthropic",
-                                _ => null
-                            };
-                        }
-
-                        CliCommands.Convert(file, finalOut, null, shape, null);
-                        break;
-
-                    case "9. Change active file":
-                        targetFile = null;
-                        running = false;
-                        await RunInteractiveWizardAsync(null);
-                        return;
-
-                    case "10. Exit":
-                        running = false;
-                        break;
-                    default:
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                ConsoleUtils.Error($"Operation failed: {ex.Message}");
-            }
-
-            if (running)
-            {
-                SysConsole.WriteLine();
-                AnsiConsole.MarkupLine("[grey]Press any key to return to operation menu...[/]");
-                SysConsole.ReadKey(intercept: true);
-            }
-        }
     }
 
     private static void PrintHelp()

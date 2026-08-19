@@ -10,7 +10,42 @@ namespace HeroParser.Console;
 /// </summary>
 public class ProgressRunner
 {
+    private readonly IAnsiConsole? console;
     private readonly List<object> columns = [];
+
+    /// <summary>
+    /// Initializes a runner that renders to <see cref="AnsiConsole.Current"/>.
+    /// </summary>
+    public ProgressRunner()
+    {
+    }
+
+    /// <summary>
+    /// Initializes a runner that renders to the supplied console.
+    /// </summary>
+    /// <param name="console">Console the progress bars are drawn on.</param>
+    public ProgressRunner(IAnsiConsole console)
+    {
+        ArgumentNullException.ThrowIfNull(console);
+        this.console = console;
+    }
+
+    /// <summary>
+    /// Gets or sets how often the bars are redrawn while the work runs.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not positive.</exception>
+    public TimeSpan RefreshInterval
+    {
+        get;
+        set
+        {
+            if (value <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value, "The refresh interval must be positive.");
+            }
+            field = value;
+        }
+    } = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// Stubs the columns configuration to support API compatibility with Spectre.Console.
@@ -26,20 +61,24 @@ public class ProgressRunner
     /// </summary>
     public async Task StartAsync(Func<ProgressContext, Task> action)
     {
+        ArgumentNullException.ThrowIfNull(action);
+
         using var cts = new CancellationTokenSource();
         var context = new ProgressContext();
+        var output = console ?? AnsiConsole.Current;
+        var interval = RefreshInterval;
 
         // Hide terminal cursor
-        System.Console.Write("\x1b[?25l");
+        output.Write("\x1b[?25l");
 
         var renderTask = Task.Run(async () =>
         {
             while (!cts.Token.IsCancellationRequested)
             {
-                RenderProgress(context);
+                RenderProgress(output, context);
                 try
                 {
-                    await Task.Delay(100, cts.Token).ConfigureAwait(false);
+                    await Task.Delay(interval, cts.Token).ConfigureAwait(false);
                 }
                 catch (TaskCanceledException)
                 {
@@ -64,15 +103,15 @@ public class ProgressRunner
                 // Gracefully ignore cancellation task exceptions
             }
 
-            RenderProgress(context);
+            RenderProgress(output, context);
 
             // Restore terminal cursor visibility
-            System.Console.Write("\x1b[?25h");
-            System.Console.WriteLine();
+            output.Write("\x1b[?25h");
+            output.WriteLine(string.Empty);
         }
     }
 
-    private static void RenderProgress(ProgressContext context)
+    private static void RenderProgress(IAnsiConsole output, ProgressContext context)
     {
         lock (context.Tasks)
         {
@@ -81,7 +120,7 @@ public class ProgressRunner
             if (context.HasRenderedBefore)
             {
                 // Move cursor up by the number of tasks to rewrite them in place
-                System.Console.Write($"\x1b[{context.Tasks.Count}A");
+                output.Write($"\x1b[{context.Tasks.Count}A");
             }
             else
             {
@@ -91,7 +130,7 @@ public class ProgressRunner
             foreach (var task in context.Tasks)
             {
                 // Clear the current console line
-                System.Console.Write("\x1b[2K\r");
+                output.Write("\x1b[2K\r");
 
                 double percent = task.MaxValue > 0 ? (task.Value / task.MaxValue) : 0;
                 percent = Math.Clamp(percent, 0.0, 1.0);
@@ -103,9 +142,15 @@ public class ProgressRunner
                 string filled = new('█', filledWidth);
                 string empty = new('░', emptyWidth);
 
-                AnsiConsole.Markup($"{task.Description} ");
-                AnsiConsole.Markup($"[green][{filled}{empty}][/] ");
-                AnsiConsole.MarkupLine($"[grey]{percent * 100:0.0}%[/]");
+                output.Markup($"{task.Description} ");
+
+                // The surrounding brackets have to be written as plain text: the markup
+                // parser reads '[' as the start of a style tag, so embedding the bar in
+                // "[green][...][/]" made the whole bar parse as a tag name and vanish.
+                output.Write("[");
+                output.Markup($"[green]{filled}{empty}[/]");
+                output.Write("] ");
+                output.MarkupLine($"[grey]{percent * 100:0.0}%[/]");
             }
         }
     }

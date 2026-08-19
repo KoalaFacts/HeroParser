@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Pipelines;
 using System.Text;
 using System.Text.Json;
@@ -187,8 +188,8 @@ public class JsonlCoverageTests
     public void Reader_WithProgress_ReportsRowsRead()
     {
         string jsonl = string.Join("\n", Enumerable.Range(0, 5).Select(i => $"{{\"Name\":\"P{i}\",\"Age\":{i}}}"));
-        List<JsonlProgress> reports = [];
-        var progress = new Progress<JsonlProgress>(reports.Add);
+        ConcurrentQueue<JsonlProgress> reports = new();
+        var progress = new Progress<JsonlProgress>(reports.Enqueue);
 
         using var reader = Jsonl.Read<Person>().WithProgress(progress, intervalRows: 1).FromText(jsonl);
         List<Person> result = [.. reader];

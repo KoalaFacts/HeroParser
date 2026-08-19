@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
@@ -236,8 +237,8 @@ public class CsvWriterBuilderTerminalTests
     [Fact]
     public void WithProgress_AndInterval_Chain()
     {
-        var reports = new List<CsvWriteProgress>();
-        var p = new Progress<CsvWriteProgress>(reports.Add);
+        var reports = new ConcurrentQueue<CsvWriteProgress>();
+        var p = new Progress<CsvWriteProgress>(reports.Enqueue);
         var text = Csv.Write<Person>()
             .WithProgress(p)
             .WithProgressInterval(1)

@@ -8,8 +8,14 @@ on:
       - '**.csproj'
       - '**.sln'
       - '**.slnx'
+      - '**.js'
+      - '**.mjs'
+      - '**.cjs'
+      - '**.ts'
+      - '**.vue'
       - 'Directory.Build.props'
       - '.github/workflows/**'
+      - '.github/codeql/**'
   pull_request:
     branches: [ "main" ]
     paths:
@@ -17,8 +23,14 @@ on:
       - '**.csproj'
       - '**.sln'
       - '**.slnx'
+      - '**.js'
+      - '**.mjs'
+      - '**.cjs'
+      - '**.ts'
+      - '**.vue'
       - 'Directory.Build.props'
       - '.github/workflows/**'
+      - '.github/codeql/**'
   schedule:
     - cron: '17 22 * * 1'
 
@@ -42,6 +54,8 @@ jobs:
         - language: actions
           build-mode: none
         - language: csharp
+          build-mode: none
+        - language: javascript-typescript
           build-mode: none
 
     steps:

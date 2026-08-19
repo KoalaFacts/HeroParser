@@ -13,6 +13,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Basic Line-Based Reading Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_SingleLine_ReadsCorrectly()
     {
         var data = "ALICE               00030NYC            ";
@@ -29,6 +30,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_MultipleLines_ReadsAllRecords()
     {
         var data = "ALICE               00030NYC            \r\n" +
@@ -48,6 +50,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_UnixLineEndings_ReadsCorrectly()
     {
         var data = "LINE1               \n" +
@@ -66,6 +69,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task Current_RawRecord_ReturnsCorrectSpan()
     {
         var data = "TEST DATA HERE     ";
@@ -79,6 +83,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task Current_GetField_ExtractsFieldCorrectly()
     {
         var data = "ALICE               00030NYC            ";
@@ -101,6 +106,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Fixed-Length Record Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_FixedLength_ReadsRecordsWithoutNewlines()
     {
         // Three 20-char records with no newlines
@@ -125,6 +131,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_FixedLength_SkipRows_SkipsRecords()
     {
         // Three 20-char records with no newlines
@@ -148,6 +155,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_FixedLength_ThrowsOnPartialRecord()
     {
         // Two full records + partial record (only 10 chars)
@@ -175,6 +183,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Empty Line Handling Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_SkipEmptyLines_SkipsEmptyLines()
     {
         var data = "LINE1               \r\n" +
@@ -201,6 +210,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_IncludeEmptyLines_IncludesEmptyLines()
     {
         var data = "LINE1\r\n\r\nLINE2";
@@ -223,6 +233,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Comment Character Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_CommentCharacter_SkipsCommentLines()
     {
         var data = "# This is a comment\r\n" +
@@ -250,6 +261,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region SkipRows Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_SkipRows_SkipsInitialRows()
     {
         var data = "HEADER ROW          \r\n" +
@@ -273,6 +285,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_SkipMoreRowsThanAvailable_ReturnsNoRecords()
     {
         var data = "ROW1\r\nROW2\r\nROW3";
@@ -285,6 +298,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_HasHeaderRow_SkipsHeaderRow()
     {
         var data = "Name      Value\r\n" +
@@ -307,6 +321,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_HasHeaderRow_WithSkipRows_SkipsBoth()
     {
         var data = "# Metadata line\r\n" +
@@ -330,6 +345,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_FixedLength_HasHeaderRow_SkipsHeaderRecord()
     {
         // Three 20-char records: header + 2 data
@@ -357,6 +373,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region MaxRecordCount Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_MaxRecordCount_ThrowsWhenExceeded()
     {
         var data = "ROW1\r\nROW2\r\nROW3\r\nROW4\r\nROW5";
@@ -382,6 +399,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region BytesRead Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task BytesRead_TracksApproximateBytesRead()
     {
         var data = "LINE 1\r\nLINE 2\r\nLINE 3";
@@ -403,6 +421,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Source Line Number Tracking Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task SourceLineNumber_WhenTracked_ReturnsCorrectLineNumber()
     {
         var data = "LINE1\r\nLINE2\r\nLINE3";
@@ -422,6 +441,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task SourceLineNumber_WithSkippedRows_CorrectlyOffsets()
     {
         var data = "HEADER\r\nDATA1\r\nDATA2";
@@ -443,6 +463,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Cancellation Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_CancellationToken_ThrowsWhenCancelled()
     {
         var data = GenerateLargeData(1000);
@@ -461,6 +482,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Dispose Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task DisposeAsync_CanBeCalledMultipleTimes()
     {
         var data = "TEST";
@@ -472,6 +494,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task DisposeAsync_LeaveOpenFalse_DisposesUnderlyingStream()
     {
         var data = "TEST";
@@ -484,6 +507,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task DisposeAsync_LeaveOpenTrue_KeepsStreamOpen()
     {
         var data = "TEST";
@@ -500,6 +524,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Unicode and Encoding Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_UnicodeContent_ReadsCorrectly()
     {
         var data = "日本語テスト        \r\n" +
@@ -521,6 +546,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_UTF8BOM_HandlesCorrectly()
     {
         var data = "TEST DATA";
@@ -582,6 +608,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Builder Integration Tests
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task Builder_FromFileAsync_CreatesReader()
     {
         var tempPath = Path.Combine(Path.GetTempPath(), $"fixedwidth_reader_test_{Guid.NewGuid()}.dat");
@@ -613,6 +640,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task Builder_FromStreamAsync_CreatesReader()
     {
         var data = "LINE1\r\nLINE2\r\nLINE3";
@@ -632,6 +660,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task Builder_WithAllOptions_CreatesConfiguredReader()
     {
         // SkipRows happens before any processing (including comment handling)
@@ -666,6 +695,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region Edge Cases
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_EmptyFile_ReturnsFalse()
     {
         await using var stream = CreateStream("");
@@ -675,6 +705,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_OnlyNewlines_WithSkipEmpty_ReturnsFalse()
     {
         var data = "\r\n\r\n\r\n";
@@ -686,6 +717,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_SingleCharacterLines_ReadsCorrectly()
     {
         var data = "A\r\nB\r\nC";
@@ -702,6 +734,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_NoTrailingNewline_ReadsLastRecord()
     {
         var data = "LINE1\r\nLINE2\r\nLINE3"; // No trailing newline
@@ -725,6 +758,7 @@ public class FixedWidthAsyncStreamReaderTests
     #region API Parity Tests (matching CSV async reader patterns)
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CreateAsyncStreamReader_FromFile_OpensFileCorrectly()
     {
         var tempPath = Path.Combine(Path.GetTempPath(), $"fixedwidth_api_test_{Guid.NewGuid()}.dat");
@@ -749,6 +783,7 @@ public class FixedWidthAsyncStreamReaderTests
     }
 
     [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CreateAsyncStreamReader_FromStream_ReadsCorrectly()
     {
         var data = "TEST DATA";

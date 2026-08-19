@@ -41,6 +41,12 @@ jobs:
           set -euo pipefail
           dotnet list package --vulnerable --include-transitive --verbosity minimal | tee security-audit.txt
           test ${PIPESTATUS[0]} -eq 0
+          # `dotnet list package --vulnerable` exits 0 even when it finds something,
+          # so the report has to be inspected for the gate to mean anything.
+          if grep -q 'has the following vulnerable packages' security-audit.txt; then
+            echo '::error::Vulnerable NuGet packages detected - see the audit report'
+            exit 1
+          fi
 
       - name: Upload audit report
         if: always()
@@ -58,6 +64,46 @@ jobs:
           if [ -f security-audit.txt ]; then
             echo '```' >> $GITHUB_STEP_SUMMARY
             cat security-audit.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No audit output captured." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  npm-audit:
+    name: NPM Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+
+      - name: Audit npm workspace for vulnerabilities
+        run: |
+          set -euo pipefail
+          # Reads package-lock.json directly, so no install is needed. Exits
+          # non-zero when anything at or above the level is present.
+          npm audit --audit-level=high --prefix npm | tee npm-audit.txt
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-security-audit
+          path: npm-audit.txt
+          retention-days: 14
+
+      - name: Summarize results
+        if: always()
+        run: |
+          echo "## NPM Vulnerability Audit" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f npm-audit.txt ]; then
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat npm-audit.txt >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
             echo "No audit output captured." >> $GITHUB_STEP_SUMMARY

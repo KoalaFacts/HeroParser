@@ -73,22 +73,22 @@ jobs:
         dotnet test tests/HeroParser.Tests
         --configuration Release --no-build
         --framework ${{ matrix.framework }}
-        --verbosity normal
-        --logger "trx;LogFileName=test-results-unit.trx"
+        --
+        --filter-trait "Category=Unit"
+        --report-trx --report-trx-filename test-results-unit.trx
         --results-directory ./TestResults/unit
-        --filter "Category=Unit"
-        ${{ matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0' && '--collect:"XPlat Code Coverage"' || '' }}
+        ${{ matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0' && '--coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml' || '' }}
 
     - name: Run Integration Tests
       run: >
         dotnet test tests/HeroParser.Tests
         --configuration Release --no-build
         --framework ${{ matrix.framework }}
-        --verbosity normal
-        --logger "trx;LogFileName=test-results-integration.trx"
+        --
+        --filter-trait "Category=Integration"
+        --report-trx --report-trx-filename test-results-integration.trx
         --results-directory ./TestResults/integration
-        --filter "Category=Integration"
-        ${{ matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0' && '--collect:"XPlat Code Coverage"' || '' }}
+        ${{ matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0' && '--coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml' || '' }}
 
     - name: Publish test results
       uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2.24.0
@@ -106,14 +106,29 @@ jobs:
         path: TestResults/**/*.trx
         retention-days: 30
 
-    - name: Upload coverage to Codecov
+    - name: Summarise coverage
       if: matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
-      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      run: |
+        set -euo pipefail
+        dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
+        # Combines the unit and integration cobertura reports into one summary.
+        "$HOME/.dotnet/tools/reportgenerator" \
+          -reports:'TestResults/*/coverage.cobertura.xml' \
+          -targetdir:TestResults/coverage-report \
+          -reporttypes:MarkdownSummaryGithub
+        cat TestResults/coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload coverage report
+      if: always() && matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        files: 'TestResults/**/coverage.cobertura.xml'
-        fail_ci_if_error: false
-        flags: unittests
-        name: codecov-${{ matrix.os }}
+        name: coverage-${{ matrix.os }}-${{ matrix.framework }}
+        # The cobertura XML is the canonical form; run ReportGenerator over it
+        # locally for a browsable HTML report.
+        path: |
+          TestResults/*/coverage.cobertura.xml
+          TestResults/coverage-report/SummaryGithub.md
+        retention-days: 14
 
   aot-tests:
     name: AOT Compatibility Tests
@@ -188,7 +203,7 @@ jobs:
       run: dotnet build tests/HeroParser.Generators.Tests --configuration Release --framework ${{ matrix.framework }}
 
     - name: Run Generator Tests
-      run: dotnet test tests/HeroParser.Generators.Tests --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal
+      run: dotnet test tests/HeroParser.Generators.Tests --configuration Release --no-build --framework ${{ matrix.framework }}
 
   code-quality:
     name: Code Quality

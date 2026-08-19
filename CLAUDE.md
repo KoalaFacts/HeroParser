@@ -24,10 +24,12 @@ benchmarks/
 dotnet build
 
 # Run unit tests
-dotnet test --filter Category=Unit
+# Tests run on Microsoft.Testing.Platform, so runner arguments go after `--`
+# and use MTP names (--filter-trait, not --filter).
+dotnet test tests/HeroParser.Tests -- --filter-trait Category=Unit
 
 # Run integration tests
-dotnet test --filter Category=Integration
+dotnet test tests/HeroParser.Tests -- --filter-trait Category=Integration
 
 # Run all tests
 dotnet test
@@ -46,6 +48,14 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 ```
 
 **CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 3 frameworks (net8.0, net9.0, net10.0). Code coverage is collected on ubuntu/net10.0 only.
+
+**Test platform**: The test projects run on Microsoft.Testing.Platform rather than VSTest. Practical consequences:
+- `global.json` selects the runner (`"test": { "runner": "Microsoft.Testing.Platform" }`); without it `dotnet test` falls back to VSTest and fails on the .NET 10 SDK.
+- Test projects must set `<OutputType>Exe</OutputType>` — MTP test assemblies are executables. `Microsoft.NET.Test.Sdk`, `xunit.runner.visualstudio` and `coverlet.collector` are VSTest-only and are no longer referenced.
+- Runner arguments follow `--`: `--filter-trait` (not `--filter`), `--report-trx --report-trx-filename` (not `--logger trx`), `--coverage --coverage-output-format cobertura` (not `--collect "XPlat Code Coverage"`).
+- Each test binary is also directly runnable and accepts xunit's native single-dash options, which is handy for debugging: `./HeroParser.Tests -trait Category=Unit -list traits`.
+
+**Every test needs a Category trait**: CI runs this assembly once per category, so a test with no `Category` trait is discovered and reported but never executed by any job — green precisely because it never ran. Mark each test `[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]` or `INTEGRATION`, or put the trait on the class when the whole class is one category. `TestCategoryCoverageTests` enforces this and fails with the offending method names, so an untagged test breaks the build rather than disappearing.
 
 ## Code Style
 - **Nullable reference types**: Enabled (`<Nullable>enable</Nullable>`)

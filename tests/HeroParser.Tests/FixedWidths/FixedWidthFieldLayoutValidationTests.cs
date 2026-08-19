@@ -3,6 +3,7 @@ using Xunit;
 
 namespace HeroParser.Tests.FixedWidths;
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class FixedWidthFieldLayoutValidationTests
 {
     private sealed class OverlappingRecord

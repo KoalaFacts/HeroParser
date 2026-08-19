@@ -14,6 +14,8 @@
   "overrides": {
     "@huggingface/transformers": {
       "onnxruntime-web": "1.20.1"
-    }
+    },
+    "adm-zip": "^0.6.0",
+    "sharp": "^0.35.3"
   }
 }

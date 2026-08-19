@@ -86,8 +86,15 @@ public class SelectionPrompt<T> where T : notnull
     /// <summary>
     /// Renders the prompt and waits for the user to make a selection.
     /// </summary>
-    public T Show()
+    public T Show() => Show(AnsiConsole.Current);
+
+    /// <summary>
+    /// Shows the prompt on the supplied console and returns the chosen item.
+    /// </summary>
+    /// <param name="console">Console to render to and read keys from.</param>
+    public T Show(IAnsiConsole console)
     {
+        ArgumentNullException.ThrowIfNull(console);
         if (choices.Count == 0)
         {
             throw new InvalidOperationException("Cannot show SelectionPrompt with 0 choices.");
@@ -97,7 +104,7 @@ public class SelectionPrompt<T> where T : notnull
         bool isFirstRender = true;
 
         // Hide terminal cursor
-        System.Console.Write("\x1b[?25l");
+        console.Write("\x1b[?25l");
 
         try
         {
@@ -106,13 +113,13 @@ public class SelectionPrompt<T> where T : notnull
                 if (!isFirstRender)
                 {
                     // Move cursor up choices.Count lines to redraw in place
-                    System.Console.Write($"\x1b[{choices.Count}A");
+                    console.Write($"\x1b[{choices.Count}A");
                 }
                 else
                 {
                     if (!string.IsNullOrEmpty(title))
                     {
-                        AnsiConsole.MarkupLine(title);
+                        console.MarkupLine(title);
                     }
                     isFirstRender = false;
                 }
@@ -121,22 +128,22 @@ public class SelectionPrompt<T> where T : notnull
                 for (int i = 0; i < choices.Count; i++)
                 {
                     // Clear the line to prevent trailing text overflow from previous frames
-                    System.Console.Write("\x1b[2K\r");
+                    console.Write("\x1b[2K\r");
 
                     if (i == selectedIndex)
                     {
-                        AnsiConsole.Write("> ", highlightStyle);
-                        AnsiConsole.WriteLine(choices[i].ToString() ?? string.Empty, highlightStyle);
+                        console.Write("> ", highlightStyle);
+                        console.WriteLine(choices[i].ToString() ?? string.Empty, highlightStyle);
                     }
                     else
                     {
-                        System.Console.Write("  ");
-                        System.Console.WriteLine(choices[i].ToString() ?? string.Empty);
+                        console.Write("  ");
+                        console.WriteLine(choices[i].ToString() ?? string.Empty);
                     }
                 }
 
                 // Wait for keystroke
-                var key = System.Console.ReadKey(intercept: true).Key;
+                var key = console.ReadKey(intercept: true).Key;
                 if (key == ConsoleKey.UpArrow)
                 {
                     selectedIndex = selectedIndex == 0 ? choices.Count - 1 : selectedIndex - 1;
@@ -148,13 +155,13 @@ public class SelectionPrompt<T> where T : notnull
                 else if (key == ConsoleKey.Enter)
                 {
                     // Print selected option in place and restore standard line
-                    System.Console.Write($"\x1b[{choices.Count}A");
+                    console.Write($"\x1b[{choices.Count}A");
                     for (int i = 0; i < choices.Count; i++)
                     {
-                        System.Console.Write("\x1b[2K\r");
+                        console.Write("\x1b[2K\r");
                     }
-                    AnsiConsole.Write("> Selected: ", Style.Default.WithDim());
-                    AnsiConsole.WriteLine(choices[selectedIndex].ToString() ?? string.Empty, highlightStyle);
+                    console.Write("> Selected: ", Style.Default.WithDim());
+                    console.WriteLine(choices[selectedIndex].ToString() ?? string.Empty, highlightStyle);
                     return choices[selectedIndex];
                 }
             }
@@ -162,7 +169,7 @@ public class SelectionPrompt<T> where T : notnull
         finally
         {
             // Always restore terminal cursor visibility
-            System.Console.Write("\x1b[?25h");
+            console.Write("\x1b[?25h");
         }
     }
 }

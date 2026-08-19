@@ -4,6 +4,7 @@ using Xunit;
 
 namespace HeroParser.Tests.FixedWidths;
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class FixedWidthReaderTests
 {
     [Fact]

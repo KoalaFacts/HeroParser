@@ -12,6 +12,7 @@ file sealed class TestProgress<T>(Action<T> handler) : IProgress<T>
     public void Report(T value) => handler(value);
 }
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class FixedWidthBuilderTests
 {
     [Fact]
@@ -155,6 +156,7 @@ public class FixedWidthBuilderTests
     }
 }
 
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class FixedWidthRecordBindingTests
 {
     [GenerateBinder]

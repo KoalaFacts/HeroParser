@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 
 namespace HeroParser.Console.Prompts;
 
@@ -133,14 +134,27 @@ public class TextPrompt<T>
         {
             if (hasDefaultValue)
             {
-                console.Markup($"{title} [[grey](default: {defaultValue})[/]]: ");
+                console.Markup($"{title} [grey][[default: {defaultValue}]][/]: ");
             }
             else
             {
                 console.Markup($"{title}: ");
             }
 
-            string input = console.ReadLine() ?? string.Empty;
+            string? input = console.ReadLine();
+
+            if (input is null)
+            {
+                // Input is exhausted — a closed or redirected stream with nothing left.
+                // Retrying would spin forever, so take the default if there is one and
+                // report the exhaustion otherwise.
+                if (hasDefaultValue)
+                {
+                    return defaultValue!;
+                }
+
+                throw new EndOfStreamException($"No input is available to answer the prompt '{title}'.");
+            }
 
             // Return default value if empty
             if (string.IsNullOrWhiteSpace(input) && hasDefaultValue)

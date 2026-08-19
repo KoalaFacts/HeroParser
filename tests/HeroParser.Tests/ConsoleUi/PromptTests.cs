@@ -188,6 +188,34 @@ public class PromptTests
     }
 
     [Fact]
+    public void TextPrompt_ExhaustedInput_StopsInsteadOfSpinning()
+    {
+        // A closed stream can never satisfy the prompt; retrying would loop forever,
+        // appending prompt text until the process runs out of memory.
+        Assert.Throws<EndOfStreamException>(() => new TextPrompt<string>("Name").Show(Scripted(string.Empty).Console));
+    }
+
+    [Fact]
+    public void TextPrompt_ExhaustedInputWithDefault_ReturnsTheDefault()
+        => Assert.Equal("fallback", new TextPrompt<string>("Name").DefaultValue("fallback").Show(Scripted(string.Empty).Console));
+
+    [Fact]
+    public void TextPrompt_FailedValidationThenExhaustedInput_Stops()
+    {
+        // The retry loop must also give up on exhaustion, not just the first read.
+        var prompt = new TextPrompt<int>("N").Validate(v => v > 10 ? ValidationResult.Success() : ValidationResult.Error("too small"));
+        Assert.Throws<EndOfStreamException>(() => prompt.Show(Scripted("3\n").Console));
+    }
+
+    [Fact]
+    public void TextPrompt_DefaultValue_IsShownInBrackets()
+    {
+        var (console, output) = Scripted("\n");
+        new TextPrompt<string>("Name").DefaultValue("fallback").Show(console);
+        Assert.Contains("[default: fallback]", Visible(output.ToString()), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TextPrompt_BuilderMethodsAreFluent()
     {
         var prompt = new TextPrompt<int>();

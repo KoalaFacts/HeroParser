@@ -33,9 +33,9 @@ public class CliAiCommandTests : IDisposable
     {
         AnsiConsoleApi.Current = previousConsole;
         output.Dispose();
-        foreach (string path in tempFiles)
+        foreach (string path in tempFiles.Where(File.Exists))
         {
-            if (File.Exists(path)) File.Delete(path);
+            File.Delete(path);
         }
         GC.SuppressFinalize(this);
     }

@@ -410,4 +410,114 @@ public class HtbAsyncAndOptionsTests : IDisposable
     [Fact]
     public void Schema_RejectsANullColumnList()
         => Assert.Throws<ArgumentNullException>(() => new HtbSchema(null!));
+
+    // ---- partial binding -------------------------------------------------------
+
+    /// <summary>Binds only two of the written columns, leaving the rest to be skipped.</summary>
+    public sealed class PartialRow
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    [Fact]
+    public async Task AsyncRead_IntoAPartialRecord_SkipsTheUnboundColumns()
+    {
+        // Skipping cannot decode a value, so it has to advance exactly the right number of
+        // bytes per column type — including the length-prefixed string and float array.
+        var written = Sample(4);
+        byte[] bytes = await WriteAsync(written);
+
+        var read = new List<PartialRow>();
+        using var stream = new MemoryStream(bytes);
+        await foreach (var row in HtbApi.Read<PartialRow>().FromStreamAsync(stream, leaveOpen: true))
+        {
+            read.Add(row);
+        }
+
+        Assert.Equal(written.Count, read.Count);
+        for (int i = 0; i < written.Count; i++)
+        {
+            Assert.Equal(written[i].Id, read[i].Id);
+            Assert.Equal(written[i].Name, read[i].Name);
+        }
+    }
+
+    [Fact]
+    public async Task SyncRead_IntoAPartialRecord_SkipsTheUnboundColumns()
+    {
+        byte[] bytes = await WriteAsync(Sample(3));
+
+        using var stream = new MemoryStream(bytes);
+        var read = HtbApi.Read<PartialRow>().FromStream(stream, leaveOpen: true).ToList();
+
+        Assert.Equal(3, read.Count);
+        Assert.Equal("row-0", read[0].Name);
+        Assert.Equal(2, read[2].Id);
+    }
+
+    [Fact]
+    public async Task AsyncRead_PartialRecordWithSkippedRows_StaysAligned()
+    {
+        // Row skipping and column skipping compose: both have to leave the stream on a
+        // record boundary or every later row decodes as garbage.
+        var written = Sample(5);
+        byte[] bytes = await WriteAsync(written);
+
+        var read = new List<PartialRow>();
+        using var stream = new MemoryStream(bytes);
+        await foreach (var row in HtbApi.Read<PartialRow>().SkipRows(3).FromStreamAsync(stream, leaveOpen: true))
+        {
+            read.Add(row);
+        }
+
+        Assert.Equal(2, read.Count);
+        Assert.Equal(written[3].Name, read[0].Name);
+        Assert.Equal(written[4].Id, read[1].Id);
+    }
+
+    [Fact]
+    public async Task AsyncRead_FromANonSeekableStream_Works()
+    {
+        // A network or pipe source cannot seek, so skipping has to read and discard.
+        byte[] bytes = await WriteAsync(Sample(3));
+
+        var read = new List<PartialRow>();
+        using var stream = new ForwardOnlyStream(bytes);
+        await foreach (var row in HtbApi.Read<PartialRow>().FromStreamAsync(stream, leaveOpen: true))
+        {
+            read.Add(row);
+        }
+
+        Assert.Equal(3, read.Count);
+        Assert.Equal("row-2", read[2].Name);
+    }
+
+    /// <summary>A read-only stream that reports itself unseekable, like a socket.</summary>
+    private sealed class ForwardOnlyStream(byte[] data) : Stream
+    {
+        private readonly MemoryStream inner = new(data);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
+        }
+    }
 }

@@ -63,31 +63,16 @@ internal sealed class ProcessLlmCliRunner : ILlmCliRunner
         var outputBuilder = new StringBuilder();
         var errorBuilder = new StringBuilder();
 
-        using var outputWaitHandle = new SemaphoreSlim(0);
-        using var errorWaitHandle = new SemaphoreSlim(0);
-
+        // A null Data marks end of stream; only the text is of interest here, because
+        // WaitForExit() below is what guarantees both pipes have finished draining.
         process.OutputDataReceived += (sender, e) =>
         {
-            if (e.Data == null)
-            {
-                outputWaitHandle.Release();
-            }
-            else
-            {
-                outputBuilder.AppendLine(e.Data);
-            }
+            if (e.Data is not null) outputBuilder.AppendLine(e.Data);
         };
 
         process.ErrorDataReceived += (sender, e) =>
         {
-            if (e.Data == null)
-            {
-                errorWaitHandle.Release();
-            }
-            else
-            {
-                errorBuilder.AppendLine(e.Data);
-            }
+            if (e.Data is not null) errorBuilder.AppendLine(e.Data);
         };
 
         try
@@ -137,8 +122,10 @@ internal sealed class ProcessLlmCliRunner : ILlmCliRunner
                 throw new TimeoutException($"The local AI CLI process for {commandName} timed out (limit: {Timeout.TotalMinutes:0.##} minutes).");
             }
 
-            // Wait briefly for stdout/stderr to drain completely
-            await Task.WhenAll(outputWaitHandle.WaitAsync(TimeSpan.FromSeconds(5)), errorWaitHandle.WaitAsync(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+            // WaitForExitAsync returns as soon as the process ends, which can be before the
+            // asynchronous output handlers have run. The parameterless WaitForExit is the
+            // documented way to wait for that redirection to complete.
+            process.WaitForExit();
 
             if (process.ExitCode != 0)
             {

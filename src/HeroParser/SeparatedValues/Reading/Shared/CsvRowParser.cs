@@ -609,6 +609,119 @@ internal static class CsvRowParser
         var lfVec = Vector256.Create(lf);
         var crVec = Vector256.Create(cr);
 
+        if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
+        {
+            // 4x unrolled block processing (128 bytes per iteration)
+            while (position + (4 * 32) <= dataLength)
+            {
+                ref byte chunkRef = ref Unsafe.Add(ref mutableRef, position);
+                var c0 = Vector256.LoadUnsafe(ref chunkRef);
+                var c1 = Vector256.LoadUnsafe(ref Unsafe.Add(ref chunkRef, 32));
+                var c2 = Vector256.LoadUnsafe(ref Unsafe.Add(ref chunkRef, 64));
+                var c3 = Vector256.LoadUnsafe(ref Unsafe.Add(ref chunkRef, 96));
+
+                var d0 = Avx2.CompareEqual(c0, delimiterVec);
+                var d1 = Avx2.CompareEqual(c1, delimiterVec);
+                var d2 = Avx2.CompareEqual(c2, delimiterVec);
+                var d3 = Avx2.CompareEqual(c3, delimiterVec);
+
+                var le0 = Avx2.Or(Avx2.CompareEqual(c0, lfVec), Avx2.CompareEqual(c0, crVec));
+                var le1 = Avx2.Or(Avx2.CompareEqual(c1, lfVec), Avx2.CompareEqual(c1, crVec));
+                var le2 = Avx2.Or(Avx2.CompareEqual(c2, lfVec), Avx2.CompareEqual(c2, crVec));
+                var le3 = Avx2.Or(Avx2.CompareEqual(c3, lfVec), Avx2.CompareEqual(c3, crVec));
+
+                var combinedLineEndings = Avx2.Or(Avx2.Or(le0, le1), Avx2.Or(le2, le3));
+                uint leMask = (uint)Avx2.MoveMask(combinedLineEndings);
+
+                if (leMask == 0)
+                {
+                    // No line endings in all 128 bytes: process delimiters directly
+                    uint dm0 = (uint)Avx2.MoveMask(d0);
+                    uint dm1 = (uint)Avx2.MoveMask(d1);
+                    uint dm2 = (uint)Avx2.MoveMask(d2);
+                    uint dm3 = (uint)Avx2.MoveMask(d3);
+
+                    int totalDelims = BitOperations.PopCount(dm0) + BitOperations.PopCount(dm1) + BitOperations.PopCount(dm2) + BitOperations.PopCount(dm3);
+                    if (columnCount + totalDelims < columnEnds.Length)
+                    {
+                        while (dm0 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm0);
+                            dm0 &= dm0 - 1;
+                            columnEnds[++columnCount] = position + bit;
+                        }
+                        while (dm1 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm1);
+                            dm1 &= dm1 - 1;
+                            columnEnds[++columnCount] = position + 32 + bit;
+                        }
+                        while (dm2 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm2);
+                            dm2 &= dm2 - 1;
+                            columnEnds[++columnCount] = position + 64 + bit;
+                        }
+                        while (dm3 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm3);
+                            dm3 &= dm3 - 1;
+                            columnEnds[++columnCount] = position + 96 + bit;
+                        }
+                    }
+                    else
+                    {
+                        while (dm0 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm0);
+                            dm0 &= dm0 - 1;
+                            AppendColumnUnchecked(position + bit, ref columnCount, ref currentStart, columnEnds);
+                        }
+                        while (dm1 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm1);
+                            dm1 &= dm1 - 1;
+                            AppendColumnUnchecked(position + 32 + bit, ref columnCount, ref currentStart, columnEnds);
+                        }
+                        while (dm2 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm2);
+                            dm2 &= dm2 - 1;
+                            AppendColumnUnchecked(position + 64 + bit, ref columnCount, ref currentStart, columnEnds);
+                        }
+                        while (dm3 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm3);
+                            dm3 &= dm3 - 1;
+                            AppendColumnUnchecked(position + 96 + bit, ref columnCount, ref currentStart, columnEnds);
+                        }
+                    }
+
+                    position += 128;
+                    continue;
+                }
+
+                // Line ending is present in one of the 4 vectors; locate the first vector with an event
+                var s0 = Avx2.Or(d0, le0);
+                var s1 = Avx2.Or(d1, le1);
+                var s2 = Avx2.Or(d2, le2);
+
+                uint m0 = (uint)Avx2.MoveMask(s0);
+                if (m0 != 0) break;
+                position += 32;
+
+                uint m1 = (uint)Avx2.MoveMask(s1);
+                if (m1 != 0) break;
+                position += 32;
+
+                uint m2 = (uint)Avx2.MoveMask(s2);
+                if (m2 != 0) break;
+                position += 32;
+
+                break;
+            }
+        }
+
         while (position + Vector256<byte>.Count <= dataLength)
         {
             var chunk = Vector256.LoadUnsafe(ref Unsafe.Add(ref mutableRef, position));
@@ -636,11 +749,17 @@ internal static class CsvRowParser
             // Fast paths when quotes are disabled - JIT eliminates this entire block when TQuotePolicy is QuotesEnabled
             if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
             {
+                if (mask == 0)
+                {
+                    position += Vector256<byte>.Count;
+                    continue;
+                }
+
                 uint delimMask = (uint)Avx2.MoveMask(delimMatch);
                 uint lineEndingMask = (uint)Avx2.MoveMask(lineEndingMatch);
 
                 // FAST PATH 1: Only separators, no line endings
-                if (delimMask == mask)
+                if (lineEndingMask == 0)
                 {
                     int startColCountFast = columnCount;
                     uint delimsToProcess = delimMask;
@@ -686,12 +805,10 @@ internal static class CsvRowParser
                     position += Vector256<byte>.Count;
                     continue;
                 }
-
-                // FAST PATH 2: Separators + line endings
-                if ((delimMask | lineEndingMask) == mask)
+                else
                 {
                     // Find first line ending position - only process delimiters before it
-                    int lineEndBit = lineEndingMask != 0 ? BitOperations.TrailingZeroCount(lineEndingMask) : Vector256<byte>.Count;
+                    int lineEndBit = BitOperations.TrailingZeroCount(lineEndingMask);
                     uint delimsBeforeLineEnd = lineEndBit >= Vector256<byte>.Count
                         ? delimMask
                         : delimMask & ((1u << lineEndBit) - 1);
@@ -737,27 +854,20 @@ internal static class CsvRowParser
                         }
                     }
 
-                    // Check if there's a line ending in this chunk
-                    if (lineEndingMask != 0)
-                    {
-                        int absolute = position + lineEndBit;
-                        byte c = Unsafe.Add(ref mutableRef, absolute);
-                        CompleteRowAtLineEnding<byte, TTrack>(
-                            ref mutableRef,
-                            dataLength,
-                            absolute,
-                            lf,
-                            cr,
-                            c,
-                            ref rowLength,
-                            ref charsConsumed,
-                            ref newlineCount,
-                            ref rowEnded);
-                        return true;
-                    }
-
-                    position += Vector256<byte>.Count;
-                    continue;
+                    int lineEndPos = position + lineEndBit;
+                    byte c = Unsafe.Add(ref mutableRef, lineEndPos);
+                    CompleteRowAtLineEnding<byte, TTrack>(
+                        ref mutableRef,
+                        dataLength,
+                        lineEndPos,
+                        lf,
+                        cr,
+                        c,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
+                    return true;
                 }
             }
 
@@ -1034,6 +1144,119 @@ internal static class CsvRowParser
         var lfVec = Vector512.Create(lf);
         var crVec = Vector512.Create(cr);
 
+        if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
+        {
+            // 4x unrolled block processing (256 bytes per iteration)
+            while (position + (4 * 64) <= dataLength)
+            {
+                ref byte chunkRef = ref Unsafe.Add(ref mutableRef, position);
+                var c0 = Vector512.LoadUnsafe(ref chunkRef);
+                var c1 = Vector512.LoadUnsafe(ref Unsafe.Add(ref chunkRef, 64));
+                var c2 = Vector512.LoadUnsafe(ref Unsafe.Add(ref chunkRef, 128));
+                var c3 = Vector512.LoadUnsafe(ref Unsafe.Add(ref chunkRef, 192));
+
+                var d0 = Avx512BW.CompareEqual(c0, delimiterVec);
+                var d1 = Avx512BW.CompareEqual(c1, delimiterVec);
+                var d2 = Avx512BW.CompareEqual(c2, delimiterVec);
+                var d3 = Avx512BW.CompareEqual(c3, delimiterVec);
+
+                var le0 = Avx512F.Or(Avx512BW.CompareEqual(c0, lfVec), Avx512BW.CompareEqual(c0, crVec));
+                var le1 = Avx512F.Or(Avx512BW.CompareEqual(c1, lfVec), Avx512BW.CompareEqual(c1, crVec));
+                var le2 = Avx512F.Or(Avx512BW.CompareEqual(c2, lfVec), Avx512BW.CompareEqual(c2, crVec));
+                var le3 = Avx512F.Or(Avx512BW.CompareEqual(c3, lfVec), Avx512BW.CompareEqual(c3, crVec));
+
+                var combinedLineEndings = Avx512F.Or(Avx512F.Or(le0, le1), Avx512F.Or(le2, le3));
+                ulong leMask = combinedLineEndings.ExtractMostSignificantBits();
+
+                if (leMask == 0)
+                {
+                    // No line endings in all 256 bytes: process delimiters directly
+                    ulong dm0 = d0.ExtractMostSignificantBits();
+                    ulong dm1 = d1.ExtractMostSignificantBits();
+                    ulong dm2 = d2.ExtractMostSignificantBits();
+                    ulong dm3 = d3.ExtractMostSignificantBits();
+
+                    int totalDelims = BitOperations.PopCount(dm0) + BitOperations.PopCount(dm1) + BitOperations.PopCount(dm2) + BitOperations.PopCount(dm3);
+                    if (columnCount + totalDelims < columnEnds.Length)
+                    {
+                        while (dm0 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm0);
+                            dm0 &= dm0 - 1;
+                            columnEnds[++columnCount] = position + bit;
+                        }
+                        while (dm1 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm1);
+                            dm1 &= dm1 - 1;
+                            columnEnds[++columnCount] = position + 64 + bit;
+                        }
+                        while (dm2 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm2);
+                            dm2 &= dm2 - 1;
+                            columnEnds[++columnCount] = position + 128 + bit;
+                        }
+                        while (dm3 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm3);
+                            dm3 &= dm3 - 1;
+                            columnEnds[++columnCount] = position + 192 + bit;
+                        }
+                    }
+                    else
+                    {
+                        while (dm0 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm0);
+                            dm0 &= dm0 - 1;
+                            AppendColumnUnchecked(position + bit, ref columnCount, ref currentStart, columnEnds);
+                        }
+                        while (dm1 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm1);
+                            dm1 &= dm1 - 1;
+                            AppendColumnUnchecked(position + 64 + bit, ref columnCount, ref currentStart, columnEnds);
+                        }
+                        while (dm2 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm2);
+                            dm2 &= dm2 - 1;
+                            AppendColumnUnchecked(position + 128 + bit, ref columnCount, ref currentStart, columnEnds);
+                        }
+                        while (dm3 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm3);
+                            dm3 &= dm3 - 1;
+                            AppendColumnUnchecked(position + 192 + bit, ref columnCount, ref currentStart, columnEnds);
+                        }
+                    }
+
+                    position += 256;
+                    continue;
+                }
+
+                // Line ending is present in one of the 4 vectors; locate the first vector with an event
+                var s0 = Avx512F.Or(d0, le0);
+                var s1 = Avx512F.Or(d1, le1);
+                var s2 = Avx512F.Or(d2, le2);
+
+                ulong m0 = s0.ExtractMostSignificantBits();
+                if (m0 != 0) break;
+                position += 64;
+
+                ulong m1 = s1.ExtractMostSignificantBits();
+                if (m1 != 0) break;
+                position += 64;
+
+                ulong m2 = s2.ExtractMostSignificantBits();
+                if (m2 != 0) break;
+                position += 64;
+
+                break;
+            }
+        }
+
         while (position + Vector512<byte>.Count <= dataLength)
         {
             var chunk = Vector512.LoadUnsafe(ref Unsafe.Add(ref mutableRef, position));
@@ -1058,10 +1281,16 @@ internal static class CsvRowParser
 
             if (typeof(TQuotePolicy) == typeof(QuotesDisabled))
             {
+                if (mask == 0)
+                {
+                    position += Vector512<byte>.Count;
+                    continue;
+                }
+
                 ulong delimMask = delimMatch.ExtractMostSignificantBits();
                 ulong lineEndingMask = lineEndingMatch.ExtractMostSignificantBits();
 
-                if (delimMask == mask)
+                if (lineEndingMask == 0)
                 {
                     int startColCountFast = columnCount;
                     ulong delimsToProcess = delimMask;
@@ -1104,12 +1333,9 @@ internal static class CsvRowParser
                     position += Vector512<byte>.Count;
                     continue;
                 }
-
-                if ((delimMask | lineEndingMask) == mask)
+                else
                 {
-                    int lineEndBit = lineEndingMask != 0
-                        ? BitOperations.TrailingZeroCount(lineEndingMask)
-                        : Vector512<byte>.Count;
+                    int lineEndBit = BitOperations.TrailingZeroCount(lineEndingMask);
                     ulong delimsBeforeLineEnd = lineEndBit >= Vector512<byte>.Count
                         ? delimMask
                         : delimMask & ((1ul << lineEndBit) - 1);
@@ -1152,26 +1378,20 @@ internal static class CsvRowParser
                         }
                     }
 
-                    if (lineEndingMask != 0)
-                    {
-                        int absolute = position + lineEndBit;
-                        byte c = Unsafe.Add(ref mutableRef, absolute);
-                        CompleteRowAtLineEnding<byte, TTrack>(
-                            ref mutableRef,
-                            dataLength,
-                            absolute,
-                            lf,
-                            cr,
-                            c,
-                            ref rowLength,
-                            ref charsConsumed,
-                            ref newlineCount,
-                            ref rowEnded);
-                        return true;
-                    }
-
-                    position += Vector512<byte>.Count;
-                    continue;
+                    int lineEndPos = position + lineEndBit;
+                    byte c = Unsafe.Add(ref mutableRef, lineEndPos);
+                    CompleteRowAtLineEnding<byte, TTrack>(
+                        ref mutableRef,
+                        dataLength,
+                        lineEndPos,
+                        lf,
+                        cr,
+                        c,
+                        ref rowLength,
+                        ref charsConsumed,
+                        ref newlineCount,
+                        ref rowEnded);
+                    return true;
                 }
             }
 

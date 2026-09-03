@@ -17,10 +17,10 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 
 2. Parse the results table from stdout.
 
-3. Compare against the baseline in AGENTS.md under "Benchmark Baseline (vs Sep 0.12.1)":
-   - Standard (10k rows x 25 cols): HeroParser should be ~0.79x Sep (quoted), ~0.93x (unquoted)
+3. Compare against the baseline in AGENTS.md under "Benchmark Baseline (vs Sep 0.17.0)":
+   - Standard (10k rows x 25 cols): HeroParser is faster than Sep (quoted) and matches/exceeds Sep (unquoted)
    - Wide CSVs: 25-45% faster than Sep
-   - Allocations: 4 KB fixed
+   - Allocations: 112 B fixed (vs Sep's ~4 KB)
 
 4. Report:
    - Whether performance improved, regressed, or held steady vs the documented baseline

@@ -19,6 +19,7 @@ namespace HeroParser.SeparatedValues.Reading.Shared;
 /// </remarks>
 internal static class HardwareCapabilities
 {
+    private static int activeOverrideCount;
     private static readonly AsyncLocal<bool?> avx2Override = new();
     private static readonly AsyncLocal<bool?> avx512BWOverride = new();
     private static readonly AsyncLocal<bool?> pclmulqdqOverride = new();
@@ -27,21 +28,21 @@ internal static class HardwareCapabilities
     public static bool Avx2IsSupported
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => avx2Override.Value ?? Avx2.IsSupported;
+        get => activeOverrideCount > 0 ? (avx2Override.Value ?? Avx2.IsSupported) : Avx2.IsSupported;
     }
 
     /// <summary>True when AVX-512BW instructions can be used; mirrors <see cref="Avx512BW.IsSupported"/> unless a test override is active.</summary>
     public static bool Avx512BWIsSupported
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => avx512BWOverride.Value ?? Avx512BW.IsSupported;
+        get => activeOverrideCount > 0 ? (avx512BWOverride.Value ?? Avx512BW.IsSupported) : Avx512BW.IsSupported;
     }
 
     /// <summary>True when PCLMULQDQ instructions can be used; mirrors <see cref="Pclmulqdq.IsSupported"/> unless a test override is active.</summary>
     public static bool PclmulqdqIsSupported
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => pclmulqdqOverride.Value ?? Pclmulqdq.IsSupported;
+        get => activeOverrideCount > 0 ? (pclmulqdqOverride.Value ?? Pclmulqdq.IsSupported) : Pclmulqdq.IsSupported;
     }
 
     /// <summary>
@@ -59,6 +60,7 @@ internal static class HardwareCapabilities
     /// </remarks>
     internal static IDisposable Override(bool? avx2 = null, bool? avx512BW = null, bool? pclmulqdq = null)
     {
+        Interlocked.Increment(ref activeOverrideCount);
         var scope = new ResetScope(avx2Override.Value, avx512BWOverride.Value, pclmulqdqOverride.Value);
         if (avx2 is not null) avx2Override.Value = avx2;
         if (avx512BW is not null) avx512BWOverride.Value = avx512BW;
@@ -77,6 +79,7 @@ internal static class HardwareCapabilities
             avx2Override.Value = prevAvx2;
             avx512BWOverride.Value = prevAvx512BW;
             pclmulqdqOverride.Value = prevPclmulqdq;
+            Interlocked.Decrement(ref activeOverrideCount);
         }
     }
 }

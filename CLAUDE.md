@@ -13,7 +13,7 @@ tests/
   HeroParser.Generators.Tests/ # Source generator tests
   HeroParser.AotTests/         # AOT compatibility tests
 benchmarks/
-  HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.12.1)
+  HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.17.0)
 .github/
   workflows/                   # CI, benchmarks, security scan, release, NuGet publish
 ```
@@ -217,16 +217,18 @@ Attempted optimizations that caused regressions:
 
 **Key insight**: The .NET JIT is very good at optimizing simple, idiomatic code. "Clever" micro-optimizations often backfire by preventing JIT optimizations or adding instruction overhead.
 
-### Benchmark Baseline (vs Sep 0.12.1)
+### Benchmark Baseline (vs Sep 0.17.0)
 
 **Latest Results (.NET 10, AVX-512, AMD Ryzen AI 9 HX PRO 370):**
 
-HeroParser UTF-8 is now **faster than Sep** in all tested scenarios, including quoted data.
+HeroParser UTF-8 is **faster than Sep 0.17.0** in both unquoted and quoted scenarios, with ~35× lower memory allocations.
 
-**Performance Summary (Jan 2026)**:
-- **Standard (10k rows x 25 cols)**: HeroParser UTF-8 takes **0.79x the time** of Sep (quoted) and **0.93x** (unquoted) — ~21% and ~7% faster respectively.
-- **Wide CSVs**: **25-45% faster** than Sep.
-- **Allocations**: **4 KB fixed** (vs Sep's variable 2-13KB).
+**Performance Summary**:
+- **Standard (10k rows x 25 cols)**:
+  - **Quoted**: HeroParser UTF-8 runs in **1.33 ms – 1.69 ms** (~15–27% faster than Sep's 1.36 ms – 2.33 ms) with 112 B vs 4,048 B allocated.
+  - **Unquoted**: HeroParser UTF-8 runs in **888.5 µs – 1.15 ms** (~0.92–1.11x Sep) with 112 B vs 3,952 B allocated.
+- **Wide CSVs (100k rows x 100 cols)**: ~223.6 Million cells/sec (44.72 ms total for 10M cells, 32 B allocated).
+- **Allocations**: **112 B fixed** for rows (vs Sep's ~4 KB).
 - **Recommendation**: Always use UTF-8 APIs (`byte[]`). UTF-16 is deprecated for performance.
 
 **Historical Note**: UTF-16 Pack-Saturate approach was abandoned due to memory traffic overhead.

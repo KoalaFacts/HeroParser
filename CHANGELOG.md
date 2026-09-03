@@ -4,7 +4,12 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-## [2.6.0] - 2026-07-07
+### Optimized
+- **Unquoted CSV SIMD Throughput (AVX-512 & AVX2)**:
+  - Added 4× vector unrolled processing (256 bytes per iteration on AVX-512, 128 bytes on AVX2) for unquoted CSV parsing in `CsvRowParser.cs`.
+  - Streamlined batch delimiter extraction directly to column ends buffers without restarting vector loops or executing per-delimiter branch calls.
+  - Gated `AsyncLocal` capability checks behind `activeOverrideCount > 0` in `HardwareCapabilities.cs`, eliminating execution context lookups on SIMD capability checks in production and benchmark paths.
+  - Upgraded benchmark reference `Sep` from `0.12.1` to `0.17.0`. HeroParser matches or exceeds Sep 0.17.0 in both quoted and unquoted reading with ~35× lower allocations (112 B vs ~4 KB).
 
 ### Added
 - **WebAssembly Engine Support**: Compiled the high-performance HeroParser core engine to WebAssembly (via the `heroparser` NPM package) targeting Node.js and browser-based runtime sandboxes.

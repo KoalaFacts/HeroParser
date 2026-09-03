@@ -23,6 +23,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     private readonly PooledColumnEnds columnEndsBuffer;
     private readonly int[] columnEnds;
     private readonly bool trackLineNumbers;
+    private readonly bool enableQuotedFields;
     private int position;
     private int rowCount;
     private int sourceLineNumber; // Track source line number (1-based), only when TrackSourceLineNumbers enabled
@@ -32,6 +33,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         this.data = data;
         this.options = options;
         trackLineNumbers = options.TrackSourceLineNumbers;
+        enableQuotedFields = options.EnableQuotedFields;
         position = 0;
         rowCount = 0;
         sourceLineNumber = 1; // Start at line 1
@@ -63,11 +65,15 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
 
             var remaining = data[position..];
             int rowStartLine = trackLineNumbers ? sourceLineNumber : 0; // Only capture when tracking enabled
-            var result = CsvRowParser.ParseRow(
-                remaining,
-                options,
-                columnEnds.AsSpan(0, options.MaxColumnCount + 1),
-                trackLineNumbers);
+            var columnEndsSpan = columnEnds.AsSpan(0, options.MaxColumnCount + 1);
+
+            CsvRowParseResult result = !trackLineNumbers
+                ? (enableQuotedFields
+                    ? CsvRowParser.ParseRow<T, NoTrackLineNumbers, QuotesEnabled>(remaining, options, columnEndsSpan)
+                    : CsvRowParser.ParseRow<T, NoTrackLineNumbers, QuotesDisabled>(remaining, options, columnEndsSpan))
+                : (enableQuotedFields
+                    ? CsvRowParser.ParseRow<T, TrackLineNumbers, QuotesEnabled>(remaining, options, columnEndsSpan)
+                    : CsvRowParser.ParseRow<T, TrackLineNumbers, QuotesDisabled>(remaining, options, columnEndsSpan));
 
             if (result.CharsConsumed == 0)
                 return false;

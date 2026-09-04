@@ -1,0 +1,40 @@
+```
+
+BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.4 LTS (Noble Numbat)
+AMD EPYC 9V74 2.60GHz, 1 CPU, 4 logical and 2 physical cores
+.NET SDK 10.0.400
+  [Host]     : .NET 10.0.11 (10.0.11, 10.0.1126.37416), X64 RyuJIT x86-64-v4
+  Job-INMAZI : .NET 10.0.11 (10.0.11, 10.0.1126.37416), X64 RyuJIT x86-64-v4
+
+IterationCount=5  RunStrategy=Throughput  WarmupCount=3  
+
+```
+| Method                                    | Rows   | Fields | Mean        | Error       | StdDev    | Ratio | RatioSD | Gen0      | Gen1      | Gen2      | Allocated  | Alloc Ratio |
+|------------------------------------------ |------- |------- |------------:|------------:|----------:|------:|--------:|----------:|----------:|----------:|-----------:|------------:|
+| **ParseFromText**                             | **10000**  | **4**      |    **163.3 μs** |     **0.31 μs** |   **0.05 μs** |  **1.00** |    **0.00** |         **-** |         **-** |         **-** |          **-** |          **NA** |
+| ParseFromAsyncStreamReader_MemoryStream   | 10000  | 4      |    345.5 μs |     5.78 μs |   1.50 μs |  2.12 |    0.01 |   18.5547 |    2.4414 |         - |    49648 B |          NA |
+| ParseFromAsyncStreamReader_File           | 10000  | 4      |    587.7 μs |    13.32 μs |   2.06 μs |  3.60 |    0.01 |    8.7891 |         - |         - |    70193 B |          NA |
+| ParseTypedFromBufferedStreamMemory        | 10000  | 4      |    942.8 μs |    39.96 μs |  10.38 μs |  5.77 |    0.06 |  204.1016 |  130.8594 |   73.2422 |  2381488 B |          NA |
+| ParseTypedFromBufferedFileStream          | 10000  | 4      |  1,074.0 μs |    61.82 μs |  16.06 μs |  6.58 |    0.09 |  193.3594 |  117.1875 |   72.2656 |  2385842 B |          NA |
+| ParseTypedFromBufferedFileAsyncEnumerable | 10000  | 4      |  1,402.2 μs |    79.57 μs |  20.66 μs |  8.59 |    0.12 |  175.7813 |  113.2813 |   66.4063 |  2406418 B |          NA |
+|                                           |        |        |             |             |           |       |         |           |           |           |            |             |
+| **ParseFromText**                             | **10000**  | **8**      |    **174.8 μs** |     **0.54 μs** |   **0.14 μs** |  **1.00** |    **0.00** |         **-** |         **-** |         **-** |          **-** |          **NA** |
+| ParseFromAsyncStreamReader_MemoryStream   | 10000  | 8      |    394.3 μs |     1.76 μs |   0.27 μs |  2.26 |    0.00 |    4.8828 |         - |         - |    49648 B |          NA |
+| ParseFromAsyncStreamReader_File           | 10000  | 8      |    741.6 μs |    53.70 μs |  13.95 μs |  4.24 |    0.07 |    8.7891 |         - |         - |    87281 B |          NA |
+| ParseTypedFromBufferedStreamMemory        | 10000  | 8      |  2,111.2 μs |    78.57 μs |  20.40 μs | 12.08 |    0.11 |  378.9063 |  359.3750 |  187.5000 |  4066280 B |          NA |
+| ParseTypedFromBufferedFileStream          | 10000  | 8      |  2,380.3 μs |   319.11 μs |  82.87 μs | 13.62 |    0.43 |  394.5313 |  378.9063 |  195.3125 |  4070856 B |          NA |
+| ParseTypedFromBufferedFileAsyncEnumerable | 10000  | 8      |  2,955.1 μs |   294.75 μs |  45.61 μs | 16.91 |    0.23 |  359.3750 |  335.9375 |  179.6875 |  4094730 B |          NA |
+|                                           |        |        |             |             |           |       |         |           |           |           |            |             |
+| **ParseFromText**                             | **100000** | **4**      |  **1,608.0 μs** |     **1.64 μs** |   **0.43 μs** |  **1.00** |    **0.00** |         **-** |         **-** |         **-** |          **-** |          **NA** |
+| ParseFromAsyncStreamReader_MemoryStream   | 100000 | 4      |  4,077.4 μs |    29.93 μs |   4.63 μs |  2.54 |    0.00 |         - |         - |         - |    49648 B |          NA |
+| ParseFromAsyncStreamReader_File           | 100000 | 4      |  5,721.5 μs |   224.61 μs |  58.33 μs |  3.56 |    0.03 |   15.6250 |         - |         - |   230405 B |          NA |
+| ParseTypedFromBufferedStreamMemory        | 100000 | 4      | 13,356.8 μs |   528.48 μs | 137.24 μs |  8.31 |    0.08 | 2046.8750 | 1187.5000 |  796.8750 | 23671590 B |          NA |
+| ParseTypedFromBufferedFileStream          | 100000 | 4      | 14,710.7 μs |   868.33 μs | 225.50 μs |  9.15 |    0.13 | 2156.2500 | 1437.5000 |  906.2500 | 23676783 B |          NA |
+| ParseTypedFromBufferedFileAsyncEnumerable | 100000 | 4      | 18,024.0 μs | 1,732.49 μs | 449.92 μs | 11.21 |    0.26 | 2000.0000 | 1343.7500 |  875.0000 | 23845376 B |          NA |
+|                                           |        |        |             |             |           |       |         |           |           |           |            |             |
+| **ParseFromText**                             | **100000** | **8**      |  **1,678.7 μs** |     **6.18 μs** |   **1.60 μs** |  **1.00** |    **0.00** |         **-** |         **-** |         **-** |          **-** |          **NA** |
+| ParseFromAsyncStreamReader_MemoryStream   | 100000 | 8      |  3,912.0 μs |    45.93 μs |  11.93 μs |  2.33 |    0.01 |         - |         - |         - |    49648 B |          NA |
+| ParseFromAsyncStreamReader_File           | 100000 | 8      |  6,888.9 μs |   118.29 μs |  18.31 μs |  4.10 |    0.01 |   39.0625 |         - |         - |   404117 B |          NA |
+| ParseTypedFromBufferedStreamMemory        | 100000 | 8      | 16,086.9 μs | 1,087.41 μs | 282.40 μs |  9.58 |    0.15 | 2937.5000 | 1718.7500 | 1000.0000 | 40508040 B |          NA |
+| ParseTypedFromBufferedFileStream          | 100000 | 8      | 18,953.0 μs | 2,899.32 μs | 752.94 μs | 11.29 |    0.41 | 2906.2500 | 1875.0000 | 1000.0000 | 40512995 B |          NA |
+| ParseTypedFromBufferedFileAsyncEnumerable | 100000 | 8      | 25,495.3 μs | 2,218.96 μs | 576.26 μs | 15.19 |    0.31 | 1937.5000 | 1343.7500 |  718.7500 | 40831311 B |          NA |

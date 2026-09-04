@@ -81,3 +81,12 @@ if (fs.existsSync(changelogPath)) {
         console.log(`Updated CHANGELOG.md: Added release section for v${version}`);
     }
 }
+
+// 9. Update src/HeroParser/HeroParser.csproj PackageReleaseNotes
+const csprojPath = path.join(rootDir, 'src/HeroParser/HeroParser.csproj');
+if (fs.existsSync(csprojPath)) {
+    let csprojContent = fs.readFileSync(csprojPath, 'utf8');
+    csprojContent = csprojContent.replace(/<PackageReleaseNotes>v\d+\.\d+\.\d+/, `<PackageReleaseNotes>v${version}`);
+    fs.writeFileSync(csprojPath, csprojContent);
+    console.log(`Updated HeroParser.csproj PackageReleaseNotes to v${version}`);
+}

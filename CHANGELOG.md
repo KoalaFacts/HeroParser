@@ -4,6 +4,8 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-09-04
+
 ### Optimized
 - **Unquoted CSV SIMD Throughput (AVX-512 & AVX2)**:
   - Added 4× vector unrolled processing (256 bytes per iteration on AVX-512, 128 bytes on AVX2) for unquoted CSV parsing in `CsvRowParser.cs`.

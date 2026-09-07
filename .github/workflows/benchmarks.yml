@@ -84,6 +84,43 @@ jobs:
           --no-build \
           -- --throughput
 
+    # ---------------------------------------------------------------------------
+    # Same-runner A/B for the Sep comparison (pull requests, net10.0 only).
+    # GitHub-hosted runners land on different CPUs from run to run, so numbers
+    # from separate runs are not comparable. Building the PR base commit in a
+    # worktree and running both sides in this job removes the hardware lottery.
+    # ---------------------------------------------------------------------------
+    - name: Build base commit for A/B
+      if: github.event_name == 'pull_request' && matrix.framework == 'net10.0' && github.event.pull_request.head.repo.fork == false
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        git fetch --no-tags --depth=1 origin "$BASE_SHA"
+        git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+        cd "$RUNNER_TEMP/base"
+        dotnet restore --force-evaluate
+        dotnet build benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj \
+          --configuration Release \
+          --framework ${{ matrix.framework }} \
+          --no-restore
+
+    - name: Run Sep comparison on base and head
+      if: github.event_name == 'pull_request' && matrix.framework == 'net10.0' && github.event.pull_request.head.repo.fork == false
+      run: |
+        OUT="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts/vs-sep"
+
+        cd "$RUNNER_TEMP/base/benchmarks/HeroParser.Benchmarks"
+        dotnet run -c Release \
+          --framework ${{ matrix.framework }} \
+          --no-build \
+          -- --vs-sep-reading --filter '*' --artifacts "$OUT/base"
+
+        cd "$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks"
+        dotnet run -c Release \
+          --framework ${{ matrix.framework }} \
+          --no-build \
+          -- --vs-sep-reading --filter '*' --artifacts "$OUT/head"
+
     - name: Upload benchmark results
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       if: always()
@@ -96,26 +133,49 @@ jobs:
     - name: Comment benchmark results on PR
       if: github.event_name == 'pull_request' && matrix.framework == 'net10.0' && github.event.pull_request.head.repo.fork == false
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       with:
         script: |
           const fs = require('fs');
           const path = require('path');
 
-          // Try to find the summary markdown file
-          const artifactsDir = 'benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts/results';
-          if (fs.existsSync(artifactsDir)) {
-            const files = fs.readdirSync(artifactsDir);
-            const summaryFile = files.find(f => f.includes('github') && f.endsWith('.md'));
+          const artifactsRoot = 'benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts';
 
-            if (summaryFile) {
-              const summaryPath = path.join(artifactsDir, summaryFile);
-              const summary = fs.readFileSync(summaryPath, 'utf8');
+          // Returns the GitHub-flavoured markdown report BenchmarkDotNet wrote into
+          // <dir>/results, or null when the directory or report is missing.
+          function readReport(dir) {
+            const resultsDir = path.join(dir, 'results');
+            if (!fs.existsSync(resultsDir)) return null;
+            const file = fs.readdirSync(resultsDir).find(f => f.includes('github') && f.endsWith('.md'));
+            return file ? fs.readFileSync(path.join(resultsDir, file), 'utf8') : null;
+          }
 
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## Benchmark Results (${{ matrix.framework }})\n\n${summary}`
-              });
-            }
+          const sections = [];
+
+          const throughput = readReport(artifactsRoot);
+          if (throughput) {
+            sections.push(`## Benchmark Results (${{ matrix.framework }})\n\n${throughput}`);
+          }
+
+          const base = readReport(path.join(artifactsRoot, 'vs-sep', 'base'));
+          const head = readReport(path.join(artifactsRoot, 'vs-sep', 'head'));
+          if (base && head) {
+            const short = sha => sha.slice(0, 7);
+            sections.push(
+              `## Sep Comparison, same runner (${{ matrix.framework }})\n\n` +
+              `Both sides ran back to back in this job, so the hardware header below applies to both.\n\n` +
+              `<details><summary>Base ${short(process.env.BASE_SHA)}</summary>\n\n${base}\n</details>\n\n` +
+              `<details open><summary>Head ${short(process.env.HEAD_SHA)}</summary>\n\n${head}\n</details>`
+            );
+          }
+
+          if (sections.length > 0) {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: sections.join('\n\n')
+            });
           }

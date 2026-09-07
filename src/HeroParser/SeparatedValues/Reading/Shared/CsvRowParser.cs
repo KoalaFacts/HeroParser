@@ -635,11 +635,49 @@ internal static class CsvRowParser
 
                 if (leMask == 0)
                 {
-                    // No line endings in all 128 bytes: consume every delimiter in the block.
-                    AppendDelimiterMask((uint)Avx2.MoveMask(d0), position, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                    AppendDelimiterMask((uint)Avx2.MoveMask(d1), position + 32, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                    AppendDelimiterMask((uint)Avx2.MoveMask(d2), position + 64, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                    AppendDelimiterMask((uint)Avx2.MoveMask(d3), position + 96, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
+                    // No line endings in all 128 bytes: process delimiters directly
+                    uint dm0 = (uint)Avx2.MoveMask(d0);
+                    uint dm1 = (uint)Avx2.MoveMask(d1);
+                    uint dm2 = (uint)Avx2.MoveMask(d2);
+                    uint dm3 = (uint)Avx2.MoveMask(d3);
+
+                    int blockStartColumnCount = columnCount;
+                    int totalDelims = BitOperations.PopCount(dm0) + BitOperations.PopCount(dm1) + BitOperations.PopCount(dm2) + BitOperations.PopCount(dm3);
+                    if (columnCount + totalDelims < columnEnds.Length)
+                    {
+                        while (dm0 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm0);
+                            dm0 &= dm0 - 1;
+                            columnEnds[++columnCount] = position + bit;
+                        }
+                        while (dm1 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm1);
+                            dm1 &= dm1 - 1;
+                            columnEnds[++columnCount] = position + 32 + bit;
+                        }
+                        while (dm2 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm2);
+                            dm2 &= dm2 - 1;
+                            columnEnds[++columnCount] = position + 64 + bit;
+                        }
+                        while (dm3 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm3);
+                            dm3 &= dm3 - 1;
+                            columnEnds[++columnCount] = position + 96 + bit;
+                        }
+                    }
+                    else
+                    {
+                        ThrowTooManyColumns(columnEnds.Length - 1);
+                    }
+
+                    if (maxFieldLength.HasValue)
+                        ValidateBlockFieldLengths(columnEnds, blockStartColumnCount, columnCount, maxFieldLength.Value, ref currentStart);
+
                     position += 128;
                     continue;
                 }
@@ -647,17 +685,27 @@ internal static class CsvRowParser
                 // Line ending is present in one of the 4 vectors. Consume the delimiters of every
                 // vector that precedes the first line-ending vector so the per-vector loop below
                 // only has to re-scan the vector that actually holds the line ending.
-                if (Avx2.MoveMask(le0) != 0) break;
-                AppendDelimiterMask((uint)Avx2.MoveMask(d0), position, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                position += 32;
+                {
+                    int blockStartColumnCount = columnCount;
+                    if (Avx2.MoveMask(le0) == 0)
+                    {
+                        AppendBlockDelimiters((uint)Avx2.MoveMask(d0), position, ref columnCount, columnEnds);
+                        position += 32;
+                        if (Avx2.MoveMask(le1) == 0)
+                        {
+                            AppendBlockDelimiters((uint)Avx2.MoveMask(d1), position, ref columnCount, columnEnds);
+                            position += 32;
+                            if (Avx2.MoveMask(le2) == 0)
+                            {
+                                AppendBlockDelimiters((uint)Avx2.MoveMask(d2), position, ref columnCount, columnEnds);
+                                position += 32;
+                            }
+                        }
+                    }
 
-                if (Avx2.MoveMask(le1) != 0) break;
-                AppendDelimiterMask((uint)Avx2.MoveMask(d1), position, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                position += 32;
-
-                if (Avx2.MoveMask(le2) != 0) break;
-                AppendDelimiterMask((uint)Avx2.MoveMask(d2), position, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                position += 32;
+                    if (maxFieldLength.HasValue)
+                        ValidateBlockFieldLengths(columnEnds, blockStartColumnCount, columnCount, maxFieldLength.Value, ref currentStart);
+                }
 
                 break;
             }
@@ -1111,11 +1159,49 @@ internal static class CsvRowParser
 
                 if (leMask == 0)
                 {
-                    // No line endings in all 256 bytes: consume every delimiter in the block.
-                    AppendDelimiterMask(d0.ExtractMostSignificantBits(), position, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                    AppendDelimiterMask(d1.ExtractMostSignificantBits(), position + 64, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                    AppendDelimiterMask(d2.ExtractMostSignificantBits(), position + 128, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                    AppendDelimiterMask(d3.ExtractMostSignificantBits(), position + 192, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
+                    // No line endings in all 256 bytes: process delimiters directly
+                    ulong dm0 = d0.ExtractMostSignificantBits();
+                    ulong dm1 = d1.ExtractMostSignificantBits();
+                    ulong dm2 = d2.ExtractMostSignificantBits();
+                    ulong dm3 = d3.ExtractMostSignificantBits();
+
+                    int blockStartColumnCount = columnCount;
+                    int totalDelims = BitOperations.PopCount(dm0) + BitOperations.PopCount(dm1) + BitOperations.PopCount(dm2) + BitOperations.PopCount(dm3);
+                    if (columnCount + totalDelims < columnEnds.Length)
+                    {
+                        while (dm0 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm0);
+                            dm0 &= dm0 - 1;
+                            columnEnds[++columnCount] = position + bit;
+                        }
+                        while (dm1 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm1);
+                            dm1 &= dm1 - 1;
+                            columnEnds[++columnCount] = position + 64 + bit;
+                        }
+                        while (dm2 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm2);
+                            dm2 &= dm2 - 1;
+                            columnEnds[++columnCount] = position + 128 + bit;
+                        }
+                        while (dm3 != 0)
+                        {
+                            int bit = BitOperations.TrailingZeroCount(dm3);
+                            dm3 &= dm3 - 1;
+                            columnEnds[++columnCount] = position + 192 + bit;
+                        }
+                    }
+                    else
+                    {
+                        ThrowTooManyColumns(columnEnds.Length - 1);
+                    }
+
+                    if (maxFieldLength.HasValue)
+                        ValidateBlockFieldLengths(columnEnds, blockStartColumnCount, columnCount, maxFieldLength.Value, ref currentStart);
+
                     position += 256;
                     continue;
                 }
@@ -1123,17 +1209,27 @@ internal static class CsvRowParser
                 // Line ending is present in one of the 4 vectors. Consume the delimiters of every
                 // vector that precedes the first line-ending vector so the per-vector loop below
                 // only has to re-scan the vector that actually holds the line ending.
-                if (le0.ExtractMostSignificantBits() != 0) break;
-                AppendDelimiterMask(d0.ExtractMostSignificantBits(), position, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                position += 64;
+                {
+                    int blockStartColumnCount = columnCount;
+                    if (le0.ExtractMostSignificantBits() == 0)
+                    {
+                        AppendBlockDelimiters(d0.ExtractMostSignificantBits(), position, ref columnCount, columnEnds);
+                        position += 64;
+                        if (le1.ExtractMostSignificantBits() == 0)
+                        {
+                            AppendBlockDelimiters(d1.ExtractMostSignificantBits(), position, ref columnCount, columnEnds);
+                            position += 64;
+                            if (le2.ExtractMostSignificantBits() == 0)
+                            {
+                                AppendBlockDelimiters(d2.ExtractMostSignificantBits(), position, ref columnCount, columnEnds);
+                                position += 64;
+                            }
+                        }
+                    }
 
-                if (le1.ExtractMostSignificantBits() != 0) break;
-                AppendDelimiterMask(d1.ExtractMostSignificantBits(), position, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                position += 64;
-
-                if (le2.ExtractMostSignificantBits() != 0) break;
-                AppendDelimiterMask(d2.ExtractMostSignificantBits(), position, ref columnCount, ref currentStart, columnEnds, columnCapacity, maxFieldLength);
-                position += 64;
+                    if (maxFieldLength.HasValue)
+                        ValidateBlockFieldLengths(columnEnds, blockStartColumnCount, columnCount, maxFieldLength.Value, ref currentStart);
+                }
 
                 break;
             }
@@ -2472,50 +2568,53 @@ internal static class CsvRowParser
     }
 
     /// <summary>
-    /// Appends one column end per set bit in <paramref name="delimiterMask"/>, offset from <paramref name="basePosition"/>.
-    /// Uses the bounds-free append when the whole mask is known to fit, otherwise the checked variant.
+    /// Block-path append: one column end per set bit in <paramref name="delimiterMask"/>, offset from
+    /// <paramref name="basePosition"/>. Mirrors the no-newline block loop: a single capacity check up
+    /// front, then bare <c>columnEnds[++columnCount]</c> writes with no per-delimiter bookkeeping.
     /// </summary>
+    /// <remarks>
+    /// Deliberately does not maintain <c>currentStart</c>; the block path only needs it when
+    /// <c>MaxFieldSize</c> is set, and <see cref="ValidateBlockFieldLengths"/> resynchronises it then.
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void AppendDelimiterMask(
+    private static void AppendBlockDelimiters(
         ulong delimiterMask,
         int basePosition,
         ref int columnCount,
-        ref int currentStart,
-        Span<int> columnEnds,
-        int columnCapacity,
-        int? maxFieldLength)
+        Span<int> columnEnds)
     {
-        int startColumnCount = columnCount;
+        if (columnCount + BitOperations.PopCount(delimiterMask) >= columnEnds.Length)
+            ThrowTooManyColumns(columnEnds.Length - 1);
 
-        if (columnCount + BitOperations.PopCount(delimiterMask) <= columnCapacity)
+        while (delimiterMask != 0)
         {
-            while (delimiterMask != 0)
-            {
-                int bit = BitOperations.TrailingZeroCount(delimiterMask);
-                delimiterMask &= delimiterMask - 1;
-                AppendColumnUncheckedUnsafe(basePosition + bit, ref columnCount, ref currentStart, columnEnds);
-            }
+            int bit = BitOperations.TrailingZeroCount(delimiterMask);
+            delimiterMask &= delimiterMask - 1;
+            columnEnds[++columnCount] = basePosition + bit;
         }
-        else
+    }
+
+    /// <summary>
+    /// Cold path for the SIMD block loops when <c>MaxFieldSize</c> is set: validates every column
+    /// appended since <paramref name="startColumnCount"/> and resynchronises <paramref name="currentStart"/>,
+    /// which the block appends skip, so <see cref="AppendFinalColumn"/> measures the last field correctly.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ValidateBlockFieldLengths(
+        Span<int> columnEnds,
+        int startColumnCount,
+        int columnCount,
+        int maxFieldLength,
+        ref int currentStart)
+    {
+        for (int i = startColumnCount; i < columnCount; i++)
         {
-            while (delimiterMask != 0)
-            {
-                int bit = BitOperations.TrailingZeroCount(delimiterMask);
-                delimiterMask &= delimiterMask - 1;
-                AppendColumnUnchecked(basePosition + bit, ref columnCount, ref currentStart, columnEnds);
-            }
+            int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
+            if (fieldLength > maxFieldLength)
+                ThrowFieldTooLong(maxFieldLength, fieldLength);
         }
 
-        // Validate once per mask rather than per delimiter (ends-only: length = end - previousEnd - 1).
-        if (maxFieldLength.HasValue)
-        {
-            for (int i = startColumnCount; i < columnCount; i++)
-            {
-                int fieldLength = columnEnds[i + 1] - columnEnds[i] - 1;
-                if (fieldLength > maxFieldLength.Value)
-                    ThrowFieldTooLong(maxFieldLength.Value, fieldLength);
-            }
-        }
+        currentStart = columnEnds[columnCount] + 1;
     }
 
     /// <summary>

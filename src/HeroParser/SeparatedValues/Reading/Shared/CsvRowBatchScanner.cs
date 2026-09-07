@@ -301,6 +301,12 @@ internal static class CsvRowBatchScanner
             return endsCount;
         }
 
+        if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && lem == 0
+            && TryAppendQuotedNoLineEnding(dm, qm, chunkBase, chunkSize, data, (byte)options.Quote, ref st, ends, ref endsCount))
+        {
+            return endsCount;
+        }
+
         ulong lfm = Vector512.Equals(chunk, lfV).ExtractMostSignificantBits();
         return ProcessEventChunk<byte, TTrack, TQuotePolicy>(dm, lem, qm, lfm, chunkBase, chunkSize, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
     }
@@ -420,6 +426,12 @@ internal static class CsvRowBatchScanner
             return endsCount;
         }
 
+        if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && lem == 0
+            && TryAppendQuotedNoLineEnding(dm, qm, chunkBase, chunkSize, data, (byte)options.Quote, ref st, ends, ref endsCount))
+        {
+            return endsCount;
+        }
+
         ulong lfm = Vector256.Equals(chunk, lfV).ExtractMostSignificantBits();
         return ProcessEventChunk<byte, TTrack, TQuotePolicy>(dm, lem, qm, lfm, chunkBase, chunkSize, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
     }
@@ -480,6 +492,11 @@ internal static class CsvRowBatchScanner
             if (lem == 0 && (typeof(TQuotePolicy) == typeof(QuotesDisabled) || (qm == 0 && !st.InQuotes && !st.SkipNextQuote)))
             {
                 AppendDelimiters(dm, position, ends, ref endsCount);
+            }
+            else if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && lem == 0
+                && TryAppendQuotedNoLineEnding(dm, qm, position, N, data, options.Quote, ref st, ends, ref endsCount))
+            {
+                // handled inline
             }
             else
             {
@@ -547,6 +564,11 @@ internal static class CsvRowBatchScanner
             if (lem == 0 && (typeof(TQuotePolicy) == typeof(QuotesDisabled) || (qm == 0 && !st.InQuotes && !st.SkipNextQuote)))
             {
                 AppendDelimiters(dm, position, ends, ref endsCount);
+            }
+            else if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && lem == 0
+                && TryAppendQuotedNoLineEnding(dm, qm, position, N, data, options.Quote, ref st, ends, ref endsCount))
+            {
+                // handled inline
             }
             else
             {
@@ -623,6 +645,48 @@ internal static class CsvRowBatchScanner
             delimiterMask &= delimiterMask - 1;
             ends[endsCount++] = chunkBase + bit;
         }
+    }
+
+    /// <summary>
+    /// Inline handling for the common quoted shape: a chunk with quote activity but no line ending
+    /// (most chunks inside a row of quoted fields). Filters delimiters through the CLMUL in-quotes
+    /// mask, appends the survivors bare, and flips the quote parity. Returns false when the chunk
+    /// needs the full state machine (doubled quotes, a carried-in skipped quote, no PCLMULQDQ).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryAppendQuotedNoLineEnding<T>(
+        ulong dm,
+        ulong qm,
+        int chunkBase,
+        int chunkSize,
+        ReadOnlySpan<T> data,
+        T quote,
+        ref ScanState st,
+        Span<int> ends,
+        ref int endsCount)
+        where T : unmanaged, IEquatable<T>
+    {
+        if (st.SkipNextQuote || (qm & (qm >> 1)) != 0 || !HardwareCapabilities.PclmulqdqIsSupported)
+            return false;
+
+        if ((qm & (1ul << (chunkSize - 1))) != 0)
+        {
+            int next = chunkBase + chunkSize;
+            if (next < data.Length && data[next].Equals(quote))
+                return false;
+        }
+
+        // No line ending in this chunk, so no CR can be pending at its end.
+        st.PendingCrInQuotes = false;
+
+        if (qm == 0)
+            return true; // entirely inside a quoted field: nothing to record
+
+        ulong inQuotes = ComputeInQuotesMask(qm, st.InQuotes);
+        AppendDelimiters(dm & ~inQuotes, chunkBase, ends, ref endsCount);
+        if ((BitOperations.PopCount(qm) & 1) != 0)
+            st.InQuotes = !st.InQuotes;
+        return true;
     }
 
     /// <summary>

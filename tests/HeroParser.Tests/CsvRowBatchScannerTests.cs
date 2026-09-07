@@ -92,6 +92,22 @@ public class CsvRowBatchScannerTests
         }
     }
 
+    private static ReadOutcome ReadBatchedChars(string csv, CsvReadOptions options, int capacity)
+    {
+        var rows = new List<RowSnapshot>();
+        try
+        {
+            using var reader = new CsvRowReader<char>(csv.AsSpan(), options, capacity);
+            while (reader.MoveNext())
+                rows.Add(Snapshot(reader.Current));
+            return new ReadOutcome(rows, null, null);
+        }
+        catch (CsvException ex)
+        {
+            return new ReadOutcome(rows, ex.ErrorCode, ex.Message);
+        }
+    }
+
     private static RowSnapshot Snapshot<T>(CsvRow<T> row) where T : unmanaged, IEquatable<T>
     {
         var cells = new string[row.ColumnCount];
@@ -106,10 +122,11 @@ public class CsvRowBatchScannerTests
         var utf8 = Encoding.UTF8.GetBytes(csv);
 
         // Minimum capacity forces a batch boundary every row or two; default is the production size.
+        // Both element types run the same scanner state machine through different vector front ends.
         foreach (int capacity in new[] { 1, CsvRowBatchScanner.DEFAULT_ENDS_CAPACITY })
         {
-            var actual = ReadBatched(utf8, options, capacity);
-            AssertOutcomesEqual(expected, actual, $"capacity={capacity}");
+            AssertOutcomesEqual(expected, ReadBatched(utf8, options, capacity), $"utf8 capacity={capacity}");
+            AssertOutcomesEqual(expected, ReadBatchedChars(csv, options, capacity), $"utf16 capacity={capacity}");
         }
     }
 
@@ -291,13 +308,31 @@ public class CsvRowBatchScannerTests
     public void MaxRowCount_Enforced_AcrossBatches()
     {
         var options = Options(quotes: false, track: false, maxRows: 25);
-        var utf8 = Encoding.UTF8.GetBytes(VaryingRows("\n", 100));
+        string csv = VaryingRows("\n", 100);
+        var utf8 = Encoding.UTF8.GetBytes(csv);
         var ex = Assert.Throws<CsvException>(() =>
         {
             using var reader = new CsvRowReader<byte>(utf8, options, 1);
             while (reader.MoveNext()) { }
         });
         Assert.Equal(CsvErrorCode.TooManyRows, ex.ErrorCode);
+
+        var exChars = Assert.Throws<CsvException>(() =>
+        {
+            using var reader = new CsvRowReader<char>(csv.AsSpan(), options, 1);
+            while (reader.MoveNext()) { }
+        });
+        Assert.Equal(CsvErrorCode.TooManyRows, exChars.ErrorCode);
+    }
+
+    /// <summary>Non-ASCII chars must not be mistaken for delimiters, quotes or line endings on the UTF-16 path.</summary>
+    [Fact]
+    public void Utf16_NonAsciiContent_MatchesPerRow()
+    {
+        var sb = new StringBuilder();
+        for (int r = 0; r < 60; r++)
+            sb.Append("名前").Append(r).Append(",\"引用, 值\",émoji 🚀,").Append(new string('ß', r % 5)).Append(r % 3 == 0 ? "\r\n" : "\n");
+        AssertSameAsOracle(sb.ToString(), Options(quotes: true, track: true));
     }
 
     [Fact]

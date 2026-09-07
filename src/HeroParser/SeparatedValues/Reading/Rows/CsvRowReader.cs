@@ -11,8 +11,13 @@ namespace HeroParser.SeparatedValues.Reading.Rows;
 /// <remarks>
 /// <para>Rows are parsed lazily as <see cref="MoveNext"/> advances.</para>
 /// <para>
-/// This reader uses a pooled column buffer per instance to reduce allocations. The buffer
-/// is returned to the pool when <see cref="Dispose"/> is called (including by <c>foreach</c>).
+/// For UTF-8 input on SIMD-capable hardware the reader scans ahead: one pass records the column ends
+/// of a batch of rows into a pooled buffer and <see cref="MoveNext"/> then only advances an index
+/// (see <see cref="CsvRowBatchScanner"/>). Other configurations parse one row per call.
+/// </para>
+/// <para>
+/// This reader uses pooled buffers per instance to reduce allocations. They are returned to the
+/// pool when <see cref="Dispose"/> is called (including by <c>foreach</c>).
 /// </para>
 /// <para>Uses Ends-only column indexing to minimize memory writes during parsing.</para>
 /// </remarks>
@@ -28,7 +33,22 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     private int rowCount;
     private int sourceLineNumber; // Track source line number (1-based), only when TrackSourceLineNumbers enabled
 
+    // Scan-ahead batch state (byte input only; null when the per-row path is in use).
+    private readonly PooledRowBatch? batch;
+    private int batchRowCount;
+    private int batchIndex;
+    private int batchErrorRowStart;
+
     internal CsvRowReader(ReadOnlySpan<T> data, CsvReadOptions options)
+        : this(data, options, CsvRowBatchScanner.DEFAULT_ENDS_CAPACITY)
+    {
+    }
+
+    /// <summary>
+    /// Creates a reader with an explicit scan-ahead buffer size. Tests use small capacities to force
+    /// batch boundaries; the capacity is raised to the minimum a single row needs.
+    /// </summary>
+    internal CsvRowReader(ReadOnlySpan<T> data, CsvReadOptions options, int batchEndsCapacity)
     {
         this.data = data;
         this.options = options;
@@ -41,6 +61,13 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         // Ends-only storage: need maxColumns + 1 entries
         columnEndsBuffer = new PooledColumnEnds(options.MaxColumnCount + 1);
         columnEnds = columnEndsBuffer.Buffer;
+
+        batchErrorRowStart = -1;
+        if (typeof(T) == typeof(byte) && CsvRowBatchScanner.IsSupported(options))
+        {
+            int endsCapacity = Math.Max(batchEndsCapacity, CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
+            batch = new PooledRowBatch(endsCapacity, trackLineNumbers);
+        }
     }
 
     /// <summary>Gets the current row.</summary>
@@ -57,6 +84,99 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     /// <returns><see langword="true"/> when another row was parsed; otherwise, <see langword="false"/>.</returns>
     /// <exception cref="CsvException">Thrown when the input violates <see cref="CsvReadOptions"/>.</exception>
     public bool MoveNext()
+    {
+        return batch is not null ? MoveNextBatched() : MoveNextPerRow();
+    }
+
+    private bool MoveNextBatched()
+    {
+        while (true)
+        {
+            if (batchIndex < batchRowCount)
+            {
+                EmitBatchRow();
+                return true;
+            }
+
+            if (batchErrorRowStart >= 0)
+            {
+                // The scanner flagged this row; the per-row parser reproduces its exception. Should it
+                // parse cleanly after all, the row is emitted and batching resumes after it.
+                position = batchErrorRowStart;
+                batchErrorRowStart = -1;
+                return MoveNextPerRow();
+            }
+
+            if (position >= data.Length)
+                return false;
+
+            int before = position;
+            FillBatch();
+
+            if (batchRowCount == 0 && batchErrorRowStart < 0)
+            {
+                if (position >= data.Length)
+                    return false; // only blank lines remained
+
+                if (position == before)
+                    return MoveNextPerRow(); // no progress possible in batch form; parse one row directly
+            }
+        }
+    }
+
+    private void FillBatch()
+    {
+        // T is byte on this path; reinterpret the span without copying.
+        var bytes = System.Runtime.InteropServices.MemoryMarshal.Cast<T, byte>(data);
+        Span<int> ends = batch!.Ends;
+        Span<int> rowStarts = batch.RowStarts;
+        Span<int> sourceLines = batch.SourceLines is { } lines ? lines : default;
+
+        batchRowCount = !trackLineNumbers
+            ? (enableQuotedFields
+                ? CsvRowBatchScanner.Scan<NoTrackLineNumbers, QuotesEnabled>(bytes, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out int nextPosition, out int nextSourceLine, out int errorRowStart)
+                : CsvRowBatchScanner.Scan<NoTrackLineNumbers, QuotesDisabled>(bytes, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart))
+            : (enableQuotedFields
+                ? CsvRowBatchScanner.Scan<TrackLineNumbers, QuotesEnabled>(bytes, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart)
+                : CsvRowBatchScanner.Scan<TrackLineNumbers, QuotesDisabled>(bytes, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart));
+
+        batchIndex = 0;
+        batchErrorRowStart = errorRowStart;
+        position = nextPosition;
+        if (trackLineNumbers)
+            sourceLineNumber = nextSourceLine;
+    }
+
+    private void EmitBatchRow()
+    {
+        int r = batchIndex++;
+        int[] ends = batch!.Ends;
+        int[] rowStarts = batch.RowStarts;
+        int endsStart = rowStarts[r];
+        int endsEnd = rowStarts[r + 1];
+        int columnCount = endsEnd - endsStart - 1;
+        int rowStart = ends[endsStart] + 1;
+        int rowEnd = ends[endsEnd - 1];
+
+        rowCount++;
+        Current = new CsvRow<T>(
+            data[rowStart..rowEnd],
+            ends.AsSpan(endsStart, columnCount + 1),
+            columnCount,
+            rowCount,
+            trackLineNumbers ? batch.SourceLines![r] : rowCount,
+            options.TrimFields,
+            baseOffset: rowStart);
+
+        if (rowCount > options.MaxRowCount)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyRows,
+                $"CSV exceeds maximum row limit of {options.MaxRowCount}");
+        }
+    }
+
+    private bool MoveNextPerRow()
     {
         while (true)
         {
@@ -115,5 +235,6 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     public readonly void Dispose()
     {
         columnEndsBuffer.Dispose();
+        batch?.Dispose();
     }
 }

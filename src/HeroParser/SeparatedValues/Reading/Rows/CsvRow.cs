@@ -28,6 +28,9 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     private readonly int lineNumber;
     private readonly int sourceLineNumber;
     private readonly bool trimFields;
+    // Offset subtracted from every entry in columnEnds to make it relative to `line`. Zero for the
+    // per-row parser (row-relative ends); the row start for scan-ahead batches (absolute ends).
+    private readonly int baseOffset;
 
     internal CsvRow(
         ReadOnlySpan<T> line,
@@ -35,14 +38,16 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         int columnCount,
         int lineNumber,
         int sourceLineNumber,
-        bool trimFields = false)
+        bool trimFields = false,
+        int baseOffset = 0)
     {
         this.line = line;
         this.columnCount = columnCount;
         this.lineNumber = lineNumber;
         this.sourceLineNumber = sourceLineNumber;
         this.trimFields = trimFields;
-        // columnEnds has columnCount + 1 entries (including the -1 sentinel)
+        this.baseOffset = baseOffset;
+        // columnEnds has columnCount + 1 entries (including the leading sentinel)
         columnEnds = columnEndsBuffer[..(columnCount + 1)];
     }
 
@@ -88,8 +93,8 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
             }
 
             // compute start and length from ends
-            var start = columnEnds[index] + 1;
-            var end = columnEnds[index + 1];
+            var start = columnEnds[index] + 1 - baseOffset;
+            var end = columnEnds[index + 1] - baseOffset;
 
             if (trimFields)
             {
@@ -120,8 +125,8 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
             return false;
         }
 
-        var start = columnEnds[index] + 1;
-        var end = columnEnds[index + 1];
+        var start = columnEnds[index] + 1 - baseOffset;
+        var end = columnEnds[index + 1] - baseOffset;
 
         if (trimFields)
         {
@@ -155,8 +160,8 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
             return false;
         }
 
-        var start = columnEnds[index] + 1;
-        var end = columnEnds[index + 1];
+        var start = columnEnds[index] + 1 - baseOffset;
+        var end = columnEnds[index + 1] - baseOffset;
 
         if (trimFields)
         {
@@ -190,8 +195,8 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
                 $"Column index {index} is out of range. Column count is {columnCount}.");
         }
 
-        var start = columnEnds[index] + 1;
-        var end = columnEnds[index + 1];
+        var start = columnEnds[index] + 1 - baseOffset;
+        var end = columnEnds[index + 1] - baseOffset;
 
         if (trimFields)
         {
@@ -225,8 +230,8 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         for (int i = 0; i < columnCount; i++)
         {
             // compute start and length from ends
-            var start = columnEnds[i] + 1;
-            var end = columnEnds[i + 1];
+            var start = columnEnds[i] + 1 - baseOffset;
+            var end = columnEnds[i + 1] - baseOffset;
 
             if (trimFields)
             {
@@ -343,7 +348,7 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     {
         var newLine = line.ToArray();
         var newEnds = columnEnds.ToArray();
-        return new CsvRow<T>(newLine, newEnds, columnCount, lineNumber, sourceLineNumber, trimFields);
+        return new CsvRow<T>(newLine, newEnds, columnCount, lineNumber, sourceLineNumber, trimFields, baseOffset);
     }
 
     /// <summary>
@@ -424,8 +429,8 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     public bool IsDangerousColumn(int index)
     {
         // compute start and length from ends
-        var start = columnEnds[index] + 1;
-        var end = columnEnds[index + 1];
+        var start = columnEnds[index] + 1 - baseOffset;
+        var end = columnEnds[index + 1] - baseOffset;
 
         if (trimFields)
         {

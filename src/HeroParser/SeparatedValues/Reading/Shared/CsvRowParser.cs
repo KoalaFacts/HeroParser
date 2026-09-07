@@ -909,6 +909,13 @@ internal static class CsvRowParser
                         uint crMask = (uint)Avx2.MoveMask(crMatch);
                         uint lfInsideQuotes = lfMask & inQuotesMask;
                         uint crInsideQuotes = crMask & inQuotesMask;
+                        if (filteredLineEndMask != 0)
+                        {
+                            // Only in-quote line endings before this row's terminator belong to this row.
+                            uint rowBits = (1u << BitOperations.TrailingZeroCount(filteredLineEndMask)) - 1;
+                            lfInsideQuotes &= rowBits;
+                            crInsideQuotes &= rowBits;
+                        }
                         newlineCount += CountLineEndingsInQuotes(
                             lfInsideQuotes,
                             crInsideQuotes,
@@ -1411,6 +1418,13 @@ internal static class CsvRowParser
                         ulong crMask = crMatch.ExtractMostSignificantBits();
                         ulong lfInsideQuotes = lfMask & inQuotesMask;
                         ulong crInsideQuotes = crMask & inQuotesMask;
+                        if (filteredLineEndMask != 0)
+                        {
+                            // Only in-quote line endings before this row's terminator belong to this row.
+                            ulong rowBits = (1ul << BitOperations.TrailingZeroCount(filteredLineEndMask)) - 1;
+                            lfInsideQuotes &= rowBits;
+                            crInsideQuotes &= rowBits;
+                        }
                         newlineCount += CountLineEndingsInQuotes(
                             lfInsideQuotes,
                             crInsideQuotes,
@@ -1862,6 +1876,13 @@ internal static class CsvRowParser
 
                         ulong lfInsideQuotes = lfMask & inQuotesMask;
                         ulong crInsideQuotes = crMask & inQuotesMask;
+                        if (filteredLineEndMask != 0)
+                        {
+                            // Only in-quote line endings before this row's terminator belong to this row.
+                            ulong rowBits = (1ul << BitOperations.TrailingZeroCount(filteredLineEndMask)) - 1;
+                            lfInsideQuotes &= rowBits;
+                            crInsideQuotes &= rowBits;
+                        }
                         newlineCount += CountLineEndingsInQuotes(
                             lfInsideQuotes,
                             crInsideQuotes,
@@ -2328,6 +2349,13 @@ internal static class CsvRowParser
                         uint crMask = (uint)Avx2.MoveMask(crMatch);
                         uint lfInsideQuotes = lfMask & inQuotesMask;
                         uint crInsideQuotes = crMask & inQuotesMask;
+                        if (filteredLineEndMask != 0)
+                        {
+                            // Only in-quote line endings before this row's terminator belong to this row.
+                            uint rowBits = (1u << BitOperations.TrailingZeroCount(filteredLineEndMask)) - 1;
+                            lfInsideQuotes &= rowBits;
+                            crInsideQuotes &= rowBits;
+                        }
                         newlineCount += CountLineEndingsInQuotes(
                             lfInsideQuotes,
                             crInsideQuotes,

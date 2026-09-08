@@ -52,24 +52,27 @@ public class SourceLineNumberQuotedChunkTests
     public void Scalar_Utf16_IsGroundTruth()
         => Assert.Equal(expectedLines, Lines(Csv.ReadFromCharSpan(CSV.AsSpan(), Options(simd: false))));
 
+    // A comment character keeps a reader on the per-row path (see CsvRowBatchScanner.IsSupported).
+
     [Fact]
     public void Simd_Utf16_PerRow()
-        => Assert.Equal(expectedLines, Lines(Csv.ReadFromCharSpan(CSV.AsSpan(), Options(simd: true))));
+        => Assert.Equal(expectedLines, Lines(new CsvRowReader<char>(CSV.AsSpan(), Options(simd: true, comment: '#'))));
 
     [Fact]
     public void Simd_Utf8_PerRow()
     {
-        // A comment character keeps the byte reader on the per-row path (see CsvRowBatchScanner.IsSupported).
         var utf8 = Encoding.UTF8.GetBytes(CSV);
         Assert.Equal(expectedLines, Lines(new CsvRowReader<byte>(utf8, Options(simd: true, comment: '#'))));
     }
 
     [Fact]
-    public void Simd_Utf8_Batched()
+    public void Simd_Batched_BothElementTypes()
     {
         var utf8 = Encoding.UTF8.GetBytes(CSV);
         Assert.Equal(expectedLines, Lines(new CsvRowReader<byte>(utf8, Options(simd: true))));
         Assert.Equal(expectedLines, Lines(new CsvRowReader<byte>(utf8, Options(simd: true), 1)));
+        Assert.Equal(expectedLines, Lines(new CsvRowReader<char>(CSV.AsSpan(), Options(simd: true))));
+        Assert.Equal(expectedLines, Lines(new CsvRowReader<char>(CSV.AsSpan(), Options(simd: true), 1)));
     }
 
     [Fact]
@@ -78,8 +81,9 @@ public class SourceLineNumberQuotedChunkTests
         if (!Avx2) return;
         using var _scope = HardwareCapabilities.Override(avx512BW: false);
         var utf8 = Encoding.UTF8.GetBytes(CSV);
-        Assert.Equal(expectedLines, Lines(Csv.ReadFromCharSpan(CSV.AsSpan(), Options(simd: true))));
+        Assert.Equal(expectedLines, Lines(new CsvRowReader<char>(CSV.AsSpan(), Options(simd: true, comment: '#'))));
         Assert.Equal(expectedLines, Lines(new CsvRowReader<byte>(utf8, Options(simd: true, comment: '#'))));
         Assert.Equal(expectedLines, Lines(new CsvRowReader<byte>(utf8, Options(simd: true))));
+        Assert.Equal(expectedLines, Lines(new CsvRowReader<char>(CSV.AsSpan(), Options(simd: true))));
     }
 }

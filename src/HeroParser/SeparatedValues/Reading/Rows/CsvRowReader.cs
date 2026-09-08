@@ -11,9 +11,10 @@ namespace HeroParser.SeparatedValues.Reading.Rows;
 /// <remarks>
 /// <para>Rows are parsed lazily as <see cref="MoveNext"/> advances.</para>
 /// <para>
-/// For UTF-8 input on SIMD-capable hardware the reader scans ahead: one pass records the column ends
-/// of a batch of rows into a pooled buffer and <see cref="MoveNext"/> then only advances an index
-/// (see <see cref="CsvRowBatchScanner"/>). Other configurations parse one row per call.
+/// On SIMD-capable hardware the reader scans ahead: one pass records the column ends of a batch of
+/// rows into a pooled buffer and <see cref="MoveNext"/> then only advances an index (see
+/// <see cref="CsvRowBatchScanner"/>). Configurations the scanner does not cover (comment or escape
+/// character, SIMD disabled) parse one row per call.
 /// </para>
 /// <para>
 /// This reader uses pooled buffers per instance to reduce allocations. They are returned to the
@@ -33,7 +34,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     private int rowCount;
     private int sourceLineNumber; // Track source line number (1-based), only when TrackSourceLineNumbers enabled
 
-    // Scan-ahead batch state (byte input only; null when the per-row path is in use).
+    // Scan-ahead batch state (null when the per-row path is in use).
     private readonly PooledRowBatch? batch;
     private int batchRowCount;
     private int batchIndex;
@@ -63,7 +64,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         columnEnds = columnEndsBuffer.Buffer;
 
         batchErrorRowStart = -1;
-        if (typeof(T) == typeof(byte) && CsvRowBatchScanner.IsSupported(options))
+        if (CsvRowBatchScanner.IsSupported(options))
         {
             int endsCapacity = Math.Max(batchEndsCapacity, CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
             batch = new PooledRowBatch(endsCapacity, trackLineNumbers);
@@ -126,19 +127,17 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
 
     private void FillBatch()
     {
-        // T is byte on this path; reinterpret the span without copying.
-        var bytes = System.Runtime.InteropServices.MemoryMarshal.Cast<T, byte>(data);
         Span<int> ends = batch!.Ends;
         Span<int> rowStarts = batch.RowStarts;
         Span<int> sourceLines = batch.SourceLines is { } lines ? lines : default;
 
         batchRowCount = !trackLineNumbers
             ? (enableQuotedFields
-                ? CsvRowBatchScanner.Scan<NoTrackLineNumbers, QuotesEnabled>(bytes, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out int nextPosition, out int nextSourceLine, out int errorRowStart)
-                : CsvRowBatchScanner.Scan<NoTrackLineNumbers, QuotesDisabled>(bytes, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart))
+                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(data, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out int nextPosition, out int nextSourceLine, out int errorRowStart)
+                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(data, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart))
             : (enableQuotedFields
-                ? CsvRowBatchScanner.Scan<TrackLineNumbers, QuotesEnabled>(bytes, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart)
-                : CsvRowBatchScanner.Scan<TrackLineNumbers, QuotesDisabled>(bytes, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart));
+                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(data, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart)
+                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(data, position, sourceLineNumber, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart));
 
         batchIndex = 0;
         batchErrorRowStart = errorRowStart;

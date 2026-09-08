@@ -80,14 +80,14 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         return cursor is not null ? MoveNextBatched(cursor) : MoveNextPerRow();
     }
 
-    private bool MoveNextBatched(CsvRowBatchCursor cursor)
+    private bool MoveNextBatched(CsvRowBatchCursor batchCursor)
     {
         while (true)
         {
-            if (cursor.TryTake(out var row))
+            if (batchCursor.TryTake(out var row))
             {
                 rowCount++;
-                Current = cursor.CreateRow(data, row, rowCount, rowCount);
+                Current = batchCursor.CreateRow(data, row, rowCount, rowCount);
                 if (rowCount > options.MaxRowCount)
                 {
                     throw new CsvException(
@@ -97,12 +97,12 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
                 return true;
             }
 
-            if (cursor.ErrorRowStart >= 0)
+            if (batchCursor.ErrorRowStart >= 0)
             {
                 // The scanner flagged this row; the per-row parser reproduces its exception. Should it
                 // parse cleanly after all, the row is emitted and batching resumes after it.
-                position = cursor.ErrorRowStart;
-                cursor.ClearError();
+                position = batchCursor.ErrorRowStart;
+                batchCursor.ClearError();
                 return MoveNextPerRow();
             }
 
@@ -110,12 +110,12 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
                 return false;
 
             int before = position;
-            int rows = cursor.Fill(data, position, sourceLineNumber, isFinalBlock: true);
-            position = cursor.NextPosition;
+            int rows = batchCursor.Fill(data, position, sourceLineNumber, isFinalBlock: true);
+            position = batchCursor.NextPosition;
             if (trackLineNumbers)
-                sourceLineNumber = cursor.NextSourceLine;
+                sourceLineNumber = batchCursor.NextSourceLine;
 
-            if (rows == 0 && cursor.ErrorRowStart < 0)
+            if (rows == 0 && batchCursor.ErrorRowStart < 0)
             {
                 if (position >= data.Length)
                     return false; // only blank lines remained

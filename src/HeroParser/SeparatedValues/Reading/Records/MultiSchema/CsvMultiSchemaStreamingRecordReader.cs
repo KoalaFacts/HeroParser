@@ -47,12 +47,9 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
     private bool endOfStream;
     private bool disposed;
 
-    // Scan-ahead over the buffered window (same protocol as CsvAsyncStreamReader); null when the
-    // options keep this reader on the per-row parser. batchBase is the buffer offset the current
-    // batch was scanned from.
+    // Shared scan-ahead cursor (null when the options keep this reader on the per-row parser).
+    // It drives the batch / refill / fallback protocol over the buffered window; see CsvRowBatchCursor.
     private readonly CsvRowBatchCursor? cursor;
-    private int batchBase;
-    private bool parseErrorRowPerRow;
 
     /// <summary>
     /// Gets the current record. Valid after <see cref="MoveNextAsync"/> returns <see langword="true"/>.
@@ -109,9 +106,11 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
         while (true)
         {
-            if (cursor is not null && cursor.TryTake(out var batchRow))
+            // Per-row hot path: rows already scanned are handed out before the buffer is touched again
+            // (a refill compacts the buffer, and pending batch rows point into the current window).
+            if (cursor is not null && cursor.TryTake(out var pendingRow))
             {
-                if (EmitBatchRow(batchRow))
+                if (EmitBatchRow(pendingRow))
                     return true;
                 continue;
             }
@@ -121,56 +120,29 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            if (cursor is not null)
+            {
+                switch (cursor.Advance<char>(buffer, ref offset, length, endOfStream, ref sourceLineNumber))
+                {
+                    case CsvBatchStep.Continue:
+                        continue;
+
+                    case CsvBatchStep.RefillNeeded:
+                        await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                        continue;
+
+                    case CsvBatchStep.EndOfInput:
+                        ReportFinalProgress();
+                        return false;
+
+                    case CsvBatchStep.ParsePerRow:
+                    default:
+                        break; // fall through to the per-row parser at the current offset
+                }
+            }
+
             var span = buffer.AsSpan(offset, length - offset);
-            if (span.IsEmpty && endOfStream)
-            {
-                ReportFinalProgress();
-                return false;
-            }
 
-            if (cursor is not null && !parseErrorRowPerRow)
-            {
-                int rows = cursor.Fill(span, 0, sourceLineNumber, isFinalBlock: endOfStream);
-                batchBase = offset;
-                int consumed = cursor.NextPosition;
-
-                if (rows > 0)
-                {
-                    offset += consumed;
-                    if (trackLineNumbers)
-                        sourceLineNumber = cursor.NextSourceLine;
-                    parseErrorRowPerRow = cursor.ErrorRowStart >= 0;
-                    cursor.ClearError();
-                    continue;
-                }
-
-                if (cursor.ErrorRowStart >= 0)
-                {
-                    offset += cursor.ErrorRowStart;
-                    cursor.ClearError();
-                    parseErrorRowPerRow = true;
-                    continue;
-                }
-
-                if (consumed > 0)
-                {
-                    offset += consumed;
-                    if (trackLineNumbers)
-                        sourceLineNumber = cursor.NextSourceLine;
-                    continue;
-                }
-
-                if (!endOfStream)
-                {
-                    await FillBufferAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                parseErrorRowPerRow = true;
-                continue;
-            }
-
-            parseErrorRowPerRow = false;
 
             int rowStartOffset = offset;
             int rowStartLine = trackLineNumbers ? sourceLineNumber : 0;
@@ -292,7 +264,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             return false;
         }
 
-        var row = cursor!.CreateRow(buffer.AsSpan(batchBase, length - batchBase), batchRow, rowNumber, rowNumber);
+        var row = cursor!.CreateRow(buffer, batchRow, rowNumber, rowNumber);
 
         if (binder.NeedsHeaderResolution)
         {

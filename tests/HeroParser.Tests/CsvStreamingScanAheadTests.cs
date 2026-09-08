@@ -227,6 +227,24 @@ public class CsvStreamingScanAheadTests
         await AssertStreamMatchesSpan(longField, Options(quotes: true, track: true, maxFieldSize: 20));
     }
 
+    /// <summary>
+    /// A row with more delimiters than the batch buffer can hold must be reported as TooManyColumns
+    /// promptly, not read into an ever-growing buffer until MaxRowSize trips with the wrong error.
+    /// </summary>
+    [Fact]
+    public async Task OverWideRow_InStream_ReportsTooManyColumns_WithoutBufferingToMaxRowSize()
+    {
+        string csv = VaryingRows("\n", 20) + new string(',', 5000) + "\n" + VaryingRows("\n", 200000);
+        var utf8 = Encoding.UTF8.GetBytes(csv);
+        var options = Options(quotes: false, track: true, maxColumns: 16, maxRowSize: 512 * 1024);
+
+        var expected = ReadSpan(utf8, options);
+        Assert.Equal(CsvErrorCode.TooManyColumns, expected.Error);
+
+        var actual = await ReadStreamAsync(utf8, options, chunk: 4096, bufferSize: 4096);
+        AssertOutcomesEqual(expected, actual, "over-wide row");
+    }
+
     [Fact]
     public async Task MaxRowSize_StillEnforced_OnBatchedRows()
     {

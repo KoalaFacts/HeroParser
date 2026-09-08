@@ -84,6 +84,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     {
         while (true)
         {
+            // Per-row hot path: hand out an already scanned row without entering the protocol.
             if (batchCursor.TryTake(out var row))
             {
                 rowCount++;
@@ -97,31 +98,20 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
                 return true;
             }
 
-            if (batchCursor.ErrorRowStart >= 0)
+            switch (batchCursor.Advance(data, ref position, data.Length, endOfStream: true, ref sourceLineNumber))
             {
-                // The scanner flagged this row; the per-row parser reproduces its exception. Should it
-                // parse cleanly after all, the row is emitted and batching resumes after it.
-                position = batchCursor.ErrorRowStart;
-                batchCursor.ClearError();
-                return MoveNextPerRow();
-            }
+                case CsvBatchStep.ParsePerRow:
+                    // A flagged row (the per-row parser reproduces its exception) or the final row
+                    // without a line ending; either way one per-row step, then batching resumes.
+                    return MoveNextPerRow();
 
-            if (position >= data.Length)
-                return false;
+                case CsvBatchStep.Continue:
+                    continue;
 
-            int before = position;
-            int rows = batchCursor.Fill(data, position, sourceLineNumber, isFinalBlock: true);
-            position = batchCursor.NextPosition;
-            if (trackLineNumbers)
-                sourceLineNumber = batchCursor.NextSourceLine;
-
-            if (rows == 0 && batchCursor.ErrorRowStart < 0)
-            {
-                if (position >= data.Length)
-                    return false; // only blank lines remained
-
-                if (position == before)
-                    return MoveNextPerRow(); // no progress possible in batch form; parse one row directly
+                case CsvBatchStep.EndOfInput:
+                case CsvBatchStep.RefillNeeded: // cannot occur for a final block
+                default:
+                    return false;
             }
         }
     }

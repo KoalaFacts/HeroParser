@@ -1,29 +1,45 @@
 using System.Buffers;
+using System.Runtime.CompilerServices;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
 
 namespace HeroParser.SeparatedValues.Reading.Shared;
 
 /// <summary>
-/// One scanned row inside a batch: offsets are relative to the span passed to
-/// <see cref="CsvRowBatchCursor.Fill{T}"/>.
+/// One scanned row inside a batch: offsets are relative to the window the batch was scanned from.
 /// </summary>
 internal readonly record struct CsvBatchRow(int RowStart, int RowEnd, int ColumnCount, int EndsStart, int SourceLine)
 {
     public int Length => RowEnd - RowStart;
 }
 
+/// <summary>What a reader should do next after <see cref="CsvRowBatchCursor.Advance{T}"/>.</summary>
+internal enum CsvBatchStep
+{
+    /// <summary>Progress was made (a batch was scanned, or blank lines consumed); take rows, then call again.</summary>
+    Continue,
+    /// <summary>The window holds only a partial row and more data may follow: refill, then call again.</summary>
+    RefillNeeded,
+    /// <summary>The row at the current offset must go through the per-row parser (a limit violation, or the final row without a line ending).</summary>
+    ParsePerRow,
+    /// <summary>No data remains.</summary>
+    EndOfInput
+}
+
 /// <summary>
 /// Shared scan-ahead cursor for every reading path: owns the pooled batch buffers, runs
-/// <see cref="CsvRowBatchScanner"/> over a span, and hands rows out one at a time. Readers keep only
-/// their own buffer management (a whole span, or a refillable stream window) and row emission.
+/// <see cref="CsvRowBatchScanner"/> over a window, hands rows out one at a time, and drives the
+/// batch / refill / fallback protocol so readers keep only their buffer management and row emission.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Protocol per window: call <see cref="Fill{T}"/> with the data and whether it is the final block;
-/// then <see cref="TryTake"/> until it returns false; then inspect <see cref="ErrorRowStart"/> (a row the
-/// per-row parser must re-parse for its exception) and <see cref="NextPosition"/> (where the window's
-/// unconsumed data begins: the partial trailing row for a streaming block, or the end).
+/// Protocol: a reader first drains pending rows with <see cref="TryTake"/> (the per-row hot path), and
+/// only when none are pending calls <see cref="Advance{T}"/> with its buffer, current offset, buffered
+/// length and end-of-stream flag, then acts on the returned <see cref="CsvBatchStep"/>. A whole-span
+/// reader passes the span, its position, the span length and <c>endOfStream: true</c>; a streaming
+/// reader passes its window and refills on <see cref="CsvBatchStep.RefillNeeded"/>. Because rows are
+/// drained before <see cref="Advance{T}"/> is entered, a reader never compacts or grows its buffer while
+/// batch offsets still point into it.
 /// </para>
 /// <para>
 /// Buffer layout: <c>ends</c> holds absolute column-end offsets, <c>rowStarts</c> the index of each
@@ -47,6 +63,8 @@ internal sealed class CsvRowBatchCursor : IDisposable
     private int[]? sourceLines;
     private int rowCount;
     private int index;
+    private int windowBase;         // buffer offset the current batch was scanned from
+    private bool pendingPerRow;     // a flagged row follows the batch and must be parsed per-row once it drains
 
     private CsvRowBatchCursor(CsvReadOptions options, int endsCapacity)
     {
@@ -56,7 +74,6 @@ internal sealed class CsvRowBatchCursor : IDisposable
         ends = ArrayPool<int>.Shared.Rent(endsCapacity);
         rowStarts = ArrayPool<int>.Shared.Rent(CsvRowBatchScanner.RowStartsCapacity(endsCapacity));
         sourceLines = trackLineNumbers ? ArrayPool<int>.Shared.Rent(rowStarts.Length) : null;
-        ErrorRowStart = -1;
     }
 
     /// <summary>
@@ -72,49 +89,11 @@ internal sealed class CsvRowBatchCursor : IDisposable
         return new CsvRowBatchCursor(options, capacity);
     }
 
-    /// <summary>Start (relative to the filled span) of a row the per-row parser must re-parse, or -1.</summary>
-    public int ErrorRowStart { get; private set; }
-
     /// <summary>
-    /// Position (relative to the filled span) where unconsumed data begins after the last
-    /// <see cref="Fill{T}"/>: the error row, the partial trailing row of a streaming block, or the span end.
+    /// Takes the next recorded row; false when the batch is exhausted. This is the per-row hot path, so it
+    /// is kept small enough to inline; the one null check reports use after <see cref="Dispose"/>.
     /// </summary>
-    public int NextPosition { get; private set; }
-
-    /// <summary>Source line at <see cref="NextPosition"/> (meaningful when line tracking is on).</summary>
-    public int NextSourceLine { get; private set; }
-
-    private int[] Ends => ends ?? throw new ObjectDisposedException(nameof(CsvRowBatchCursor));
-
-    private int[] RowStarts => rowStarts ?? throw new ObjectDisposedException(nameof(CsvRowBatchCursor));
-
-    /// <summary>
-    /// Scans <paramref name="data"/> from <paramref name="start"/> and records complete rows.
-    /// Returns the number of rows available to take.
-    /// </summary>
-    public int Fill<T>(ReadOnlySpan<T> data, int start, int sourceLine, bool isFinalBlock)
-        where T : unmanaged, IEquatable<T>
-    {
-        Span<int> endsSpan = Ends;
-        Span<int> rowStartsSpan = RowStarts;
-        Span<int> sourceLinesSpan = sourceLines is { } lines ? lines : default;
-
-        rowCount = !trackLineNumbers
-            ? (quotes
-                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(data, start, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out int nextPosition, out int nextSourceLine, out int errorRowStart)
-                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(data, start, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out nextPosition, out nextSourceLine, out errorRowStart))
-            : (quotes
-                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(data, start, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out nextPosition, out nextSourceLine, out errorRowStart)
-                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(data, start, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out nextPosition, out nextSourceLine, out errorRowStart));
-
-        index = 0;
-        NextPosition = nextPosition;
-        NextSourceLine = nextSourceLine;
-        ErrorRowStart = errorRowStart;
-        return rowCount;
-    }
-
-    /// <summary>Takes the next recorded row; false when the batch is exhausted.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryTake(out CsvBatchRow row)
     {
         if (index >= rowCount)
@@ -123,9 +102,12 @@ internal sealed class CsvRowBatchCursor : IDisposable
             return false;
         }
 
+        int[]? e = ends;
+        if (e is null)
+            ThrowDisposed();
+
         int r = index++;
-        int[] e = Ends;
-        int[] starts = RowStarts;
+        int[] starts = rowStarts!;
         int endsStart = starts[r];
         int endsEnd = starts[r + 1];
         int columnCount = endsEnd - endsStart - 1;
@@ -136,19 +118,83 @@ internal sealed class CsvRowBatchCursor : IDisposable
         return true;
     }
 
-    /// <summary>Clears the error marker once the caller has handed the row to the per-row parser.</summary>
-    public void ClearError() => ErrorRowStart = -1;
+    /// <summary>
+    /// Drives one step of the protocol over <paramref name="buffer"/>'s window <c>[offset, length)</c>.
+    /// Call only when <see cref="TryTake"/> has returned false. Moves <paramref name="offset"/> past
+    /// consumed data and, with line tracking, keeps <paramref name="sourceLine"/> at the line of the new
+    /// offset.
+    /// </summary>
+    public CsvBatchStep Advance<T>(ReadOnlySpan<T> buffer, ref int offset, int length, bool endOfStream, ref int sourceLine)
+        where T : unmanaged, IEquatable<T>
+    {
+        if (pendingPerRow)
+        {
+            // The batch just drained up to a flagged row; the per-row parser reproduces its exception
+            // (or, should it parse cleanly after all, yields it) and batching resumes after it.
+            pendingPerRow = false;
+            return CsvBatchStep.ParsePerRow;
+        }
+
+        var window = buffer[offset..length];
+        if (window.IsEmpty)
+            return endOfStream ? CsvBatchStep.EndOfInput : CsvBatchStep.RefillNeeded;
+
+        int rows = Fill(window, sourceLine, isFinalBlock: endOfStream, out int consumed, out int nextSourceLine, out bool rowFlagged);
+        windowBase = offset;
+
+        // Consume once, whatever was scanned: rows, blank lines, or the prefix before a flagged row.
+        // The scanner already stops the consumed prefix at a flagged row's start.
+        offset += consumed;
+        if (trackLineNumbers)
+            sourceLine = nextSourceLine;
+
+        if (rows > 0)
+        {
+            pendingPerRow = rowFlagged;
+            return CsvBatchStep.Continue;
+        }
+
+        if (rowFlagged)
+            return CsvBatchStep.ParsePerRow;
+
+        if (consumed > 0)
+            return CsvBatchStep.Continue; // only blank lines were consumed
+
+        // A trailing row the scanner could not close: partial if more data may follow, otherwise the
+        // per-row parser emits it (no line ending) or throws (unterminated quote), exactly as before.
+        return endOfStream ? CsvBatchStep.ParsePerRow : CsvBatchStep.RefillNeeded;
+    }
+
+    private int Fill<T>(ReadOnlySpan<T> window, int sourceLine, bool isFinalBlock, out int consumed, out int nextSourceLine, out bool rowFlagged)
+        where T : unmanaged, IEquatable<T>
+    {
+        Span<int> endsSpan = ends ?? throw new ObjectDisposedException(nameof(CsvRowBatchCursor));
+        Span<int> rowStartsSpan = rowStarts;
+        Span<int> sourceLinesSpan = sourceLines is { } lines ? lines : default;
+
+        rowCount = !trackLineNumbers
+            ? (quotes
+                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out int errorRowStart)
+                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart))
+            : (quotes
+                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart)
+                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart));
+
+        index = 0;
+        rowFlagged = errorRowStart >= 0;
+        return rowCount;
+    }
 
     /// <summary>
-    /// Builds the <see cref="CsvRow{T}"/> for a taken row. <paramref name="window"/> must be the same span
-    /// (or a span starting at the same element) that was passed to <see cref="Fill{T}"/>.
+    /// Builds the <see cref="CsvRow{T}"/> for a row taken from the current batch. <paramref name="buffer"/>
+    /// must be the buffer that was passed to <see cref="Advance{T}"/>.
     /// </summary>
-    public CsvRow<T> CreateRow<T>(ReadOnlySpan<T> window, CsvBatchRow row, int rowNumber, int sourceLineFallback)
+    public CsvRow<T> CreateRow<T>(ReadOnlySpan<T> buffer, CsvBatchRow row, int rowNumber, int sourceLineFallback)
         where T : unmanaged, IEquatable<T>
     {
         return new CsvRow<T>(
-            window.Slice(row.RowStart, row.Length),
-            Ends.AsSpan(row.EndsStart, row.ColumnCount + 1),
+            buffer.Slice(windowBase + row.RowStart, row.Length),
+            ends.AsSpan(row.EndsStart, row.ColumnCount + 1),
             row.ColumnCount,
             rowNumber,
             trackLineNumbers ? row.SourceLine : sourceLineFallback,
@@ -164,16 +210,22 @@ internal sealed class CsvRowBatchCursor : IDisposable
             return;
 
         ends = null;
-        ArrayPool<int>.Shared.Return(e, clearArray: false);
+        ArrayPool<int>.Shared.Return(e);
 
-        var starts = rowStarts;
-        rowStarts = null;
-        if (starts is not null)
-            ArrayPool<int>.Shared.Return(starts, clearArray: false);
+        if (rowStarts is { } starts)
+        {
+            rowStarts = null;
+            ArrayPool<int>.Shared.Return(starts);
+        }
 
-        var lines = sourceLines;
-        sourceLines = null;
-        if (lines is not null)
-            ArrayPool<int>.Shared.Return(lines, clearArray: false);
+        if (sourceLines is { } lines)
+        {
+            sourceLines = null;
+            ArrayPool<int>.Shared.Return(lines);
+        }
     }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
+    private static void ThrowDisposed() => throw new ObjectDisposedException(nameof(CsvRowBatchCursor));
 }

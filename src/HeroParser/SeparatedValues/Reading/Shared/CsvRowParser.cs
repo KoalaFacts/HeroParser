@@ -379,7 +379,7 @@ internal static class CsvRowParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong ComputeInQuotesMaskClmul(ulong quoteMask, bool prevInQuotes)
+    internal static ulong ComputeInQuotesMaskClmul(ulong quoteMask, bool prevInQuotes)
     {
         var quoteMaskVec = Vector128.CreateScalarUnsafe((long)quoteMask);
         var allOnes = Vector128.CreateScalarUnsafe(-1L);
@@ -2539,7 +2539,7 @@ internal static class CsvRowParser
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static T CastFromChar<T>(char c) where T : unmanaged
+    internal static T CastFromChar<T>(char c) where T : unmanaged
     {
         if (typeof(T) == typeof(byte))
             return (T)(object)(byte)c;

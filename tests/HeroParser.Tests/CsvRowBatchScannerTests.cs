@@ -344,6 +344,35 @@ public class CsvRowBatchScannerTests
         AssertSameAsOracle(sb.ToString().Replace("\"", string.Empty), Options(quotes: false, track: true));
     }
 
+    /// <summary>
+    /// The reader is a ref struct copied by foreach, and the cursor is shared by the copies. Using the
+    /// original after a copy was disposed must fail loudly whatever the input size, not read as end of data.
+    /// </summary>
+    [Fact]
+    public void MoveNext_AfterDisposeThroughCopy_Throws()
+    {
+        // Scanner-path behaviour: the per-row fallback (no AVX, e.g. Apple Silicon) caches its column
+        // buffer and has never thrown here, and changing that is outside this test's scope.
+        if (!CsvRowBatchScanner.IsSupported(Options(quotes: false, track: false))) return;
+
+        var utf8 = Encoding.UTF8.GetBytes(VaryingRows("\n", 50));
+        var reader = new CsvRowReader<byte>(utf8, Options(quotes: false, track: false));
+        foreach (var _ in reader)
+            break; // disposes the enumerator copy, which shares the cursor
+
+        // A ref struct cannot be captured by a lambda, so assert the throw by hand.
+        bool threw = false;
+        try
+        {
+            reader.MoveNext();
+        }
+        catch (ObjectDisposedException)
+        {
+            threw = true;
+        }
+        Assert.True(threw, "MoveNext after a copy was disposed must throw ObjectDisposedException");
+    }
+
     [Fact]
     public void TrimFields_AppliedToBatchedRows()
     {

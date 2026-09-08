@@ -47,6 +47,13 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
     private bool endOfStream;
     private bool disposed;
 
+    // Scan-ahead over the buffered window (same protocol as CsvAsyncStreamReader); null when the
+    // options keep this reader on the per-row parser. batchBase is the buffer offset the current
+    // batch was scanned from.
+    private readonly CsvRowBatchCursor? cursor;
+    private int batchBase;
+    private bool parseErrorRowPerRow;
+
     /// <summary>
     /// Gets the current record. Valid after <see cref="MoveNextAsync"/> returns <see langword="true"/>.
     /// </summary>
@@ -80,6 +87,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: leaveOpen);
         buffer = RentBuffer(Math.Max(4096, parserOptions.MaxRowSize ?? 4096));
         columnEndsBuffer = new PooledColumnEnds(parserOptions.MaxColumnCount + 1);
+        cursor = CsvRowBatchCursor.TryCreate(parserOptions);
         offset = 0;
         length = 0;
         rowNumber = 0;
@@ -101,6 +109,13 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
         while (true)
         {
+            if (cursor is not null && cursor.TryTake(out var batchRow))
+            {
+                if (EmitBatchRow(batchRow))
+                    return true;
+                continue;
+            }
+
             if (!endOfStream && offset >= length)
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
@@ -112,6 +127,50 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
                 ReportFinalProgress();
                 return false;
             }
+
+            if (cursor is not null && !parseErrorRowPerRow)
+            {
+                int rows = cursor.Fill(span, 0, sourceLineNumber, isFinalBlock: endOfStream);
+                batchBase = offset;
+                int consumed = cursor.NextPosition;
+
+                if (rows > 0)
+                {
+                    offset += consumed;
+                    if (trackLineNumbers)
+                        sourceLineNumber = cursor.NextSourceLine;
+                    parseErrorRowPerRow = cursor.ErrorRowStart >= 0;
+                    cursor.ClearError();
+                    continue;
+                }
+
+                if (cursor.ErrorRowStart >= 0)
+                {
+                    offset += cursor.ErrorRowStart;
+                    cursor.ClearError();
+                    parseErrorRowPerRow = true;
+                    continue;
+                }
+
+                if (consumed > 0)
+                {
+                    offset += consumed;
+                    if (trackLineNumbers)
+                        sourceLineNumber = cursor.NextSourceLine;
+                    continue;
+                }
+
+                if (!endOfStream)
+                {
+                    await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                parseErrorRowPerRow = true;
+                continue;
+            }
+
+            parseErrorRowPerRow = false;
 
             int rowStartOffset = offset;
             int rowStartLine = trackLineNumbers ? sourceLineNumber : 0;
@@ -194,6 +253,51 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             Current = bound;
             return true;
         }
+    }
+
+    /// <summary>
+    /// Applies the per-row bookkeeping (size limit, row count, skip rows, header resolution, binding)
+    /// to a scanned row. Returns true when a record was bound into <see cref="Current"/>.
+    /// </summary>
+    private bool EmitBatchRow(CsvBatchRow batchRow)
+    {
+        if (batchRow.Length > maxRowSize)
+        {
+            throw new CsvException(
+                CsvErrorCode.ParseError,
+                $"Row exceeds maximum size of {maxRowSize:N0} characters. Ensure rows have proper line endings.");
+        }
+
+        rowNumber++;
+        if (rowNumber > parserOptions.MaxRowCount)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyRows,
+                $"CSV exceeds maximum row limit of {parserOptions.MaxRowCount}");
+        }
+
+        if (skippedCount < skipRows)
+        {
+            skippedCount++;
+            return false;
+        }
+
+        var row = cursor!.CreateRow(buffer.AsSpan(batchBase, length - batchBase), batchRow, rowNumber, rowNumber);
+
+        if (binder.NeedsHeaderResolution)
+        {
+            binder.BindHeader(row, rowNumber);
+            return false;
+        }
+
+        var bound = binder.Bind(row, rowNumber);
+        if (bound is null)
+            return false;
+
+        dataRowCount++;
+        ReportProgress();
+        Current = bound;
+        return true;
     }
 
     private async ValueTask FillBufferAsync(CancellationToken cancellationToken)
@@ -288,6 +392,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
         disposed = true;
         columnEndsBuffer.Return();
+        cursor?.Dispose();
         ReturnBuffer(buffer);
         buffer = null!;
         reader.Dispose();

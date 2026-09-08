@@ -93,13 +93,17 @@ internal static class CsvRowBatchScanner
 
     /// <summary>
     /// Scans from <paramref name="start"/> and fills <paramref name="ends"/> / <paramref name="rowStarts"/>
-    /// with complete rows.
+    /// with complete rows. With <paramref name="isFinalBlock"/> true the data ends the input: a trailing
+    /// row without a line ending is emitted and an open quote is an error. With it false the data is a
+    /// streaming buffer that more data may follow: the trailing row (open quote or not) is left
+    /// unconsumed for the next call and <paramref name="nextPosition"/> stops at its start.
     /// </summary>
     /// <returns>The number of complete rows recorded.</returns>
     public static int Scan<T, TTrack, TQuotePolicy>(
         ReadOnlySpan<T> data,
         int start,
         int startSourceLine,
+        bool isFinalBlock,
         CsvReadOptions options,
         Span<int> ends,
         Span<int> rowStarts,
@@ -140,7 +144,20 @@ internal static class CsvRowBatchScanner
         }
 
         bool reachedEnd = st.ErrorRowStart < 0 && position >= data.Length;
-        if (reachedEnd)
+        if (reachedEnd && !isFinalBlock)
+        {
+            // A streaming buffer: whatever follows the last line ending is a partial row until more data
+            // (or end of stream) says otherwise, so leave it for the next call.
+            reachedEnd = false;
+
+            // A CR as the window's last element may be the first half of a CRLF whose LF arrives with the
+            // next read. Closing on the CR now would make that LF look like a blank line (and, with line
+            // tracking, count a line that does not exist), so rewind to the CR and let the next call see
+            // the pair together.
+            if (st.RowStart == data.Length && data.Length > start && data[^1].Equals(CastFromChar<T>('\r')))
+                RewindTrailingCr<TTrack>(data.Length - 1, ends, rowStarts, sourceLines, ref st);
+        }
+        else if (reachedEnd)
         {
             if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && st.InQuotes)
                 st.ErrorRowStart = st.RowStart;
@@ -169,6 +186,38 @@ internal static class CsvRowBatchScanner
         }
 
         return st.RowCount;
+    }
+
+    /// <summary>
+    /// Undoes the row close performed on the CR at <paramref name="crPosition"/> (the window's last
+    /// element) so the scan resumes there. The CR either terminated a recorded row, which is popped, or
+    /// a blank line, whose consumption is reverted.
+    /// </summary>
+    private static void RewindTrailingCr<TTrack>(int crPosition, Span<int> ends, Span<int> rowStarts, Span<int> sourceLines, ref ScanState st)
+        where TTrack : struct
+    {
+        bool recordedRowEndsHere = st.RowCount > 0 && ends[st.CurRowEndsStart - 1] == crPosition;
+        if (recordedRowEndsHere)
+        {
+            st.RowCount--;
+            st.CurRowEndsStart = rowStarts[st.RowCount];
+            st.RowStart = ends[st.CurRowEndsStart] + 1;
+            if (typeof(TTrack) == typeof(TrackLineNumbers))
+            {
+                st.CurRowStartLine = sourceLines[st.RowCount];
+                st.SourceLine = st.CurRowStartLine;
+            }
+        }
+        else
+        {
+            st.RowStart = crPosition;
+            ends[st.CurRowEndsStart] = crPosition - 1;
+            if (typeof(TTrack) == typeof(TrackLineNumbers))
+            {
+                st.SourceLine--;
+                st.CurRowStartLine = st.SourceLine;
+            }
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

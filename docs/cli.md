@@ -13,13 +13,13 @@ The `heroparser` CLI is a high-performance, AI-native command-line utility for w
 Install the CLI globally as a dotnet tool:
 
 ```bash
-dotnet tool install --global HeroParser.Cli --version 2.6.0
+dotnet tool install --global HeroParser.Cli --version 2.7.0
 ```
 
 To update an existing installation:
 
 ```bash
-dotnet tool update --global HeroParser.Cli --version 2.6.0
+dotnet tool update --global HeroParser.Cli --version 2.7.0
 ```
 
 ### Option 2: Homebrew Tap (macOS & Linux)

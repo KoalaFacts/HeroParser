@@ -4,6 +4,37 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-08
+
+Read-path performance release. Every head-to-head reading case (UTF-8 and UTF-16, quoted and unquoted) is now faster than Sep 0.17.0 on the same runner, with allocations still fixed and roughly 26x below Sep's. UTF-16 (`string`) input is no longer a second-class path.
+
+### Optimized
+- **Scan-ahead row batches** (`CsvRowBatchScanner`, `PooledRowBatch`): one SIMD pass records the column ends of a batch of rows (pooled 4096-int buffer, ends-only encoding in absolute offsets) and `CsvRowReader<T>.MoveNext` then only advances an index. Previously every row re-entered the parser: re-slice, re-broadcast vectors, re-check options, re-load the chunk holding the previous newline. Per-row fixed cost drops from about 58 ns to Sep's range. Applies to both span readers (`ReadFromByteSpan`, `ReadFromCharSpan`, `ReadFromText`, `FromFile`, `FromStream` into memory) and everything built on them, including the typed record readers.
+- **Inline quoted-chunk fast path**: chunks with quotes but no line ending (most chunks in a row of quoted fields) are handled in the dispatch with the CLMUL in-quotes mask, filtered delimiters and a bare append, instead of the full state machine. This is where the quoted-case gains come from.
+- **UTF-16 pack-and-saturate front end**: each 64- or 32-char chunk is packed to one byte vector (`PackUnsignedSaturate` plus a lane permute) and reuses the byte dispatch, halving compares per element. Chars above 0xFF saturate to 0xFF or 0x00 and can never alias an ASCII delimiter, quote or line ending.
+- **Unquoted block loop**: the 4-vector block exited whenever vector 0 held any delimiter, discarding the whole block's loads and compares on dense CSV; it now exits only on a real line ending and consumes the delimiters before it.
+- **Same-runner benchmark A/B in CI**: the PR benchmark job builds the base commit in a worktree and runs the Sep comparison for base and head back to back on the same runner, posting both in the PR comment. Cross-run numbers were not comparable because GitHub-hosted runners land on different CPUs.
+
+Same-runner results, 10,000 rows x 25 columns, .NET 10, AMD EPYC 9V74 (AVX-512), Sep 0.17.0 as baseline:
+
+| Case | Sep | HeroParser | Ratio |
+|---|---|---|---|
+| UTF-8, unquoted | 663.5 us | 491.4 us | 0.74x |
+| UTF-8, quoted | 1,343.2 us | 898.8 us | 0.67x |
+| UTF-16, unquoted | 663.5 us | 534.4 us | 0.81x |
+| UTF-16, quoted | 1,343.2 us | 984.1 us | 0.73x |
+
+For reference, the v2.6.0 report on the same CPU model had UTF-8 at 1.24x / 1.01x and UTF-16 at 1.61x / 1.89x.
+
+### Fixed
+- **`MaxFieldSize` not enforced inside the unquoted SIMD block path**: fields in unquoted rows longer than one block (256 bytes on AVX-512, 128 on AVX2) passed the size check. Now validated once per block on a cold path.
+- **`SourceLineNumber` off by one before multi-line quoted fields**: with `TrackSourceLineNumbers`, the SIMD parser credited every in-quote newline in the current chunk to the row being parsed, including newlines belonging to later rows in the same chunk, on both the UTF-8 and UTF-16 paths. Newlines are now attributed to the row that contains them.
+
+### Changed
+- Span readers allocate 152 B per read instead of 112 B (one pooled batch holder), still fixed regardless of row or column count.
+- Scan-ahead applies when the delimiter and quote are ASCII and no comment or escape character is configured; other configurations keep the per-row parser with unchanged behavior. Streaming readers (`CsvAsyncStreamReader`, PipeReader) also keep the per-row parser in this release.
+- Benchmark documentation now reports same-runner CI numbers against Sep 0.17.0 and no longer recommends UTF-8 over UTF-16 for performance.
+
 ## [2.6.0] - 2026-09-04
 
 ### Optimized

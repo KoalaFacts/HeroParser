@@ -174,11 +174,11 @@ internal sealed class CsvRowBatchCursor : IDisposable
 
         rowCount = !trackLineNumbers
             ? (quotes
-                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out int errorRowStart)
-                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart))
+                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out int errorRowStart)
+                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart))
             : (quotes
-                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart)
-                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart));
+                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart)
+                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart));
 
         index = 0;
         rowFlagged = errorRowStart >= 0;

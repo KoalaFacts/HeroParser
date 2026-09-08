@@ -38,8 +38,11 @@ namespace HeroParser.SeparatedValues.Reading.Shared;
 /// the per-row path always has.
 /// </para>
 /// <para>
-/// Requires an ASCII delimiter and quote, no comment or escape character, and an AVX2 or AVX-512BW
-/// capable CPU. Callers check <see cref="IsSupported"/> and otherwise stay on the per-row path.
+/// Batch mode requires an ASCII delimiter and quote, no comment or escape character, and an AVX2 or
+/// AVX-512BW capable CPU (<see cref="IsSupported"/>). Single-row mode, used by
+/// <see cref="CsvRowParser.ParseRow{T, TTrack, TQuotePolicy}"/>, additionally accepts a comment character
+/// (<see cref="IsSupportedForRow"/>) because the per-row parser handles comment lines itself. This is the
+/// only SIMD CSV front end in the library.
 /// </para>
 /// </remarks>
 internal static class CsvRowBatchScanner
@@ -66,17 +69,24 @@ internal static class CsvRowBatchScanner
     public static int RowStartsCapacity(int endsCapacity) => (endsCapacity / 2) + MAX_CHUNK + 2;
 
     /// <summary>
-    /// The scanner handles the default configuration space: ASCII delimiter and quote (the UTF-16 path
-    /// packs chars to bytes with saturation, so a non-ASCII special could alias a saturated char), no
-    /// comment or escape character, SIMD on and available.
+    /// Single-row support (the per-row parser): ASCII delimiter and quote (the UTF-16 path packs chars
+    /// to bytes with saturation, so a non-ASCII special could alias a saturated char), no escape
+    /// character, SIMD on and available. A comment character is fine here because the per-row parser
+    /// handles comment lines before it scans.
     /// </summary>
-    public static bool IsSupported(CsvReadOptions options) =>
+    public static bool IsSupportedForRow(CsvReadOptions options) =>
         options.UseSimdIfAvailable
         && options.Delimiter < 0x80
         && options.Quote < 0x80
         && !options.EscapeCharacter.HasValue
-        && !options.CommentCharacter.HasValue
         && (HardwareCapabilities.Avx512BWIsSupported || HardwareCapabilities.Avx2IsSupported);
+
+    /// <summary>
+    /// Batch support (the cursor): <see cref="IsSupportedForRow"/> and no comment character, since a
+    /// batch cannot skip comment lines between rows.
+    /// </summary>
+    public static bool IsSupported(CsvReadOptions options) =>
+        IsSupportedForRow(options) && !options.CommentCharacter.HasValue;
 
     // ---------------------------------------------------------------------------------------------
     // Scan context: everything one scan needs, passed by ref so the mask-level routines take a
@@ -106,6 +116,8 @@ internal static class CsvRowBatchScanner
         public bool SkipNextQuote;
         public bool PendingCrInQuotes;
         public bool SkipLeadingLf;      // previous chunk closed a row on a CR whose LF is the next chunk's first element
+        public bool SingleRow;          // stop after the first line terminator (per-row parser mode)
+        public bool Stopped;            // the scan must not continue: an error row, or the single-row stop
     }
 
     /// <summary>
@@ -114,6 +126,8 @@ internal static class CsvRowBatchScanner
     /// row without a line ending is emitted and an open quote is an error. With it false the data is a
     /// streaming buffer that more data may follow: the trailing row (open quote or not) is left
     /// unconsumed for the next call and <paramref name="nextPosition"/> stops at its start.
+    /// With <paramref name="singleRow"/> true the scan stops after the first line terminator, blank line
+    /// included; <paramref name="rowStarts"/> then needs two entries and <paramref name="sourceLines"/> one.
     /// </summary>
     /// <returns>The number of complete rows recorded.</returns>
     public static int Scan<T, TTrack, TQuotePolicy>(
@@ -121,6 +135,7 @@ internal static class CsvRowBatchScanner
         int start,
         int startSourceLine,
         bool isFinalBlock,
+        bool singleRow,
         CsvReadOptions options,
         Span<int> ends,
         Span<int> rowStarts,
@@ -148,7 +163,8 @@ internal static class CsvRowBatchScanner
             RowCount = 0,
             SourceLine = startSourceLine,
             CurRowStartLine = startSourceLine,
-            ErrorRowStart = -1
+            ErrorRowStart = -1,
+            SingleRow = singleRow
         };
         ends[0] = start - 1;
         int endsCount = 1;
@@ -157,7 +173,7 @@ internal static class CsvRowBatchScanner
             ? ScanCore<T, Vector512<byte>, Avx512Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount)
             : ScanCore<T, Vector256<byte>, Avx2Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount);
 
-        if (ctx.ErrorRowStart < 0 && position < data.Length && ctx.RowCount == 0)
+        if (ctx.ErrorRowStart < 0 && !ctx.Stopped && position < data.Length && ctx.RowCount == 0)
         {
             // The scan stopped on buffer capacity before recording a single row. MinEndsCapacity
             // guarantees any row within MaxColumnCount fits an empty batch, so this row is too wide:
@@ -358,7 +374,8 @@ internal static class CsvRowBatchScanner
         // Hot values the per-chunk dispatch needs stay in registers; the context carries the rest.
         ReadOnlySpan<T> data = ctx.Data;
         T quote = ctx.Quote;
-        int rowStartsLimit = ctx.RowStarts.Length - 1;
+        // Single-row mode records at most one row, so the per-chunk row-capacity guards never bind.
+        int rowStartsLimit = ctx.SingleRow ? int.MaxValue - (4 * MAX_CHUNK) : ctx.RowStarts.Length - 1;
         var delimV = TLanes.Create((byte)ctx.Options.Delimiter);
         var quoteV = TLanes.Create((byte)ctx.Options.Quote);
         var lfV = TLanes.Create((byte)'\n');
@@ -400,16 +417,16 @@ internal static class CsvRowBatchScanner
 
                 // A line ending is somewhere in the block: dispatch each chunk in order.
                 endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c0, le0, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
-                if (ctx.ErrorRowStart >= 0) break;
+                if (ctx.Stopped) break;
                 position += n;
                 endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c1, le1, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
-                if (ctx.ErrorRowStart >= 0) break;
+                if (ctx.Stopped) break;
                 position += n;
                 endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c2, le2, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
-                if (ctx.ErrorRowStart >= 0) break;
+                if (ctx.Stopped) break;
                 position += n;
                 endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c3, le3, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
-                if (ctx.ErrorRowStart >= 0) break;
+                if (ctx.Stopped) break;
                 position += n;
                 continue;
             }
@@ -417,11 +434,11 @@ internal static class CsvRowBatchScanner
             var chunk = Load<T, TVec, TLanes>(ref dataRef, position);
             var le = TLanes.Or(TLanes.Equals(chunk, lfV), TLanes.Equals(chunk, crV));
             endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(chunk, le, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
-            if (ctx.ErrorRowStart >= 0) break;
+            if (ctx.Stopped) break;
             position += n;
         }
 
-        if (ctx.ErrorRowStart < 0 && position + n > length)
+        if (!ctx.Stopped && position + n > length)
             position = ScanTail<T, TTrack, TQuotePolicy>(position, ref ctx, ref endsCount);
 
         endsCountRef = endsCount;
@@ -488,7 +505,7 @@ internal static class CsvRowBatchScanner
         if (tail <= 0)
             return position;
 
-        if (endsCount + CHUNK_RESERVE > ctx.Ends.Length || ctx.RowCount + MAX_CHUNK > ctx.RowStarts.Length - 1)
+        if (endsCount + CHUNK_RESERVE > ctx.Ends.Length || (!ctx.SingleRow && ctx.RowCount + MAX_CHUNK > ctx.RowStarts.Length - 1))
             return position;
 
         ulong dm = 0, lfm = 0, crm = 0, qm = 0;
@@ -503,7 +520,7 @@ internal static class CsvRowBatchScanner
         }
 
         endsCount = ProcessEventChunk<T, TTrack, TQuotePolicy>(dm, lfm | crm, qm, lfm, position, tail, ref ctx, endsCount);
-        return ctx.ErrorRowStart < 0 ? data.Length : position;
+        return ctx.Stopped ? position : data.Length;
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -605,7 +622,7 @@ internal static class CsvRowBatchScanner
 
             if (!ctx.Options.AllowNewlinesInsideQuotes && (lem & inQuotes) != 0)
             {
-                ctx.ErrorRowStart = ctx.RowStart;
+                Fail(ref ctx);
                 return endsCount;
             }
 
@@ -721,7 +738,7 @@ internal static class CsvRowBatchScanner
                 {
                     if (!ctx.Options.AllowNewlinesInsideQuotes)
                     {
-                        ctx.ErrorRowStart = ctx.RowStart;
+                        Fail(ref ctx);
                         return endsCount;
                     }
 
@@ -752,10 +769,18 @@ internal static class CsvRowBatchScanner
         return endsCount;
     }
 
+    /// <summary>Flags the current row for the per-row parser and stops the scan.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Fail<T>(ref ScanContext<T> ctx) where T : unmanaged, IEquatable<T>
+    {
+        ctx.ErrorRowStart = ctx.RowStart;
+        ctx.Stopped = true;
+    }
+
     /// <summary>
     /// Closes the current row at <paramref name="rowEnd"/>. Blank rows are dropped. Sets up the next
-    /// row's sentinel. Returns false when the row violates a limit and must be re-parsed by the
-    /// per-row parser for its exception.
+    /// row's sentinel. Returns false when the scan must stop: the row violates a limit and must be
+    /// re-parsed by the per-row parser for its exception, or single-row mode has consumed its line.
     /// </summary>
     private static bool CloseRow<T, TTrack>(int rowEnd, bool isCr, bool terminatesLine, ref ScanContext<T> ctx, ref int endsCount)
         where T : unmanaged, IEquatable<T>
@@ -768,7 +793,7 @@ internal static class CsvRowBatchScanner
             int delimiterCount = endsCount - ctx.CurRowEndsStart - 1;
             if (delimiterCount + 1 > ctx.Options.MaxColumnCount)
             {
-                ctx.ErrorRowStart = ctx.RowStart;
+                Fail(ref ctx);
                 return false;
             }
 
@@ -776,7 +801,7 @@ internal static class CsvRowBatchScanner
 
             if (ctx.Options.MaxFieldSize is { } maxFieldSize && !FieldLengthsWithinLimit(ends, ctx.CurRowEndsStart, endsCount, maxFieldSize))
             {
-                ctx.ErrorRowStart = ctx.RowStart;
+                Fail(ref ctx);
                 return false;
             }
 
@@ -802,6 +827,14 @@ internal static class CsvRowBatchScanner
         endsCount = ctx.CurRowEndsStart + 1;
         ctx.RowStart = nextRowStart;
         ctx.CurRowStartLine = ctx.SourceLine;
+
+        if (ctx.SingleRow && terminatesLine)
+        {
+            // Per-row mode: one line per call. The next row start already includes a CRLF's LF.
+            ctx.Stopped = true;
+            return false;
+        }
+
         return true;
     }
 

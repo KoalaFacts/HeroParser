@@ -207,6 +207,14 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
                 continue;
             }
 
+            // The row closed on a CR that is the buffer's last char: its LF may arrive with the next
+            // read, and closing now would turn that LF into a phantom blank line. Refill first.
+            if (!endOfStream && result.CharsConsumed == span.Length && result.CharsConsumed > result.RowLength && span[^1] == '\r')
+            {
+                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             offset = rowStartOffset + result.CharsConsumed;
             if (trackLineNumbers)
                 sourceLineNumber += result.NewlineCount;

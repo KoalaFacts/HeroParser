@@ -268,6 +268,21 @@ public class CsvStreamingScanAheadTests
         Assert.Equal(4, outcome.Rows[1].SourceLineNumber);
     }
 
+    /// <summary>
+    /// Without AVX2/AVX-512 (Apple Silicon, or SIMD disabled) both readers take the per-row parser; the
+    /// streaming reader must still agree with the span reader across refills, including CRLF pairs split
+    /// by a read boundary.
+    /// </summary>
+    [Fact]
+    public async Task PerRowFallback_NoSimd_MatchesSpanReader()
+    {
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        Assert.False(CsvRowBatchScanner.IsSupported(Options(quotes: true, track: true)));
+        await AssertStreamMatchesSpan(VaryingRows("\r\n", 600), Options(quotes: false, track: true));
+        await AssertStreamMatchesSpan(QuotedMix("\r\n", 300), Options(quotes: true, track: true));
+        await AssertStreamMatchesSpan("\n\n" + VaryingRows("\r\n", 200) + "\r\n\r\n" + VaryingRows("\n", 100) + "\n\n\n", Options(quotes: true, track: true));
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Multi-schema streaming reader (UTF-16 buffer): records from the stream match records from text.
     // ---------------------------------------------------------------------------------------------

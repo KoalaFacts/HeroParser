@@ -1,3 +1,4 @@
+using System.Buffers;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
 
@@ -25,16 +26,25 @@ internal readonly record struct CsvBatchRow(int RowStart, int RowEnd, int Column
 /// unconsumed data begins: the partial trailing row for a streaming block, or the end).
 /// </para>
 /// <para>
-/// This is a class so that ref-struct readers copied by <c>foreach</c> share one instance and
-/// <see cref="Dispose"/> is idempotent (see <see cref="PooledRowBatch"/>).
+/// Buffer layout: <c>ends</c> holds absolute column-end offsets, <c>rowStarts</c> the index of each
+/// row's sentinel in <c>ends</c> terminated by one extra entry, and <c>sourceLines</c> (line tracking
+/// only) the source line each row starts on. See <see cref="CsvRowBatchScanner"/>.
+/// </para>
+/// <para>
+/// This is a class, holding the arrays itself, for the same reason <see cref="PooledColumnEnds"/> is:
+/// ref-struct readers are copied by <c>foreach</c> and dispose once per copy. One shared instance with
+/// an idempotent <see cref="Dispose"/> keeps the arrays from being returned to the pool twice, which
+/// would hand the same array to two owners.
 /// </para>
 /// </remarks>
 internal sealed class CsvRowBatchCursor : IDisposable
 {
-    private readonly PooledRowBatch batch;
     private readonly CsvReadOptions options;
     private readonly bool trackLineNumbers;
     private readonly bool quotes;
+    private int[]? ends;
+    private int[]? rowStarts;
+    private int[]? sourceLines;
     private int rowCount;
     private int index;
 
@@ -43,7 +53,9 @@ internal sealed class CsvRowBatchCursor : IDisposable
         this.options = options;
         trackLineNumbers = options.TrackSourceLineNumbers;
         quotes = options.EnableQuotedFields;
-        batch = new PooledRowBatch(endsCapacity, trackLineNumbers);
+        ends = ArrayPool<int>.Shared.Rent(endsCapacity);
+        rowStarts = ArrayPool<int>.Shared.Rent(CsvRowBatchScanner.RowStartsCapacity(endsCapacity));
+        sourceLines = trackLineNumbers ? ArrayPool<int>.Shared.Rent(rowStarts.Length) : null;
         ErrorRowStart = -1;
     }
 
@@ -60,9 +72,6 @@ internal sealed class CsvRowBatchCursor : IDisposable
         return new CsvRowBatchCursor(options, capacity);
     }
 
-    /// <summary>Rows recorded by the last <see cref="Fill{T}"/> that have not been taken yet.</summary>
-    public bool HasPending => index < rowCount;
-
     /// <summary>Start (relative to the filled span) of a row the per-row parser must re-parse, or -1.</summary>
     public int ErrorRowStart { get; private set; }
 
@@ -75,6 +84,10 @@ internal sealed class CsvRowBatchCursor : IDisposable
     /// <summary>Source line at <see cref="NextPosition"/> (meaningful when line tracking is on).</summary>
     public int NextSourceLine { get; private set; }
 
+    private int[] Ends => ends ?? throw new ObjectDisposedException(nameof(CsvRowBatchCursor));
+
+    private int[] RowStarts => rowStarts ?? throw new ObjectDisposedException(nameof(CsvRowBatchCursor));
+
     /// <summary>
     /// Scans <paramref name="data"/> from <paramref name="start"/> and records complete rows.
     /// Returns the number of rows available to take.
@@ -82,17 +95,17 @@ internal sealed class CsvRowBatchCursor : IDisposable
     public int Fill<T>(ReadOnlySpan<T> data, int start, int sourceLine, bool isFinalBlock)
         where T : unmanaged, IEquatable<T>
     {
-        Span<int> ends = batch.Ends;
-        Span<int> rowStarts = batch.RowStarts;
-        Span<int> sourceLines = batch.SourceLines is { } lines ? lines : default;
+        Span<int> endsSpan = Ends;
+        Span<int> rowStartsSpan = RowStarts;
+        Span<int> sourceLinesSpan = sourceLines is { } lines ? lines : default;
 
         rowCount = !trackLineNumbers
             ? (quotes
-                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(data, start, sourceLine, isFinalBlock, options, ends, rowStarts, sourceLines, out int nextPosition, out int nextSourceLine, out int errorRowStart)
-                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(data, start, sourceLine, isFinalBlock, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart))
+                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(data, start, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out int nextPosition, out int nextSourceLine, out int errorRowStart)
+                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(data, start, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out nextPosition, out nextSourceLine, out errorRowStart))
             : (quotes
-                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(data, start, sourceLine, isFinalBlock, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart)
-                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(data, start, sourceLine, isFinalBlock, options, ends, rowStarts, sourceLines, out nextPosition, out nextSourceLine, out errorRowStart));
+                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(data, start, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out nextPosition, out nextSourceLine, out errorRowStart)
+                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(data, start, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out nextPosition, out nextSourceLine, out errorRowStart));
 
         index = 0;
         NextPosition = nextPosition;
@@ -111,15 +124,15 @@ internal sealed class CsvRowBatchCursor : IDisposable
         }
 
         int r = index++;
-        int[] ends = batch.Ends;
-        int[] rowStarts = batch.RowStarts;
-        int endsStart = rowStarts[r];
-        int endsEnd = rowStarts[r + 1];
+        int[] e = Ends;
+        int[] starts = RowStarts;
+        int endsStart = starts[r];
+        int endsEnd = starts[r + 1];
         int columnCount = endsEnd - endsStart - 1;
-        int rowStart = ends[endsStart] + 1;
-        int rowEnd = ends[endsEnd - 1];
-        int sourceLine = trackLineNumbers ? batch.SourceLines![r] : 0;
-        row = new CsvBatchRow(rowStart, rowEnd, columnCount, endsStart, sourceLine);
+        int rowStart = e[endsStart] + 1;
+        int rowEnd = e[endsEnd - 1];
+        int line = trackLineNumbers ? sourceLines![r] : 0;
+        row = new CsvBatchRow(rowStart, rowEnd, columnCount, endsStart, line);
         return true;
     }
 
@@ -135,7 +148,7 @@ internal sealed class CsvRowBatchCursor : IDisposable
     {
         return new CsvRow<T>(
             window.Slice(row.RowStart, row.Length),
-            batch.Ends.AsSpan(row.EndsStart, row.ColumnCount + 1),
+            Ends.AsSpan(row.EndsStart, row.ColumnCount + 1),
             row.ColumnCount,
             rowNumber,
             trackLineNumbers ? row.SourceLine : sourceLineFallback,
@@ -143,5 +156,24 @@ internal sealed class CsvRowBatchCursor : IDisposable
             baseOffset: row.RowStart);
     }
 
-    public void Dispose() => batch.Dispose();
+    /// <summary>Returns the pooled arrays; safe to call more than once.</summary>
+    public void Dispose()
+    {
+        var e = ends;
+        if (e is null)
+            return;
+
+        ends = null;
+        ArrayPool<int>.Shared.Return(e, clearArray: false);
+
+        var starts = rowStarts;
+        rowStarts = null;
+        if (starts is not null)
+            ArrayPool<int>.Shared.Return(starts, clearArray: false);
+
+        var lines = sourceLines;
+        sourceLines = null;
+        if (lines is not null)
+            ArrayPool<int>.Shared.Return(lines, clearArray: false);
+    }
 }

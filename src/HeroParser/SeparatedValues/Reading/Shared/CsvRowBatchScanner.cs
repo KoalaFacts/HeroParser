@@ -565,7 +565,7 @@ internal static class CsvRowBatchScanner
         if (qm == 0)
             return true; // entirely inside a quoted field: nothing to record
 
-        ulong inQuotes = CsvRowParser.ComputeInQuotesMaskClmul(qm, ctx.InQuotes);
+        ulong inQuotes = ComputeInQuotesMaskClmul(qm, ctx.InQuotes);
         AppendDelimiters(dm & ~inQuotes, chunkBase, ends, ref endsCount);
         if ((BitOperations.PopCount(qm) & 1) != 0)
             ctx.InQuotes = !ctx.InQuotes;
@@ -617,7 +617,7 @@ internal static class CsvRowBatchScanner
                 return ProcessEventChunkSequential<T, TTrack>(dm | lem | qm, chunkBase, chunkSize, ref ctx, endsCount);
 
             ulong inQuotes = qm != 0
-                ? CsvRowParser.ComputeInQuotesMaskClmul(qm, ctx.InQuotes)
+                ? ComputeInQuotesMaskClmul(qm, ctx.InQuotes)
                 : (ctx.InQuotes ? ulong.MaxValue : 0ul);
 
             if (!ctx.Options.AllowNewlinesInsideQuotes && (lem & inQuotes) != 0)
@@ -850,8 +850,33 @@ internal static class CsvRowBatchScanner
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Quote-state helpers (same technique as CsvRowParser).
+    // Quote-state helpers.
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Computes the "inside quotes" mask for one chunk with PCLMULQDQ: carry-less multiplication by
+    /// all-ones is a prefix XOR, so the result toggles at every quote position in O(1).
+    /// Technique from Langdale and Lemire, "Parsing Gigabytes of JSON per Second" (simdjson).
+    /// </summary>
+    /// <param name="quoteMask">1 bits at quote positions in the chunk.</param>
+    /// <param name="prevInQuotes">Whether the chunk started inside a quoted field.</param>
+    /// <returns>1 bits at positions inside quotes.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong ComputeInQuotesMaskClmul(ulong quoteMask, bool prevInQuotes)
+    {
+        var quoteMaskVec = Vector128.CreateScalarUnsafe((long)quoteMask);
+        var allOnes = Vector128.CreateScalarUnsafe(-1L);
+
+        var prefixXor = Pclmulqdq.CarrylessMultiply(quoteMaskVec, allOnes, 0);
+        ulong clmulResult = (ulong)prefixXor.GetElement(0);
+
+        ulong inQuotesMask = clmulResult << 1;
+
+        if (prevInQuotes)
+            inQuotesMask = ~inQuotesMask;
+
+        return inQuotesMask;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void UpdateNewlineCountInQuotes(bool isLf, bool isCr, ref bool pendingCrInQuotes, ref int newlineCount)

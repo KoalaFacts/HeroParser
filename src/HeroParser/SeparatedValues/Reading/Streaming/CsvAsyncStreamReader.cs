@@ -40,12 +40,27 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private int currentRowNumber;
     private int currentSourceLineNumber;
 
+    // Scan-ahead: the cursor scans the buffered window [offset, length) in batches; null when the
+    // options keep this reader on the per-row parser. batchBase is the buffer offset the current batch
+    // was scanned from (row offsets in the batch are relative to it). The buffer is only compacted or
+    // grown once a batch is fully consumed, so batch offsets stay valid while rows are handed out.
+    private readonly CsvRowBatchCursor? cursor;
+    private int batchBase;
+    private bool currentFromBatch;
+    private CsvBatchRow currentBatchRow;
+    private bool parseErrorRowPerRow;
+
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
     public CsvRow<byte> Current
     {
         get
         {
             ThrowIfDisposed();
+            if (currentFromBatch)
+            {
+                return cursor!.CreateRow(buffer.AsSpan(batchBase, length - batchBase), currentBatchRow, currentRowNumber, currentSourceLineNumber);
+            }
+
             return new CsvRow<byte>(
                 buffer.AsSpan(currentRowStart, currentRowLength),
                 columnEndsBuffer.Buffer,
@@ -72,6 +87,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         bytePool = ArrayPool<byte>.Shared;
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
         columnEndsBuffer = new PooledColumnEnds(options.MaxColumnCount + 1);
+        cursor = CsvRowBatchCursor.TryCreate(options);
 
         offset = 0;
         length = 0;
@@ -102,6 +118,14 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         while (true)
         {
+            // Rows already scanned into the batch are handed out before the buffer is touched again.
+            if (cursor is not null && cursor.TryTake(out var batchRow))
+            {
+                if (EmitBatchRow(batchRow))
+                    return true;
+                continue;
+            }
+
             if (!endOfStream && offset >= length)
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
@@ -125,6 +149,58 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 return false;
             }
 
+            if (cursor is not null && !parseErrorRowPerRow)
+            {
+                int rows = cursor.Fill(span, 0, sourceLineNumber, isFinalBlock: endOfStream);
+                batchBase = offset;
+                int consumed = cursor.NextPosition;
+
+                if (rows > 0)
+                {
+                    // The batch owns [offset, offset + consumed); a flagged row, if any, is re-parsed
+                    // by the per-row path once the batch is drained.
+                    offset += consumed;
+                    if (trackLineNumbers)
+                        sourceLineNumber = cursor.NextSourceLine;
+                    parseErrorRowPerRow = cursor.ErrorRowStart >= 0;
+                    cursor.ClearError();
+                    continue;
+                }
+
+                if (cursor.ErrorRowStart >= 0)
+                {
+                    // Nothing before the flagged row: parse it now for its exception (or its row).
+                    offset += cursor.ErrorRowStart;
+                    cursor.ClearError();
+                    parseErrorRowPerRow = true;
+                    continue;
+                }
+
+                if (consumed > 0)
+                {
+                    // Only blank lines were consumed.
+                    offset += consumed;
+                    if (trackLineNumbers)
+                        sourceLineNumber = cursor.NextSourceLine;
+                    continue;
+                }
+
+                if (!endOfStream)
+                {
+                    // A partial row: more data is needed before it can be closed.
+                    await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                // End of stream with a trailing row the scanner could not close: the per-row parser
+                // either emits it (no line ending) or throws (unterminated quote), exactly as before.
+                parseErrorRowPerRow = true;
+                continue;
+            }
+
+            parseErrorRowPerRow = false;
+            currentFromBatch = false;
+
             int rowStartOffset = offset;
             int rowStartLine = trackLineNumbers ? sourceLineNumber : 0;
 
@@ -135,8 +211,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                     ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer.Span)
                     : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer.Span);
             }
-            catch (CsvException ex) when (!endOfStream && ex.QuoteStartPosition.HasValue)
+            catch (CsvException ex) when (!endOfStream && (ex.QuoteStartPosition.HasValue || span.IndexOfAny((byte)'\n', (byte)'\r') < 0))
             {
+                // An open quote, or a row with no line ending anywhere in the buffered data yet, is a
+                // partial row: a limit it seems to break (field length, column count) must be judged on
+                // the complete row, so read more first.
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
             }
@@ -152,6 +231,14 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             }
 
             if (result.RowLength == span.Length && !endOfStream)
+            {
+                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            // The row closed on a CR that is the buffer's last byte: its LF may arrive with the next
+            // read, and closing now would turn that LF into a phantom blank line. Refill first.
+            if (!endOfStream && result.CharsConsumed == span.Length && result.CharsConsumed > result.RowLength && span[^1] == (byte)'\r')
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
@@ -185,6 +272,40 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             currentSourceLineNumber = trackLineNumbers ? rowStartLine : rowCount;
             return true;
         }
+    }
+
+    /// <summary>
+    /// Applies the per-row bookkeeping (size limit, row count, skip rows) to a scanned row and makes it
+    /// current. Returns false when the row is skipped.
+    /// </summary>
+    private bool EmitBatchRow(CsvBatchRow row)
+    {
+        if (row.Length > maxRowSize)
+        {
+            throw new CsvException(
+                CsvErrorCode.ParseError,
+                $"Row exceeds maximum size of {maxRowSize:N0} bytes. Ensure rows have proper line endings.");
+        }
+
+        rowCount++;
+        if (rowCount > options.MaxRowCount)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyRows,
+                $"CSV exceeds maximum row limit of {options.MaxRowCount}");
+        }
+
+        if (skippedCount < skipRows)
+        {
+            skippedCount++;
+            return false;
+        }
+
+        currentFromBatch = true;
+        currentBatchRow = row;
+        currentRowNumber = rowCount;
+        currentSourceLineNumber = trackLineNumbers ? row.SourceLine : rowCount;
+        return true;
     }
 
     private bool TryProcessBom()
@@ -266,6 +387,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         disposed = true;
         columnEndsBuffer.Return();
+        cursor?.Dispose();
         ReturnBuffer(buffer);
         buffer = null!;
 

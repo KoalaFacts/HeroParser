@@ -104,22 +104,28 @@ jobs:
           --framework ${{ matrix.framework }} \
           --no-restore
 
-    - name: Run Sep comparison on base and head
+    - name: Run same-runner comparisons on base and head
       if: github.event_name == 'pull_request' && matrix.framework == 'net10.0' && github.event.pull_request.head.repo.fork == false
       run: |
-        OUT="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts/vs-sep"
+        ROOT="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts"
 
-        cd "$RUNNER_TEMP/base/benchmarks/HeroParser.Benchmarks"
-        dotnet run -c Release \
-          --framework ${{ matrix.framework }} \
-          --no-build \
-          -- --vs-sep-reading --filter '*' --artifacts "$OUT/base"
+        # group flag -> artifact directory. Each pair runs base then head so both share the runner.
+        for pair in "--vs-sep-reading:vs-sep" "--csv-streaming:streaming"; do
+          GROUP="${pair%%:*}"
+          DIR="${pair##*:}"
 
-        cd "$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks"
-        dotnet run -c Release \
-          --framework ${{ matrix.framework }} \
-          --no-build \
-          -- --vs-sep-reading --filter '*' --artifacts "$OUT/head"
+          cd "$RUNNER_TEMP/base/benchmarks/HeroParser.Benchmarks"
+          dotnet run -c Release \
+            --framework ${{ matrix.framework }} \
+            --no-build \
+            -- "$GROUP" --filter '*' --artifacts "$ROOT/$DIR/base"
+
+          cd "$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks"
+          dotnet run -c Release \
+            --framework ${{ matrix.framework }} \
+            --no-build \
+            -- "$GROUP" --filter '*' --artifacts "$ROOT/$DIR/head"
+        done
 
     - name: Upload benchmark results
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -159,16 +165,22 @@ jobs:
             sections.push(`## Benchmark Results (${{ matrix.framework }})\n\n${throughput}`);
           }
 
-          const base = readReport(path.join(artifactsRoot, 'vs-sep', 'base'));
-          const head = readReport(path.join(artifactsRoot, 'vs-sep', 'head'));
-          if (base && head) {
-            const short = sha => sha.slice(0, 7);
-            sections.push(
-              `## Sep Comparison, same runner (${{ matrix.framework }})\n\n` +
-              `Both sides ran back to back in this job, so the hardware header below applies to both.\n\n` +
-              `<details><summary>Base ${short(process.env.BASE_SHA)}</summary>\n\n${base}\n</details>\n\n` +
-              `<details open><summary>Head ${short(process.env.HEAD_SHA)}</summary>\n\n${head}\n</details>`
-            );
+          const short = sha => sha.slice(0, 7);
+          const comparisons = [
+            { dir: 'vs-sep', title: 'Sep Comparison, same runner' },
+            { dir: 'streaming', title: 'Streaming Comparison, same runner' },
+          ];
+          for (const { dir, title } of comparisons) {
+            const base = readReport(path.join(artifactsRoot, dir, 'base'));
+            const head = readReport(path.join(artifactsRoot, dir, 'head'));
+            if (base && head) {
+              sections.push(
+                `## ${title} (${{ matrix.framework }})\n\n` +
+                `Both sides ran back to back in this job, so the hardware header below applies to both.\n\n` +
+                `<details><summary>Base ${short(process.env.BASE_SHA)}</summary>\n\n${base}\n</details>\n\n` +
+                `<details open><summary>Head ${short(process.env.HEAD_SHA)}</summary>\n\n${head}\n</details>`
+              );
+            }
           }
 
           if (sections.length > 0) {

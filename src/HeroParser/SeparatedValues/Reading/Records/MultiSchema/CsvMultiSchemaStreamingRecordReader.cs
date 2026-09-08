@@ -182,8 +182,10 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
                     ? CsvRowParser.ParseRow<char, TrackLineNumbers>(span, parserOptions, columnEndsBuffer.Span)
                     : CsvRowParser.ParseRow<char, NoTrackLineNumbers>(span, parserOptions, columnEndsBuffer.Span);
             }
-            catch (CsvException ex) when (!endOfStream && ex.QuoteStartPosition.HasValue)
+            catch (CsvException ex) when (!endOfStream && (ex.QuoteStartPosition.HasValue || span.IndexOfAny('\n', '\r') < 0))
             {
+                // An open quote, or a row with no line ending anywhere in the buffered data yet, is a
+                // partial row: a limit it seems to break must be judged on the complete row.
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
             }

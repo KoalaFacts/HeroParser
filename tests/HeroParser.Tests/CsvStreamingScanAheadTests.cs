@@ -281,6 +281,11 @@ public class CsvStreamingScanAheadTests
         await AssertStreamMatchesSpan(VaryingRows("\r\n", 600), Options(quotes: false, track: true));
         await AssertStreamMatchesSpan(QuotedMix("\r\n", 300), Options(quotes: true, track: true));
         await AssertStreamMatchesSpan("\n\n" + VaryingRows("\r\n", 200) + "\r\n\r\n" + VaryingRows("\n", 100) + "\n\n\n", Options(quotes: true, track: true));
+
+        // Limits must be judged on the complete row, not on the part of it a refill happened to cut.
+        await AssertStreamMatchesSpan(VaryingRows("\n", 400) + "short," + new string('L', 40) + ",short\n", Options(quotes: true, track: true, maxFieldSize: 20));
+        await AssertStreamMatchesSpan(VaryingRows("\n", 400) + "1,2,3,4,5,6,7,8,9\n" + "after,error\n", Options(quotes: false, track: true, maxColumns: 8));
+        await AssertStreamMatchesSpan(VaryingRows("\n", 400) + "bad,\"never closed,x\n" + "more,rows\n", Options(quotes: true, track: true));
     }
 
     // ---------------------------------------------------------------------------------------------

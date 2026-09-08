@@ -122,12 +122,8 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
             if (cursor is not null)
             {
-                switch (cursor.Advance<char>(buffer, ref offset, length, endOfStream, ref sourceLineNumber, out _))
+                switch (cursor.Advance<char>(buffer, ref offset, length, endOfStream, ref sourceLineNumber))
                 {
-                    case CsvBatchStep.Row:
-                        // Advance only reports rows it just scanned; the loop hands them out above.
-                        continue;
-
                     case CsvBatchStep.Continue:
                         continue;
 
@@ -140,19 +136,12 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
                         return false;
 
                     case CsvBatchStep.ParsePerRow:
-                        break; // fall through to the per-row parser at the current offset
-
                     default:
-                        throw new InvalidOperationException("Unexpected batch step.");
+                        break; // fall through to the per-row parser at the current offset
                 }
             }
 
             var span = buffer.AsSpan(offset, length - offset);
-            if (span.IsEmpty && endOfStream)
-            {
-                ReportFinalProgress();
-                return false;
-            }
 
 
             int rowStartOffset = offset;
@@ -275,7 +264,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             return false;
         }
 
-        var row = cursor!.CreateRow(buffer, length, batchRow, rowNumber, rowNumber);
+        var row = cursor!.CreateRow(buffer, batchRow, rowNumber, rowNumber);
 
         if (binder.NeedsHeaderResolution)
         {

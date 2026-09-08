@@ -139,10 +139,10 @@ internal static class CsvRowBatchScanner
             RowStarts = rowStarts,
             SourceLines = sourceLines,
             Options = options,
-            Delimiter = CastFromChar<T>(options.Delimiter),
-            Quote = CastFromChar<T>(options.Quote),
-            Lf = CastFromChar<T>('\n'),
-            Cr = CastFromChar<T>('\r'),
+            Delimiter = CsvRowParser.CastFromChar<T>(options.Delimiter),
+            Quote = CsvRowParser.CastFromChar<T>(options.Quote),
+            Lf = CsvRowParser.CastFromChar<T>('\n'),
+            Cr = CsvRowParser.CastFromChar<T>('\r'),
             RowStart = start,
             CurRowEndsStart = 0,
             RowCount = 0,
@@ -156,6 +156,14 @@ internal static class CsvRowBatchScanner
         int position = HardwareCapabilities.Avx512BWIsSupported
             ? ScanCore<T, Vector512<byte>, Avx512Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount)
             : ScanCore<T, Vector256<byte>, Avx2Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount);
+
+        if (ctx.ErrorRowStart < 0 && position < data.Length && ctx.RowCount == 0)
+        {
+            // The scan stopped on buffer capacity before recording a single row. MinEndsCapacity
+            // guarantees any row within MaxColumnCount fits an empty batch, so this row is too wide:
+            // hand it to the per-row parser for its TooManyColumns instead of asking for more data.
+            ctx.ErrorRowStart = ctx.RowStart;
+        }
 
         bool reachedEnd = ctx.ErrorRowStart < 0 && position >= data.Length;
         if (reachedEnd && !isFinalBlock)
@@ -235,24 +243,12 @@ internal static class CsvRowBatchScanner
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static T CastFromChar<T>(char c) where T : unmanaged
-    {
-        if (typeof(T) == typeof(byte))
-        {
-            byte b = (byte)c;
-            return Unsafe.As<byte, T>(ref b);
-        }
-
-        return Unsafe.As<char, T>(ref c);
-    }
-
     // ---------------------------------------------------------------------------------------------
     // SIMD width adapters. Static abstract members on a struct type parameter compile to direct
     // intrinsic calls, so ScanCore is written once and specialised per width by the JIT.
     // ---------------------------------------------------------------------------------------------
 
-    private interface ISimdLanes<TVec> where TVec : struct
+    internal interface ISimdLanes<TVec> where TVec : struct
     {
         /// <summary>Elements per chunk: bytes for UTF-8, chars for UTF-16 (two half vectors packed).</summary>
         static abstract int Count { get; }
@@ -270,7 +266,7 @@ internal static class CsvRowBatchScanner
         static abstract ulong Mask(TVec vector);
     }
 
-    private readonly struct Avx512Lanes : ISimdLanes<Vector512<byte>>
+    internal readonly struct Avx512Lanes : ISimdLanes<Vector512<byte>>
     {
         public static int Count => 64;
 
@@ -301,7 +297,7 @@ internal static class CsvRowBatchScanner
         public static ulong Mask(Vector512<byte> vector) => vector.ExtractMostSignificantBits();
     }
 
-    private readonly struct Avx2Lanes : ISimdLanes<Vector256<byte>>
+    internal readonly struct Avx2Lanes : ISimdLanes<Vector256<byte>>
     {
         public static int Count => 32;
 
@@ -552,7 +548,7 @@ internal static class CsvRowBatchScanner
         if (qm == 0)
             return true; // entirely inside a quoted field: nothing to record
 
-        ulong inQuotes = ComputeInQuotesMask(qm, ctx.InQuotes);
+        ulong inQuotes = CsvRowParser.ComputeInQuotesMaskClmul(qm, ctx.InQuotes);
         AppendDelimiters(dm & ~inQuotes, chunkBase, ends, ref endsCount);
         if ((BitOperations.PopCount(qm) & 1) != 0)
             ctx.InQuotes = !ctx.InQuotes;
@@ -588,6 +584,7 @@ internal static class CsvRowBatchScanner
 
         ulong crm = lem & ~lfm;
         ulong quotedNewlines = 0;
+        Span<int> ends = ctx.Ends;
 
         if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
         {
@@ -603,7 +600,7 @@ internal static class CsvRowBatchScanner
                 return ProcessEventChunkSequential<T, TTrack>(dm | lem | qm, chunkBase, chunkSize, ref ctx, endsCount);
 
             ulong inQuotes = qm != 0
-                ? ComputeInQuotesMask(qm, ctx.InQuotes)
+                ? CsvRowParser.ComputeInQuotesMaskClmul(qm, ctx.InQuotes)
                 : (ctx.InQuotes ? ulong.MaxValue : 0ul);
 
             if (!ctx.Options.AllowNewlinesInsideQuotes && (lem & inQuotes) != 0)
@@ -642,7 +639,7 @@ internal static class CsvRowBatchScanner
 
             if (((lem >> bit) & 1) == 0)
             {
-                ctx.Ends[endsCount++] = pos;
+                ends[endsCount++] = pos;
                 continue;
             }
 
@@ -683,6 +680,11 @@ internal static class CsvRowBatchScanner
         where TTrack : struct
     {
         ReadOnlySpan<T> data = ctx.Data;
+        Span<int> ends = ctx.Ends;
+        T delimiter = ctx.Delimiter;
+        T quote = ctx.Quote;
+        T lf = ctx.Lf;
+        T cr = ctx.Cr;
 
         while (mask != 0)
         {
@@ -691,7 +693,7 @@ internal static class CsvRowBatchScanner
             int pos = chunkBase + bit;
             T c = data[pos];
 
-            if (c.Equals(ctx.Quote))
+            if (c.Equals(quote))
             {
                 if (ctx.SkipNextQuote)
                 {
@@ -699,7 +701,7 @@ internal static class CsvRowBatchScanner
                     continue;
                 }
 
-                if (ctx.InQuotes && pos + 1 < data.Length && data[pos + 1].Equals(ctx.Quote))
+                if (ctx.InQuotes && pos + 1 < data.Length && data[pos + 1].Equals(quote))
                 {
                     ctx.SkipNextQuote = true;
                     continue;
@@ -713,8 +715,8 @@ internal static class CsvRowBatchScanner
 
             if (ctx.InQuotes)
             {
-                bool isLf = c.Equals(ctx.Lf);
-                bool isCr = c.Equals(ctx.Cr);
+                bool isLf = c.Equals(lf);
+                bool isCr = c.Equals(cr);
                 if (isLf || isCr)
                 {
                     if (!ctx.Options.AllowNewlinesInsideQuotes)
@@ -729,13 +731,13 @@ internal static class CsvRowBatchScanner
                 continue;
             }
 
-            if (c.Equals(ctx.Delimiter))
+            if (c.Equals(delimiter))
             {
-                ctx.Ends[endsCount++] = pos;
+                ends[endsCount++] = pos;
                 continue;
             }
 
-            if (!CloseRow<T, TTrack>(pos, c.Equals(ctx.Cr), terminatesLine: true, ref ctx, ref endsCount))
+            if (!CloseRow<T, TTrack>(pos, c.Equals(cr), terminatesLine: true, ref ctx, ref endsCount))
                 return endsCount;
 
             if (ctx.RowStart == pos + 2)
@@ -817,16 +819,6 @@ internal static class CsvRowBatchScanner
     // ---------------------------------------------------------------------------------------------
     // Quote-state helpers (same technique as CsvRowParser).
     // ---------------------------------------------------------------------------------------------
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong ComputeInQuotesMask(ulong quoteMask, bool prevInQuotes)
-    {
-        var quoteMaskVec = Vector128.CreateScalarUnsafe((long)quoteMask);
-        var allOnes = Vector128.CreateScalarUnsafe(-1L);
-        var prefixXor = Pclmulqdq.CarrylessMultiply(quoteMaskVec, allOnes, 0);
-        ulong inQuotesMask = (ulong)prefixXor.GetElement(0) << 1;
-        return prevInQuotes ? ~inQuotesMask : inQuotesMask;
-    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void UpdateNewlineCountInQuotes(bool isLf, bool isCr, ref bool pendingCrInQuotes, ref int newlineCount)

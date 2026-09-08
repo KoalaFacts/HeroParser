@@ -54,7 +54,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             ThrowIfDisposed();
             if (currentFromBatch)
             {
-                return cursor!.CreateRow(buffer, length, currentBatchRow, currentRowNumber, currentSourceLineNumber);
+                return cursor!.CreateRow(buffer, currentBatchRow, currentRowNumber, currentSourceLineNumber);
             }
 
             return new CsvRow<byte>(
@@ -142,12 +142,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
             if (cursor is not null)
             {
-                switch (cursor.Advance<byte>(buffer, ref offset, length, endOfStream, ref sourceLineNumber, out _))
+                switch (cursor.Advance<byte>(buffer, ref offset, length, endOfStream, ref sourceLineNumber))
                 {
-                    case CsvBatchStep.Row:
-                        // Advance only reports rows it just scanned; the loop hands them out above.
-                        continue;
-
                     case CsvBatchStep.Continue:
                         continue;
 
@@ -159,18 +155,12 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                         return false;
 
                     case CsvBatchStep.ParsePerRow:
-                        break; // fall through to the per-row parser at the current offset
-
                     default:
-                        throw new InvalidOperationException("Unexpected batch step.");
+                        break; // fall through to the per-row parser at the current offset
                 }
             }
 
             var span = buffer.AsSpan(offset, length - offset);
-            if (span.IsEmpty && endOfStream)
-            {
-                return false;
-            }
 
             currentFromBatch = false;
 

@@ -88,7 +88,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
             if (batchCursor.TryTake(out var row))
             {
                 rowCount++;
-                Current = batchCursor.CreateRow(data, data.Length, row, rowCount, rowCount);
+                Current = batchCursor.CreateRow(data, row, rowCount, rowCount);
                 if (rowCount > options.MaxRowCount)
                 {
                     throw new CsvException(
@@ -98,12 +98,8 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
                 return true;
             }
 
-            switch (batchCursor.Advance(data, ref position, data.Length, endOfStream: true, ref sourceLineNumber, out _))
+            switch (batchCursor.Advance(data, ref position, data.Length, endOfStream: true, ref sourceLineNumber))
             {
-                case CsvBatchStep.Row:
-                    // Advance only reports rows it just scanned; the loop hands them out above.
-                    continue;
-
                 case CsvBatchStep.ParsePerRow:
                     // A flagged row (the per-row parser reproduces its exception) or the final row
                     // without a line ending; either way one per-row step, then batching resumes.
@@ -114,10 +110,8 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
 
                 case CsvBatchStep.EndOfInput:
                 case CsvBatchStep.RefillNeeded: // cannot occur for a final block
-                    return false;
-
                 default:
-                    throw new InvalidOperationException("Unexpected batch step.");
+                    return false;
             }
         }
     }

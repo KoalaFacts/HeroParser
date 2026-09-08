@@ -84,44 +84,33 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     {
         while (true)
         {
-            if (batchCursor.TryTake(out var row))
+            switch (batchCursor.Advance(data, ref position, data.Length, endOfStream: true, ref sourceLineNumber, out var row))
             {
-                rowCount++;
-                Current = batchCursor.CreateRow(data, row, rowCount, rowCount);
-                if (rowCount > options.MaxRowCount)
-                {
-                    throw new CsvException(
-                        CsvErrorCode.TooManyRows,
-                        $"CSV exceeds maximum row limit of {options.MaxRowCount}");
-                }
-                return true;
-            }
+                case CsvBatchStep.Row:
+                    rowCount++;
+                    Current = batchCursor.CreateRow(data, data.Length, row, rowCount, rowCount);
+                    if (rowCount > options.MaxRowCount)
+                    {
+                        throw new CsvException(
+                            CsvErrorCode.TooManyRows,
+                            $"CSV exceeds maximum row limit of {options.MaxRowCount}");
+                    }
+                    return true;
 
-            if (batchCursor.ErrorRowStart >= 0)
-            {
-                // The scanner flagged this row; the per-row parser reproduces its exception. Should it
-                // parse cleanly after all, the row is emitted and batching resumes after it.
-                position = batchCursor.ErrorRowStart;
-                batchCursor.ClearError();
-                return MoveNextPerRow();
-            }
+                case CsvBatchStep.ParsePerRow:
+                    // A flagged row (the per-row parser reproduces its exception) or the final row
+                    // without a line ending; either way one per-row step, then batching resumes.
+                    return MoveNextPerRow();
 
-            if (position >= data.Length)
-                return false;
+                case CsvBatchStep.Continue:
+                    continue;
 
-            int before = position;
-            int rows = batchCursor.Fill(data, position, sourceLineNumber, isFinalBlock: true);
-            position = batchCursor.NextPosition;
-            if (trackLineNumbers)
-                sourceLineNumber = batchCursor.NextSourceLine;
+                case CsvBatchStep.EndOfInput:
+                case CsvBatchStep.RefillNeeded: // cannot occur for a final block
+                    return false;
 
-            if (rows == 0 && batchCursor.ErrorRowStart < 0)
-            {
-                if (position >= data.Length)
-                    return false; // only blank lines remained
-
-                if (position == before)
-                    return MoveNextPerRow(); // no progress possible in batch form; parse one row directly
+                default:
+                    throw new InvalidOperationException("Unexpected batch step.");
             }
         }
     }

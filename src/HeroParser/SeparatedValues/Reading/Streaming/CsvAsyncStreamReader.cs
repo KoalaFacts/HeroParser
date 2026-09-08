@@ -40,15 +40,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private int currentRowNumber;
     private int currentSourceLineNumber;
 
-    // Scan-ahead: the cursor scans the buffered window [offset, length) in batches; null when the
-    // options keep this reader on the per-row parser. batchBase is the buffer offset the current batch
-    // was scanned from (row offsets in the batch are relative to it). The buffer is only compacted or
-    // grown once a batch is fully consumed, so batch offsets stay valid while rows are handed out.
+    // Shared scan-ahead cursor (null when the options keep this reader on the per-row parser).
+    // It drives the batch / refill / fallback protocol over the buffered window; see CsvRowBatchCursor.
     private readonly CsvRowBatchCursor? cursor;
-    private int batchBase;
     private bool currentFromBatch;
     private CsvBatchRow currentBatchRow;
-    private bool parseErrorRowPerRow;
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
     public CsvRow<byte> Current
@@ -58,7 +54,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             ThrowIfDisposed();
             if (currentFromBatch)
             {
-                return cursor!.CreateRow(buffer.AsSpan(batchBase, length - batchBase), currentBatchRow, currentRowNumber, currentSourceLineNumber);
+                return cursor!.CreateRow(buffer, length, currentBatchRow, currentRowNumber, currentSourceLineNumber);
             }
 
             return new CsvRow<byte>(
@@ -118,15 +114,9 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         while (true)
         {
-            // Rows already scanned into the batch are handed out before the buffer is touched again.
-            if (cursor is not null && cursor.TryTake(out var batchRow))
-            {
-                if (EmitBatchRow(batchRow))
-                    return true;
-                continue;
-            }
-
-            if (!endOfStream && offset >= length)
+            // Refill only when no scanned rows are pending: a refill compacts the buffer, and pending
+            // batch rows point into the current window.
+            if (!endOfStream && offset >= length && cursor is not { HasPending: true })
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -143,62 +133,39 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 }
             }
 
+            if (cursor is not null)
+            {
+                switch (cursor.Advance<byte>(buffer, ref offset, length, endOfStream, ref sourceLineNumber, out var row))
+                {
+                    case CsvBatchStep.Row:
+                        if (EmitBatchRow(row))
+                            return true;
+                        continue;
+
+                    case CsvBatchStep.Continue:
+                        continue;
+
+                    case CsvBatchStep.RefillNeeded:
+                        await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                        continue;
+
+                    case CsvBatchStep.EndOfInput:
+                        return false;
+
+                    case CsvBatchStep.ParsePerRow:
+                        break; // fall through to the per-row parser at the current offset
+
+                    default:
+                        throw new InvalidOperationException("Unexpected batch step.");
+                }
+            }
+
             var span = buffer.AsSpan(offset, length - offset);
             if (span.IsEmpty && endOfStream)
             {
                 return false;
             }
 
-            if (cursor is not null && !parseErrorRowPerRow)
-            {
-                int rows = cursor.Fill(span, 0, sourceLineNumber, isFinalBlock: endOfStream);
-                batchBase = offset;
-                int consumed = cursor.NextPosition;
-
-                if (rows > 0)
-                {
-                    // The batch owns [offset, offset + consumed); a flagged row, if any, is re-parsed
-                    // by the per-row path once the batch is drained.
-                    offset += consumed;
-                    if (trackLineNumbers)
-                        sourceLineNumber = cursor.NextSourceLine;
-                    parseErrorRowPerRow = cursor.ErrorRowStart >= 0;
-                    cursor.ClearError();
-                    continue;
-                }
-
-                if (cursor.ErrorRowStart >= 0)
-                {
-                    // Nothing before the flagged row: parse it now for its exception (or its row).
-                    offset += cursor.ErrorRowStart;
-                    cursor.ClearError();
-                    parseErrorRowPerRow = true;
-                    continue;
-                }
-
-                if (consumed > 0)
-                {
-                    // Only blank lines were consumed.
-                    offset += consumed;
-                    if (trackLineNumbers)
-                        sourceLineNumber = cursor.NextSourceLine;
-                    continue;
-                }
-
-                if (!endOfStream)
-                {
-                    // A partial row: more data is needed before it can be closed.
-                    await FillBufferAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                // End of stream with a trailing row the scanner could not close: the per-row parser
-                // either emits it (no line ending) or throws (unterminated quote), exactly as before.
-                parseErrorRowPerRow = true;
-                continue;
-            }
-
-            parseErrorRowPerRow = false;
             currentFromBatch = false;
 
             int rowStartOffset = offset;

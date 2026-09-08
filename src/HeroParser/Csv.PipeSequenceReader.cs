@@ -319,7 +319,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     {
         this.reader = reader;
         this.options = options;
-        columnEndsBuffer = new PooledColumnEnds(options.MaxColumnCount + 1);
+        columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
         quote = (byte)options.Quote;
         escape = options.EscapeCharacter is { } escapeChar ? (byte)escapeChar : null;
         enableQuotes = options.EnableQuotedFields;

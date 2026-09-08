@@ -82,7 +82,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         bytePool = ArrayPool<byte>.Shared;
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
-        columnEndsBuffer = new PooledColumnEnds(options.MaxColumnCount + 1);
+        columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
         cursor = CsvRowBatchCursor.TryCreate(options);
 
         offset = 0;

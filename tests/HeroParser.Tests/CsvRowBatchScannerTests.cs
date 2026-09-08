@@ -569,6 +569,15 @@ public class CsvRowBatchScannerTests
     }
 
     [Fact]
+    public void MinEndsCapacity_CoversMaxColumnsPlusChunkReserve()
+    {
+        // Callers that own a per-row buffer (span reader, streaming readers, PipeReader) size it with this,
+        // so ParseRow's SIMD path is taken. A buffer of MaxColumnCount + 1 would fall to the scalar loop.
+        Assert.Equal(100 + 2 + 130, CsvRowBatchScanner.MinEndsCapacity(100));
+        Assert.True(CsvRowBatchScanner.MinEndsCapacity(1) > 1 + 1);
+    }
+
+    [Fact]
     public void IsSupportedForRow_AllowsCommentCharacter_BatchDoesNot()
     {
         if (!Avx2) return;

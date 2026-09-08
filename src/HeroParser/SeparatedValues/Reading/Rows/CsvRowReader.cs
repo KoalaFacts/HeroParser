@@ -56,8 +56,8 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         rowCount = 0;
         sourceLineNumber = 1; // Start at line 1
         Current = default;
-        // Ends-only storage: need maxColumns + 1 entries
-        columnEndsBuffer = new PooledColumnEnds(options.MaxColumnCount + 1);
+        // Ends-only storage sized for the scanner's single-row mode (max columns plus its chunk reserve).
+        columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
         columnEnds = columnEndsBuffer.Buffer;
         cursor = CsvRowBatchCursor.TryCreate(options, batchEndsCapacity);
     }
@@ -125,7 +125,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
 
             var remaining = data[position..];
             int rowStartLine = trackLineNumbers ? sourceLineNumber : 0; // Only capture when tracking enabled
-            var columnEndsSpan = columnEnds.AsSpan(0, options.MaxColumnCount + 1);
+            var columnEndsSpan = columnEndsBuffer.Span;
 
             CsvRowParseResult result = !trackLineNumbers
                 ? (enableQuotedFields

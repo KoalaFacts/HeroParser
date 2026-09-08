@@ -109,22 +109,26 @@ jobs:
       run: |
         ROOT="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts"
 
-        # group flag -> artifact directory. Each pair runs base then head so both share the runner.
-        for pair in "--vs-sep-reading:vs-sep" "--csv-streaming:streaming"; do
-          GROUP="${pair%%:*}"
-          DIR="${pair##*:}"
+        # group flag -> artifact directory -> BenchmarkDotNet filter. Each triple runs base then head so
+        # both share the runner. The pipe group runs only the row-level PipeReader benchmark: the typed
+        # one would double the job time and its report file would collide with the first in the comment.
+        for triple in "--vs-sep-reading:vs-sep:*" "--csv-streaming:streaming:*" "--csv-pipe:pipe:*CsvPipeReaderBenchmarks*"; do
+          GROUP="${triple%%:*}"
+          rest="${triple#*:}"
+          DIR="${rest%%:*}"
+          FILTER="${rest#*:}"
 
           cd "$RUNNER_TEMP/base/benchmarks/HeroParser.Benchmarks"
           dotnet run -c Release \
             --framework ${{ matrix.framework }} \
             --no-build \
-            -- "$GROUP" --filter '*' --artifacts "$ROOT/$DIR/base"
+            -- "$GROUP" --filter "$FILTER" --artifacts "$ROOT/$DIR/base"
 
           cd "$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks"
           dotnet run -c Release \
             --framework ${{ matrix.framework }} \
             --no-build \
-            -- "$GROUP" --filter '*' --artifacts "$ROOT/$DIR/head"
+            -- "$GROUP" --filter "$FILTER" --artifacts "$ROOT/$DIR/head"
         done
 
     - name: Upload benchmark results
@@ -169,6 +173,7 @@ jobs:
           const comparisons = [
             { dir: 'vs-sep', title: 'Sep Comparison, same runner' },
             { dir: 'streaming', title: 'Streaming Comparison, same runner' },
+            { dir: 'pipe', title: 'PipeReader Comparison, same runner' },
           ];
           for (const { dir, title } of comparisons) {
             const base = readReport(path.join(artifactsRoot, dir, 'base'));

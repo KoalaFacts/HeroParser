@@ -6,11 +6,9 @@ using Xunit;
 namespace HeroParser.Tests.Internal;
 
 /// <summary>
-/// Drives the QuotesDisabled compile-time-specialized SIMD code paths in
-/// CsvRowParser by setting <see cref="CsvReadOptions.EnableQuotedFields"/> = false.
-/// Hits 200+ lines of byte/char/Avx2/Avx512 SIMD fast-path code in CsvRowParser.cs
-/// (lines 585-731, 1010-1170, 1454-1620) that are JIT-eliminated when quotes
-/// are enabled.
+/// Drives the QuotesDisabled compile-time specialisation of the read path by setting
+/// <see cref="CsvReadOptions.EnableQuotedFields"/> = false: the scanner's unquoted block loop and
+/// dispatch, and the parser's scalar loop with quote handling JIT-eliminated.
 /// </summary>
 [Trait("Category", "Unit")]
 [Collection("AsyncWriterTests")] // shares HardwareCapabilities state with other SIMD tests

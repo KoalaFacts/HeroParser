@@ -9,7 +9,7 @@
 ### Why Choose HeroParser?
 * **Extreme Performance**: Engineered with AVX-512, AVX2, and ARM NEON SIMD optimizations to deliver ultra-high-throughput reading and writing.
 * **AI-Native integrations**: Built-in support for token-budgeted chunking, LLM output structured repair, vector embedding pipelines, and agent tool mapping.
-* **Zero Dependencies & Low Footprint**: Operates with zero external packages. Employs a fixed **112-byte heap memory footprint** on the reading hot-path regardless of file size.
+* **Zero Dependencies & Low Footprint**: Operates with zero external packages. Employs a fixed **152-byte heap memory footprint** on the reading hot-path regardless of file size.
 * **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, Fixed-Width, and HTB APIs.
 
 ---
@@ -19,7 +19,7 @@
 Tested under **.NET 10.0** on an **AMD Ryzen AI 9 HX PRO 370 CPU**:
 * **Read Throughput**: SIMD-accelerated UTF-8 (`byte[]`) read paths on both quoted and unquoted data.
 * **Write Throughput**: Highly optimized CSV/JSONL serialization achieving massive throughput.
-* **GC Allocations**: Fixed 112-byte allocation throughout parsing, representing a **97% memory reduction** compared to traditional reflection-based parsers.
+* **GC Allocations**: Fixed 152-byte allocation throughout parsing, representing a **97% memory reduction** compared to traditional reflection-based parsers.
 * **String Generation**: **Up to 64% speedup** on synchronous text generation via pre-allocated capacities.
 
 View live performance graphs and history on the [HeroParser Performance Portal](https://KoalaFacts.github.io/HeroParser/).
@@ -44,7 +44,7 @@ dotnet add package HeroParser.Console
 
 #### Option 1: Dotnet Global Tool (Cross-Platform)
 ```bash
-dotnet tool install --global HeroParser.Cli --version 2.6.0
+dotnet tool install --global HeroParser.Cli --version 2.7.0
 ```
 
 #### Option 2: Homebrew Tap (macOS & Linux)

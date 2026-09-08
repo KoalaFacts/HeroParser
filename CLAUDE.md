@@ -197,42 +197,54 @@ These are the patterns CodeQL flags as `cs/useless-assignment-to-local` and
 
 ## Performance Optimization Lessons
 
+### How to measure
+
+- **Only the same-runner A/B counts.** The PR benchmark job builds the PR base in a worktree and runs `--vs-sep-reading` for base and head back to back, posting both under "Sep Comparison, same runner" in the PR comment. GitHub-hosted runners land on different CPUs from run to run (EPYC 7763 Zen 3 without AVX-512, EPYC 9V74 Zen 4, Xeon 6973P-C all seen within a week), so numbers from different runs, from the published docs, or from a laptop are not comparable. Sep's own number should agree within a few percent between the two halves; if not, the runner was unstable and the run should be repeated.
+- Local laptop runs are too noisy for effects under ~20%: Sep drifted 25% between consecutive local runs while the same-runner job resolved a 3% change. The same-runner A/B caught a 14% regression that three local trials had read as an improvement.
+- Cheap way to test a per-row hypothesis: sweep the row/column split at constant cell count (50000x5, 10000x25, 2500x100). If the ratio to Sep tracks row count, the cost is per-row, not per-byte.
+
 ### What Works
 
-- **CLMUL-based quote handling**: The PCLMULQDQ instruction for branchless prefix XOR provides efficient quote-aware SIMD parsing
-- **Compile-time specialization**: Generic type parameters (`TQuotePolicy`, `TTrack`) allow JIT to eliminate dead code paths
-- **`AppendColumn` method**: The JIT already optimizes this well - don't try to "improve" it
-- **ArrayPool for buffer reuse**: `CsvCharToByteBinderAdapter` uses `ArrayPool<byte>.Shared` for char-to-byte conversion buffers, reducing GC pressure
-- **Stackalloc for small arrays**: Column byte lengths use stackalloc when ≤128 columns, avoiding heap allocations entirely
+- **Scan-ahead row batches** (`CsvRowBatchScanner`): one SIMD pass fills a pooled `ends` buffer with many rows' column ends (ends-only encoding, absolute offsets, a sentinel per row) and `MoveNext` only advances an index. Per-row entry into the parser was ~58 ns against Sep's ~15 ns and was the entire gap at 5-25 columns.
+- **Inline "quotes but no line ending" chunk path**: most chunks in a quoted row have quotes and no newline. Handling them in the dispatch (CLMUL mask, filter, bare append, flip parity) instead of calling the state machine is what made the quoted cases win. A non-inlined call per chunk cancels per-row savings.
+- **UTF-16 pack-and-saturate**: pack two `short` vectors into one byte vector with `PackUnsignedSaturate` plus a lane permute, then reuse the byte dispatch. Halves compares per element; loads are identical either way. (An older note said this was abandoned for memory traffic; the same-runner A/B showed -20% unquoted, -15% quoted.) Requires ASCII specials so saturated chars (0xFF / 0x00) can never alias them.
+- **Bare delimiter loops on true locals**: `ends[endsCount++] = base + bit` with `endsCount` a local of the front end. Keep the hot loop free of `ref` parameters and per-delimiter bookkeeping.
+- **Delegated error diagnostics**: when the scanner detects a violation it stops and the reader re-parses that row with `ParseRow`, so exceptions, messages and positions stay byte-identical without duplicating diagnostics code.
+- **Pooled buffers behind a class** (`PooledColumnEnds`, `PooledRowBatch`): the reader struct is copied by `foreach` and disposed per copy; a class with an idempotent return prevents double-returning arrays to `ArrayPool`, which otherwise hands the same array to two owners.
+- **CLMUL-based quote handling**: PCLMULQDQ prefix XOR for branchless in-quotes masks.
+- **Compile-time specialization**: `TQuotePolicy`, `TTrack` and the element type let the JIT eliminate dead paths.
+- **ArrayPool for buffer reuse** and **stackalloc for small arrays** in the binders.
 
 ### What Doesn't Work
 
-Attempted optimizations that caused regressions:
+Attempted optimizations that caused regressions, all caught by the same-runner A/B:
 
-1. **Batch validation with PopCount**: Using `BitOperations.PopCount()` to count delimiters and validate bounds once per chunk actually adds overhead. The per-delimiter check in `AppendColumn` is already well-optimized by the JIT.
+1. **Early exit on a combined mask**: the unquoted block loop tested `d0 | le0` and broke whenever vector 0 held any delimiter, which on dense CSV is always, so the whole block's loads and compares were discarded and redone. Combine masks before a branch only when the combined event is rare.
 
-2. **Unsafe.Add for columnEnds writes**: Replacing array indexing with `Unsafe.Add(ref columnEndsRef, index)` didn't help - the JIT already eliminates bounds checks when it can prove safety.
+2. **Per-delimiter stores through a `ref` parameter in the block path**: routing the no-newline block through a helper that stored `currentStart` per delimiter and did a popcount per vector regressed unquoted 10k x 25 by 14% (540 us to 617 us). Keep validation on a cold path behind one `HasValue` branch per block.
 
-3. **Hoisting maxFieldLength checks**: Pre-computing `maxFieldLength ?? int.MaxValue` and using a `checkLimit` boolean adds more overhead than the nullable check itself.
+3. **Batch validation with PopCount** per vector adds overhead over one check per block.
 
-**Key insight**: The .NET JIT is very good at optimizing simple, idiomatic code. "Clever" micro-optimizations often backfire by preventing JIT optimizations or adding instruction overhead.
+4. **Unsafe.Add for columnEnds writes**: the JIT already eliminates bounds checks it can prove.
+
+5. **Hoisting maxFieldLength checks** into a boolean costs more than the nullable check.
+
+**Key insight**: the .NET JIT is very good at simple, idiomatic code. Structure (what runs per row vs per chunk vs per byte, what stays inline) moves the numbers; micro-tricks mostly don't.
 
 ### Benchmark Baseline (vs Sep 0.17.0)
 
-**Latest Results (.NET 10, AVX-512, AMD Ryzen AI 9 HX PRO 370):**
+Same-runner CI, 10,000 rows x 25 columns, .NET 10, AMD EPYC 9V74 (AVX-512), v2.7.0:
 
-HeroParser UTF-8 is **faster than Sep 0.17.0** in both unquoted and quoted scenarios, with ~35× lower memory allocations.
+| Case | Sep | HeroParser | Ratio | Allocated |
+|---|---|---|---|---|
+| UTF-8, unquoted | 663.5 us | 491.4 us | 0.74x | 152 B vs 3,952 B |
+| UTF-8, quoted | 1,343.2 us | 898.8 us | 0.67x | 152 B vs 4,048 B |
+| UTF-16, unquoted | 663.5 us | 534.4 us | 0.81x | 152 B vs 3,952 B |
+| UTF-16, quoted | 1,343.2 us | 984.1 us | 0.73x | 152 B vs 4,048 B |
 
-**Performance Summary**:
-- **Standard (10k rows x 25 cols)**:
-  - **Quoted**: HeroParser UTF-8 runs in **1.33 ms – 1.69 ms** (~15–27% faster than Sep's 1.36 ms – 2.33 ms) with 112 B vs 4,048 B allocated.
-  - **Unquoted**: HeroParser UTF-8 runs in **888.5 µs – 1.15 ms** (~0.92–1.11x Sep) with 112 B vs 3,952 B allocated.
-- **Wide CSVs (100k rows x 100 cols)**: ~223.6 Million cells/sec (44.72 ms total for 10M cells, 32 B allocated).
-- **Allocations**: **112 B fixed** for rows (vs Sep's ~4 KB).
-- **Recommendation**: Always use UTF-8 APIs (`byte[]`). UTF-16 is deprecated for performance.
-
-**Historical Note**: UTF-16 Pack-Saturate approach was abandoned due to memory traffic overhead.
-**Unicode**: Verified correct handling for Chinese, Arabic, Emoji, and Mixed Unicode.
+- **Allocations**: 152 B fixed per span read (one pooled batch holder), regardless of row or column count.
+- **UTF-8 vs UTF-16**: both are first-class now; prefer UTF-8 when the data is already bytes to skip the pack step, but `string` input no longer needs conversion for performance.
+- **Unicode**: verified for CJK, Arabic, Hangul, accented chars, emoji surrogate pairs, U+FFFF and U+FFFD on both element types.
 
 ## Architecture Overview
 
@@ -247,10 +259,11 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
                                     │ Scalar   │  (fallback)
                                     └──────────┘
 ```
-- **Row Scanner**: Uses SIMD to find delimiters + newlines in parallel. PCLMULQDQ for branchless quote tracking.
-- **Column Extraction**: `AppendColumn` tracks column boundaries via `columnEnds[]` array.
+- **Scan-ahead scanner** (`CsvRowBatchScanner`, span readers): one SIMD pass records a batch of rows' column ends into a pooled buffer; `CsvRowReader<T>.MoveNext` advances an index. UTF-16 chunks are packed to bytes with saturation and share the byte dispatch. Errors are delegated to `ParseRow` for identical diagnostics. Used when the delimiter and quote are ASCII and no comment/escape character is set.
+- **Per-row parser** (`CsvRowParser.ParseRow`): SIMD per row, used by the streaming readers (`CsvAsyncStreamReader`, PipeReader, multi-schema streaming) and by the span readers for configurations the scanner declines. PCLMULQDQ for branchless quote tracking.
+- **Column Extraction**: ends-only `columnEnds[]` (sentinel, delimiter positions, row end); `CsvRow<T>` carries a base offset so it can point into a shared batch buffer.
 - **Binding**: `ICsvSourceBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
-- **UTF-16 fallback**: `CsvCharToByteBinderAdapter` converts to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
+- **UTF-16 binding fallback**: `CsvCharToByteBinderAdapter` converts to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
 
 ### Write Path
 ```
@@ -260,7 +273,7 @@ Records → PropertyAccessor (compiled expression trees) → CsvStreamWriter (bu
 ```
 
 ### Key Abstractions
-- `CsvRowReader<T>` — ref struct row iterator (T = byte or char)
+- `CsvRowReader<T>` — ref struct row iterator (T = byte or char); batches via `CsvRowBatchScanner` + `PooledRowBatch`, falls back to `CsvRowParser.ParseRow`
 - `CsvRecordReader<TElement, T>` — ref struct that wraps row reader + binder
 - `CsvStreamWriter` — buffered writer with `ArrayPool<char>` management
 - `CsvAsyncStreamWriter` — async variant with `char[]` + `byte[]` dual buffers

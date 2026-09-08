@@ -325,14 +325,23 @@ public class CsvRowBatchScannerTests
         Assert.Equal(CsvErrorCode.TooManyRows, exChars.ErrorCode);
     }
 
-    /// <summary>Non-ASCII chars must not be mistaken for delimiters, quotes or line endings on the UTF-16 path.</summary>
+    /// <summary>
+    /// Non-ASCII chars must not be mistaken for delimiters, quotes or line endings on the UTF-16 path.
+    /// Covers chars in 0x0100-0x7FFF (saturate to 0xFF when packed) and at or above 0x8000, including
+    /// surrogates and private-use chars (saturate to 0x00 when packed), plus U+FFFF.
+    /// </summary>
     [Fact]
     public void Utf16_NonAsciiContent_MatchesPerRow()
     {
         var sb = new StringBuilder();
         for (int r = 0; r < 60; r++)
-            sb.Append("名前").Append(r).Append(",\"引用, 值\",émoji 🚀,").Append(new string('ß', r % 5)).Append(r % 3 == 0 ? "\r\n" : "\n");
+        {
+            sb.Append("名前").Append(r).Append(",\"引用, 值\",émoji 🚀,").Append(new string('ß', r % 5))
+              .Append(",￿�,").Append("한글 한글")
+              .Append(r % 3 == 0 ? "\r\n" : "\n");
+        }
         AssertSameAsOracle(sb.ToString(), Options(quotes: true, track: true));
+        AssertSameAsOracle(sb.ToString().Replace("\"", string.Empty), Options(quotes: false, track: true));
     }
 
     [Fact]

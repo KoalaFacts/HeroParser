@@ -210,7 +210,7 @@ These are the patterns CodeQL flags as `cs/useless-assignment-to-local` and
 - **UTF-16 pack-and-saturate**: pack two `short` vectors into one byte vector with `PackUnsignedSaturate` plus a lane permute, then reuse the byte dispatch. Halves compares per element; loads are identical either way. (An older note said this was abandoned for memory traffic; the same-runner A/B showed -20% unquoted, -15% quoted.) Requires ASCII specials so saturated chars (0xFF / 0x00) can never alias them.
 - **Bare delimiter loops on true locals**: `ends[endsCount++] = base + bit` with `endsCount` a local of the front end. Keep the hot loop free of `ref` parameters and per-delimiter bookkeeping.
 - **Delegated error diagnostics**: when the scanner detects a violation it stops and the reader re-parses that row with `ParseRow`, so exceptions, messages and positions stay byte-identical without duplicating diagnostics code.
-- **Pooled buffers behind a class** (`PooledColumnEnds`, `PooledRowBatch`): the reader struct is copied by `foreach` and disposed per copy; a class with an idempotent return prevents double-returning arrays to `ArrayPool`, which otherwise hands the same array to two owners.
+- **Pooled buffers behind a class** (`PooledColumnEnds`, `CsvRowBatchCursor`): the reader struct is copied by `foreach` and disposed per copy; a class with an idempotent return prevents double-returning arrays to `ArrayPool`, which otherwise hands the same array to two owners.
 - **CLMUL-based quote handling**: PCLMULQDQ prefix XOR for branchless in-quotes masks.
 - **Compile-time specialization**: `TQuotePolicy`, `TTrack` and the element type let the JIT eliminate dead paths.
 - **ArrayPool for buffer reuse** and **stackalloc for small arrays** in the binders.
@@ -259,8 +259,8 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
                                     │ Scalar   │  (fallback)
                                     └──────────┘
 ```
-- **Scan-ahead scanner** (`CsvRowBatchScanner`, span readers): one SIMD pass records a batch of rows' column ends into a pooled buffer; `CsvRowReader<T>.MoveNext` advances an index. UTF-16 chunks are packed to bytes with saturation and share the byte dispatch. Errors are delegated to `ParseRow` for identical diagnostics. Used when the delimiter and quote are ASCII and no comment/escape character is set.
-- **Per-row parser** (`CsvRowParser.ParseRow`): SIMD per row, used by the streaming readers (`CsvAsyncStreamReader`, PipeReader, multi-schema streaming) and by the span readers for configurations the scanner declines. PCLMULQDQ for branchless quote tracking.
+- **Scan-ahead scanner** (`CsvRowBatchScanner` + `CsvRowBatchCursor`): one SIMD pass records a batch of rows' column ends into a pooled buffer; the cursor drives the batch / refill / fallback protocol for the span readers and the streaming readers (`CsvAsyncStreamReader`, `CsvMultiSchemaStreamingRecordReader`), which scan their buffered window and never emit a partial row mid-stream. UTF-16 chunks are packed to bytes with saturation and share the byte dispatch. Errors are delegated to `ParseRow` for identical diagnostics. Used when the delimiter and quote are ASCII and no comment/escape character is set.
+- **Per-row parser** (`CsvRowParser.ParseRow`): SIMD per row, used by the PipeReader path, by every reader for configurations the scanner declines (comment or escape character, non-ASCII specials, SIMD off), and by the batched readers to re-parse a flagged row so its exception is the same. PCLMULQDQ for branchless quote tracking.
 - **Column Extraction**: ends-only `columnEnds[]` (sentinel, delimiter positions, row end); `CsvRow<T>` carries a base offset so it can point into a shared batch buffer.
 - **Binding**: `ICsvSourceBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
 - **UTF-16 binding fallback**: `CsvCharToByteBinderAdapter` converts to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
@@ -273,7 +273,7 @@ Records → PropertyAccessor (compiled expression trees) → CsvStreamWriter (bu
 ```
 
 ### Key Abstractions
-- `CsvRowReader<T>` — ref struct row iterator (T = byte or char); batches via `CsvRowBatchScanner` + `PooledRowBatch`, falls back to `CsvRowParser.ParseRow`
+- `CsvRowReader<T>` — ref struct row iterator (T = byte or char); batches via `CsvRowBatchCursor`, falls back to `CsvRowParser.ParseRow`
 - `CsvRecordReader<TElement, T>` — ref struct that wraps row reader + binder
 - `CsvStreamWriter` — buffered writer with `ArrayPool<char>` management
 - `CsvAsyncStreamWriter` — async variant with `char[]` + `byte[]` dual buffers

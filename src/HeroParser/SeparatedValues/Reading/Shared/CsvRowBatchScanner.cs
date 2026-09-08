@@ -22,11 +22,13 @@ namespace HeroParser.SeparatedValues.Reading.Shared;
 /// <see cref="Rows.CsvRow{T}"/>, in absolute rather than row-relative coordinates.
 /// </para>
 /// <para>
-/// The vector front ends differ per element type and width; UTF-16 chunks are packed to bytes with
-/// saturation first, so both types share one byte-vector dispatch. It reduces every chunk to bit
-/// masks (delimiter, line ending, LF, quote) and hands chunks with line endings, or quote activity the
-/// inline quoted path cannot take, to one shared mask-level state machine. Chunks holding nothing but
-/// delimiters take a bare append loop on true locals.
+/// One generic front end (<c>ScanCore</c>) serves both element types and both vector widths. The
+/// width is a type parameter implementing <see cref="ISimdLanes{TVec}"/> with static abstract members,
+/// which the JIT resolves at compile time exactly like <c>TQuotePolicy</c>. UTF-16 chunks are packed to
+/// bytes with saturation on load, so after the load everything is byte-vector work. The front end
+/// reduces every chunk to bit masks (delimiter, line ending, LF, quote) and hands chunks with line
+/// endings, or quote activity the inline quoted path cannot take, to one mask-level state machine.
+/// Chunks holding nothing but delimiters take a bare append loop on true locals.
 /// </para>
 /// <para>
 /// Error handling is delegated: when the scanner detects a violation (too many columns, oversize
@@ -36,8 +38,8 @@ namespace HeroParser.SeparatedValues.Reading.Shared;
 /// the per-row path always has.
 /// </para>
 /// <para>
-/// Requires no comment or escape character and an AVX2 or AVX-512BW capable CPU. Callers check
-/// <see cref="IsSupported"/> and otherwise stay on the per-row path.
+/// Requires an ASCII delimiter and quote, no comment or escape character, and an AVX2 or AVX-512BW
+/// capable CPU. Callers check <see cref="IsSupported"/> and otherwise stay on the per-row path.
 /// </para>
 /// </remarks>
 internal static class CsvRowBatchScanner
@@ -45,7 +47,7 @@ internal static class CsvRowBatchScanner
     /// <summary>Default <c>ends</c> capacity: 16 KB of ints, comfortably L1-resident, about 160 rows of 25 columns.</summary>
     public const int DEFAULT_ENDS_CAPACITY = 4096;
 
-    /// <summary>Largest chunk any front end produces (64 bytes or 64 chars).</summary>
+    /// <summary>Largest chunk any width produces (64 bytes or 64 chars).</summary>
     private const int MAX_CHUNK = 64;
 
     /// <summary>
@@ -64,9 +66,9 @@ internal static class CsvRowBatchScanner
     public static int RowStartsCapacity(int endsCapacity) => (endsCapacity / 2) + MAX_CHUNK + 2;
 
     /// <summary>
-    /// The scanner handles the default configuration space: ASCII delimiter and quote (the UTF-16 front
-    /// ends pack chars to bytes with saturation, so a non-ASCII special could alias a saturated char),
-    /// no comment or escape character, SIMD on and available.
+    /// The scanner handles the default configuration space: ASCII delimiter and quote (the UTF-16 path
+    /// packs chars to bytes with saturation, so a non-ASCII special could alias a saturated char), no
+    /// comment or escape character, SIMD on and available.
     /// </summary>
     public static bool IsSupported(CsvReadOptions options) =>
         options.UseSimdIfAvailable
@@ -76,11 +78,26 @@ internal static class CsvRowBatchScanner
         && !options.CommentCharacter.HasValue
         && (HardwareCapabilities.Avx512BWIsSupported || HardwareCapabilities.Avx2IsSupported);
 
-    /// <summary>Mutable scan state shared by the vector front ends and the mask-level state machine.</summary>
-    private ref struct ScanState
+    // ---------------------------------------------------------------------------------------------
+    // Scan context: everything one scan needs, passed by ref so the mask-level routines take a
+    // handful of parameters. The hot loop in ScanCore keeps its own locals (position, endsCount) and
+    // only touches the context for state that changes per row.
+    // ---------------------------------------------------------------------------------------------
+
+    private ref struct ScanContext<T> where T : unmanaged, IEquatable<T>
     {
+        public ReadOnlySpan<T> Data;
+        public Span<int> Ends;
+        public Span<int> RowStarts;
+        public Span<int> SourceLines;
+        public CsvReadOptions Options;
+        public T Delimiter;
+        public T Quote;
+        public T Lf;
+        public T Cr;
+
         public int RowStart;            // absolute start of the row being scanned
-        public int CurRowEndsStart;     // index of the current row's sentinel in ends
+        public int CurRowEndsStart;     // index of the current row's sentinel in Ends
         public int RowCount;            // complete rows recorded so far
         public int SourceLine;          // 1-based physical line at the scan position (TrackLineNumbers only)
         public int CurRowStartLine;     // SourceLine when the current row started
@@ -115,8 +132,17 @@ internal static class CsvRowBatchScanner
         where TTrack : struct
         where TQuotePolicy : struct
     {
-        var st = new ScanState
+        var ctx = new ScanContext<T>
         {
+            Data = data,
+            Ends = ends,
+            RowStarts = rowStarts,
+            SourceLines = sourceLines,
+            Options = options,
+            Delimiter = CastFromChar<T>(options.Delimiter),
+            Quote = CastFromChar<T>(options.Quote),
+            Lf = CastFromChar<T>('\n'),
+            Cr = CastFromChar<T>('\r'),
             RowStart = start,
             CurRowEndsStart = 0,
             RowCount = 0,
@@ -127,23 +153,11 @@ internal static class CsvRowBatchScanner
         ends[0] = start - 1;
         int endsCount = 1;
 
-        int position;
-        if (typeof(T) == typeof(byte))
-        {
-            var bytes = MemoryMarshal.Cast<T, byte>(data);
-            position = HardwareCapabilities.Avx512BWIsSupported
-                ? ScanBytesAvx512<TTrack, TQuotePolicy>(bytes, start, options, ends, rowStarts, sourceLines, ref st, ref endsCount)
-                : ScanBytesAvx2<TTrack, TQuotePolicy>(bytes, start, options, ends, rowStarts, sourceLines, ref st, ref endsCount);
-        }
-        else
-        {
-            var chars = MemoryMarshal.Cast<T, char>(data);
-            position = HardwareCapabilities.Avx512BWIsSupported
-                ? ScanCharsAvx512<TTrack, TQuotePolicy>(chars, start, options, ends, rowStarts, sourceLines, ref st, ref endsCount)
-                : ScanCharsAvx2<TTrack, TQuotePolicy>(chars, start, options, ends, rowStarts, sourceLines, ref st, ref endsCount);
-        }
+        int position = HardwareCapabilities.Avx512BWIsSupported
+            ? ScanCore<T, Vector512<byte>, Avx512Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount)
+            : ScanCore<T, Vector256<byte>, Avx2Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount);
 
-        bool reachedEnd = st.ErrorRowStart < 0 && position >= data.Length;
+        bool reachedEnd = ctx.ErrorRowStart < 0 && position >= data.Length;
         if (reachedEnd && !isFinalBlock)
         {
             // A streaming buffer: whatever follows the last line ending is a partial row until more data
@@ -154,38 +168,38 @@ internal static class CsvRowBatchScanner
             // next read. Closing on the CR now would make that LF look like a blank line (and, with line
             // tracking, count a line that does not exist), so rewind to the CR and let the next call see
             // the pair together.
-            if (st.RowStart == data.Length && data.Length > start && data[^1].Equals(CastFromChar<T>('\r')))
-                RewindTrailingCr<TTrack>(data.Length - 1, ends, rowStarts, sourceLines, ref st);
+            if (ctx.RowStart == data.Length && data.Length > start && data[^1].Equals(ctx.Cr))
+                RewindTrailingCr<T, TTrack>(data.Length - 1, ref ctx);
         }
         else if (reachedEnd)
         {
-            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && st.InQuotes)
-                st.ErrorRowStart = st.RowStart;
-            else if (st.RowStart < data.Length)
-                CloseRow<T, TTrack>(data.Length, isCr: false, terminatesLine: false, data, CastFromChar<T>('\n'), options, ends, rowStarts, sourceLines, ref st, ref endsCount);
+            if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && ctx.InQuotes)
+                ctx.ErrorRowStart = ctx.RowStart;
+            else if (ctx.RowStart < data.Length)
+                CloseRow<T, TTrack>(data.Length, isCr: false, terminatesLine: false, ref ctx, ref endsCount);
         }
 
         // Drop a partial row (batch full or error row) so the next call re-scans it from its start.
-        rowStarts[st.RowCount] = st.CurRowEndsStart;
+        rowStarts[ctx.RowCount] = ctx.CurRowEndsStart;
 
-        errorRowStart = st.ErrorRowStart;
+        errorRowStart = ctx.ErrorRowStart;
         if (errorRowStart >= 0)
         {
             nextPosition = errorRowStart;
-            nextSourceLine = st.CurRowStartLine;
+            nextSourceLine = ctx.CurRowStartLine;
         }
         else if (reachedEnd)
         {
             nextPosition = data.Length;
-            nextSourceLine = st.SourceLine;
+            nextSourceLine = ctx.SourceLine;
         }
         else
         {
-            nextPosition = st.RowStart;
-            nextSourceLine = st.CurRowStartLine;
+            nextPosition = ctx.RowStart;
+            nextSourceLine = ctx.CurRowStartLine;
         }
 
-        return st.RowCount;
+        return ctx.RowCount;
     }
 
     /// <summary>
@@ -193,29 +207,30 @@ internal static class CsvRowBatchScanner
     /// element) so the scan resumes there. The CR either terminated a recorded row, which is popped, or
     /// a blank line, whose consumption is reverted.
     /// </summary>
-    private static void RewindTrailingCr<TTrack>(int crPosition, Span<int> ends, Span<int> rowStarts, Span<int> sourceLines, ref ScanState st)
+    private static void RewindTrailingCr<T, TTrack>(int crPosition, ref ScanContext<T> ctx)
+        where T : unmanaged, IEquatable<T>
         where TTrack : struct
     {
-        bool recordedRowEndsHere = st.RowCount > 0 && ends[st.CurRowEndsStart - 1] == crPosition;
+        bool recordedRowEndsHere = ctx.RowCount > 0 && ctx.Ends[ctx.CurRowEndsStart - 1] == crPosition;
         if (recordedRowEndsHere)
         {
-            st.RowCount--;
-            st.CurRowEndsStart = rowStarts[st.RowCount];
-            st.RowStart = ends[st.CurRowEndsStart] + 1;
+            ctx.RowCount--;
+            ctx.CurRowEndsStart = ctx.RowStarts[ctx.RowCount];
+            ctx.RowStart = ctx.Ends[ctx.CurRowEndsStart] + 1;
             if (typeof(TTrack) == typeof(TrackLineNumbers))
             {
-                st.CurRowStartLine = sourceLines[st.RowCount];
-                st.SourceLine = st.CurRowStartLine;
+                ctx.CurRowStartLine = ctx.SourceLines[ctx.RowCount];
+                ctx.SourceLine = ctx.CurRowStartLine;
             }
         }
         else
         {
-            st.RowStart = crPosition;
-            ends[st.CurRowEndsStart] = crPosition - 1;
+            ctx.RowStart = crPosition;
+            ctx.Ends[ctx.CurRowEndsStart] = crPosition - 1;
             if (typeof(TTrack) == typeof(TrackLineNumbers))
             {
-                st.SourceLine--;
-                st.CurRowStartLine = st.SourceLine;
+                ctx.SourceLine--;
+                ctx.CurRowStartLine = ctx.SourceLine;
             }
         }
     }
@@ -233,510 +248,264 @@ internal static class CsvRowBatchScanner
     }
 
     // ---------------------------------------------------------------------------------------------
-    // UTF-8 front ends. They own the hot locals (position, endsCount) and only hand off to the
-    // shared state machine for chunks that contain line endings or quote activity.
+    // SIMD width adapters. Static abstract members on a struct type parameter compile to direct
+    // intrinsic calls, so ScanCore is written once and specialised per width by the JIT.
     // ---------------------------------------------------------------------------------------------
 
-    private static int ScanBytesAvx512<TTrack, TQuotePolicy>(
-        ReadOnlySpan<byte> data,
-        int start,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
-        ref int endsCountRef)
+    private interface ISimdLanes<TVec> where TVec : struct
+    {
+        /// <summary>Elements per chunk: bytes for UTF-8, chars for UTF-16 (two half vectors packed).</summary>
+        static abstract int Count { get; }
+        static abstract TVec Create(byte value);
+        static abstract TVec LoadBytes(ref byte source);
+        /// <summary>
+        /// Loads <see cref="Count"/> chars as two <c>short</c> vectors and packs them to one byte vector
+        /// with unsigned saturation: chars 0x0100-0x7FFF become 0xFF, chars at or above 0x8000 (negative
+        /// as <c>short</c>) become 0x00; neither can equal an ASCII special. The pack interleaves 64-bit
+        /// lanes, so one permute restores source order.
+        /// </summary>
+        static abstract TVec LoadChars(ref short source);
+        static abstract TVec Equals(TVec left, TVec right);
+        static abstract TVec Or(TVec left, TVec right);
+        static abstract ulong Mask(TVec vector);
+    }
+
+    private readonly struct Avx512Lanes : ISimdLanes<Vector512<byte>>
+    {
+        public static int Count => 64;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector512<byte> Create(byte value) => Vector512.Create(value);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector512<byte> LoadBytes(ref byte source) => Vector512.LoadUnsafe(ref source);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector512<byte> LoadChars(ref short source)
+        {
+            var lo = Vector512.LoadUnsafe(ref source);
+            var hi = Vector512.LoadUnsafe(ref Unsafe.Add(ref source, 32));
+            // PackUnsignedSaturate emits, per 128-bit lane, 8 bytes of lo then 8 bytes of hi; gather the lo
+            // qwords first and the hi qwords second to recover source order.
+            var laneOrder = Vector512.Create(0L, 2, 4, 6, 1, 3, 5, 7);
+            return Avx512F.PermuteVar8x64(Avx512BW.PackUnsignedSaturate(lo, hi).AsInt64(), laneOrder).AsByte();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector512<byte> Equals(Vector512<byte> left, Vector512<byte> right) => Vector512.Equals(left, right);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector512<byte> Or(Vector512<byte> left, Vector512<byte> right) => left | right;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ulong Mask(Vector512<byte> vector) => vector.ExtractMostSignificantBits();
+    }
+
+    private readonly struct Avx2Lanes : ISimdLanes<Vector256<byte>>
+    {
+        public static int Count => 32;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256<byte> Create(byte value) => Vector256.Create(value);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256<byte> LoadBytes(ref byte source) => Vector256.LoadUnsafe(ref source);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256<byte> LoadChars(ref short source)
+        {
+            var lo = Vector256.LoadUnsafe(ref source);
+            var hi = Vector256.LoadUnsafe(ref Unsafe.Add(ref source, 16));
+            return Avx2.Permute4x64(Avx2.PackUnsignedSaturate(lo, hi).AsInt64(), 0b11_01_10_00).AsByte();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256<byte> Equals(Vector256<byte> left, Vector256<byte> right) => Vector256.Equals(left, right);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256<byte> Or(Vector256<byte> left, Vector256<byte> right) => left | right;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ulong Mask(Vector256<byte> vector) => vector.ExtractMostSignificantBits();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // The one vector front end. It owns the hot locals (position, endsCount, the ends span) and only
+    // hands off to the state machine for chunks that contain line endings or quote activity.
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>Loads one chunk at <paramref name="position"/>, packing chars to bytes for UTF-16.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static TVec Load<T, TVec, TLanes>(ref T dataRef, int position)
+        where T : unmanaged
+        where TVec : struct
+        where TLanes : struct, ISimdLanes<TVec>
+    {
+        ref T at = ref Unsafe.Add(ref dataRef, position);
+        return typeof(T) == typeof(byte)
+            ? TLanes.LoadBytes(ref Unsafe.As<T, byte>(ref at))
+            : TLanes.LoadChars(ref Unsafe.As<T, short>(ref at));
+    }
+
+    private static int ScanCore<T, TVec, TLanes, TTrack, TQuotePolicy>(int start, ref ScanContext<T> ctx, ref int endsCountRef)
+        where T : unmanaged, IEquatable<T>
+        where TVec : struct
+        where TLanes : struct, ISimdLanes<TVec>
         where TTrack : struct
         where TQuotePolicy : struct
     {
-        const int N = 64;
-        ref byte dataRef = ref MemoryMarshal.GetReference(data);
-        int length = data.Length;
-        var delimV = Vector512.Create((byte)options.Delimiter);
-        var quoteV = Vector512.Create((byte)options.Quote);
-        var lfV = Vector512.Create((byte)'\n');
-        var crV = Vector512.Create((byte)'\r');
+        int n = TLanes.Count;
+        ref T dataRef = ref MemoryMarshal.GetReference(ctx.Data);
+        int length = ctx.Data.Length;
+        Span<int> ends = ctx.Ends;
+        int endsLength = ends.Length;
+        int rowStartsLimit = ctx.RowStarts.Length - 1;
+        var delimV = TLanes.Create((byte)ctx.Options.Delimiter);
+        var quoteV = TLanes.Create((byte)ctx.Options.Quote);
+        var lfV = TLanes.Create((byte)'\n');
+        var crV = TLanes.Create((byte)'\r');
 
         int position = start;
         int endsCount = endsCountRef;
-        int rowStartsLimit = rowStarts.Length - 1;
 
-        while (position + N <= length)
+        while (position + n <= length)
         {
-            if (endsCount + CHUNK_RESERVE > ends.Length || st.RowCount + N > rowStartsLimit)
+            if (endsCount + CHUNK_RESERVE > endsLength || ctx.RowCount + n > rowStartsLimit)
                 break;
 
-            // Unquoted 4-vector block: newline-free stretches take the bare path four vectors at a time.
+            // Unquoted 4-chunk block: newline-free stretches take the bare path four chunks at a time.
             if (typeof(TQuotePolicy) == typeof(QuotesDisabled)
-                && position + (4 * N) <= length
-                && endsCount + (4 * CHUNK_RESERVE) <= ends.Length
-                && st.RowCount + (4 * N) <= rowStartsLimit)
+                && position + (4 * n) <= length
+                && endsCount + (4 * CHUNK_RESERVE) <= endsLength
+                && ctx.RowCount + (4 * n) <= rowStartsLimit)
             {
-                ref byte blockRef = ref Unsafe.Add(ref dataRef, position);
-                var c0 = Vector512.LoadUnsafe(ref blockRef);
-                var c1 = Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, N));
-                var c2 = Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, 2 * N));
-                var c3 = Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, 3 * N));
+                var c0 = Load<T, TVec, TLanes>(ref dataRef, position);
+                var c1 = Load<T, TVec, TLanes>(ref dataRef, position + n);
+                var c2 = Load<T, TVec, TLanes>(ref dataRef, position + (2 * n));
+                var c3 = Load<T, TVec, TLanes>(ref dataRef, position + (3 * n));
 
-                var le0 = Vector512.Equals(c0, lfV) | Vector512.Equals(c0, crV);
-                var le1 = Vector512.Equals(c1, lfV) | Vector512.Equals(c1, crV);
-                var le2 = Vector512.Equals(c2, lfV) | Vector512.Equals(c2, crV);
-                var le3 = Vector512.Equals(c3, lfV) | Vector512.Equals(c3, crV);
+                var le0 = TLanes.Or(TLanes.Equals(c0, lfV), TLanes.Equals(c0, crV));
+                var le1 = TLanes.Or(TLanes.Equals(c1, lfV), TLanes.Equals(c1, crV));
+                var le2 = TLanes.Or(TLanes.Equals(c2, lfV), TLanes.Equals(c2, crV));
+                var le3 = TLanes.Or(TLanes.Equals(c3, lfV), TLanes.Equals(c3, crV));
 
-                if ((le0 | le1 | le2 | le3).ExtractMostSignificantBits() == 0)
+                if (TLanes.Mask(TLanes.Or(TLanes.Or(le0, le1), TLanes.Or(le2, le3))) == 0)
                 {
-                    AppendDelimiters(Vector512.Equals(c0, delimV).ExtractMostSignificantBits(), position, ends, ref endsCount);
-                    AppendDelimiters(Vector512.Equals(c1, delimV).ExtractMostSignificantBits(), position + N, ends, ref endsCount);
-                    AppendDelimiters(Vector512.Equals(c2, delimV).ExtractMostSignificantBits(), position + (2 * N), ends, ref endsCount);
-                    AppendDelimiters(Vector512.Equals(c3, delimV).ExtractMostSignificantBits(), position + (3 * N), ends, ref endsCount);
-                    position += 4 * N;
+                    AppendDelimiters(TLanes.Mask(TLanes.Equals(c0, delimV)), position, ends, ref endsCount);
+                    AppendDelimiters(TLanes.Mask(TLanes.Equals(c1, delimV)), position + n, ends, ref endsCount);
+                    AppendDelimiters(TLanes.Mask(TLanes.Equals(c2, delimV)), position + (2 * n), ends, ref endsCount);
+                    AppendDelimiters(TLanes.Mask(TLanes.Equals(c3, delimV)), position + (3 * n), ends, ref endsCount);
+                    position += 4 * n;
                     continue;
                 }
 
-                // A line ending is somewhere in the block: dispatch each vector in order.
-                endsCount = Dispatch<byte, TTrack, TQuotePolicy>(c0, le0, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<byte, TTrack, TQuotePolicy>(c1, le1, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<byte, TTrack, TQuotePolicy>(c2, le2, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<byte, TTrack, TQuotePolicy>(c3, le3, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
+                // A line ending is somewhere in the block: dispatch each chunk in order.
+                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c0, le0, delimV, quoteV, lfV, position, ref ctx, endsCount);
+                if (ctx.ErrorRowStart >= 0) break;
+                position += n;
+                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c1, le1, delimV, quoteV, lfV, position, ref ctx, endsCount);
+                if (ctx.ErrorRowStart >= 0) break;
+                position += n;
+                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c2, le2, delimV, quoteV, lfV, position, ref ctx, endsCount);
+                if (ctx.ErrorRowStart >= 0) break;
+                position += n;
+                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c3, le3, delimV, quoteV, lfV, position, ref ctx, endsCount);
+                if (ctx.ErrorRowStart >= 0) break;
+                position += n;
                 continue;
             }
 
-            var chunk = Vector512.LoadUnsafe(ref Unsafe.Add(ref dataRef, position));
-            var le = Vector512.Equals(chunk, lfV) | Vector512.Equals(chunk, crV);
-            endsCount = Dispatch<byte, TTrack, TQuotePolicy>(chunk, le, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-            if (st.ErrorRowStart >= 0) break;
-            position += N;
+            var chunk = Load<T, TVec, TLanes>(ref dataRef, position);
+            var le = TLanes.Or(TLanes.Equals(chunk, lfV), TLanes.Equals(chunk, crV));
+            endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(chunk, le, delimV, quoteV, lfV, position, ref ctx, endsCount);
+            if (ctx.ErrorRowStart >= 0) break;
+            position += n;
         }
 
-        if (st.ErrorRowStart < 0 && position + N > length)
-            position = ScanTail<byte, TTrack, TQuotePolicy>(data, position, options, ends, rowStarts, sourceLines, ref st, ref endsCount);
+        if (ctx.ErrorRowStart < 0 && position + n > length)
+            position = ScanTail<T, TTrack, TQuotePolicy>(position, ref ctx, ref endsCount);
 
         endsCountRef = endsCount;
         return position;
     }
 
     /// <summary>
-    /// Processes one 64-lane vector of bytes (raw UTF-8, or UTF-16 packed with saturation): bare
-    /// delimiter appends when nothing but delimiters is present, the inline quoted path when quotes
-    /// but no line ending are present, otherwise the shared state machine, which peeks into the
-    /// original <typeparamref name="T"/> span. Returns the new <c>endsCount</c>.
+    /// Processes one chunk: bare delimiter appends when nothing but delimiters is present, the inline
+    /// quoted path when quotes appear without a line ending, otherwise the state machine. Returns the
+    /// new <c>endsCount</c>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int Dispatch<T, TTrack, TQuotePolicy>(
-        Vector512<byte> chunk,
-        Vector512<byte> lineEndings,
-        Vector512<byte> delimV,
-        Vector512<byte> quoteV,
-        Vector512<byte> lfV,
+    private static int Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(
+        TVec chunk,
+        TVec lineEndings,
+        TVec delimV,
+        TVec quoteV,
+        TVec lfV,
         int chunkBase,
-        int chunkSize,
-        ReadOnlySpan<T> data,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
+        ref ScanContext<T> ctx,
         int endsCount)
         where T : unmanaged, IEquatable<T>
+        where TVec : struct
+        where TLanes : struct, ISimdLanes<TVec>
         where TTrack : struct
         where TQuotePolicy : struct
     {
-        ulong lem = lineEndings.ExtractMostSignificantBits();
-        ulong dm = Vector512.Equals(chunk, delimV).ExtractMostSignificantBits();
+        ulong lem = TLanes.Mask(lineEndings);
+        ulong dm = TLanes.Mask(TLanes.Equals(chunk, delimV));
         ulong qm = 0;
         if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
-            qm = Vector512.Equals(chunk, quoteV).ExtractMostSignificantBits();
+            qm = TLanes.Mask(TLanes.Equals(chunk, quoteV));
 
-        if (lem == 0 && (typeof(TQuotePolicy) == typeof(QuotesDisabled) || (qm == 0 && !st.InQuotes && !st.SkipNextQuote)))
+        if (lem == 0 && (typeof(TQuotePolicy) == typeof(QuotesDisabled) || (qm == 0 && !ctx.InQuotes && !ctx.SkipNextQuote)))
         {
-            AppendDelimiters(dm, chunkBase, ends, ref endsCount);
+            AppendDelimiters(dm, chunkBase, ctx.Ends, ref endsCount);
             return endsCount;
         }
 
         if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && lem == 0
-            && TryAppendQuotedNoLineEnding(dm, qm, chunkBase, chunkSize, data, CastFromChar<T>(options.Quote), ref st, ends, ref endsCount))
+            && TryAppendQuotedNoLineEnding(dm, qm, chunkBase, TLanes.Count, ref ctx, ref endsCount))
         {
             return endsCount;
         }
 
-        ulong lfm = Vector512.Equals(chunk, lfV).ExtractMostSignificantBits();
-        return ProcessEventChunk<T, TTrack, TQuotePolicy>(dm, lem, qm, lfm, chunkBase, chunkSize, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-    }
-
-    private static int ScanBytesAvx2<TTrack, TQuotePolicy>(
-        ReadOnlySpan<byte> data,
-        int start,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
-        ref int endsCountRef)
-        where TTrack : struct
-        where TQuotePolicy : struct
-    {
-        const int N = 32;
-        ref byte dataRef = ref MemoryMarshal.GetReference(data);
-        int length = data.Length;
-        var delimV = Vector256.Create((byte)options.Delimiter);
-        var quoteV = Vector256.Create((byte)options.Quote);
-        var lfV = Vector256.Create((byte)'\n');
-        var crV = Vector256.Create((byte)'\r');
-
-        int position = start;
-        int endsCount = endsCountRef;
-        int rowStartsLimit = rowStarts.Length - 1;
-
-        while (position + N <= length)
-        {
-            if (endsCount + CHUNK_RESERVE > ends.Length || st.RowCount + N > rowStartsLimit)
-                break;
-
-            if (typeof(TQuotePolicy) == typeof(QuotesDisabled)
-                && position + (4 * N) <= length
-                && endsCount + (4 * CHUNK_RESERVE) <= ends.Length
-                && st.RowCount + (4 * N) <= rowStartsLimit)
-            {
-                ref byte blockRef = ref Unsafe.Add(ref dataRef, position);
-                var c0 = Vector256.LoadUnsafe(ref blockRef);
-                var c1 = Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, N));
-                var c2 = Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, 2 * N));
-                var c3 = Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, 3 * N));
-
-                var le0 = Vector256.Equals(c0, lfV) | Vector256.Equals(c0, crV);
-                var le1 = Vector256.Equals(c1, lfV) | Vector256.Equals(c1, crV);
-                var le2 = Vector256.Equals(c2, lfV) | Vector256.Equals(c2, crV);
-                var le3 = Vector256.Equals(c3, lfV) | Vector256.Equals(c3, crV);
-
-                if ((le0 | le1 | le2 | le3).ExtractMostSignificantBits() == 0)
-                {
-                    AppendDelimiters(Vector256.Equals(c0, delimV).ExtractMostSignificantBits(), position, ends, ref endsCount);
-                    AppendDelimiters(Vector256.Equals(c1, delimV).ExtractMostSignificantBits(), position + N, ends, ref endsCount);
-                    AppendDelimiters(Vector256.Equals(c2, delimV).ExtractMostSignificantBits(), position + (2 * N), ends, ref endsCount);
-                    AppendDelimiters(Vector256.Equals(c3, delimV).ExtractMostSignificantBits(), position + (3 * N), ends, ref endsCount);
-                    position += 4 * N;
-                    continue;
-                }
-
-                endsCount = Dispatch<byte, TTrack, TQuotePolicy>(c0, le0, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<byte, TTrack, TQuotePolicy>(c1, le1, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<byte, TTrack, TQuotePolicy>(c2, le2, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<byte, TTrack, TQuotePolicy>(c3, le3, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                continue;
-            }
-
-            var chunk = Vector256.LoadUnsafe(ref Unsafe.Add(ref dataRef, position));
-            var le = Vector256.Equals(chunk, lfV) | Vector256.Equals(chunk, crV);
-            endsCount = Dispatch<byte, TTrack, TQuotePolicy>(chunk, le, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-            if (st.ErrorRowStart >= 0) break;
-            position += N;
-        }
-
-        if (st.ErrorRowStart < 0 && position + N > length)
-            position = ScanTail<byte, TTrack, TQuotePolicy>(data, position, options, ends, rowStarts, sourceLines, ref st, ref endsCount);
-
-        endsCountRef = endsCount;
-        return position;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int Dispatch<T, TTrack, TQuotePolicy>(
-        Vector256<byte> chunk,
-        Vector256<byte> lineEndings,
-        Vector256<byte> delimV,
-        Vector256<byte> quoteV,
-        Vector256<byte> lfV,
-        int chunkBase,
-        int chunkSize,
-        ReadOnlySpan<T> data,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
-        int endsCount)
-        where T : unmanaged, IEquatable<T>
-        where TTrack : struct
-        where TQuotePolicy : struct
-    {
-        ulong lem = lineEndings.ExtractMostSignificantBits();
-        ulong dm = Vector256.Equals(chunk, delimV).ExtractMostSignificantBits();
-        ulong qm = 0;
-        if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
-            qm = Vector256.Equals(chunk, quoteV).ExtractMostSignificantBits();
-
-        if (lem == 0 && (typeof(TQuotePolicy) == typeof(QuotesDisabled) || (qm == 0 && !st.InQuotes && !st.SkipNextQuote)))
-        {
-            AppendDelimiters(dm, chunkBase, ends, ref endsCount);
-            return endsCount;
-        }
-
-        if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && lem == 0
-            && TryAppendQuotedNoLineEnding(dm, qm, chunkBase, chunkSize, data, CastFromChar<T>(options.Quote), ref st, ends, ref endsCount))
-        {
-            return endsCount;
-        }
-
-        ulong lfm = Vector256.Equals(chunk, lfV).ExtractMostSignificantBits();
-        return ProcessEventChunk<T, TTrack, TQuotePolicy>(dm, lem, qm, lfm, chunkBase, chunkSize, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // UTF-16 front ends. A chunk is two short vectors (64 chars on AVX-512, 32 on AVX2) packed with
-    // unsigned saturation into one byte vector: chars 0x0100-0x7FFF become 0xFF and chars at or above
-    // 0x8000 (negative as short) become 0x00, neither of which can equal the ASCII delimiter, quote,
-    // LF or CR (IsSupported requires ASCII specials). The pack interleaves 64-bit lanes, so one
-    // permute restores source order; from there the byte dispatch is reused unchanged, with the
-    // state machine peeking into the original char span.
-    // ---------------------------------------------------------------------------------------------
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector512<byte> PackChars(Vector512<short> lo, Vector512<short> hi, Vector512<long> laneOrder)
-        => Avx512F.PermuteVar8x64(Avx512BW.PackUnsignedSaturate(lo, hi).AsInt64(), laneOrder).AsByte();
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector256<byte> PackChars(Vector256<short> lo, Vector256<short> hi)
-        => Avx2.Permute4x64(Avx2.PackUnsignedSaturate(lo, hi).AsInt64(), 0b11_01_10_00).AsByte();
-
-    private static int ScanCharsAvx512<TTrack, TQuotePolicy>(
-        ReadOnlySpan<char> data,
-        int start,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
-        ref int endsCountRef)
-        where TTrack : struct
-        where TQuotePolicy : struct
-    {
-        const int HALF = 32;
-        const int N = 2 * HALF;
-        ref short dataRef = ref Unsafe.As<char, short>(ref MemoryMarshal.GetReference(data));
-        int length = data.Length;
-        var delimV = Vector512.Create((byte)options.Delimiter);
-        var quoteV = Vector512.Create((byte)options.Quote);
-        var lfV = Vector512.Create((byte)'\n');
-        var crV = Vector512.Create((byte)'\r');
-        // PackUnsignedSaturate emits, per 128-bit lane, 8 bytes of lo then 8 bytes of hi; gather the lo
-        // qwords first and the hi qwords second to recover source order.
-        var laneOrder = Vector512.Create(0L, 2, 4, 6, 1, 3, 5, 7);
-
-        int position = start;
-        int endsCount = endsCountRef;
-        int rowStartsLimit = rowStarts.Length - 1;
-
-        while (position + N <= length)
-        {
-            if (endsCount + CHUNK_RESERVE > ends.Length || st.RowCount + N > rowStartsLimit)
-                break;
-
-            if (typeof(TQuotePolicy) == typeof(QuotesDisabled)
-                && position + (4 * N) <= length
-                && endsCount + (4 * CHUNK_RESERVE) <= ends.Length
-                && st.RowCount + (4 * N) <= rowStartsLimit)
-            {
-                ref short blockRef = ref Unsafe.Add(ref dataRef, position);
-                var c0 = PackChars(Vector512.LoadUnsafe(ref blockRef), Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, HALF)), laneOrder);
-                var c1 = PackChars(Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, N)), Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, N + HALF)), laneOrder);
-                var c2 = PackChars(Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, 2 * N)), Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, (2 * N) + HALF)), laneOrder);
-                var c3 = PackChars(Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, 3 * N)), Vector512.LoadUnsafe(ref Unsafe.Add(ref blockRef, (3 * N) + HALF)), laneOrder);
-
-                var le0 = Vector512.Equals(c0, lfV) | Vector512.Equals(c0, crV);
-                var le1 = Vector512.Equals(c1, lfV) | Vector512.Equals(c1, crV);
-                var le2 = Vector512.Equals(c2, lfV) | Vector512.Equals(c2, crV);
-                var le3 = Vector512.Equals(c3, lfV) | Vector512.Equals(c3, crV);
-
-                if ((le0 | le1 | le2 | le3).ExtractMostSignificantBits() == 0)
-                {
-                    AppendDelimiters(Vector512.Equals(c0, delimV).ExtractMostSignificantBits(), position, ends, ref endsCount);
-                    AppendDelimiters(Vector512.Equals(c1, delimV).ExtractMostSignificantBits(), position + N, ends, ref endsCount);
-                    AppendDelimiters(Vector512.Equals(c2, delimV).ExtractMostSignificantBits(), position + (2 * N), ends, ref endsCount);
-                    AppendDelimiters(Vector512.Equals(c3, delimV).ExtractMostSignificantBits(), position + (3 * N), ends, ref endsCount);
-                    position += 4 * N;
-                    continue;
-                }
-
-                endsCount = Dispatch<char, TTrack, TQuotePolicy>(c0, le0, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<char, TTrack, TQuotePolicy>(c1, le1, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<char, TTrack, TQuotePolicy>(c2, le2, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<char, TTrack, TQuotePolicy>(c3, le3, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                continue;
-            }
-
-            var chunk = PackChars(
-                Vector512.LoadUnsafe(ref Unsafe.Add(ref dataRef, position)),
-                Vector512.LoadUnsafe(ref Unsafe.Add(ref dataRef, position + HALF)),
-                laneOrder);
-            var le = Vector512.Equals(chunk, lfV) | Vector512.Equals(chunk, crV);
-            endsCount = Dispatch<char, TTrack, TQuotePolicy>(chunk, le, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-            if (st.ErrorRowStart >= 0) break;
-            position += N;
-        }
-
-        if (st.ErrorRowStart < 0 && position + N > length)
-            position = ScanTail<char, TTrack, TQuotePolicy>(data, position, options, ends, rowStarts, sourceLines, ref st, ref endsCount);
-
-        endsCountRef = endsCount;
-        return position;
-    }
-
-    private static int ScanCharsAvx2<TTrack, TQuotePolicy>(
-        ReadOnlySpan<char> data,
-        int start,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
-        ref int endsCountRef)
-        where TTrack : struct
-        where TQuotePolicy : struct
-    {
-        const int HALF = 16;
-        const int N = 2 * HALF;
-        ref short dataRef = ref Unsafe.As<char, short>(ref MemoryMarshal.GetReference(data));
-        int length = data.Length;
-        var delimV = Vector256.Create((byte)options.Delimiter);
-        var quoteV = Vector256.Create((byte)options.Quote);
-        var lfV = Vector256.Create((byte)'\n');
-        var crV = Vector256.Create((byte)'\r');
-
-        int position = start;
-        int endsCount = endsCountRef;
-        int rowStartsLimit = rowStarts.Length - 1;
-
-        while (position + N <= length)
-        {
-            if (endsCount + CHUNK_RESERVE > ends.Length || st.RowCount + N > rowStartsLimit)
-                break;
-
-            if (typeof(TQuotePolicy) == typeof(QuotesDisabled)
-                && position + (4 * N) <= length
-                && endsCount + (4 * CHUNK_RESERVE) <= ends.Length
-                && st.RowCount + (4 * N) <= rowStartsLimit)
-            {
-                ref short blockRef = ref Unsafe.Add(ref dataRef, position);
-                var c0 = PackChars(Vector256.LoadUnsafe(ref blockRef), Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, HALF)));
-                var c1 = PackChars(Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, N)), Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, N + HALF)));
-                var c2 = PackChars(Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, 2 * N)), Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, (2 * N) + HALF)));
-                var c3 = PackChars(Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, 3 * N)), Vector256.LoadUnsafe(ref Unsafe.Add(ref blockRef, (3 * N) + HALF)));
-
-                var le0 = Vector256.Equals(c0, lfV) | Vector256.Equals(c0, crV);
-                var le1 = Vector256.Equals(c1, lfV) | Vector256.Equals(c1, crV);
-                var le2 = Vector256.Equals(c2, lfV) | Vector256.Equals(c2, crV);
-                var le3 = Vector256.Equals(c3, lfV) | Vector256.Equals(c3, crV);
-
-                if ((le0 | le1 | le2 | le3).ExtractMostSignificantBits() == 0)
-                {
-                    AppendDelimiters(Vector256.Equals(c0, delimV).ExtractMostSignificantBits(), position, ends, ref endsCount);
-                    AppendDelimiters(Vector256.Equals(c1, delimV).ExtractMostSignificantBits(), position + N, ends, ref endsCount);
-                    AppendDelimiters(Vector256.Equals(c2, delimV).ExtractMostSignificantBits(), position + (2 * N), ends, ref endsCount);
-                    AppendDelimiters(Vector256.Equals(c3, delimV).ExtractMostSignificantBits(), position + (3 * N), ends, ref endsCount);
-                    position += 4 * N;
-                    continue;
-                }
-
-                endsCount = Dispatch<char, TTrack, TQuotePolicy>(c0, le0, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<char, TTrack, TQuotePolicy>(c1, le1, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<char, TTrack, TQuotePolicy>(c2, le2, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                endsCount = Dispatch<char, TTrack, TQuotePolicy>(c3, le3, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-                if (st.ErrorRowStart >= 0) break;
-                position += N;
-                continue;
-            }
-
-            var chunk = PackChars(
-                Vector256.LoadUnsafe(ref Unsafe.Add(ref dataRef, position)),
-                Vector256.LoadUnsafe(ref Unsafe.Add(ref dataRef, position + HALF)));
-            var le = Vector256.Equals(chunk, lfV) | Vector256.Equals(chunk, crV);
-            endsCount = Dispatch<char, TTrack, TQuotePolicy>(chunk, le, delimV, quoteV, lfV, position, N, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-            if (st.ErrorRowStart >= 0) break;
-            position += N;
-        }
-
-        if (st.ErrorRowStart < 0 && position + N > length)
-            position = ScanTail<char, TTrack, TQuotePolicy>(data, position, options, ends, rowStarts, sourceLines, ref st, ref endsCount);
-
-        endsCountRef = endsCount;
-        return position;
+        ulong lfm = TLanes.Mask(TLanes.Equals(chunk, lfV));
+        return ProcessEventChunk<T, TTrack, TQuotePolicy>(dm, lem, qm, lfm, chunkBase, TLanes.Count, ref ctx, endsCount);
     }
 
     /// <summary>
     /// Scans the final elements that do not fill a chunk by building the same masks scalar-side and
-    /// running the shared state machine once. Returns the position reached.
+    /// running the state machine once. Returns the position reached.
     /// </summary>
-    private static int ScanTail<T, TTrack, TQuotePolicy>(
-        ReadOnlySpan<T> data,
-        int position,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
-        ref int endsCount)
+    private static int ScanTail<T, TTrack, TQuotePolicy>(int position, ref ScanContext<T> ctx, ref int endsCount)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
         where TQuotePolicy : struct
     {
+        ReadOnlySpan<T> data = ctx.Data;
         int tail = data.Length - position;
         if (tail <= 0)
             return position;
 
-        if (endsCount + CHUNK_RESERVE > ends.Length || st.RowCount + MAX_CHUNK > rowStarts.Length - 1)
+        if (endsCount + CHUNK_RESERVE > ctx.Ends.Length || ctx.RowCount + MAX_CHUNK > ctx.RowStarts.Length - 1)
             return position;
 
-        T delimiter = CastFromChar<T>(options.Delimiter);
-        T quote = CastFromChar<T>(options.Quote);
-        T lf = CastFromChar<T>('\n');
-        T cr = CastFromChar<T>('\r');
         ulong dm = 0, lfm = 0, crm = 0, qm = 0;
         for (int i = 0; i < tail; i++)
         {
             T c = data[position + i];
             ulong bit = 1ul << i;
-            if (c.Equals(delimiter)) dm |= bit;
-            else if (c.Equals(lf)) lfm |= bit;
-            else if (c.Equals(cr)) crm |= bit;
-            else if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c.Equals(quote)) qm |= bit;
+            if (c.Equals(ctx.Delimiter)) dm |= bit;
+            else if (c.Equals(ctx.Lf)) lfm |= bit;
+            else if (c.Equals(ctx.Cr)) crm |= bit;
+            else if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c.Equals(ctx.Quote)) qm |= bit;
         }
 
-        endsCount = ProcessEventChunk<T, TTrack, TQuotePolicy>(dm, lfm | crm, qm, lfm, position, tail, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-        return st.ErrorRowStart < 0 ? data.Length : position;
+        endsCount = ProcessEventChunk<T, TTrack, TQuotePolicy>(dm, lfm | crm, qm, lfm, position, tail, ref ctx, endsCount);
+        return ctx.ErrorRowStart < 0 ? data.Length : position;
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Shared mask-level state machine.
+    // Mask-level state machine.
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>Bare append of one column end per set bit; used when a chunk holds nothing but delimiters.</summary>
@@ -758,45 +527,36 @@ internal static class CsvRowBatchScanner
     /// needs the full state machine (doubled quotes, a carried-in skipped quote, no PCLMULQDQ).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TryAppendQuotedNoLineEnding<T>(
-        ulong dm,
-        ulong qm,
-        int chunkBase,
-        int chunkSize,
-        ReadOnlySpan<T> data,
-        T quote,
-        ref ScanState st,
-        Span<int> ends,
-        ref int endsCount)
+    private static bool TryAppendQuotedNoLineEnding<T>(ulong dm, ulong qm, int chunkBase, int chunkSize, ref ScanContext<T> ctx, ref int endsCount)
         where T : unmanaged, IEquatable<T>
     {
-        if (st.SkipNextQuote || (qm & (qm >> 1)) != 0 || !HardwareCapabilities.PclmulqdqIsSupported)
+        if (ctx.SkipNextQuote || (qm & (qm >> 1)) != 0 || !HardwareCapabilities.PclmulqdqIsSupported)
             return false;
 
         if ((qm & (1ul << (chunkSize - 1))) != 0)
         {
             int next = chunkBase + chunkSize;
-            if (next < data.Length && data[next].Equals(quote))
+            if (next < ctx.Data.Length && ctx.Data[next].Equals(ctx.Quote))
                 return false;
         }
 
         // No line ending in this chunk, so no CR can be pending at its end.
-        st.PendingCrInQuotes = false;
+        ctx.PendingCrInQuotes = false;
 
         if (qm == 0)
             return true; // entirely inside a quoted field: nothing to record
 
-        ulong inQuotes = ComputeInQuotesMask(qm, st.InQuotes);
-        AppendDelimiters(dm & ~inQuotes, chunkBase, ends, ref endsCount);
+        ulong inQuotes = ComputeInQuotesMask(qm, ctx.InQuotes);
+        AppendDelimiters(dm & ~inQuotes, chunkBase, ctx.Ends, ref endsCount);
         if ((BitOperations.PopCount(qm) & 1) != 0)
-            st.InQuotes = !st.InQuotes;
+            ctx.InQuotes = !ctx.InQuotes;
         return true;
     }
 
     /// <summary>
     /// Processes one chunk that contains line endings and/or quote activity and returns the new
-    /// <c>endsCount</c>. On return, <c>st.ErrorRowStart</c> is set if the scan must stop for the reader
-    /// to re-parse a row.
+    /// <c>endsCount</c>. On return, <c>ctx.ErrorRowStart</c> is set if the scan must stop for the
+    /// reader to re-parse a row.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static int ProcessEventChunk<T, TTrack, TQuotePolicy>(
@@ -806,23 +566,16 @@ internal static class CsvRowBatchScanner
         ulong lfm,
         int chunkBase,
         int chunkSize,
-        ReadOnlySpan<T> data,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
+        ref ScanContext<T> ctx,
         int endsCount)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
         where TQuotePolicy : struct
     {
-        T lf = CastFromChar<T>('\n');
-
-        if (st.SkipLeadingLf)
+        if (ctx.SkipLeadingLf)
         {
             // The LF half of a CRLF that straddled the chunk boundary; the row start already skips it.
-            st.SkipLeadingLf = false;
+            ctx.SkipLeadingLf = false;
             lem &= ~1ul;
             lfm &= ~1ul;
         }
@@ -832,27 +585,24 @@ internal static class CsvRowBatchScanner
 
         if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
         {
-            T quote = CastFromChar<T>(options.Quote);
             bool hasDoubledQuotes = (qm & (qm >> 1)) != 0;
             if (!hasDoubledQuotes && qm != 0 && (qm & (1ul << (chunkSize - 1))) != 0)
             {
                 int next = chunkBase + chunkSize;
-                if (next < data.Length && data[next].Equals(quote))
+                if (next < ctx.Data.Length && ctx.Data[next].Equals(ctx.Quote))
                     hasDoubledQuotes = true;
             }
 
-            if (hasDoubledQuotes || st.SkipNextQuote || !HardwareCapabilities.PclmulqdqIsSupported)
-            {
-                return ProcessEventChunkSequential<T, TTrack>(dm | lem | qm, chunkBase, chunkSize, data, options, ends, rowStarts, sourceLines, ref st, endsCount);
-            }
+            if (hasDoubledQuotes || ctx.SkipNextQuote || !HardwareCapabilities.PclmulqdqIsSupported)
+                return ProcessEventChunkSequential<T, TTrack>(dm | lem | qm, chunkBase, chunkSize, ref ctx, endsCount);
 
             ulong inQuotes = qm != 0
-                ? ComputeInQuotesMask(qm, st.InQuotes)
-                : (st.InQuotes ? ulong.MaxValue : 0ul);
+                ? ComputeInQuotesMask(qm, ctx.InQuotes)
+                : (ctx.InQuotes ? ulong.MaxValue : 0ul);
 
-            if (!options.AllowNewlinesInsideQuotes && (lem & inQuotes) != 0)
+            if (!ctx.Options.AllowNewlinesInsideQuotes && (lem & inQuotes) != 0)
             {
-                st.ErrorRowStart = st.RowStart;
+                ctx.ErrorRowStart = ctx.RowStart;
                 return endsCount;
             }
 
@@ -864,9 +614,9 @@ internal static class CsvRowBatchScanner
                 ulong lfInside = lfm & inQuotes;
                 ulong crInside = crm & inQuotes;
                 quotedNewlines = crInside | (lfInside & ~(crInside << 1));
-                if (st.PendingCrInQuotes)
+                if (ctx.PendingCrInQuotes)
                     quotedNewlines &= ~1ul;
-                st.PendingCrInQuotes = (crInside & (1ul << (chunkSize - 1))) != 0;
+                ctx.PendingCrInQuotes = (crInside & (1ul << (chunkSize - 1))) != 0;
             }
 
             dm &= ~inQuotes;
@@ -874,7 +624,7 @@ internal static class CsvRowBatchScanner
             crm &= ~inQuotes;
 
             if ((BitOperations.PopCount(qm) & 1) != 0)
-                st.InQuotes = !st.InQuotes;
+                ctx.InQuotes = !ctx.InQuotes;
         }
 
         ulong events = dm | lem;
@@ -886,34 +636,34 @@ internal static class CsvRowBatchScanner
 
             if (((lem >> bit) & 1) == 0)
             {
-                ends[endsCount++] = pos;
+                ctx.Ends[endsCount++] = pos;
                 continue;
             }
 
             if (typeof(TTrack) == typeof(TrackLineNumbers) && quotedNewlines != 0)
             {
                 ulong below = quotedNewlines & ((1ul << bit) - 1);
-                st.SourceLine += BitOperations.PopCount(below);
+                ctx.SourceLine += BitOperations.PopCount(below);
                 quotedNewlines ^= below;
             }
 
             bool isCr = ((crm >> bit) & 1) != 0;
-            if (!CloseRow<T, TTrack>(pos, isCr, terminatesLine: true, data, lf, options, ends, rowStarts, sourceLines, ref st, ref endsCount))
+            if (!CloseRow<T, TTrack>(pos, isCr, terminatesLine: true, ref ctx, ref endsCount))
                 return endsCount;
 
             // CRLF: CloseRow consumed the LF; drop its event bit, or flag it if it is the next chunk's first element.
-            if (st.RowStart == pos + 2)
+            if (ctx.RowStart == pos + 2)
             {
                 if (bit + 1 < chunkSize)
                     events &= ~(1ul << (bit + 1));
                 else
-                    st.SkipLeadingLf = true;
+                    ctx.SkipLeadingLf = true;
             }
         }
 
         // In-quote line endings after the last row close belong to the row still open.
         if (typeof(TTrack) == typeof(TrackLineNumbers))
-            st.SourceLine += BitOperations.PopCount(quotedNewlines);
+            ctx.SourceLine += BitOperations.PopCount(quotedNewlines);
 
         return endsCount;
     }
@@ -922,24 +672,11 @@ internal static class CsvRowBatchScanner
     /// Sequential fallback for chunks with doubled (escaped) quotes, a carried-in skipped quote, or
     /// no PCLMULQDQ. Mirrors the per-row parser's slow path, but closes rows instead of returning.
     /// </summary>
-    private static int ProcessEventChunkSequential<T, TTrack>(
-        ulong mask,
-        int chunkBase,
-        int chunkSize,
-        ReadOnlySpan<T> data,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
-        int endsCount)
+    private static int ProcessEventChunkSequential<T, TTrack>(ulong mask, int chunkBase, int chunkSize, ref ScanContext<T> ctx, int endsCount)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
     {
-        T delimiter = CastFromChar<T>(options.Delimiter);
-        T quote = CastFromChar<T>(options.Quote);
-        T lf = CastFromChar<T>('\n');
-        T cr = CastFromChar<T>('\r');
+        ReadOnlySpan<T> data = ctx.Data;
 
         while (mask != 0)
         {
@@ -948,59 +685,59 @@ internal static class CsvRowBatchScanner
             int pos = chunkBase + bit;
             T c = data[pos];
 
-            if (c.Equals(quote))
+            if (c.Equals(ctx.Quote))
             {
-                if (st.SkipNextQuote)
+                if (ctx.SkipNextQuote)
                 {
-                    st.SkipNextQuote = false;
+                    ctx.SkipNextQuote = false;
                     continue;
                 }
 
-                if (st.InQuotes && pos + 1 < data.Length && data[pos + 1].Equals(quote))
+                if (ctx.InQuotes && pos + 1 < data.Length && data[pos + 1].Equals(ctx.Quote))
                 {
-                    st.SkipNextQuote = true;
+                    ctx.SkipNextQuote = true;
                     continue;
                 }
 
-                st.InQuotes = !st.InQuotes;
+                ctx.InQuotes = !ctx.InQuotes;
                 if (typeof(TTrack) == typeof(TrackLineNumbers))
-                    st.PendingCrInQuotes = false;
+                    ctx.PendingCrInQuotes = false;
                 continue;
             }
 
-            if (st.InQuotes)
+            if (ctx.InQuotes)
             {
-                bool isLf = c.Equals(lf);
-                bool isCr = c.Equals(cr);
+                bool isLf = c.Equals(ctx.Lf);
+                bool isCr = c.Equals(ctx.Cr);
                 if (isLf || isCr)
                 {
-                    if (!options.AllowNewlinesInsideQuotes)
+                    if (!ctx.Options.AllowNewlinesInsideQuotes)
                     {
-                        st.ErrorRowStart = st.RowStart;
+                        ctx.ErrorRowStart = ctx.RowStart;
                         return endsCount;
                     }
 
                     if (typeof(TTrack) == typeof(TrackLineNumbers))
-                        UpdateNewlineCountInQuotes(isLf, isCr, ref st.PendingCrInQuotes, ref st.SourceLine);
+                        UpdateNewlineCountInQuotes(isLf, isCr, ref ctx.PendingCrInQuotes, ref ctx.SourceLine);
                 }
                 continue;
             }
 
-            if (c.Equals(delimiter))
+            if (c.Equals(ctx.Delimiter))
             {
-                ends[endsCount++] = pos;
+                ctx.Ends[endsCount++] = pos;
                 continue;
             }
 
-            if (!CloseRow<T, TTrack>(pos, c.Equals(cr), terminatesLine: true, data, lf, options, ends, rowStarts, sourceLines, ref st, ref endsCount))
+            if (!CloseRow<T, TTrack>(pos, c.Equals(ctx.Cr), terminatesLine: true, ref ctx, ref endsCount))
                 return endsCount;
 
-            if (st.RowStart == pos + 2)
+            if (ctx.RowStart == pos + 2)
             {
                 if (bit + 1 < chunkSize)
                     mask &= ~(1ul << (bit + 1));
                 else
-                    st.SkipLeadingLf = true;
+                    ctx.SkipLeadingLf = true;
             }
         }
 
@@ -1012,60 +749,51 @@ internal static class CsvRowBatchScanner
     /// row's sentinel. Returns false when the row violates a limit and must be re-parsed by the
     /// per-row parser for its exception.
     /// </summary>
-    private static bool CloseRow<T, TTrack>(
-        int rowEnd,
-        bool isCr,
-        bool terminatesLine,
-        ReadOnlySpan<T> data,
-        T lf,
-        CsvReadOptions options,
-        Span<int> ends,
-        Span<int> rowStarts,
-        Span<int> sourceLines,
-        ref ScanState st,
-        ref int endsCount)
+    private static bool CloseRow<T, TTrack>(int rowEnd, bool isCr, bool terminatesLine, ref ScanContext<T> ctx, ref int endsCount)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
     {
-        if (rowEnd != st.RowStart)
+        Span<int> ends = ctx.Ends;
+
+        if (rowEnd != ctx.RowStart)
         {
-            int delimiterCount = endsCount - st.CurRowEndsStart - 1;
-            if (delimiterCount + 1 > options.MaxColumnCount)
+            int delimiterCount = endsCount - ctx.CurRowEndsStart - 1;
+            if (delimiterCount + 1 > ctx.Options.MaxColumnCount)
             {
-                st.ErrorRowStart = st.RowStart;
+                ctx.ErrorRowStart = ctx.RowStart;
                 return false;
             }
 
             ends[endsCount++] = rowEnd;
 
-            if (options.MaxFieldSize.HasValue && !FieldLengthsWithinLimit(ends, st.CurRowEndsStart, endsCount, options.MaxFieldSize.Value))
+            if (ctx.Options.MaxFieldSize is { } maxFieldSize && !FieldLengthsWithinLimit(ends, ctx.CurRowEndsStart, endsCount, maxFieldSize))
             {
-                st.ErrorRowStart = st.RowStart;
+                ctx.ErrorRowStart = ctx.RowStart;
                 return false;
             }
 
-            rowStarts[st.RowCount] = st.CurRowEndsStart;
+            ctx.RowStarts[ctx.RowCount] = ctx.CurRowEndsStart;
             if (typeof(TTrack) == typeof(TrackLineNumbers))
-                sourceLines[st.RowCount] = st.CurRowStartLine;
-            st.RowCount++;
-            st.CurRowEndsStart = endsCount;
+                ctx.SourceLines[ctx.RowCount] = ctx.CurRowStartLine;
+            ctx.RowCount++;
+            ctx.CurRowEndsStart = endsCount;
         }
 
         int nextRowStart = rowEnd;
         if (terminatesLine)
         {
             nextRowStart++;
-            if (isCr && nextRowStart < data.Length && data[nextRowStart].Equals(lf))
+            if (isCr && nextRowStart < ctx.Data.Length && ctx.Data[nextRowStart].Equals(ctx.Lf))
                 nextRowStart++;
 
             if (typeof(TTrack) == typeof(TrackLineNumbers))
-                st.SourceLine++;
+                ctx.SourceLine++;
         }
 
-        ends[st.CurRowEndsStart] = nextRowStart - 1;
-        endsCount = st.CurRowEndsStart + 1;
-        st.RowStart = nextRowStart;
-        st.CurRowStartLine = st.SourceLine;
+        ends[ctx.CurRowEndsStart] = nextRowStart - 1;
+        endsCount = ctx.CurRowEndsStart + 1;
+        ctx.RowStart = nextRowStart;
+        ctx.CurRowStartLine = ctx.SourceLine;
         return true;
     }
 

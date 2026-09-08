@@ -198,7 +198,11 @@ internal sealed class CsvRowBatchCursor : IDisposable
         return rowCount;
     }
 
-    /// <summary>Takes the next recorded row; false when the batch is exhausted.</summary>
+    /// <summary>
+    /// Takes the next recorded row; false when the batch is exhausted. This is the per-row hot path, so
+    /// it is kept small enough to inline and reads the arrays directly (a disposed cursor has no rows).
+    /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public bool TryTake(out CsvBatchRow row)
     {
         if (index >= rowCount)
@@ -208,8 +212,8 @@ internal sealed class CsvRowBatchCursor : IDisposable
         }
 
         int r = index++;
-        int[] e = Ends;
-        int[] starts = RowStarts;
+        int[] e = ends!;
+        int[] starts = rowStarts!;
         int endsStart = starts[r];
         int endsEnd = starts[r + 1];
         int columnCount = endsEnd - endsStart - 1;
@@ -245,6 +249,8 @@ internal sealed class CsvRowBatchCursor : IDisposable
         if (e is null)
             return;
 
+        rowCount = 0;
+        index = 0;
         ends = null;
         ArrayPool<int>.Shared.Return(e);
 

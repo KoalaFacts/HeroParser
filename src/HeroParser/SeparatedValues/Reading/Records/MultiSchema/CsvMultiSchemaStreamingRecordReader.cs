@@ -106,20 +106,26 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
 
         while (true)
         {
-            // Refill only when no scanned rows are pending: a refill compacts the buffer, and pending
-            // batch rows point into the current window.
-            if (!endOfStream && offset >= length && cursor is not { HasPending: true })
+            // Per-row hot path: rows already scanned are handed out before the buffer is touched again
+            // (a refill compacts the buffer, and pending batch rows point into the current window).
+            if (cursor is not null && cursor.TryTake(out var pendingRow))
+            {
+                if (EmitBatchRow(pendingRow))
+                    return true;
+                continue;
+            }
+
+            if (!endOfStream && offset >= length)
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
             }
 
             if (cursor is not null)
             {
-                switch (cursor.Advance<char>(buffer, ref offset, length, endOfStream, ref sourceLineNumber, out var batchRow))
+                switch (cursor.Advance<char>(buffer, ref offset, length, endOfStream, ref sourceLineNumber, out _))
                 {
                     case CsvBatchStep.Row:
-                        if (EmitBatchRow(batchRow))
-                            return true;
+                        // Advance only reports rows it just scanned; the loop hands them out above.
                         continue;
 
                     case CsvBatchStep.Continue:

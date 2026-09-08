@@ -84,18 +84,25 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     {
         while (true)
         {
-            switch (batchCursor.Advance(data, ref position, data.Length, endOfStream: true, ref sourceLineNumber, out var row))
+            // Per-row hot path: hand out an already scanned row without entering the protocol.
+            if (batchCursor.TryTake(out var row))
+            {
+                rowCount++;
+                Current = batchCursor.CreateRow(data, data.Length, row, rowCount, rowCount);
+                if (rowCount > options.MaxRowCount)
+                {
+                    throw new CsvException(
+                        CsvErrorCode.TooManyRows,
+                        $"CSV exceeds maximum row limit of {options.MaxRowCount}");
+                }
+                return true;
+            }
+
+            switch (batchCursor.Advance(data, ref position, data.Length, endOfStream: true, ref sourceLineNumber, out _))
             {
                 case CsvBatchStep.Row:
-                    rowCount++;
-                    Current = batchCursor.CreateRow(data, data.Length, row, rowCount, rowCount);
-                    if (rowCount > options.MaxRowCount)
-                    {
-                        throw new CsvException(
-                            CsvErrorCode.TooManyRows,
-                            $"CSV exceeds maximum row limit of {options.MaxRowCount}");
-                    }
-                    return true;
+                    // Advance only reports rows it just scanned; the loop hands them out above.
+                    continue;
 
                 case CsvBatchStep.ParsePerRow:
                     // A flagged row (the per-row parser reproduces its exception) or the final row

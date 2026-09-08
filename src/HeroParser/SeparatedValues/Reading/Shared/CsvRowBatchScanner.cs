@@ -359,6 +359,9 @@ internal static class CsvRowBatchScanner
         int length = ctx.Data.Length;
         Span<int> ends = ctx.Ends;
         int endsLength = ends.Length;
+        // Hot values the per-chunk dispatch needs stay in registers; the context carries the rest.
+        ReadOnlySpan<T> data = ctx.Data;
+        T quote = ctx.Quote;
         int rowStartsLimit = ctx.RowStarts.Length - 1;
         var delimV = TLanes.Create((byte)ctx.Options.Delimiter);
         var quoteV = TLanes.Create((byte)ctx.Options.Quote);
@@ -400,16 +403,16 @@ internal static class CsvRowBatchScanner
                 }
 
                 // A line ending is somewhere in the block: dispatch each chunk in order.
-                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c0, le0, delimV, quoteV, lfV, position, ref ctx, endsCount);
+                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c0, le0, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
                 if (ctx.ErrorRowStart >= 0) break;
                 position += n;
-                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c1, le1, delimV, quoteV, lfV, position, ref ctx, endsCount);
+                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c1, le1, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
                 if (ctx.ErrorRowStart >= 0) break;
                 position += n;
-                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c2, le2, delimV, quoteV, lfV, position, ref ctx, endsCount);
+                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c2, le2, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
                 if (ctx.ErrorRowStart >= 0) break;
                 position += n;
-                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c3, le3, delimV, quoteV, lfV, position, ref ctx, endsCount);
+                endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(c3, le3, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
                 if (ctx.ErrorRowStart >= 0) break;
                 position += n;
                 continue;
@@ -417,7 +420,7 @@ internal static class CsvRowBatchScanner
 
             var chunk = Load<T, TVec, TLanes>(ref dataRef, position);
             var le = TLanes.Or(TLanes.Equals(chunk, lfV), TLanes.Equals(chunk, crV));
-            endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(chunk, le, delimV, quoteV, lfV, position, ref ctx, endsCount);
+            endsCount = Dispatch<T, TVec, TLanes, TTrack, TQuotePolicy>(chunk, le, delimV, quoteV, lfV, position, data, ends, quote, ref ctx, endsCount);
             if (ctx.ErrorRowStart >= 0) break;
             position += n;
         }
@@ -442,6 +445,9 @@ internal static class CsvRowBatchScanner
         TVec quoteV,
         TVec lfV,
         int chunkBase,
+        ReadOnlySpan<T> data,
+        Span<int> ends,
+        T quote,
         ref ScanContext<T> ctx,
         int endsCount)
         where T : unmanaged, IEquatable<T>
@@ -458,12 +464,12 @@ internal static class CsvRowBatchScanner
 
         if (lem == 0 && (typeof(TQuotePolicy) == typeof(QuotesDisabled) || (qm == 0 && !ctx.InQuotes && !ctx.SkipNextQuote)))
         {
-            AppendDelimiters(dm, chunkBase, ctx.Ends, ref endsCount);
+            AppendDelimiters(dm, chunkBase, ends, ref endsCount);
             return endsCount;
         }
 
         if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && lem == 0
-            && TryAppendQuotedNoLineEnding(dm, qm, chunkBase, TLanes.Count, ref ctx, ref endsCount))
+            && TryAppendQuotedNoLineEnding(dm, qm, chunkBase, TLanes.Count, data, ends, quote, ref ctx, ref endsCount))
         {
             return endsCount;
         }
@@ -527,7 +533,7 @@ internal static class CsvRowBatchScanner
     /// needs the full state machine (doubled quotes, a carried-in skipped quote, no PCLMULQDQ).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TryAppendQuotedNoLineEnding<T>(ulong dm, ulong qm, int chunkBase, int chunkSize, ref ScanContext<T> ctx, ref int endsCount)
+    private static bool TryAppendQuotedNoLineEnding<T>(ulong dm, ulong qm, int chunkBase, int chunkSize, ReadOnlySpan<T> data, Span<int> ends, T quote, ref ScanContext<T> ctx, ref int endsCount)
         where T : unmanaged, IEquatable<T>
     {
         if (ctx.SkipNextQuote || (qm & (qm >> 1)) != 0 || !HardwareCapabilities.PclmulqdqIsSupported)
@@ -536,7 +542,7 @@ internal static class CsvRowBatchScanner
         if ((qm & (1ul << (chunkSize - 1))) != 0)
         {
             int next = chunkBase + chunkSize;
-            if (next < ctx.Data.Length && ctx.Data[next].Equals(ctx.Quote))
+            if (next < data.Length && data[next].Equals(quote))
                 return false;
         }
 
@@ -547,7 +553,7 @@ internal static class CsvRowBatchScanner
             return true; // entirely inside a quoted field: nothing to record
 
         ulong inQuotes = ComputeInQuotesMask(qm, ctx.InQuotes);
-        AppendDelimiters(dm & ~inQuotes, chunkBase, ctx.Ends, ref endsCount);
+        AppendDelimiters(dm & ~inQuotes, chunkBase, ends, ref endsCount);
         if ((BitOperations.PopCount(qm) & 1) != 0)
             ctx.InQuotes = !ctx.InQuotes;
         return true;

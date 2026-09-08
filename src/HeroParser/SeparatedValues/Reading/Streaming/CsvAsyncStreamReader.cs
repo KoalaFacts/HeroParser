@@ -114,9 +114,16 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         while (true)
         {
-            // Refill only when no scanned rows are pending: a refill compacts the buffer, and pending
-            // batch rows point into the current window.
-            if (!endOfStream && offset >= length && cursor is not { HasPending: true })
+            // Per-row hot path: rows already scanned are handed out before the buffer is touched again
+            // (a refill compacts the buffer, and pending batch rows point into the current window).
+            if (cursor is not null && cursor.TryTake(out var pendingRow))
+            {
+                if (EmitBatchRow(pendingRow))
+                    return true;
+                continue;
+            }
+
+            if (!endOfStream && offset >= length)
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -135,11 +142,10 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
             if (cursor is not null)
             {
-                switch (cursor.Advance<byte>(buffer, ref offset, length, endOfStream, ref sourceLineNumber, out var row))
+                switch (cursor.Advance<byte>(buffer, ref offset, length, endOfStream, ref sourceLineNumber, out _))
                 {
                     case CsvBatchStep.Row:
-                        if (EmitBatchRow(row))
-                            return true;
+                        // Advance only reports rows it just scanned; the loop hands them out above.
                         continue;
 
                     case CsvBatchStep.Continue:

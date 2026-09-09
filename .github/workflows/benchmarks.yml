@@ -109,26 +109,29 @@ jobs:
       run: |
         ROOT="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/BenchmarkDotNet.Artifacts"
 
-        # group flag -> artifact directory -> BenchmarkDotNet filter. Each triple runs base then head so
-        # both share the runner. The pipe group runs only the row-level PipeReader benchmark: the typed
-        # one would double the job time and its report file would collide with the first in the comment.
-        for triple in "--vs-sep-reading:vs-sep:*" "--csv-streaming:streaming:*" "--csv-pipe:pipe:*CsvPipeReaderBenchmarks*"; do
-          GROUP="${triple%%:*}"
-          rest="${triple#*:}"
-          DIR="${rest%%:*}"
-          FILTER="${rest#*:}"
+        # group flag | artifact directory | BenchmarkDotNet filter | extra BenchmarkDotNet args. Each entry
+        # runs base then head so both share the runner. The pipe group runs only the row-level PipeReader
+        # benchmark: the typed one would double the job time and its report file would collide with the
+        # first in the comment. The avx2 entry re-runs the Sep comparison with AVX-512 disabled in the
+        # benchmark process so the AVX2 code path is measured on every runner, not only on Zen 3 ones.
+        for entry in \
+          "--vs-sep-reading|vs-sep|*|" \
+          "--vs-sep-reading|vs-sep-avx2|*|--envVars DOTNET_EnableAVX512:0" \
+          "--csv-streaming|streaming|*|" \
+          "--csv-pipe|pipe|*CsvPipeReaderBenchmarks*|"; do
+          IFS='|' read -r GROUP DIR FILTER EXTRA <<< "$entry"
 
           cd "$RUNNER_TEMP/base/benchmarks/HeroParser.Benchmarks"
           dotnet run -c Release \
             --framework ${{ matrix.framework }} \
             --no-build \
-            -- "$GROUP" --filter "$FILTER" --artifacts "$ROOT/$DIR/base"
+            -- "$GROUP" --filter "$FILTER" --artifacts "$ROOT/$DIR/base" $EXTRA
 
           cd "$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks"
           dotnet run -c Release \
             --framework ${{ matrix.framework }} \
             --no-build \
-            -- "$GROUP" --filter "$FILTER" --artifacts "$ROOT/$DIR/head"
+            -- "$GROUP" --filter "$FILTER" --artifacts "$ROOT/$DIR/head" $EXTRA
         done
 
     - name: Upload benchmark results
@@ -172,6 +175,7 @@ jobs:
           const short = sha => sha.slice(0, 7);
           const comparisons = [
             { dir: 'vs-sep', title: 'Sep Comparison, same runner' },
+            { dir: 'vs-sep-avx2', title: 'Sep Comparison, same runner, AVX-512 disabled (AVX2 path)' },
             { dir: 'streaming', title: 'Streaming Comparison, same runner' },
             { dir: 'pipe', title: 'PipeReader Comparison, same runner' },
           ];

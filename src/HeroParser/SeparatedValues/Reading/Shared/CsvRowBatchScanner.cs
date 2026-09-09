@@ -74,6 +74,7 @@ internal static class CsvRowBatchScanner
     /// character, SIMD on and available. A comment character is fine here because the per-row parser
     /// handles comment lines before it scans.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsSupportedForRow(CsvReadOptions options) =>
         options.UseSimdIfAvailable
         && options.Delimiter < 0x80
@@ -85,6 +86,7 @@ internal static class CsvRowBatchScanner
     /// Batch support (the cursor): <see cref="IsSupportedForRow"/> and no comment character, since a
     /// batch cannot skip comment lines between rows.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsSupported(CsvReadOptions options) =>
         IsSupportedForRow(options) && !options.CommentCharacter.HasValue;
 
@@ -439,7 +441,7 @@ internal static class CsvRowBatchScanner
         }
 
         if (!ctx.Stopped && position + n > length)
-            position = ScanTail<T, TTrack, TQuotePolicy>(position, ref ctx, ref endsCount);
+            position = ScanTail<T, TVec, TLanes, TTrack, TQuotePolicy>(position, ref ctx, ref endsCount);
 
         endsCountRef = endsCount;
         return position;
@@ -492,11 +494,15 @@ internal static class CsvRowBatchScanner
     }
 
     /// <summary>
-    /// Scans the final elements that do not fill a chunk by building the same masks scalar-side and
-    /// running the state machine once. Returns the position reached.
+    /// Scans the final elements that do not fill a chunk: copies them into a zero-padded stack buffer,
+    /// runs the same vector compares as a full chunk, and masks the padding out of the results. Zero
+    /// never equals a special (the UTF-16 pack turns padding into 0x00 as well), so the padding cannot
+    /// add events. Returns the position reached.
     /// </summary>
-    private static int ScanTail<T, TTrack, TQuotePolicy>(int position, ref ScanContext<T> ctx, ref int endsCount)
+    private static int ScanTail<T, TVec, TLanes, TTrack, TQuotePolicy>(int position, ref ScanContext<T> ctx, ref int endsCount)
         where T : unmanaged, IEquatable<T>
+        where TVec : struct
+        where TLanes : struct, ISimdLanes<TVec>
         where TTrack : struct
         where TQuotePolicy : struct
     {
@@ -508,18 +514,24 @@ internal static class CsvRowBatchScanner
         if (endsCount + CHUNK_RESERVE > ctx.Ends.Length || (!ctx.SingleRow && ctx.RowCount + MAX_CHUNK > ctx.RowStarts.Length - 1))
             return position;
 
-        ulong dm = 0, lfm = 0, crm = 0, qm = 0;
-        for (int i = 0; i < tail; i++)
-        {
-            T c = data[position + i];
-            ulong bit = 1ul << i;
-            if (c.Equals(ctx.Delimiter)) dm |= bit;
-            else if (c.Equals(ctx.Lf)) lfm |= bit;
-            else if (c.Equals(ctx.Cr)) crm |= bit;
-            else if (typeof(TQuotePolicy) == typeof(QuotesEnabled) && c.Equals(ctx.Quote)) qm |= bit;
-        }
+        // stackalloc is zero-initialised here (no SkipLocalsInit), so only the tail needs copying.
+        Span<T> padded = stackalloc T[MAX_CHUNK];
+        data.Slice(position, tail).CopyTo(padded);
+        var chunk = Load<T, TVec, TLanes>(ref MemoryMarshal.GetReference(padded), 0);
+        ulong valid = (1ul << tail) - 1; // tail < TLanes.Count <= 64
 
-        endsCount = ProcessEventChunk<T, TTrack, TQuotePolicy>(dm, lfm | crm, qm, lfm, position, tail, ref ctx, endsCount);
+        ulong dm = TLanes.Mask(TLanes.Equals(chunk, TLanes.Create((byte)ctx.Options.Delimiter))) & valid;
+        ulong lfm = TLanes.Mask(TLanes.Equals(chunk, TLanes.Create((byte)'\n'))) & valid;
+        ulong lem = lfm | (TLanes.Mask(TLanes.Equals(chunk, TLanes.Create((byte)'\r'))) & valid);
+        ulong qm = 0;
+        if (typeof(TQuotePolicy) == typeof(QuotesEnabled))
+            qm = TLanes.Mask(TLanes.Equals(chunk, TLanes.Create((byte)ctx.Options.Quote))) & valid;
+
+        if (lem == 0 && (typeof(TQuotePolicy) == typeof(QuotesDisabled) || (qm == 0 && !ctx.InQuotes && !ctx.SkipNextQuote)))
+            AppendDelimiters(dm, position, ctx.Ends, ref endsCount);
+        else
+            endsCount = ProcessEventChunk<T, TTrack, TQuotePolicy>(dm, lem, qm, lfm, position, tail, ref ctx, endsCount);
+
         return ctx.Stopped ? position : data.Length;
     }
 

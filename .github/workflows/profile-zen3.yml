@@ -25,6 +25,10 @@ on:
         description: Number of parallel jobs to start (more jobs, better odds of drawing the CPU)
         required: true
         default: '6'
+      compare_ref:
+        description: Optional git ref to build as a baseline; the driver timings of base and head are then interleaved on the same runner (an on-demand A/B for this CPU)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -104,7 +108,13 @@ jobs:
       - name: Profile
         if: steps.cpu.outputs.hit == 'true'
         env:
-          DOTNET_PerfMapEnabled: '1'
+          # perf cannot see the runtime's JIT code heap (reserved without permissions, committed with
+          # mprotect), so samples land in [unknown] and neither the perf map nor the jitdump resolves.
+          # Symbolization is done here instead: perf supplies raw instruction pointers, the perf map
+          # supplies method ranges, and the hot methods' code bytes are copied out of /proc/<pid>/mem
+          # while the process runs so objdump can list them instruction by instruction.
+          DOTNET_PerfMapEnabled: '3'
+          DOTNET_PerfMapShowOptimizationTiers: '1'
           DOTNET_TieredPGO: '1'
         run: |
           set -euo pipefail
@@ -113,19 +123,84 @@ jobs:
           echo "${{ steps.cpu.outputs.model }}" > "$OUT/cpu.txt"
           grep -m1 -E '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^avx' | tr '\n' ' ' >> "$OUT/cpu.txt"; echo >> "$OUT/cpu.txt"
           DLL="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/bin/Release/net10.0/HeroParser.Benchmarks.dll"
+          SECONDS_TOTAL='${{ inputs.seconds }}'
           for CASE in ${{ inputs.cases }}; do
             echo "=== $CASE"
-            "$PERF" record -e cpu-clock -F 1999 -g -k 1 -o "$OUT/$CASE.data" -- dotnet "$DLL" --profile "$CASE" '${{ inputs.seconds }}' | tee -a "$OUT/timings.txt"
-            "$PERF" inject --jit -i "$OUT/$CASE.data" -o "$OUT/$CASE.jit.data"
-            "$PERF" report -i "$OUT/$CASE.jit.data" --stdio --no-children --sort symbol --percent-limit 0.5 2>/dev/null > "$OUT/$CASE.report.txt" || true
-            "$PERF" annotate -i "$OUT/$CASE.jit.data" --stdio --percent-type local-period 2>/dev/null | head -4000 > "$OUT/$CASE.annotate.txt" || true
-            rm -f "$OUT/$CASE.data" "$OUT/$CASE.jit.data"
+            case "$CASE" in
+              hero-*) DUMP_REGEX='CsvRowBatchScanner|CsvRowReader|CsvRowBatchCursor' ;;
+              sep-*)  DUMP_REGEX='SepParser|SepReader|nietras' ;;
+              *)      DUMP_REGEX='.' ;;
+            esac
+            CODE="$OUT/$CASE.code"; mkdir -p "$CODE"
+
+            # The driver warms up for 2 s, then loops for SECONDS_TOTAL. Sample from 3 s on so that
+            # only tier-1 code is measured, and dump the hot methods' code bytes while it runs.
+            dotnet "$DLL" --profile "$CASE" "$SECONDS_TOTAL" > "$OUT/$CASE.timing.txt" &
+            PID=$!
+            sleep 3
+            "$PERF" record -e cpu-clock -F 1999 -p "$PID" -o "$OUT/$CASE.data" -- sleep $((SECONDS_TOTAL - 2)) 2>&1 | tail -1 &
+            PERF_PID=$!
+            sleep 2
+            MAP="/tmp/perf-$PID.map"
+            cp "$MAP" "$OUT/$CASE.perfmap"
+            # Map lines are "0xSTART SIZE NAME": strip the prefix before the base-16 conversion. The
+            # dump is named by the start address in the same form the symbolizer prints (no prefix).
+            (grep -E "$DUMP_REGEX" "$MAP" || true) | while read -r START SIZE NAME; do
+              S=${START#0x}; Z=${SIZE#0x}
+              sudo dd if="/proc/$PID/mem" of="$CODE/$S.bin" iflag=skip_bytes,count_bytes skip=$((16#$S)) count=$((16#$Z)) status=none 2>/dev/null || true
+            done
+            echo "code dumps: $(ls "$CODE" | wc -l) methods matching '$DUMP_REGEX'"
+            wait "$PERF_PID" || true
+            wait "$PID" || true
+            cat "$OUT/$CASE.timing.txt" | tee -a "$OUT/timings.txt"
+
+            "$PERF" script -i "$OUT/$CASE.data" -F ip 2>/dev/null | awk '{print $1}' > "$OUT/$CASE.ips"
+            echo "sampled ips: $(wc -l < "$OUT/$CASE.ips")"
+            python3 "$GITHUB_WORKSPACE/.github/scripts/perf-symbolize.py" "$OUT/$CASE.perfmap" "$OUT/$CASE.ips" "$CODE" 6 > "$OUT/$CASE.profile.txt"
+            rm -f "$OUT/$CASE.data" "$OUT/$CASE.ips" "$MAP"
           done
+          set +o pipefail
           echo "=== timings"; cat "$OUT/timings.txt"
-          for f in "$OUT"/*.report.txt; do echo "=== $f"; head -40 "$f"; done
+          for f in "$OUT"/*.profile.txt; do echo "=== $f"; head -60 "$f"; done
+
+      - name: Compare against baseline
+        if: steps.cpu.outputs.hit == 'true' && inputs.compare_ref != ''
+        env:
+          DOTNET_TieredPGO: '1'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/profile-out"
+          git fetch --no-tags --depth=1 origin '${{ inputs.compare_ref }}'
+          git worktree add "$RUNNER_TEMP/base" FETCH_HEAD
+          (cd "$RUNNER_TEMP/base" && dotnet restore --force-evaluate && dotnet build benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj -c Release -f net10.0 --no-restore)
+          BASE="$RUNNER_TEMP/base/benchmarks/HeroParser.Benchmarks/bin/Release/net10.0/HeroParser.Benchmarks.dll"
+          HEAD="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/bin/Release/net10.0/HeroParser.Benchmarks.dll"
+          echo "# base=${{ inputs.compare_ref }} head=${GITHUB_SHA::7} cpu=${{ steps.cpu.outputs.model }}" | tee "$OUT/compare.txt"
+          for ROUND in 1 2 3; do
+            for CASE in ${{ inputs.cases }}; do
+              for SIDE in base head; do
+                if [ "$SIDE" = base ]; then DLL="$BASE"; else DLL="$HEAD"; fi
+                LINE=$(dotnet "$DLL" --profile "$CASE" 5 | tail -1)
+                echo "round $ROUND $SIDE $LINE" | tee -a "$OUT/compare.txt"
+              done
+            done
+          done
+          echo "=== summary (us/iteration, three rounds)"
+          python3 - "$OUT/compare.txt" <<'PY'
+          import re, sys, collections
+          t = collections.defaultdict(list)
+          for line in open(sys.argv[1]):
+              m = re.match(r"round \d+ (base|head) (\S+): .* ([0-9.]+) us/iteration", line)
+              if m:
+                  t[(m.group(2), m.group(1))].append(float(m.group(3)))
+          cases = sorted({c for c, _ in t})
+          for c in cases:
+              b = min(t[(c, "base")]); h = min(t[(c, "head")])
+              print(f"{c:18s} base {b:8.1f}  head {h:8.1f}  head/base {h / b:.3f}   (min of rounds; all base {t[(c,'base')]}, head {t[(c,'head')]})")
+          PY
 
       - name: Upload profile
-        if: steps.cpu.outputs.hit == 'true'
+        if: always() && steps.cpu.outputs.hit == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: profile-${{ matrix.instance }}

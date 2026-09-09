@@ -83,7 +83,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         charPool = ArrayPool<char>.Shared;
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: leaveOpen);
         buffer = RentBuffer(Math.Max(4096, parserOptions.MaxRowSize ?? 4096));
-        columnEndsBuffer = new PooledColumnEnds(parserOptions.MaxColumnCount + 1);
+        columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(parserOptions.MaxColumnCount));
         cursor = CsvRowBatchCursor.TryCreate(parserOptions);
         offset = 0;
         length = 0;

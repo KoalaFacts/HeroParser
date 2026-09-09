@@ -459,4 +459,131 @@ public class CsvRowBatchScannerTests
         Assert.False(CsvRowBatchScanner.IsSupported(options));
         AssertSameAsOracle(QuotedMix("\n"), options);
     }
+
+    // ───── single-row mode (used by CsvRowParser.ParseRow) ─────
+
+    private sealed record SingleScan(int Rows, int Next, int NextLine, int Error, int[] Ends, int[] RowStarts);
+
+    private static SingleScan ScanSingle(string text, CsvReadOptions options)
+    {
+        var utf8 = Encoding.UTF8.GetBytes(text);
+        var ends = new int[CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount)];
+        var rowStarts = new int[2];
+        var lines = new int[1];
+        int rows = options.EnableQuotedFields
+            ? CsvRowBatchScanner.Scan<byte, TrackLineNumbers, QuotesEnabled>(utf8, 0, 0, true, true, options, ends, rowStarts, lines, out int next, out int line, out int error)
+            : CsvRowBatchScanner.Scan<byte, TrackLineNumbers, QuotesDisabled>(utf8, 0, 0, true, true, options, ends, rowStarts, lines, out next, out line, out error);
+        return new SingleScan(rows, next, line, error, ends, rowStarts);
+    }
+
+    [Fact]
+    public void SingleRow_StopsAfterFirstTerminator()
+    {
+        if (!Avx2) return;
+        var scan = ScanSingle("a,b\r\nc,d\n", Options(quotes: true, track: true));
+        Assert.Equal(1, scan.Rows);
+        Assert.Equal(5, scan.Next);
+        Assert.Equal(1, scan.NextLine);
+        Assert.Equal(-1, scan.Error);
+        Assert.Equal(0, scan.RowStarts[0]);
+        Assert.Equal(3, scan.RowStarts[1]);          // sentinel + 2 column ends
+        Assert.Equal([-1, 1, 3], scan.Ends[..3]);    // ends[2] is the row end (the CR)
+    }
+
+    [Fact]
+    public void SingleRow_QuotesDisabled_StopsAfterFirstTerminator()
+    {
+        if (!Avx2) return;
+        var scan = ScanSingle("a,b\nc,d\n", Options(quotes: false, track: true));
+        Assert.Equal(1, scan.Rows);
+        Assert.Equal(4, scan.Next);
+        Assert.Equal([-1, 1, 3], scan.Ends[..3]);
+    }
+
+    [Fact]
+    public void SingleRow_BlankLine_ConsumesOnlyTheTerminator()
+    {
+        if (!Avx2) return;
+        foreach (var (text, consumed) in new[] { ("\nabc\n", 1), ("\r\nabc\n", 2), ("\rabc\n", 1), ("\n", 1) })
+        {
+            var scan = ScanSingle(text, Options(quotes: true, track: true));
+            Assert.Equal(0, scan.Rows);
+            Assert.Equal(consumed, scan.Next);
+            Assert.Equal(1, scan.NextLine);
+            Assert.Equal(-1, scan.Error);
+        }
+    }
+
+    [Fact]
+    public void SingleRow_CrLfStraddlingChunkBoundary_ConsumesBoth()
+    {
+        if (!Avx2) return;
+        foreach (int crAt in new[] { 31, 63, 127 })
+        {
+            string text = new string('x', crAt) + "\r\n" + "y\n";
+            var scan = ScanSingle(text, Options(quotes: true, track: true, maxColumns: 4));
+            Assert.Equal(1, scan.Rows);
+            Assert.Equal(crAt + 2, scan.Next);
+            Assert.Equal(1, scan.NextLine);
+        }
+    }
+
+    [Fact]
+    public void SingleRow_FinalRowWithoutTerminator_IsClosed()
+    {
+        if (!Avx2) return;
+        var scan = ScanSingle("a,b", Options(quotes: true, track: true));
+        Assert.Equal(1, scan.Rows);
+        Assert.Equal(3, scan.Next);
+        Assert.Equal(0, scan.NextLine);
+        Assert.Equal([-1, 1, 3], scan.Ends[..3]);
+    }
+
+    [Fact]
+    public void SingleRow_QuotedNewlines_CountLines()
+    {
+        if (!Avx2) return;
+        var scan = ScanSingle("\"a\nb\",c\nd\n", Options(quotes: true, track: true));
+        Assert.Equal(1, scan.Rows);
+        Assert.Equal(8, scan.Next);
+        Assert.Equal(2, scan.NextLine);
+    }
+
+    [Fact]
+    public void SingleRow_TooManyColumns_FlagsTheRow()
+    {
+        if (!Avx2) return;
+        var scan = ScanSingle("a,b,c\nd\n", Options(quotes: true, track: true, maxColumns: 2));
+        Assert.Equal(0, scan.Rows);
+        Assert.Equal(0, scan.Error);
+        Assert.Equal(0, scan.Next);
+    }
+
+    [Fact]
+    public void SingleRow_UnterminatedQuote_FlagsTheRow()
+    {
+        if (!Avx2) return;
+        var scan = ScanSingle("\"abc,d", Options(quotes: true, track: true));
+        Assert.Equal(0, scan.Rows);
+        Assert.Equal(0, scan.Error);
+    }
+
+    [Fact]
+    public void MinEndsCapacity_CoversMaxColumnsPlusChunkReserve()
+    {
+        // Callers that own a per-row buffer (span reader, streaming readers, PipeReader) size it with this,
+        // so ParseRow's SIMD path is taken. A buffer of MaxColumnCount + 1 would fall to the scalar loop.
+        Assert.Equal(100 + 2 + 130, CsvRowBatchScanner.MinEndsCapacity(100));
+        Assert.True(CsvRowBatchScanner.MinEndsCapacity(1) > 1 + 1);
+    }
+
+    [Fact]
+    public void IsSupportedForRow_AllowsCommentCharacter_BatchDoesNot()
+    {
+        if (!Avx2) return;
+        var withComment = Options(quotes: true, track: false, commentCharacter: '#');
+        Assert.True(CsvRowBatchScanner.IsSupportedForRow(withComment));
+        Assert.False(CsvRowBatchScanner.IsSupported(withComment));
+        Assert.True(CsvRowBatchScanner.IsSupported(Options(quotes: true, track: false)));
+    }
 }

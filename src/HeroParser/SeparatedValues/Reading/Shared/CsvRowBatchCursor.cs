@@ -63,7 +63,6 @@ internal sealed class CsvRowBatchCursor : IDisposable
     private int[]? sourceLines;
     private int rowCount;
     private int index;
-    private int windowBase;         // buffer offset the current batch was scanned from
     private bool pendingPerRow;     // a flagged row follows the batch and must be parsed per-row once it drains
 
     private CsvRowBatchCursor(CsvReadOptions options, int endsCapacity)
@@ -140,7 +139,7 @@ internal sealed class CsvRowBatchCursor : IDisposable
             return endOfStream ? CsvBatchStep.EndOfInput : CsvBatchStep.RefillNeeded;
 
         int rows = Fill(window, sourceLine, isFinalBlock: endOfStream, out int consumed, out int nextSourceLine, out bool rowFlagged);
-        windowBase = offset;
+        WindowBase = offset;
 
         // Consume once, whatever was scanned: rows, blank lines, or the prefix before a flagged row.
         // The scanner already stops the consumed prefix at a flagged row's start.
@@ -174,16 +173,26 @@ internal sealed class CsvRowBatchCursor : IDisposable
 
         rowCount = !trackLineNumbers
             ? (quotes
-                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out int errorRowStart)
-                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart))
+                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out int errorRowStart)
+                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart))
             : (quotes
-                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart)
-                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart));
+                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart)
+                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart));
 
         index = 0;
         rowFlagged = errorRowStart >= 0;
         return rowCount;
     }
+
+    /// <summary>Buffer offset the current batch was scanned from; row starts are relative to it.</summary>
+    public int WindowBase { get; private set; }
+
+    /// <summary>
+    /// The ends-only column ends of a row taken from the current batch, in window-relative offsets:
+    /// the sentinel <c>RowStart - 1</c>, one entry per delimiter, then the row end. Readers that build
+    /// their own row type subtract <see cref="CsvBatchRow.RowStart"/> to make them row-relative.
+    /// </summary>
+    public ReadOnlySpan<int> EndsOf(CsvBatchRow row) => ends.AsSpan(row.EndsStart, row.ColumnCount + 1);
 
     /// <summary>
     /// Builds the <see cref="CsvRow{T}"/> for a row taken from the current batch. <paramref name="buffer"/>
@@ -193,7 +202,7 @@ internal sealed class CsvRowBatchCursor : IDisposable
         where T : unmanaged, IEquatable<T>
     {
         return new CsvRow<T>(
-            buffer.Slice(windowBase + row.RowStart, row.Length),
+            buffer.Slice(WindowBase + row.RowStart, row.Length),
             ends.AsSpan(row.EndsStart, row.ColumnCount + 1),
             row.ColumnCount,
             rowNumber,

@@ -299,8 +299,12 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     private readonly bool trackLineNumbers;
     private readonly int skipRows;
     private readonly int? maxRowSize;
+    private readonly CsvRowBatchCursor? cursor;   // scan-ahead over a single-segment buffer; null when the options need the per-row path
 
     private bool disposed;
+    private int windowConsumed;                   // offset into the buffered first segment the cursor has consumed
+    private bool currentFromBatch;
+    private CsvBatchRow currentBatchRow;
     private bool bomProcessed;
     private bool hasCurrent;
     private bool hasBufferedRead;
@@ -319,7 +323,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     {
         this.reader = reader;
         this.options = options;
-        columnEndsBuffer = new PooledColumnEnds(options.MaxColumnCount + 1);
+        columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
         quote = (byte)options.Quote;
         escape = options.EscapeCharacter is { } escapeChar ? (byte)escapeChar : null;
         enableQuotes = options.EnableQuotedFields;
@@ -327,6 +331,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
         this.skipRows = skipRows;
         maxRowSize = options.MaxRowSize;
         sourceLineNumber = 1;
+        cursor = CsvRowBatchCursor.TryCreate(options);
     }
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
@@ -340,6 +345,22 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 throw new InvalidOperationException("No current row is available. Call MoveNextAsync() first.");
             }
 
+            if (currentFromBatch)
+            {
+                // Batch rows point into the cursor's ends buffer; their ends are window-relative.
+                var row = currentBatchRow;
+                return new CsvPipeSequenceRow(
+                    currentRowData,
+                    cursor!.EndsOf(row),
+                    row.ColumnCount,
+                    currentRowNumber,
+                    currentSourceLineNumber,
+                    options.TrimFields,
+                    quote,
+                    escape,
+                    baseOffset: row.RowStart);
+            }
+
             return new CsvPipeSequenceRow(
                 currentRowData,
                 columnEndsBuffer.Buffer.AsSpan(0, currentColumnCount + 1),
@@ -348,7 +369,8 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 currentSourceLineNumber,
                 options.TrimFields,
                 quote,
-                escape);
+                escape,
+                baseOffset: 0);
         }
     }
 
@@ -361,6 +383,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         hasCurrent = false;
+        currentFromBatch = false;
 
         while (true)
         {
@@ -387,6 +410,46 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
             if (buffer.IsSingleSegment)
             {
+                if (cursor is not null)
+                {
+                    // Scan-ahead: hand out the pending batch first, then advance the cursor over the
+                    // buffered segment. The buffer is never re-sliced while batch rows are pending.
+                    if (cursor.TryTake(out var batchRow))
+                    {
+                        if (EmitBatchRow(batchRow))
+                            return true;
+                        continue;
+                    }
+
+                    ReadOnlySpan<byte> window = buffer.FirstSpan;
+                    switch (cursor.Advance(window, ref windowConsumed, window.Length, bufferedIsCompleted, ref sourceLineNumber))
+                    {
+                        case CsvBatchStep.Continue:
+                            continue;
+
+                        case CsvBatchStep.RefillNeeded:
+                            // A partial row (or nothing) remains: give the consumed prefix back to the pipe and
+                            // read more; the partial row is re-scanned from its start with the next buffer.
+                            Csv.EnsureRowSize(window.Length - windowConsumed, maxRowSize);
+                            ReleaseBufferedRead(buffer.GetPosition(windowConsumed));
+                            windowConsumed = 0;
+                            continue;
+
+                        case CsvBatchStep.EndOfInput:
+                            ReleaseBufferedRead(buffer.End);
+                            windowConsumed = 0;
+                            return false;
+
+                        case CsvBatchStep.ParsePerRow:
+                        default:
+                            // The per-row parser below takes the row at the current offset.
+                            buffer = buffer.Slice(windowConsumed);
+                            bufferedData = buffer;
+                            windowConsumed = 0;
+                            break;
+                    }
+                }
+
                 ReadOnlySpan<byte> span = buffer.FirstSpan;
                 if (span.IsEmpty)
                 {
@@ -440,6 +503,15 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
                 if (parseResult.RowLength == span.Length && !bufferedIsCompleted)
                 {
+                    ReleaseBufferedRead(buffer.Start);
+                    continue;
+                }
+
+                // The row closed on a CR that is the buffer's last byte: its LF may arrive with the next
+                // read, and closing now would turn that LF into a phantom blank line. Read more first.
+                if (!bufferedIsCompleted && parseResult.CharsConsumed == span.Length && parseResult.CharsConsumed > parseResult.RowLength && span[^1] == (byte)'\r')
+                {
+                    Csv.EnsureRowSize(buffer.Length, maxRowSize);
                     ReleaseBufferedRead(buffer.Start);
                     continue;
                 }
@@ -591,6 +663,33 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     }
 
     /// <summary>
+    /// Makes a row taken from the cursor's batch current, applying the row-size, row-count and skip rules
+    /// the per-row path applies. Returns false when the row was skipped.
+    /// </summary>
+    private bool EmitBatchRow(CsvBatchRow row)
+    {
+        Csv.EnsureRowSize(row.Length, maxRowSize);
+
+        rowNumber++;
+        Csv.EnsureRowCount(rowNumber, options.MaxRowCount);
+
+        if (skippedRows < skipRows)
+        {
+            skippedRows++;
+            return false;
+        }
+
+        currentRowData = bufferedData.Slice(cursor!.WindowBase + row.RowStart, row.Length);
+        currentBatchRow = row;
+        currentFromBatch = true;
+        currentColumnCount = row.ColumnCount;
+        currentRowNumber = rowNumber;
+        currentSourceLineNumber = trackLineNumbers ? row.SourceLine : rowNumber;
+        hasCurrent = true;
+        return true;
+    }
+
+    /// <summary>
     /// Completes the underlying <see cref="PipeReader"/> and releases pooled buffers.
     /// </summary>
     public async ValueTask DisposeAsync()
@@ -607,6 +706,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
             ReleaseBufferedRead(bufferedData.Start);
         }
 
+        cursor?.Dispose();
         columnEndsBuffer.Return();
         await reader.CompleteAsync().ConfigureAwait(false);
     }
@@ -645,6 +745,7 @@ public readonly ref struct CsvPipeSequenceRow
     private readonly bool trimFields;
     private readonly byte quote;
     private readonly byte? escape;
+    private readonly int baseOffset;   // subtracted from columnEnds to make them row-relative (batch rows share a window buffer)
 
     internal CsvPipeSequenceRow(
         ReadOnlySequence<byte> data,
@@ -654,7 +755,8 @@ public readonly ref struct CsvPipeSequenceRow
         int sourceLineNumber,
         bool trimFields,
         byte quote,
-        byte? escape)
+        byte? escape,
+        int baseOffset)
     {
         this.data = data;
         this.columnEnds = columnEnds;
@@ -662,6 +764,7 @@ public readonly ref struct CsvPipeSequenceRow
         this.trimFields = trimFields;
         this.quote = quote;
         this.escape = escape;
+        this.baseOffset = baseOffset;
         RowNumber = rowNumber;
         SourceLineNumber = sourceLineNumber;
     }
@@ -688,8 +791,8 @@ public readonly ref struct CsvPipeSequenceRow
                 throw new IndexOutOfRangeException($"Column index {index} is out of range. Row has {columnCount} columns.");
             }
 
-            long start = columnEnds[index] + 1L;
-            long end = columnEnds[index + 1];
+            long start = columnEnds[index] + 1L - baseOffset;
+            long end = columnEnds[index + 1] - (long)baseOffset;
 
             if (trimFields)
             {
@@ -719,7 +822,8 @@ public readonly ref struct CsvPipeSequenceRow
             columnCount,
             RowNumber,
             SourceLineNumber,
-            trimFields);
+            trimFields,
+            baseOffset);
 
     internal CsvPipeRow ToOwnedRow()
     {
@@ -734,7 +838,7 @@ public readonly ref struct CsvPipeSequenceRow
             case 1:
                 for (int i = 0; i <= columnCount; i++)
                 {
-                    header[i] = checked((byte)(columnEnds[i] + 1));
+                    header[i] = checked((byte)(columnEnds[i] + 1 - baseOffset));
                 }
                 break;
 
@@ -743,7 +847,7 @@ public readonly ref struct CsvPipeSequenceRow
                 {
                     BinaryPrimitives.WriteUInt16LittleEndian(
                         header.Slice(i * sizeof(ushort), sizeof(ushort)),
-                        checked((ushort)(columnEnds[i] + 1)));
+                        checked((ushort)(columnEnds[i] + 1 - baseOffset)));
                 }
                 break;
 
@@ -752,7 +856,7 @@ public readonly ref struct CsvPipeSequenceRow
                 {
                     BinaryPrimitives.WriteInt32LittleEndian(
                         header.Slice(i * sizeof(int), sizeof(int)),
-                        columnEnds[i] + 1);
+                        columnEnds[i] + 1 - baseOffset);
                 }
                 break;
         }

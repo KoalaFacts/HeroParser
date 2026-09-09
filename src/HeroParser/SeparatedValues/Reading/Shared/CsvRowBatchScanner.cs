@@ -173,7 +173,7 @@ internal static class CsvRowBatchScanner
 
         int position = HardwareCapabilities.Avx512BWIsSupported
             ? ScanCore<T, Vector512<byte>, Avx512Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount)
-            : ScanCore<T, Vector256<byte>, Avx2Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount);
+            : ScanCore<T, Vector256Pair, Avx2PairLanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount);
 
         if (ctx.ErrorRowStart < 0 && !ctx.Stopped && position < data.Length && ctx.RowCount == 0)
         {
@@ -341,6 +341,49 @@ internal static class CsvRowBatchScanner
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong Mask(Vector256<byte> vector) => vector.ExtractMostSignificantBits();
+    }
+
+    /// <summary>Two 256-bit vectors treated as one 64-element chunk on AVX2 hardware.</summary>
+    internal readonly struct Vector256Pair(Vector256<byte> lo, Vector256<byte> hi)
+    {
+        public readonly Vector256<byte> Lo = lo;
+        public readonly Vector256<byte> Hi = hi;
+    }
+
+    /// <summary>
+    /// AVX2 with 64-element chunks: every per-chunk cost (mask extraction, dispatch, the quoted path's
+    /// CLMUL) and every per-block cost is paid once per 64 elements, as on AVX-512, instead of twice.
+    /// </summary>
+    internal readonly struct Avx2PairLanes : ISimdLanes<Vector256Pair>
+    {
+        public static int Count => 64;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256Pair Create(byte value)
+        {
+            var v = Vector256.Create(value);
+            return new Vector256Pair(v, v);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256Pair LoadBytes(ref byte source) =>
+            new(Vector256.LoadUnsafe(ref source), Vector256.LoadUnsafe(ref Unsafe.Add(ref source, 32)));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256Pair LoadChars(ref short source) =>
+            new(Avx2Lanes.LoadChars(ref source), Avx2Lanes.LoadChars(ref Unsafe.Add(ref source, 32)));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256Pair Equals(Vector256Pair left, Vector256Pair right) =>
+            new(Vector256.Equals(left.Lo, right.Lo), Vector256.Equals(left.Hi, right.Hi));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector256Pair Or(Vector256Pair left, Vector256Pair right) =>
+            new(left.Lo | right.Lo, left.Hi | right.Hi);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ulong Mask(Vector256Pair vector) =>
+            vector.Lo.ExtractMostSignificantBits() | ((ulong)vector.Hi.ExtractMostSignificantBits() << 32);
     }
 
     // ---------------------------------------------------------------------------------------------

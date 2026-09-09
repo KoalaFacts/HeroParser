@@ -4,19 +4,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-### Optimized
-- **PipeReader scan-ahead**: `CsvPipeSequenceReader`, and `Csv.ReadFromPipeReaderAsync` which wraps it, now batch rows through `CsvRowBatchCursor` over the buffered pipe segment, the same scan-ahead the span and streaming readers use. The per-row path remains only for rows that straddle pipe segments and for configurations the scanner declines. Same runner, 10,000 to 100,000 rows of 4 to 8 columns: `CsvPipeSequenceReader` and `ReadFromPipeReaderAsync` 22-25% faster on EPYC 7763, 13-22% on Xeon 6973P-C, about 20% on EPYC 9V74.
-- **AVX2 quoted path in 64-element chunks**: on AVX2-only hardware the quoted scanner processes two 256-bit vectors per chunk, halving per-chunk dispatch and CLMUL cost. Same runner, 10,000 x 25 quoted: UTF-16 -13% and UTF-8 -10% on EPYC 7763 (native AVX2); UTF-16 -12% and UTF-8 -13% on EPYC 9V74 with AVX-512 disabled. Unquoted unchanged: its block loop keeps single vectors, where pairs spilled registers.
-- **Scanner tail**: the final elements that do not fill a chunk are scanned with the same vector compares as a full chunk via a zero-padded stack buffer, instead of a byte-by-byte mask build. Applies to every batch end and to every single-row scan.
-
-### Fixed
-- PipeReader readers: a CRLF terminator split across two reads was counted as two source lines because the LF became a phantom blank line; the reader now waits for the LF like the streaming reader does. A disallowed newline inside quotes reached through a multi-segment buffer was reported before the rows preceding it were yielded. Both paths now match the span reader, pinned by differential tests over trickling reads and small pipe segments.
-
-### Changed
-- **One SIMD front end**: `CsvRowParser.ParseRow` now delegates its SIMD work to `CsvRowBatchScanner` in a new single-row mode, and the four per-row SIMD state machines (UTF-8 and UTF-16, AVX2 and AVX-512) are deleted. Results, exceptions, messages and positions are unchanged; the scalar loop remains the oracle for diagnostics. One deliberate speed-only change: UTF-16 input with a non-ASCII delimiter or quote parsed row by row (the PipeReader path, or a flagged or final row) now takes the scalar loop.
-- The PR benchmark job's same-runner A/B now also runs the PipeReader comparison, the one path that parses every row through `ParseRow`.
-
-## [2.7.0] - 2026-09-08
+## [2.7.0] - 2026-09-09
 
 Read-path performance release. Every head-to-head reading case (UTF-8 and UTF-16, quoted and unquoted) is now faster than Sep 0.17.0 on the same runner, with allocations still fixed and roughly 26x below Sep's. UTF-16 (`string`) input is no longer a second-class path.
 
@@ -27,6 +15,9 @@ Read-path performance release. Every head-to-head reading case (UTF-8 and UTF-16
 - **UTF-16 pack-and-saturate front end**: each 64- or 32-char chunk is packed to one byte vector (`PackUnsignedSaturate` plus a lane permute) and reuses the byte dispatch, halving compares per element. Chars above 0xFF saturate to 0xFF or 0x00 and can never alias an ASCII delimiter, quote or line ending.
 - **Unquoted block loop**: the 4-vector block exited whenever vector 0 held any delimiter, discarding the whole block's loads and compares on dense CSV; it now exits only on a real line ending and consumes the delimiters before it.
 - **Same-runner benchmark A/B in CI**: the PR benchmark job builds the base commit in a worktree and runs the Sep comparison for base and head back to back on the same runner, posting both in the PR comment. Cross-run numbers were not comparable because GitHub-hosted runners land on different CPUs.
+- **PipeReader scan-ahead**: `CsvPipeSequenceReader`, and `Csv.ReadFromPipeReaderAsync` which wraps it, now batch rows through `CsvRowBatchCursor` over the buffered pipe segment, the same scan-ahead the span and streaming readers use. The per-row path remains only for rows that straddle pipe segments and for configurations the scanner declines. Same runner, 10,000 to 100,000 rows of 4 to 8 columns: `CsvPipeSequenceReader` and `ReadFromPipeReaderAsync` 22-25% faster on EPYC 7763, 13-22% on Xeon 6973P-C, about 20% on EPYC 9V74.
+- **AVX2 quoted path in 64-element chunks**: on AVX2-only hardware the quoted scanner processes two 256-bit vectors per chunk, halving per-chunk dispatch and CLMUL cost. Same runner, 10,000 x 25 quoted: UTF-16 -13% and UTF-8 -10% on EPYC 7763 (native AVX2); UTF-16 -12% and UTF-8 -13% on EPYC 9V74 with AVX-512 disabled. Unquoted unchanged: its block loop keeps single vectors, where pairs spilled registers.
+- **Scanner tail**: the final elements that do not fill a chunk are scanned with the same vector compares as a full chunk via a zero-padded stack buffer, instead of a byte-by-byte mask build. Applies to every batch end and to every single-row scan.
 
 Same-runner results, 10,000 rows x 25 columns, .NET 10, AMD EPYC 9V74 (AVX-512), Sep 0.17.0 as baseline:
 
@@ -42,12 +33,15 @@ For reference, the v2.6.0 report on the same CPU model had UTF-8 at 1.24x / 1.01
 ### Fixed
 - **`MaxFieldSize` not enforced inside the unquoted SIMD block path**: fields in unquoted rows longer than one block (256 bytes on AVX-512, 128 on AVX2) passed the size check. Now validated once per block on a cold path.
 - **`SourceLineNumber` off by one before multi-line quoted fields**: with `TrackSourceLineNumbers`, the SIMD parser credited every in-quote newline in the current chunk to the row being parsed, including newlines belonging to later rows in the same chunk, on both the UTF-8 and UTF-16 paths. Newlines are now attributed to the row that contains them.
+- PipeReader readers: a CRLF terminator split across two reads was counted as two source lines because the LF became a phantom blank line; the reader now waits for the LF like the streaming reader does. A disallowed newline inside quotes reached through a multi-segment buffer was reported before the rows preceding it were yielded. Both paths now match the span reader, pinned by differential tests over trickling reads and small pipe segments.
 
 ### Changed
 - Span readers allocate 152 B per read instead of 112 B (one pooled batch cursor), still fixed regardless of row or column count.
-- Scan-ahead applies when the delimiter and quote are ASCII and no comment or escape character is configured; other configurations keep the per-row parser with unchanged behavior. The PipeReader path keeps the per-row parser in this release.
+- Scan-ahead applies when the delimiter and quote are ASCII and no comment or escape character is configured; other configurations keep the per-row parser with unchanged behavior. The PipeReader readers batch through the same cursor over a single-segment buffer and keep the per-row path only for rows that straddle segments.
 - Two pre-existing streaming-fallback quirks fixed while adding scan-ahead there: a row closing on a CR that ended the read buffer turned the LF from the next read into a phantom blank line (and, with line tracking, an extra `SourceLineNumber`); and a `MaxFieldSize` or `MaxColumnCount` violation in a row split by a buffer refill reported the truncated part rather than the complete row.
 - Benchmark documentation now reports same-runner CI numbers against Sep 0.17.0 and no longer recommends UTF-8 over UTF-16 for performance.
+- **One SIMD front end**: `CsvRowParser.ParseRow` now delegates its SIMD work to `CsvRowBatchScanner` in a new single-row mode, and the four per-row SIMD state machines (UTF-8 and UTF-16, AVX2 and AVX-512) are deleted. Results, exceptions, messages and positions are unchanged; the scalar loop remains the oracle for diagnostics. One deliberate speed-only change: UTF-16 input with a non-ASCII delimiter or quote parsed row by row (the PipeReader path, or a flagged or final row) now takes the scalar loop.
+- The PR benchmark job's same-runner A/B now also runs the PipeReader comparison, the one path that parses every row through `ParseRow`.
 
 ## [2.6.0] - 2026-09-04
 

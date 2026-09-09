@@ -104,10 +104,13 @@ jobs:
       - name: Profile
         if: steps.cpu.outputs.hit == 'true'
         env:
-          # perf map + jitdump. W^X must be off: with it on, JIT code lives in a double-mapped memfd
-          # that perf cannot associate with either the perf map or the jitdump, and nothing resolves.
-          DOTNET_PerfMapEnabled: '1'
-          DOTNET_EnableWriteXorExecute: '0'
+          # perf cannot see the runtime's JIT code heap (reserved without permissions, committed with
+          # mprotect), so samples land in [unknown] and neither the perf map nor the jitdump resolves.
+          # Symbolization is done here instead: perf supplies raw instruction pointers, the perf map
+          # supplies method ranges, and the hot methods' code bytes are copied out of /proc/<pid>/mem
+          # while the process runs so objdump can list them instruction by instruction.
+          DOTNET_PerfMapEnabled: '3'
+          DOTNET_PerfMapShowOptimizationTiers: '1'
           DOTNET_TieredPGO: '1'
         run: |
           set -euo pipefail
@@ -116,23 +119,45 @@ jobs:
           echo "${{ steps.cpu.outputs.model }}" > "$OUT/cpu.txt"
           grep -m1 -E '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^avx' | tr '\n' ' ' >> "$OUT/cpu.txt"; echo >> "$OUT/cpu.txt"
           DLL="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/bin/Release/net10.0/HeroParser.Benchmarks.dll"
+          SECONDS_TOTAL='${{ inputs.seconds }}'
           for CASE in ${{ inputs.cases }}; do
             echo "=== $CASE"
-            "$PERF" record -e cpu-clock -F 1999 -g -k 1 -o "$OUT/$CASE.data" -- dotnet "$DLL" --profile "$CASE" '${{ inputs.seconds }}' | tee -a "$OUT/timings.txt"
-            echo "--- jit artifacts in /tmp:"; ls -la /tmp/perf-*.map /tmp/jit-*.dump 2>/dev/null || echo "(none)"
-            "$PERF" inject --jit -v -i "$OUT/$CASE.data" -o "$OUT/$CASE.jit.data" 2>&1 | tail -5 || true
-            echo "--- injected objects:"; ls ~/.debug/jit 2>/dev/null | head -3 || echo "(none)"
-            "$PERF" report -i "$OUT/$CASE.jit.data" --stdio --no-children --sort dso,symbol --percent-limit 0.5 2>/dev/null > "$OUT/$CASE.report.txt" || true
-            "$PERF" report -i "$OUT/$CASE.data" --stdio --no-children --sort dso,symbol --percent-limit 0.5 2>/dev/null > "$OUT/$CASE.report-perfmap.txt" || true
-            "$PERF" annotate -i "$OUT/$CASE.jit.data" --stdio --percent-type local-period 2>/dev/null | head -6000 > "$OUT/$CASE.annotate.txt" || true
-            rm -f "$OUT/$CASE.data" "$OUT/$CASE.jit.data" /tmp/perf-*.map /tmp/jit-*.dump
-            rm -rf ~/.debug/jit
+            case "$CASE" in
+              hero-*) DUMP_REGEX='CsvRowBatchScanner|CsvRowReader|CsvRowBatchCursor' ;;
+              sep-*)  DUMP_REGEX='SepParser|SepReader|nietras' ;;
+              *)      DUMP_REGEX='.' ;;
+            esac
+            CODE="$OUT/$CASE.code"; mkdir -p "$CODE"
+
+            # The driver warms up for 2 s, then loops for SECONDS_TOTAL. Sample from 3 s on so that
+            # only tier-1 code is measured, and dump the hot methods' code bytes while it runs.
+            dotnet "$DLL" --profile "$CASE" "$SECONDS_TOTAL" > "$OUT/$CASE.timing.txt" &
+            PID=$!
+            sleep 3
+            "$PERF" record -e cpu-clock -F 1999 -p "$PID" -o "$OUT/$CASE.data" -- sleep $((SECONDS_TOTAL - 2)) 2>&1 | tail -1 &
+            PERF_PID=$!
+            sleep 2
+            MAP="/tmp/perf-$PID.map"
+            cp "$MAP" "$OUT/$CASE.perfmap"
+            (grep -E "$DUMP_REGEX" "$MAP" || true) | while read -r START SIZE NAME; do
+              sudo dd if="/proc/$PID/mem" of="$CODE/$START.bin" iflag=skip_bytes,count_bytes skip=$((16#$START)) count=$((16#$SIZE)) status=none 2>/dev/null || true
+            done
+            echo "code dumps: $(ls "$CODE" | wc -l) methods matching '$DUMP_REGEX'"
+            wait "$PERF_PID" || true
+            wait "$PID" || true
+            cat "$OUT/$CASE.timing.txt" | tee -a "$OUT/timings.txt"
+
+            "$PERF" script -i "$OUT/$CASE.data" -F ip 2>/dev/null | awk '{print $1}' > "$OUT/$CASE.ips"
+            echo "sampled ips: $(wc -l < "$OUT/$CASE.ips")"
+            python3 "$GITHUB_WORKSPACE/.github/scripts/perf-symbolize.py" "$OUT/$CASE.perfmap" "$OUT/$CASE.ips" "$CODE" 6 > "$OUT/$CASE.profile.txt"
+            rm -f "$OUT/$CASE.data" "$OUT/$CASE.ips" "$MAP"
           done
+          set +o pipefail
           echo "=== timings"; cat "$OUT/timings.txt"
-          for f in "$OUT"/*.report.txt; do echo "=== $f"; grep -vE '^#|^\s*$' "$f" | grep -E '^\s+[0-9.]+%' | head -25; done
+          for f in "$OUT"/*.profile.txt; do echo "=== $f"; head -60 "$f"; done
 
       - name: Upload profile
-        if: steps.cpu.outputs.hit == 'true'
+        if: always() && steps.cpu.outputs.hit == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: profile-${{ matrix.instance }}

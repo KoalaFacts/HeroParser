@@ -104,7 +104,10 @@ jobs:
       - name: Profile
         if: steps.cpu.outputs.hit == 'true'
         env:
+          # perf map + jitdump. W^X must be off: with it on, JIT code lives in a double-mapped memfd
+          # that perf cannot associate with either the perf map or the jitdump, and nothing resolves.
           DOTNET_PerfMapEnabled: '1'
+          DOTNET_EnableWriteXorExecute: '0'
           DOTNET_TieredPGO: '1'
         run: |
           set -euo pipefail
@@ -116,13 +119,17 @@ jobs:
           for CASE in ${{ inputs.cases }}; do
             echo "=== $CASE"
             "$PERF" record -e cpu-clock -F 1999 -g -k 1 -o "$OUT/$CASE.data" -- dotnet "$DLL" --profile "$CASE" '${{ inputs.seconds }}' | tee -a "$OUT/timings.txt"
-            "$PERF" inject --jit -i "$OUT/$CASE.data" -o "$OUT/$CASE.jit.data"
-            "$PERF" report -i "$OUT/$CASE.jit.data" --stdio --no-children --sort symbol --percent-limit 0.5 2>/dev/null > "$OUT/$CASE.report.txt" || true
-            "$PERF" annotate -i "$OUT/$CASE.jit.data" --stdio --percent-type local-period 2>/dev/null | head -4000 > "$OUT/$CASE.annotate.txt" || true
-            rm -f "$OUT/$CASE.data" "$OUT/$CASE.jit.data"
+            echo "--- jit artifacts in /tmp:"; ls -la /tmp/perf-*.map /tmp/jit-*.dump 2>/dev/null || echo "(none)"
+            "$PERF" inject --jit -v -i "$OUT/$CASE.data" -o "$OUT/$CASE.jit.data" 2>&1 | tail -5 || true
+            echo "--- injected objects:"; ls ~/.debug/jit 2>/dev/null | head -3 || echo "(none)"
+            "$PERF" report -i "$OUT/$CASE.jit.data" --stdio --no-children --sort dso,symbol --percent-limit 0.5 2>/dev/null > "$OUT/$CASE.report.txt" || true
+            "$PERF" report -i "$OUT/$CASE.data" --stdio --no-children --sort dso,symbol --percent-limit 0.5 2>/dev/null > "$OUT/$CASE.report-perfmap.txt" || true
+            "$PERF" annotate -i "$OUT/$CASE.jit.data" --stdio --percent-type local-period 2>/dev/null | head -6000 > "$OUT/$CASE.annotate.txt" || true
+            rm -f "$OUT/$CASE.data" "$OUT/$CASE.jit.data" /tmp/perf-*.map /tmp/jit-*.dump
+            rm -rf ~/.debug/jit
           done
           echo "=== timings"; cat "$OUT/timings.txt"
-          for f in "$OUT"/*.report.txt; do echo "=== $f"; head -40 "$f"; done
+          for f in "$OUT"/*.report.txt; do echo "=== $f"; grep -vE '^#|^\s*$' "$f" | grep -E '^\s+[0-9.]+%' | head -25; done
 
       - name: Upload profile
         if: steps.cpu.outputs.hit == 'true'

@@ -34,7 +34,7 @@ public class VsSepReadingBenchmarks
         utf8 = Encoding.UTF8.GetBytes(csv);
     }
 
-    private static string GenerateCsv(int rows, int columns, bool withQuotes)
+    internal static string GenerateCsv(int rows, int columns, bool withQuotes)
     {
         var sb = new StringBuilder();
         for (int r = 0; r < rows; r++)

@@ -139,8 +139,11 @@ jobs:
             sleep 2
             MAP="/tmp/perf-$PID.map"
             cp "$MAP" "$OUT/$CASE.perfmap"
+            # Map lines are "0xSTART SIZE NAME": strip the prefix before the base-16 conversion. The
+            # dump is named by the start address in the same form the symbolizer prints (no prefix).
             (grep -E "$DUMP_REGEX" "$MAP" || true) | while read -r START SIZE NAME; do
-              sudo dd if="/proc/$PID/mem" of="$CODE/$START.bin" iflag=skip_bytes,count_bytes skip=$((16#$START)) count=$((16#$SIZE)) status=none 2>/dev/null || true
+              S=${START#0x}; Z=${SIZE#0x}
+              sudo dd if="/proc/$PID/mem" of="$CODE/$S.bin" iflag=skip_bytes,count_bytes skip=$((16#$S)) count=$((16#$Z)) status=none 2>/dev/null || true
             done
             echo "code dumps: $(ls "$CODE" | wc -l) methods matching '$DUMP_REGEX'"
             wait "$PERF_PID" || true

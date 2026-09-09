@@ -4,6 +4,13 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+### Optimized
+- **PipeReader scan-ahead**: `CsvPipeSequenceReader`, and `Csv.ReadFromPipeReaderAsync` which wraps it, now batch rows through `CsvRowBatchCursor` over the buffered pipe segment, the same scan-ahead the span and streaming readers use. The per-row path remains only for rows that straddle pipe segments and for configurations the scanner declines. Measured on the same-runner PipeReader comparison in the PR.
+- **Scanner tail**: the final elements that do not fill a chunk are scanned with the same vector compares as a full chunk via a zero-padded stack buffer, instead of a byte-by-byte mask build. Applies to every batch end and to every single-row scan.
+
+### Fixed
+- PipeReader readers: a CRLF terminator split across two reads was counted as two source lines because the LF became a phantom blank line; the reader now waits for the LF like the streaming reader does. A disallowed newline inside quotes reached through a multi-segment buffer was reported before the rows preceding it were yielded. Both paths now match the span reader, pinned by differential tests over trickling reads and small pipe segments.
+
 ### Changed
 - **One SIMD front end**: `CsvRowParser.ParseRow` now delegates its SIMD work to `CsvRowBatchScanner` in a new single-row mode, and the four per-row SIMD state machines (UTF-8 and UTF-16, AVX2 and AVX-512) are deleted. Results, exceptions, messages and positions are unchanged; the scalar loop remains the oracle for diagnostics. One deliberate speed-only change: UTF-16 input with a non-ASCII delimiter or quote parsed row by row (the PipeReader path, or a flagged or final row) now takes the scalar loop.
 - The PR benchmark job's same-runner A/B now also runs the PipeReader comparison, the one path that parses every row through `ParseRow`.

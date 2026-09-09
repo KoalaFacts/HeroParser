@@ -208,6 +208,8 @@ These are the patterns CodeQL flags as `cs/useless-assignment-to-local` and
 - **Scan-ahead row batches** (`CsvRowBatchScanner`): one SIMD pass fills a pooled `ends` buffer with many rows' column ends (ends-only encoding, absolute offsets, a sentinel per row) and `MoveNext` only advances an index. Per-row entry into the parser was ~58 ns against Sep's ~15 ns and was the entire gap at 5-25 columns.
 - **Inline "quotes but no line ending" chunk path**: most chunks in a quoted row have quotes and no newline. Handling them in the dispatch (CLMUL mask, filter, bare append, flip parity) instead of calling the state machine is what made the quoted cases win. A non-inlined call per chunk cancels per-row savings.
 - **UTF-16 pack-and-saturate**: pack two `short` vectors into one byte vector with `PackUnsignedSaturate` plus a lane permute, then reuse the byte dispatch. Halves compares per element; loads are identical either way. (An older note said this was abandoned for memory traffic; the same-runner A/B showed -20% unquoted, -15% quoted.) Requires ASCII specials so saturated chars (0xFF / 0x00) can never alias them.
+- **64-element chunks on AVX2 for the quoted path** (`Avx2PairLanes`): two 256-bit vectors per chunk halve the per-chunk cost (mask extraction, dispatch, CLMUL) where chunks are dispatched one at a time. Same runner with AVX-512 disabled (EPYC 9V74): quoted -12% UTF-16, -13% UTF-8. Selected per quote policy in `Scan`; see "What Doesn't Work" for why the unquoted block keeps single vectors.
+- **Vector tail scan**: the elements that do not fill a chunk are copied into a zero-padded stack buffer and scanned with the same compares as a full chunk; zero never equals a special, and the UTF-16 pack turns padding into 0x00.
 - **Bare delimiter loops on true locals**: `ends[endsCount++] = base + bit` with `endsCount` a local of the front end. Keep the hot loop free of `ref` parameters and per-delimiter bookkeeping.
 - **Delegated error diagnostics**: when the scanner detects a violation it stops and the reader re-parses that row with `ParseRow`, so exceptions, messages and positions stay byte-identical without duplicating diagnostics code.
 - **Pooled buffers behind a class** (`PooledColumnEnds`, `CsvRowBatchCursor`): the reader struct is copied by `foreach` and disposed per copy; a class with an idempotent return prevents double-returning arrays to `ArrayPool`, which otherwise hands the same array to two owners.
@@ -228,6 +230,10 @@ Attempted optimizations that caused regressions, all caught by the same-runner A
 4. **Unsafe.Add for columnEnds writes**: the JIT already eliminates bounds checks it can prove.
 
 5. **Hoisting maxFieldLength checks** into a boolean costs more than the nullable check.
+
+6. **Vector pairs in the unquoted 4-chunk block on AVX2**: four pair chunks plus their line-ending compares plus the broadcast constants exceed the sixteen 256-bit registers, and the spills cost +41% (UTF-8) to +49% (UTF-16) unquoted with AVX-512 disabled on EPYC 9V74, while the same pairs gained 12-13% on the quoted path. Width is chosen per quote policy; keep register pressure in mind before widening any unrolled block.
+
+7. **Per-row SIMD entry for short rows**: entering the scanner once per row (context setup, three call levels, tail scan) cost 20-25 ns more per row than the old per-row SIMD on the PipeReader path, 24-28% on 40-byte rows. Batching the pipe reader through the cursor removed the per-row entry and made the path 13-22% faster than before instead. Structure (per row vs per batch) beats trimming the entry.
 
 **Key insight**: the .NET JIT is very good at simple, idiomatic code. Structure (what runs per row vs per chunk vs per byte, what stays inline) moves the numbers; micro-tricks mostly don't.
 

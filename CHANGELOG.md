@@ -5,7 +5,8 @@ All notable changes to HeroParser are documented in this file. This project foll
 ## [Unreleased]
 
 ### Optimized
-- **PipeReader scan-ahead**: `CsvPipeSequenceReader`, and `Csv.ReadFromPipeReaderAsync` which wraps it, now batch rows through `CsvRowBatchCursor` over the buffered pipe segment, the same scan-ahead the span and streaming readers use. The per-row path remains only for rows that straddle pipe segments and for configurations the scanner declines. Measured on the same-runner PipeReader comparison in the PR.
+- **PipeReader scan-ahead**: `CsvPipeSequenceReader`, and `Csv.ReadFromPipeReaderAsync` which wraps it, now batch rows through `CsvRowBatchCursor` over the buffered pipe segment, the same scan-ahead the span and streaming readers use. The per-row path remains only for rows that straddle pipe segments and for configurations the scanner declines. Same runner (Xeon 6973P-C), 10,000 to 100,000 rows of 4 to 8 columns: `CsvPipeSequenceReader` 13-22% faster, `ReadFromPipeReaderAsync` 17-22% faster.
+- **AVX2 quoted path in 64-element chunks**: on AVX2-only hardware the quoted scanner processes two 256-bit vectors per chunk, halving per-chunk dispatch and CLMUL cost. Same runner with AVX-512 disabled (EPYC 9V74), 10,000 x 25 quoted: UTF-16 -12%, UTF-8 -13%. The unquoted block keeps single vectors, where pairs spilled registers.
 - **Scanner tail**: the final elements that do not fill a chunk are scanned with the same vector compares as a full chunk via a zero-padded stack buffer, instead of a byte-by-byte mask build. Applies to every batch end and to every single-row scan.
 
 ### Fixed

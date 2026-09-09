@@ -171,9 +171,15 @@ internal static class CsvRowBatchScanner
         ends[0] = start - 1;
         int endsCount = 1;
 
+        // AVX2 width choice by quote policy: the quoted path dispatches one chunk at a time, so 64-element
+        // pairs halve its per-chunk cost (measured -12% quoted, same runner, AVX-512 disabled). The unquoted
+        // 4-chunk block already holds four chunks and their line-ending compares; with pairs that is more
+        // than the sixteen 256-bit registers and it spilled (+41-49% unquoted), so it keeps single vectors.
         int position = HardwareCapabilities.Avx512BWIsSupported
             ? ScanCore<T, Vector512<byte>, Avx512Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount)
-            : ScanCore<T, Vector256Pair, Avx2PairLanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount);
+            : typeof(TQuotePolicy) == typeof(QuotesEnabled)
+                ? ScanCore<T, Vector256Pair, Avx2PairLanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount)
+                : ScanCore<T, Vector256<byte>, Avx2Lanes, TTrack, TQuotePolicy>(start, ref ctx, ref endsCount);
 
         if (ctx.ErrorRowStart < 0 && !ctx.Stopped && position < data.Length && ctx.RowCount == 0)
         {
@@ -351,8 +357,9 @@ internal static class CsvRowBatchScanner
     }
 
     /// <summary>
-    /// AVX2 with 64-element chunks: every per-chunk cost (mask extraction, dispatch, the quoted path's
-    /// CLMUL) and every per-block cost is paid once per 64 elements, as on AVX-512, instead of twice.
+    /// AVX2 with 64-element chunks, used for the quoted policy: every per-chunk cost (mask extraction,
+    /// dispatch, CLMUL) is paid once per 64 elements, as on AVX-512, instead of twice. Not used for the
+    /// unquoted policy, whose 4-chunk block spills registers with pairs; see <see cref="Scan{T, TTrack, TQuotePolicy}"/>.
     /// </summary>
     internal readonly struct Avx2PairLanes : ISimdLanes<Vector256Pair>
     {

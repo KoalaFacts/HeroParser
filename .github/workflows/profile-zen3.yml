@@ -25,6 +25,10 @@ on:
         description: Number of parallel jobs to start (more jobs, better odds of drawing the CPU)
         required: true
         default: '6'
+      compare_ref:
+        description: Optional git ref to build as a baseline; the driver timings of base and head are then interleaved on the same runner (an on-demand A/B for this CPU)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -158,6 +162,42 @@ jobs:
           set +o pipefail
           echo "=== timings"; cat "$OUT/timings.txt"
           for f in "$OUT"/*.profile.txt; do echo "=== $f"; head -60 "$f"; done
+
+      - name: Compare against baseline
+        if: steps.cpu.outputs.hit == 'true' && inputs.compare_ref != ''
+        env:
+          DOTNET_TieredPGO: '1'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/profile-out"
+          git fetch --no-tags --depth=1 origin '${{ inputs.compare_ref }}'
+          git worktree add "$RUNNER_TEMP/base" FETCH_HEAD
+          (cd "$RUNNER_TEMP/base" && dotnet restore --force-evaluate && dotnet build benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj -c Release -f net10.0 --no-restore)
+          BASE="$RUNNER_TEMP/base/benchmarks/HeroParser.Benchmarks/bin/Release/net10.0/HeroParser.Benchmarks.dll"
+          HEAD="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/bin/Release/net10.0/HeroParser.Benchmarks.dll"
+          echo "# base=${{ inputs.compare_ref }} head=${GITHUB_SHA::7} cpu=${{ steps.cpu.outputs.model }}" | tee "$OUT/compare.txt"
+          for ROUND in 1 2 3; do
+            for CASE in ${{ inputs.cases }}; do
+              for SIDE in base head; do
+                if [ "$SIDE" = base ]; then DLL="$BASE"; else DLL="$HEAD"; fi
+                LINE=$(dotnet "$DLL" --profile "$CASE" 5 | tail -1)
+                echo "round $ROUND $SIDE $LINE" | tee -a "$OUT/compare.txt"
+              done
+            done
+          done
+          echo "=== summary (us/iteration, three rounds)"
+          python3 - "$OUT/compare.txt" <<'PY'
+          import re, sys, collections
+          t = collections.defaultdict(list)
+          for line in open(sys.argv[1]):
+              m = re.match(r"round \d+ (base|head) (\S+): .* ([0-9.]+) us/iteration", line)
+              if m:
+                  t[(m.group(2), m.group(1))].append(float(m.group(3)))
+          cases = sorted({c for c, _ in t})
+          for c in cases:
+              b = min(t[(c, "base")]); h = min(t[(c, "head")])
+              print(f"{c:18s} base {b:8.1f}  head {h:8.1f}  head/base {h / b:.3f}   (min of rounds; all base {t[(c,'base')]}, head {t[(c,'head')]})")
+          PY
 
       - name: Upload profile
         if: always() && steps.cpu.outputs.hit == 'true'

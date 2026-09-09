@@ -1,0 +1,133 @@
+name: Profile on a chosen CPU
+
+# GitHub-hosted runners land on different CPUs (EPYC 7763 Zen 3, EPYC 9V74 Zen 4, Xeon 6973P-C).
+# This workflow starts several jobs at once; each checks its CPU model and only the ones matching the
+# requested pattern profile, so one dispatch almost always yields at least one hit. Each hit runs the
+# Sep-comparison workloads in a loop under Linux perf with .NET JIT dumps enabled, so the reports
+# resolve JIT-compiled methods and annotate instructions inside them.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cpu:
+        description: Regex the CPU model name must match (e.g. 7763 for Zen 3, 9V74 for Zen 4, 6973P for the Xeon)
+        required: true
+        default: '7763'
+      cases:
+        description: Space-separated profile cases (hero-utf8 hero-utf16 sep-utf16, each optionally -quoted)
+        required: true
+        default: 'hero-utf8 hero-utf16 sep-utf16'
+      seconds:
+        description: Seconds to loop each case under the profiler
+        required: true
+        default: '8'
+      jobs:
+        description: Number of parallel jobs to start (more jobs, better odds of drawing the CPU)
+        required: true
+        default: '6'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  plan:
+    name: Fan out
+    runs-on: ubuntu-latest
+    outputs:
+      instances: ${{ steps.fan.outputs.instances }}
+    steps:
+      - id: fan
+        run: |
+          n='${{ inputs.jobs }}'
+          echo "instances=$(seq -s, 1 "$n" | sed 's/^/[/; s/$/]/')" >> "$GITHUB_OUTPUT"
+
+  profile:
+    needs: plan
+    name: Profile (instance ${{ matrix.instance }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        instance: ${{ fromJSON(needs.plan.outputs.instances) }}
+    steps:
+      - name: Check CPU
+        id: cpu
+        run: |
+          model=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')
+          echo "model=$model"
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+          if echo "$model" | grep -Eq '${{ inputs.cpu }}'; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::instance ${{ matrix.instance }} drew '$model': profiling"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::instance ${{ matrix.instance }} drew '$model': not a match, skipping"
+          fi
+
+      - name: Checkout code
+        if: steps.cpu.outputs.hit == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Extract configuration
+        if: steps.cpu.outputs.hit == 'true'
+        id: extract
+        uses: ./.github/actions/extract-build-config
+
+      - name: Setup all .NET SDKs
+        if: steps.cpu.outputs.hit == 'true'
+        uses: ./.github/actions/setup-dotnet-sdks
+        with:
+          dotnet-version: ${{ steps.extract.outputs.versions }}
+
+      - name: Install perf
+        if: steps.cpu.outputs.hit == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq linux-tools-common linux-tools-generic "linux-tools-$(uname -r)" || true
+          PERF=$(command -v perf || ls /usr/lib/linux-tools/*/perf | tail -1)
+          "$PERF" version
+          echo "PERF=$PERF" >> "$GITHUB_ENV"
+          sudo sysctl -w kernel.perf_event_paranoid=1
+          sudo sysctl -w kernel.kptr_restrict=0
+
+      - name: Build benchmarks
+        if: steps.cpu.outputs.hit == 'true'
+        run: |
+          dotnet restore --force-evaluate
+          dotnet build benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj -c Release -f net10.0 --no-restore
+
+      - name: Profile
+        if: steps.cpu.outputs.hit == 'true'
+        env:
+          DOTNET_PerfMapEnabled: '1'
+          DOTNET_TieredPGO: '1'
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/profile-out"
+          mkdir -p "$OUT"
+          echo "${{ steps.cpu.outputs.model }}" > "$OUT/cpu.txt"
+          grep -m1 -E '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^avx' | tr '\n' ' ' >> "$OUT/cpu.txt"; echo >> "$OUT/cpu.txt"
+          DLL="$GITHUB_WORKSPACE/benchmarks/HeroParser.Benchmarks/bin/Release/net10.0/HeroParser.Benchmarks.dll"
+          for CASE in ${{ inputs.cases }}; do
+            echo "=== $CASE"
+            "$PERF" record -e cpu-clock -F 1999 -g -k 1 -o "$OUT/$CASE.data" -- dotnet "$DLL" --profile "$CASE" '${{ inputs.seconds }}' | tee -a "$OUT/timings.txt"
+            "$PERF" inject --jit -i "$OUT/$CASE.data" -o "$OUT/$CASE.jit.data"
+            "$PERF" report -i "$OUT/$CASE.jit.data" --stdio --no-children --sort symbol --percent-limit 0.5 2>/dev/null > "$OUT/$CASE.report.txt" || true
+            "$PERF" annotate -i "$OUT/$CASE.jit.data" --stdio --percent-type local-period 2>/dev/null | head -4000 > "$OUT/$CASE.annotate.txt" || true
+            rm -f "$OUT/$CASE.data" "$OUT/$CASE.jit.data"
+          done
+          echo "=== timings"; cat "$OUT/timings.txt"
+          for f in "$OUT"/*.report.txt; do echo "=== $f"; head -40 "$f"; done
+
+      - name: Upload profile
+        if: steps.cpu.outputs.hit == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: profile-${{ matrix.instance }}
+          path: profile-out/
+          retention-days: 14

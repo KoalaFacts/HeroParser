@@ -131,6 +131,12 @@ public class Program
             return;
         }
 
+        if (args[0] == "--profile")
+        {
+            ProfileDriver.Run(args);
+            return;
+        }
+
         if (args[0] == "--all")
         {
             RunBenchmarks(args, allBenchmarks);
@@ -157,6 +163,7 @@ public class Program
         Console.WriteLine("=== HeroParser Benchmarks ===");
         Console.WriteLine();
         Console.WriteLine("Options:");
+        Console.WriteLine("  --profile <case> [s]  Loop one Sep-comparison case for s seconds under an external profiler (see ProfileDriver)");
         Console.WriteLine("  --throughput          Run raw CSV throughput benchmarks");
         Console.WriteLine("  --csv-streaming       Run CSV async stream reader benchmarks");
         Console.WriteLine("  --csv-pipe            Run CSV PipeReader benchmarks");

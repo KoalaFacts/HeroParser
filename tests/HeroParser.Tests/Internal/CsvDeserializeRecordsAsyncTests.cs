@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.IO.Pipelines;
 using System.Text;
 using HeroParser.SeparatedValues;
@@ -59,10 +58,10 @@ public class CsvDeserializeRecordsAsyncTests
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         using var ms = new MemoryStream(bytes);
         var pipe = PipeReader.Create(ms);
-        var reports = new ConcurrentQueue<CsvProgress>();
+        var reported = new List<long>();
         var recordOptions = new CsvRecordOptions
         {
-            Progress = new Progress<CsvProgress>(reports.Enqueue),
+            Progress = new SynchronousProgress<CsvProgress>(p => reported.Add(p.RowsProcessed)),
             ProgressIntervalRows = 5
         };
 
@@ -73,9 +72,9 @@ public class CsvDeserializeRecordsAsyncTests
             records.Add(p);
         }
         Assert.Equal(50, records.Count);
-        // Progress reports may be delivered asynchronously via SyncContext; verify they fire eventually.
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        Assert.NotEmpty(reports);
+        Assert.Equal(5, reported[0]);
+        Assert.Equal(50, reported[^1]);
+        Assert.All(reported, rows => Assert.Equal(0, rows % 5));
     }
 
     [Fact]

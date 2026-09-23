@@ -505,15 +505,6 @@ public class SimpleWriteRecord
 }
 
 /// <summary>
-/// A progress implementation that reports synchronously for use in tests.
-/// </summary>
-/// <typeparam name="T">The progress value type.</typeparam>
-internal sealed class SynchronousProgress<T>(Action<T> handler) : IProgress<T>
-{
-    public void Report(T value) => handler(value);
-}
-
-/// <summary>
 /// A minimal inline fluent map for Excel writing, used in tests.
 /// Implements <see cref="SeparatedValues.Mapping.ICsvWriteMapSource{T}"/> so it works
 /// with <see cref="ExcelWriterBuilder{T}.WithMap"/>.

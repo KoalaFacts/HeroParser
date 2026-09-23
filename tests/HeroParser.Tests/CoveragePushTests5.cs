@@ -130,8 +130,8 @@ public class CoveragePushTests5
         var rows = new List<CoveragePerson>();
         for (int i = 0; i < 250; i++) rows.Add(new CoveragePerson { Name = $"P{i}", Age = i });
 
-        var progressCalls = 0;
-        var progress = new Progress<CsvWriteProgress>(_ => Interlocked.Increment(ref progressCalls));
+        var reported = new List<long>();
+        var progress = new SynchronousProgress<CsvWriteProgress>(p => reported.Add(p.RowsWritten));
 
         using var ms = new MemoryStream();
         await Csv.WriteToStreamAsync(
@@ -139,9 +139,9 @@ public class CoveragePushTests5
             rows,
             options: new CsvWriteOptions { WriteProgress = progress, WriteProgressIntervalRows = 50 },
             cancellationToken: TestContext.Current.CancellationToken);
-        // Allow progress task to flush.
-        await Task.Delay(50, TestContext.Current.CancellationToken);
-        Assert.True(progressCalls > 0);
+        Assert.Equal(50, reported[0]);
+        Assert.Equal(250, reported[^1]);
+        Assert.All(reported, written => Assert.Equal(0, written % 50));
     }
 
     [Fact]

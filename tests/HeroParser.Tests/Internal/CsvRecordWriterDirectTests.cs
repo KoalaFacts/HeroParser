@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Writing;
 using Xunit;
@@ -107,8 +106,8 @@ public class CsvRecordWriterDirectTests
     [Fact]
     public void WriteRecords_WithProgress_ReportsAtInterval()
     {
-        var reports = new ConcurrentQueue<CsvWriteProgress>();
-        var progress = new Progress<CsvWriteProgress>(reports.Enqueue);
+        var reported = new List<long>();
+        var progress = new SynchronousProgress<CsvWriteProgress>(p => reported.Add(p.RowsWritten));
         var rw = CsvRecordWriterFactory.GetWriter<Person>(new CsvWriteOptions
         {
             WriteProgress = progress,
@@ -120,9 +119,9 @@ public class CsvRecordWriterDirectTests
         {
             rw.WriteRecords(writer, Sample(3), includeHeader: false);
         }
-        // Progress is reported via Progress<T> which posts to the SyncCtx; reports may be
-        // delivered asynchronously, so just verify writes succeeded.
         Assert.Contains("P0,18", sw.ToString());
+        Assert.Equal(1, reported[0]);
+        Assert.Equal(3, reported[^1]);
     }
 
     [Fact]

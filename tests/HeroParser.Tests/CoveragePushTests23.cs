@@ -49,7 +49,6 @@ public class CoveragePushTests23
                 WriteProgressIntervalRows = 50,
             },
             cancellationToken: TestContext.Current.CancellationToken);
-        await Task.Delay(50, TestContext.Current.CancellationToken);
         Assert.True(ms.Length > 0);
     }
 

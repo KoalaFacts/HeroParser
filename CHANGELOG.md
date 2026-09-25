@@ -4,9 +4,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-## [2.7.0] - Unreleased
+## [2.7.0] - 2026-09-25
 
-Read-path performance release. Every head-to-head reading case (UTF-8 and UTF-16, quoted and unquoted) is now faster than Sep 0.17.0 on the same runner, with allocations still fixed and roughly 26x below Sep's. UTF-16 (`string`) input is no longer a second-class path.
+Read-path performance release. On the AMD EPYC 9V74 benchmark below, the UTF-8 and UTF-16 quoted and unquoted reading cases outperform Sep 0.17.0 on the same runner, with fixed allocations roughly 26x below Sep's. Results on other CPUs may differ. UTF-16 (`string`) input is no longer a second-class path.
 
 ### Optimized
 - **Scan-ahead row batches** (`CsvRowBatchScanner`, `CsvRowBatchCursor`): one SIMD pass records the column ends of a batch of rows (pooled 4096-int buffer, ends-only encoding in absolute offsets) and advancing to the next row is index arithmetic. Previously every row re-entered the parser: re-slice, re-broadcast vectors, re-check options, re-load the chunk holding the previous newline. Per-row fixed cost drops from about 58 ns to Sep's range. Applies to the span readers (`ReadFromByteSpan`, `ReadFromCharSpan`, `ReadFromText`, `FromFile`, `FromStream` into memory), everything built on them including the typed record readers, and the streaming readers `CsvAsyncStreamReader` and `CsvMultiSchemaStreamingRecordReader`, which scan their buffered window in batches and never emit a partial row mid-stream.

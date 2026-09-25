@@ -60,11 +60,8 @@ Install the native binary without Homebrew:
 curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.sh | sh
 ```
 
-#### Option 4: Snap Store (Linux)
-Install the strictly-confined package from the Snap Store:
-```bash
-sudo snap install heroparser
-```
+#### Option 4: Snap Store (Linux, pending)
+The Snap package is not yet publicly available in the Snap Store. Use the shell installer above or a Linux archive from [GitHub Releases](https://github.com/KoalaFacts/HeroParser/releases) until store publication is confirmed.
 
 #### Option 5: WinGet (Windows)
 Install the portable binary via WinGet:

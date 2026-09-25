@@ -141,6 +141,7 @@ This directory contains automated CI/CD workflows for HeroParser.
 
 **Requirements:**
 - GitHub secret: `SNAPCRAFT_TOKEN` (Snap Store login token exported from `snapcraft export-login`)
+- The `heroparser` snap must be registered in the store and the token must have permission to upload and release it. A successful build alone does not make the package installable.
 
 ---
 

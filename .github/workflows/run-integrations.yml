@@ -65,10 +65,18 @@ jobs:
       run: dotnet build tests/HeroParser.Generators.Tests/HeroParser.Generators.Tests.csproj --configuration Release --no-restore --framework ${{ matrix.framework }}
 
     - name: Run HeroParser.Tests
-      run: dotnet test tests/HeroParser.Tests/HeroParser.Tests.csproj --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
+      run: >
+        dotnet test tests/HeroParser.Tests/HeroParser.Tests.csproj
+        --configuration Release --no-build
+        --framework ${{ matrix.framework }}
+        --
+        --report-trx --report-trx-filename test-results.trx
+        --results-directory ./TestResults
 
+    # No TRX here: the generator test project does not reference the TrxReport
+    # extension, and MTP rejects --report-trx without it (exit 5, zero tests).
     - name: Run HeroParser.Generators.Tests
-      run: dotnet test tests/HeroParser.Generators.Tests/HeroParser.Generators.Tests.csproj --configuration Release --no-build --framework ${{ matrix.framework }} --verbosity normal --logger "trx;LogFileName=generator-test-results.trx" --results-directory ./TestResults
+      run: dotnet test tests/HeroParser.Generators.Tests/HeroParser.Generators.Tests.csproj --configuration Release --no-build --framework ${{ matrix.framework }}
 
     - name: Upload test results
       if: always()

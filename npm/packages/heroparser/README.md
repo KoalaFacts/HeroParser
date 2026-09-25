@@ -1,6 +1,6 @@
 # heroparser
 
-High-performance, zero-allocation tabular data parser (CSV, Fixed-Width, Excel) for JavaScript/TypeScript environments (Node.js and Browser) powered by .NET WebAssembly.
+High-performance tabular data parser (CSV, Fixed-Width, Excel) for JavaScript/TypeScript environments (Node.js and Browser) powered by .NET WebAssembly. This package is an unpublished preview in the repository.
 
 ## Features
 
@@ -12,15 +12,17 @@ High-performance, zero-allocation tabular data parser (CSV, Fixed-Width, Excel) 
 
 ---
 
-## Installation
+## Local Preview
 
 ```bash
-npm install heroparser
+dotnet publish src/HeroParser.Wasm/HeroParser.Wasm.csproj -c Release
 ```
+
+Run this from the repository root before using the workspace package. The package needs the generated `_framework` runtime assets; it is not yet available on npm.
 
 ## Interactive Playground Demo
 
-Try the interactive, zero-allocation WebAssembly sandbox directly in your browser:
+Try the interactive WebAssembly sandbox directly in your browser:
 👉 **[https://KoalaFacts.github.io/HeroParser/demo/](https://KoalaFacts.github.io/HeroParser/demo/)**
 
 ---

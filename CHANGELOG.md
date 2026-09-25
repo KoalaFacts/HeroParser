@@ -4,7 +4,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-## [2.7.0] - 2026-09-09
+## [2.7.0] - Unreleased
 
 Read-path performance release. Every head-to-head reading case (UTF-8 and UTF-16, quoted and unquoted) is now faster than Sep 0.17.0 on the same runner, with allocations still fixed and roughly 26x below Sep's. UTF-16 (`string`) input is no longer a second-class path.
 

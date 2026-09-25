@@ -10,6 +10,7 @@
     <Authors>HeroParser Contributors</Authors>
     <Description>High-performance, cross-platform CLI tool for parsing, converting, formatting, and profiling CSV, Fixed-Width, Excel, JSONL, and HTB (High-Throughput Tabular Binary) files. Powered by HeroParser.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>heroparser</ToolCommandName>
   </PropertyGroup>
@@ -29,6 +30,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
     <ProjectReference Include="..\HeroParser\HeroParser.csproj" />
     <ProjectReference Include="..\HeroParser.Console\HeroParser.Console.csproj" />
   </ItemGroup>

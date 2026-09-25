@@ -2,9 +2,9 @@
 
 [Back to README](../README.md)
 
-`HeroParser.Console` is a lightweight, zero-allocation, reflection-free, and 100% Native AOT compatible terminal rendering and widget library. It is designed to act as a drop-in replacement or high-performance alternative to `Spectre.Console` for performance-critical and Native AOT-targeted application environments.
+`HeroParser.Console` is a lightweight, allocation-conscious, reflection-free, and Native AOT-compatible terminal rendering and widget library. It is designed as a high-performance alternative to `Spectre.Console` for performance-critical and Native AOT-targeted application environments.
 
-By avoiding reflection, heavy styling trees, and runtime allocation cycles, it maintains a near-zero heap memory footprint when rendering tables, panels, rules, progress indicators, status spinners, and interactive selection prompts.
+By avoiding reflection and heavy styling trees, it keeps rendering overhead low for tables, panels, rules, progress indicators, status spinners, and interactive selection prompts.
 
 ---
 

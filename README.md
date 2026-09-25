@@ -4,12 +4,12 @@
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**HeroParser** is a zero-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, and 10. Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
+**HeroParser** is a low-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, and 10. Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
 
 ### Why Choose HeroParser?
 * **Extreme Performance**: Engineered with AVX-512, AVX2, and ARM NEON SIMD optimizations to deliver ultra-high-throughput reading and writing.
 * **AI-Native integrations**: Built-in support for token-budgeted chunking, LLM output structured repair, vector embedding pipelines, and agent tool mapping.
-* **Zero Dependencies & Low Footprint**: Operates with zero external packages. Employs a fixed **152-byte heap memory footprint** on the reading hot-path regardless of file size.
+* **Low Footprint**: The UTF-8 span row-reading benchmark measures 152 bytes of fixed allocation for the tested workload; typed binding and streaming APIs have different allocation profiles.
 * **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, Fixed-Width, and HTB APIs.
 
 ---
@@ -19,7 +19,7 @@
 Tested under **.NET 10.0** on an **AMD Ryzen AI 9 HX PRO 370 CPU**:
 * **Read Throughput**: SIMD-accelerated UTF-8 (`byte[]`) read paths on both quoted and unquoted data.
 * **Write Throughput**: Highly optimized CSV/JSONL serialization achieving massive throughput.
-* **GC Allocations**: Fixed 152-byte allocation throughout parsing, representing a **97% memory reduction** compared to traditional reflection-based parsers.
+* **GC Allocations**: The measured UTF-8 span row-reading workload allocates 152 bytes independent of the tested input size. See the performance portal for benchmark conditions and comparisons.
 * **String Generation**: **Up to 64% speedup** on synchronous text generation via pre-allocated capacities.
 
 View live performance graphs and history on the [HeroParser Performance Portal](https://KoalaFacts.github.io/HeroParser/).
@@ -44,7 +44,7 @@ dotnet add package HeroParser.Console
 
 #### Option 1: Dotnet Global Tool (Cross-Platform)
 ```bash
-dotnet tool install --global HeroParser.Cli --version 2.7.0
+dotnet tool install --global HeroParser.Cli
 ```
 
 #### Option 2: Homebrew Tap (macOS & Linux)
@@ -81,25 +81,21 @@ scoop install heroparser/heroparser
 
 ### WebAssembly / JavaScript (Node.js & Browser)
 
-The high-performance core engine is also available as a compiled WebAssembly package for both Node.js and browser-based applications.
-
-```bash
-npm install heroparser
-```
+The JavaScript package is an unpublished preview in this repository, not yet available from npm. Build the WebAssembly runtime locally before using the workspace package; see [the package README](npm/packages/heroparser/README.md). The browser demo is separate from an npm release.
 
 #### Interactive Playground Demo
-Try the interactive, zero-allocation WebAssembly sandbox directly in your browser:
+Try the interactive WebAssembly sandbox directly in your browser:
 👉 **[https://KoalaFacts.github.io/HeroParser/demo/](https://KoalaFacts.github.io/HeroParser/demo/)**
 
 #### JS/TS Quick Start
 ```javascript
-import { init, parseCsv } from 'heroparser';
+import { init, readCsv } from 'heroparser';
 
 // Initialize the WebAssembly runtime
 await init();
 
 // Parse CSV text directly in the browser or Node.js
-const records = parseCsv("Name,Age,Role\nAlice,30,Developer\nBob,25,Designer", {
+const records = readCsv("Name,Age,Role\nAlice,30,Developer\nBob,25,Designer", {
     delimiter: ',',
     hasHeader: true
 });
@@ -234,7 +230,7 @@ Htb.ConvertFromCsv("products.csv", "products.htb", HtbSchema.FromType<Product>()
 
 ### Console (High-Performance Terminal Widget Engine)
 
-A zero-allocation, reflection-free, and 100% Native AOT-compatible library designed for high-performance terminal applications.
+An allocation-conscious, reflection-free, and Native AOT-compatible library designed for high-performance terminal applications.
 
 ```csharp
 using HeroParser.Console;

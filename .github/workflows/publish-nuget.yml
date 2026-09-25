@@ -11,7 +11,7 @@ on:
     inputs:
       version:
         description: 'Package version (e.g., 1.0.0)'
-        required: false
+        required: true
         type: string
 
 # Prevent concurrent publishes
@@ -42,24 +42,27 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" == "workflow_run" ]; then
-            # Get the latest release (most recently created)
-            echo "Finding latest release from create-release workflow..."
-
-            TAG=$(gh api repos/${GITHUB_REPOSITORY}/releases \
-              --jq ".[0].tag_name" | head -n 1)
-
-            if [ -z "${TAG}" ]; then
-              echo "Error: Could not find any releases"
+            if [[ ! "$RUN_TITLE" =~ ^Create[[:space:]]Release[[:space:]]v([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?)$ ]]; then
+              echo "Error: Unexpected release workflow title: $RUN_TITLE"
               exit 1
             fi
-
-            VERSION="${TAG#v}"
-            echo "Using latest release: ${TAG}"
-          elif [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
+            VERSION="${BASH_REMATCH[1]}"
+            TAG="v${VERSION}"
+            RELEASE_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.target_commitish')
+            if [ "$RELEASE_SHA" != "$RELEASE_HEAD_SHA" ]; then
+              echo "Error: Release $TAG does not target the completed workflow commit"
+              exit 1
+            fi
+          elif [ -n "$REQUESTED_VERSION" ]; then
+            VERSION="$REQUESTED_VERSION"
             TAG="v${VERSION}"
           else
             echo "Error: No version specified and not triggered by workflow_run"
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "Error: Invalid version: $VERSION"
             exit 1
           fi
 
@@ -68,6 +71,9 @@ jobs:
           echo "Publishing version: $VERSION (tag: $TAG)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
+          RELEASE_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REQUESTED_VERSION: ${{ inputs.version }}
 
   publish:
     runs-on: ubuntu-latest

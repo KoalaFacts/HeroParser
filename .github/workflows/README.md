@@ -38,32 +38,29 @@ This directory contains automated CI/CD workflows for HeroParser.
 ### 📦 [publish-nuget.yml](./publish-nuget.yml) - Publish to NuGet
 
 **Triggers:**
-- When a GitHub Release is published
-- Manual workflow dispatch (for republishing)
+- When the **Create Release** workflow completes successfully on `main`
+- Manual workflow dispatch with an explicit version (for retries)
 
 **What it does:**
-1. Extracts version from release tag (e.g., `v1.0.0` → `1.0.0`)
+1. Finds the release created by the completed workflow (or uses the requested retry version)
 2. Validates version format (semantic versioning)
-3. Builds and runs tests
-4. Packs NuGet package with symbols
-5. Validates package contents
-6. Generates package provenance attestation
-7. Publishes to NuGet.org
-8. Uploads artifacts for record-keeping
+3. Downloads the three NuGet packages and symbol packages from that GitHub Release
+4. Validates package contents and generates package provenance attestation
+5. Publishes to NuGet.org and uploads artifacts for record-keeping
 
 **Requirements:**
 - GitHub environment: `production`
 - NuGet.org Trusted Publishing configured (OIDC - no API keys needed!)
 
 **Usage:**
-1. Create a GitHub Release with tag `vX.Y.Z`
-2. Workflow automatically publishes to NuGet.org
+1. Run **Create Release** from `main` with version `X.Y.Z`
+2. After that workflow succeeds, NuGet publishing starts automatically
 3. Package available at: https://www.nuget.org/packages/HeroParser
 
 **Manual Republish:**
 ```bash
 # Go to Actions → Publish to NuGet → Run workflow
-# Enter version: 1.0.0
+# Enter the version of the release to republish
 ```
 
 **Artifacts:**
@@ -227,52 +224,12 @@ Recommended settings for `main` branch:
 
 ### Step-by-step Release Process
 
-**All tagging happens in GitHub UI - no local git tags needed!**
+1. Merge release-preparation changes to `main`. Check that the version in `Directory.Build.props`, package metadata, and changelog agree. Replace the `Unreleased` changelog date with the actual release date and wait for required CI checks.
+2. Dispatch the **Create Release** workflow from `main` with version `2.7.0`. It validates the branch and configured version, builds and tests, packs NuGet packages and CLI binaries, then creates the immutable `v2.7.0` tag at the tested commit and publishes the GitHub Release.
+3. Inspect the release assets and generated notes. Check the downstream NuGet, WinGet, Homebrew, Scoop, and Snap workflows separately; a successful GitHub Release does not guarantee each distribution is live.
+4. Announce the release only after the intended distribution channels have succeeded. The JavaScript/npm package is a separate, unpublished preview and is not published by this workflow.
 
-1. **Create GitHub Release** (this creates the tag automatically)
-   - Go to: https://github.com/KoalaFacts/HeroParser/releases/new
-   - Click "Choose a tag" → Type `v1.0.0` → "Create new tag: v1.0.0 on publish"
-   - Title: `v1.0.0 - Production Ready Release`
-   - Description: Release notes (see template below)
-   - Click "Publish release"
-
-2. **Automatic NuGet publishing**
-   - `publish-nuget.yml` workflow triggers automatically
-   - Extracts version from tag (`v1.0.0` → `1.0.0`)
-   - Builds, tests, and publishes to NuGet.org
-   - Package available within 5-10 minutes
-
-**No manual git tagging required!** GitHub creates the tag when you publish the release.
-
-### Release Notes Template
-
-```markdown
-## What's New in v1.0.0
-
-### 🎉 Production Ready!
-
-HeroParser v1.0.0 is now production-ready with comprehensive security fixes and improvements.
-
-### ✨ Features
-- High-performance CSV parsing with SIMD optimizations (AVX-512, AVX2, NEON)
-- RFC 4180 quote handling (quoted fields, escaped quotes, delimiters in quotes)
-- Zero-allocation design with lazy column evaluation
-- Multi-framework support (.NET 8, 9, 10)
-
-### 🔒 Security Fixes
-- Added bounds checking for column indexers
-- Integer overflow protection in SIMD processing
-- Resource management documentation
-
-### 📦 Installation
-
-```bash
-dotnet add package HeroParser --version 1.0.0
-```
-
-### 📝 Full Changelog
-See [CHANGELOG.md](CHANGELOG.md) for complete details.
-```
+Do not create a tag or GitHub Release manually for this process. A rerun refuses to replace an existing release or tag. Release notes are generated from commits and a checked-in footer; review claims against the changelog before dispatch.
 
 ---
 

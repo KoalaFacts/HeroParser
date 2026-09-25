@@ -2,7 +2,7 @@
 
 [Back to README](../README.md)
 
-The `heroparser` CLI is a high-performance, AI-native command-line utility for working with tabular data formats (CSV, JSONL, Fixed-Width, and Excel `.xlsx`). It is built using `HeroParser.Console`, ensuring complete Native AOT compatibility and zero-allocation overhead for high-speed file operations.
+The `heroparser` CLI is a high-performance, AI-native command-line utility for working with tabular data formats (CSV, JSONL, Fixed-Width, and Excel `.xlsx`). It is built using `HeroParser.Console` and supports Native AOT for high-speed file operations.
 
 ---
 
@@ -13,13 +13,13 @@ The `heroparser` CLI is a high-performance, AI-native command-line utility for w
 Install the CLI globally as a dotnet tool:
 
 ```bash
-dotnet tool install --global HeroParser.Cli --version 2.7.0
+dotnet tool install --global HeroParser.Cli
 ```
 
 To update an existing installation:
 
 ```bash
-dotnet tool update --global HeroParser.Cli --version 2.7.0
+dotnet tool update --global HeroParser.Cli
 ```
 
 ### Option 2: Homebrew Tap (macOS & Linux)

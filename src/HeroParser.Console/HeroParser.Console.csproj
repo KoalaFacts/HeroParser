@@ -5,13 +5,15 @@
     <!-- Package metadata -->
     <PackageId>HeroParser.Console</PackageId>
     <Authors>HeroParser Contributors</Authors>
-    <Description>Fluent, zero-allocation, 100% Native AOT-compatible terminal layout and interactive widget library. Designed as a high-performance Spectre.Console competitor, it features 24-bit TrueColor styling, layout widgets (tables with auto-fitting/word-wrapping, panels, rules, grids), and interactive console components (selection/text prompts, progress bars, and loading spinners) with zero external dependencies and zero trim warnings.</Description>
+    <Description>Fluent, allocation-conscious, Native AOT-compatible terminal layout and interactive widget library. It features 24-bit TrueColor styling, layout widgets (tables with auto-fitting/word-wrapping, panels, rules, grids), and interactive console components (selection/text prompts, progress bars, and loading spinners) without external package dependencies.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
     <InternalsVisibleTo Include="HeroParser.Console.Tests" />
     <InternalsVisibleTo Include="HeroParser.Console.Benchmarks" />
     <InternalsVisibleTo Include="HeroParser.Cli" />

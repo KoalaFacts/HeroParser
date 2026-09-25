@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>HeroParser.Benchmarks.ExcelReadBenchmarks-20260925-141954</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.5 LTS (Noble Numbat)
+Intel Xeon 6973P-C 3.70GHz, 1 CPU, 4 logical and 2 physical cores
+.NET SDK 10.0.401
+  [Host]     : .NET 10.0.12 (10.0.12, 10.0.1226.42308), X64 RyuJIT x86-64-v4
+  Job-INMAZI : .NET 10.0.12 (10.0.12, 10.0.1226.42308), X64 RyuJIT x86-64-v4
+</code></pre>
+<pre><code>IterationCount=5  RunStrategy=Throughput  WarmupCount=3  
+</code></pre>
+
+<table>
+<thead><tr><th>Method                     </th><th>Mean</th><th>Error</th><th>StdDev</th><th>Ratio</th><th>RatioSD</th><th>Gen0</th><th>Gen1</th><th>Gen2</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>ReadWithGeneratedCharBinder</td><td>32.66 ms</td><td>2.173 ms</td><td>0.336 ms</td><td>1.00</td><td>0.01</td><td>1250.0000</td><td>500.0000</td><td>250.0000</td><td>14.32 MB</td><td>1.00</td>
+</tr><tr><td>ReadWithFallbackCharToByteAdapter</td><td>36.22 ms</td><td>4.605 ms</td><td>1.196 ms</td><td>1.11</td><td>0.04</td><td>1214.2857</td><td>428.5714</td><td>142.8571</td><td>15.9 MB</td><td>1.11</td>
+</tr></tbody></table>
+</body>
+</html>

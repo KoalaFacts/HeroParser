@@ -34,9 +34,7 @@ internal static partial class CliCommands
             return false;
         }
 
-        string extension = Path.GetExtension(path);
-        if (extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
-            extension.Equals(".jsonl", StringComparison.OrdinalIgnoreCase))
+        if (!IsCsvInput(path))
         {
             ConsoleUtils.Error("Quick inspect supports UTF-8 CSV/TSV only. Use profile for Excel or JSONL-specific tooling for JSONL.");
             return false;

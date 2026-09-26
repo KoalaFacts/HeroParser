@@ -94,7 +94,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
             {
                 value = Deserialize(line);
             }
-            catch (Exception ex) when (options.OnError is not null)
+            catch (Exception ex) when (options.OnError is not null && ex is not (OutOfMemoryException or OperationCanceledException))
             {
                 var context = new JsonlDeserializeErrorContext
                 {
@@ -116,7 +116,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
                 recordIndex++;
                 continue;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
             {
                 throw new JsonlException(
                     JsonlErrorCode.DeserializeError,

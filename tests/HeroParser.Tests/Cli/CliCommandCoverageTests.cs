@@ -182,6 +182,15 @@ public sealed class CliCommandCoverageTests : IDisposable
     }
 
     [Fact]
+    public async Task Inspect_RejectsOtherExtensionsBeforeSavingPlan()
+    {
+        string plan = TempPath(".json");
+
+        Assert.False(await CliCommands.InspectAsync(TempFile("Name,Age\nAlice,30\n", ".txt"), null, 1, plan));
+        Assert.False(File.Exists(plan));
+    }
+
+    [Fact]
     public async Task Inspect_TabsAndMarkupInCellsAreSafe()
     {
         string path = TempFile("Name\tAge\n[red]\t30\n", ".tsv");
@@ -276,6 +285,19 @@ public sealed class CliCommandCoverageTests : IDisposable
         Assert.Contains("At least 100 distinct categories tracked", Output, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Profile_ByteObservedNumbers_PreserveRangesAndNulls()
+    {
+        string csv = "Amount,Label\n1,North\n2,North\n3.5,South\n,South\n";
+
+        Assert.True(await CliCommands.ProfileAsync(TempFile(csv), ',', null));
+
+        Assert.Contains("Decimal", Output, StringComparison.Ordinal);
+        Assert.Contains("25.0%", Output, StringComparison.Ordinal);
+        Assert.Contains("3.50", Output, StringComparison.Ordinal);
+        Assert.Contains("North", Output, StringComparison.Ordinal);
+    }
+
     // ---- convert ---------------------------------------------------------------
 
     [Fact]
@@ -368,6 +390,15 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         CliCommands.Convert(ExcelFile(new Person { Name = "a", Age = "1" }), TempPath(".xyz"), null, null, null);
         Assert.Contains("Unsupported output extension", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Convert_EmptyExcelToAnUnsupportedFormat_DoesNotCreateOutput()
+    {
+        string outputPath = TempPath(".xyz");
+
+        Assert.False(CliCommands.Convert(EmptyExcelFile(), outputPath, null, null, null));
+        Assert.False(File.Exists(outputPath));
     }
 
     // ---- repair ----------------------------------------------------------------

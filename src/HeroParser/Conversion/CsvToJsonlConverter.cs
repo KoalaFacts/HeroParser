@@ -58,7 +58,8 @@ public static class CsvToJsonlConverter
         {
             Delimiter = opt.Delimiter,
             AllowNewlinesInsideQuotes = opt.AllowNewlinesInsideQuotes,
-            MaxColumnCount = opt.MaxColumnCount
+            MaxColumnCount = opt.MaxColumnCount,
+            MaxRowCount = opt.MaxRowCount
         };
 
         await using var rowReader = Csv.CreateAsyncStreamReader(csvStream, parserReadOptions, leaveOpen: true);
@@ -112,7 +113,8 @@ public static class CsvToJsonlConverter
         {
             Delimiter = options.Delimiter,
             AllowNewlinesInsideQuotes = options.AllowNewlinesInsideQuotes,
-            MaxColumnCount = options.MaxColumnCount
+            MaxColumnCount = options.MaxColumnCount,
+            MaxRowCount = options.MaxRowCount
         };
         byte[] newlineBytes = Encoding.UTF8.GetBytes(options.NewLine);
 

@@ -1,5 +1,6 @@
 using System.IO.Pipelines;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using HeroParser.JsonLines;
 using HeroParser.JsonLines.Reading;
@@ -117,6 +118,49 @@ public class JsonlCoverageTests2
         public string? Name { get; set; }
         // A custom getter that throws — forces JsonSerializer.Serialize to fail.
         public string Boom => throw new InvalidOperationException("kaboom");
+    }
+
+    public class CancelledValue
+    {
+        public string Value => throw new OperationCanceledException();
+    }
+
+    private sealed class CancelledPersonConverter : JsonConverter<JsonlCoveragePerson>
+    {
+        public override JsonlCoveragePerson? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            => throw new OperationCanceledException();
+
+        public override void Write(Utf8JsonWriter writer, JsonlCoveragePerson value, JsonSerializerOptions options)
+            => throw new OperationCanceledException();
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Writer_OnError_DoesNotSwallowCancellation()
+    {
+        int errors = 0;
+
+        Assert.Throws<OperationCanceledException>(() => Jsonl.Write<CancelledValue>()
+            .OnError((_, _) => { errors++; return JsonlSerializeErrorAction.SkipRecord; })
+            .ToText([new CancelledValue()]));
+
+        Assert.Equal(0, errors);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void Reader_OnError_DoesNotSwallowCancellation()
+    {
+        int errors = 0;
+        var options = new JsonSerializerOptions();
+        options.Converters.Add(new CancelledPersonConverter());
+        using var reader = Jsonl.Read<JsonlCoveragePerson>()
+            .WithJsonOptions(options)
+            .OnError((_, _) => { errors++; return JsonlDeserializeErrorAction.SkipRecord; })
+            .FromText("{}");
+
+        Assert.Throws<OperationCanceledException>(() => reader.ToList());
+        Assert.Equal(0, errors);
     }
 
     [Fact]

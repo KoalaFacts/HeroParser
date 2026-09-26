@@ -237,19 +237,17 @@ internal static partial class CliCommands
 
         try
         {
-            string[] headers;
             List<DynamicColumnStats> statsList;
             int totalRows;
             if (Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
             {
                 var (excelHeaders, rows) = ReadTabularData(path, delimiter, sheet);
-                headers = excelHeaders;
-                statsList = DynamicProfiler.Analyze(headers, rows);
+                statsList = DynamicProfiler.Analyze(excelHeaders, rows);
                 totalRows = rows.Count;
             }
             else
             {
-                (headers, statsList, totalRows) = await ProfileCsvAsync(path, delimiter).ConfigureAwait(false);
+                (_, statsList, totalRows) = await ProfileCsvAsync(path, delimiter).ConfigureAwait(false);
             }
             var filename = Path.GetFileName(path);
 
@@ -371,7 +369,8 @@ internal static partial class CliCommands
                 {
                     Delimiter = inputDelimiter,
                     AllowNewlinesInsideQuotes = plan is not null,
-                    MaxColumnCount = plan is null ? 100 : 1000
+                    MaxColumnCount = plan is null ? 100 : 1000,
+                    MaxRowCount = plan is null ? 100_000 : int.MaxValue
                 };
                 CsvToJsonlConverter.Convert(inputPath, outputPath, shape, options);
                 ConsoleUtils.Success($"Converted CSV to JSONL successfully.");
@@ -407,6 +406,11 @@ internal static partial class CliCommands
             }
             else if (inExt == ".xlsx") // Excel -> CSV or JSONL
             {
+                if (outExt is not (".csv" or ".jsonl"))
+                {
+                    ConsoleUtils.Error($"Unsupported output extension from Excel: {outExt}");
+                    return false;
+                }
                 var allRows = Excel.Read().WithoutHeader().FromSheet(sheet ?? "Sheet1").FromFile(inputPath);
                 if (allRows.Count == 0)
                 {
@@ -518,13 +522,11 @@ internal static partial class CliCommands
             }
 
             char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
-            var schemaResult = utf16
-                ? Csv.InferSchema(File.ReadAllText(path), new CsvSchemaInferenceOptions { Delimiter = effectiveDelimiter })
-                : await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions
-                {
-                    Delimiter = effectiveDelimiter,
-                    MaxColumnCount = plan is null ? 100 : 1000
-                }).ConfigureAwait(false);
+            var schemaResult = await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions
+            {
+                Delimiter = effectiveDelimiter,
+                MaxColumnCount = plan is null ? 100 : 1000
+            }).ConfigureAwait(false);
             if (plan is not null && schemaResult.Columns.Count != plan.ExpectedColumnCount)
             {
                 ConsoleUtils.Error($"CSV header has {schemaResult.Columns.Count} columns, but the import plan expects {plan.ExpectedColumnCount}.");
@@ -532,8 +534,6 @@ internal static partial class CliCommands
             }
 
             ConsoleUtils.Info($"Types inferred from {schemaResult.SampledRowCount} data rows (limit 100); this is not full-file validation.");
-            if (utf16)
-                ConsoleUtils.Warning("UTF-16 schema inference still loads the whole file into memory.");
 
             var className = Path.GetFileNameWithoutExtension(path);
             // Replace non-alphanumeric for class name
@@ -609,9 +609,7 @@ internal static partial class CliCommands
 
             // AI Schema Generation
             var filename = Path.GetFileName(path);
-            var (headers, rows) = utf16
-                ? ReadTabularData(path, effectiveDelimiter, null)
-                : await ReadSchemaContextAsync(path, effectiveDelimiter, plan is null ? 100 : 1000).ConfigureAwait(false);
+            var (headers, rows) = await ReadSchemaContextAsync(path, effectiveDelimiter, plan is null ? 100 : 1000).ConfigureAwait(false);
             var contextCard = DynamicProfiler.GenerateContextCard(filename, headers, [.. rows.Take(10)]);
 
             var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
@@ -681,19 +679,12 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
             if (IsCsvInput(path))
             {
                 var (sample, sampleLength) = ReadCsvSample(path);
-                if (!IsUtf16LittleEndian(sample, sampleLength) && !IsUtf16BigEndian(sample, sampleLength))
-                {
-                    char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16: false);
-                    var (streamHeaders, stats, totalRows) = await ProfileCsvAsync(path, effectiveDelimiter).ConfigureAwait(false);
-                    headers = streamHeaders;
-                    (_, sampleRows) = await ReadSchemaContextAsync(path, effectiveDelimiter, 100).ConfigureAwait(false);
-                    card = DynamicProfiler.GenerateContextCard(filename, totalRows, stats);
-                }
-                else
-                {
-                    (headers, sampleRows) = ReadTabularData(path, delimiter, sheet);
-                    card = DynamicProfiler.GenerateContextCard(filename, headers, sampleRows);
-                }
+                bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+                char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
+                var (streamHeaders, stats, totalRows) = await ProfileCsvAsync(path, effectiveDelimiter).ConfigureAwait(false);
+                headers = streamHeaders;
+                (_, sampleRows) = await ReadSchemaContextAsync(path, effectiveDelimiter, 100).ConfigureAwait(false);
+                card = DynamicProfiler.GenerateContextCard(filename, totalRows, stats);
             }
             else
             {
@@ -771,12 +762,13 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
         ConsoleUtils.Info($"Starting batch translation / transformation pipeline...");
         ConsoleUtils.Info($"Output will be written to: {outputPath}");
 
+        string? stagingPath = null;
         try
         {
             var (sample, sampleLength) = ReadCsvSample(path);
-            bool streamCsv = IsCsvInput(path) && !IsUtf16LittleEndian(sample, sampleLength) &&
-                !IsUtf16BigEndian(sample, sampleLength);
-            char inputDelimiter = delimiter ?? (streamCsv ? DetectSchemaDelimiter(path, sample, sampleLength, utf16: false) : ',');
+            bool streamCsv = IsCsvInput(path);
+            bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+            char inputDelimiter = delimiter ?? (streamCsv ? DetectSchemaDelimiter(path, sample, sampleLength, utf16) : ',');
             string[] headers;
             List<string[]>? rows = null;
             long totalRows;
@@ -798,49 +790,62 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
 
             var headersJoined = string.Join(",", headers);
 
-            // Setup output file and write header
-            using var fileWriter = Csv.CreateFileWriter(outputPath, new CsvWriteOptions { Delimiter = delimiter ?? ',' });
+            stagingPath = $"{Path.GetFullPath(outputPath)}.{Guid.NewGuid():N}.tmp";
+            var stagingOptions = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None
+            };
+            if (!OperatingSystem.IsWindows())
+                stagingOptions.UnixCreateMode = File.Exists(outputPath)
+                    ? File.GetUnixFileMode(outputPath)
+                    : UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            using (var stagingStream = new FileStream(stagingPath, stagingOptions))
+            using (var fileWriter = Csv.CreateStreamWriter(stagingStream,
+                new CsvWriteOptions { Delimiter = delimiter ?? ',' }, leaveOpen: false))
+            {
 
-            bool isFirstBatch = true;
-            string[] outputHeaders = headers;
+                bool isFirstBatch = true;
+                string[] outputHeaders = headers;
 
-            char openBrace = '{';
-            char closeBrace = '}';
+                char openBrace = '{';
+                char closeBrace = '}';
 
-            await AnsiConsole.Progress()
-                .Columns([
-                    new TaskDescriptionColumn(),
+                await AnsiConsole.Progress()
+                    .Columns([
+                        new TaskDescriptionColumn(),
                     new ProgressBarColumn(),
                     new PercentageColumn(),
                     new RemainingTimeColumn(),
                     new SpinnerColumn()
-                ])
-                .StartAsync(async ctx =>
-                {
-                    var progressTask = ctx.AddTask("[green]Transforming rows[/]", maxValue: totalRows);
-
-                    for (long i = 0; i < totalRows; i += batchSize)
+                    ])
+                    .StartAsync(async ctx =>
                     {
-                        List<string[]> batch = source is null
-                            ? [.. rows!.Skip((int)i).Take(batchSize)]
-                            : await source.ReadBatchAsync(batchSize).ConfigureAwait(false);
-                        if (batch.Count == 0)
-                            throw new IOException("Input changed while translating; expected more rows.");
-                        progressTask.Description = $"[green]Transforming rows {i + 1} to {Math.Min(i + batchSize, totalRows)} of {totalRows}[/]";
+                        var progressTask = ctx.AddTask("[green]Transforming rows[/]", maxValue: totalRows);
 
-                        // Format batch as JSON array of key-value maps
-                        var batchArray = new JsonArray();
-                        foreach (var r in batch)
+                        for (long i = 0; i < totalRows; i += batchSize)
                         {
-                            var obj = new JsonObject();
-                            for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
-                            {
-                                obj[headers[c]] = r[c];
-                            }
-                            batchArray.Add((JsonNode)obj);
-                        }
+                            List<string[]> batch = source is null
+                                ? [.. rows!.Skip((int)i).Take(batchSize)]
+                                : await source.ReadBatchAsync(batchSize).ConfigureAwait(false);
+                            if (batch.Count == 0)
+                                throw new IOException("Input changed while translating; expected more rows.");
+                            progressTask.Description = $"[green]Transforming rows {i + 1} to {Math.Min(i + batchSize, totalRows)} of {totalRows}[/]";
 
-                        string prompt = $"""
+                            // Format batch as JSON array of key-value maps
+                            var batchArray = new JsonArray();
+                            foreach (var r in batch)
+                            {
+                                var obj = new JsonObject();
+                                for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
+                                {
+                                    obj[headers[c]] = r[c];
+                                }
+                                batchArray.Add((JsonNode)obj);
+                            }
+
+                            string prompt = $"""
 You are a high-performance tabular data mapping agent. 
 Task: Transform the input rows according to this prompt: "{transformPrompt}"
 
@@ -855,49 +860,60 @@ Instructions:
 4. Output ONLY the JSONL records. Do not output markdown code blocks (no ```json or ```), conversational text, or explanations. Each line must start with '{openBrace}' and end with '{closeBrace}'.
 """;
 
-                        // Call AI without inner status spinner, letting progress bar own rendering
-                        var responseText = await aiClient.AskAsync(prompt).ConfigureAwait(false);
+                            // Call AI without inner status spinner, letting progress bar own rendering
+                            var responseText = await aiClient.AskAsync(prompt).ConfigureAwait(false);
 
-                        var cleaned = LlmRepair.RepairText(responseText);
-                        var lines = cleaned.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                            var cleaned = LlmRepair.RepairText(responseText);
+                            var lines = cleaned.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-                        foreach (var line in lines)
-                        {
-                            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("{")) continue;
-
-                            try
+                            int acceptedRows = 0;
+                            foreach (var line in lines)
                             {
-                                if (JsonNode.Parse(line) is not JsonObject parsedObj) continue;
+                                if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("{")) continue;
 
-                                if (isFirstBatch)
+                                try
                                 {
-                                    isFirstBatch = false;
-                                    outputHeaders = [.. parsedObj.Select(k => k.Key)];
-                                    fileWriter.WriteRow(outputHeaders);
-                                }
+                                    if (JsonNode.Parse(line) is not JsonObject parsedObj) continue;
 
-                                var rowValues = new string[outputHeaders.Length];
-                                for (int colIndex = 0; colIndex < outputHeaders.Length; colIndex++)
-                                {
-                                    rowValues[colIndex] = parsedObj[outputHeaders[colIndex]]?.ToString() ?? "";
+                                    if (isFirstBatch)
+                                    {
+                                        isFirstBatch = false;
+                                        outputHeaders = [.. parsedObj.Select(k => k.Key)];
+                                        fileWriter.WriteRow(outputHeaders);
+                                    }
+
+                                    var rowValues = new string[outputHeaders.Length];
+                                    for (int colIndex = 0; colIndex < outputHeaders.Length; colIndex++)
+                                    {
+                                        rowValues[colIndex] = parsedObj[outputHeaders[colIndex]]?.ToString() ?? "";
+                                    }
+                                    fileWriter.WriteRow(rowValues);
+                                    acceptedRows++;
                                 }
-                                fileWriter.WriteRow(rowValues);
+                                catch (Exception lineEx)
+                                {
+                                    AnsiConsole.MarkupLine($"[yellow]⚠ Failed to parse output line: {Markup.Escape(line)}. Error: {Markup.Escape(lineEx.Message)}[/]");
+                                }
                             }
-                            catch (Exception lineEx)
-                            {
-                                AnsiConsole.MarkupLine($"[yellow]⚠ Failed to parse output line: {Markup.Escape(line)}. Error: {Markup.Escape(lineEx.Message)}[/]");
-                            }
+
+                            if (acceptedRows != batch.Count)
+                                throw new InvalidDataException($"Model returned {acceptedRows} valid records for a batch of {batch.Count} rows.");
+
+                            progressTask.Increment(batch.Count);
                         }
 
-                        progressTask.Increment(batch.Count);
-                    }
+                        if (source is not null && (await source.ReadBatchAsync(1).ConfigureAwait(false)).Count > 0)
+                            throw new IOException("Input changed while translating; additional rows appeared.");
 
-                    if (source is not null && (await source.ReadBatchAsync(1).ConfigureAwait(false)).Count > 0)
-                        throw new IOException("Input changed while translating; additional rows appeared.");
+                        progressTask.Description = $"[green]Processed all {totalRows} rows[/]";
+                    });
+            }
 
-                    progressTask.Description = $"[green]Processed all {totalRows} rows[/]";
-                });
-
+            if (File.Exists(outputPath))
+                File.Replace(stagingPath, outputPath, destinationBackupFileName: null);
+            else
+                File.Move(stagingPath, outputPath);
+            stagingPath = null;
             ConsoleUtils.Success($"Translation/transformation completed successfully. Saved to: {outputPath}");
             return true;
         }
@@ -905,6 +921,11 @@ Instructions:
         {
             ConsoleUtils.Error($"Translation pipeline failed: {ex.Message}");
             return false;
+        }
+        finally
+        {
+            if (stagingPath is not null)
+                File.Delete(stagingPath);
         }
     }
 
@@ -923,7 +944,7 @@ Instructions:
         }
         catch (InvalidOperationException)
         {
-            if (!utf16 && new FileInfo(path).Length > length)
+            if (new FileInfo(path).Length > length)
                 throw new InvalidOperationException("Cannot detect delimiter from the bounded sample; specify --delimiter explicitly.");
             return ',';
         }
@@ -993,19 +1014,14 @@ Instructions:
         string path, char? delimiter)
     {
         var (sample, sampleLength) = ReadCsvSample(path);
-        if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
-        {
-            var (headers, rows) = ReadTabularData(path, delimiter, null);
-            return (headers, DynamicProfiler.Analyze(headers, rows), rows.Count);
-        }
-
-        char detectedDelimiter = delimiter ?? CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
+        bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+        char detectedDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
         await using var reader = Csv.Read()
             .WithDelimiter(detectedDelimiter)
             .WithMaxRows(int.MaxValue)
             .WithMaxRowSize(null)
             .AllowNewlinesInQuotes()
-            .FromFileAsync(path);
+            .FromTextFileAsync(path);
         if (!await reader.MoveNextAsync().ConfigureAwait(false))
             return ([], [], 0);
 
@@ -1021,7 +1037,12 @@ Instructions:
             rowCount++;
             var row = reader.Current;
             for (int i = 0; i < stats.Count; i++)
-                DynamicProfiler.ObserveCell(stats[i], i < row.ColumnCount ? row.GetString(i) : null);
+            {
+                if (i < row.ColumnCount)
+                    DynamicProfiler.ObserveCellUtf8(stats[i], row[i].Span);
+                else
+                    DynamicProfiler.ObserveCell(stats[i], null);
+            }
         }
 
         return (columnNames, stats, rowCount);

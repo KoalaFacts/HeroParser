@@ -11,7 +11,7 @@ namespace HeroParser.SeparatedValues.Reading.Streaming;
 public sealed class CsvAsyncStreamReader : IAsyncDisposable
 {
     // Absolute maximum buffer size (128 MB) to prevent unbounded memory growth.
-    private const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
+    internal const int ABSOLUTE_MAX_BUFFER_SIZE = 128 * 1024 * 1024;
     private const int MAX_LINE_ENDING_LENGTH = 2;
 
     private readonly ArrayPool<byte> bytePool;

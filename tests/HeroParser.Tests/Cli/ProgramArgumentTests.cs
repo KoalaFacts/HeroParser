@@ -207,6 +207,19 @@ public sealed class ProgramArgumentTests : IDisposable
     }
 
     [Fact]
+    public async Task ImportPlan_ConvertsMoreThanDefaultRowLimit()
+    {
+        string input = Csv("Name,Age\n" + string.Concat(Enumerable.Repeat("Alice,30\n", 100_001)));
+        string planPath = OutputPath(".json");
+        string output = OutputPath();
+
+        Assert.Equal(0, await Program.Main(["inspect", input, "--delimiter", ",", "--save-plan", planPath]));
+        Assert.Equal(0, await Program.Main(["validate", input, "--plan", planPath]));
+        Assert.Equal(0, await Program.Main(["convert", input, output, "--plan", planPath]));
+        Assert.Equal(100_001, File.ReadLines(output).Count());
+    }
+
+    [Fact]
     public async Task ImportPlan_SchemaChecksTheSampledHeaderWidth()
     {
         string input = Csv("Name;Age\nAlice;30\n");
@@ -236,6 +249,37 @@ public sealed class ProgramArgumentTests : IDisposable
         File.Copy(planPath, jsonlPlanPath);
         Assert.Equal(1, await Program.Main(["convert", input, jsonlPlanPath, "--plan", jsonlPlanPath]));
         Assert.Contains("\"version\": 1", File.ReadAllText(jsonlPlanPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImportPlan_RejectsCaseAliasOnCaseInsensitiveVolume()
+    {
+        string input = Csv("Name,Age\nAlice,30\n");
+        string planPath = OutputPath(".jsonl");
+        Assert.Equal(0, await Program.Main(["inspect", input, "--delimiter", ",", "--save-plan", planPath]));
+        string alias = Path.Combine(Path.GetDirectoryName(planPath)!, Path.GetFileName(planPath).ToUpperInvariant());
+        if (!File.Exists(alias))
+            return;
+
+        Assert.Equal(1, await Program.Main(["convert", input, alias, "--plan", planPath]));
+        Assert.Contains("\"version\": 1", File.ReadAllText(planPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImportPlan_AllowsDistinctCaseSensitiveOutput()
+    {
+        string input = Csv("Name,Age\nAlice,30\n");
+        string planPath = OutputPath(".jsonl");
+        Assert.Equal(0, await Program.Main(["inspect", input, "--delimiter", ",", "--save-plan", planPath]));
+        string output = Path.Combine(Path.GetDirectoryName(planPath)!, Path.GetFileName(planPath).ToUpperInvariant());
+        if (File.Exists(output))
+            return;
+        tempFiles.Add(output);
+        File.WriteAllText(output, "previous result");
+
+        Assert.Equal(0, await Program.Main(["convert", input, output, "--plan", planPath]));
+        Assert.Contains("\"Name\":\"Alice\"", File.ReadAllText(output), StringComparison.Ordinal);
+        Assert.Contains("\"version\": 1", File.ReadAllText(planPath), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -269,6 +313,19 @@ public sealed class ProgramArgumentTests : IDisposable
     public async Task ValidationReport_MarksTheBoundedErrorLimit()
     {
         string input = Csv("A,B\n" + string.Join('\n', Enumerable.Repeat("only-one", 105)) + "\n");
+        string reportPath = OutputPath(".json");
+
+        Assert.Equal(1, await Program.Main(["validate", input, "--delimiter", ",", "--report", reportPath]));
+        using var report = JsonDocument.Parse(File.ReadAllText(reportPath));
+        Assert.True(report.RootElement.GetProperty("stoppedEarly").GetBoolean());
+        Assert.Equal(100, report.RootElement.GetProperty("errors").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task ValidationReport_Utf16AlsoHonorsErrorLimit()
+    {
+        string input = OutputPath(".csv");
+        File.WriteAllText(input, "A,B\n" + string.Concat(Enumerable.Repeat("only-one\n", 105)), Encoding.Unicode);
         string reportPath = OutputPath(".json");
 
         Assert.Equal(1, await Program.Main(["validate", input, "--delimiter", ",", "--report", reportPath]));

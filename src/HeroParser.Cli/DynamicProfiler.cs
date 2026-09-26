@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -33,6 +34,8 @@ internal sealed class DynamicColumnStats
     // Categorical frequency
     public Dictionary<string, int> ValueCounts { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool CategoriesTruncated { get; set; }
+
+    internal Utf8ProfileCache? Utf8Cache;
 }
 
 internal static class DynamicProfiler
@@ -69,6 +72,101 @@ internal static class DynamicProfiler
         }
     }
 
+    public static void ObserveCellUtf8(DynamicColumnStats stats, ReadOnlySpan<byte> value)
+    {
+        if (value.IsEmpty)
+        {
+            stats.NullCount++;
+            return;
+        }
+
+        if (stats.Utf8Cache is { } cache && stats.ValueCounts.Count <= 16 &&
+            cache.TryGet(value, out var cachedKind, out var cachedText))
+        {
+            ReplayCachedValue(stats, cachedKind, cachedText);
+            return;
+        }
+
+        byte first = value[0];
+        if (first is (>= (byte)'0' and <= (byte)'9') or (byte)'+' or (byte)'-' or (byte)'.')
+        {
+            if (Utf8Parser.TryParse(value, out int intValue, out int consumed) && consumed == value.Length)
+            {
+                stats.NonNullCount++;
+                stats.IntCount++;
+                UpdateNumericRange(intValue, stats);
+                return;
+            }
+
+            if (Utf8Parser.TryParse(value, out long longValue, out consumed) && consumed == value.Length)
+            {
+                stats.NonNullCount++;
+                stats.LongCount++;
+                UpdateNumericRange(longValue, stats);
+                return;
+            }
+
+            if (Utf8Parser.TryParse(value, out double doubleValue, out consumed) && consumed == value.Length)
+            {
+                stats.NonNullCount++;
+                stats.DecimalCount++;
+                UpdateNumericRange(doubleValue, stats);
+                return;
+            }
+        }
+
+        string text = Encoding.UTF8.GetString(value);
+        ProfileValueKind kind;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            stats.NullCount++;
+            kind = ProfileValueKind.Null;
+        }
+        else
+        {
+            stats.NonNullCount++;
+            kind = ObserveValue(text, stats);
+        }
+
+        if (kind != ProfileValueKind.Uncached && value.Length <= 256 &&
+            stats.ValueCounts.Count <= 16 && !stats.CategoriesTruncated)
+        {
+            (stats.Utf8Cache ??= new Utf8ProfileCache()).Store(value, kind, text);
+        }
+    }
+
+    private static void ReplayCachedValue(DynamicColumnStats stats, ProfileValueKind kind, string? text)
+    {
+        switch (kind)
+        {
+            case ProfileValueKind.Null:
+                stats.NullCount++;
+                return;
+            case ProfileValueKind.True:
+                stats.BoolCount++;
+                stats.TrueCount++;
+                break;
+            case ProfileValueKind.False:
+                stats.BoolCount++;
+                stats.FalseCount++;
+                break;
+            case ProfileValueKind.Guid:
+                stats.GuidCount++;
+                break;
+            case ProfileValueKind.DateTime:
+                stats.DateTimeCount++;
+                break;
+            case ProfileValueKind.String:
+                stats.StringCount++;
+                break;
+            case ProfileValueKind.Uncached:
+            default:
+                throw new InvalidOperationException("Only classified non-null values can be replayed.");
+        }
+        stats.NonNullCount++;
+        TrackCategory(text!, stats);
+    }
+
     public static string GenerateContextCard(string datasetName, string[] headers, List<string[]> rows)
     {
         var statsList = Analyze(headers, rows);
@@ -78,7 +176,7 @@ internal static class DynamicProfiler
     public static string GenerateContextCard(string datasetName, int totalRows, List<DynamicColumnStats> stats)
         => RenderMarkdownCard(datasetName, totalRows, stats);
 
-    private static void ObserveValue(string value, DynamicColumnStats stats)
+    private static ProfileValueKind ObserveValue(string value, DynamicColumnStats stats)
     {
         // Check Boolean
         if (bool.TryParse(value, out var bVal))
@@ -87,7 +185,7 @@ internal static class DynamicProfiler
             if (bVal) stats.TrueCount++;
             else stats.FalseCount++;
             TrackCategory(value, stats);
-            return;
+            return bVal ? ProfileValueKind.True : ProfileValueKind.False;
         }
 
         // Check Integer (Int32)
@@ -95,7 +193,7 @@ internal static class DynamicProfiler
         {
             stats.IntCount++;
             UpdateNumericRange(iVal, stats);
-            return;
+            return ProfileValueKind.Uncached;
         }
 
         // Check Long (Int64)
@@ -103,7 +201,7 @@ internal static class DynamicProfiler
         {
             stats.LongCount++;
             UpdateNumericRange(lVal, stats);
-            return;
+            return ProfileValueKind.Uncached;
         }
 
         // Check Decimal/Double
@@ -111,7 +209,7 @@ internal static class DynamicProfiler
         {
             stats.DecimalCount++;
             UpdateNumericRange(dVal, stats);
-            return;
+            return ProfileValueKind.Uncached;
         }
 
         // Check Guid
@@ -119,7 +217,7 @@ internal static class DynamicProfiler
         {
             stats.GuidCount++;
             TrackCategory(value, stats);
-            return;
+            return ProfileValueKind.Guid;
         }
 
         // Check DateTime
@@ -127,12 +225,13 @@ internal static class DynamicProfiler
         {
             stats.DateTimeCount++;
             TrackCategory(value, stats);
-            return;
+            return ProfileValueKind.DateTime;
         }
 
         // Fallback: String
         stats.StringCount++;
         TrackCategory(value, stats);
+        return ProfileValueKind.String;
     }
 
     private static void UpdateNumericRange(double value, DynamicColumnStats stats)

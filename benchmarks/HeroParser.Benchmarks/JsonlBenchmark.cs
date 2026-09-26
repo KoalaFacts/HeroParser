@@ -68,7 +68,11 @@ public class JsonlBenchmark
             if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
                 File.Delete(filePath);
         }
-        catch
+        catch (IOException)
+        {
+            // best-effort cleanup
+        }
+        catch (UnauthorizedAccessException)
         {
             // best-effort cleanup
         }

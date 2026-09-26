@@ -75,7 +75,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
             JsonSerializer.Serialize(writer, value, typeInfo);
             writer.Flush();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
             HandleSerializeFailure(ex);
             return;
@@ -103,7 +103,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
             JsonSerializer.Serialize(writer, value, options.SerializerOptions);
             writer.Flush();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
             HandleSerializeFailure(ex);
             return;
@@ -130,7 +130,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
             JsonSerializer.Serialize(writer, value, typeInfo);
             writer.Flush();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
             HandleSerializeFailure(ex);
             return;
@@ -158,7 +158,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
             JsonSerializer.Serialize(writer, value, options.SerializerOptions);
             writer.Flush();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
             HandleSerializeFailure(ex);
             return;

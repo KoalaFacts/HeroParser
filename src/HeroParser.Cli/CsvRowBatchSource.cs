@@ -22,7 +22,7 @@ internal sealed class CsvRowBatchSource : IAsyncDisposable
             .WithMaxRows(int.MaxValue)
             .WithMaxRowSize(null)
             .AllowNewlinesInQuotes()
-            .FromFileAsync(path);
+            .FromTextFileAsync(path);
         try
         {
             if (!await reader.MoveNextAsync().ConfigureAwait(false))

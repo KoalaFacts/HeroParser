@@ -1,4 +1,5 @@
 using HeroParser.Cli;
+using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests.Cli;
@@ -13,6 +14,117 @@ namespace HeroParser.Tests.Cli;
 [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class DynamicProfilerTests
 {
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData("0")]
+    [InlineData("+42")]
+    [InlineData("-2147483649")]
+    [InlineData("9223372036854775807")]
+    [InlineData("9223372036854775808")]
+    [InlineData("123.45")]
+    [InlineData("1e3")]
+    [InlineData("1e309")]
+    [InlineData("1.7976931348623157E+308")]
+    [InlineData(".5")]
+    [InlineData(" 42 ")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("true")]
+    [InlineData("2026-01-01")]
+    [InlineData("11112222-3333-4444-5555-666677778888")]
+    [InlineData("\"42\"")]
+    [InlineData("北")]
+    public void ObserveCellUtf8_MatchesStringObservation(string value)
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+
+        DynamicProfiler.ObserveCell(expected, value);
+        DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+
+        AssertSameStats(expected, actual);
+    }
+
+    [Fact]
+    public void ObserveCellUtf8_RepeatedAndHighCardinalityValuesMatchStringObservation()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] recurring = ["North", "north", "South", "true", "false", "2026-01-01", "北", " ", "", "123.45"];
+
+        foreach (string value in Enumerable.Range(0, 300).Select(i => recurring[i % recurring.Length])
+            .Concat(Enumerable.Range(0, 110).Select(i => $"unique{i}"))
+            .Concat(Enumerable.Repeat("North", 30))
+            .Append(new string('x', 300)))
+        {
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        AssertSameStats(expected, actual);
+    }
+
+    [Fact]
+    public void ObserveCellUtf8_SixteenAlternatingCategoriesMatchStringObservation()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] values = [.. Enumerable.Range(0, 16).Select(i => $"category{i}")];
+
+        for (int i = 0; i < 320; i++)
+        {
+            string value = values[i % values.Length];
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        Assert.Equal(16, actual.ValueCounts.Count);
+        AssertSameStats(expected, actual);
+    }
+
+    [Fact]
+    public void ObserveCellUtf8_DisablesCacheAfterSeventeenByteDistinctVariants()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] variants = [.. Enumerable.Range(0, 17).Select(mask =>
+            new string([.. "abcdefgh".Select((value, index) =>
+                (mask & (1 << index)) == 0 ? value : char.ToUpperInvariant(value))]))];
+
+        for (int i = 0; i < 340; i++)
+        {
+            string value = variants[i % variants.Length];
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        Assert.Single(actual.ValueCounts);
+        Assert.NotNull(actual.Utf8Cache);
+        Assert.True(actual.Utf8Cache.IsDisabled);
+        AssertSameStats(expected, actual);
+    }
+
+    private static void AssertSameStats(DynamicColumnStats expected, DynamicColumnStats actual)
+    {
+        Assert.Equal(expected.NullCount, actual.NullCount);
+        Assert.Equal(expected.NonNullCount, actual.NonNullCount);
+        Assert.Equal(expected.IntCount, actual.IntCount);
+        Assert.Equal(expected.LongCount, actual.LongCount);
+        Assert.Equal(expected.DecimalCount, actual.DecimalCount);
+        Assert.Equal(expected.BoolCount, actual.BoolCount);
+        Assert.Equal(expected.TrueCount, actual.TrueCount);
+        Assert.Equal(expected.FalseCount, actual.FalseCount);
+        Assert.Equal(expected.DateTimeCount, actual.DateTimeCount);
+        Assert.Equal(expected.GuidCount, actual.GuidCount);
+        Assert.Equal(expected.StringCount, actual.StringCount);
+        Assert.Equal(expected.Min, actual.Min);
+        Assert.Equal(expected.Max, actual.Max);
+        Assert.Equal(expected.Sum, actual.Sum);
+        Assert.Equal(expected.ValueCounts, actual.ValueCounts);
+        Assert.Equal(expected.CategoriesTruncated, actual.CategoriesTruncated);
+    }
+
     private static string TypeOfColumn(params string[] values)
     {
         var stats = DynamicProfiler.Analyze(["Col"], [.. values.Select(v => new[] { v })]);

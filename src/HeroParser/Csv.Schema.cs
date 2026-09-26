@@ -33,8 +33,8 @@ public static partial class Csv
         return CsvSchemaInference.Infer(data, options);
     }
 
-    /// <summary>Infers a UTF-8 CSV file's schema from a bounded sample without loading the whole file.</summary>
-    /// <param name="path">Path to the UTF-8 CSV file.</param>
+    /// <summary>Infers a UTF-8 or BOM-marked UTF-16 CSV file's schema from a bounded sample without loading the whole file.</summary>
+    /// <param name="path">Path to the CSV file.</param>
     /// <param name="options">Optional inference options.</param>
     /// <param name="cancellationToken">Cancels file reads.</param>
     /// <returns>The inferred columns and number of sampled data rows.</returns>

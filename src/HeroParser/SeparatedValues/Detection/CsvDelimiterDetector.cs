@@ -388,7 +388,16 @@ public static class CsvDelimiterDetector
         if (counts.Length <= 1)
             return 100; // Single row = 100% confidence by default
 
-        if (avg == 0)
+        bool hasDelimiter = false;
+        foreach (int count in counts)
+        {
+            if (count > 0)
+            {
+                hasDelimiter = true;
+                break;
+            }
+        }
+        if (!hasDelimiter)
             return 0;
 
         double stdDev = CalculateStandardDeviation(counts, avg);

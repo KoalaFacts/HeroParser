@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
 
@@ -88,8 +89,8 @@ public static class CsvSchemaInference
 {
     private const int DETECTION_SAMPLE_BYTES = 64 * 1024;
 
-    /// <summary>Infers a UTF-8 CSV file's schema from a bounded number of data rows.</summary>
-    /// <param name="path">Path to the UTF-8 CSV file.</param>
+    /// <summary>Infers a UTF-8 or BOM-marked UTF-16 CSV file's schema from a bounded number of data rows.</summary>
+    /// <param name="path">Path to the CSV file.</param>
     /// <param name="options">Inference and parsing options.</param>
     /// <param name="cancellationToken">Cancels file reads.</param>
     /// <returns>Column types inferred only from the sampled rows.</returns>
@@ -109,7 +110,7 @@ public static class CsvSchemaInference
             .WithMaxRowSize(null)
             .AllowNewlinesInQuotes()
             .TrackSourceLineNumbers()
-            .FromFileAsync(path);
+            .FromTextFileAsync(path);
 
         if (!await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException("Cannot infer schema from empty data.");
@@ -191,16 +192,12 @@ public static class CsvSchemaInference
             if (read == 0) break;
             length += read;
         }
-        if (length >= 2)
-        {
-            bool littleEndianBom = sample[0] == 0xFF && sample[1] == 0xFE;
-            bool bigEndianBom = sample[0] == 0xFE && sample[1] == 0xFF;
-            if (littleEndianBom || bigEndianBom)
-                throw new NotSupportedException("Streaming schema inference supports UTF-8 only.");
-        }
-
         try
         {
+            if (length >= 2 && sample[0] == 0xFF && sample[1] == 0xFE)
+                return CsvDelimiterDetector.DetectDelimiter(Encoding.Unicode.GetString(sample, 2, (length - 2) & ~1));
+            if (length >= 2 && sample[0] == 0xFE && sample[1] == 0xFF)
+                return CsvDelimiterDetector.DetectDelimiter(Encoding.BigEndianUnicode.GetString(sample, 2, (length - 2) & ~1));
             return CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, length));
         }
         catch (InvalidOperationException)

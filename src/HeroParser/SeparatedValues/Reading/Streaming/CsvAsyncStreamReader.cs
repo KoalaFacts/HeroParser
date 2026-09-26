@@ -70,6 +70,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     /// <summary>Gets the approximate number of bytes read from the underlying stream.</summary>
     public long BytesRead { get; private set; }
 
+    internal int NextSourceLineNumber => sourceLineNumber;
+
     internal CsvAsyncStreamReader(Stream stream, CsvReadOptions options, bool leaveOpen, int initialBufferSize, int skipRows = 0)
     {
         this.stream = stream;

@@ -490,7 +490,8 @@ internal static partial class CliCommands
         }
     }
 
-    public static async Task<bool> SchemaAsync(string path, char? delimiter, bool useAi, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
+    public static async Task<bool> SchemaAsync(string path, char? delimiter, bool useAi, string? providerName, string? apiKey, string? model,
+        LlmClient? aiClientOverride = null, CsvImportPlan? plan = null)
     {
         if (!File.Exists(path))
         {
@@ -502,8 +503,37 @@ internal static partial class CliCommands
 
         try
         {
-            var csvData = File.ReadAllText(path);
-            var schemaResult = Csv.InferSchema(csvData, new CsvSchemaInferenceOptions { Delimiter = delimiter });
+            if (plan is not null && !IsCsvInput(path))
+            {
+                ConsoleUtils.Error("CSV import plans support .csv and .tsv UTF-8 input only.");
+                return false;
+            }
+
+            var (sample, sampleLength) = ReadCsvSample(path);
+            bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+            if (plan is not null && utf16)
+            {
+                ConsoleUtils.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
+                return false;
+            }
+
+            char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
+            var schemaResult = utf16
+                ? Csv.InferSchema(File.ReadAllText(path), new CsvSchemaInferenceOptions { Delimiter = effectiveDelimiter })
+                : await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions
+                {
+                    Delimiter = effectiveDelimiter,
+                    MaxColumnCount = plan is null ? 100 : 1000
+                }).ConfigureAwait(false);
+            if (plan is not null && schemaResult.Columns.Count != plan.ExpectedColumnCount)
+            {
+                ConsoleUtils.Error($"CSV header has {schemaResult.Columns.Count} columns, but the import plan expects {plan.ExpectedColumnCount}.");
+                return false;
+            }
+
+            ConsoleUtils.Info($"Types inferred from {schemaResult.SampledRowCount} data rows (limit 100); this is not full-file validation.");
+            if (utf16)
+                ConsoleUtils.Warning("UTF-16 schema inference still loads the whole file into memory.");
 
             var className = Path.GetFileNameWithoutExtension(path);
             // Replace non-alphanumeric for class name
@@ -579,7 +609,9 @@ internal static partial class CliCommands
 
             // AI Schema Generation
             var filename = Path.GetFileName(path);
-            var (headers, rows) = ReadTabularData(path, delimiter, null);
+            var (headers, rows) = utf16
+                ? ReadTabularData(path, effectiveDelimiter, null)
+                : await ReadSchemaContextAsync(path, effectiveDelimiter, plan is null ? 100 : 1000).ConfigureAwait(false);
             var contextCard = DynamicProfiler.GenerateContextCard(filename, headers, [.. rows.Take(10)]);
 
             var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
@@ -588,6 +620,8 @@ internal static partial class CliCommands
 You are an expert compiler engineer and software architect.
 Here is the dataset profile and sample rows:
 {contextCard}
+
+This profile covers at most the first 10 data rows, not the whole file.
 
 Here is a basic inferred C# record class:
 ```csharp
@@ -640,15 +674,38 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
 
         try
         {
-            var (headers, rows) = ReadTabularData(path, delimiter, sheet);
+            string[] headers;
+            List<string[]> sampleRows;
             var filename = Path.GetFileName(path);
-            var card = DynamicProfiler.GenerateContextCard(filename, headers, rows);
+            string card;
+            if (IsCsvInput(path))
+            {
+                var (sample, sampleLength) = ReadCsvSample(path);
+                if (!IsUtf16LittleEndian(sample, sampleLength) && !IsUtf16BigEndian(sample, sampleLength))
+                {
+                    char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16: false);
+                    var (streamHeaders, stats, totalRows) = await ProfileCsvAsync(path, effectiveDelimiter).ConfigureAwait(false);
+                    headers = streamHeaders;
+                    (_, sampleRows) = await ReadSchemaContextAsync(path, effectiveDelimiter, 100).ConfigureAwait(false);
+                    card = DynamicProfiler.GenerateContextCard(filename, totalRows, stats);
+                }
+                else
+                {
+                    (headers, sampleRows) = ReadTabularData(path, delimiter, sheet);
+                    card = DynamicProfiler.GenerateContextCard(filename, headers, sampleRows);
+                }
+            }
+            else
+            {
+                (headers, sampleRows) = ReadTabularData(path, delimiter, sheet);
+                card = DynamicProfiler.GenerateContextCard(filename, headers, sampleRows);
+            }
 
             // Format sample rows
             var sampleSb = new StringBuilder();
             sampleSb.AppendLine("| " + string.Join(" | ", headers) + " |");
             sampleSb.AppendLine("| " + string.Join(" | ", headers.Select(_ => "---")) + " |");
-            foreach (var r in rows.Take(10))
+            foreach (var r in sampleRows.Take(10))
             {
                 sampleSb.AppendLine("| " + string.Join(" | ", r.Select(c => c?.Replace("|", "\\|") ?? "")) + " |");
             }
@@ -699,12 +756,44 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
             return false;
         }
 
+        if (batchSize <= 0)
+        {
+            ConsoleUtils.Error("Batch size must be positive.");
+            return false;
+        }
+        if (Path.GetFullPath(path).Equals(Path.GetFullPath(outputPath),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            ConsoleUtils.Error("Translation output path must differ from the input path.");
+            return false;
+        }
+
         ConsoleUtils.Info($"Starting batch translation / transformation pipeline...");
         ConsoleUtils.Info($"Output will be written to: {outputPath}");
 
         try
         {
-            var (headers, rows) = ReadTabularData(path, delimiter, sheet);
+            var (sample, sampleLength) = ReadCsvSample(path);
+            bool streamCsv = IsCsvInput(path) && !IsUtf16LittleEndian(sample, sampleLength) &&
+                !IsUtf16BigEndian(sample, sampleLength);
+            char inputDelimiter = delimiter ?? (streamCsv ? DetectSchemaDelimiter(path, sample, sampleLength, utf16: false) : ',');
+            string[] headers;
+            List<string[]>? rows = null;
+            long totalRows;
+            if (streamCsv)
+            {
+                await using var counting = await CsvRowBatchSource.OpenAsync(path, inputDelimiter).ConfigureAwait(false);
+                headers = counting.Headers;
+                totalRows = await counting.CountRemainingRowsAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                (headers, rows) = ReadTabularData(path, delimiter, sheet);
+                totalRows = rows.Count;
+            }
+            await using var source = streamCsv
+                ? await CsvRowBatchSource.OpenAsync(path, inputDelimiter).ConfigureAwait(false)
+                : null;
             var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
 
             var headersJoined = string.Join(",", headers);
@@ -714,9 +803,6 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
 
             bool isFirstBatch = true;
             string[] outputHeaders = headers;
-
-            int totalRows = rows.Count;
-            int processed = 0;
 
             char openBrace = '{';
             char closeBrace = '}';
@@ -733,9 +819,13 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
                 {
                     var progressTask = ctx.AddTask("[green]Transforming rows[/]", maxValue: totalRows);
 
-                    for (int i = 0; i < totalRows; i += batchSize)
+                    for (long i = 0; i < totalRows; i += batchSize)
                     {
-                        List<string[]> batch = [.. rows.Skip(i).Take(batchSize)];
+                        List<string[]> batch = source is null
+                            ? [.. rows!.Skip((int)i).Take(batchSize)]
+                            : await source.ReadBatchAsync(batchSize).ConfigureAwait(false);
+                        if (batch.Count == 0)
+                            throw new IOException("Input changed while translating; expected more rows.");
                         progressTask.Description = $"[green]Transforming rows {i + 1} to {Math.Min(i + batchSize, totalRows)} of {totalRows}[/]";
 
                         // Format batch as JSON array of key-value maps
@@ -799,9 +889,11 @@ Instructions:
                             }
                         }
 
-                        processed += batch.Count;
                         progressTask.Increment(batch.Count);
                     }
+
+                    if (source is not null && (await source.ReadBatchAsync(1).ConfigureAwait(false)).Count > 0)
+                        throw new IOException("Input changed while translating; additional rows appeared.");
 
                     progressTask.Description = $"[green]Processed all {totalRows} rows[/]";
                 });
@@ -814,6 +906,35 @@ Instructions:
             ConsoleUtils.Error($"Translation pipeline failed: {ex.Message}");
             return false;
         }
+    }
+
+    private static char DetectSchemaDelimiter(string path, byte[] sample, int length, bool utf16)
+    {
+        try
+        {
+            if (utf16)
+            {
+                string text = IsUtf16LittleEndian(sample, length)
+                    ? Encoding.Unicode.GetString(sample, 2, length - 2)
+                    : Encoding.BigEndianUnicode.GetString(sample, 2, length - 2);
+                return CsvDelimiterDetector.DetectDelimiter(text);
+            }
+            return CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, length));
+        }
+        catch (InvalidOperationException)
+        {
+            if (!utf16 && new FileInfo(path).Length > length)
+                throw new InvalidOperationException("Cannot detect delimiter from the bounded sample; specify --delimiter explicitly.");
+            return ',';
+        }
+    }
+
+    private static async Task<(string[] Headers, List<string[]> Rows)> ReadSchemaContextAsync(
+        string path, char delimiter, int maxColumns)
+    {
+        await using var source = await CsvRowBatchSource.OpenAsync(path, delimiter, maxColumns).ConfigureAwait(false);
+        var rows = await source.ReadBatchAsync(10).ConfigureAwait(false);
+        return (source.Headers, rows);
     }
 
     private static (string[] Headers, List<string[]> Rows) ReadTabularData(string path, char? delimiter, string? sheet)
@@ -882,6 +1003,7 @@ Instructions:
         await using var reader = Csv.Read()
             .WithDelimiter(detectedDelimiter)
             .WithMaxRows(int.MaxValue)
+            .WithMaxRowSize(null)
             .AllowNewlinesInQuotes()
             .FromFileAsync(path);
         if (!await reader.MoveNextAsync().ConfigureAwait(false))

@@ -62,6 +62,9 @@ public sealed record CsvSchemaInferenceOptions
     /// </summary>
     public int SampleRows { get; init; } = 100;
 
+    /// <summary>Gets or sets the maximum number of columns for streaming inference (default: 100).</summary>
+    public int MaxColumnCount { get; init; } = 100;
+
     /// <summary>
     /// Gets the default options.
     /// </summary>
@@ -83,6 +86,131 @@ public sealed record CsvSchemaInferenceOptions
 /// </remarks>
 public static class CsvSchemaInference
 {
+    private const int DETECTION_SAMPLE_BYTES = 64 * 1024;
+
+    /// <summary>Infers a UTF-8 CSV file's schema from a bounded number of data rows.</summary>
+    /// <param name="path">Path to the UTF-8 CSV file.</param>
+    /// <param name="options">Inference and parsing options.</param>
+    /// <param name="cancellationToken">Cancels file reads.</param>
+    /// <returns>Column types inferred only from the sampled rows.</returns>
+    public static async Task<CsvSchemaInferenceResult> InferFileAsync(
+        string path, CsvSchemaInferenceOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        options ??= CsvSchemaInferenceOptions.Default;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.SampleRows);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxColumnCount);
+
+        char delimiter = options.Delimiter ?? await DetectFileDelimiterAsync(path, cancellationToken).ConfigureAwait(false);
+        await using var reader = Csv.Read()
+            .WithDelimiter(delimiter)
+            .WithMaxColumns(options.MaxColumnCount)
+            .WithMaxRows(int.MaxValue)
+            .WithMaxRowSize(null)
+            .AllowNewlinesInQuotes()
+            .TrackSourceLineNumbers()
+            .FromFileAsync(path);
+
+        if (!await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException("Cannot infer schema from empty data.");
+
+        var header = reader.Current;
+        var headers = new string[header.ColumnCount];
+        var candidates = new ColumnTypeTracker[header.ColumnCount];
+        int embeddedLines = 0;
+        for (int i = 0; i < headers.Length; i++)
+        {
+            headers[i] = header.GetString(i);
+            embeddedLines += CountNewlines(headers[i].AsSpan());
+            candidates[i] = new ColumnTypeTracker();
+        }
+
+        bool hasSkippedEmptyRows = header.SourceLineNumber > 1;
+        int expectedNextLine = header.SourceLineNumber + embeddedLines + 1;
+        int sampledRows = 0;
+        while (sampledRows < options.SampleRows)
+        {
+            bool hasRow;
+            try
+            {
+                hasRow = await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (CsvException)
+            {
+                break;
+            }
+            if (!hasRow)
+            {
+                if (reader.NextSourceLineNumber > expectedNextLine)
+                    hasSkippedEmptyRows = true;
+                break;
+            }
+
+            var row = reader.Current;
+            if (row.SourceLineNumber > expectedNextLine)
+                hasSkippedEmptyRows = true;
+
+            embeddedLines = 0;
+            for (int i = 0; i < Math.Min(headers.Length, row.ColumnCount); i++)
+            {
+                string value = row.GetString(i);
+                candidates[i].Observe(value);
+                embeddedLines += CountNewlines(value.AsSpan());
+            }
+            for (int i = headers.Length; i < row.ColumnCount; i++)
+                embeddedLines += CountNewlines(row.GetString(i).AsSpan());
+            for (int i = row.ColumnCount; i < headers.Length; i++)
+                candidates[i].Observe("");
+
+            expectedNextLine = row.SourceLineNumber + embeddedLines + 1;
+            sampledRows++;
+        }
+
+        if (hasSkippedEmptyRows)
+        {
+            foreach (var candidate in candidates)
+                candidate.HasNulls = true;
+        }
+
+        var columns = new CsvInferredColumn[headers.Length];
+        for (int i = 0; i < columns.Length; i++)
+            columns[i] = new CsvInferredColumn(headers[i], candidates[i].GetInferredType(),
+                candidates[i].HasNulls, candidates[i].MaxLength);
+        return new CsvSchemaInferenceResult(columns, sampledRows);
+    }
+
+    private static async Task<char> DetectFileDelimiterAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var sample = new byte[DETECTION_SAMPLE_BYTES];
+        int length = 0;
+        while (length < sample.Length)
+        {
+            int read = await stream.ReadAsync(sample.AsMemory(length), cancellationToken).ConfigureAwait(false);
+            if (read == 0) break;
+            length += read;
+        }
+        if (length >= 2)
+        {
+            bool littleEndianBom = sample[0] == 0xFF && sample[1] == 0xFE;
+            bool bigEndianBom = sample[0] == 0xFE && sample[1] == 0xFF;
+            if (littleEndianBom || bigEndianBom)
+                throw new NotSupportedException("Streaming schema inference supports UTF-8 only.");
+        }
+
+        try
+        {
+            return CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, length));
+        }
+        catch (InvalidOperationException)
+        {
+            if (stream.Position < stream.Length)
+                throw new InvalidOperationException("Cannot detect delimiter from the bounded sample; specify a delimiter explicitly.");
+            return ',';
+        }
+    }
+
     /// <summary>
     /// Infers the schema of CSV data by analyzing sample rows.
     /// </summary>

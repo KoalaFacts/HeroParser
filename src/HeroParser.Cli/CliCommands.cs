@@ -33,7 +33,7 @@ using SysConsole = System.Console;
 
 namespace HeroParser.Cli;
 
-internal static class CliCommands
+internal static partial class CliCommands
 {
     public static bool Detect(string path)
     {

@@ -81,7 +81,7 @@ heroparser
 
 This presents a styled, keyboard-driven navigation menu (powered by `HeroParser.Console`) where you can:
 - Select a file to inspect.
-- Choose from operations (detect delimiter, validate, profile, convert, repair, etc.).
+- Choose from operations (quick inspect, detect delimiter, validate, profile, convert, etc.).
 - Fill in parameters with auto-validation.
 
 To load a file directly into the wizard:
@@ -94,7 +94,18 @@ heroparser products.csv
 
 ## 3. Subcommand Reference
 
-### 3.1 `detect`
+### 3.1 `inspect`
+
+Quickly inspect a UTF-8 CSV/TSV file without reading all data rows. The command reads up to 64 KiB to infer a delimiter, then inspects up to 1,000 data rows by default. It reports encoding evidence, delimiter confidence, column names and sample-only type/empty-value observations, row-width mismatches within the sample, and the first three data rows. It also prints a reusable `--delimiter` setting.
+
+```bash
+heroparser inspect data.csv
+heroparser inspect data.tsv --delimiter '\t' --sample-rows 500
+```
+
+`--sample-rows` accepts 1 to 10,000. Set `--delimiter` when automatic detection is uncertain or the file has only one column. Without a BOM, UTF-8/ASCII is assumed, not verified. This is not full-file validation; run `heroparser validate data.csv` for that. UTF-16, Excel and JSONL are not supported by quick inspect.
+
+### 3.2 `detect`
 
 Analyze a CSV file to auto-detect its delimiter character (e.g. `,`, `;`, `|`, `\t`) and character encoding (UTF-8, UTF-16, etc.) with a confidence score.
 
@@ -102,7 +113,7 @@ Analyze a CSV file to auto-detect its delimiter character (e.g. `,`, `;`, `|`, `
 heroparser detect data.csv
 ```
 
-### 3.2 `validate`
+### 3.3 `validate`
 
 Verify the structural integrity of a file (e.g. checks that all rows have a consistent number of fields, detects unclosed quotes, and validates header structures).
 
@@ -112,7 +123,7 @@ heroparser validate data.csv
 
 UTF-8 CSV files are validated row by row without loading the whole file. Validation retains at most 100 errors, then stops and reports that later rows were not checked. UTF-16 files with a BOM currently use the in-memory validation path. A validation failure returns a nonzero process exit code.
 
-### 3.3 `profile`
+### 3.4 `profile`
 
 Generate a markdown-formatted statistical profile card summarizing column datatypes, value ranges, distinct counts, null counts, and sample values. Ideal for printing dataset metadata or sending schema context to LLMs.
 
@@ -126,7 +137,7 @@ Options:
 - `-d, --delimiter <char>`: Specify CSV delimiter.
 - `-s, --sheet <name>`: Excel sheet name (if profiling an Excel workbook).
 
-### 3.4 `convert`
+### 3.5 `convert`
 
 Stream-convert records between CSV, JSONL, Fixed-Width, and Excel (`.xlsx`) formats.
 
@@ -142,7 +153,7 @@ Options:
 - `-d, --delimiter <char>`: Delimiter for input/output CSV.
 - `-s, --sheet <name>`: Sheet name if input or output is an Excel file.
 
-### 3.5 `repair`
+### 3.6 `repair`
 
 Cleans up truncated, poorly-escaped, or cut-off tabular text returned by LLMs (e.g., handles unclosed quotes/escapes on final lines, and strips markdown code-blocks tags).
 
@@ -150,7 +161,7 @@ Cleans up truncated, poorly-escaped, or cut-off tabular text returned by LLMs (e
 heroparser repair raw_llm_output.csv clean_output.csv
 ```
 
-### 3.6 `schema`
+### 3.7 `schema`
 
 Infers column datatypes and generates a production-ready C# record class model decorated with `[GenerateBinder]` and v2 mapping/validation attributes.
 
@@ -165,7 +176,7 @@ Add `--ai` to consult LLMs to infer optimal field-level validation rules (e.g., 
 heroparser schema data.csv --ai --ai-provider gemini
 ```
 
-### 3.7 `query` / `ask` [AI]
+### 3.8 `query` / `ask` [AI]
 
 Submit natural language questions about your dataset. The CLI profiles the data structure, extracts top rows, and uses LLMs to answer questions directly.
 
@@ -173,7 +184,7 @@ Submit natural language questions about your dataset. The CLI profiles the data 
 heroparser query data.csv "Which region generated the highest sales volume?"
 ```
 
-### 3.8 `translate` [AI]
+### 3.9 `translate` [AI]
 
 Translate, map, or transform cells across rows in batches utilizing an LLM prompt.
 

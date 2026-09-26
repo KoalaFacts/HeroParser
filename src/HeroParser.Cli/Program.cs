@@ -57,6 +57,7 @@ internal static class Program
         string? model = null;
         string? output = null;
         int batchSize = 50;
+        int sampleRows = 1000;
         bool useAi = false;
         var positionalArgs = new List<string>();
 
@@ -150,6 +151,16 @@ internal static class Program
                     return 1;
                 }
             }
+            else if (arg == "--sample-rows")
+            {
+                if (i + 1 < args.Length && int.TryParse(args[++i], out var count) && count is > 0 and <= 10000)
+                    sampleRows = count;
+                else
+                {
+                    ConsoleUtils.Error("--sample-rows must be an integer from 1 to 10000");
+                    return 1;
+                }
+            }
             else if (arg == "-ai" || arg == "--ai")
             {
                 useAi = true;
@@ -175,6 +186,15 @@ internal static class Program
         {
             switch (command)
             {
+                case "inspect":
+                    if (positionalArgs.Count != 1)
+                    {
+                        ConsoleUtils.Error("Usage: heroparser inspect <file> [--delimiter <char>] [--sample-rows <1-10000>]");
+                        return 1;
+                    }
+                    if (!await CliCommands.InspectAsync(positionalArgs[0], delimiter, sampleRows)) return 1;
+                    break;
+
                 case "detect":
                     if (positionalArgs.Count < 1)
                     {
@@ -289,6 +309,7 @@ internal static class Program
         SysConsole.WriteLine("========================================================");
         SysConsole.WriteLine("\nUsage: heroparser <command> [arguments] [options]\n");
         SysConsole.WriteLine("Commands:");
+        SysConsole.WriteLine("  inspect <file>               Quickly inspect a sample of a UTF-8 CSV/TSV file");
         SysConsole.WriteLine("  detect <file>                Auto-detect delimiter and encoding of a CSV file");
         SysConsole.WriteLine("  validate <file>              Validate CSV structure and columns consistency");
         SysConsole.WriteLine("  profile <file>               Generate a Markdown statistical profile card of columns");
@@ -300,6 +321,7 @@ internal static class Program
 
         SysConsole.WriteLine("\nGlobal Options:");
         SysConsole.WriteLine("  -d, --delimiter <char>       Set CSV delimiter (e.g. , ; | or \\t)");
+        SysConsole.WriteLine("  --sample-rows <1-10000>      Data rows to inspect (inspect only; default: 1000)");
         SysConsole.WriteLine("  -s, --sheet <name>           Sheet name to process for Excel files");
         SysConsole.WriteLine("  -o, --output <path>          Path to output file (required for convert/repair/translate)");
 
@@ -321,6 +343,11 @@ internal static class Program
 
         switch (command)
         {
+            case "inspect":
+                SysConsole.WriteLine("Samples a UTF-8 CSV/TSV without scanning the whole file. Reports encoding evidence, delimiter confidence, columns, inferred sample types, and sampled row-width anomalies.");
+                SysConsole.WriteLine("Use validate for full-file structural validation. UTF-16 and Excel are not supported by this quick command.");
+                SysConsole.WriteLine("Usage: heroparser inspect <file> [--delimiter <char>] [--sample-rows <1-10000>]");
+                break;
             case "detect":
                 SysConsole.WriteLine("Auto-detects delimiter and encoding for tabular datasets.");
                 SysConsole.WriteLine("Usage: heroparser detect <file>");

@@ -249,6 +249,7 @@ public static partial class CsvValidator
         bool quoted = false;
         bool afterCr = false;
         int skipped = 0;
+        int rowLimit = maxRowSize ?? CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE;
         long rowBytes = 0;
         int read;
         while (skipped < rows && (read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
@@ -262,9 +263,9 @@ public static partial class CsvValidator
                     if (value == (byte)'\n')
                         continue;
                 }
-                if (++rowBytes > (maxRowSize ?? int.MaxValue))
+                if (++rowBytes > rowLimit)
                     throw new CsvException(CsvErrorCode.ParseError,
-                        $"Row exceeds maximum size of {maxRowSize:N0} bytes while skipping preamble.", skipped + 1);
+                        $"Row exceeds maximum size of {rowLimit:N0} bytes while skipping preamble.", skipped + 1);
                 if (value == (byte)'"')
                     quoted = !quoted;
                 if (!quoted && (value == (byte)'\r' || value == (byte)'\n'))

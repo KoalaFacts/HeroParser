@@ -114,7 +114,7 @@ heroparser validate data.csv --plan data.plan.json --report data.validation.json
 heroparser convert data.csv data.jsonl --plan data.plan.json
 ```
 
-The plan currently assumes a header row and standard double-quote escaping. You may correct its delimiter before replaying it, but re-inspect if that changes the observed column count. `--plan` cannot be combined with `--delimiter`. Plans support UTF-8 `.csv` and `.tsv` input; planned conversion currently targets JSONL only. CSV-to-fixed-width and other conversion directions do not yet accept plans.
+The plan currently assumes a header row and standard double-quote escaping. You may correct its delimiter before replaying it, but re-inspect if that changes the observed column count. `--plan` cannot be combined with `--delimiter`. Plans support UTF-8 `.csv` and `.tsv` input for validation and schema inference; planned conversion currently targets JSONL only. CSV-to-fixed-width and other conversion directions do not yet accept plans.
 
 ### 3.2 `detect`
 
@@ -183,7 +183,10 @@ Infers column datatypes and generates a production-ready C# record class model d
 
 ```bash
 heroparser schema data.csv
+heroparser schema data.csv --plan data.plan.json
 ```
+
+For UTF-8 CSV/TSV, schema inference reads at most the first 100 data rows instead of loading the whole file. The generated types are sample-based and do not prove that later rows match. With `--plan`, the sampled header width must match the saved plan; run `validate --plan` separately for full-file structural validation. UTF-16 input still uses the in-memory path.
 
 AI-Powered Mode:
 Add `--ai` to consult LLMs to infer optimal field-level validation rules (e.g., regex patterns for emails/zip codes, validation range limits, and enum type mapping):
@@ -200,6 +203,8 @@ Submit natural language questions about your dataset. The CLI profiles the data 
 heroparser query data.csv "Which region generated the highest sales volume?"
 ```
 
+For UTF-8 CSV/TSV, the profile covers all rows using bounded categorical statistics, while only the first 10 rows are included as examples in the model prompt. Excel and UTF-16 input still use the in-memory path. The model receives a summary, not every row, so answers requiring exact row-level retrieval are not guaranteed.
+
 ### 3.9 `translate` [AI]
 
 Translate, map, or transform cells across rows in batches utilizing an LLM prompt.
@@ -207,6 +212,8 @@ Translate, map, or transform cells across rows in batches utilizing an LLM promp
 ```bash
 heroparser translate customers.csv "Translate the Description field to Spanish and capitalize the Name field" --output spanish_customers.csv
 ```
+
+For UTF-8 CSV/TSV, translation first counts rows for the progress display, then reads and transforms one configured batch at a time. This adds a sequential read pass but avoids retaining the whole input in memory. Excel and UTF-16 input still use the in-memory path. The output file may be partial if the model or parsing fails partway through; never use the input path as the output path.
 
 ---
 

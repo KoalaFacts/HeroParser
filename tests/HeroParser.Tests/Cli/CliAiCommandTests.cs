@@ -100,6 +100,21 @@ public class CliAiCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Schema_WithAi_StopsReadingBeforeOversizedTail()
+    {
+        var runner = new ScriptedRunner("```csharp\npublic sealed class Refined { }\n```");
+        string csv = "Id,Active\n" + string.Concat(Enumerable.Range(0, 100).Select(i => $"{i},true\n")) +
+            new string('x', 600_000);
+
+        Assert.True(await CliCommands.SchemaAsync(TempFile(csv), null, useAi: true, null, null, null, ClientFor(runner)));
+
+        string prompt = Assert.Single(runner.Prompts);
+        Assert.Contains("at most the first 10 data rows", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain(new string('x', 100), prompt, StringComparison.Ordinal);
+        Assert.Contains("Types inferred from 100 data rows", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Schema_ColumnTypes_ComeFromInference()
     {
         var runner = new ScriptedRunner("x");
@@ -169,6 +184,21 @@ public class CliAiCommandTests : IDisposable
             TempFile("Name,Note\nAlice,\"x|y\""), ',', null, "q", null, null, null, ClientFor(runner));
 
         Assert.Contains("x\\|y", Assert.Single(runner.Prompts), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Query_ProfilesAllRowsButShowsOnlyTenSamples()
+    {
+        var runner = new ScriptedRunner("ok");
+        string csv = "Name,Age\n" + string.Join('\n', Enumerable.Range(0, 200).Select(i => $"n{i},{i}"));
+
+        Assert.True(await CliCommands.QueryAsync(
+            TempFile(csv), null, null, "count the rows", null, null, null, ClientFor(runner)));
+
+        string prompt = Assert.Single(runner.Prompts);
+        Assert.Contains("(200 rows)", prompt, StringComparison.Ordinal);
+        Assert.Contains("| n9 | 9 |", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("| n10 | 10 |", prompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -292,6 +322,19 @@ public class CliAiCommandTests : IDisposable
             new LlmClient(LlmProvider.Google, null, new FailingRunner()));
 
         Assert.Contains("Translation pipeline failed", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Translate_DoesNotOverwriteItsInput()
+    {
+        string input = TempFile(SAMPLE_CSV);
+        var runner = new ScriptedRunner("{}");
+
+        Assert.False(await CliCommands.TranslateAsync(
+            input, null, null, "t", input, batchSize: 2, null, null, null, ClientFor(runner)));
+
+        Assert.Equal(SAMPLE_CSV, File.ReadAllText(input));
+        Assert.Empty(runner.Prompts);
     }
 
     private sealed class FailingRunner : ILlmCliRunner

@@ -75,6 +75,9 @@ internal static class DynamicProfiler
         return RenderMarkdownCard(datasetName, rows.Count, statsList);
     }
 
+    public static string GenerateContextCard(string datasetName, int totalRows, List<DynamicColumnStats> stats)
+        => RenderMarkdownCard(datasetName, totalRows, stats);
+
     private static void ObserveValue(string value, DynamicColumnStats stats)
     {
         // Check Boolean

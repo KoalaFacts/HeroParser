@@ -207,6 +207,19 @@ public sealed class ProgramArgumentTests : IDisposable
     }
 
     [Fact]
+    public async Task ImportPlan_SchemaChecksTheSampledHeaderWidth()
+    {
+        string input = Csv("Name;Age\nAlice;30\n");
+        string planPath = OutputPath(".json");
+        Assert.Equal(0, await Program.Main(["inspect", input, "--delimiter", ";", "--save-plan", planPath]));
+
+        Assert.Equal(0, await Program.Main(["schema", input, "--plan", planPath]));
+
+        File.WriteAllText(input, "Name;Age;City\nAlice;30;Sydney\n");
+        Assert.Equal(1, await Program.Main(["schema", input, "--plan", planPath]));
+    }
+
+    [Fact]
     public async Task ImportPlan_RejectsConflictsAndUnsupportedUse()
     {
         string input = Csv("Name;Age\nAlice;30\n");

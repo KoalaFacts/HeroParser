@@ -208,9 +208,9 @@ internal static class Program
                 ConsoleUtils.Error("--save-plan is only supported by inspect");
                 return 1;
             }
-            if (planPath is not null && command is not ("validate" or "convert"))
+            if (planPath is not null && command is not ("validate" or "convert" or "schema"))
             {
-                ConsoleUtils.Error("--plan is only supported by validate and convert");
+                ConsoleUtils.Error("--plan is only supported by validate, convert, and schema");
                 return 1;
             }
             if (reportPath is not null && command != "validate")
@@ -306,7 +306,7 @@ internal static class Program
                         ConsoleUtils.Error("Usage: heroparser schema <file> [options]");
                         return 1;
                     }
-                    if (!await CliCommands.SchemaAsync(positionalArgs[0], delimiter, useAi, provider, key, model)) return 1;
+                    if (!await CliCommands.SchemaAsync(positionalArgs[0], delimiter, useAi, provider, key, model, plan: plan)) return 1;
                     break;
 
                 case "query":
@@ -371,7 +371,7 @@ internal static class Program
         SysConsole.WriteLine("  -d, --delimiter <char>       Set CSV delimiter (e.g. , ; | or \\t)");
         SysConsole.WriteLine("  --sample-rows <1-10000>      Data rows to inspect (inspect only; default: 1000)");
         SysConsole.WriteLine("  --save-plan <path>           Save sampled CSV settings (inspect only)");
-        SysConsole.WriteLine("  --plan <path>                Re-use CSV settings (validate or convert)");
+        SysConsole.WriteLine("  --plan <path>                Re-use CSV settings (validate, convert, or schema)");
         SysConsole.WriteLine("  --report <path>              Save bounded validation errors as JSON (validate only)");
         SysConsole.WriteLine("  -s, --sheet <name>           Sheet name to process for Excel files");
         SysConsole.WriteLine("  -o, --output <path>          Path to output file (required for convert/repair/translate)");
@@ -422,15 +422,16 @@ internal static class Program
             case "schema":
                 SysConsole.WriteLine("Generates a production-ready C# class matching the inferred column types.");
                 SysConsole.WriteLine("Add --ai to consult LLMs for regex formats, range checks, enum resolution, and docs.");
-                SysConsole.WriteLine("Usage: heroparser schema <file> [--ai] [--ai-provider <provider>]");
+                SysConsole.WriteLine("UTF-8 input is sampled without loading the whole file; UTF-16 still uses the in-memory path.");
+                SysConsole.WriteLine("Usage: heroparser schema <file> [--plan <file>] [--ai] [--ai-provider <provider>]");
                 break;
             case "query":
             case "ask":
-                SysConsole.WriteLine("Queries the dataset using natural language based on its statistical profile and top rows.");
+                SysConsole.WriteLine("Queries the dataset using a full-file statistical profile and ten sample rows for UTF-8 CSV/TSV.");
                 SysConsole.WriteLine("Usage: heroparser query <file> \"What are the top 3 categories by total amount?\"");
                 break;
             case "translate":
-                SysConsole.WriteLine("Maps, translates, or transforms rows in batches utilizing LLM commands.");
+                SysConsole.WriteLine("Maps or transforms UTF-8 CSV/TSV with a counting pass followed by bounded LLM batches.");
                 SysConsole.WriteLine("Usage: heroparser translate <input> \"Translate the Name field to French\" --output <output>");
                 break;
             default:

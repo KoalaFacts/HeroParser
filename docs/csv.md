@@ -1195,6 +1195,19 @@ var schema = Csv.InferSchema(csvData, options);
 Console.WriteLine($"Sampled {schema.SampledRowCount} rows, found {schema.Columns.Count} columns");
 ```
 
+For large UTF-8 files, infer directly from a bounded row sample without loading the whole file:
+
+```csharp
+var schema = await Csv.InferSchemaFileAsync("data.csv", new CsvSchemaInferenceOptions
+{
+    Delimiter = ';',         // Optional; auto-detected from at most 64 KiB when omitted
+    SampleRows = 200,       // Default: 100
+    MaxColumnCount = 1000   // Default: 100
+});
+```
+
+`InferSchemaFileAsync` supports UTF-8 (with or without BOM) and stops after the configured number of data rows. Its types and nullability describe only that sample, not the entire file. Use CSV validation separately when every row must be checked.
+
 **Use cases:**
 - Dynamic CSV import without pre-defined schemas
 - Generating `CREATE TABLE` statements from CSV files

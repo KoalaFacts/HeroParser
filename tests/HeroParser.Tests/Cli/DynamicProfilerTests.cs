@@ -43,6 +43,70 @@ public class DynamicProfilerTests
         DynamicProfiler.ObserveCell(expected, value);
         DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
 
+        AssertSameStats(expected, actual);
+    }
+
+    [Fact]
+    public void ObserveCellUtf8_RepeatedAndHighCardinalityValuesMatchStringObservation()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] recurring = ["North", "north", "South", "true", "false", "2026-01-01", "北", " ", "", "123.45"];
+
+        foreach (string value in Enumerable.Range(0, 300).Select(i => recurring[i % recurring.Length])
+            .Concat(Enumerable.Range(0, 110).Select(i => $"unique{i}"))
+            .Concat(Enumerable.Repeat("North", 30))
+            .Append(new string('x', 300)))
+        {
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        AssertSameStats(expected, actual);
+    }
+
+    [Fact]
+    public void ObserveCellUtf8_SixteenAlternatingCategoriesMatchStringObservation()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] values = [.. Enumerable.Range(0, 16).Select(i => $"category{i}")];
+
+        for (int i = 0; i < 320; i++)
+        {
+            string value = values[i % values.Length];
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        Assert.Equal(16, actual.ValueCounts.Count);
+        AssertSameStats(expected, actual);
+    }
+
+    [Fact]
+    public void ObserveCellUtf8_DisablesCacheAfterSeventeenByteDistinctVariants()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] variants = [.. Enumerable.Range(0, 17).Select(mask =>
+            new string([.. "abcdefgh".Select((value, index) =>
+                (mask & (1 << index)) == 0 ? value : char.ToUpperInvariant(value))]))];
+
+        for (int i = 0; i < 340; i++)
+        {
+            string value = variants[i % variants.Length];
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        Assert.Single(actual.ValueCounts);
+        Assert.NotNull(actual.Utf8Cache);
+        Assert.True(actual.Utf8Cache.IsDisabled);
+        AssertSameStats(expected, actual);
+    }
+
+    private static void AssertSameStats(DynamicColumnStats expected, DynamicColumnStats actual)
+    {
         Assert.Equal(expected.NullCount, actual.NullCount);
         Assert.Equal(expected.NonNullCount, actual.NonNullCount);
         Assert.Equal(expected.IntCount, actual.IntCount);

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -67,6 +68,48 @@ internal static class DynamicProfiler
             stats.NonNullCount++;
             ObserveValue(value, stats);
         }
+    }
+
+    public static void ObserveCellUtf8(DynamicColumnStats stats, ReadOnlySpan<byte> value)
+    {
+        if (value.IsEmpty)
+        {
+            stats.NullCount++;
+            return;
+        }
+
+        byte first = value[0];
+        if (first is not ((>= (byte)'0' and <= (byte)'9') or (byte)'+' or (byte)'-' or (byte)'.'))
+        {
+            ObserveCell(stats, Encoding.UTF8.GetString(value));
+            return;
+        }
+
+        if (Utf8Parser.TryParse(value, out int intValue, out int consumed) && consumed == value.Length)
+        {
+            stats.NonNullCount++;
+            stats.IntCount++;
+            UpdateNumericRange(intValue, stats);
+            return;
+        }
+
+        if (Utf8Parser.TryParse(value, out long longValue, out consumed) && consumed == value.Length)
+        {
+            stats.NonNullCount++;
+            stats.LongCount++;
+            UpdateNumericRange(longValue, stats);
+            return;
+        }
+
+        if (Utf8Parser.TryParse(value, out double doubleValue, out consumed) && consumed == value.Length)
+        {
+            stats.NonNullCount++;
+            stats.DecimalCount++;
+            UpdateNumericRange(doubleValue, stats);
+            return;
+        }
+
+        ObserveCell(stats, Encoding.UTF8.GetString(value));
     }
 
     public static string GenerateContextCard(string datasetName, string[] headers, List<string[]> rows)

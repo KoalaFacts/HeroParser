@@ -1003,7 +1003,12 @@ Instructions:
             rowCount++;
             var row = reader.Current;
             for (int i = 0; i < stats.Count; i++)
-                DynamicProfiler.ObserveCell(stats[i], i < row.ColumnCount ? row.GetString(i) : null);
+            {
+                if (i < row.ColumnCount)
+                    DynamicProfiler.ObserveCellUtf8(stats[i], row[i].Span);
+                else
+                    DynamicProfiler.ObserveCell(stats[i], null);
+            }
         }
 
         return (columnNames, stats, rowCount);

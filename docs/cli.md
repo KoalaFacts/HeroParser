@@ -146,7 +146,7 @@ Generate a markdown-formatted statistical profile card summarizing column dataty
 heroparser profile data.csv
 ```
 
-UTF-8 CSV profiling reads rows incrementally. To keep memory bounded, it tracks at most 100 short values per categorical column; when that limit is reached, the displayed category count is a lower bound, not an exact distinct count. Excel and UTF-16 inputs currently use the in-memory path.
+UTF-8 and BOM-marked UTF-16 CSV profiling read rows incrementally. UTF-16 is transcoded to UTF-8 as it is read. To keep memory bounded, profiling tracks at most 100 short values per categorical column; when that limit is reached, the displayed category count is a lower bound, not an exact distinct count. Excel still uses the in-memory path.
 
 Options:
 - `-d, --delimiter <char>`: Specify CSV delimiter.
@@ -186,7 +186,7 @@ heroparser schema data.csv
 heroparser schema data.csv --plan data.plan.json
 ```
 
-For UTF-8 CSV/TSV, schema inference reads at most the first 100 data rows instead of loading the whole file. The generated types are sample-based and do not prove that later rows match. With `--plan`, the sampled header width must match the saved plan; run `validate --plan` separately for full-file structural validation. UTF-16 input still uses the in-memory path.
+For UTF-8 and BOM-marked UTF-16 CSV/TSV, schema inference reads at most the first 100 data rows instead of loading the whole file. The generated types are sample-based and do not prove that later rows match. With `--plan`, the sampled header width must match the saved plan; run `validate --plan` separately for full-file structural validation. Plans still require UTF-8 input.
 
 The streaming commands accept logical rows above the reader's usual 512 KiB default, up to its 128 MiB hard limit. If delimiter detection cannot decide from a truncated 64 KiB sample, pass `--delimiter` explicitly rather than assuming a comma.
 
@@ -205,7 +205,7 @@ Submit natural language questions about your dataset. The CLI profiles the data 
 heroparser query data.csv "Which region generated the highest sales volume?"
 ```
 
-For UTF-8 CSV/TSV, the profile covers all rows using bounded categorical statistics, while only the first 10 rows are included as examples in the model prompt. Excel and UTF-16 input still use the in-memory path. The model receives a summary, not every row, so answers requiring exact row-level retrieval are not guaranteed.
+For UTF-8 and BOM-marked UTF-16 CSV/TSV, the profile covers all rows using bounded categorical statistics, while only the first 10 rows are included as examples in the model prompt. Excel still uses the in-memory path. The model receives a summary, not every row, so answers requiring exact row-level retrieval are not guaranteed.
 
 ### 3.9 `translate` [AI]
 
@@ -215,7 +215,7 @@ Translate, map, or transform cells across rows in batches utilizing an LLM promp
 heroparser translate customers.csv "Translate the Description field to Spanish and capitalize the Name field" --output spanish_customers.csv
 ```
 
-For UTF-8 CSV/TSV, translation first counts rows for the progress display, then reads and transforms one configured batch at a time. This adds a sequential read pass but avoids retaining the whole input in memory. Excel and UTF-16 input still use the in-memory path. The output file may be partial if the model or parsing fails partway through; never use the input path as the output path.
+For UTF-8 and BOM-marked UTF-16 CSV/TSV, translation first counts rows for the progress display, then reads and transforms one configured batch at a time. UTF-16 is transcoded during each pass. This adds a sequential read pass but avoids retaining the whole input in memory. Excel still uses the in-memory path. The output file may be partial if the model or parsing fails partway through; never use the input path as the output path.
 
 ---
 

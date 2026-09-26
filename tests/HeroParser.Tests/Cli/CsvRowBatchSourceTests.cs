@@ -1,5 +1,6 @@
 using HeroParser.Cli;
 using HeroParser.Tests.ConsoleUi;
+using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests.Cli;
@@ -60,5 +61,24 @@ public sealed class CsvRowBatchSourceTests : IDisposable
         await using var reading = await CsvRowBatchSource.OpenAsync(path, ',');
         var batch = await reading.ReadBatchAsync(1);
         Assert.Equal(600_000, Assert.Single(batch)[0].Length);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Utf16_CountAndBatches_PreserveQuotedRowsAndUnicode(bool bigEndian)
+    {
+        string path = FileWith("");
+        File.WriteAllText(path, "Name,Note\r\n猫,\"line\n😀\"\r\n犬,last\r\n",
+            bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode);
+
+        await using var counting = await CsvRowBatchSource.OpenAsync(path, ',');
+        Assert.Equal(2, await counting.CountRemainingRowsAsync());
+
+        await using var reading = await CsvRowBatchSource.OpenAsync(path, ',');
+        Assert.Equal(["Name", "Note"], reading.Headers);
+        Assert.Equal(["猫", "\"line\n😀\""], Assert.Single(await reading.ReadBatchAsync(1)));
+        Assert.Equal(["犬", "last"], Assert.Single(await reading.ReadBatchAsync(1)));
+        Assert.Empty(await reading.ReadBatchAsync(1));
     }
 }

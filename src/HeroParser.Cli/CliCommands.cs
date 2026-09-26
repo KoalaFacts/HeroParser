@@ -518,13 +518,11 @@ internal static partial class CliCommands
             }
 
             char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
-            var schemaResult = utf16
-                ? Csv.InferSchema(File.ReadAllText(path), new CsvSchemaInferenceOptions { Delimiter = effectiveDelimiter })
-                : await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions
-                {
-                    Delimiter = effectiveDelimiter,
-                    MaxColumnCount = plan is null ? 100 : 1000
-                }).ConfigureAwait(false);
+            var schemaResult = await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions
+            {
+                Delimiter = effectiveDelimiter,
+                MaxColumnCount = plan is null ? 100 : 1000
+            }).ConfigureAwait(false);
             if (plan is not null && schemaResult.Columns.Count != plan.ExpectedColumnCount)
             {
                 ConsoleUtils.Error($"CSV header has {schemaResult.Columns.Count} columns, but the import plan expects {plan.ExpectedColumnCount}.");
@@ -532,8 +530,6 @@ internal static partial class CliCommands
             }
 
             ConsoleUtils.Info($"Types inferred from {schemaResult.SampledRowCount} data rows (limit 100); this is not full-file validation.");
-            if (utf16)
-                ConsoleUtils.Warning("UTF-16 schema inference still loads the whole file into memory.");
 
             var className = Path.GetFileNameWithoutExtension(path);
             // Replace non-alphanumeric for class name
@@ -609,9 +605,7 @@ internal static partial class CliCommands
 
             // AI Schema Generation
             var filename = Path.GetFileName(path);
-            var (headers, rows) = utf16
-                ? ReadTabularData(path, effectiveDelimiter, null)
-                : await ReadSchemaContextAsync(path, effectiveDelimiter, plan is null ? 100 : 1000).ConfigureAwait(false);
+            var (headers, rows) = await ReadSchemaContextAsync(path, effectiveDelimiter, plan is null ? 100 : 1000).ConfigureAwait(false);
             var contextCard = DynamicProfiler.GenerateContextCard(filename, headers, [.. rows.Take(10)]);
 
             var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
@@ -681,19 +675,12 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
             if (IsCsvInput(path))
             {
                 var (sample, sampleLength) = ReadCsvSample(path);
-                if (!IsUtf16LittleEndian(sample, sampleLength) && !IsUtf16BigEndian(sample, sampleLength))
-                {
-                    char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16: false);
-                    var (streamHeaders, stats, totalRows) = await ProfileCsvAsync(path, effectiveDelimiter).ConfigureAwait(false);
-                    headers = streamHeaders;
-                    (_, sampleRows) = await ReadSchemaContextAsync(path, effectiveDelimiter, 100).ConfigureAwait(false);
-                    card = DynamicProfiler.GenerateContextCard(filename, totalRows, stats);
-                }
-                else
-                {
-                    (headers, sampleRows) = ReadTabularData(path, delimiter, sheet);
-                    card = DynamicProfiler.GenerateContextCard(filename, headers, sampleRows);
-                }
+                bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+                char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
+                var (streamHeaders, stats, totalRows) = await ProfileCsvAsync(path, effectiveDelimiter).ConfigureAwait(false);
+                headers = streamHeaders;
+                (_, sampleRows) = await ReadSchemaContextAsync(path, effectiveDelimiter, 100).ConfigureAwait(false);
+                card = DynamicProfiler.GenerateContextCard(filename, totalRows, stats);
             }
             else
             {
@@ -774,9 +761,9 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
         try
         {
             var (sample, sampleLength) = ReadCsvSample(path);
-            bool streamCsv = IsCsvInput(path) && !IsUtf16LittleEndian(sample, sampleLength) &&
-                !IsUtf16BigEndian(sample, sampleLength);
-            char inputDelimiter = delimiter ?? (streamCsv ? DetectSchemaDelimiter(path, sample, sampleLength, utf16: false) : ',');
+            bool streamCsv = IsCsvInput(path);
+            bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+            char inputDelimiter = delimiter ?? (streamCsv ? DetectSchemaDelimiter(path, sample, sampleLength, utf16) : ',');
             string[] headers;
             List<string[]>? rows = null;
             long totalRows;
@@ -923,7 +910,7 @@ Instructions:
         }
         catch (InvalidOperationException)
         {
-            if (!utf16 && new FileInfo(path).Length > length)
+            if (new FileInfo(path).Length > length)
                 throw new InvalidOperationException("Cannot detect delimiter from the bounded sample; specify --delimiter explicitly.");
             return ',';
         }
@@ -993,19 +980,14 @@ Instructions:
         string path, char? delimiter)
     {
         var (sample, sampleLength) = ReadCsvSample(path);
-        if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
-        {
-            var (headers, rows) = ReadTabularData(path, delimiter, null);
-            return (headers, DynamicProfiler.Analyze(headers, rows), rows.Count);
-        }
-
-        char detectedDelimiter = delimiter ?? CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
+        bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+        char detectedDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
         await using var reader = Csv.Read()
             .WithDelimiter(detectedDelimiter)
             .WithMaxRows(int.MaxValue)
             .WithMaxRowSize(null)
             .AllowNewlinesInQuotes()
-            .FromFileAsync(path);
+            .FromTextFileAsync(path);
         if (!await reader.MoveNextAsync().ConfigureAwait(false))
             return ([], [], 0);
 

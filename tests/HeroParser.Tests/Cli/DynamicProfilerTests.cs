@@ -43,6 +43,30 @@ public class DynamicProfilerTests
         DynamicProfiler.ObserveCell(expected, value);
         DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
 
+        AssertSameStats(expected, actual);
+    }
+
+    [Fact]
+    public void ObserveCellUtf8_RepeatedAndHighCardinalityValuesMatchStringObservation()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] recurring = ["North", "north", "South", "true", "false", "2026-01-01", "北", " ", "", "123.45"];
+
+        foreach (string value in Enumerable.Range(0, 300).Select(i => recurring[i % recurring.Length])
+            .Concat(Enumerable.Range(0, 110).Select(i => $"unique{i}"))
+            .Concat(Enumerable.Repeat("North", 30))
+            .Append(new string('x', 300)))
+        {
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        AssertSameStats(expected, actual);
+    }
+
+    private static void AssertSameStats(DynamicColumnStats expected, DynamicColumnStats actual)
+    {
         Assert.Equal(expected.NullCount, actual.NullCount);
         Assert.Equal(expected.NonNullCount, actual.NonNullCount);
         Assert.Equal(expected.IntCount, actual.IntCount);

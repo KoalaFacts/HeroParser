@@ -381,11 +381,10 @@ internal static class Program
             {
                 bool outputEntry = false;
                 bool planEntry = false;
-                foreach (string entry in Directory.EnumerateFileSystemEntries(parent))
+                foreach (string? name in Directory.EnumerateFileSystemEntries(parent).Select(Path.GetFileName))
                 {
-                    string name = Path.GetFileName(entry);
-                    outputEntry |= name.Equals(outputParts[i], StringComparison.Ordinal);
-                    planEntry |= name.Equals(planParts[i], StringComparison.Ordinal);
+                    outputEntry |= string.Equals(name, outputParts[i], StringComparison.Ordinal);
+                    planEntry |= string.Equals(name, planParts[i], StringComparison.Ordinal);
                 }
                 if (outputEntry && planEntry)
                     return true;

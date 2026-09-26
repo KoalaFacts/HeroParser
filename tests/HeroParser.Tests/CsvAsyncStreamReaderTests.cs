@@ -32,6 +32,85 @@ public class CsvAsyncStreamReaderTests
         Assert.False(await reader.MoveNextAsync(cancellationToken));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task TextFileReader_TranscodesUtf16AcrossSmallBuffers(bool bigEndian)
+    {
+        string path = Path.Join(Path.GetTempPath(), Path.GetRandomFileName() + ".csv");
+        try
+        {
+            File.WriteAllText(path, "Name,Note\n猫,\"line\n😀\"\n", bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode);
+            await using var reader = Csv.Read().AllowNewlinesInQuotes().FromTextFileAsync(path, bufferSize: 4);
+            var token = TestContext.Current.CancellationToken;
+
+            Assert.True(await reader.MoveNextAsync(token));
+            Assert.Equal(["Name", "Note"], reader.Current.ToStringArray());
+            Assert.True(await reader.MoveNextAsync(token));
+            Assert.Equal("猫", reader.Current.GetString(0));
+            Assert.Equal("line\n😀", reader.Current[1].UnquoteToString());
+            Assert.False(await reader.MoveNextAsync(token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task TextFileReader_PreservesSurrogateAcrossTranscodingBlocks(bool bigEndian)
+    {
+        string path = Path.Join(Path.GetTempPath(), Path.GetRandomFileName() + ".csv");
+        try
+        {
+            string value = new string('a', 32_761) + "😀";
+            File.WriteAllText(path, "Value\n" + value + "\n", bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode);
+            await using var reader = Csv.Read().FromTextFileAsync(path, bufferSize: 4096);
+            var token = TestContext.Current.CancellationToken;
+
+            Assert.True(await reader.MoveNextAsync(token));
+            Assert.Equal("Value", reader.Current.GetString(0));
+            Assert.True(await reader.MoveNextAsync(token));
+            Assert.Equal(value, reader.Current.GetString(0));
+            Assert.False(await reader.MoveNextAsync(token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task TextFileReader_ReplacesIncompleteUtf16CodeUnit(bool bigEndian)
+    {
+        string path = Path.Join(Path.GetTempPath(), Path.GetRandomFileName() + ".csv");
+        try
+        {
+            Encoding encoding = bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode;
+            byte[] bytes = [.. encoding.GetPreamble(), .. encoding.GetBytes("Value\n"), 0xFF];
+            File.WriteAllBytes(path, bytes);
+            await using var reader = Csv.Read().FromTextFileAsync(path);
+            var token = TestContext.Current.CancellationToken;
+
+            Assert.True(await reader.MoveNextAsync(token));
+            Assert.Equal("Value", reader.Current.GetString(0));
+            Assert.True(await reader.MoveNextAsync(token));
+            Assert.Equal("\uFFFD", reader.Current.GetString(0));
+            Assert.False(await reader.MoveNextAsync(token));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task AsyncStreamReader_AllowsNewlinesInsideQuotes()

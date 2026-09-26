@@ -1,4 +1,5 @@
 using System.IO.Pipelines;
+using System.Text;
 using HeroParser.SeparatedValues.Reading.Streaming;
 
 namespace HeroParser.SeparatedValues.Reading.Rows;
@@ -108,6 +109,45 @@ public sealed partial class CsvRowReaderBuilder
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         return new CsvAsyncStreamReader(stream, options, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
+    }
+
+    /// <summary>
+    /// Creates an async streaming reader for a UTF-8 file or a BOM-marked UTF-16 file.
+    /// UTF-16 bytes are incrementally transcoded to UTF-8 before parsing.
+    /// </summary>
+    /// <param name="path">Filesystem path to the CSV file.</param>
+    /// <param name="bufferSize">Initial pooled parser buffer size in bytes.</param>
+    /// <returns>A reader that owns its file stream.</returns>
+    public CsvAsyncStreamReader FromTextFileAsync(string path, int bufferSize = 16 * 1024)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        var options = GetOptions();
+        options.Validate();
+        var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        Stream input = file;
+        try
+        {
+            int first = file.ReadByte();
+            int second = file.ReadByte();
+            Encoding? encoding = (first, second) switch
+            {
+                (0xFF, 0xFE) => Encoding.Unicode,
+                (0xFE, 0xFF) => Encoding.BigEndianUnicode,
+                _ => null
+            };
+            if (encoding is null)
+                file.Position = 0;
+            else
+                input = new Utf16ToUtf8ReadStream(file, encoding);
+
+            return new CsvAsyncStreamReader(input, options, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
+        }
+        catch
+        {
+            input.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

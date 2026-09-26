@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
+using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests;
@@ -64,15 +65,19 @@ public sealed class SchemaInferenceFileTests : IDisposable
         Assert.All(result.Columns, column => Assert.Equal(CsvInferredType.Integer, column.InferredType));
     }
 
-    [Fact]
-    public async Task Utf16File_IsRejectedEvenWithExplicitDelimiter()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Utf16File_InfersSchemaWithDetectedDelimiter(bool bigEndian)
     {
         string path = FileWith("");
-        File.WriteAllText(path, "A,B\n1,2", System.Text.Encoding.Unicode);
+        File.WriteAllText(path, "Name;Count\n猫;2\n犬;3", bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode);
 
-        await Assert.ThrowsAsync<CsvException>(async () =>
-            await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions { Delimiter = ',' },
-                TestContext.Current.CancellationToken));
+        var result = await Csv.InferSchemaFileAsync(path, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.SampledRowCount);
+        Assert.Equal("Name", result.Columns[0].Name);
+        Assert.Equal(CsvInferredType.Integer, result.Columns[1].InferredType);
     }
 
     [Fact]
@@ -111,6 +116,21 @@ public sealed class SchemaInferenceFileTests : IDisposable
     {
         string csv = "\"" + new string('x', 70_000) + "\";B\n1;2";
         string path = FileWith(csv);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await Csv.InferSchemaFileAsync(path, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Contains("specify a delimiter", error.Message, StringComparison.OrdinalIgnoreCase);
+
+        var result = await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions { Delimiter = ';' },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(2, result.Columns.Count);
+    }
+
+    [Fact]
+    public async Task Utf16TruncatedDelimiterSample_RequiresExplicitDelimiter()
+    {
+        string path = FileWith("");
+        File.WriteAllText(path, "\"" + new string('x', 70_000) + "\";B\n1;2", Encoding.Unicode);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await Csv.InferSchemaFileAsync(path, cancellationToken: TestContext.Current.CancellationToken));

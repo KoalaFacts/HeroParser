@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using HeroParser.Cli;
 using HeroParser.Cli.AI;
 using HeroParser.Tests.ConsoleUi;
@@ -58,10 +59,10 @@ public class CliAiCommandTests : IDisposable
 
     private static LlmClient ClientFor(ScriptedRunner runner) => new(LlmProvider.Google, null, runner);
 
-    private string TempFile(string contents, string extension = ".csv")
+    private string TempFile(string contents, string extension = ".csv", Encoding? encoding = null)
     {
         string path = Path.Join(Path.GetTempPath(), Path.GetRandomFileName() + extension);
-        File.WriteAllText(path, contents);
+        File.WriteAllText(path, contents, encoding ?? new UTF8Encoding(false));
         tempFiles.Add(path);
         return path;
     }
@@ -112,6 +113,24 @@ public class CliAiCommandTests : IDisposable
         Assert.Contains("at most the first 10 data rows", prompt, StringComparison.Ordinal);
         Assert.DoesNotContain(new string('x', 100), prompt, StringComparison.Ordinal);
         Assert.Contains("Types inferred from 100 data rows", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Schema_Utf16_SamplesOnlyFirstRows(bool bigEndian)
+    {
+        var runner = new ScriptedRunner("```csharp\npublic sealed class Refined { }\n```");
+        string csv = "Name;Count\n" + string.Concat(Enumerable.Range(0, 100).Select(i => $"猫{i};{i}\n")) +
+            new string('x', 600_000);
+
+        Assert.True(await CliCommands.SchemaAsync(TempFile(csv, encoding: bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode),
+            ';', useAi: true, null, null, null, ClientFor(runner)), output.ToString());
+
+        string prompt = Assert.Single(runner.Prompts);
+        Assert.Contains("TabularMap(Name = \"Name\")", prompt, StringComparison.Ordinal);
+        Assert.Contains("public int Count", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain(new string('x', 100), prompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -202,6 +221,34 @@ public class CliAiCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Query_Utf16_ProfilesAllRowsAndSamplesTen()
+    {
+        var runner = new ScriptedRunner("ok");
+        string csv = "Name;Age\n" + string.Join('\n', Enumerable.Range(0, 20).Select(i => $"猫{i};{i}"));
+
+        Assert.True(await CliCommands.QueryAsync(TempFile(csv, encoding: Encoding.BigEndianUnicode),
+            null, null, "count", null, null, null, ClientFor(runner)));
+
+        string prompt = Assert.Single(runner.Prompts);
+        Assert.Contains("(20 rows)", prompt, StringComparison.Ordinal);
+        Assert.Contains("| 猫9 | 9 |", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("| 猫10 | 10 |", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Utf16_ProfileAndQuery_SupportMoreThanDefaultRowLimit()
+    {
+        var runner = new ScriptedRunner("ok");
+        string csv = "Name,Age\n" + string.Concat(Enumerable.Range(0, 100_001).Select(i => $"n{i},{i}\n"));
+        string path = TempFile(csv, encoding: Encoding.Unicode);
+
+        Assert.True(await CliCommands.ProfileAsync(path, ',', null), output.ToString());
+        Assert.True(await CliCommands.QueryAsync(path, ',', null, "count", null, null, null, ClientFor(runner)),
+            output.ToString());
+        Assert.Contains($"({100_001:N0} rows)", Assert.Single(runner.Prompts), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Query_ProfilesLargeRowBeyondSamples()
     {
         var runner = new ScriptedRunner("ok");
@@ -287,6 +334,22 @@ public class CliAiCommandTests : IDisposable
         // 5 rows in batches of 2 is three calls, the last one short.
         Assert.Equal(3, runner.Prompts.Count);
         Assert.Contains("Transform the input rows according to this prompt: \"t\"", runner.Prompts[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Translate_Utf16_UsesConfiguredBatches()
+    {
+        var runner = new ScriptedRunner("{\"Name\":\"ok\"}");
+        string outputPath = TempPath();
+
+        Assert.True(await CliCommands.TranslateAsync(
+            TempFile("Name\nA\nB\nC", encoding: Encoding.Unicode), null, null, "t",
+            outputPath, batchSize: 2, null, null, null, ClientFor(runner)));
+
+        Assert.Equal(2, runner.Prompts.Count);
+        Assert.Contains("\"A\"", runner.Prompts[0], StringComparison.Ordinal);
+        Assert.Contains("\"C\"", runner.Prompts[1], StringComparison.Ordinal);
+        Assert.Contains("ok", File.ReadAllText(outputPath), StringComparison.Ordinal);
     }
 
     [Fact]

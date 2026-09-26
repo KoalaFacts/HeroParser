@@ -65,6 +65,24 @@ public class DynamicProfilerTests
         AssertSameStats(expected, actual);
     }
 
+    [Fact]
+    public void ObserveCellUtf8_SixteenAlternatingCategoriesMatchStringObservation()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] values = [.. Enumerable.Range(0, 16).Select(i => $"category{i}")];
+
+        for (int i = 0; i < 320; i++)
+        {
+            string value = values[i % values.Length];
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        Assert.Equal(16, actual.ValueCounts.Count);
+        AssertSameStats(expected, actual);
+    }
+
     private static void AssertSameStats(DynamicColumnStats expected, DynamicColumnStats actual)
     {
         Assert.Equal(expected.NullCount, actual.NullCount);

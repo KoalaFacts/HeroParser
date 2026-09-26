@@ -13,7 +13,7 @@ internal enum ProfileValueKind
 
 internal sealed class Utf8ProfileCache
 {
-    private const int CAPACITY = 4;
+    private const int CAPACITY = 16;
 
     private readonly Entry[] entries = new Entry[CAPACITY];
     private int count;

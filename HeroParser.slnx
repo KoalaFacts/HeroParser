@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks\HeroParser.Benchmarks\HeroParser.Benchmarks.csproj" />
+    <Project Path="benchmarks\HeroParser.CliProbe\HeroParser.CliProbe.csproj" />
     <Project Path="benchmarks\HeroParser.Console.Benchmarks\HeroParser.Console.Benchmarks.csproj" />
   </Folder>
   <Folder Name="/examples/">

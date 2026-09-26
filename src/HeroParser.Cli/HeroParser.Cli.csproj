@@ -37,6 +37,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="HeroParser.Tests" />
+    <InternalsVisibleTo Include="HeroParser.CliProbe" />
   </ItemGroup>
 
 </Project>

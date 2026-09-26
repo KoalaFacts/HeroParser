@@ -1,4 +1,5 @@
 using HeroParser.Cli;
+using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests.Cli;
@@ -13,6 +14,53 @@ namespace HeroParser.Tests.Cli;
 [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public class DynamicProfilerTests
 {
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData("0")]
+    [InlineData("+42")]
+    [InlineData("-2147483649")]
+    [InlineData("9223372036854775807")]
+    [InlineData("9223372036854775808")]
+    [InlineData("123.45")]
+    [InlineData("1e3")]
+    [InlineData("1e309")]
+    [InlineData("1.7976931348623157E+308")]
+    [InlineData(".5")]
+    [InlineData(" 42 ")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("true")]
+    [InlineData("2026-01-01")]
+    [InlineData("11112222-3333-4444-5555-666677778888")]
+    [InlineData("\"42\"")]
+    [InlineData("北")]
+    public void ObserveCellUtf8_MatchesStringObservation(string value)
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+
+        DynamicProfiler.ObserveCell(expected, value);
+        DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+
+        Assert.Equal(expected.NullCount, actual.NullCount);
+        Assert.Equal(expected.NonNullCount, actual.NonNullCount);
+        Assert.Equal(expected.IntCount, actual.IntCount);
+        Assert.Equal(expected.LongCount, actual.LongCount);
+        Assert.Equal(expected.DecimalCount, actual.DecimalCount);
+        Assert.Equal(expected.BoolCount, actual.BoolCount);
+        Assert.Equal(expected.TrueCount, actual.TrueCount);
+        Assert.Equal(expected.FalseCount, actual.FalseCount);
+        Assert.Equal(expected.DateTimeCount, actual.DateTimeCount);
+        Assert.Equal(expected.GuidCount, actual.GuidCount);
+        Assert.Equal(expected.StringCount, actual.StringCount);
+        Assert.Equal(expected.Min, actual.Min);
+        Assert.Equal(expected.Max, actual.Max);
+        Assert.Equal(expected.Sum, actual.Sum);
+        Assert.Equal(expected.ValueCounts, actual.ValueCounts);
+        Assert.Equal(expected.CategoriesTruncated, actual.CategoriesTruncated);
+    }
+
     private static string TypeOfColumn(params string[] values)
     {
         var stats = DynamicProfiler.Analyze(["Col"], [.. values.Select(v => new[] { v })]);

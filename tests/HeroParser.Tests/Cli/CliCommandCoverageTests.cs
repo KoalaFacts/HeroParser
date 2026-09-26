@@ -276,6 +276,19 @@ public sealed class CliCommandCoverageTests : IDisposable
         Assert.Contains("At least 100 distinct categories tracked", Output, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Profile_ByteObservedNumbers_PreserveRangesAndNulls()
+    {
+        string csv = "Amount,Label\n1,North\n2,North\n3.5,South\n,South\n";
+
+        Assert.True(await CliCommands.ProfileAsync(TempFile(csv), ',', null));
+
+        Assert.Contains("Decimal", Output, StringComparison.Ordinal);
+        Assert.Contains("25.0%", Output, StringComparison.Ordinal);
+        Assert.Contains("3.50", Output, StringComparison.Ordinal);
+        Assert.Contains("North", Output, StringComparison.Ordinal);
+    }
+
     // ---- convert ---------------------------------------------------------------
 
     [Fact]

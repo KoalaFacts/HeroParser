@@ -13,7 +13,7 @@ namespace HeroParser.Cli;
 
 internal static partial class CliCommands
 {
-    public static async Task<bool> InspectAsync(string path, char? delimiter, int sampleRows)
+    public static async Task<bool> InspectAsync(string path, char? delimiter, int sampleRows, string? savePlanPath = null)
     {
         if (!File.Exists(path))
         {
@@ -24,6 +24,13 @@ internal static partial class CliCommands
         if (sampleRows is < 1 or > 10000)
         {
             ConsoleUtils.Error("--sample-rows must be an integer from 1 to 10000");
+            return false;
+        }
+
+        if (savePlanPath is not null && Path.GetFullPath(path).Equals(Path.GetFullPath(savePlanPath),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            ConsoleUtils.Error("Plan path must differ from the CSV input path.");
             return false;
         }
 
@@ -49,6 +56,11 @@ internal static partial class CliCommands
 
             if (sampleLength == 0 || (utf8Bom && sampleLength == 3))
             {
+                if (savePlanPath is not null)
+                {
+                    ConsoleUtils.Error("Cannot save a CSV import plan from an empty file.");
+                    return false;
+                }
                 ConsoleUtils.Header($"CSV Inspection: {SanitizeTerminalText(Path.GetFileName(path))}");
                 ConsoleUtils.Info("File is empty; no header or data rows were found.");
                 return true;
@@ -152,6 +164,19 @@ internal static partial class CliCommands
 
             ConsoleUtils.Info("Types and anomalies describe only inspected rows. Run 'heroparser validate <file>' to check the full file.");
             ConsoleUtils.Info($"Re-use parser setting: --delimiter \"{SanitizeTerminalText(delimiter == '\t' ? "\\t" : delimiter.Value.ToString())}\"");
+            if (savePlanPath is not null)
+            {
+                new CsvImportPlan
+                {
+                    Delimiter = delimiter.Value,
+                    ExpectedColumnCount = headers.Length,
+                    SampledDataRows = rows,
+                    SampledWidthMismatches = raggedRows,
+                    DelimiterConfidence = detection?.Confidence,
+                    Utf8BomObserved = utf8Bom
+                }.Save(savePlanPath);
+                ConsoleUtils.Info($"Saved sampled CSV import plan: {SanitizeTerminalText(savePlanPath)}. Validate the full file before converting.");
+            }
             return true;
         }
         catch (CsvException ex)
@@ -165,6 +190,11 @@ internal static partial class CliCommands
             return false;
         }
         catch (InvalidOperationException ex)
+        {
+            ConsoleUtils.Error($"Inspection failed: {ex.Message}");
+            return false;
+        }
+        catch (UnauthorizedAccessException ex)
         {
             ConsoleUtils.Error($"Inspection failed: {ex.Message}");
             return false;

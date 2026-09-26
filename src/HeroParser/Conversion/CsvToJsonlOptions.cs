@@ -13,6 +13,12 @@ public sealed record CsvToJsonlOptions
     /// <summary>Gets or sets a value indicating whether the CSV has a header row (default <see langword="true"/>).</summary>
     public bool HasHeaderRow { get; init; } = true;
 
+    /// <summary>Gets or sets whether quoted CSV fields may contain newlines.</summary>
+    public bool AllowNewlinesInsideQuotes { get; init; }
+
+    /// <summary>Gets or sets the maximum number of CSV columns (default 100).</summary>
+    public int MaxColumnCount { get; init; } = 100;
+
     /// <summary>Gets or sets the JSONL line separator (default <c>"\n"</c>).</summary>
     public string NewLine { get; init; } = "\n";
 

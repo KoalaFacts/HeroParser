@@ -101,9 +101,20 @@ Quickly inspect a UTF-8 CSV/TSV file without reading all data rows. The command 
 ```bash
 heroparser inspect data.csv
 heroparser inspect data.tsv --delimiter '\t' --sample-rows 500
+heroparser inspect data.csv --save-plan data.plan.json
 ```
 
 `--sample-rows` accepts 1 to 10,000 and is rejected by other commands. Quick inspect supports at most 1,000 columns; wider inputs require a different workflow. Set `--delimiter` when automatic detection is uncertain or the file has only one column. Without a BOM, UTF-8/ASCII is assumed, not verified. This is not full-file validation; run `heroparser validate data.csv` for that. UTF-16, Excel and JSONL are not supported by quick inspect.
+
+`--save-plan` creates a versioned JSON file containing the delimiter, header assumption, sampled column count, and sampling evidence. It refuses to overwrite an existing file or the input CSV. These values are observations, not a claim that the whole file is valid. Review the plan, especially when delimiter confidence is low, then run full-file validation with the same plan:
+
+```bash
+heroparser validate data.csv --plan data.plan.json
+heroparser validate data.csv --plan data.plan.json --report data.validation.json
+heroparser convert data.csv data.jsonl --plan data.plan.json
+```
+
+The plan currently assumes a header row and standard double-quote escaping. You may correct its delimiter before replaying it, but re-inspect if that changes the observed column count. `--plan` cannot be combined with `--delimiter`. Plans support UTF-8 `.csv` and `.tsv` input; planned conversion currently targets JSONL only. CSV-to-fixed-width and other conversion directions do not yet accept plans.
 
 ### 3.2 `detect`
 
@@ -122,6 +133,10 @@ heroparser validate data.csv
 ```
 
 UTF-8 CSV files are validated row by row without loading the whole file. Validation retains at most 100 errors, then stops and reports that later rows were not checked. UTF-16 files with a BOM currently use the in-memory validation path. A validation failure returns a nonzero process exit code.
+
+With `--plan`, validation uses the plan's delimiter and checks every row against its sampled column count. It still stops at the error limit, so a failure does not mean later rows were checked.
+
+`--report <path>` writes a versioned JSON result with validated row count, column count, `stoppedEarly`, and the bounded set of errors with row and column numbers. It works with or without a plan and refuses to overwrite the input or an existing report. The validator does not currently expose byte offsets; the report does not invent them. Treat this report as containing potentially sensitive input-derived error details.
 
 ### 3.4 `profile`
 
@@ -151,6 +166,7 @@ Options:
   - `openai`: OpenAI fine-tuning chat shape (`messages` array with system, user, and assistant content).
   - `anthropic`: Anthropic messages shape.
 - `-d, --delimiter <char>`: Delimiter for input/output CSV.
+- `--plan <path>`: Validate a UTF-8 CSV/TSV input against a saved plan before CSV/TSV-to-JSONL conversion. No output is created when validation fails.
 - `-s, --sheet <name>`: Sheet name if input or output is an Excel file.
 
 ### 3.6 `repair`

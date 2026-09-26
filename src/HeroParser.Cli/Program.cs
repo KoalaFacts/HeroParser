@@ -56,6 +56,9 @@ internal static class Program
         string? key = null;
         string? model = null;
         string? output = null;
+        string? planPath = null;
+        string? savePlanPath = null;
+        string? reportPath = null;
         int batchSize = 50;
         int sampleRows = 1000;
         bool useAi = false;
@@ -151,6 +154,17 @@ internal static class Program
                     return 1;
                 }
             }
+            else if (arg is "--plan" or "--save-plan" or "--report")
+            {
+                if (i + 1 >= args.Length || args[i + 1].StartsWith('-'))
+                {
+                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    return 1;
+                }
+                if (arg == "--plan") planPath = args[++i];
+                else if (arg == "--save-plan") savePlanPath = args[++i];
+                else reportPath = args[++i];
+            }
             else if (arg == "--sample-rows")
             {
                 if (command != "inspect")
@@ -189,15 +203,38 @@ internal static class Program
         // Route commands
         try
         {
+            if (savePlanPath is not null && command != "inspect")
+            {
+                ConsoleUtils.Error("--save-plan is only supported by inspect");
+                return 1;
+            }
+            if (planPath is not null && command is not ("validate" or "convert"))
+            {
+                ConsoleUtils.Error("--plan is only supported by validate and convert");
+                return 1;
+            }
+            if (reportPath is not null && command != "validate")
+            {
+                ConsoleUtils.Error("--report is only supported by validate");
+                return 1;
+            }
+            if (planPath is not null && delimiter.HasValue)
+            {
+                ConsoleUtils.Error("--plan and --delimiter cannot be combined; edit the plan delimiter instead");
+                return 1;
+            }
+            CsvImportPlan? plan = planPath is null ? null : CsvImportPlan.Load(planPath);
+            if (plan is not null) delimiter = plan.Delimiter;
+
             switch (command)
             {
                 case "inspect":
                     if (positionalArgs.Count != 1)
                     {
-                        ConsoleUtils.Error("Usage: heroparser inspect <file> [--delimiter <char>] [--sample-rows <1-10000>]");
+                        ConsoleUtils.Error("Usage: heroparser inspect <file> [--delimiter <char>] [--sample-rows <1-10000>] [--save-plan <file>]");
                         return 1;
                     }
-                    if (!await CliCommands.InspectAsync(positionalArgs[0], delimiter, sampleRows)) return 1;
+                    if (!await CliCommands.InspectAsync(positionalArgs[0], delimiter, sampleRows, savePlanPath)) return 1;
                     break;
 
                 case "detect":
@@ -215,7 +252,7 @@ internal static class Program
                         ConsoleUtils.Error("Usage: heroparser validate <file> [options]");
                         return 1;
                     }
-                    if (!await CliCommands.ValidateAsync(positionalArgs[0], delimiter)) return 1;
+                    if (!await CliCommands.ValidateAsync(positionalArgs[0], delimiter, plan, reportPath)) return 1;
                     break;
 
                 case "profile":
@@ -239,7 +276,13 @@ internal static class Program
                         ConsoleUtils.Error("Output file path is required. Specify it as second argument or use --output flag.");
                         return 1;
                     }
-                    if (!CliCommands.Convert(positionalArgs[0], outPath, delimiter, shape, sheet)) return 1;
+                    if (planPath is not null && Path.GetFullPath(outPath).Equals(Path.GetFullPath(planPath),
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    {
+                        ConsoleUtils.Error("Conversion output path must differ from the import plan path.");
+                        return 1;
+                    }
+                    if (!CliCommands.Convert(positionalArgs[0], outPath, delimiter, shape, sheet, plan)) return 1;
                     break;
 
                 case "repair":
@@ -327,6 +370,9 @@ internal static class Program
         SysConsole.WriteLine("\nGlobal Options:");
         SysConsole.WriteLine("  -d, --delimiter <char>       Set CSV delimiter (e.g. , ; | or \\t)");
         SysConsole.WriteLine("  --sample-rows <1-10000>      Data rows to inspect (inspect only; default: 1000)");
+        SysConsole.WriteLine("  --save-plan <path>           Save sampled CSV settings (inspect only)");
+        SysConsole.WriteLine("  --plan <path>                Re-use CSV settings (validate or convert)");
+        SysConsole.WriteLine("  --report <path>              Save bounded validation errors as JSON (validate only)");
         SysConsole.WriteLine("  -s, --sheet <name>           Sheet name to process for Excel files");
         SysConsole.WriteLine("  -o, --output <path>          Path to output file (required for convert/repair/translate)");
 
@@ -351,7 +397,7 @@ internal static class Program
             case "inspect":
                 SysConsole.WriteLine("Samples a UTF-8 CSV/TSV without scanning the whole file. Reports encoding evidence, delimiter confidence, columns, inferred sample types, and sampled row-width anomalies.");
                 SysConsole.WriteLine("Use validate for full-file structural validation. UTF-16 and Excel are not supported by this quick command.");
-                SysConsole.WriteLine("Usage: heroparser inspect <file> [--delimiter <char>] [--sample-rows <1-10000>]");
+                SysConsole.WriteLine("Usage: heroparser inspect <file> [--delimiter <char>] [--sample-rows <1-10000>] [--save-plan <file>]");
                 break;
             case "detect":
                 SysConsole.WriteLine("Auto-detects delimiter and encoding for tabular datasets.");
@@ -359,7 +405,7 @@ internal static class Program
                 break;
             case "validate":
                 SysConsole.WriteLine("Validates tabular column counts, consistency, and structural anomalies.");
-                SysConsole.WriteLine("Usage: heroparser validate <file> [--delimiter <char>]");
+                SysConsole.WriteLine("Usage: heroparser validate <file> [--delimiter <char> | --plan <file>] [--report <file>]");
                 break;
             case "profile":
                 SysConsole.WriteLine("Generates a Markdown statistics Context Card profiling the dataset.");
@@ -367,7 +413,7 @@ internal static class Program
                 break;
             case "convert":
                 SysConsole.WriteLine("Converts files between CSV, JSONL, Fixed-Width, and Excel (.xlsx) formats.");
-                SysConsole.WriteLine("Usage: heroparser convert <input> <output> [--shape <openai|anthropic>] [--delimiter <char>] [--sheet <name>]");
+                SysConsole.WriteLine("Usage: heroparser convert <input> <output> [--shape <openai|anthropic>] [--delimiter <char> | --plan <file>] [--sheet <name>]");
                 break;
             case "repair":
                 SysConsole.WriteLine("Cleans up truncated, unclosed quotes, and markdown tags from LLM-generated files.");

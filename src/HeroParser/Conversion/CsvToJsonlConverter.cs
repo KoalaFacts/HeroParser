@@ -54,7 +54,12 @@ public static class CsvToJsonlConverter
         ArgumentNullException.ThrowIfNull(shape);
         CsvToJsonlOptions opt = options ?? CsvToJsonlOptions.Default;
 
-        CsvReadOptions parserReadOptions = new() { Delimiter = opt.Delimiter };
+        CsvReadOptions parserReadOptions = new()
+        {
+            Delimiter = opt.Delimiter,
+            AllowNewlinesInsideQuotes = opt.AllowNewlinesInsideQuotes,
+            MaxColumnCount = opt.MaxColumnCount
+        };
 
         await using var rowReader = Csv.CreateAsyncStreamReader(csvStream, parserReadOptions, leaveOpen: true);
 
@@ -103,7 +108,12 @@ public static class CsvToJsonlConverter
 
     private static void ConvertCore(ReadOnlySpan<char> csvText, CsvToJsonlShape shape, CsvToJsonlOptions options, Stream output)
     {
-        CsvReadOptions parser = new() { Delimiter = options.Delimiter };
+        CsvReadOptions parser = new()
+        {
+            Delimiter = options.Delimiter,
+            AllowNewlinesInsideQuotes = options.AllowNewlinesInsideQuotes,
+            MaxColumnCount = options.MaxColumnCount
+        };
         byte[] newlineBytes = Encoding.UTF8.GetBytes(options.NewLine);
 
         JsonWriterOptions writerOptions = new()

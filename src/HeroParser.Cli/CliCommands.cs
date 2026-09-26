@@ -790,8 +790,7 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
 
             var headersJoined = string.Join(",", headers);
 
-            stagingPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!,
-                $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp");
+            stagingPath = $"{Path.GetFullPath(outputPath)}.{Guid.NewGuid():N}.tmp";
             using (var fileWriter = Csv.CreateFileWriter(stagingPath, new CsvWriteOptions { Delimiter = delimiter ?? ',' }))
             {
 

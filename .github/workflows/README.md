@@ -135,11 +135,13 @@ This directory contains automated CI/CD workflows for HeroParser.
 1. Determines the target release version
 2. Downloads the Linux x64 release tarball and extracts the binary
 3. Prepares the build environment by dynamically inserting the version into `snap/snapcraft.yaml`
-4. Builds the Snap package using `snapcore/action-build`
-5. Publishes the Snap package to the Snap Store using `snapcore/action-publish` (if token is configured)
+4. Requires `SNAPCRAFT_TOKEN`; fails explicitly when it is missing
+5. Builds the Snap package using `canonical/action-build`
+6. Publishes the Snap package to the Snap Store's stable channel using `canonical/action-publish`
 
 **Requirements:**
-- GitHub secret: `SNAPCRAFT_TOKEN` (Snap Store login token exported from `snapcraft export-login`)
+- GitHub secret: `SNAPCRAFT_TOKEN` (Snap Store login token exported from `snapcraft export-login`, passed as `SNAPCRAFT_STORE_CREDENTIALS`)
+- The `heroparser` snap must be registered in the store and the token must have permission to upload and release it. A successful build alone does not make the package installable.
 
 ---
 

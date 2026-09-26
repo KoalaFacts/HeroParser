@@ -266,6 +266,23 @@ public sealed class ProgramArgumentTests : IDisposable
     }
 
     [Fact]
+    public async Task ImportPlan_AllowsDistinctCaseSensitiveOutput()
+    {
+        string input = Csv("Name,Age\nAlice,30\n");
+        string planPath = OutputPath(".jsonl");
+        Assert.Equal(0, await Program.Main(["inspect", input, "--delimiter", ",", "--save-plan", planPath]));
+        string output = Path.Combine(Path.GetDirectoryName(planPath)!, Path.GetFileName(planPath).ToUpperInvariant());
+        if (File.Exists(output))
+            return;
+        tempFiles.Add(output);
+        File.WriteAllText(output, "previous result");
+
+        Assert.Equal(0, await Program.Main(["convert", input, output, "--plan", planPath]));
+        Assert.Contains("\"Name\":\"Alice\"", File.ReadAllText(output), StringComparison.Ordinal);
+        Assert.Contains("\"version\": 1", File.ReadAllText(planPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ImportPlan_RejectsBadVersionAndDoesNotOverwriteFiles()
     {
         string input = Csv();

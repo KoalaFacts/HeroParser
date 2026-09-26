@@ -100,6 +100,19 @@ public sealed class CsvStreamingValidationTests : IDisposable
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ValidateFileAsync_RejectsOversizedQuotedPreamble()
+    {
+        string path = TempFile("\"metadata," + new string('x', 600_000));
+
+        var result = await Csv.ValidateFileAsync(path, new CsvValidationOptions { SkipRows = 1 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(result.Errors, error => error.ErrorType == CsvValidationErrorType.ParseError);
+        Assert.Contains("maximum size", result.Errors[0].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ValidateFileAsync_QuotedNewlineAcrossBufferBoundaryIsOneRow()
     {
         string field = new('a', 20_000);

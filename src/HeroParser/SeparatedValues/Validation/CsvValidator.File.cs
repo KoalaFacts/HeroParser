@@ -52,11 +52,24 @@ public static partial class CsvValidator
                 if (options.SkipRows > 0)
                 {
                     stream.Position = 0;
-                    await SkipLogicalRowsAsync(stream, options.SkipRows, sample, cancellationToken).ConfigureAwait(false);
+                    await SkipLogicalRowsAsync(stream, options.SkipRows, options.GetEffectiveParseOptions().MaxRowSize,
+                        sample, cancellationToken).ConfigureAwait(false);
                     sampleLength = await ReadSampleAsync(stream, sample, cancellationToken).ConfigureAwait(false);
                 }
                 if (sampleLength > 0)
                     delimiter = CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
+            }
+            catch (CsvException ex)
+            {
+                return new CsvValidationResult
+                {
+                    Delimiter = delimiter,
+                    Errors = [new CsvValidationError
+                    {
+                        ErrorType = CsvValidationErrorType.ParseError,
+                        Message = $"Parse error: {ex.Message}"
+                    }]
+                };
             }
             catch (InvalidOperationException ex)
             {
@@ -230,11 +243,13 @@ public static partial class CsvValidator
         return true;
     }
 
-    private static async Task SkipLogicalRowsAsync(Stream stream, int rows, byte[] buffer, CancellationToken cancellationToken)
+    private static async Task SkipLogicalRowsAsync(Stream stream, int rows, int? maxRowSize, byte[] buffer,
+        CancellationToken cancellationToken)
     {
         bool quoted = false;
         bool afterCr = false;
         int skipped = 0;
+        long rowBytes = 0;
         int read;
         while (skipped < rows && (read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
         {
@@ -247,11 +262,15 @@ public static partial class CsvValidator
                     if (value == (byte)'\n')
                         continue;
                 }
+                if (++rowBytes > (maxRowSize ?? int.MaxValue))
+                    throw new CsvException(CsvErrorCode.ParseError,
+                        $"Row exceeds maximum size of {maxRowSize:N0} bytes while skipping preamble.", skipped + 1);
                 if (value == (byte)'"')
                     quoted = !quoted;
                 if (!quoted && (value == (byte)'\r' || value == (byte)'\n'))
                 {
                     skipped++;
+                    rowBytes = 0;
                     if (value == (byte)'\r')
                         afterCr = true;
                     if (skipped == rows)

@@ -371,6 +371,24 @@ public class CliAiCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Translate_PreservesExistingUnixOutputMode()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        string outputPath = TempPath();
+        File.WriteAllText(outputPath, "previous result");
+        const UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        File.SetUnixFileMode(outputPath, mode);
+
+        Assert.True(await CliCommands.TranslateAsync(
+            TempFile("Name\nAlice\n"), ',', null, "t", outputPath, batchSize: 1, null, null, null,
+            ClientFor(new ScriptedRunner("{\"Name\":\"translated\"}"))));
+
+        Assert.Equal(mode, File.GetUnixFileMode(outputPath));
+    }
+
+    [Fact]
     public async Task Translate_CountsAndReadsLargeRow()
     {
         var runner = new ScriptedRunner("{\"Value\":\"ok\"}");

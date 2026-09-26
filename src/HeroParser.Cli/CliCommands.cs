@@ -791,7 +791,19 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
             var headersJoined = string.Join(",", headers);
 
             stagingPath = $"{Path.GetFullPath(outputPath)}.{Guid.NewGuid():N}.tmp";
-            using (var fileWriter = Csv.CreateFileWriter(stagingPath, new CsvWriteOptions { Delimiter = delimiter ?? ',' }))
+            var stagingOptions = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None
+            };
+            if (!OperatingSystem.IsWindows())
+                stagingOptions.UnixCreateMode = File.Exists(outputPath)
+                    ? File.GetUnixFileMode(outputPath)
+                    : UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            using (var stagingStream = new FileStream(stagingPath, stagingOptions))
+            using (var fileWriter = Csv.CreateStreamWriter(stagingStream,
+                new CsvWriteOptions { Delimiter = delimiter ?? ',' }, leaveOpen: false))
             {
 
                 bool isFirstBatch = true;
@@ -897,7 +909,10 @@ Instructions:
                     });
             }
 
-            File.Move(stagingPath, outputPath, overwrite: true);
+            if (File.Exists(outputPath))
+                File.Replace(stagingPath, outputPath, destinationBackupFileName: null);
+            else
+                File.Move(stagingPath, outputPath);
             stagingPath = null;
             ConsoleUtils.Success($"Translation/transformation completed successfully. Saved to: {outputPath}");
             return true;

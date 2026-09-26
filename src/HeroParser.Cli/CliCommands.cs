@@ -35,23 +35,27 @@ namespace HeroParser.Cli;
 
 internal static class CliCommands
 {
-    public static void Detect(string path)
+    public static bool Detect(string path)
     {
         if (!File.Exists(path))
         {
             ConsoleUtils.Error($"File not found: {path}");
-            return;
+            return false;
         }
 
         ConsoleUtils.Info($"Analyzing delimiter and encoding for: {path}");
 
         try
         {
-            var bytes = File.ReadAllBytes(path);
-            var content = Encoding.UTF8.GetString(bytes);
-
-            // Detect encoding (UTF-8 BOM check)
-            bool hasBom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+            var (bytes, length) = ReadCsvSample(path);
+            bool utf16LittleEndian = IsUtf16LittleEndian(bytes, length);
+            bool utf16BigEndian = IsUtf16BigEndian(bytes, length);
+            bool hasBom = length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+            string content = utf16LittleEndian
+                ? Encoding.Unicode.GetString(bytes, 2, length - 2)
+                : utf16BigEndian
+                    ? Encoding.BigEndianUnicode.GetString(bytes, 2, length - 2)
+                    : Encoding.UTF8.GetString(bytes, hasBom ? 3 : 0, length - (hasBom ? 3 : 0));
 
             // Delimiter detection
             var detection = CsvDelimiterDetector.Detect(content);
@@ -71,7 +75,9 @@ internal static class CliCommands
             table.AddColumn("[blue bold]Value[/]");
 
             table.AddRow("File Path", path);
-            table.AddRow("Encoding", hasBom ? "UTF-8 with BOM" : "UTF-8 or ASCII");
+            table.AddRow("Encoding", utf16LittleEndian ? "UTF-16 LE with BOM"
+                : utf16BigEndian ? "UTF-16 BE with BOM"
+                : hasBom ? "UTF-8 with BOM" : "UTF-8 or ASCII (assumed)");
             table.AddRow("Detected Delimiter", readableDelimiter);
 
             string confColor = detection.Confidence >= 80 ? "green" : (detection.Confidence >= 50 ? "yellow" : "red");
@@ -114,33 +120,37 @@ internal static class CliCommands
             {
                 ConsoleUtils.Warning("Low delimiter confidence. Please manually verify using --delimiter option.");
             }
+            return true;
         }
         catch (Exception ex)
         {
             ConsoleUtils.Error($"Detection failed: {ex.Message}");
+            return false;
         }
     }
 
-    public static void Validate(string path, char? delimiter)
+    public static async Task<bool> ValidateAsync(string path, char? delimiter)
     {
         if (!File.Exists(path))
         {
             ConsoleUtils.Error($"File not found: {path}");
-            return;
+            return false;
         }
 
         ConsoleUtils.Info($"Running structural validation on: {path}");
 
         try
         {
-            var content = File.ReadAllText(path);
-            var options = new CsvValidationOptions();
+            var options = new CsvValidationOptions { MaxRows = 0 };
             if (delimiter.HasValue)
             {
                 options = options with { Delimiter = delimiter.Value };
             }
 
-            var result = Csv.Validate(content, options);
+            var (sample, sampleLength) = ReadCsvSample(path);
+            var result = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength)
+                ? Csv.Validate(File.ReadAllText(path), options)
+                : await Csv.ValidateFileAsync(path, options).ConfigureAwait(false);
 
             if (result.IsValid)
             {
@@ -178,29 +188,45 @@ internal static class CliCommands
                 {
                     ConsoleUtils.Info($"... and {result.Errors.Count - displayLimit} more errors.");
                 }
+                if (result.StoppedEarly)
+                    ConsoleUtils.Warning("Validation stopped after reaching the error limit; later rows were not checked.");
             }
+            return result.IsValid;
         }
         catch (Exception ex)
         {
             ConsoleUtils.Error($"Validation failed: {ex.Message}");
+            return false;
         }
     }
 
-    public static void Profile(string path, char? delimiter, string? sheet)
+    public static async Task<bool> ProfileAsync(string path, char? delimiter, string? sheet)
     {
         if (!File.Exists(path))
         {
             ConsoleUtils.Error($"File not found: {path}");
-            return;
+            return false;
         }
 
         ConsoleUtils.Info($"Profiling dataset: {path}");
 
         try
         {
-            var (headers, rows) = ReadTabularData(path, delimiter, sheet);
+            string[] headers;
+            List<DynamicColumnStats> statsList;
+            int totalRows;
+            if (Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                var (excelHeaders, rows) = ReadTabularData(path, delimiter, sheet);
+                headers = excelHeaders;
+                statsList = DynamicProfiler.Analyze(headers, rows);
+                totalRows = rows.Count;
+            }
+            else
+            {
+                (headers, statsList, totalRows) = await ProfileCsvAsync(path, delimiter).ConfigureAwait(false);
+            }
             var filename = Path.GetFileName(path);
-            var statsList = DynamicProfiler.Analyze(headers, rows);
 
             var table = new Table();
             table.Border(TableBorder.Rounded);
@@ -208,8 +234,6 @@ internal static class CliCommands
             table.AddColumn("[blue bold]Inferred Type[/]");
             table.AddColumn("[blue bold]Null Density[/]");
             table.AddColumn("[blue bold]Statistics / Frequency Details[/]");
-
-            int totalRows = rows.Count;
 
             foreach (var stats in statsList)
             {
@@ -238,7 +262,9 @@ internal static class CliCommands
                 {
                     int distinctCount = stats.ValueCounts.Count;
                     var sb = new StringBuilder();
-                    sb.Append($"{distinctCount} distinct categories. Top: ");
+                    sb.Append(stats.CategoriesTruncated
+                        ? $"At least {distinctCount} distinct categories tracked. Top tracked: "
+                        : $"{distinctCount} distinct categories. Top: ");
                     var topValues = stats.ValueCounts.OrderByDescending(v => v.Value).Take(3).ToList();
                     for (int j = 0; j < topValues.Count; j++)
                     {
@@ -256,19 +282,21 @@ internal static class CliCommands
             ConsoleUtils.Header($"Dataset Profile: {filename} ({totalRows:N0} rows)");
             AnsiConsole.Write(table);
             SysConsole.WriteLine();
+            return true;
         }
         catch (Exception ex)
         {
             ConsoleUtils.Error($"Profiling failed: {ex.Message}");
+            return false;
         }
     }
 
-    public static void Convert(string inputPath, string outputPath, char? delimiter, string? shapeName, string? sheet)
+    public static bool Convert(string inputPath, string outputPath, char? delimiter, string? shapeName, string? sheet)
     {
         if (!File.Exists(inputPath))
         {
             ConsoleUtils.Error($"Input file not found: {inputPath}");
-            return;
+            return false;
         }
 
         ConsoleUtils.Info($"Converting: {inputPath} -> {outputPath}");
@@ -320,6 +348,7 @@ internal static class CliCommands
             else if (inExt == ".txt" && outExt == ".csv") // FixedWidth -> CSV
             {
                 ConsoleUtils.Error("Conversion from Fixed-Width requires column widths. This CLI uses CSV/Excel as first class. Use the core API directly for manual layouts.");
+                return false;
             }
             else if (inExt == ".xlsx") // Excel -> CSV or JSONL
             {
@@ -328,7 +357,7 @@ internal static class CliCommands
                 {
                     File.WriteAllText(outputPath, "");
                     ConsoleUtils.Warning("Excel sheet was empty.");
-                    return;
+                    return true;
                 }
 
                 var headers = allRows[0];
@@ -364,25 +393,29 @@ internal static class CliCommands
                 else
                 {
                     ConsoleUtils.Error($"Unsupported output extension from Excel: {outExt}");
+                    return false;
                 }
             }
             else
             {
                 ConsoleUtils.Error($"Unsupported conversion direction from {inExt} to {outExt}");
+                return false;
             }
+            return true;
         }
         catch (Exception ex)
         {
             ConsoleUtils.Error($"Conversion failed: {ex.Message}");
+            return false;
         }
     }
 
-    public static void Repair(string inputPath, string outputPath)
+    public static bool Repair(string inputPath, string outputPath)
     {
         if (!File.Exists(inputPath))
         {
             ConsoleUtils.Error($"Input file not found: {inputPath}");
-            return;
+            return false;
         }
 
         ConsoleUtils.Info($"Repairing: {inputPath} -> {outputPath}");
@@ -393,19 +426,21 @@ internal static class CliCommands
             var repaired = LlmRepair.RepairText(text);
             File.WriteAllText(outputPath, repaired);
             ConsoleUtils.Success("Text repaired successfully (stripped markdown blocks & resolved unbalanced quotes).");
+            return true;
         }
         catch (Exception ex)
         {
             ConsoleUtils.Error($"Repair failed: {ex.Message}");
+            return false;
         }
     }
 
-    public static async Task SchemaAsync(string path, char? delimiter, bool useAi, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
+    public static async Task<bool> SchemaAsync(string path, char? delimiter, bool useAi, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
     {
         if (!File.Exists(path))
         {
             ConsoleUtils.Error($"File not found: {path}");
-            return;
+            return false;
         }
 
         ConsoleUtils.Info($"Generating schema for: {path}");
@@ -484,7 +519,7 @@ internal static class CliCommands
                 ConsoleUtils.Header("Generated C# Class (Local Inference)");
                 SysConsole.WriteLine(localSchema);
                 ConsoleUtils.Header("End of Class");
-                return;
+                return true;
             }
 
             // AI Schema Generation
@@ -529,19 +564,21 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
             ConsoleUtils.Header("Generated AI-Optimized C# Class");
             SysConsole.WriteLine(repairedCode);
             ConsoleUtils.Header("End of Class");
+            return true;
         }
         catch (Exception ex)
         {
             ConsoleUtils.Error($"Schema generation failed: {ex.Message}");
+            return false;
         }
     }
 
-    public static async Task QueryAsync(string path, char? delimiter, string? sheet, string userQuery, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
+    public static async Task<bool> QueryAsync(string path, char? delimiter, string? sheet, string userQuery, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
     {
         if (!File.Exists(path))
         {
             ConsoleUtils.Error($"File not found: {path}");
-            return;
+            return false;
         }
 
         ConsoleUtils.Info($"Loading dataset for AI Q&A...");
@@ -590,19 +627,21 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
             };
             AnsiConsole.Write(panel);
             SysConsole.WriteLine();
+            return true;
         }
         catch (Exception ex)
         {
             ConsoleUtils.Error($"Query failed: {ex.Message}");
+            return false;
         }
     }
 
-    public static async Task TranslateAsync(string path, char? delimiter, string? sheet, string transformPrompt, string outputPath, int batchSize, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
+    public static async Task<bool> TranslateAsync(string path, char? delimiter, string? sheet, string transformPrompt, string outputPath, int batchSize, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
     {
         if (!File.Exists(path))
         {
             ConsoleUtils.Error($"File not found: {path}");
-            return;
+            return false;
         }
 
         ConsoleUtils.Info($"Starting batch translation / transformation pipeline...");
@@ -713,10 +752,12 @@ Instructions:
                 });
 
             ConsoleUtils.Success($"Translation/transformation completed successfully. Saved to: {outputPath}");
+            return true;
         }
         catch (Exception ex)
         {
             ConsoleUtils.Error($"Translation pipeline failed: {ex.Message}");
+            return false;
         }
     }
 
@@ -771,4 +812,63 @@ Instructions:
             return (headers, rows);
         }
     }
+
+    private static async Task<(string[] Headers, List<DynamicColumnStats> Stats, int RowCount)> ProfileCsvAsync(
+        string path, char? delimiter)
+    {
+        var (sample, sampleLength) = ReadCsvSample(path);
+        if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
+        {
+            var (headers, rows) = ReadTabularData(path, delimiter, null);
+            return (headers, DynamicProfiler.Analyze(headers, rows), rows.Count);
+        }
+
+        char detectedDelimiter = delimiter ?? CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
+        await using var reader = Csv.Read()
+            .WithDelimiter(detectedDelimiter)
+            .WithMaxRows(int.MaxValue)
+            .AllowNewlinesInQuotes()
+            .FromFileAsync(path);
+        if (!await reader.MoveNextAsync().ConfigureAwait(false))
+            return ([], [], 0);
+
+        var header = reader.Current;
+        var columnNames = new string[header.ColumnCount];
+        for (int i = 0; i < columnNames.Length; i++)
+            columnNames[i] = header.GetString(i);
+
+        var stats = DynamicProfiler.CreateStats(columnNames);
+        int rowCount = 0;
+        while (await reader.MoveNextAsync().ConfigureAwait(false))
+        {
+            rowCount++;
+            var row = reader.Current;
+            for (int i = 0; i < stats.Count; i++)
+                DynamicProfiler.ObserveCell(stats[i], i < row.ColumnCount ? row.GetString(i) : null);
+        }
+
+        return (columnNames, stats, rowCount);
+    }
+
+    private static (byte[] Bytes, int Length) ReadCsvSample(string path)
+    {
+        var sample = new byte[64 * 1024];
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, FileOptions.SequentialScan);
+        int length = 0;
+        while (length < sample.Length)
+        {
+            int read = stream.Read(sample, length, sample.Length - length);
+            if (read == 0)
+                break;
+            length += read;
+        }
+        return (sample, length);
+    }
+
+    private static bool IsUtf16LittleEndian(byte[] data, int length)
+        => length >= 2 && data[0] == 0xFF && data[1] == 0xFE;
+
+    private static bool IsUtf16BigEndian(byte[] data, int length)
+        => length >= 2 && data[0] == 0xFE && data[1] == 0xFF;
 }

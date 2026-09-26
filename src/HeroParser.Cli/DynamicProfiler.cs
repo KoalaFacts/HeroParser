@@ -32,44 +32,41 @@ internal sealed class DynamicColumnStats
 
     // Categorical frequency
     public Dictionary<string, int> ValueCounts { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool CategoriesTruncated { get; set; }
 }
 
 internal static class DynamicProfiler
 {
     public static List<DynamicColumnStats> Analyze(string[] headers, List<string[]> rows)
     {
-        var statsList = new List<DynamicColumnStats>();
-        foreach (var header in headers)
-        {
-            statsList.Add(new DynamicColumnStats { Name = header });
-        }
+        var statsList = CreateStats(headers);
 
         foreach (var row in rows)
         {
-            for (int i = 0; i < Math.Min(headers.Length, row.Length); i++)
-            {
-                var val = row[i];
-                var stats = statsList[i];
-
-                if (string.IsNullOrWhiteSpace(val))
-                {
-                    stats.NullCount++;
-                }
-                else
-                {
-                    stats.NonNullCount++;
-                    ObserveValue(val, stats);
-                }
-            }
-
-            // Mark missing fields as null
-            for (int i = row.Length; i < headers.Length; i++)
-            {
-                statsList[i].NullCount++;
-            }
+            ObserveRow(statsList, row);
         }
 
         return statsList;
+    }
+
+    public static List<DynamicColumnStats> CreateStats(string[] headers)
+        => [.. headers.Select(header => new DynamicColumnStats { Name = header })];
+
+    public static void ObserveRow(List<DynamicColumnStats> statsList, string[] row)
+    {
+        for (int i = 0; i < statsList.Count; i++)
+            ObserveCell(statsList[i], i < row.Length ? row[i] : null);
+    }
+
+    public static void ObserveCell(DynamicColumnStats stats, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            stats.NullCount++;
+        else
+        {
+            stats.NonNullCount++;
+            ObserveValue(value, stats);
+        }
     }
 
     public static string GenerateContextCard(string datasetName, string[] headers, List<string[]> rows)
@@ -144,9 +141,10 @@ internal static class DynamicProfiler
 
     private static void TrackCategory(string value, DynamicColumnStats stats)
     {
-        // Limit unique tracker to 100 to avoid memory overflow for large fields
-        if (stats.ValueCounts.Count >= 100 && !stats.ValueCounts.ContainsKey(value))
+        // The profile retains bounded examples, not an exact distinct-count index.
+        if (value.Length > 256 || (stats.ValueCounts.Count >= 100 && !stats.ValueCounts.ContainsKey(value)))
         {
+            stats.CategoriesTruncated = true;
             return;
         }
 
@@ -187,11 +185,13 @@ internal static class DynamicProfiler
             else
             {
                 int distinctCount = stats.ValueCounts.Count;
-                sb.Append($"{distinctCount:N0} distinct categories.");
+                sb.Append(stats.CategoriesTruncated
+                    ? $"At least {distinctCount:N0} distinct categories tracked."
+                    : $"{distinctCount:N0} distinct categories.");
                 if (distinctCount > 0)
                 {
                     var topValues = stats.ValueCounts.OrderByDescending(v => v.Value).Take(3).ToList();
-                    sb.Append(" Top values: ");
+                    sb.Append(stats.CategoriesTruncated ? " Top tracked values: " : " Top values: ");
                     for (int j = 0; j < topValues.Count; j++)
                     {
                         double pct = (double)topValues[j].Value / totalRows * 100;

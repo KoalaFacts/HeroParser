@@ -47,13 +47,9 @@ curl -fsSL https://raw.githubusercontent.com/KoalaFacts/HeroParser/main/install.
 
 This will automatically detect your operating system and architecture, download the correct release asset, extract the binary, and install it to `/usr/local/bin` (or `~/.local/bin` if `/usr/local/bin` is not writable).
 
-### Option 4: Snap Store (Linux)
+### Option 4: Snap Store (Linux, pending)
 
-For Linux systems, you can also install the strictly-confined package directly from the Snap Store:
-
-```bash
-sudo snap install heroparser
-```
+The Snap package is not yet publicly available. Use the shell installer or a Linux archive from GitHub Releases until store publication is confirmed.
 
 ### Option 5: WinGet (Windows)
 
@@ -114,6 +110,8 @@ Verify the structural integrity of a file (e.g. checks that all rows have a cons
 heroparser validate data.csv
 ```
 
+UTF-8 CSV files are validated row by row without loading the whole file. Validation retains at most 100 errors, then stops and reports that later rows were not checked. UTF-16 files with a BOM currently use the in-memory validation path. A validation failure returns a nonzero process exit code.
+
 ### 3.3 `profile`
 
 Generate a markdown-formatted statistical profile card summarizing column datatypes, value ranges, distinct counts, null counts, and sample values. Ideal for printing dataset metadata or sending schema context to LLMs.
@@ -121,6 +119,8 @@ Generate a markdown-formatted statistical profile card summarizing column dataty
 ```bash
 heroparser profile data.csv
 ```
+
+UTF-8 CSV profiling reads rows incrementally. To keep memory bounded, it tracks at most 100 short values per categorical column; when that limit is reached, the displayed category count is a lower bound, not an exact distinct count. Excel and UTF-16 inputs currently use the in-memory path.
 
 Options:
 - `-d, --delimiter <char>`: Specify CSV delimiter.

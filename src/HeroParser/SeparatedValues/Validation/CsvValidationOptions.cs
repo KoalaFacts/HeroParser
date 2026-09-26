@@ -43,6 +43,11 @@ public sealed record CsvValidationOptions
     public int MaxRows { get; init; } = 1_000_000;
 
     /// <summary>
+    /// Maximum number of errors retained by streaming validation before it stops (default is 100).
+    /// </summary>
+    public int MaxErrors { get; init; } = 100;
+
+    /// <summary>
     /// Gets or sets a value indicating whether to check for consistent column counts across all rows (default is true).
     /// </summary>
     public bool CheckConsistentColumnCount { get; init; } = true;

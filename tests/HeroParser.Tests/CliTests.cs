@@ -51,7 +51,7 @@ public sealed class CliTests
     }
 
     [Fact]
-    public void Validate_ValidCsv_Succeeds()
+    public async Task Validate_ValidCsv_Succeeds()
     {
         // Arrange
         string csv = "Name,Age,Email\nAlice,30,alice@example.com\nBob,25,bob@example.com";
@@ -61,7 +61,7 @@ public sealed class CliTests
         try
         {
             // Act & Assert
-            CliCommands.Validate(tempFile, ',');
+            Assert.True(await CliCommands.ValidateAsync(tempFile, ','));
         }
         finally
         {
@@ -70,7 +70,7 @@ public sealed class CliTests
     }
 
     [Fact]
-    public void Validate_InvalidCsv_HandlesErrorsGracefully()
+    public async Task Validate_InvalidCsv_HandlesErrorsGracefully()
     {
         // Arrange
         string csv = "Name,Age,Email\nAlice,30\nBob,25,bob@example.com,ExtraColumn";
@@ -80,7 +80,7 @@ public sealed class CliTests
         try
         {
             // Act & Assert
-            CliCommands.Validate(tempFile, ',');
+            Assert.False(await CliCommands.ValidateAsync(tempFile, ','));
         }
         finally
         {
@@ -89,7 +89,7 @@ public sealed class CliTests
     }
 
     [Fact]
-    public void Profile_ValidCsv_PrintsMarkdownProfile()
+    public async Task Profile_ValidCsv_PrintsMarkdownProfile()
     {
         // Arrange
         string csv = "Name,Age,Active\nAlice,30,true\nBob,25,false\nCharlie,,true";
@@ -99,7 +99,7 @@ public sealed class CliTests
         try
         {
             // Act & Assert
-            CliCommands.Profile(tempFile, ',', null);
+            Assert.True(await CliCommands.ProfileAsync(tempFile, ',', null));
         }
         finally
         {

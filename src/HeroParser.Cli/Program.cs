@@ -42,8 +42,7 @@ internal static class Program
         {
             if (SysConsole.IsOutputRedirected || SysConsole.IsInputRedirected)
             {
-                CliCommands.Profile(args[0], null, null);
-                return 0;
+                return await CliCommands.ProfileAsync(args[0], null, null) ? 0 : 1;
             }
             await new InteractiveWizard(AnsiConsole.Current).RunAsync(args[0]);
             return 0;
@@ -138,12 +137,17 @@ internal static class Program
             {
                 if (i + 1 < args.Length)
                 {
-                    if (int.TryParse(args[++i], out var bs)) batchSize = bs;
+                    if (int.TryParse(args[++i], out var bs) && bs > 0) batchSize = bs;
                     else
                     {
-                        ConsoleUtils.Error("Invalid integer value for --batch-size");
+                        ConsoleUtils.Error("--batch-size must be a positive integer");
                         return 1;
                     }
+                }
+                else
+                {
+                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    return 1;
                 }
             }
             else if (arg == "-ai" || arg == "--ai")
@@ -177,7 +181,7 @@ internal static class Program
                         ConsoleUtils.Error("Usage: heroparser detect <file>");
                         return 1;
                     }
-                    CliCommands.Detect(positionalArgs[0]);
+                    if (!CliCommands.Detect(positionalArgs[0])) return 1;
                     break;
 
                 case "validate":
@@ -186,7 +190,7 @@ internal static class Program
                         ConsoleUtils.Error("Usage: heroparser validate <file> [options]");
                         return 1;
                     }
-                    CliCommands.Validate(positionalArgs[0], delimiter);
+                    if (!await CliCommands.ValidateAsync(positionalArgs[0], delimiter)) return 1;
                     break;
 
                 case "profile":
@@ -195,7 +199,7 @@ internal static class Program
                         ConsoleUtils.Error("Usage: heroparser profile <file> [options]");
                         return 1;
                     }
-                    CliCommands.Profile(positionalArgs[0], delimiter, sheet);
+                    if (!await CliCommands.ProfileAsync(positionalArgs[0], delimiter, sheet)) return 1;
                     break;
 
                 case "convert":
@@ -210,7 +214,7 @@ internal static class Program
                         ConsoleUtils.Error("Output file path is required. Specify it as second argument or use --output flag.");
                         return 1;
                     }
-                    CliCommands.Convert(positionalArgs[0], outPath, delimiter, shape, sheet);
+                    if (!CliCommands.Convert(positionalArgs[0], outPath, delimiter, shape, sheet)) return 1;
                     break;
 
                 case "repair":
@@ -225,7 +229,7 @@ internal static class Program
                         ConsoleUtils.Error("Output file path is required. Specify it as second argument or use --output flag.");
                         return 1;
                     }
-                    CliCommands.Repair(positionalArgs[0], repairOut);
+                    if (!CliCommands.Repair(positionalArgs[0], repairOut)) return 1;
                     break;
 
                 case "schema":
@@ -234,7 +238,7 @@ internal static class Program
                         ConsoleUtils.Error("Usage: heroparser schema <file> [options]");
                         return 1;
                     }
-                    await CliCommands.SchemaAsync(positionalArgs[0], delimiter, useAi, provider, key, model);
+                    if (!await CliCommands.SchemaAsync(positionalArgs[0], delimiter, useAi, provider, key, model)) return 1;
                     break;
 
                 case "query":
@@ -245,7 +249,7 @@ internal static class Program
                         return 1;
                     }
                     string queryPrompt = string.Join(" ", positionalArgs.Skip(1));
-                    await CliCommands.QueryAsync(positionalArgs[0], delimiter, sheet, queryPrompt, provider, key, model);
+                    if (!await CliCommands.QueryAsync(positionalArgs[0], delimiter, sheet, queryPrompt, provider, key, model)) return 1;
                     break;
 
                 case "translate":
@@ -260,7 +264,7 @@ internal static class Program
                         return 1;
                     }
                     string transformPrompt = string.Join(" ", positionalArgs.Skip(1));
-                    await CliCommands.TranslateAsync(positionalArgs[0], delimiter, sheet, transformPrompt, output, batchSize, provider, key, model);
+                    if (!await CliCommands.TranslateAsync(positionalArgs[0], delimiter, sheet, transformPrompt, output, batchSize, provider, key, model)) return 1;
                     break;
 
                 default:

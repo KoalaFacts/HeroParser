@@ -1,5 +1,6 @@
 using HeroParser.Cli;
 using HeroParser.Tests.ConsoleUi;
+using System.Text;
 using Xunit;
 
 namespace HeroParser.Tests.Cli;
@@ -201,12 +202,32 @@ public sealed class ProgramArgumentTests : IDisposable
         => Assert.Equal(1, await Program.Main(["translate", Csv(), "make it french"]));
 
     [Fact]
-    public async Task MissingFile_IsReportedWithoutFailingTheProcess()
+    public async Task MissingFile_FailsTheProcess()
     {
-        // A missing input is a user error the command reports; the CLI still exits 0
-        // because the command itself ran to completion.
-        Assert.Equal(0, await Program.Main(["detect", "definitely-not-here.csv"]));
+        Assert.Equal(1, await Program.Main(["detect", "definitely-not-here.csv"]));
     }
+
+    [Fact]
+    public async Task InvalidCsv_FailsValidationAndProcess()
+        => Assert.Equal(1, await Program.Main(["validate", Csv("A,B\n1\n2,3")]));
+
+    [Fact]
+    public async Task Utf16Csv_StillValidatesAndProfiles()
+    {
+        string path = Csv();
+        File.WriteAllText(path, "Name,Age\nAlice,30\n", Encoding.Unicode);
+
+        Assert.Equal(0, await Program.Main(["validate", path]));
+        Assert.Equal(0, await Program.Main(["profile", path]));
+    }
+
+    [Fact]
+    public async Task UnsupportedConversion_FailsTheProcess()
+        => Assert.Equal(1, await Program.Main(["convert", Csv(), OutputPath(".xyz")]));
+
+    [Fact]
+    public async Task BatchSize_RejectsZero()
+        => Assert.Equal(1, await Program.Main(["translate", Csv(), "x", "-o", OutputPath(), "-b", "0"]));
 
     [Fact]
     public async Task SingleExistingFileArgument_ProfilesItWhenOutputIsRedirected()

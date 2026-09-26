@@ -153,6 +153,11 @@ internal static class Program
             }
             else if (arg == "--sample-rows")
             {
+                if (command != "inspect")
+                {
+                    ConsoleUtils.Error("--sample-rows is only supported by inspect");
+                    return 1;
+                }
                 if (i + 1 < args.Length && int.TryParse(args[++i], out var count) && count is > 0 and <= 10000)
                     sampleRows = count;
                 else

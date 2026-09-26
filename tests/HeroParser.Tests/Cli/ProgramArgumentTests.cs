@@ -126,6 +126,10 @@ public sealed class ProgramArgumentTests : IDisposable
     public async Task Inspect_RequiresSampleRowsValue()
         => Assert.Equal(1, await Program.Main(["inspect", Csv(), "--sample-rows"]));
 
+    [Fact]
+    public async Task SampleRows_OnAnotherCommand_Fails()
+        => Assert.Equal(1, await Program.Main(["validate", Csv(), "--sample-rows", "10"]));
+
     // ---- command routing -------------------------------------------------------
 
     [Theory]

@@ -199,6 +199,18 @@ Sugar;2,00;200";
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void DetectDelimiter_WithQuotedNewlines_SamplesLogicalRows()
+    {
+        var csv = "Name,Note\nAlice,\"x;y\nz\"\nBob,\"p;q\nr\"\n";
+
+        var result = Csv.DetectDelimiterWithDetails(csv);
+
+        Assert.Equal(',', result.DetectedDelimiter);
+        Assert.Equal(3, result.SampledRows);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void DetectDelimiter_CrlfLineEndings_DetectsCorrectly()
     {
         var csv = "Name,Age,City\r\nJohn,30,NYC\r\nJane,25,LA";

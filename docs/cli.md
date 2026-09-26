@@ -103,7 +103,7 @@ heroparser inspect data.csv
 heroparser inspect data.tsv --delimiter '\t' --sample-rows 500
 ```
 
-`--sample-rows` accepts 1 to 10,000. Set `--delimiter` when automatic detection is uncertain or the file has only one column. Without a BOM, UTF-8/ASCII is assumed, not verified. This is not full-file validation; run `heroparser validate data.csv` for that. UTF-16, Excel and JSONL are not supported by quick inspect.
+`--sample-rows` accepts 1 to 10,000 and is rejected by other commands. Quick inspect supports at most 1,000 columns; wider inputs require a different workflow. Set `--delimiter` when automatic detection is uncertain or the file has only one column. Without a BOM, UTF-8/ASCII is assumed, not verified. This is not full-file validation; run `heroparser validate data.csv` for that. UTF-16, Excel and JSONL are not supported by quick inspect.
 
 ### 3.2 `detect`
 

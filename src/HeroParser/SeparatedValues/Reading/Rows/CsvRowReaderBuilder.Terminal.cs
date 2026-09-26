@@ -139,7 +139,7 @@ public sealed partial class CsvRowReaderBuilder
             if (encoding is null)
                 file.Position = 0;
             else
-                input = Encoding.CreateTranscodingStream(file, encoding, new UTF8Encoding(false), leaveOpen: false);
+                input = new Utf16ToUtf8ReadStream(file, encoding);
 
             return new CsvAsyncStreamReader(input, options, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
         }

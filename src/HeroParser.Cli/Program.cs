@@ -276,8 +276,7 @@ internal static class Program
                         ConsoleUtils.Error("Output file path is required. Specify it as second argument or use --output flag.");
                         return 1;
                     }
-                    if (planPath is not null && Path.GetFullPath(outPath).Equals(Path.GetFullPath(planPath),
-                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    if (planPath is not null && PathsAlias(outPath, planPath))
                     {
                         ConsoleUtils.Error("Conversion output path must differ from the import plan path.");
                         return 1;
@@ -348,6 +347,55 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static bool PathsAlias(string outputPath, string planPath)
+    {
+        string output = Path.GetFullPath(outputPath);
+        string plan = Path.GetFullPath(planPath);
+        if (output.Equals(plan, StringComparison.Ordinal))
+            return true;
+
+        if (!File.Exists(output))
+            return false;
+        if (output.Equals(plan, StringComparison.OrdinalIgnoreCase) && !HasDistinctCaseSensitiveEntry(output, plan))
+            return true;
+
+        string? target = new FileInfo(output).ResolveLinkTarget(returnFinalTarget: true)?.FullName;
+        return target is not null && target.Equals(plan, StringComparison.OrdinalIgnoreCase) &&
+            !HasDistinctCaseSensitiveEntry(target, plan);
+    }
+
+    private static bool HasDistinctCaseSensitiveEntry(string output, string plan)
+    {
+        string root = Path.GetPathRoot(plan)!;
+        if (!root.Equals(Path.GetPathRoot(output), StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        string[] outputParts = output[root.Length..].Split(Path.DirectorySeparatorChar);
+        string[] planParts = plan[root.Length..].Split(Path.DirectorySeparatorChar);
+        string parent = root;
+        for (int i = 0; i < planParts.Length; i++)
+        {
+            if (!outputParts[i].Equals(planParts[i], StringComparison.Ordinal))
+            {
+                bool outputEntry = false;
+                bool planEntry = false;
+                foreach (string? name in Directory.EnumerateFileSystemEntries(parent).Select(Path.GetFileName))
+                {
+                    outputEntry |= string.Equals(name, outputParts[i], StringComparison.Ordinal);
+                    planEntry |= string.Equals(name, planParts[i], StringComparison.Ordinal);
+                }
+                if (outputEntry && planEntry)
+                    return true;
+                parent = Path.Join(parent, planEntry ? planParts[i] : outputParts[i]);
+            }
+            else
+            {
+                parent = Path.Join(parent, planParts[i]);
+            }
+        }
+        return false;
     }
 
     private static void PrintHelp()

@@ -75,4 +75,19 @@ public static partial class Csv
     {
         return CsvValidator.Validate(data, options);
     }
+
+    /// <summary>
+    /// Validates a UTF-8 CSV file without loading it entirely into memory.
+    /// </summary>
+    /// <param name="path">Path to the CSV file.</param>
+    /// <param name="options">Validation options. A null value uses the defaults.</param>
+    /// <param name="cancellationToken">Token used to cancel file reads.</param>
+    /// <returns>The validation result and any retained errors.</returns>
+    public static Task<CsvValidationResult> ValidateFileAsync(
+        string path,
+        CsvValidationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        return CsvValidator.ValidateFileAsync(path, options, cancellationToken);
+    }
 }

@@ -88,6 +88,7 @@ public class DynamicProfilerTests
 
         Assert.Equal(100, stats[0].ValueCounts.Count);
         Assert.Equal(250, stats[0].NonNullCount);
+        Assert.True(stats[0].CategoriesTruncated);
     }
 
     [Fact]
@@ -98,6 +99,15 @@ public class DynamicProfilerTests
         var stats = DynamicProfiler.Analyze(["Col"], rows);
 
         Assert.Equal(2, stats[0].ValueCounts["v0"]);
+    }
+
+    [Fact]
+    public void Analyze_DoesNotRetainOversizedCategoryValues()
+    {
+        var stats = DynamicProfiler.Analyze(["Col"], [[new string('x', 1000)]]);
+
+        Assert.Empty(stats[0].ValueCounts);
+        Assert.True(stats[0].CategoriesTruncated);
     }
 
     [Fact]

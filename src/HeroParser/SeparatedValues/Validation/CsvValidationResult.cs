@@ -24,6 +24,11 @@ public sealed record CsvValidationResult
     public int TotalRows { get; init; }
 
     /// <summary>
+    /// Gets whether streaming validation stopped after reaching the configured error limit.
+    /// </summary>
+    public bool StoppedEarly { get; init; }
+
+    /// <summary>
     /// Gets the number of columns detected (from header or first data row).
     /// </summary>
     public int ColumnCount { get; init; }

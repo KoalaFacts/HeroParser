@@ -24,7 +24,7 @@ namespace HeroParser.SeparatedValues.Validation;
 /// Thread-Safety: All methods are thread-safe as they operate on local state only.
 /// </para>
 /// </remarks>
-public static class CsvValidator
+public static partial class CsvValidator
 {
     /// <summary>
     /// Validates CSV data according to the specified options.
@@ -126,7 +126,7 @@ public static class CsvValidator
         {
             throw new ArgumentException(
                 $"Input exceeds the maximum supported size for in-memory validation ({MAX_UTF8_INPUT_BYTES} bytes). " +
-                "Use a stream-based validation API for larger inputs.",
+                "Use Csv.ValidateFileAsync for larger files.",
                 nameof(data));
         }
         options ??= new CsvValidationOptions();

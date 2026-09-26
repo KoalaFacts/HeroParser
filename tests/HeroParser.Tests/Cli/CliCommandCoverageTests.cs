@@ -94,20 +94,20 @@ public sealed class CliCommandCoverageTests : IDisposable
     // ---- validate --------------------------------------------------------------
 
     [Fact]
-    public void Validate_MissingFile_IsReported()
+    public async Task Validate_MissingFile_IsReported()
     {
-        CliCommands.Validate("no-such-file.csv", null);
+        Assert.False(await CliCommands.ValidateAsync("no-such-file.csv", null));
         Assert.Contains("File not found", Output, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Validate_ManyErrors_SummarisesTheRemainder()
+    public async Task Validate_ManyErrors_SummarisesTheRemainder()
     {
         // The table is capped, so the count of what it left out has to be reported.
         var rows = new List<string> { "a,b,c" };
         rows.AddRange(Enumerable.Range(0, 40).Select(i => $"{i},{i}"));
 
-        CliCommands.Validate(TempFile(string.Join('\n', rows) + "\n"), null);
+        Assert.False(await CliCommands.ValidateAsync(TempFile(string.Join('\n', rows) + "\n"), null));
 
         Assert.Contains("and ", Output, StringComparison.Ordinal);
         Assert.Contains("Validation Failed", Output, StringComparison.Ordinal);
@@ -116,17 +116,27 @@ public sealed class CliCommandCoverageTests : IDisposable
     // ---- profile ---------------------------------------------------------------
 
     [Fact]
-    public void Profile_MissingFile_IsReported()
+    public async Task Profile_MissingFile_IsReported()
     {
-        CliCommands.Profile("no-such-file.csv", null, null);
+        Assert.False(await CliCommands.ProfileAsync("no-such-file.csv", null, null));
         Assert.Contains("File not found", Output, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Profile_HeaderOnlyFile_ReportsNoData()
+    public async Task Profile_HeaderOnlyFile_ReportsNoData()
     {
-        CliCommands.Profile(TempFile("a,b,c\n"), null, null);
+        Assert.True(await CliCommands.ProfileAsync(TempFile("a,b,c\n"), null, null));
         Assert.Contains("No data", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Profile_ManyCategories_LabelsDistinctCountAsLowerBound()
+    {
+        string csv = "Category,Value\n" + string.Join('\n', Enumerable.Range(0, 110).Select(i => $"value{i},1"));
+
+        Assert.True(await CliCommands.ProfileAsync(TempFile(csv), null, null));
+
+        Assert.Contains("At least 100 distinct categories tracked", Output, StringComparison.Ordinal);
     }
 
     // ---- convert ---------------------------------------------------------------

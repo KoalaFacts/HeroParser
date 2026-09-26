@@ -131,11 +131,11 @@ internal sealed class InteractiveWizard
                         break;
 
                     case "2. Validate structure & health":
-                        CliCommands.Validate(file, null);
+                        await CliCommands.ValidateAsync(file, null);
                         break;
 
                     case "3. Profile statistics & values":
-                        CliCommands.Profile(file, null, null);
+                        await CliCommands.ProfileAsync(file, null, null);
                         break;
 
                     case "4. Generate C# record schema (Local)":

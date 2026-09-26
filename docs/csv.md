@@ -1100,6 +1100,21 @@ if (!result.IsValid)
 var records = Csv.Read<Person>().FromText(csvData).ToList();
 ```
 
+For a large UTF-8 file, validate incrementally instead:
+
+```csharp
+var result = await Csv.ValidateFileAsync("data.csv", new CsvValidationOptions
+{
+    MaxRows = 0,  // No row-count limit
+    MaxErrors = 100
+});
+
+if (!result.IsValid)
+    Console.WriteLine($"Found {result.Errors.Count} errors; stopped early: {result.StoppedEarly}");
+```
+
+`ValidateFileAsync` samples up to 64 KiB to detect the delimiter, then parses rows from a stream. Supply `Delimiter` explicitly when the sample is ambiguous (for example, very long quoted fields). `TotalRows` counts inspected rows, not necessarily the entire file when validation stops early.
+
 **Full options:**
 
 ```csharp
@@ -1110,6 +1125,7 @@ var options = new CsvValidationOptions
     RequiredHeaders           = ["Id", "Name"],
     ExpectedColumnCount       = 5,
     MaxRows                   = 1_000_000,
+    MaxErrors                 = 100,        // Streaming validation error limit
     CheckConsistentColumnCount = true,       // All rows must have same column count
     AllowEmptyFile            = false        // Reject empty files
 };

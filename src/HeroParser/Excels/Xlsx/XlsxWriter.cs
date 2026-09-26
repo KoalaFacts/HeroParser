@@ -756,7 +756,6 @@ public sealed class XlsxWriter : IDisposable
                 ExcelInjectionProtection.Sanitize => StripDangerousPrefix(value.ToString()),
                 ExcelInjectionProtection.Reject => throw new ExcelException(
                     $"Excel injection detected: cell value starts with dangerous character '{value[0]}'."),
-                ExcelInjectionProtection.None => value.ToString(),
                 _ => value.ToString(),
             };
         }
@@ -777,7 +776,6 @@ public sealed class XlsxWriter : IDisposable
                 ExcelInjectionProtection.Sanitize => StripDangerousPrefix(value),
                 ExcelInjectionProtection.Reject => throw new ExcelException(
                     $"Excel injection detected: cell value starts with dangerous character '{value[0]}'."),
-                ExcelInjectionProtection.None => value,
                 _ => value,
             };
         }

@@ -49,4 +49,16 @@ public sealed class CsvRowBatchSourceTests : IDisposable
         Assert.Single(await reading.ReadBatchAsync(1));
         Assert.Empty(await reading.ReadBatchAsync(1));
     }
+
+    [Fact]
+    public async Task CountAndBatches_AcceptRowsOverDefaultLimit()
+    {
+        string path = FileWith("Value\n" + new string('x', 600_000));
+        await using var counting = await CsvRowBatchSource.OpenAsync(path, ',');
+        Assert.Equal(1, await counting.CountRemainingRowsAsync());
+
+        await using var reading = await CsvRowBatchSource.OpenAsync(path, ',');
+        var batch = await reading.ReadBatchAsync(1);
+        Assert.Equal(600_000, Assert.Single(batch)[0].Length);
+    }
 }

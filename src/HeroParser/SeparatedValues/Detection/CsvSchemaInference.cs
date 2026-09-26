@@ -106,6 +106,7 @@ public static class CsvSchemaInference
             .WithDelimiter(delimiter)
             .WithMaxColumns(options.MaxColumnCount)
             .WithMaxRows(int.MaxValue)
+            .WithMaxRowSize(null)
             .AllowNewlinesInQuotes()
             .TrackSourceLineNumbers()
             .FromFileAsync(path);
@@ -127,8 +128,24 @@ public static class CsvSchemaInference
         bool hasSkippedEmptyRows = header.SourceLineNumber > 1;
         int expectedNextLine = header.SourceLineNumber + embeddedLines + 1;
         int sampledRows = 0;
-        while (sampledRows < options.SampleRows && await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        while (sampledRows < options.SampleRows)
         {
+            bool hasRow;
+            try
+            {
+                hasRow = await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (CsvException)
+            {
+                break;
+            }
+            if (!hasRow)
+            {
+                if (reader.NextSourceLineNumber > expectedNextLine)
+                    hasSkippedEmptyRows = true;
+                break;
+            }
+
             var row = reader.Current;
             if (row.SourceLineNumber > expectedNextLine)
                 hasSkippedEmptyRows = true;
@@ -174,9 +191,13 @@ public static class CsvSchemaInference
             if (read == 0) break;
             length += read;
         }
-        if (length >= 2 && ((sample[0] == 0xFF && sample[1] == 0xFE) ||
-            (sample[0] == 0xFE && sample[1] == 0xFF)))
-            throw new NotSupportedException("Streaming schema inference supports UTF-8 only.");
+        if (length >= 2)
+        {
+            bool littleEndianBom = sample[0] == 0xFF && sample[1] == 0xFE;
+            bool bigEndianBom = sample[0] == 0xFE && sample[1] == 0xFF;
+            if (littleEndianBom || bigEndianBom)
+                throw new NotSupportedException("Streaming schema inference supports UTF-8 only.");
+        }
 
         try
         {
@@ -184,6 +205,8 @@ public static class CsvSchemaInference
         }
         catch (InvalidOperationException)
         {
+            if (stream.Position < stream.Length)
+                throw new InvalidOperationException("Cannot detect delimiter from the bounded sample; specify a delimiter explicitly.");
             return ',';
         }
     }

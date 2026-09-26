@@ -517,7 +517,7 @@ internal static partial class CliCommands
                 return false;
             }
 
-            char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(sample, sampleLength, utf16);
+            char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
             var schemaResult = utf16
                 ? Csv.InferSchema(File.ReadAllText(path), new CsvSchemaInferenceOptions { Delimiter = effectiveDelimiter })
                 : await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions
@@ -683,7 +683,7 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
                 var (sample, sampleLength) = ReadCsvSample(path);
                 if (!IsUtf16LittleEndian(sample, sampleLength) && !IsUtf16BigEndian(sample, sampleLength))
                 {
-                    char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(sample, sampleLength, utf16: false);
+                    char effectiveDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16: false);
                     var (streamHeaders, stats, totalRows) = await ProfileCsvAsync(path, effectiveDelimiter).ConfigureAwait(false);
                     headers = streamHeaders;
                     (_, sampleRows) = await ReadSchemaContextAsync(path, effectiveDelimiter, 100).ConfigureAwait(false);
@@ -776,7 +776,7 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
             var (sample, sampleLength) = ReadCsvSample(path);
             bool streamCsv = IsCsvInput(path) && !IsUtf16LittleEndian(sample, sampleLength) &&
                 !IsUtf16BigEndian(sample, sampleLength);
-            char inputDelimiter = delimiter ?? (streamCsv ? DetectSchemaDelimiter(sample, sampleLength, utf16: false) : ',');
+            char inputDelimiter = delimiter ?? (streamCsv ? DetectSchemaDelimiter(path, sample, sampleLength, utf16: false) : ',');
             string[] headers;
             List<string[]>? rows = null;
             long totalRows;
@@ -908,7 +908,7 @@ Instructions:
         }
     }
 
-    private static char DetectSchemaDelimiter(byte[] sample, int length, bool utf16)
+    private static char DetectSchemaDelimiter(string path, byte[] sample, int length, bool utf16)
     {
         try
         {
@@ -923,6 +923,8 @@ Instructions:
         }
         catch (InvalidOperationException)
         {
+            if (!utf16 && new FileInfo(path).Length > length)
+                throw new InvalidOperationException("Cannot detect delimiter from the bounded sample; specify --delimiter explicitly.");
             return ',';
         }
     }
@@ -1001,6 +1003,7 @@ Instructions:
         await using var reader = Csv.Read()
             .WithDelimiter(detectedDelimiter)
             .WithMaxRows(int.MaxValue)
+            .WithMaxRowSize(null)
             .AllowNewlinesInQuotes()
             .FromFileAsync(path);
         if (!await reader.MoveNextAsync().ConfigureAwait(false))

@@ -20,6 +20,7 @@ internal sealed class CsvRowBatchSource : IAsyncDisposable
             .WithDelimiter(delimiter)
             .WithMaxColumns(maxColumns)
             .WithMaxRows(int.MaxValue)
+            .WithMaxRowSize(null)
             .AllowNewlinesInQuotes()
             .FromFileAsync(path);
         try

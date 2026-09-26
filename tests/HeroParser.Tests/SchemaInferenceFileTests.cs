@@ -74,4 +74,50 @@ public sealed class SchemaInferenceFileTests : IDisposable
             await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions { Delimiter = ',' },
                 TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    public async Task TrailingBlankRows_MarkColumnsNullable()
+    {
+        var result = await Csv.InferSchemaFileAsync(FileWith("A,B\n1,2\n\n"),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, result.SampledRowCount);
+        Assert.All(result.Columns, column => Assert.True(column.IsNullable));
+    }
+
+    [Fact]
+    public async Task MalformedSampleRow_ReturnsObservedRows()
+    {
+        var result = await Csv.InferSchemaFileAsync(FileWith("Id,Value\n1,true\n\"unterminated"),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, result.SampledRowCount);
+        Assert.Equal(CsvInferredType.Integer, result.Columns[0].InferredType);
+        Assert.Equal(CsvInferredType.Boolean, result.Columns[1].InferredType);
+    }
+
+    [Fact]
+    public async Task LargeRow_UsesStreamingHardLimitInsteadOfDefaultLimit()
+    {
+        var result = await Csv.InferSchemaFileAsync(FileWith("Value\n" + new string('x', 600_000)),
+            new CsvSchemaInferenceOptions { Delimiter = ',' }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, result.SampledRowCount);
+        Assert.Equal(600_000, result.Columns[0].MaxLength);
+    }
+
+    [Fact]
+    public async Task TruncatedDelimiterSample_RequiresExplicitDelimiter()
+    {
+        string csv = "\"" + new string('x', 70_000) + "\";B\n1;2";
+        string path = FileWith(csv);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await Csv.InferSchemaFileAsync(path, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Contains("specify a delimiter", error.Message, StringComparison.OrdinalIgnoreCase);
+
+        var result = await Csv.InferSchemaFileAsync(path, new CsvSchemaInferenceOptions { Delimiter = ';' },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(2, result.Columns.Count);
+    }
 }

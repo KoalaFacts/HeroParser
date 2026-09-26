@@ -202,6 +202,31 @@ public class CliAiCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Query_ProfilesLargeRowBeyondSamples()
+    {
+        var runner = new ScriptedRunner("ok");
+        string csv = "Value\n" + string.Concat(Enumerable.Repeat("small\n", 10)) + new string('x', 600_000);
+
+        Assert.True(await CliCommands.QueryAsync(
+            TempFile(csv), ',', null, "count", null, null, null, ClientFor(runner)));
+
+        Assert.Contains("(11 rows)", Assert.Single(runner.Prompts), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Query_RejectsTruncatedUndetectableDelimiterSample()
+    {
+        var runner = new ScriptedRunner("ok");
+        string csv = "\"" + new string('x', 70_000) + "\";B\n1;2";
+
+        Assert.False(await CliCommands.QueryAsync(
+            TempFile(csv), null, null, "count", null, null, null, ClientFor(runner)));
+
+        Assert.Empty(runner.Prompts);
+        Assert.Contains("specify --delimiter", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Query_MissingFile_ReportsAnError()
     {
         var runner = new ScriptedRunner();
@@ -262,6 +287,20 @@ public class CliAiCommandTests : IDisposable
         // 5 rows in batches of 2 is three calls, the last one short.
         Assert.Equal(3, runner.Prompts.Count);
         Assert.Contains("Transform the input rows according to this prompt: \"t\"", runner.Prompts[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Translate_CountsAndReadsLargeRow()
+    {
+        var runner = new ScriptedRunner("{\"Value\":\"ok\"}");
+        string csv = "Value\n" + new string('x', 600_000);
+        string outputPath = TempPath();
+
+        Assert.True(await CliCommands.TranslateAsync(
+            TempFile(csv), ',', null, "t", outputPath, batchSize: 1, null, null, null, ClientFor(runner)));
+
+        Assert.Single(runner.Prompts);
+        Assert.Contains("ok", File.ReadAllText(outputPath), StringComparison.Ordinal);
     }
 
     [Fact]

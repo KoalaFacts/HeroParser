@@ -188,6 +188,8 @@ heroparser schema data.csv --plan data.plan.json
 
 For UTF-8 CSV/TSV, schema inference reads at most the first 100 data rows instead of loading the whole file. The generated types are sample-based and do not prove that later rows match. With `--plan`, the sampled header width must match the saved plan; run `validate --plan` separately for full-file structural validation. UTF-16 input still uses the in-memory path.
 
+The streaming commands accept logical rows above the reader's usual 512 KiB default, up to its 128 MiB hard limit. If delimiter detection cannot decide from a truncated 64 KiB sample, pass `--delimiter` explicitly rather than assuming a comma.
+
 AI-Powered Mode:
 Add `--ai` to consult LLMs to infer optimal field-level validation rules (e.g., regex patterns for emails/zip codes, validation range limits, and enum type mapping):
 

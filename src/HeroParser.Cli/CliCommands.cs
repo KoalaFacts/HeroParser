@@ -129,7 +129,7 @@ internal static partial class CliCommands
         }
     }
 
-    public static async Task<bool> ValidateAsync(string path, char? delimiter)
+    public static async Task<bool> ValidateAsync(string path, char? delimiter, CsvImportPlan? plan = null, string? reportPath = null)
     {
         if (!File.Exists(path))
         {
@@ -141,16 +141,41 @@ internal static partial class CliCommands
 
         try
         {
+            if (reportPath is not null && Path.GetFullPath(path).Equals(Path.GetFullPath(reportPath),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            {
+                ConsoleUtils.Error("Validation report path must differ from the CSV input path.");
+                return false;
+            }
+
+            if (plan is not null && !IsCsvInput(path))
+            {
+                ConsoleUtils.Error("CSV import plans support .csv and .tsv UTF-8 input only.");
+                return false;
+            }
+
             var options = new CsvValidationOptions { MaxRows = 0 };
             if (delimiter.HasValue)
             {
                 options = options with { Delimiter = delimiter.Value };
             }
+            if (plan is not null) options = plan.ToValidationOptions();
 
             var (sample, sampleLength) = ReadCsvSample(path);
+            if (plan is not null && (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength)))
+            {
+                ConsoleUtils.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
+                return false;
+            }
             var result = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength)
                 ? Csv.Validate(File.ReadAllText(path), options)
                 : await Csv.ValidateFileAsync(path, options).ConfigureAwait(false);
+
+            if (reportPath is not null)
+            {
+                CsvValidationReport.Save(reportPath, result);
+                ConsoleUtils.Info($"Saved validation report: {reportPath}");
+            }
 
             if (result.IsValid)
             {
@@ -291,7 +316,7 @@ internal static partial class CliCommands
         }
     }
 
-    public static bool Convert(string inputPath, string outputPath, char? delimiter, string? shapeName, string? sheet)
+    public static bool Convert(string inputPath, string outputPath, char? delimiter, string? shapeName, string? sheet, CsvImportPlan? plan = null)
     {
         if (!File.Exists(inputPath))
         {
@@ -305,8 +330,33 @@ internal static partial class CliCommands
         {
             var inExt = Path.GetExtension(inputPath).ToLowerInvariant();
             var outExt = Path.GetExtension(outputPath).ToLowerInvariant();
+            if (plan is not null)
+            {
+                if (!IsCsvInput(inputPath) || outExt != ".jsonl")
+                {
+                    ConsoleUtils.Error("CSV import plans currently support CSV/TSV to JSONL conversion only.");
+                    return false;
+                }
 
-            if (inExt == ".csv" && outExt == ".jsonl")
+                var (sample, sampleLength) = ReadCsvSample(inputPath);
+                if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
+                {
+                    ConsoleUtils.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
+                    return false;
+                }
+
+                var validation = Csv.ValidateFileAsync(inputPath, plan.ToValidationOptions())
+                    .ConfigureAwait(false).GetAwaiter().GetResult();
+                if (!validation.IsValid)
+                {
+                    ConsoleUtils.Error($"Conversion stopped: CSV does not match the import plan ({validation.Errors[0].Message}). Run validate --plan for details.");
+                    return false;
+                }
+            }
+
+            char inputDelimiter = delimiter ?? (inExt == ".tsv" ? '\t' : ',');
+
+            if (IsCsvInput(inputPath) && outExt == ".jsonl")
             {
                 CsvToJsonlShape shape = CsvToJsonlShape.FlatObject();
                 if (!string.IsNullOrWhiteSpace(shapeName))
@@ -317,7 +367,12 @@ internal static partial class CliCommands
                         shape = CsvToJsonlShape.AnthropicMessages("Question", "Answer");
                 }
 
-                var options = new CsvToJsonlOptions { Delimiter = delimiter ?? ',' };
+                var options = new CsvToJsonlOptions
+                {
+                    Delimiter = inputDelimiter,
+                    AllowNewlinesInsideQuotes = plan is not null,
+                    MaxColumnCount = plan is null ? 100 : 1000
+                };
                 CsvToJsonlConverter.Convert(inputPath, outputPath, shape, options);
                 ConsoleUtils.Success($"Converted CSV to JSONL successfully.");
             }
@@ -331,15 +386,15 @@ internal static partial class CliCommands
                 JsonlToCsvConverter.Convert(inputPath, outputPath, options);
                 ConsoleUtils.Success($"Converted JSONL to CSV successfully.");
             }
-            else if (inExt == ".csv" && outExt == ".txt") // CSV -> FixedWidth
+            else if (IsCsvInput(inputPath) && outExt == ".txt") // CSV -> FixedWidth
             {
                 var csvData = File.ReadAllText(inputPath);
-                var schema = Csv.InferSchema(csvData, new CsvSchemaInferenceOptions { Delimiter = delimiter });
+                var schema = Csv.InferSchema(csvData, new CsvSchemaInferenceOptions { Delimiter = inputDelimiter });
 
                 // Map columns to widths matching their observed max lengths
                 var fields = schema.Columns.Select(c => new FixedWidthFieldDefinition(c.Name, Math.Max(5, c.MaxLength + 2))).ToList();
 
-                var options = new CsvToFixedWidthOptions { Delimiter = delimiter ?? ',', IncludeHeader = true };
+                var options = new CsvToFixedWidthOptions { Delimiter = inputDelimiter, IncludeHeader = true };
                 var fixedWidthData = CsvToFixedWidthConverter.Convert(csvData, fields, options);
 
                 File.WriteAllText(outputPath, fixedWidthData);
@@ -848,6 +903,13 @@ Instructions:
         }
 
         return (columnNames, stats, rowCount);
+    }
+
+    private static bool IsCsvInput(string path)
+    {
+        string extension = Path.GetExtension(path);
+        return extension.Equals(".csv", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".tsv", StringComparison.OrdinalIgnoreCase);
     }
 
     private static (byte[] Bytes, int Length) ReadCsvSample(string path)

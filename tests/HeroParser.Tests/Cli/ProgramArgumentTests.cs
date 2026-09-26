@@ -1,6 +1,7 @@
 using HeroParser.Cli;
 using HeroParser.Tests.ConsoleUi;
 using System.Text;
+using System.Text.Json;
 using Xunit;
 
 namespace HeroParser.Tests.Cli;
@@ -129,6 +130,139 @@ public sealed class ProgramArgumentTests : IDisposable
     [Fact]
     public async Task SampleRows_OnAnotherCommand_Fails()
         => Assert.Equal(1, await Program.Main(["validate", Csv(), "--sample-rows", "10"]));
+
+    [Fact]
+    public async Task ImportPlan_InspectValidateAndConvert_ReuseTheSameDelimiter()
+    {
+        string input = Csv("Name;Age\nAlice;30\nBob;25\n");
+        string planPath = OutputPath(".json");
+        string output = OutputPath();
+
+        Assert.Equal(0, await Program.Main(["inspect", input, "--save-plan", planPath]));
+        using (var document = JsonDocument.Parse(File.ReadAllText(planPath)))
+        {
+            var plan = document.RootElement;
+            Assert.Equal(1, plan.GetProperty("version").GetInt32());
+            Assert.Equal(";", plan.GetProperty("delimiter").GetString());
+            Assert.Equal(2, plan.GetProperty("expectedColumnCount").GetInt32());
+            Assert.Equal(2, plan.GetProperty("sampledDataRows").GetInt32());
+        }
+
+        Assert.Equal(0, await Program.Main(["validate", input, "--plan", planPath]));
+        Assert.Equal(0, await Program.Main(["convert", input, output, "--plan", planPath]));
+        Assert.Contains("\"Name\":\"Alice\"", File.ReadAllText(output), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImportPlan_FullValidationFindsAnomalyBeyondInspectedRows()
+    {
+        string input = Csv("Name;Age\nAlice;30\nBob\n");
+        string planPath = OutputPath(".json");
+        string reportPath = OutputPath(".json");
+        string output = OutputPath();
+
+        Assert.Equal(0, await Program.Main(["inspect", input, "--delimiter", ";", "--sample-rows", "1", "--save-plan", planPath]));
+        Assert.Equal(1, await Program.Main(["validate", input, "--plan", planPath, "--report", reportPath]));
+        using (var report = JsonDocument.Parse(File.ReadAllText(reportPath)))
+        {
+            Assert.False(report.RootElement.GetProperty("valid").GetBoolean());
+            Assert.False(report.RootElement.GetProperty("stoppedEarly").GetBoolean());
+            Assert.Equal(3, report.RootElement.GetProperty("validatedRows").GetInt32());
+            Assert.Equal(3, report.RootElement.GetProperty("errors")[0].GetProperty("rowNumber").GetInt32());
+        }
+        Assert.Equal(1, await Program.Main(["convert", input, output, "--plan", planPath]));
+        Assert.False(File.Exists(output));
+    }
+
+    [Fact]
+    public async Task ImportPlan_ConvertsQuotedNewlinesAndWideCsv()
+    {
+        string[] headers = [.. Enumerable.Range(0, 101).Select(i => $"C{i}")];
+        string[] values = [.. Enumerable.Repeat("value", 101)];
+        values[0] = "\"first\nsecond\"";
+        string input = Csv(string.Join(';', headers) + "\n" + string.Join(';', values) + "\n");
+        string planPath = OutputPath(".json");
+        string output = OutputPath();
+
+        Assert.Equal(0, await Program.Main(["inspect", input, "--delimiter", ";", "--save-plan", planPath]));
+        Assert.Equal(0, await Program.Main(["validate", input, "--plan", planPath]));
+        Assert.Equal(0, await Program.Main(["convert", input, output, "--plan", planPath]));
+        using var result = JsonDocument.Parse(File.ReadAllText(output));
+        Assert.Equal("first\nsecond", result.RootElement.GetProperty("C0").GetString());
+        Assert.Equal("value", result.RootElement.GetProperty("C100").GetString());
+    }
+
+    [Fact]
+    public async Task ImportPlan_TsvCanBeValidatedAndConverted()
+    {
+        string input = OutputPath(".tsv");
+        File.WriteAllText(input, "Name\tAge\nAlice\t30\n");
+        string planPath = OutputPath(".json");
+        string output = OutputPath();
+
+        Assert.Equal(0, await Program.Main(["inspect", input, "--save-plan", planPath]));
+        Assert.Equal(0, await Program.Main(["validate", input, "--plan", planPath]));
+        Assert.Equal(0, await Program.Main(["convert", input, output, "--plan", planPath]));
+        Assert.Contains("\"Name\":\"Alice\"", File.ReadAllText(output), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImportPlan_RejectsConflictsAndUnsupportedUse()
+    {
+        string input = Csv("Name;Age\nAlice;30\n");
+        string planPath = OutputPath(".json");
+        Assert.Equal(0, await Program.Main(["inspect", input, "--delimiter", ";", "--save-plan", planPath]));
+
+        Assert.Equal(1, await Program.Main(["validate", input, "--plan", planPath, "--delimiter", ","]));
+        Assert.Equal(1, await Program.Main(["profile", input, "--plan", planPath]));
+        Assert.Equal(1, await Program.Main(["validate", input, "--save-plan", OutputPath(".json")]));
+        Assert.Equal(1, await Program.Main(["inspect", input, "--report", OutputPath(".json")]));
+        Assert.Equal(1, await Program.Main(["convert", input, OutputPath(".csv"), "--plan", planPath]));
+        Assert.Equal(1, await Program.Main(["convert", input, OutputPath(".txt"), "--plan", planPath]));
+        string jsonlPlanPath = OutputPath();
+        File.Copy(planPath, jsonlPlanPath);
+        Assert.Equal(1, await Program.Main(["convert", input, jsonlPlanPath, "--plan", jsonlPlanPath]));
+        Assert.Contains("\"version\": 1", File.ReadAllText(jsonlPlanPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ImportPlan_RejectsBadVersionAndDoesNotOverwriteFiles()
+    {
+        string input = Csv();
+        string planPath = OutputPath(".json");
+        File.WriteAllText(planPath, "{\"version\":2}");
+
+        Assert.Equal(1, await Program.Main(["validate", input, "--plan", planPath]));
+        Assert.Equal(1, await Program.Main(["inspect", input, "--delimiter", ",", "--save-plan", planPath]));
+        Assert.Equal("{\"version\":2}", File.ReadAllText(planPath));
+        Assert.Equal(1, await Program.Main(["inspect", input, "--delimiter", ",", "--save-plan", input]));
+        Assert.StartsWith("Name,Age", File.ReadAllText(input), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ValidationReport_DoesNotOverwriteInputOrAnExistingReport()
+    {
+        string input = Csv();
+        string reportPath = OutputPath(".json");
+        File.WriteAllText(reportPath, "keep");
+
+        Assert.Equal(1, await Program.Main(["validate", input, "--report", input]));
+        Assert.Equal(1, await Program.Main(["validate", input, "--report", reportPath]));
+        Assert.Equal("keep", File.ReadAllText(reportPath));
+        Assert.StartsWith("Name,Age", File.ReadAllText(input), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ValidationReport_MarksTheBoundedErrorLimit()
+    {
+        string input = Csv("A,B\n" + string.Join('\n', Enumerable.Repeat("only-one", 105)) + "\n");
+        string reportPath = OutputPath(".json");
+
+        Assert.Equal(1, await Program.Main(["validate", input, "--delimiter", ",", "--report", reportPath]));
+        using var report = JsonDocument.Parse(File.ReadAllText(reportPath));
+        Assert.True(report.RootElement.GetProperty("stoppedEarly").GetBoolean());
+        Assert.Equal(100, report.RootElement.GetProperty("errors").GetArrayLength());
+    }
 
     // ---- command routing -------------------------------------------------------
 

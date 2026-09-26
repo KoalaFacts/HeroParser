@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using HeroParser.Cli;
 using HeroParser.Tests.ConsoleUi;
 using Xunit;
@@ -52,6 +53,142 @@ public sealed class CliCommandCoverageTests : IDisposable
         string path = Path.Join(Path.GetTempPath(), Path.GetRandomFileName() + extension);
         tempFiles.Add(path);
         return path;
+    }
+
+    // ---- inspect ---------------------------------------------------------------
+
+    [Fact]
+    public async Task Inspect_ReportsSampleEvidenceAndRaggedRows()
+    {
+        string path = TempFile("Name;Age\nAlice;30\nBob;\nCharlie\n");
+
+        Assert.True(await CliCommands.InspectAsync(path, ';', 3));
+
+        Assert.Contains("Delimiter evidence", Output, StringComparison.Ordinal);
+        Assert.Contains("Sample type", Output, StringComparison.Ordinal);
+        Assert.Contains("Row-width mismatches in sample", Output, StringComparison.Ordinal);
+        Assert.Contains("Re-use parser setting: --delimiter \";\"", Output, StringComparison.Ordinal);
+        Assert.Contains("not a full-file count", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_AutoDetectsDelimiterFromRegularSample()
+    {
+        string path = TempFile("Name;Age\nAlice;30\nBob;25\n");
+
+        Assert.True(await CliCommands.InspectAsync(path, null, 2));
+
+        Assert.Contains("confidence from", Output, StringComparison.Ordinal);
+        Assert.Contains("Re-use parser setting: --delimiter \";\"", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_UsesUnquotedHeadersAndValues()
+    {
+        string path = TempFile("\"Name\",\"Age\",\"Active\"\n\"Alice \"\"A\"\"\",\"30\",\"true\"\n");
+
+        Assert.True(await CliCommands.InspectAsync(path, ',', 1));
+
+        Assert.Contains("Alice \"A\"", Output, StringComparison.Ordinal);
+        Assert.Contains("Integer", Output, StringComparison.Ordinal);
+        Assert.Contains("Boolean", Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Age\"", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_AllowsMoreThanOneHundredColumns()
+    {
+        string path = TempFile(string.Join(',', Enumerable.Range(0, 101).Select(i => $"C{i}")) + "\n" +
+            string.Join(',', Enumerable.Repeat("1", 101)) + "\n");
+
+        Assert.True(await CliCommands.InspectAsync(path, ',', 1));
+        Assert.Contains("C100", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_ReportsItsColumnLimit()
+    {
+        string path = TempFile(string.Join(',', Enumerable.Range(0, 1001).Select(i => $"C{i}")) + "\n");
+
+        Assert.False(await CliCommands.InspectAsync(path, ',', 1));
+        Assert.Contains("more than 1000 columns", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_DetectsDelimiterOutsideQuotedText()
+    {
+        string path = TempFile("Name,Note\nAlice,\"x;y;z\"\nBob,\"p;q;r\"\n");
+
+        Assert.True(await CliCommands.InspectAsync(path, null, 2));
+        Assert.Contains("Re-use parser setting: --delimiter \",\"", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_DetectsDelimiterAcrossQuotedNewlines()
+    {
+        string path = TempFile("Name,Note\nAlice,\"x;y\nz\"\nBob,\"p;q\nr\"\n");
+
+        Assert.True(await CliCommands.InspectAsync(path, null, 2));
+        Assert.Contains("Re-use parser setting: --delimiter \",\"", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_EscapesTerminalControlsFromCsvContent()
+    {
+        string path = TempFile("Name,Value\n\u001b]52;c;AAAA\u0007,30\n");
+
+        Assert.True(await CliCommands.InspectAsync(path, ',', 1));
+        Assert.DoesNotContain("\u001b]52;c;AAAA\u0007", Output, StringComparison.Ordinal);
+        Assert.Contains("\\u001B", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_StopsAtRequestedDataRows()
+    {
+        string path = TempFile("Name,Age\nAlice,30\nBob,25\nCharlie,invalid\n");
+
+        Assert.True(await CliCommands.InspectAsync(path, ',', 2));
+
+        Assert.DoesNotContain("Charlie", Output, StringComparison.Ordinal);
+        Assert.Contains("Explicit --delimiter override", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_RequiresDelimiterForSingleColumnFile()
+    {
+        string path = TempFile("Name\nAlice\nBob\n");
+
+        Assert.False(await CliCommands.InspectAsync(path, null, 2));
+        Assert.Contains("Specify --delimiter", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_EmptyFileDoesNotClaimAHeader()
+    {
+        Assert.True(await CliCommands.InspectAsync(TempFile(""), null, 10));
+        Assert.Contains("File is empty", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_RejectsUtf16AndExcel()
+    {
+        string utf16 = TempPath();
+        File.WriteAllText(utf16, "Name,Age\nAlice,30\n", Encoding.Unicode);
+
+        Assert.False(await CliCommands.InspectAsync(utf16, null, 10));
+        Assert.Contains("UTF-16 BOM", Output, StringComparison.Ordinal);
+        Assert.False(await CliCommands.InspectAsync(TempFile("", ".xlsx"), null, 10));
+        Assert.Contains("CSV/TSV only", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inspect_TabsAndMarkupInCellsAreSafe()
+    {
+        string path = TempFile("Name\tAge\n[red]\t30\n", ".tsv");
+
+        Assert.True(await CliCommands.InspectAsync(path, null, 1));
+        Assert.Contains("Tab", Output, StringComparison.Ordinal);
+        Assert.Contains("[red]", Output, StringComparison.Ordinal);
     }
 
     // ---- detect ----------------------------------------------------------------

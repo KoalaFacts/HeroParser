@@ -54,6 +54,7 @@ public sealed class ProgramArgumentTests : IDisposable
 
     [Theory]
     [InlineData("detect")]
+    [InlineData("inspect")]
     [InlineData("validate")]
     [InlineData("profile")]
     [InlineData("convert")]
@@ -114,10 +115,26 @@ public sealed class ProgramArgumentTests : IDisposable
     public async Task Delimiter_EmptyValue_IsIgnored()
         => Assert.Equal(0, await Program.Main(["validate", Csv(), "-d", ""]));
 
+    [Theory]
+    [InlineData("0")]
+    [InlineData("10001")]
+    [InlineData("many")]
+    public async Task Inspect_RejectsInvalidSampleRows(string value)
+        => Assert.Equal(1, await Program.Main(["inspect", Csv(), "--sample-rows", value]));
+
+    [Fact]
+    public async Task Inspect_RequiresSampleRowsValue()
+        => Assert.Equal(1, await Program.Main(["inspect", Csv(), "--sample-rows"]));
+
+    [Fact]
+    public async Task SampleRows_OnAnotherCommand_Fails()
+        => Assert.Equal(1, await Program.Main(["validate", Csv(), "--sample-rows", "10"]));
+
     // ---- command routing -------------------------------------------------------
 
     [Theory]
     [InlineData("detect")]
+    [InlineData("inspect")]
     [InlineData("validate")]
     [InlineData("profile")]
     [InlineData("schema")]
@@ -126,6 +143,7 @@ public sealed class ProgramArgumentTests : IDisposable
 
     [Theory]
     [InlineData("detect")]
+    [InlineData("inspect")]
     [InlineData("validate")]
     [InlineData("profile")]
     [InlineData("schema")]

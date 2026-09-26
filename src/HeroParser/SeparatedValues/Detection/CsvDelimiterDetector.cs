@@ -193,9 +193,22 @@ public static class CsvDelimiterDetector
 
         int rowStart = 0;
         int rowCount = 0;
+        bool insideQuotes = false;
 
         for (int i = 0; i < data.Length && rowCount < sampleRows; i++)
         {
+            if (data[i] == '"')
+            {
+                if (insideQuotes && i + 1 < data.Length && data[i + 1] == '"')
+                    i++;
+                else
+                    insideQuotes = !insideQuotes;
+                continue;
+            }
+
+            if (insideQuotes)
+                continue;
+
             bool isLineEnd = false;
             int rowEnd = i;
 

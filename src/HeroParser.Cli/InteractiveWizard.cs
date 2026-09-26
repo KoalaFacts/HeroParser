@@ -119,7 +119,8 @@ internal sealed class InteractiveWizard
                         "7. Translate or transform columns (AI)",
                         "8. Convert file format",
                         "9. Change active file",
-                        "10. Exit"
+                        "10. Quick inspect CSV/TSV sample",
+                        "11. Exit"
                     ]));
 
             try
@@ -205,7 +206,11 @@ internal sealed class InteractiveWizard
                         await RunAsync(null);
                         return;
 
-                    case "10. Exit":
+                    case "10. Quick inspect CSV/TSV sample":
+                        await CliCommands.InspectAsync(file, null, 1000);
+                        break;
+
+                    case "11. Exit":
                         running = false;
                         break;
                     default:

@@ -135,7 +135,7 @@ public class InteractiveWizardTests : IDisposable
     private static IEnumerable<ConsoleKeyInfo> Choose(int oneBasedIndex)
         => [.. Down(oneBasedIndex - 1), Key(ConsoleKey.Enter)];
 
-    private static readonly ConsoleKeyInfo[] EXIT_MENU = [.. Choose(10)];
+    private static readonly ConsoleKeyInfo[] EXIT_MENU = [.. Choose(11)];
 
     /// <summary>Dismisses the "press any key" pause between operations.</summary>
     private static ConsoleKeyInfo Any => Key(ConsoleKey.Spacebar);
@@ -234,6 +234,16 @@ public class InteractiveWizardTests : IDisposable
         await RunAsync(console, CreateCsv());
 
         Assert.Contains("Analyzing delimiter and encoding", console.Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InspectOperation_Runs()
+    {
+        var console = new ScriptedConsole([.. Choose(10), Any, .. EXIT_MENU]);
+        await RunAsync(console, CreateCsv());
+
+        Assert.Contains("CSV Inspection: data.csv", console.Output, StringComparison.Ordinal);
+        Assert.Contains("Data rows inspected", console.Output, StringComparison.Ordinal);
     }
 
     [Fact]

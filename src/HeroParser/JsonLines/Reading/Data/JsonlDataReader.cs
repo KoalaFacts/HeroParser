@@ -82,7 +82,7 @@ public sealed class JsonlDataReader : DbDataReader
             {
                 doc = JsonDocument.Parse(lineMemory);
             }
-            catch (Exception ex)
+            catch (JsonException ex)
             {
                 throw new JsonlException(JsonlErrorCode.DeserializeError, $"Failed to parse JSON: {ex.Message}", ln, ex);
             }
@@ -148,7 +148,15 @@ public sealed class JsonlDataReader : DbDataReader
             if (targetType == typeof(DateTime)) return value.GetDateTime();
             if (targetType == typeof(Guid)) return value.GetGuid();
         }
-        catch
+        catch (InvalidOperationException)
+        {
+            return DBNull.Value;
+        }
+        catch (FormatException)
+        {
+            return DBNull.Value;
+        }
+        catch (OverflowException)
         {
             return DBNull.Value;
         }

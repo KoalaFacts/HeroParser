@@ -319,16 +319,13 @@ public static partial class CsvValidator
 
         // Check for empty file if no data rows
         var nonDataRows = validationOptions.SkipRows + (validationOptions.HasHeaderRow ? 1 : 0);
-        if (totalRows <= nonDataRows && errors.Count < validationOptions.MaxErrors)
+        if (totalRows <= nonDataRows && errors.Count < validationOptions.MaxErrors && !validationOptions.AllowEmptyFile)
         {
-            if (!validationOptions.AllowEmptyFile)
+            errors.Add(new CsvValidationError
             {
-                errors.Add(new CsvValidationError
-                {
-                    ErrorType = CsvValidationErrorType.EmptyFile,
-                    Message = "CSV contains no data rows"
-                });
-            }
+                ErrorType = CsvValidationErrorType.EmptyFile,
+                Message = "CSV contains no data rows"
+            });
         }
 
         return new CsvValidationResult

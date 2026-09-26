@@ -256,7 +256,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
                         ? JsonSerializer.Deserialize(bytes, typeInfo)
                         : DeserializeReflectionInstance(bytes, options.SerializerOptions));
             }
-            catch (Exception ex) when (options.OnError is not null)
+            catch (Exception ex) when (options.OnError is not null && ex is not (OutOfMemoryException or OperationCanceledException))
             {
                 var ctx = new JsonlDeserializeErrorContext
                 {
@@ -278,7 +278,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
                 recordIndex++;
                 continue;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
             {
                 throw new JsonlException(
                     JsonlErrorCode.DeserializeError,

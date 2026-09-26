@@ -137,15 +137,11 @@ internal static class DynamicProfiler
 
     private static void ReplayCachedValue(DynamicColumnStats stats, ProfileValueKind kind, string? text)
     {
-        if (kind == ProfileValueKind.Null)
-        {
-            stats.NullCount++;
-            return;
-        }
-
-        stats.NonNullCount++;
         switch (kind)
         {
+            case ProfileValueKind.Null:
+                stats.NullCount++;
+                return;
             case ProfileValueKind.True:
                 stats.BoolCount++;
                 stats.TrueCount++;
@@ -163,11 +159,11 @@ internal static class DynamicProfiler
             case ProfileValueKind.String:
                 stats.StringCount++;
                 break;
-            case ProfileValueKind.Null:
             case ProfileValueKind.Uncached:
             default:
                 throw new InvalidOperationException("Only classified non-null values can be replayed.");
         }
+        stats.NonNullCount++;
         TrackCategory(text!, stats);
     }
 

@@ -182,6 +182,15 @@ public sealed class CliCommandCoverageTests : IDisposable
     }
 
     [Fact]
+    public async Task Inspect_RejectsOtherExtensionsBeforeSavingPlan()
+    {
+        string plan = TempPath(".json");
+
+        Assert.False(await CliCommands.InspectAsync(TempFile("Name,Age\nAlice,30\n", ".txt"), null, 1, plan));
+        Assert.False(File.Exists(plan));
+    }
+
+    [Fact]
     public async Task Inspect_TabsAndMarkupInCellsAreSafe()
     {
         string path = TempFile("Name\tAge\n[red]\t30\n", ".tsv");
@@ -381,6 +390,15 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         CliCommands.Convert(ExcelFile(new Person { Name = "a", Age = "1" }), TempPath(".xyz"), null, null, null);
         Assert.Contains("Unsupported output extension", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Convert_EmptyExcelToAnUnsupportedFormat_DoesNotCreateOutput()
+    {
+        string outputPath = TempPath(".xyz");
+
+        Assert.False(CliCommands.Convert(EmptyExcelFile(), outputPath, null, null, null));
+        Assert.False(File.Exists(outputPath));
     }
 
     // ---- repair ----------------------------------------------------------------

@@ -40,6 +40,66 @@ public sealed class CsvStreamingValidationTests : IDisposable
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ValidateFileAsync_TreatsLargeWhitespaceFileAsEmpty()
+    {
+        string path = TempFile(new string(' ', 70_000));
+
+        var rejected = await Csv.ValidateFileAsync(path, cancellationToken: TestContext.Current.CancellationToken);
+        var allowed = await Csv.ValidateFileAsync(path, new CsvValidationOptions { AllowEmptyFile = true },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(rejected.Errors, error => error.ErrorType == CsvValidationErrorType.EmptyFile);
+        Assert.True(allowed.IsValid);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ValidateFileAsync_DetectsDelimiterAfterSkippedRows()
+    {
+        string path = TempFile("metadata,with,commas\nmore,metadata,here\nName;Age\nAlice;30\nBob;25\n");
+
+        var result = await Csv.ValidateFileAsync(path, new CsvValidationOptions
+        {
+            SkipRows = 2,
+            RequiredHeaders = ["Name", "Age"]
+        }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(error => error.Message)));
+        Assert.Equal(';', result.Delimiter);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ValidateFileAsync_SkipsQuotedPreambleAcrossSampleBoundary()
+    {
+        string preamble = "\"metadata," + new string('x', 70_000) + "\ncontinued\",note\n";
+        string path = TempFile(preamble + "Name;Age\nAlice;30\n");
+
+        var result = await Csv.ValidateFileAsync(path, new CsvValidationOptions { SkipRows = 1 },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(error => error.Message)));
+        Assert.Equal(';', result.Delimiter);
+        Assert.Equal(["Name", "Age"], result.Headers);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ValidateFileAsync_SkippingAllRowsHonorsAllowEmptyFile()
+    {
+        string path = TempFile("metadata,only\n");
+
+        var result = await Csv.ValidateFileAsync(path, new CsvValidationOptions
+        {
+            SkipRows = 1,
+            AllowEmptyFile = true
+        }, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ValidateFileAsync_QuotedNewlineAcrossBufferBoundaryIsOneRow()
     {
         string field = new('a', 20_000);

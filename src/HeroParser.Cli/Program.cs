@@ -276,8 +276,7 @@ internal static class Program
                         ConsoleUtils.Error("Output file path is required. Specify it as second argument or use --output flag.");
                         return 1;
                     }
-                    if (planPath is not null && Path.GetFullPath(outPath).Equals(Path.GetFullPath(planPath),
-                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    if (planPath is not null && PathsAlias(outPath, planPath))
                     {
                         ConsoleUtils.Error("Conversion output path must differ from the import plan path.");
                         return 1;
@@ -348,6 +347,23 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static bool PathsAlias(string outputPath, string planPath)
+    {
+        string output = Path.GetFullPath(outputPath);
+        string plan = Path.GetFullPath(planPath);
+        if (output.Equals(plan, StringComparison.Ordinal))
+            return true;
+
+        // Probe the output path on the actual volume; case-only aliases exist on some Unix volumes.
+        if (!File.Exists(output))
+            return false;
+        if (output.Equals(plan, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        string? target = new FileInfo(output).ResolveLinkTarget(returnFinalTarget: true)?.FullName;
+        return target is not null && target.Equals(plan, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void PrintHelp()

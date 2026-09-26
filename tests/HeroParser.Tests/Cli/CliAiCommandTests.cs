@@ -325,7 +325,9 @@ public class CliAiCommandTests : IDisposable
     [Fact]
     public async Task Translate_BatchesRowsAndCallsTheModelOncePerBatch()
     {
-        var runner = new ScriptedRunner("{\"Name\":\"x\",\"Age\":\"1\"}");
+        var runner = new ScriptedRunner("{\"Name\":\"x\",\"Age\":\"1\"}\n{\"Name\":\"y\",\"Age\":\"2\"}",
+            "{\"Name\":\"x\",\"Age\":\"1\"}\n{\"Name\":\"y\",\"Age\":\"2\"}",
+            "{\"Name\":\"z\",\"Age\":\"3\"}");
         string csv = "Name,Age\n" + string.Join('\n', Enumerable.Range(0, 5).Select(i => $"n{i},{i}"));
 
         await CliCommands.TranslateAsync(
@@ -339,7 +341,7 @@ public class CliAiCommandTests : IDisposable
     [Fact]
     public async Task Translate_Utf16_UsesConfiguredBatches()
     {
-        var runner = new ScriptedRunner("{\"Name\":\"ok\"}");
+        var runner = new ScriptedRunner("{\"Name\":\"ok\"}\n{\"Name\":\"ok\"}", "{\"Name\":\"ok\"}");
         string outputPath = TempPath();
 
         Assert.True(await CliCommands.TranslateAsync(
@@ -350,6 +352,22 @@ public class CliAiCommandTests : IDisposable
         Assert.Contains("\"A\"", runner.Prompts[0], StringComparison.Ordinal);
         Assert.Contains("\"C\"", runner.Prompts[1], StringComparison.Ordinal);
         Assert.Contains("ok", File.ReadAllText(outputPath), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("{\"Name\":\"only-one\"}")]
+    [InlineData("{\"Name\":\"first\"}\n{\"Name\":\"second\"}\n{\"Name\":\"extra\"}")]
+    public async Task Translate_RejectsWrongRecordCountWithoutReplacingOutput(string response)
+    {
+        var runner = new ScriptedRunner(response);
+        string outputPath = TempPath();
+        File.WriteAllText(outputPath, "previous result");
+
+        Assert.False(await CliCommands.TranslateAsync(
+            TempFile("Name\nA\nB\n"), ',', null, "t", outputPath, batchSize: 2, null, null, null, ClientFor(runner)));
+
+        Assert.Equal("previous result", File.ReadAllText(outputPath));
     }
 
     [Fact]

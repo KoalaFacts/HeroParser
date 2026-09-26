@@ -237,19 +237,17 @@ internal static partial class CliCommands
 
         try
         {
-            string[] headers;
             List<DynamicColumnStats> statsList;
             int totalRows;
             if (Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
             {
                 var (excelHeaders, rows) = ReadTabularData(path, delimiter, sheet);
-                headers = excelHeaders;
-                statsList = DynamicProfiler.Analyze(headers, rows);
+                statsList = DynamicProfiler.Analyze(excelHeaders, rows);
                 totalRows = rows.Count;
             }
             else
             {
-                (headers, statsList, totalRows) = await ProfileCsvAsync(path, delimiter).ConfigureAwait(false);
+                (_, statsList, totalRows) = await ProfileCsvAsync(path, delimiter).ConfigureAwait(false);
             }
             var filename = Path.GetFileName(path);
 
@@ -371,7 +369,8 @@ internal static partial class CliCommands
                 {
                     Delimiter = inputDelimiter,
                     AllowNewlinesInsideQuotes = plan is not null,
-                    MaxColumnCount = plan is null ? 100 : 1000
+                    MaxColumnCount = plan is null ? 100 : 1000,
+                    MaxRowCount = plan is null ? 100_000 : int.MaxValue
                 };
                 CsvToJsonlConverter.Convert(inputPath, outputPath, shape, options);
                 ConsoleUtils.Success($"Converted CSV to JSONL successfully.");
@@ -407,6 +406,11 @@ internal static partial class CliCommands
             }
             else if (inExt == ".xlsx") // Excel -> CSV or JSONL
             {
+                if (outExt is not (".csv" or ".jsonl"))
+                {
+                    ConsoleUtils.Error($"Unsupported output extension from Excel: {outExt}");
+                    return false;
+                }
                 var allRows = Excel.Read().WithoutHeader().FromSheet(sheet ?? "Sheet1").FromFile(inputPath);
                 if (allRows.Count == 0)
                 {
@@ -758,6 +762,7 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
         ConsoleUtils.Info($"Starting batch translation / transformation pipeline...");
         ConsoleUtils.Info($"Output will be written to: {outputPath}");
 
+        string? stagingPath = null;
         try
         {
             var (sample, sampleLength) = ReadCsvSample(path);
@@ -785,49 +790,51 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
 
             var headersJoined = string.Join(",", headers);
 
-            // Setup output file and write header
-            using var fileWriter = Csv.CreateFileWriter(outputPath, new CsvWriteOptions { Delimiter = delimiter ?? ',' });
+            stagingPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!,
+                $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp");
+            using (var fileWriter = Csv.CreateFileWriter(stagingPath, new CsvWriteOptions { Delimiter = delimiter ?? ',' }))
+            {
 
-            bool isFirstBatch = true;
-            string[] outputHeaders = headers;
+                bool isFirstBatch = true;
+                string[] outputHeaders = headers;
 
-            char openBrace = '{';
-            char closeBrace = '}';
+                char openBrace = '{';
+                char closeBrace = '}';
 
-            await AnsiConsole.Progress()
-                .Columns([
-                    new TaskDescriptionColumn(),
+                await AnsiConsole.Progress()
+                    .Columns([
+                        new TaskDescriptionColumn(),
                     new ProgressBarColumn(),
                     new PercentageColumn(),
                     new RemainingTimeColumn(),
                     new SpinnerColumn()
-                ])
-                .StartAsync(async ctx =>
-                {
-                    var progressTask = ctx.AddTask("[green]Transforming rows[/]", maxValue: totalRows);
-
-                    for (long i = 0; i < totalRows; i += batchSize)
+                    ])
+                    .StartAsync(async ctx =>
                     {
-                        List<string[]> batch = source is null
-                            ? [.. rows!.Skip((int)i).Take(batchSize)]
-                            : await source.ReadBatchAsync(batchSize).ConfigureAwait(false);
-                        if (batch.Count == 0)
-                            throw new IOException("Input changed while translating; expected more rows.");
-                        progressTask.Description = $"[green]Transforming rows {i + 1} to {Math.Min(i + batchSize, totalRows)} of {totalRows}[/]";
+                        var progressTask = ctx.AddTask("[green]Transforming rows[/]", maxValue: totalRows);
 
-                        // Format batch as JSON array of key-value maps
-                        var batchArray = new JsonArray();
-                        foreach (var r in batch)
+                        for (long i = 0; i < totalRows; i += batchSize)
                         {
-                            var obj = new JsonObject();
-                            for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
-                            {
-                                obj[headers[c]] = r[c];
-                            }
-                            batchArray.Add((JsonNode)obj);
-                        }
+                            List<string[]> batch = source is null
+                                ? [.. rows!.Skip((int)i).Take(batchSize)]
+                                : await source.ReadBatchAsync(batchSize).ConfigureAwait(false);
+                            if (batch.Count == 0)
+                                throw new IOException("Input changed while translating; expected more rows.");
+                            progressTask.Description = $"[green]Transforming rows {i + 1} to {Math.Min(i + batchSize, totalRows)} of {totalRows}[/]";
 
-                        string prompt = $"""
+                            // Format batch as JSON array of key-value maps
+                            var batchArray = new JsonArray();
+                            foreach (var r in batch)
+                            {
+                                var obj = new JsonObject();
+                                for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
+                                {
+                                    obj[headers[c]] = r[c];
+                                }
+                                batchArray.Add((JsonNode)obj);
+                            }
+
+                            string prompt = $"""
 You are a high-performance tabular data mapping agent. 
 Task: Transform the input rows according to this prompt: "{transformPrompt}"
 
@@ -842,49 +849,57 @@ Instructions:
 4. Output ONLY the JSONL records. Do not output markdown code blocks (no ```json or ```), conversational text, or explanations. Each line must start with '{openBrace}' and end with '{closeBrace}'.
 """;
 
-                        // Call AI without inner status spinner, letting progress bar own rendering
-                        var responseText = await aiClient.AskAsync(prompt).ConfigureAwait(false);
+                            // Call AI without inner status spinner, letting progress bar own rendering
+                            var responseText = await aiClient.AskAsync(prompt).ConfigureAwait(false);
 
-                        var cleaned = LlmRepair.RepairText(responseText);
-                        var lines = cleaned.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                            var cleaned = LlmRepair.RepairText(responseText);
+                            var lines = cleaned.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-                        foreach (var line in lines)
-                        {
-                            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("{")) continue;
-
-                            try
+                            int acceptedRows = 0;
+                            foreach (var line in lines)
                             {
-                                if (JsonNode.Parse(line) is not JsonObject parsedObj) continue;
+                                if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("{")) continue;
 
-                                if (isFirstBatch)
+                                try
                                 {
-                                    isFirstBatch = false;
-                                    outputHeaders = [.. parsedObj.Select(k => k.Key)];
-                                    fileWriter.WriteRow(outputHeaders);
-                                }
+                                    if (JsonNode.Parse(line) is not JsonObject parsedObj) continue;
 
-                                var rowValues = new string[outputHeaders.Length];
-                                for (int colIndex = 0; colIndex < outputHeaders.Length; colIndex++)
-                                {
-                                    rowValues[colIndex] = parsedObj[outputHeaders[colIndex]]?.ToString() ?? "";
+                                    if (isFirstBatch)
+                                    {
+                                        isFirstBatch = false;
+                                        outputHeaders = [.. parsedObj.Select(k => k.Key)];
+                                        fileWriter.WriteRow(outputHeaders);
+                                    }
+
+                                    var rowValues = new string[outputHeaders.Length];
+                                    for (int colIndex = 0; colIndex < outputHeaders.Length; colIndex++)
+                                    {
+                                        rowValues[colIndex] = parsedObj[outputHeaders[colIndex]]?.ToString() ?? "";
+                                    }
+                                    fileWriter.WriteRow(rowValues);
+                                    acceptedRows++;
                                 }
-                                fileWriter.WriteRow(rowValues);
+                                catch (Exception lineEx)
+                                {
+                                    AnsiConsole.MarkupLine($"[yellow]⚠ Failed to parse output line: {Markup.Escape(line)}. Error: {Markup.Escape(lineEx.Message)}[/]");
+                                }
                             }
-                            catch (Exception lineEx)
-                            {
-                                AnsiConsole.MarkupLine($"[yellow]⚠ Failed to parse output line: {Markup.Escape(line)}. Error: {Markup.Escape(lineEx.Message)}[/]");
-                            }
+
+                            if (acceptedRows != batch.Count)
+                                throw new InvalidDataException($"Model returned {acceptedRows} valid records for a batch of {batch.Count} rows.");
+
+                            progressTask.Increment(batch.Count);
                         }
 
-                        progressTask.Increment(batch.Count);
-                    }
+                        if (source is not null && (await source.ReadBatchAsync(1).ConfigureAwait(false)).Count > 0)
+                            throw new IOException("Input changed while translating; additional rows appeared.");
 
-                    if (source is not null && (await source.ReadBatchAsync(1).ConfigureAwait(false)).Count > 0)
-                        throw new IOException("Input changed while translating; additional rows appeared.");
+                        progressTask.Description = $"[green]Processed all {totalRows} rows[/]";
+                    });
+            }
 
-                    progressTask.Description = $"[green]Processed all {totalRows} rows[/]";
-                });
-
+            File.Move(stagingPath, outputPath, overwrite: true);
+            stagingPath = null;
             ConsoleUtils.Success($"Translation/transformation completed successfully. Saved to: {outputPath}");
             return true;
         }
@@ -892,6 +907,11 @@ Instructions:
         {
             ConsoleUtils.Error($"Translation pipeline failed: {ex.Message}");
             return false;
+        }
+        finally
+        {
+            if (stagingPath is not null)
+                File.Delete(stagingPath);
         }
     }
 

@@ -27,17 +27,12 @@ public static partial class CsvValidator
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var sample = new byte[DETECTION_SAMPLE_BYTES];
-        int sampleLength = 0;
-        while (sampleLength < sample.Length)
-        {
-            int read = await stream.ReadAsync(sample.AsMemory(sampleLength), cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-                break;
-            sampleLength += read;
-        }
+        int sampleLength = await ReadSampleAsync(stream, sample, cancellationToken).ConfigureAwait(false);
 
         char delimiter = options.Delimiter ?? ',';
-        if (sampleLength == 0 || (stream.Length == sampleLength && IsWhiteSpaceOnly(sample.AsSpan(0, sampleLength))))
+        bool whitespaceOnly = sampleLength == 0 || (IsWhiteSpaceOnly(sample.AsSpan(0, sampleLength)) &&
+            await IsRemainingWhiteSpaceAsync(stream, cancellationToken).ConfigureAwait(false));
+        if (whitespaceOnly)
         {
             return new CsvValidationResult
             {
@@ -54,7 +49,14 @@ public static partial class CsvValidator
         {
             try
             {
-                delimiter = CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
+                if (options.SkipRows > 0)
+                {
+                    stream.Position = 0;
+                    await SkipLogicalRowsAsync(stream, options.SkipRows, sample, cancellationToken).ConfigureAwait(false);
+                    sampleLength = await ReadSampleAsync(stream, sample, cancellationToken).ConfigureAwait(false);
+                }
+                if (sampleLength > 0)
+                    delimiter = CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
             }
             catch (InvalidOperationException ex)
             {
@@ -201,5 +203,70 @@ public static partial class CsvValidator
             });
 
         return Result();
+    }
+
+    private static async Task<int> ReadSampleAsync(Stream stream, byte[] sample, CancellationToken cancellationToken)
+    {
+        int length = 0;
+        while (length < sample.Length)
+        {
+            int read = await stream.ReadAsync(sample.AsMemory(length), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+                break;
+            length += read;
+        }
+        return length;
+    }
+
+    private static async Task<bool> IsRemainingWhiteSpaceAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        byte[] buffer = new byte[16 * 1024];
+        int read;
+        while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (!IsWhiteSpaceOnly(buffer.AsSpan(0, read)))
+                return false;
+        }
+        return true;
+    }
+
+    private static async Task SkipLogicalRowsAsync(Stream stream, int rows, byte[] buffer, CancellationToken cancellationToken)
+    {
+        bool quoted = false;
+        bool afterCr = false;
+        int skipped = 0;
+        int read;
+        while (skipped < rows && (read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            for (int i = 0; i < read; i++)
+            {
+                byte value = buffer[i];
+                if (afterCr)
+                {
+                    afterCr = false;
+                    if (value == (byte)'\n')
+                        continue;
+                }
+                if (value == (byte)'"')
+                    quoted = !quoted;
+                if (!quoted && (value == (byte)'\r' || value == (byte)'\n'))
+                {
+                    skipped++;
+                    if (value == (byte)'\r')
+                        afterCr = true;
+                    if (skipped == rows)
+                    {
+                        stream.Position -= read - i - 1;
+                        if (afterCr && stream.Position < stream.Length)
+                        {
+                            int next = stream.ReadByte();
+                            if (next != (byte)'\n')
+                                stream.Position--;
+                        }
+                        return;
+                    }
+                }
+            }
+        }
     }
 }

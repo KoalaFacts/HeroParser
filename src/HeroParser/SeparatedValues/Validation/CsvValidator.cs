@@ -47,6 +47,7 @@ public static partial class CsvValidator
     public static CsvValidationResult Validate(ReadOnlySpan<char> data, CsvValidationOptions? options = null)
     {
         options ??= new CsvValidationOptions();
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxErrors);
         var errors = new List<CsvValidationError>();
 
         // Check for empty data
@@ -130,6 +131,7 @@ public static partial class CsvValidator
                 nameof(data));
         }
         options ??= new CsvValidationOptions();
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxErrors);
         var errors = new List<CsvValidationError>();
 
         // Check for empty data
@@ -242,11 +244,13 @@ public static partial class CsvValidator
                                 Expected = requiredHeader
                             });
                         }
+                        if (errors.Count >= validationOptions.MaxErrors)
+                            break;
                     }
                 }
 
                 // Check expected column count
-                if (expectedColumnCount > 0 && headerRow.ColumnCount != expectedColumnCount)
+                if (errors.Count < validationOptions.MaxErrors && expectedColumnCount > 0 && headerRow.ColumnCount != expectedColumnCount)
                 {
                     errors.Add(new CsvValidationError
                     {
@@ -260,7 +264,7 @@ public static partial class CsvValidator
             }
 
             // Validate data rows
-            while (reader.MoveNext())
+            while (errors.Count < validationOptions.MaxErrors && reader.MoveNext())
             {
                 totalRows++;
                 var row = reader.Current;
@@ -289,7 +293,7 @@ public static partial class CsvValidator
                 }
 
                 // Check row count limit
-                if (validationOptions.MaxRows > 0 && totalRows > validationOptions.MaxRows)
+                if (errors.Count < validationOptions.MaxErrors && validationOptions.MaxRows > 0 && totalRows > validationOptions.MaxRows)
                 {
                     errors.Add(new CsvValidationError
                     {
@@ -303,18 +307,19 @@ public static partial class CsvValidator
         }
         catch (CsvException ex)
         {
-            errors.Add(new CsvValidationError
-            {
-                ErrorType = CsvValidationErrorType.ParseError,
-                Message = $"Parse error: {ex.Message}",
-                RowNumber = ex.Row ?? 0,
-                ColumnNumber = ex.Column ?? 0
-            });
+            if (errors.Count < validationOptions.MaxErrors)
+                errors.Add(new CsvValidationError
+                {
+                    ErrorType = CsvValidationErrorType.ParseError,
+                    Message = $"Parse error: {ex.Message}",
+                    RowNumber = ex.Row ?? 0,
+                    ColumnNumber = ex.Column ?? 0
+                });
         }
 
         // Check for empty file if no data rows
         var nonDataRows = validationOptions.SkipRows + (validationOptions.HasHeaderRow ? 1 : 0);
-        if (totalRows <= nonDataRows)
+        if (totalRows <= nonDataRows && errors.Count < validationOptions.MaxErrors)
         {
             if (!validationOptions.AllowEmptyFile)
             {
@@ -332,7 +337,8 @@ public static partial class CsvValidator
             TotalRows = totalRows,
             ColumnCount = detectedColumnCount,
             Delimiter = parseOptions.Delimiter,
-            Headers = headers
+            Headers = headers,
+            StoppedEarly = errors.Count >= validationOptions.MaxErrors
         };
     }
 

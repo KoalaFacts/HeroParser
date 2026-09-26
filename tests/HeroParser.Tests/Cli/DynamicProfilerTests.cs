@@ -83,6 +83,28 @@ public class DynamicProfilerTests
         AssertSameStats(expected, actual);
     }
 
+    [Fact]
+    public void ObserveCellUtf8_DisablesCacheAfterSeventeenByteDistinctVariants()
+    {
+        var expected = new DynamicColumnStats();
+        var actual = new DynamicColumnStats();
+        string[] variants = [.. Enumerable.Range(0, 17).Select(mask =>
+            new string([.. "abcdefgh".Select((value, index) =>
+                (mask & (1 << index)) == 0 ? value : char.ToUpperInvariant(value))]))];
+
+        for (int i = 0; i < 340; i++)
+        {
+            string value = variants[i % variants.Length];
+            DynamicProfiler.ObserveCell(expected, value);
+            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        }
+
+        Assert.Single(actual.ValueCounts);
+        Assert.NotNull(actual.Utf8Cache);
+        Assert.True(actual.Utf8Cache.IsDisabled);
+        AssertSameStats(expected, actual);
+    }
+
     private static void AssertSameStats(DynamicColumnStats expected, DynamicColumnStats actual)
     {
         Assert.Equal(expected.NullCount, actual.NullCount);

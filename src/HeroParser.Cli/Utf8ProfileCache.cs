@@ -17,10 +17,18 @@ internal sealed class Utf8ProfileCache
 
     private readonly Entry[] entries = new Entry[CAPACITY];
     private int count;
-    private int next;
+
+    public bool IsDisabled { get; private set; }
 
     public bool TryGet(ReadOnlySpan<byte> value, out ProfileValueKind kind, out string? text)
     {
+        if (IsDisabled)
+        {
+            kind = ProfileValueKind.Uncached;
+            text = null;
+            return false;
+        }
+
         for (int i = 0; i < count; i++)
         {
             ref Entry entry = ref entries[i];
@@ -39,7 +47,15 @@ internal sealed class Utf8ProfileCache
 
     public void Store(ReadOnlySpan<byte> value, ProfileValueKind kind, string text)
     {
-        ref Entry entry = ref entries[next];
+        if (IsDisabled)
+            return;
+        if (count == CAPACITY)
+        {
+            IsDisabled = true;
+            return;
+        }
+
+        ref Entry entry = ref entries[count];
         if (entry.Bytes is null || entry.Bytes.Length < value.Length)
             entry.Bytes = new byte[value.Length];
 
@@ -48,9 +64,7 @@ internal sealed class Utf8ProfileCache
         entry.Kind = kind;
         entry.Text = text;
 
-        if (count < CAPACITY)
-            count++;
-        next = (next + 1) % CAPACITY;
+        count++;
     }
 
     private struct Entry

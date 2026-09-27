@@ -377,7 +377,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     /// <summary>
     /// Advances to the next row, reading from the underlying <see cref="PipeReader"/> as needed.
     /// </summary>
-    public async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
+    public ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
@@ -385,6 +385,20 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
         hasCurrent = false;
         currentFromBatch = false;
 
+        if (hasBufferedRead && bufferedData.IsSingleSegment && cursor is not null)
+        {
+            while (cursor.TryTake(out var batchRow))
+            {
+                if (EmitBatchRow(batchRow))
+                    return ValueTask.FromResult(true);
+            }
+        }
+
+        return MoveNextSlowAsync(cancellationToken);
+    }
+
+    private async ValueTask<bool> MoveNextSlowAsync(CancellationToken cancellationToken)
+    {
         while (true)
         {
             if (!hasBufferedRead)

@@ -111,6 +111,21 @@ public class CsvPipeScanAheadTests
     private static PipeReader CreatePipe(byte[] utf8, int chunk, int segment) =>
         PipeReader.Create(new TrickleStream(utf8, chunk), new StreamPipeReaderOptions(bufferSize: segment, minimumReadSize: Math.Min(segment, 16), leaveOpen: false));
 
+    [Fact]
+    public async Task BufferedRows_HonorCancellationBetweenMoves()
+    {
+        byte[] utf8 = Encoding.UTF8.GetBytes("a,b\nc,d\ne,f\n");
+        using var cancellation = new CancellationTokenSource();
+        await using var reader = Csv.CreatePipeSequenceReader(
+            PipeReader.Create(new MemoryStream(utf8, writable: false)), Options());
+
+        Assert.True(await reader.MoveNextAsync(cancellation.Token));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await reader.MoveNextAsync(cancellation.Token));
+    }
+
     private static async Task<ReadOutcome> ReadSequenceAsync(byte[] utf8, CsvReadOptions options, int chunk, int segment)
     {
         var rows = new List<RowSnapshot>();

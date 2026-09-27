@@ -1,9 +1,10 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Json.Nodes;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using HeroParser.AI;
@@ -809,6 +810,7 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
 
                 char openBrace = '{';
                 char closeBrace = '}';
+                var batchJsonBuffer = new ArrayBufferWriter<byte>();
 
                 await AnsiConsole.Progress()
                     .Columns([
@@ -829,17 +831,20 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
                                 throw new IOException("Input changed while translating; expected more rows.");
                             progressTask.Description = $"[green]Transforming rows {i + 1} to {Math.Min(i + batchSize, totalRows)} of {totalRows}[/]";
 
-                            // Format batch as JSON array of key-value maps
-                            var batchArray = new JsonArray();
-                            foreach (var r in batch)
+                            batchJsonBuffer.Clear();
+                            using (var jsonWriter = new Utf8JsonWriter(batchJsonBuffer))
                             {
-                                var obj = new JsonObject();
-                                for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
+                                jsonWriter.WriteStartArray();
+                                foreach (var r in batch)
                                 {
-                                    obj[headers[c]] = r[c];
+                                    jsonWriter.WriteStartObject();
+                                    for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
+                                        jsonWriter.WriteString(headers[c], r[c]);
+                                    jsonWriter.WriteEndObject();
                                 }
-                                batchArray.Add((JsonNode)obj);
+                                jsonWriter.WriteEndArray();
                             }
+                            string batchJson = Encoding.UTF8.GetString(batchJsonBuffer.WrittenSpan);
 
                             string prompt = $"""
 You are a high-performance tabular data mapping agent. 
@@ -847,7 +852,7 @@ Task: Transform the input rows according to this prompt: "{transformPrompt}"
 
 Input Columns: {headersJoined}
 Input Rows (JSON):
-{batchArray.ToJsonString()}
+{batchJson}
 
 Instructions:
 1. Process each row.
@@ -869,19 +874,28 @@ Instructions:
 
                                 try
                                 {
-                                    if (JsonNode.Parse(line) is not JsonObject parsedObj) continue;
+                                    using var parsed = JsonDocument.Parse(line);
+                                    JsonElement parsedObj = parsed.RootElement;
+                                    if (parsedObj.ValueKind != JsonValueKind.Object) continue;
 
                                     if (isFirstBatch)
                                     {
                                         isFirstBatch = false;
-                                        outputHeaders = [.. parsedObj.Select(k => k.Key)];
+                                        outputHeaders = [.. parsedObj.EnumerateObject().Select(k => k.Name).Distinct(StringComparer.Ordinal)];
                                         fileWriter.WriteRow(outputHeaders);
                                     }
 
                                     var rowValues = new string[outputHeaders.Length];
                                     for (int colIndex = 0; colIndex < outputHeaders.Length; colIndex++)
                                     {
-                                        rowValues[colIndex] = parsedObj[outputHeaders[colIndex]]?.ToString() ?? "";
+                                        rowValues[colIndex] = parsedObj.TryGetProperty(outputHeaders[colIndex], out JsonElement value)
+                                            ? value.ValueKind switch
+                                            {
+                                                JsonValueKind.True => "true",
+                                                JsonValueKind.False => "false",
+                                                _ => value.ToString()
+                                            }
+                                            : "";
                                     }
                                     fileWriter.WriteRow(rowValues);
                                     acceptedRows++;

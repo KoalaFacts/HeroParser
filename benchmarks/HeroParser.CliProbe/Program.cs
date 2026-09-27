@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using HeroParser.Cli;
@@ -72,7 +73,33 @@ internal static class Program
             try
             {
                 WriteFixture(fixturePath, args[1], rows);
-                await RunInFreshProcessAsync(args, fixturePath);
+                try
+                {
+                    await RunInFreshProcessAsync(args, fixturePath);
+                }
+                catch when (args[1] == "xlsx")
+                {
+                    try
+                    {
+                        using (var archive = ZipFile.OpenRead(fixturePath))
+                        {
+                            foreach (var entry in archive.Entries.Where(entry =>
+                                entry.FullName.StartsWith("xl/worksheets/", StringComparison.Ordinal)))
+                            {
+                                SysConsole.Error.WriteLine($"XLSX worksheet entry: {entry.Length} uncompressed bytes, " +
+                                    $"{entry.CompressedLength} compressed bytes.");
+                            }
+                        }
+
+                        using var reader = HeroParser.Excel.CreateDataReader(fixturePath, "Sheet1");
+                        while (reader.Read()) { }
+                    }
+                    catch (Exception ex)
+                    {
+                        SysConsole.Error.WriteLine($"XLSX reader diagnostic: {ex}");
+                    }
+                    throw;
+                }
             }
             finally
             {
@@ -113,14 +140,7 @@ internal static class Program
                 var stopwatch = Stopwatch.StartNew();
                 try
                 {
-                    succeeded = args[0] switch
-                    {
-                        "schema" => await CliCommands.SchemaAsync(inputPath, ',', false, null, null, null),
-                        "profile" => await CliCommands.ProfileAsync(inputPath, ',', null),
-                        "query" => await CliCommands.QueryAsync(inputPath, ',', null, "Summarize the data", null, null, null, client),
-                        _ => await CliCommands.TranslateAsync(inputPath, ',', null, "Return unchanged rows", outputPath,
-                            batchSize: 100, null, null, null, client)
-                    };
+                    succeeded = await RunScenarioAsync(args[0], inputPath, outputPath, client);
                 }
                 finally
                 {
@@ -141,7 +161,18 @@ internal static class Program
             }
 
             if (!succeeded)
-                throw new InvalidOperationException("CLI command failed during the performance probe.");
+            {
+                try
+                {
+                    AnsiConsoleApi.Current = new SystemAnsiConsole(SysConsole.Error);
+                    await RunScenarioAsync(args[0], inputPath, outputPath, client);
+                }
+                finally
+                {
+                    AnsiConsoleApi.Current = previousAnsi;
+                }
+                throw new InvalidOperationException("CLI command failed during the performance probe; see the diagnostic output above.");
+            }
             if (args[0] == "translate" && File.ReadLines(outputPath).LongCount() != rows + 1L)
                 throw new InvalidDataException("Translation output row count did not match the input fixture.");
 
@@ -164,6 +195,16 @@ internal static class Program
             File.Delete(outputPath);
         }
     }
+
+    private static Task<bool> RunScenarioAsync(string scenario, string inputPath, string outputPath, LlmClient client)
+        => scenario switch
+        {
+            "schema" => CliCommands.SchemaAsync(inputPath, ',', false, null, null, null),
+            "profile" => CliCommands.ProfileAsync(inputPath, ',', null),
+            "query" => CliCommands.QueryAsync(inputPath, ',', null, "Summarize the data", null, null, null, client),
+            _ => CliCommands.TranslateAsync(inputPath, ',', null, "Return unchanged rows", outputPath,
+                batchSize: 100, null, null, null, client)
+        };
 
     private static async Task RunInFreshProcessAsync(string[] args, string fixturePath)
     {

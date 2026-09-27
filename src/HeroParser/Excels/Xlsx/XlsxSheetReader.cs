@@ -21,7 +21,7 @@ internal sealed class XlsxSheetReader : IDisposable
     /// </summary>
     public XlsxSheetReader(Stream sheetStream, XlsxSharedStrings sharedStrings, XlsxStylesheet stylesheet)
     {
-        reader = XmlReader.Create(sheetStream, XlsxXml.CreateReaderSettings());
+        reader = XmlReader.Create(sheetStream, XlsxXml.CreateWorksheetReaderSettings());
         this.sharedStrings = sharedStrings;
         this.stylesheet = stylesheet;
     }
@@ -74,7 +74,7 @@ internal sealed class XlsxSheetReader : IDisposable
         }
         catch (XmlException ex)
         {
-            throw new ExcelException("Failed to read Excel worksheet due to XML corruption.", ex);
+            throw new ExcelException("Failed to read Excel worksheet XML; it may be malformed or exceed the document-size limit.", ex);
         }
     }
 

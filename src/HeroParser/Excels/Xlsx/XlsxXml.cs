@@ -7,10 +7,10 @@ namespace HeroParser.Excels.Xlsx;
 /// </summary>
 internal static class XlsxXml
 {
-    // Caps on parsed XML size to bound memory consumption from crafted .xlsx inputs (zip-bomb defence).
-    // 100 million chars ≈ 200 MB UTF-16, which is well above any realistic legitimate sharedStrings/sheet
-    // payload but stops a small attacker-controlled zip entry from expanding into multi-GB allocations.
+    // Metadata and shared strings may be materialized, so retain their tighter document cap.
     private const long MAX_CHARACTERS_IN_DOCUMENT = 100_000_000;
+    // Worksheets are read row by row. Keep a finite CPU/expansion cap while allowing large sheets.
+    private const long MAX_WORKSHEET_CHARACTERS_IN_DOCUMENT = 256_000_000;
     private const long MAX_CHARACTERS_FROM_ENTITIES = 10_000_000;
 
     /// <summary>
@@ -18,12 +18,18 @@ internal static class XlsxXml
     /// Prohibits DTD processing and disables the XML resolver to prevent XXE attacks,
     /// and caps document/entity character counts to mitigate decompression-bomb DoS.
     /// </summary>
-    internal static XmlReaderSettings CreateReaderSettings() => new()
+    internal static XmlReaderSettings CreateReaderSettings()
+        => CreateReaderSettings(MAX_CHARACTERS_IN_DOCUMENT);
+
+    internal static XmlReaderSettings CreateWorksheetReaderSettings()
+        => CreateReaderSettings(MAX_WORKSHEET_CHARACTERS_IN_DOCUMENT);
+
+    private static XmlReaderSettings CreateReaderSettings(long maxCharactersInDocument) => new()
     {
         IgnoreWhitespace = true,
         DtdProcessing = DtdProcessing.Prohibit,
         XmlResolver = null,
-        MaxCharactersInDocument = MAX_CHARACTERS_IN_DOCUMENT,
+        MaxCharactersInDocument = maxCharactersInDocument,
         MaxCharactersFromEntities = MAX_CHARACTERS_FROM_ENTITIES
     };
 

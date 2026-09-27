@@ -788,6 +788,12 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
             var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
 
             var headersJoined = string.Join(",", headers);
+            var duplicateInputColumns = new HashSet<string>(headers, StringComparer.Ordinal).Count == headers.Length
+                ? null
+                : headers.Select((name, index) => (name, index))
+                    .GroupBy(column => column.name, StringComparer.Ordinal)
+                    .Select(group => (Name: group.Key, Indexes: group.Select(column => column.index).ToArray()))
+                    .ToArray();
 
             stagingPath = $"{Path.GetFullPath(outputPath)}.{Guid.NewGuid():N}.tmp";
             var stagingOptions = new FileStreamOptions
@@ -811,6 +817,7 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
                 char openBrace = '{';
                 char closeBrace = '}';
                 var batchJsonBuffer = new ArrayBufferWriter<byte>();
+                var responsePropertyNames = new HashSet<string>(StringComparer.Ordinal);
 
                 await AnsiConsole.Progress()
                     .Columns([
@@ -838,8 +845,23 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
                                 foreach (var r in batch)
                                 {
                                     jsonWriter.WriteStartObject();
-                                    for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
-                                        jsonWriter.WriteString(headers[c], r[c]);
+                                    if (duplicateInputColumns is null)
+                                    {
+                                        for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
+                                            jsonWriter.WriteString(headers[c], r[c]);
+                                    }
+                                    else
+                                    {
+                                        foreach (var (name, indexes) in duplicateInputColumns)
+                                        {
+                                            for (int index = indexes.Length - 1; index >= 0; index--)
+                                            {
+                                                if (indexes[index] >= r.Length) continue;
+                                                jsonWriter.WriteString(name, r[indexes[index]]);
+                                                break;
+                                            }
+                                        }
+                                    }
                                     jsonWriter.WriteEndObject();
                                 }
                                 jsonWriter.WriteEndArray();
@@ -880,9 +902,41 @@ Instructions:
 
                                     if (isFirstBatch)
                                     {
+                                        responsePropertyNames.Clear();
+                                        var firstHeaders = new List<string>();
+                                        foreach (JsonProperty property in parsedObj.EnumerateObject())
+                                        {
+                                            string name = property.Name;
+                                            if (!responsePropertyNames.Add(name))
+                                                throw new JsonException($"Duplicate property '{name}' in model output.");
+                                            firstHeaders.Add(name);
+                                        }
                                         isFirstBatch = false;
-                                        outputHeaders = [.. parsedObj.EnumerateObject().Select(k => k.Name).Distinct(StringComparer.Ordinal)];
+                                        outputHeaders = [.. firstHeaders];
                                         fileWriter.WriteRow(outputHeaders);
+                                    }
+                                    else
+                                    {
+                                        // Stable model schemas can be checked without allocating property-name strings per row.
+                                        int propertyIndex = 0;
+                                        bool sameOrder = true;
+                                        foreach (JsonProperty property in parsedObj.EnumerateObject())
+                                        {
+                                            if (propertyIndex >= outputHeaders.Length || !property.NameEquals(outputHeaders[propertyIndex++]))
+                                            {
+                                                sameOrder = false;
+                                                break;
+                                            }
+                                        }
+                                        if (!sameOrder || propertyIndex != outputHeaders.Length)
+                                        {
+                                            responsePropertyNames.Clear();
+                                            foreach (JsonProperty property in parsedObj.EnumerateObject())
+                                            {
+                                                if (!responsePropertyNames.Add(property.Name))
+                                                    throw new JsonException($"Duplicate property '{property.Name}' in model output.");
+                                            }
+                                        }
                                     }
 
                                     var rowValues = new string[outputHeaders.Length];

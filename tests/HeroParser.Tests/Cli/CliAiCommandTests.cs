@@ -420,6 +420,40 @@ public class CliAiCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Translate_DuplicateInputHeadersUseTheLastValueWithoutDuplicateJsonKeys()
+    {
+        var runner = new ScriptedRunner("{\"Name\":\"ok\",\"Other\":\"x\"}");
+
+        Assert.True(await CliCommands.TranslateAsync(
+            TempFile("Name,Other,Name\nfirst,x,last"), ',', null, "t", TempPath(),
+            batchSize: 1, null, null, null, ClientFor(runner)));
+
+        string prompt = Assert.Single(runner.Prompts);
+        int start = prompt.IndexOf('[', prompt.IndexOf("Input Rows (JSON):", StringComparison.Ordinal));
+        int end = prompt.IndexOf("Instructions:", start, StringComparison.Ordinal);
+        using var batch = JsonDocument.Parse(prompt[start..end].Trim());
+        JsonProperty[] properties = [.. batch.RootElement[0].EnumerateObject()];
+        Assert.Equal(["Name", "Other"], properties.Select(property => property.Name));
+        Assert.Equal("last", properties[0].Value.GetString());
+        Assert.Equal("x", properties[1].Value.GetString());
+    }
+
+    [Fact]
+    public async Task Translate_DuplicateOutputPropertiesDoNotReplaceExistingOutput()
+    {
+        string outputPath = TempPath();
+        File.WriteAllText(outputPath, "previous result");
+
+        Assert.False(await CliCommands.TranslateAsync(
+            TempFile("Name\ninput"), ',', null, "t", outputPath,
+            batchSize: 1, null, null, null,
+            ClientFor(new ScriptedRunner("{\"Name\":\"first\",\"Name\":\"second\"}"))));
+
+        Assert.Equal("previous result", File.ReadAllText(outputPath));
+        Assert.Contains("Failed to parse output line", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Translate_BatchesRowsAndCallsTheModelOncePerBatch()
     {
         var runner = new ScriptedRunner("{\"Name\":\"x\",\"Age\":\"1\"}\n{\"Name\":\"y\",\"Age\":\"2\"}",

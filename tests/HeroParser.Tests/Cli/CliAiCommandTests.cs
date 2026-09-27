@@ -74,6 +74,19 @@ public class CliAiCommandTests : IDisposable
         return path;
     }
 
+    public sealed class ExcelPerson
+    {
+        public string Name { get; set; } = "";
+        public string Age { get; set; } = "";
+    }
+
+    private string ExcelFile(string sheet, IEnumerable<ExcelPerson> people)
+    {
+        string path = TempPath(".xlsx");
+        HeroParser.Excel.Write<ExcelPerson>().WithSheetName(sheet).ToFile(path, people);
+        return path;
+    }
+
     private const string SAMPLE_CSV = "Name,Age\nAlice,30\nBob,25";
 
     // ---- schema ----------------------------------------------------------------
@@ -206,6 +219,17 @@ public class CliAiCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Query_TreatsUnknownExtensionAsCsv()
+    {
+        var runner = new ScriptedRunner("ok");
+
+        Assert.True(await CliCommands.QueryAsync(TempFile(SAMPLE_CSV, ".data"), ',', null,
+            "count", null, null, null, ClientFor(runner)), output.ToString());
+
+        Assert.Contains("| Alice | 30 |", Assert.Single(runner.Prompts), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Query_ProfilesAllRowsButShowsOnlyTenSamples()
     {
         var runner = new ScriptedRunner("ok");
@@ -233,6 +257,57 @@ public class CliAiCommandTests : IDisposable
         Assert.Contains("(20 rows)", prompt, StringComparison.Ordinal);
         Assert.Contains("| 猫9 | 9 |", prompt, StringComparison.Ordinal);
         Assert.DoesNotContain("| 猫10 | 10 |", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Excel_ProfileAndQuery_UseSelectedSheetAndOnlySampleTenRows()
+    {
+        var runner = new ScriptedRunner("ok");
+        string path = ExcelFile("Records", Enumerable.Range(0, 20).Select(i => new ExcelPerson
+        {
+            Name = $"n{i}",
+            Age = i.ToString(CultureInfo.InvariantCulture)
+        }));
+
+        Assert.True(await CliCommands.ProfileAsync(path, null, "Records"), output.ToString());
+        Assert.True(await CliCommands.QueryAsync(path, null, "Records", "count", null, null, null, ClientFor(runner)),
+            output.ToString());
+
+        string prompt = Assert.Single(runner.Prompts);
+        Assert.Contains("(20 rows)", prompt, StringComparison.Ordinal);
+        Assert.Contains("| n9 | 9 |", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("| n10 | 10 |", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Excel_RowBatches_PreserveBlankCells()
+    {
+        string path = ExcelFile("Records", [
+            new ExcelPerson { Name = "Alice", Age = "30" },
+            new ExcelPerson { Name = "Bob", Age = "" }
+        ]);
+
+        await using var source = ExcelRowBatchSource.Open(path, "Records");
+        Assert.Equal(["Name", "Age"], source.Headers);
+        Assert.Equal(["Alice", "30"], Assert.Single(await source.ReadBatchAsync(1)));
+        Assert.Equal(["Bob", ""], Assert.Single(await source.ReadBatchAsync(2)));
+        Assert.Empty(await source.ReadBatchAsync(1));
+    }
+
+    [Fact]
+    public async Task Excel_EmptySheet_ProfilesAndTranslatesWithoutModelCalls()
+    {
+        string path = TempPath(".xlsx");
+        HeroParser.Excel.Write<ExcelPerson>().WithSheetName("Records").WithoutHeader().ToFile(path, []);
+        var runner = new ScriptedRunner();
+        string outputPath = TempPath();
+
+        Assert.True(await CliCommands.ProfileAsync(path, null, "Records"), output.ToString());
+        Assert.True(await CliCommands.TranslateAsync(path, null, "Records", "unchanged", outputPath,
+            batchSize: 2, null, null, null, ClientFor(runner)), output.ToString());
+
+        Assert.Empty(runner.Prompts);
+        Assert.Empty(File.ReadAllText(outputPath));
     }
 
     [Fact]
@@ -352,6 +427,30 @@ public class CliAiCommandTests : IDisposable
         Assert.Contains("\"A\"", runner.Prompts[0], StringComparison.Ordinal);
         Assert.Contains("\"C\"", runner.Prompts[1], StringComparison.Ordinal);
         Assert.Contains("ok", File.ReadAllText(outputPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Excel_Translate_UsesSelectedSheetAndConfiguredBatches()
+    {
+        var runner = new ScriptedRunner(
+            "{\"Name\":\"n0\",\"Age\":\"0\"}\n{\"Name\":\"n1\",\"Age\":\"1\"}",
+            "{\"Name\":\"n2\",\"Age\":\"2\"}\n{\"Name\":\"n3\",\"Age\":\"3\"}",
+            "{\"Name\":\"n4\",\"Age\":\"4\"}");
+        string path = ExcelFile("Records", Enumerable.Range(0, 5).Select(i => new ExcelPerson
+        {
+            Name = $"n{i}",
+            Age = i.ToString(CultureInfo.InvariantCulture)
+        }));
+        string outputPath = TempPath();
+
+        Assert.True(await CliCommands.TranslateAsync(path, null, "Records", "unchanged", outputPath,
+            batchSize: 2, null, null, null, ClientFor(runner)), output.ToString());
+
+        Assert.Equal(3, runner.Prompts.Count);
+        Assert.Contains("\"n0\"", runner.Prompts[0], StringComparison.Ordinal);
+        Assert.Contains("\"n4\"", runner.Prompts[2], StringComparison.Ordinal);
+        Assert.Equal(6, File.ReadLines(outputPath).Count());
+        Assert.Contains("n4,4", File.ReadAllText(outputPath), StringComparison.Ordinal);
     }
 
     [Theory]

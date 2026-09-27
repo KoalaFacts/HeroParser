@@ -2,7 +2,7 @@ using HeroParser.SeparatedValues.Reading.Streaming;
 
 namespace HeroParser.Cli;
 
-internal sealed class CsvRowBatchSource : IAsyncDisposable
+internal sealed class CsvRowBatchSource : IRowBatchSource
 {
     private readonly CsvAsyncStreamReader reader;
 

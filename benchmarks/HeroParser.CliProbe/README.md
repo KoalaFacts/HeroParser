@@ -37,4 +37,16 @@ Windows, .NET SDK 10.0.401, Release net10.0, PR #108's probe branch updated to i
 | `query` / 100,000 | UTF-16 CSV | 336 ms | 38.3 MiB | 1.0 MiB |
 | `translate` / 100,000 | UTF-16 CSV | 4,977 ms | 59.1 MiB | 653.0 MiB |
 
-The `translate` run made 1,000 local echo-model calls and verified all 100,000 output rows. Its cumulative allocation includes prompt formatting and the echo substitute; it does not measure a real model or isolate parser allocations. Use repeated, same-machine runs before prioritizing further optimization. Excel still materializes rows in the CLI, but the historical 90,000-row Excel measurement alone does not establish the next bottleneck on current `main`.
+The `translate` run made 1,000 local echo-model calls and verified all 100,000 output rows. Its cumulative allocation includes prompt formatting and the echo substitute; it does not measure a real model or isolate parser allocations. Use repeated, same-machine runs before prioritizing further optimization. At this baseline, Excel still materialized rows in the CLI; the historical 90,000-row Excel measurement alone did not establish the next bottleneck.
+
+## Excel CLI streaming spot check (2026-09-27)
+
+After replacing the CLI's full-sheet materialization with `Excel.CreateDataReader`, the same 100,000-row XLSX probe was run once per command on the same Windows/.NET 10 machine. The before and after figures are individual fresh-process observations, not benchmark medians. The generated XLSX input was 2.6 MiB in each run.
+
+| Command | Before peak working set | After peak working set |
+|---|---:|---:|
+| `profile` | 61.7 MiB | 45.9 MiB |
+| `query` | 62.4 MiB | 46.3 MiB |
+| `translate` | 78.8 MiB | 58.7 MiB |
+
+The new `profile` path also completed a 200,000-row XLSX run at 47.3 MiB peak working set. This is evidence for bounded memory on this fixture, not a guarantee for workbooks with large shared-string tables. `translate` now scans the worksheet once to count rows and again to process batches, so its cumulative managed allocation increased from about 694 MiB to 779 MiB in the 100,000-row spot checks. A 500,000-row probe failed without a diagnostic from the child command; do not infer a performance or security-limit conclusion from that run.

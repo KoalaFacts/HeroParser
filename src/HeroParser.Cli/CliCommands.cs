@@ -13,6 +13,7 @@ using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Validation;
 using HeroParser.SeparatedValues.Writing;
 using HeroParser.Cli.AI;
+using HeroParser.Excels.Reading.Data;
 using AnsiConsole = HeroParser.Console.AnsiConsole;
 using Color = HeroParser.Console.Color;
 using Markup = HeroParser.Console.Markup;
@@ -239,11 +240,9 @@ internal static partial class CliCommands
         {
             List<DynamicColumnStats> statsList;
             int totalRows;
-            if (Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+            if (IsExcelInput(path))
             {
-                var (excelHeaders, rows) = ReadTabularData(path, delimiter, sheet);
-                statsList = DynamicProfiler.Analyze(excelHeaders, rows);
-                totalRows = rows.Count;
+                (_, statsList, totalRows, _) = ProfileExcel(path, sheet);
             }
             else
             {
@@ -676,7 +675,7 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
             List<string[]> sampleRows;
             var filename = Path.GetFileName(path);
             string card;
-            if (IsCsvInput(path))
+            if (!IsExcelInput(path))
             {
                 var (sample, sampleLength) = ReadCsvSample(path);
                 bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
@@ -688,8 +687,8 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
             }
             else
             {
-                (headers, sampleRows) = ReadTabularData(path, delimiter, sheet);
-                card = DynamicProfiler.GenerateContextCard(filename, headers, sampleRows);
+                (headers, var stats, var totalRows, sampleRows) = ProfileExcel(path, sheet);
+                card = DynamicProfiler.GenerateContextCard(filename, totalRows, stats);
             }
 
             // Format sample rows
@@ -765,27 +764,26 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
         string? stagingPath = null;
         try
         {
-            var (sample, sampleLength) = ReadCsvSample(path);
-            bool streamCsv = IsCsvInput(path);
-            bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
-            char inputDelimiter = delimiter ?? (streamCsv ? DetectSchemaDelimiter(path, sample, sampleLength, utf16) : ',');
-            string[] headers;
-            List<string[]>? rows = null;
-            long totalRows;
+            bool streamCsv = !IsExcelInput(path);
+            char inputDelimiter = ',';
             if (streamCsv)
             {
-                await using var counting = await CsvRowBatchSource.OpenAsync(path, inputDelimiter).ConfigureAwait(false);
+                var (sample, sampleLength) = ReadCsvSample(path);
+                bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+                inputDelimiter = delimiter ?? DetectSchemaDelimiter(path, sample, sampleLength, utf16);
+            }
+            string[] headers;
+            long totalRows;
+            await using (IRowBatchSource counting = streamCsv
+                ? await CsvRowBatchSource.OpenAsync(path, inputDelimiter).ConfigureAwait(false)
+                : ExcelRowBatchSource.Open(path, sheet))
+            {
                 headers = counting.Headers;
                 totalRows = await counting.CountRemainingRowsAsync().ConfigureAwait(false);
             }
-            else
-            {
-                (headers, rows) = ReadTabularData(path, delimiter, sheet);
-                totalRows = rows.Count;
-            }
-            await using var source = streamCsv
+            await using IRowBatchSource source = streamCsv
                 ? await CsvRowBatchSource.OpenAsync(path, inputDelimiter).ConfigureAwait(false)
-                : null;
+                : ExcelRowBatchSource.Open(path, sheet);
             var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
 
             var headersJoined = string.Join(",", headers);
@@ -826,9 +824,7 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
 
                         for (long i = 0; i < totalRows; i += batchSize)
                         {
-                            List<string[]> batch = source is null
-                                ? [.. rows!.Skip((int)i).Take(batchSize)]
-                                : await source.ReadBatchAsync(batchSize).ConfigureAwait(false);
+                            List<string[]> batch = await source.ReadBatchAsync(batchSize).ConfigureAwait(false);
                             if (batch.Count == 0)
                                 throw new IOException("Input changed while translating; expected more rows.");
                             progressTask.Description = $"[green]Transforming rows {i + 1} to {Math.Min(i + batchSize, totalRows)} of {totalRows}[/]";
@@ -902,7 +898,7 @@ Instructions:
                             progressTask.Increment(batch.Count);
                         }
 
-                        if (source is not null && (await source.ReadBatchAsync(1).ConfigureAwait(false)).Count > 0)
+                        if ((await source.ReadBatchAsync(1).ConfigureAwait(false)).Count > 0)
                             throw new IOException("Input changed while translating; additional rows appeared.");
 
                         progressTask.Description = $"[green]Processed all {totalRows} rows[/]";
@@ -958,56 +954,33 @@ Instructions:
         return (source.Headers, rows);
     }
 
-    private static (string[] Headers, List<string[]> Rows) ReadTabularData(string path, char? delimiter, string? sheet)
+    private static (string[] Headers, List<DynamicColumnStats> Stats, int RowCount, List<string[]> SampleRows)
+        ProfileExcel(string path, string? sheet)
     {
-        var ext = Path.GetExtension(path).ToLowerInvariant();
+        using var reader = Excel.CreateDataReader(path,
+            new ExcelDataReaderOptions { AllowMissingColumns = true }, sheet ?? "Sheet1");
+        var headers = new string[reader.FieldCount];
+        for (int i = 0; i < headers.Length; i++)
+            headers[i] = reader.GetName(i);
 
-        if (ext == ".xlsx")
+        var stats = DynamicProfiler.CreateStats(headers);
+        var sampleRows = new List<string[]>(10);
+        int rowCount = 0;
+        while (reader.Read())
         {
-            var allRows = Excel.Read().WithoutHeader().FromSheet(sheet ?? "Sheet1").FromFile(path);
-            if (allRows.Count == 0)
+            rowCount++;
+            string[]? sample = sampleRows.Count < 10 ? new string[headers.Length] : null;
+            for (int i = 0; i < stats.Count; i++)
             {
-                return ([], []);
+                string? value = reader.GetValue(i) as string;
+                DynamicProfiler.ObserveCell(stats[i], value);
+                sample?[i] = value ?? "";
             }
-            var headers = allRows[0];
-            var rows = allRows.Skip(1).ToList();
-            return (headers, rows);
+            if (sample is not null)
+                sampleRows.Add(sample);
         }
-        else
-        {
-            // Assume CSV/TSV
-            var content = File.ReadAllText(path);
-            var detectDelim = delimiter ?? CsvDelimiterDetector.DetectDelimiter(content);
 
-            var readOptions = new CsvReadOptions { Delimiter = detectDelim };
-            using var reader = Csv.ReadFromText(content, readOptions);
-
-            if (!reader.MoveNext())
-            {
-                return ([], []);
-            }
-
-            var headerRow = reader.Current;
-            var headers = new string[headerRow.ColumnCount];
-            for (int i = 0; i < headerRow.ColumnCount; i++)
-            {
-                headers[i] = headerRow[i].ToString();
-            }
-
-            var rows = new List<string[]>();
-            while (reader.MoveNext())
-            {
-                var r = reader.Current;
-                var rowData = new string[headers.Length];
-                for (int i = 0; i < headers.Length; i++)
-                {
-                    rowData[i] = i < r.ColumnCount ? r[i].ToString() : "";
-                }
-                rows.Add(rowData);
-            }
-
-            return (headers, rows);
-        }
+        return (headers, stats, rowCount, sampleRows);
     }
 
     private static async Task<(string[] Headers, List<DynamicColumnStats> Stats, int RowCount)> ProfileCsvAsync(
@@ -1054,6 +1027,9 @@ Instructions:
         return extension.Equals(".csv", StringComparison.OrdinalIgnoreCase) ||
             extension.Equals(".tsv", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsExcelInput(string path)
+        => Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase);
 
     private static (byte[] Bytes, int Length) ReadCsvSample(string path)
     {

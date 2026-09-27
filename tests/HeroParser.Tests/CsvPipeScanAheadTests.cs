@@ -122,8 +122,35 @@ public class CsvPipeScanAheadTests
         Assert.True(await reader.MoveNextAsync(cancellation.Token));
         cancellation.Cancel();
 
+        ValueTask<bool> canceledMove = reader.MoveNextAsync(cancellation.Token);
+        Assert.True(canceledMove.IsCanceled);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            async () => await reader.MoveNextAsync(cancellation.Token));
+            async () => await canceledMove);
+    }
+
+    [Fact]
+    public async Task BufferedRows_KeepFailureInReturnedValueTask()
+    {
+        byte[] utf8 = Encoding.UTF8.GetBytes("a,b\nc,d\n");
+        await using var reader = Csv.CreatePipeSequenceReader(
+            PipeReader.Create(new MemoryStream(utf8, writable: false)), Options(maxRows: 1));
+
+        Assert.True(await reader.MoveNextAsync(TestContext.Current.CancellationToken));
+        ValueTask<bool> failedMove = reader.MoveNextAsync(TestContext.Current.CancellationToken);
+        Assert.True(failedMove.IsFaulted);
+        await Assert.ThrowsAsync<CsvException>(async () => await failedMove);
+    }
+
+    [Fact]
+    public async Task DisposedReader_ReturnsFaultedValueTask()
+    {
+        byte[] utf8 = Encoding.UTF8.GetBytes("a,b\n");
+        var reader = Csv.CreatePipeSequenceReader(PipeReader.Create(new MemoryStream(utf8, writable: false)));
+        await reader.DisposeAsync();
+
+        ValueTask<bool> failedMove = reader.MoveNextAsync(TestContext.Current.CancellationToken);
+        Assert.True(failedMove.IsFaulted);
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () => await failedMove);
     }
 
     private static async Task<ReadOutcome> ReadSequenceAsync(byte[] utf8, CsvReadOptions options, int chunk, int segment)

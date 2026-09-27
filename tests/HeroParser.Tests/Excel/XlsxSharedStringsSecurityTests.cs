@@ -48,6 +48,18 @@ public class XlsxSharedStringsSecurityTests
             "MaxCharactersFromEntities must be > 0 even though DTD is prohibited (defence-in-depth)");
     }
 
+    [Fact]
+    public void WorksheetReaderSettings_RaisesOnlyTheStreamingDocumentCap()
+    {
+        var metadata = XlsxXml.CreateReaderSettings();
+        var worksheet = XlsxXml.CreateWorksheetReaderSettings();
+
+        Assert.Equal(100_000_000, metadata.MaxCharactersInDocument);
+        Assert.Equal(256_000_000, worksheet.MaxCharactersInDocument);
+        Assert.Equal(metadata.MaxCharactersFromEntities, worksheet.MaxCharactersFromEntities);
+        Assert.Equal(DtdProcessing.Prohibit, worksheet.DtdProcessing);
+    }
+
     // Sanity check that the XmlReader contract used by .NET does throw XmlException when the
     // document character cap is exceeded. We use a tiny payload + a tiny custom cap so this
     // test runs in milliseconds and behaves identically across platforms.

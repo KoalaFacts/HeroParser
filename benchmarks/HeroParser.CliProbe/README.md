@@ -49,4 +49,18 @@ After replacing the CLI's full-sheet materialization with `Excel.CreateDataReade
 | `query` | 62.4 MiB | 46.3 MiB |
 | `translate` | 78.8 MiB | 58.7 MiB |
 
-The new `profile` path also completed a 200,000-row XLSX run at 47.3 MiB peak working set. This is evidence for bounded memory on this fixture, not a guarantee for workbooks with large shared-string tables. `translate` now scans the worksheet once to count rows and again to process batches, so its cumulative managed allocation increased from about 694 MiB to 779 MiB in the 100,000-row spot checks. A 500,000-row probe failed without a diagnostic from the child command; do not infer a performance or security-limit conclusion from that run.
+The new `profile` path also completed a 200,000-row XLSX run at 47.3 MiB peak working set. This is evidence for bounded memory on this fixture, not a guarantee for workbooks with large shared-string tables. `translate` now scans the worksheet once to count rows and again to process batches, so its cumulative managed allocation increased from about 694 MiB to 779 MiB in the 100,000-row spot checks.
+
+## Large worksheet limit and diagnostic (2026-09-27)
+
+A 500,000-row XLSX fixture expanded to 143,889,398 bytes of worksheet XML, above the previous 100,000,000-character cap. The probe now reruns failed commands outside the measured interval to expose CLI errors and, for XLSX, reports the worksheet entry size and underlying reader exception. The initial failure was `MaxCharactersInDocument`, not memory exhaustion or a malformed workbook.
+
+The worksheet-only character cap is now 256,000,000. Metadata and shared strings retain the 100,000,000-character cap; ZIP entry size (512 MiB), compression ratio (200:1), DTD, resolver, and entity limits are unchanged. After this change, single fresh-process runs on the same 500,000-row fixture completed as follows:
+
+| Command | Peak working set | Managed allocation | Output verification |
+|---|---:|---:|---|
+| `profile` | 49.3 MiB | 406.6 MiB | Command succeeded |
+| `query` | 49.6 MiB | 406.6 MiB | Local model called once |
+| `translate` | 59.5 MiB | 3,916.5 MiB | 500,000 rows verified |
+
+These are spot checks, not benchmark medians. Real workbooks with many unique shared strings can still have much higher memory usage.

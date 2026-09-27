@@ -1,9 +1,10 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Json.Nodes;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using HeroParser.AI;
@@ -787,6 +788,12 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
             var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
 
             var headersJoined = string.Join(",", headers);
+            var duplicateInputColumns = new HashSet<string>(headers, StringComparer.Ordinal).Count == headers.Length
+                ? null
+                : headers.Select((name, index) => (name, index))
+                    .GroupBy(column => column.name, StringComparer.Ordinal)
+                    .Select(group => (Name: group.Key, Indexes: group.Select(column => column.index).ToArray()))
+                    .ToArray();
 
             stagingPath = $"{Path.GetFullPath(outputPath)}.{Guid.NewGuid():N}.tmp";
             var stagingOptions = new FileStreamOptions
@@ -809,6 +816,8 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
 
                 char openBrace = '{';
                 char closeBrace = '}';
+                var batchJsonBuffer = new ArrayBufferWriter<byte>();
+                var responsePropertyNames = new HashSet<string>(StringComparer.Ordinal);
 
                 await AnsiConsole.Progress()
                     .Columns([
@@ -829,17 +838,35 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
                                 throw new IOException("Input changed while translating; expected more rows.");
                             progressTask.Description = $"[green]Transforming rows {i + 1} to {Math.Min(i + batchSize, totalRows)} of {totalRows}[/]";
 
-                            // Format batch as JSON array of key-value maps
-                            var batchArray = new JsonArray();
-                            foreach (var r in batch)
+                            batchJsonBuffer.Clear();
+                            using (var jsonWriter = new Utf8JsonWriter(batchJsonBuffer))
                             {
-                                var obj = new JsonObject();
-                                for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
+                                jsonWriter.WriteStartArray();
+                                foreach (var r in batch)
                                 {
-                                    obj[headers[c]] = r[c];
+                                    jsonWriter.WriteStartObject();
+                                    if (duplicateInputColumns is null)
+                                    {
+                                        for (int c = 0; c < Math.Min(headers.Length, r.Length); c++)
+                                            jsonWriter.WriteString(headers[c], r[c]);
+                                    }
+                                    else
+                                    {
+                                        foreach (var (name, indexes) in duplicateInputColumns)
+                                        {
+                                            for (int index = indexes.Length - 1; index >= 0; index--)
+                                            {
+                                                if (indexes[index] >= r.Length) continue;
+                                                jsonWriter.WriteString(name, r[indexes[index]]);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    jsonWriter.WriteEndObject();
                                 }
-                                batchArray.Add((JsonNode)obj);
+                                jsonWriter.WriteEndArray();
                             }
+                            string batchJson = Encoding.UTF8.GetString(batchJsonBuffer.WrittenSpan);
 
                             string prompt = $"""
 You are a high-performance tabular data mapping agent. 
@@ -847,7 +874,7 @@ Task: Transform the input rows according to this prompt: "{transformPrompt}"
 
 Input Columns: {headersJoined}
 Input Rows (JSON):
-{batchArray.ToJsonString()}
+{batchJson}
 
 Instructions:
 1. Process each row.
@@ -869,19 +896,60 @@ Instructions:
 
                                 try
                                 {
-                                    if (JsonNode.Parse(line) is not JsonObject parsedObj) continue;
+                                    using var parsed = JsonDocument.Parse(line);
+                                    JsonElement parsedObj = parsed.RootElement;
+                                    if (parsedObj.ValueKind != JsonValueKind.Object) continue;
 
                                     if (isFirstBatch)
                                     {
+                                        responsePropertyNames.Clear();
+                                        var firstHeaders = new List<string>();
+                                        foreach (JsonProperty property in parsedObj.EnumerateObject())
+                                        {
+                                            string name = property.Name;
+                                            if (!responsePropertyNames.Add(name))
+                                                throw new JsonException($"Duplicate property '{name}' in model output.");
+                                            firstHeaders.Add(name);
+                                        }
                                         isFirstBatch = false;
-                                        outputHeaders = [.. parsedObj.Select(k => k.Key)];
+                                        outputHeaders = [.. firstHeaders];
                                         fileWriter.WriteRow(outputHeaders);
+                                    }
+                                    else
+                                    {
+                                        // Stable model schemas can be checked without allocating property-name strings per row.
+                                        int propertyIndex = 0;
+                                        bool sameOrder = true;
+                                        foreach (JsonProperty property in parsedObj.EnumerateObject())
+                                        {
+                                            if (propertyIndex >= outputHeaders.Length || !property.NameEquals(outputHeaders[propertyIndex++]))
+                                            {
+                                                sameOrder = false;
+                                                break;
+                                            }
+                                        }
+                                        if (!sameOrder || propertyIndex != outputHeaders.Length)
+                                        {
+                                            responsePropertyNames.Clear();
+                                            foreach (JsonProperty property in parsedObj.EnumerateObject())
+                                            {
+                                                if (!responsePropertyNames.Add(property.Name))
+                                                    throw new JsonException($"Duplicate property '{property.Name}' in model output.");
+                                            }
+                                        }
                                     }
 
                                     var rowValues = new string[outputHeaders.Length];
                                     for (int colIndex = 0; colIndex < outputHeaders.Length; colIndex++)
                                     {
-                                        rowValues[colIndex] = parsedObj[outputHeaders[colIndex]]?.ToString() ?? "";
+                                        rowValues[colIndex] = parsedObj.TryGetProperty(outputHeaders[colIndex], out JsonElement value)
+                                            ? value.ValueKind switch
+                                            {
+                                                JsonValueKind.True => "true",
+                                                JsonValueKind.False => "false",
+                                                _ => value.ToString()
+                                            }
+                                            : "";
                                     }
                                     fileWriter.WriteRow(rowValues);
                                     acceptedRows++;

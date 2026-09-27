@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using HeroParser.Cli;
 using HeroParser.Cli.AI;
 using HeroParser.Tests.ConsoleUi;
@@ -395,6 +396,61 @@ public class CliAiCommandTests : IDisposable
             TempFile("Name,Age\nAlice,30"), null, null, "t", outputPath, batchSize: 10, null, null, null, ClientFor(runner));
 
         Assert.StartsWith("Upper,Decade", File.ReadAllText(outputPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Translate_EscapesInputAndWritesMixedJsonValues()
+    {
+        var runner = new ScriptedRunner("{\"Renamed\":\"caf\\u00e9\",\"Count\":12,\"Enabled\":true,\"Optional\":null}");
+        string outputPath = TempPath();
+
+        Assert.True(await CliCommands.TranslateAsync(
+            TempFile("Name,Note\n\"A\"\"B\",\"line 1\nline 2\""), ',', null, "t", outputPath,
+            batchSize: 1, null, null, null, ClientFor(runner)));
+
+        string prompt = Assert.Single(runner.Prompts);
+        int start = prompt.IndexOf('[', prompt.IndexOf("Input Rows (JSON):", StringComparison.Ordinal));
+        int end = prompt.IndexOf("Instructions:", start, StringComparison.Ordinal);
+        using var batch = JsonDocument.Parse(prompt[start..end].Trim());
+        JsonElement row = batch.RootElement[0];
+        Assert.Equal("\"A\"\"B\"", row.GetProperty("Name").GetString());
+        Assert.Equal("\"line 1\nline 2\"", row.GetProperty("Note").GetString());
+        Assert.Equal("Renamed,Count,Enabled,Optional", File.ReadLines(outputPath).First());
+        Assert.Contains("caf\u00e9,12,true,", File.ReadAllText(outputPath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Translate_DuplicateInputHeadersUseTheLastValueWithoutDuplicateJsonKeys()
+    {
+        var runner = new ScriptedRunner("{\"Name\":\"ok\",\"Other\":\"x\"}");
+
+        Assert.True(await CliCommands.TranslateAsync(
+            TempFile("Name,Other,Name\nfirst,x,last"), ',', null, "t", TempPath(),
+            batchSize: 1, null, null, null, ClientFor(runner)));
+
+        string prompt = Assert.Single(runner.Prompts);
+        int start = prompt.IndexOf('[', prompt.IndexOf("Input Rows (JSON):", StringComparison.Ordinal));
+        int end = prompt.IndexOf("Instructions:", start, StringComparison.Ordinal);
+        using var batch = JsonDocument.Parse(prompt[start..end].Trim());
+        JsonProperty[] properties = [.. batch.RootElement[0].EnumerateObject()];
+        Assert.Equal(["Name", "Other"], properties.Select(property => property.Name));
+        Assert.Equal("last", properties[0].Value.GetString());
+        Assert.Equal("x", properties[1].Value.GetString());
+    }
+
+    [Fact]
+    public async Task Translate_DuplicateOutputPropertiesDoNotReplaceExistingOutput()
+    {
+        string outputPath = TempPath();
+        File.WriteAllText(outputPath, "previous result");
+
+        Assert.False(await CliCommands.TranslateAsync(
+            TempFile("Name\ninput"), ',', null, "t", outputPath,
+            batchSize: 1, null, null, null,
+            ClientFor(new ScriptedRunner("{\"Name\":\"first\",\"Name\":\"second\"}"))));
+
+        Assert.Equal("previous result", File.ReadAllText(outputPath));
+        Assert.Contains("Failed to parse output line", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

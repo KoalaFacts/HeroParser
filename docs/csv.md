@@ -1189,7 +1189,8 @@ var options = new CsvSchemaInferenceOptions
 {
     Delimiter  = ';',    // Auto-detects if null
     SampleRows = 200,    // Default: 100
-    MaxColumnCount = 100 // Default: 100
+    MaxColumnCount = 100, // Default: 100
+    MaxRowSize = 1024 * 1024 // Default: 1 MiB per row
 };
 
 var schema = Csv.InferSchema(csvData, options);
@@ -1203,11 +1204,14 @@ var schema = await Csv.InferSchemaFileAsync("data.csv", new CsvSchemaInferenceOp
 {
     Delimiter = ';',         // Optional; auto-detected from at most 64 KiB when omitted
     SampleRows = 200,       // Default: 100
-    MaxColumnCount = 1000   // Default: 100
+    MaxColumnCount = 1000,  // Default: 100
+    MaxRowSize = 1024 * 1024 // Default: 1 MiB per row
 });
 ```
 
 `InferSchemaFileAsync` supports UTF-8 (with or without BOM) and BOM-marked UTF-16 LE/BE. UTF-16 is transcoded incrementally to UTF-8 before parsing. The string API also ignores a leading BOM character. All inference entry points accept quoted fields containing newlines and enforce `SampleRows` and `MaxColumnCount`. Inference stops after the configured number of data rows; its types and nullability describe only that sample, not the entire input. Use CSV validation separately when every row must be checked.
+
+Inference rejects sampled rows above `MaxRowSize` instead of returning a partial schema. The default is 1,048,576 units; set a larger positive value (up to 134,217,728 units) only when trusted input requires it. The limit counts characters for string input and UTF-8 bytes for file or stream input (after transcoding BOM-marked UTF-16). A quoted field spanning physical lines is one logical row. This is a per-row limit, not a total input-byte budget.
 
 For a caller-owned stream, use `InferSchemaAsync` with the same options. The stream stays open. A seekable stream returns to its original position, including on failure or cancellation:
 
@@ -1219,7 +1223,7 @@ var schema = await Csv.InferSchemaAsync(stream, new CsvSchemaInferenceOptions { 
 
 For non-seekable streams, specify `Delimiter` explicitly. Inference may read ahead past the last sampled row, so the remaining stream is **not** positioned at the next CSV row; replay or buffer the input if it must be parsed afterwards. Both stream kinds support UTF-8 and BOM-marked UTF-16 LE/BE.
 
-Inference allows logical rows above the reader's usual 512 KiB default, up to its 128 MiB hard limit. String, file, and seekable-stream auto-detection use at most the first 64 KiB of UTF-8 input; if a truncated sample cannot determine a delimiter, provide `Delimiter` explicitly. For BOM-marked UTF-16 files and streams, the 64 KiB limit applies to encoded input bytes.
+Inference allows logical rows above the reader's usual 512 KiB default when `MaxRowSize` is raised explicitly. String, file, and seekable-stream auto-detection use at most the first 64 KiB of UTF-8 input; if a truncated sample cannot determine a delimiter, provide `Delimiter` explicitly. For BOM-marked UTF-16 files and streams, the 64 KiB limit applies to encoded input bytes.
 
 **Use cases:**
 - Dynamic CSV import without pre-defined schemas

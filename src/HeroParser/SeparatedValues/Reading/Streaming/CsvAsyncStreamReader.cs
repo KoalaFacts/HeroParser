@@ -194,9 +194,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
             if (result.RowLength > maxRowSize)
             {
-                throw new CsvException(
-                    CsvErrorCode.ParseError,
-                    $"Row exceeds maximum size of {maxRowSize:N0} bytes. Ensure rows have proper line endings.");
+                throw CsvException.RowSizeLimitExceeded(maxRowSize, isUtf8: true);
             }
 
             if (result.RowLength == span.Length && !endOfStream)
@@ -251,9 +249,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     {
         if (row.Length > maxRowSize)
         {
-            throw new CsvException(
-                CsvErrorCode.ParseError,
-                $"Row exceeds maximum size of {maxRowSize:N0} bytes. Ensure rows have proper line endings.");
+            throw CsvException.RowSizeLimitExceeded(maxRowSize, isUtf8: true);
         }
 
         rowCount++;
@@ -313,23 +309,23 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             offset = 0;
         }
 
-        if (length == buffer.Length)
+        int capacity = Math.Min(buffer.Length, maxBufferSize);
+        if (length == capacity)
         {
-            if (buffer.Length >= maxBufferSize)
+            if (capacity >= maxBufferSize)
             {
-                throw new CsvException(
-                    CsvErrorCode.ParseError,
-                    $"Row exceeds maximum size of {maxRowSize:N0} bytes. Ensure rows have proper line endings.");
+                throw CsvException.RowSizeLimitExceeded(maxRowSize, isUtf8: true);
             }
 
-            int newSize = Math.Min(buffer.Length * 2, maxBufferSize);
+            int newSize = Math.Min(capacity * 2, maxBufferSize);
             var newBuffer = RentBuffer(newSize);
             buffer.AsSpan(0, length).CopyTo(newBuffer);
             ReturnBuffer(buffer);
             buffer = newBuffer;
+            capacity = Math.Min(buffer.Length, maxBufferSize);
         }
 
-        int read = await stream.ReadAsync(buffer.AsMemory(length, buffer.Length - length), cancellationToken).ConfigureAwait(false);
+        int read = await stream.ReadAsync(buffer.AsMemory(length, capacity - length), cancellationToken).ConfigureAwait(false);
         if (read == 0)
         {
             endOfStream = true;

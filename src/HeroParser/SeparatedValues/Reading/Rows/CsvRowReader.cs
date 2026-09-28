@@ -66,6 +66,8 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     /// <remarks>The value is only valid after <see cref="MoveNext"/> returns <see langword="true"/>.</remarks>
     public CsvRow<T> Current { get; private set; }
 
+    internal readonly int RemainingInputLength => data.Length - position;
+
     /// <summary>Returns this instance so it can be consumed by <c>foreach</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly CsvRowReader<T> GetEnumerator() => this;

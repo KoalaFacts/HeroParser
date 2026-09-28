@@ -177,6 +177,30 @@ public sealed class SchemaInferenceParityTests
     }
 
     [Fact]
+    public async Task OversizedUnterminatedQuotedRow_IsRejectedAcrossSources()
+    {
+        string csv = "A\n\"" + new string('x', 10);
+        await AssertRowSizeLimitAcrossSourcesAsync(csv,
+            new CsvSchemaInferenceOptions { Delimiter = ',', MaxRowSize = 8 });
+    }
+
+    [Fact]
+    public async Task OversizedUnterminatedQuotedHeader_IsRejectedAcrossSources()
+    {
+        string csv = "\"" + new string('x', 10);
+        await AssertRowSizeLimitAcrossSourcesAsync(csv,
+            new CsvSchemaInferenceOptions { Delimiter = ',', MaxRowSize = 8 });
+    }
+
+    [Fact]
+    public async Task UnterminatedQuotedRowWithinLimit_RemainsRecoverable()
+    {
+        const string csv = "A\n\"short";
+        var options = new CsvSchemaInferenceOptions { Delimiter = ',', MaxRowSize = 8 };
+        await AssertSourcesAgreeAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
     public async Task DefaultRowSizeLimit_RejectsOversizedDataRow()
     {
         string csv = "Value\n" + new string('x', 1024 * 1024 + 1);
@@ -276,6 +300,9 @@ public sealed class SchemaInferenceParityTests
             Assert.Equal(CsvErrorCode.ParseError, textError.ErrorCode);
             Assert.Equal(CsvErrorCode.ParseError, fileError.ErrorCode);
             Assert.Equal(CsvErrorCode.ParseError, streamError.ErrorCode);
+            Assert.Contains("maximum size", textError.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("maximum size", fileError.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("maximum size", streamError.Message, StringComparison.OrdinalIgnoreCase);
             Assert.Equal(0, seekable.Position);
 
             if (includeNonSeekable)
@@ -284,6 +311,7 @@ public sealed class SchemaInferenceParityTests
                 var chunkedError = await Assert.ThrowsAsync<CsvException>(() =>
                     Csv.InferSchemaAsync(chunked, options, TestContext.Current.CancellationToken));
                 Assert.Equal(CsvErrorCode.ParseError, chunkedError.ErrorCode);
+                Assert.Contains("maximum size", chunkedError.Message, StringComparison.OrdinalIgnoreCase);
             }
         }
         finally

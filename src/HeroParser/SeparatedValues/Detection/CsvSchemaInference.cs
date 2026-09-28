@@ -338,7 +338,16 @@ public static class CsvSchemaInference
         using var reader = Csv.ReadFromCharSpan(csv, readOptions);
 
         // Read header row
-        if (!reader.MoveNext())
+        bool hasHeader;
+        try
+        {
+            hasHeader = reader.MoveNext();
+        }
+        catch (CsvException ex) when (ex.QuoteStartPosition.HasValue && reader.RemainingInputLength > options.MaxRowSize)
+        {
+            throw CsvException.RowSizeLimitExceeded(options.MaxRowSize, isUtf8: false);
+        }
+        if (!hasHeader)
             throw new InvalidOperationException("Cannot infer schema from empty data.");
         CsvRow<char> headerRow = reader.Current;
         ThrowIfRowTooLarge(headerRow.Line, options.MaxRowSize);
@@ -401,6 +410,8 @@ public static class CsvSchemaInference
         }
         catch (CsvException ex) when (ex.ErrorCode == CsvErrorCode.ParseError && !ex.IsRowSizeLimitExceeded)
         {
+            if (ex.QuoteStartPosition.HasValue && reader.RemainingInputLength > options.MaxRowSize)
+                throw CsvException.RowSizeLimitExceeded(options.MaxRowSize, isUtf8: false);
             // Gracefully stop inference and output whatever was successfully parsed.
         }
 

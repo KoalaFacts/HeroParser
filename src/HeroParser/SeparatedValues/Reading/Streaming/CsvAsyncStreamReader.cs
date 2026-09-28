@@ -188,6 +188,10 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
             }
+            catch (CsvException ex) when (ex.QuoteStartPosition.HasValue && span.Length > maxRowSize)
+            {
+                throw CsvException.RowSizeLimitExceeded(maxRowSize, isUtf8: true);
+            }
 
             if (result.CharsConsumed == 0)
                 return false;

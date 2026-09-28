@@ -43,4 +43,20 @@ public static partial class Csv
     {
         return CsvSchemaInference.InferFileAsync(path, options, cancellationToken);
     }
+
+    /// <summary>Infers a stream's CSV schema from a bounded number of data rows without closing the stream.</summary>
+    /// <param name="stream">A readable UTF-8 stream or a BOM-marked UTF-16 stream.</param>
+    /// <param name="options">Inference options. Non-seekable streams require an explicit delimiter.</param>
+    /// <param name="cancellationToken">Cancels reads.</param>
+    /// <returns>The inferred columns and number of sampled data rows.</returns>
+    /// <remarks>
+    /// A seekable stream is restored to its initial position. A non-seekable stream remains open but may
+    /// be consumed beyond the final sampled row due to parser read-ahead; do not resume parsing it at
+    /// the current position. To parse the same non-seekable input afterwards, buffer or replay it first.
+    /// </remarks>
+    public static Task<CsvSchemaInferenceResult> InferSchemaAsync(
+        Stream stream, CsvSchemaInferenceOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        return CsvSchemaInference.InferAsync(stream, options, cancellationToken);
+    }
 }

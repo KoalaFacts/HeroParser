@@ -1208,6 +1208,16 @@ var schema = await Csv.InferSchemaFileAsync("data.csv", new CsvSchemaInferenceOp
 
 `InferSchemaFileAsync` supports UTF-8 (with or without BOM) and BOM-marked UTF-16 LE/BE. UTF-16 is transcoded incrementally to UTF-8 before parsing. Inference stops after the configured number of data rows; its types and nullability describe only that sample, not the entire file. Use CSV validation separately when every row must be checked.
 
+For a caller-owned stream, use `InferSchemaAsync` with the same options. The stream stays open. A seekable stream returns to its original position, including on failure or cancellation:
+
+```csharp
+await using var stream = File.OpenRead("data.csv");
+var schema = await Csv.InferSchemaAsync(stream, new CsvSchemaInferenceOptions { SampleRows = 100 });
+// stream.Position is unchanged.
+```
+
+For non-seekable streams, specify `Delimiter` explicitly. Inference may read ahead past the last sampled row, so the remaining stream is **not** positioned at the next CSV row; replay or buffer the input if it must be parsed afterwards. Both stream kinds support UTF-8 and BOM-marked UTF-16 LE/BE.
+
 File inference allows logical rows above the reader's usual 512 KiB default, up to its 128 MiB hard limit. If auto-detection cannot determine a delimiter from a truncated 64 KiB sample, provide `Delimiter` explicitly.
 
 **Use cases:**

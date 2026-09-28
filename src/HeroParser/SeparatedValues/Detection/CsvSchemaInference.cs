@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
+using HeroParser.SeparatedValues.Reading.Streaming;
 
 namespace HeroParser.SeparatedValues.Detection;
 
@@ -112,6 +113,64 @@ public static class CsvSchemaInference
             .TrackSourceLineNumbers()
             .FromTextFileAsync(path);
 
+        return await InferRowsAsync(reader, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Infers a stream's CSV schema from a bounded number of rows, leaving the stream open.</summary>
+    /// <param name="stream">A readable UTF-8 stream or a BOM-marked UTF-16 stream.</param>
+    /// <param name="options">Inference options. Non-seekable streams require an explicit delimiter.</param>
+    /// <param name="cancellationToken">Cancels reads.</param>
+    /// <returns>Column types inferred only from the sampled rows.</returns>
+    public static async Task<CsvSchemaInferenceResult> InferAsync(
+        Stream stream, CsvSchemaInferenceOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (!stream.CanRead)
+            throw new ArgumentException("The stream must be readable.", nameof(stream));
+
+        options ??= CsvSchemaInferenceOptions.Default;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.SampleRows);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxColumnCount);
+        if (!stream.CanSeek && options.Delimiter is null)
+            throw new ArgumentException("Non-seekable streams require an explicit delimiter.", nameof(options));
+
+        cancellationToken.ThrowIfCancellationRequested();
+        long? initialPosition = stream.CanSeek ? stream.Position : null;
+        try
+        {
+            var prefix = new byte[options.Delimiter is null ? DETECTION_SAMPLE_BYTES : 2];
+            int length = await ReadPrefixAsync(stream, prefix, cancellationToken).ConfigureAwait(false);
+            bool hasMore = stream.CanSeek && stream.Position < stream.Length;
+            char delimiter = options.Delimiter ?? DetectSampleDelimiter(prefix.AsSpan(0, length), hasMore);
+            Encoding? encoding = GetUtf16Encoding(prefix.AsSpan(0, length));
+
+            int bomLength = encoding is null ? 0 : 2;
+            Stream input = new CsvPrefixReadStream(stream, prefix.AsMemory(bomLength, length - bomLength));
+            if (encoding is not null)
+                input = new Utf16ToUtf8ReadStream(input, encoding);
+
+            await using var ownedInput = input;
+            await using var reader = Csv.Read()
+                .WithDelimiter(delimiter)
+                .WithMaxColumns(options.MaxColumnCount)
+                .WithMaxRows(int.MaxValue)
+                .WithMaxRowSize(null)
+                .AllowNewlinesInQuotes()
+                .TrackSourceLineNumbers()
+                .FromStreamAsync(ownedInput, leaveOpen: true);
+
+            return await InferRowsAsync(reader, options, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (initialPosition.HasValue)
+                stream.Position = initialPosition.Value;
+        }
+    }
+
+    private static async Task<CsvSchemaInferenceResult> InferRowsAsync(
+        CsvAsyncStreamReader reader, CsvSchemaInferenceOptions options, CancellationToken cancellationToken)
+    {
         if (!await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException("Cannot infer schema from empty data.");
 
@@ -185,28 +244,51 @@ public static class CsvSchemaInference
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var sample = new byte[DETECTION_SAMPLE_BYTES];
+        int length = await ReadPrefixAsync(stream, sample, cancellationToken).ConfigureAwait(false);
+        return DetectSampleDelimiter(sample.AsSpan(0, length), stream.Position < stream.Length);
+    }
+
+    private static async Task<int> ReadPrefixAsync(Stream stream, byte[] sample, CancellationToken cancellationToken)
+    {
         int length = 0;
         while (length < sample.Length)
         {
             int read = await stream.ReadAsync(sample.AsMemory(length), cancellationToken).ConfigureAwait(false);
-            if (read == 0) break;
+            if (read == 0)
+                break;
             length += read;
         }
+        return length;
+    }
+
+    private static char DetectSampleDelimiter(ReadOnlySpan<byte> sample, bool hasMore)
+    {
         try
         {
-            if (length >= 2 && sample[0] == 0xFF && sample[1] == 0xFE)
-                return CsvDelimiterDetector.DetectDelimiter(Encoding.Unicode.GetString(sample, 2, (length - 2) & ~1));
-            if (length >= 2 && sample[0] == 0xFE && sample[1] == 0xFF)
-                return CsvDelimiterDetector.DetectDelimiter(Encoding.BigEndianUnicode.GetString(sample, 2, (length - 2) & ~1));
-            return CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, length));
+            Encoding? encoding = GetUtf16Encoding(sample);
+            if (encoding is not null)
+            {
+                ReadOnlySpan<byte> payload = sample[2..];
+                return CsvDelimiterDetector.DetectDelimiter(encoding.GetString(payload[..(payload.Length & ~1)]));
+            }
+            return CsvDelimiterDetector.DetectDelimiter(sample);
         }
         catch (InvalidOperationException)
         {
-            if (stream.Position < stream.Length)
+            if (hasMore)
                 throw new InvalidOperationException("Cannot detect delimiter from the bounded sample; specify a delimiter explicitly.");
             return ',';
         }
     }
+
+    private static Encoding? GetUtf16Encoding(ReadOnlySpan<byte> sample) => sample.Length >= 2
+        ? (sample[0], sample[1]) switch
+        {
+            (0xFF, 0xFE) => Encoding.Unicode,
+            (0xFE, 0xFF) => Encoding.BigEndianUnicode,
+            _ => null
+        }
+        : null;
 
     /// <summary>
     /// Infers the schema of CSV data by analyzing sample rows.

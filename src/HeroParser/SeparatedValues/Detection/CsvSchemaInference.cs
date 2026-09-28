@@ -67,6 +67,13 @@ public sealed record CsvSchemaInferenceOptions
     /// <summary>Gets or sets the maximum number of columns for inference (default: 100).</summary>
     public int MaxColumnCount { get; init; } = 100;
 
+    /// <summary>Gets or sets the maximum size of a sampled row (default: 1,048,576 units).</summary>
+    /// <remarks>
+    /// Measured in characters for string input and UTF-8 bytes for file or stream input.
+    /// Increase this limit explicitly for trusted input with larger rows.
+    /// </remarks>
+    public int MaxRowSize { get; init; } = 1024 * 1024;
+
     /// <summary>
     /// Gets the default options.
     /// </summary>
@@ -102,13 +109,15 @@ public static class CsvSchemaInference
         options ??= CsvSchemaInferenceOptions.Default;
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.SampleRows);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxColumnCount);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxRowSize);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MaxRowSize, CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE);
 
         char delimiter = options.Delimiter ?? await DetectFileDelimiterAsync(path, cancellationToken).ConfigureAwait(false);
         await using var reader = Csv.Read()
             .WithDelimiter(delimiter)
             .WithMaxColumns(options.MaxColumnCount)
             .WithMaxRows(int.MaxValue)
-            .WithMaxRowSize(null)
+            .WithMaxRowSize(options.MaxRowSize)
             .AllowNewlinesInQuotes()
             .TrackSourceLineNumbers()
             .FromTextFileAsync(path);
@@ -131,6 +140,8 @@ public static class CsvSchemaInference
         options ??= CsvSchemaInferenceOptions.Default;
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.SampleRows);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxColumnCount);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxRowSize);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MaxRowSize, CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE);
         if (!stream.CanSeek && options.Delimiter is null)
             throw new ArgumentException("Non-seekable streams require an explicit delimiter.", nameof(options));
 
@@ -154,7 +165,7 @@ public static class CsvSchemaInference
                 .WithDelimiter(delimiter)
                 .WithMaxColumns(options.MaxColumnCount)
                 .WithMaxRows(int.MaxValue)
-                .WithMaxRowSize(null)
+                .WithMaxRowSize(options.MaxRowSize)
                 .AllowNewlinesInQuotes()
                 .TrackSourceLineNumbers()
                 .FromStreamAsync(ownedInput, leaveOpen: true);
@@ -195,7 +206,7 @@ public static class CsvSchemaInference
             {
                 hasRow = await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (CsvException)
+            catch (CsvException ex) when (ex.ErrorCode == CsvErrorCode.ParseError && !ex.IsRowSizeLimitExceeded)
             {
                 break;
             }
@@ -309,6 +320,8 @@ public static class CsvSchemaInference
         options ??= CsvSchemaInferenceOptions.Default;
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.SampleRows);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxColumnCount);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxRowSize);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MaxRowSize, CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE);
         var delimiter = options.Delimiter ?? DetectDelimiter(data.AsSpan());
         var maxSampleRows = options.SampleRows;
 
@@ -318,16 +331,26 @@ public static class CsvSchemaInference
             Delimiter = delimiter,
             MaxColumnCount = options.MaxColumnCount,
             MaxRowCount = int.MaxValue,
-            MaxRowSize = null,
+            MaxRowSize = options.MaxRowSize,
             AllowNewlinesInsideQuotes = true,
             TrackSourceLineNumbers = true
         };
         using var reader = Csv.ReadFromCharSpan(csv, readOptions);
 
         // Read header row
-        if (!reader.MoveNext())
+        bool hasHeader;
+        try
+        {
+            hasHeader = reader.MoveNext();
+        }
+        catch (CsvException ex) when (ex.QuoteStartPosition.HasValue && reader.RemainingInputLength > options.MaxRowSize)
+        {
+            throw CsvException.RowSizeLimitExceeded(options.MaxRowSize, isUtf8: false);
+        }
+        if (!hasHeader)
             throw new InvalidOperationException("Cannot infer schema from empty data.");
         CsvRow<char> headerRow = reader.Current;
+        ThrowIfRowTooLarge(headerRow.Line, options.MaxRowSize);
 
         int columnCount = headerRow.ColumnCount;
         var headers = new string[columnCount];
@@ -354,6 +377,7 @@ public static class CsvSchemaInference
             while (sampledRows < maxSampleRows && reader.MoveNext())
             {
                 var row = reader.Current;
+                ThrowIfRowTooLarge(row.Line, options.MaxRowSize);
                 sampledRows++;
 
                 if (row.SourceLineNumber > expectedNextLine)
@@ -384,8 +408,10 @@ public static class CsvSchemaInference
                 }
             }
         }
-        catch (CsvException)
+        catch (CsvException ex) when (ex.ErrorCode == CsvErrorCode.ParseError && !ex.IsRowSizeLimitExceeded)
         {
+            if (ex.QuoteStartPosition.HasValue && reader.RemainingInputLength > options.MaxRowSize)
+                throw CsvException.RowSizeLimitExceeded(options.MaxRowSize, isUtf8: false);
             // Gracefully stop inference and output whatever was successfully parsed.
         }
 
@@ -417,6 +443,12 @@ public static class CsvSchemaInference
         int length = Math.Min(encoded.Length, DETECTION_SAMPLE_BYTES);
         bool hasMore = prefix.Length < data.Length || encoded.Length > length;
         return DetectSampleDelimiter(encoded.AsSpan(0, length), hasMore);
+    }
+
+    private static void ThrowIfRowTooLarge(ReadOnlySpan<char> row, int maxRowSize)
+    {
+        if (row.Length > maxRowSize)
+            throw CsvException.RowSizeLimitExceeded(maxRowSize, isUtf8: false);
     }
 
     private static int CountNewlines(ReadOnlySpan<char> span)

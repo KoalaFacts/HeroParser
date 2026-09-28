@@ -12,6 +12,8 @@ public class CsvException : Exception
     /// </summary>
     public CsvErrorCode ErrorCode { get; }
 
+    internal bool IsRowSizeLimitExceeded { get; private set; }
+
     /// <summary>
     /// Gets the 1-based logical row number where the error occurred, or <see langword="null"/> when unknown.
     /// </summary>
@@ -171,6 +173,11 @@ public class CsvException : Exception
     /// <returns>A new <see cref="CsvException"/> instance.</returns>
     internal static CsvException UnterminatedQuote(string message, int row, int sourceLineNumber, int quoteStartPosition)
         => new(CsvErrorCode.ParseError, message, row, sourceLineNumber, quoteStartPosition, true);
+
+    internal static CsvException RowSizeLimitExceeded(int maxRowSize, bool isUtf8)
+        => new(CsvErrorCode.ParseError,
+            $"Row exceeds maximum size of {maxRowSize:N0} {(isUtf8 ? "bytes" : "characters")}. Ensure rows have proper line endings.")
+        { IsRowSizeLimitExceeded = true };
 
     private static string BuildUnterminatedQuoteMessage(int row, int? sourceLineNumber, string message, int? quoteStartPosition)
     {

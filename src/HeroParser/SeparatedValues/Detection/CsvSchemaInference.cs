@@ -64,7 +64,7 @@ public sealed record CsvSchemaInferenceOptions
     /// </summary>
     public int SampleRows { get; init; } = 100;
 
-    /// <summary>Gets or sets the maximum number of columns for streaming inference (default: 100).</summary>
+    /// <summary>Gets or sets the maximum number of columns for inference (default: 100).</summary>
     public int MaxColumnCount { get; init; } = 100;
 
     /// <summary>
@@ -300,29 +300,34 @@ public static class CsvSchemaInference
     public static CsvSchemaInferenceResult Infer(string data, CsvSchemaInferenceOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(data);
-        if (string.IsNullOrWhiteSpace(data))
+        ReadOnlySpan<char> csv = data.AsSpan();
+        if (!csv.IsEmpty && csv[0] == '\uFEFF')
+            csv = csv[1..];
+        if (csv.IsEmpty)
             throw new InvalidOperationException("Cannot infer schema from empty data.");
 
         options ??= CsvSchemaInferenceOptions.Default;
-        var delimiter = options.Delimiter ?? DetectDelimiter(data);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.SampleRows);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxColumnCount);
+        var delimiter = options.Delimiter ?? DetectDelimiter(data.AsSpan());
         var maxSampleRows = options.SampleRows;
 
         // Parse the CSV data to extract headers and values
-        var readOptions = new Core.CsvReadOptions { Delimiter = delimiter, TrackSourceLineNumbers = true };
-        var reader = Csv.ReadFromText(data, readOptions);
+        var readOptions = new Core.CsvReadOptions
+        {
+            Delimiter = delimiter,
+            MaxColumnCount = options.MaxColumnCount,
+            MaxRowCount = int.MaxValue,
+            MaxRowSize = null,
+            AllowNewlinesInsideQuotes = true,
+            TrackSourceLineNumbers = true
+        };
+        using var reader = Csv.ReadFromCharSpan(csv, readOptions);
 
         // Read header row
-        CsvRow<char> headerRow;
-        try
-        {
-            if (!reader.MoveNext())
-                throw new InvalidOperationException("Cannot infer schema from empty data.");
-            headerRow = reader.Current;
-        }
-        catch (Exception)
-        {
-            return new CsvSchemaInferenceResult([], 0);
-        }
+        if (!reader.MoveNext())
+            throw new InvalidOperationException("Cannot infer schema from empty data.");
+        CsvRow<char> headerRow = reader.Current;
 
         int columnCount = headerRow.ColumnCount;
         var headers = new string[columnCount];
@@ -346,7 +351,7 @@ public static class CsvSchemaInference
             }
             expectedNextLine = headerRow.SourceLineNumber + CountNewlines(headerRow.Line) + 1;
 
-            while (reader.MoveNext() && sampledRows < maxSampleRows)
+            while (sampledRows < maxSampleRows && reader.MoveNext())
             {
                 var row = reader.Current;
                 sampledRows++;
@@ -372,14 +377,14 @@ public static class CsvSchemaInference
 
             if (!hasSkippedEmptyRows && sampledRows < maxSampleRows)
             {
-                int totalLines = CountNewlines(data.AsSpan()) + 1;
+                int totalLines = CountNewlines(csv) + 1;
                 if (totalLines > expectedNextLine)
                 {
                     hasSkippedEmptyRows = true;
                 }
             }
         }
-        catch (Exception)
+        catch (CsvException)
         {
             // Gracefully stop inference and output whatever was successfully parsed.
         }
@@ -404,20 +409,14 @@ public static class CsvSchemaInference
         return new CsvSchemaInferenceResult(columns, sampledRows);
     }
 
-    private static char DetectDelimiter(string data)
+    private static char DetectDelimiter(ReadOnlySpan<char> data)
     {
-        try
-        {
-            return CsvDelimiterDetector.DetectDelimiter(data);
-        }
-        catch (FormatException)
-        {
-            return ','; // default fallback for ambiguous data
-        }
-        catch (InvalidOperationException)
-        {
-            return ','; // default fallback for single-column data
-        }
+        ReadOnlySpan<char> prefix = data[..Math.Min(data.Length, DETECTION_SAMPLE_BYTES + 2)];
+        byte[] encoded = new byte[Encoding.UTF8.GetByteCount(prefix)];
+        Encoding.UTF8.GetBytes(prefix, encoded);
+        int length = Math.Min(encoded.Length, DETECTION_SAMPLE_BYTES);
+        bool hasMore = prefix.Length < data.Length || encoded.Length > length;
+        return DetectSampleDelimiter(encoded.AsSpan(0, length), hasMore);
     }
 
     private static int CountNewlines(ReadOnlySpan<char> span)

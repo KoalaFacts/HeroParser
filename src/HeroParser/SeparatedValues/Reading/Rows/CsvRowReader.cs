@@ -42,11 +42,21 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     {
     }
 
+    internal CsvRowReader(ReadOnlySpan<T> data, CsvReadOptions options, bool allowBatchScan)
+        : this(data, options, CsvRowBatchScanner.DEFAULT_ENDS_CAPACITY, allowBatchScan)
+    {
+    }
+
     /// <summary>
     /// Creates a reader with an explicit scan-ahead buffer size. Tests use small capacities to force
     /// batch boundaries; the capacity is raised to the minimum a single row needs.
     /// </summary>
     internal CsvRowReader(ReadOnlySpan<T> data, CsvReadOptions options, int batchEndsCapacity)
+        : this(data, options, batchEndsCapacity, allowBatchScan: true)
+    {
+    }
+
+    private CsvRowReader(ReadOnlySpan<T> data, CsvReadOptions options, int batchEndsCapacity, bool allowBatchScan)
     {
         this.data = data;
         this.options = options;
@@ -59,7 +69,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         // Ends-only storage sized for the scanner's single-row mode (max columns plus its chunk reserve).
         columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
         columnEnds = columnEndsBuffer.Buffer;
-        cursor = CsvRowBatchCursor.TryCreate(options, batchEndsCapacity);
+        cursor = allowBatchScan ? CsvRowBatchCursor.TryCreate(options, batchEndsCapacity) : null;
     }
 
     /// <summary>Gets the current row.</summary>

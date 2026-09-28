@@ -16,7 +16,7 @@ public class CsvAsyncStreamReaderTests
     {
         using var source = new MemoryStream(Encoding.UTF8.GetBytes("Name,Age\nAda,30\n"));
         byte[] bom = [0xEF, 0xBB, 0xBF];
-        await using var input = new CsvPrefixReadStream(source, bom);
+        await using var input = new CsvPrefixReadStream(source, bom, long.MaxValue, bom.Length);
         var options = new CsvReadOptions { UseSimdIfAvailable = false };
         await using var reader = Csv.CreateAsyncStreamReader(input, options, leaveOpen: true);
         var token = TestContext.Current.CancellationToken;

@@ -201,6 +201,157 @@ public sealed class SchemaInferenceParityTests
     }
 
     [Fact]
+    public async Task BlankRowsBeyondScanBudget_AreRejectedAcrossSources()
+    {
+        string csv = "A\n1\n" + new string('\n', 100);
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            SampleRows = 2,
+            MaxRowSize = 8,
+            MaxScannedInputSize = 32
+        };
+
+        byte[] bytes = Encoding.UTF8.GetBytes(csv);
+        string path = Path.Join(Path.GetTempPath(), Path.GetRandomFileName() + ".csv");
+        try
+        {
+            await File.WriteAllBytesAsync(path, bytes, TestContext.Current.CancellationToken);
+            Assert.Equal(CsvErrorCode.InputSizeExceeded,
+                Assert.Throws<CsvException>(() => Csv.InferSchema(csv, options)).ErrorCode);
+            Assert.Equal(CsvErrorCode.InputSizeExceeded,
+                (await Assert.ThrowsAsync<CsvException>(() => Csv.InferSchemaFileAsync(path, options,
+                    TestContext.Current.CancellationToken))).ErrorCode);
+
+            using var seekable = new MemoryStream(bytes, writable: false);
+            Assert.Equal(CsvErrorCode.InputSizeExceeded,
+                (await Assert.ThrowsAsync<CsvException>(() => Csv.InferSchemaAsync(seekable, options,
+                    TestContext.Current.CancellationToken))).ErrorCode);
+            Assert.Equal(0, seekable.Position);
+
+            using var chunked = new ChunkedReadStream(bytes, 1);
+            Assert.Equal(CsvErrorCode.InputSizeExceeded,
+                (await Assert.ThrowsAsync<CsvException>(() => Csv.InferSchemaAsync(chunked, options,
+                    TestContext.Current.CancellationToken))).ErrorCode);
+            Assert.InRange(chunked.BytesRead, 1, 33);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task CompletedSample_DoesNotReadTrailingInputBeyondBudget()
+    {
+        string csv = "A\n1\n" + new string('\n', 100);
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            SampleRows = 1,
+            MaxScannedInputSize = 8
+        };
+
+        await AssertSourcesAgreeAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
+    public async Task InputExactlyAtScanBudget_IsAccepted()
+    {
+        const string csv = "A\n1";
+        var options = new CsvSchemaInferenceOptions { Delimiter = ',', MaxScannedInputSize = 3 };
+
+        await AssertSourcesAgreeAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
+    public async Task LeadingBom_IsIncludedInScanBudget()
+    {
+        const string csv = "\uFEFFA\n1";
+        var options = new CsvSchemaInferenceOptions { Delimiter = ',', MaxScannedInputSize = 3 };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
+    public async Task QuotedRowCutOffByScanBudget_IsRejectedAcrossSources()
+    {
+        string csv = "A\n\"" + new string('x', 100) + "\"";
+        var options = new CsvSchemaInferenceOptions { Delimiter = ',', MaxScannedInputSize = 16 };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Utf16BlankRowsBeyondScanBudget_AreRejected(bool bigEndian)
+    {
+        string csv = "A\n1\n" + new string('\n', 100);
+        Encoding encoding = bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode;
+        byte[] bytes = [.. encoding.GetPreamble(), .. encoding.GetBytes(csv)];
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            SampleRows = 2,
+            MaxRowSize = 8,
+            MaxScannedInputSize = 32
+        };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, bytes, options);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Utf16CompletedSample_DoesNotReadTrailingInputBeyondBudget(bool bigEndian)
+    {
+        string csv = "A\n1\n" + new string('\n', 100);
+        Encoding encoding = bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode;
+        byte[] bytes = [.. encoding.GetPreamble(), .. encoding.GetBytes(csv)];
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            SampleRows = 1,
+            MaxScannedInputSize = 10
+        };
+
+        await AssertSourcesAgreeAsync(csv, bytes, options);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task InvalidScanBudget_IsRejectedAcrossSources(long maxScannedInputSize)
+    {
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            MaxScannedInputSize = maxScannedInputSize
+        };
+        const string csv = "A\n1";
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => Csv.InferSchema(csv, options));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            Csv.InferSchemaAsync(stream, options, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AutoDetection_RespectsScanBudget()
+    {
+        string csv = "A,B\n1,2\n" + new string('\n', 100);
+        var options = new CsvSchemaInferenceOptions
+        {
+            SampleRows = 2,
+            MaxScannedInputSize = 2
+        };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, Encoding.UTF8.GetBytes(csv), options,
+            includeNonSeekable: false);
+    }
+
+    [Fact]
     public async Task DefaultRowSizeLimit_RejectsOversizedDataRow()
     {
         string csv = "Value\n" + new string('x', 1024 * 1024 + 1);
@@ -312,6 +463,39 @@ public sealed class SchemaInferenceParityTests
                     Csv.InferSchemaAsync(chunked, options, TestContext.Current.CancellationToken));
                 Assert.Equal(CsvErrorCode.ParseError, chunkedError.ErrorCode);
                 Assert.Contains("maximum size", chunkedError.Message, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static async Task AssertScanLimitAcrossSourcesAsync(
+        string csv, byte[] bytes, CsvSchemaInferenceOptions options, bool includeNonSeekable = true)
+    {
+        string path = Path.Join(Path.GetTempPath(), Path.GetRandomFileName() + ".csv");
+        try
+        {
+            await File.WriteAllBytesAsync(path, bytes, TestContext.Current.CancellationToken);
+            Assert.Equal(CsvErrorCode.InputSizeExceeded,
+                Assert.Throws<CsvException>(() => Csv.InferSchema(csv, options)).ErrorCode);
+            Assert.Equal(CsvErrorCode.InputSizeExceeded,
+                (await Assert.ThrowsAsync<CsvException>(() => Csv.InferSchemaFileAsync(path, options,
+                    TestContext.Current.CancellationToken))).ErrorCode);
+            using var seekable = new MemoryStream(bytes, writable: false);
+            Assert.Equal(CsvErrorCode.InputSizeExceeded,
+                (await Assert.ThrowsAsync<CsvException>(() => Csv.InferSchemaAsync(seekable, options,
+                    TestContext.Current.CancellationToken))).ErrorCode);
+            Assert.Equal(0, seekable.Position);
+
+            if (includeNonSeekable)
+            {
+                using var chunked = new ChunkedReadStream(bytes, 1);
+                Assert.Equal(CsvErrorCode.InputSizeExceeded,
+                    (await Assert.ThrowsAsync<CsvException>(() => Csv.InferSchemaAsync(chunked, options,
+                        TestContext.Current.CancellationToken))).ErrorCode);
+                Assert.InRange(chunked.BytesRead, 1, (int)options.MaxScannedInputSize + 1);
             }
         }
         finally

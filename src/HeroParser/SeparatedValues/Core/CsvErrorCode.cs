@@ -34,6 +34,11 @@ public enum CsvErrorCode
     InvalidOptions = 4,
 
     /// <summary>
+    /// Schema inference exceeds its maximum scanned input size.
+    /// </summary>
+    InputSizeExceeded = 5,
+
+    /// <summary>
     /// General parsing error.
     /// </summary>
     ParseError = 99,

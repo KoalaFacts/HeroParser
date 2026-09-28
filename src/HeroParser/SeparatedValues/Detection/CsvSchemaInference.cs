@@ -337,7 +337,7 @@ public static class CsvSchemaInference
             throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
         bool budgetTruncated = csv.Length > availableBudget;
         if (budgetTruncated)
-            csv = csv[..((int)availableBudget + 1)];
+            csv = csv[..(int)availableBudget];
 
         // Parse the CSV data to extract headers and values
         var readOptions = new Core.CsvReadOptions
@@ -366,7 +366,7 @@ public static class CsvSchemaInference
         {
             throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
         }
-        ThrowIfScanBudgetExceeded(bomLength + csv.Length - reader.RemainingInputLength, options.MaxScannedInputSize);
+        ThrowIfBudgetCutsOffRow(csv, reader.RemainingInputLength, budgetTruncated, options.MaxScannedInputSize);
         if (!hasHeader)
         {
             if (budgetTruncated)
@@ -400,7 +400,7 @@ public static class CsvSchemaInference
 
             while (sampledRows < maxSampleRows && reader.MoveNext())
             {
-                ThrowIfScanBudgetExceeded(bomLength + csv.Length - reader.RemainingInputLength, options.MaxScannedInputSize);
+                ThrowIfBudgetCutsOffRow(csv, reader.RemainingInputLength, budgetTruncated, options.MaxScannedInputSize);
                 var row = reader.Current;
                 ThrowIfRowTooLarge(row.Line, options.MaxRowSize);
                 sampledRows++;
@@ -488,9 +488,10 @@ public static class CsvSchemaInference
             throw CsvException.RowSizeLimitExceeded(maxRowSize, isUtf8: false);
     }
 
-    private static void ThrowIfScanBudgetExceeded(long consumed, long maxScannedInputSize)
+    private static void ThrowIfBudgetCutsOffRow(
+        ReadOnlySpan<char> csv, int remainingInputLength, bool budgetTruncated, long maxScannedInputSize)
     {
-        if (consumed > maxScannedInputSize)
+        if (budgetTruncated && remainingInputLength == 0 && csv[^1] != '\n')
             throw CsvException.InputSizeLimitExceeded(maxScannedInputSize, isUtf8: false);
     }
 

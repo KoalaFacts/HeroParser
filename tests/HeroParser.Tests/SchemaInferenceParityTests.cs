@@ -265,6 +265,34 @@ public sealed class SchemaInferenceParityTests
     }
 
     [Fact]
+    public async Task CompletedSampleAtScanBudgetBoundary_IsAccepted()
+    {
+        string csv = "A,B\n1,2\n" + new string('\n', 100);
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            SampleRows = 1,
+            MaxScannedInputSize = 8
+        };
+
+        await AssertSourcesAgreeAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
+    public async Task OverBudgetDelimiter_DoesNotCauseColumnError()
+    {
+        const string csv = "A,B,";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            MaxColumnCount = 2,
+            MaxScannedInputSize = 3
+        };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
     public async Task LeadingBom_IsIncludedInScanBudget()
     {
         const string csv = "\uFEFFA\n1";

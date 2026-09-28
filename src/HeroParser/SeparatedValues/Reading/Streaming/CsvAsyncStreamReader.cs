@@ -142,6 +142,10 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 }
             }
 
+            // A short read can contain only the BOM; it is not the end of the stream.
+            if (offset >= length && !endOfStream)
+                continue;
+
             if (cursor is not null)
             {
                 switch (cursor.Advance<byte>(buffer, ref offset, length, endOfStream, ref sourceLineNumber))

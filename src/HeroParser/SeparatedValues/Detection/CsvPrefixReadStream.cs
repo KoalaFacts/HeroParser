@@ -3,7 +3,7 @@ namespace HeroParser.SeparatedValues.Detection;
 // Replays delimiter/BOM probe bytes without taking ownership of the caller's stream.
 internal sealed class CsvPrefixReadStream(Stream source, ReadOnlyMemory<byte> prefix) : Stream
 {
-    private int offset;
+    private int prefixOffset;
     private bool disposed;
 
     public override bool CanRead => !disposed && source.CanRead;
@@ -25,11 +25,11 @@ internal sealed class CsvPrefixReadStream(Stream source, ReadOnlyMemory<byte> pr
         if (buffer.IsEmpty)
             return 0;
 
-        if (offset < prefix.Length)
+        if (prefixOffset < prefix.Length)
         {
-            int count = Math.Min(buffer.Length, prefix.Length - offset);
-            prefix.Span.Slice(offset, count).CopyTo(buffer);
-            offset += count;
+            int count = Math.Min(buffer.Length, prefix.Length - prefixOffset);
+            prefix.Span.Slice(prefixOffset, count).CopyTo(buffer);
+            prefixOffset += count;
             return count;
         }
 
@@ -48,11 +48,11 @@ internal sealed class CsvPrefixReadStream(Stream source, ReadOnlyMemory<byte> pr
         if (buffer.IsEmpty)
             return ValueTask.FromResult(0);
 
-        if (offset < prefix.Length)
+        if (prefixOffset < prefix.Length)
         {
-            int count = Math.Min(buffer.Length, prefix.Length - offset);
-            prefix.Span.Slice(offset, count).CopyTo(buffer.Span);
-            offset += count;
+            int count = Math.Min(buffer.Length, prefix.Length - prefixOffset);
+            prefix.Span.Slice(prefixOffset, count).CopyTo(buffer.Span);
+            prefixOffset += count;
             return ValueTask.FromResult(count);
         }
 

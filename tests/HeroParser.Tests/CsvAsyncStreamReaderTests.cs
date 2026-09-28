@@ -1,5 +1,6 @@
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Detection;
 using System;
 using System.IO;
 using System.Text;
@@ -9,6 +10,24 @@ namespace HeroParser.Tests;
 
 public class CsvAsyncStreamReaderTests
 {
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task AsyncStreamReader_ScalarPathRefillsAfterBomOnlyRead()
+    {
+        using var source = new MemoryStream(Encoding.UTF8.GetBytes("Name,Age\nAda,30\n"));
+        byte[] bom = [0xEF, 0xBB, 0xBF];
+        await using var input = new CsvPrefixReadStream(source, bom);
+        var options = new CsvReadOptions { UseSimdIfAvailable = false };
+        await using var reader = Csv.CreateAsyncStreamReader(input, options, leaveOpen: true);
+        var token = TestContext.Current.CancellationToken;
+
+        Assert.True(await reader.MoveNextAsync(token));
+        Assert.Equal(["Name", "Age"], reader.Current.ToStringArray());
+        Assert.True(await reader.MoveNextAsync(token));
+        Assert.Equal(["Ada", "30"], reader.Current.ToStringArray());
+        Assert.False(await reader.MoveNextAsync(token));
+    }
+
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task AsyncStreamReader_ParsesRowsAcrossBuffers()

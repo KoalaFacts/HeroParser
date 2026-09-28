@@ -397,7 +397,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                         return ValueTask.FromResult(true);
                 }
             }
-            catch (Exception ex)
+            catch (CsvException ex)
             {
                 return ValueTask.FromException<bool>(ex);
             }

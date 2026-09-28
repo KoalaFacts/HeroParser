@@ -291,7 +291,7 @@ public static class CsvSchemaInference
             if (!hasSkippedEmptyRows && sampledRows < maxSampleRows)
             {
                 int totalLines = CountNewlines(data.AsSpan()) + 1;
-                if (totalLines >= expectedNextLine)
+                if (totalLines > expectedNextLine)
                 {
                     hasSkippedEmptyRows = true;
                 }

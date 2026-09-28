@@ -136,6 +136,32 @@ public class SchemaInferenceTests
         Assert.False(schema.Columns[0].IsNullable);
     }
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\r")]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void InferSchema_TerminalLineEnding_DoesNotMarkColumnNullable(string lineEnding)
+    {
+        var schema = Csv.InferSchema($"Age{lineEnding}30{lineEnding}");
+
+        Assert.Equal(1, schema.SampledRowCount);
+        Assert.False(schema.Columns[0].IsNullable);
+    }
+
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\r")]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void InferSchema_TrailingBlankLine_MarksColumnNullable(string lineEnding)
+    {
+        var schema = Csv.InferSchema($"Age{lineEnding}30{lineEnding}{lineEnding}");
+
+        Assert.Equal(1, schema.SampledRowCount);
+        Assert.True(schema.Columns[0].IsNullable);
+    }
+
     #endregion
 
     #region Mixed Types Fall Back

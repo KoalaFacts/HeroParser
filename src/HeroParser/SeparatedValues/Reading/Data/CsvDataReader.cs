@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
@@ -184,6 +185,7 @@ public sealed class CsvDataReader : DbDataReader
     }
 
     /// <inheritdoc />
+    [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)]
     public override Type GetFieldType(int ordinal)
     {
         EnsureInitialized();

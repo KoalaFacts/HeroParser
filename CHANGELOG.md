@@ -4,6 +4,24 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-09-29
+
+### Added
+- Streaming CSV inspection and a bounded `inspect` CLI command with a wizard entry, reusable import plans, and validation reports.
+- Sample-limited CSV schema inference for files and streams, including UTF-16 input.
+- A reproducible memory probe for CLI streaming workflows.
+
+### Improved
+- Stream CSV reads in CLI schema, query, and translation commands; reduce allocations in CSV profiling and JSON translation, including caching repeated UTF-8 values during profiling.
+- Stream Excel rows in CLI profile, query, and translation commands, and support larger streamed XLSX worksheets with bounded XML limits.
+- Fast-path buffered CSV `PipeReader` rows.
+
+### Fixed
+- Align schema inference results across input sources and handle nullability correctly at terminal line endings.
+- Bound schema inference row size and total scanning for untrusted input; the default total scan budget is 128 MiB, measured in characters for string input and original bytes for file and stream input.
+- Address CSV CLI and parser review findings, including reliable CLI exit codes.
+- Fail Snap publishing explicitly when the store token is missing instead of reporting a misleading success.
+
 ## [2.7.0] - 2026-09-25
 
 Read-path performance release. On the AMD EPYC 9V74 benchmark below, the UTF-8 and UTF-16 quoted and unquoted reading cases outperform Sep 0.17.0 on the same runner, with fixed allocations roughly 26x below Sep's. Results on other CPUs may differ. UTF-16 (`string`) input is no longer a second-class path.

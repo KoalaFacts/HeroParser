@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node ../../scripts/require-npm12.js",
     "dev": "node copy-to-public.js && vp dev",
+    "prebuild": "node ../../scripts/require-npm12.js",
     "build": "vue-tsc -b && vp build && node copy-framework.js",
+    "prepreview": "node ../../scripts/require-npm12.js",
     "preview": "vp preview"
   },
   "dependencies": {

@@ -81,6 +81,11 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Upgrade npm
+        run: |
+          npm install --global npm@12
+          npm --version
+
       - name: Audit npm workspace for vulnerabilities
         run: |
           set -euo pipefail

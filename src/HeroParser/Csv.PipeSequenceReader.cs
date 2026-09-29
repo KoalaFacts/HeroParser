@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Pipelines;
-using System.Text;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Reading.Rows;
@@ -987,79 +986,7 @@ public readonly ref struct CsvPipeSequenceColumn
     /// Decodes the column as UTF-8 text and removes CSV quoting/escaping.
     /// </summary>
     public string ToUnquotedString()
-    {
-        ReadOnlySequence<byte> value = data;
-        if (value.Length >= 2 &&
-            GetByteAt(value, 0) == quote &&
-            GetByteAt(value, value.Length - 1) == quote)
-        {
-            value = value.Slice(1, value.Length - 2);
-        }
-
-        if (value.IsEmpty)
-        {
-            return string.Empty;
-        }
-
-        string decoded = value.IsSingleSegment
-            ? Encoding.UTF8.GetString(value.FirstSpan)
-            : Encoding.UTF8.GetString(value.ToArray());
-
-        char quoteChar = (char)quote;
-
-        if (escape is not null)
-        {
-            char escapeChar = (char)escape.Value;
-            if (!decoded.AsSpan().Contains(escapeChar) && !decoded.AsSpan().Contains(quoteChar))
-            {
-                return decoded;
-            }
-
-            var result = new StringBuilder(decoded.Length);
-            for (int i = 0; i < decoded.Length; i++)
-            {
-                char current = decoded[i];
-                if (current == escapeChar && i + 1 < decoded.Length)
-                {
-                    i++;
-                    result.Append(decoded[i]);
-                }
-                else if (current == quoteChar && i + 1 < decoded.Length && decoded[i + 1] == quoteChar)
-                {
-                    result.Append(quoteChar);
-                    i++;
-                }
-                else
-                {
-                    result.Append(current);
-                }
-            }
-
-            return result.ToString();
-        }
-
-        if (!decoded.AsSpan().Contains(quoteChar))
-        {
-            return decoded;
-        }
-
-        var unescaped = new StringBuilder(decoded.Length);
-        for (int i = 0; i < decoded.Length; i++)
-        {
-            char current = decoded[i];
-            if (current == quoteChar && i + 1 < decoded.Length && decoded[i + 1] == quoteChar)
-            {
-                unescaped.Append(quoteChar);
-                i++;
-            }
-            else
-            {
-                unescaped.Append(current);
-            }
-        }
-
-        return unescaped.ToString();
-    }
+        => CsvPipeColumnText.Decode(data, quote, escape);
 
     /// <summary>Returns the decoded, unquoted column text.</summary>
     public override string ToString() => ToUnquotedString();

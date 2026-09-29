@@ -63,7 +63,7 @@ To eliminate GC allocations and backing buffer copy-doubling cycles when generat
 
 ## 4. Core Architectural Pillars & Memory Profile
 
-- **Allocation-Free Hot Path**: HeroParser maintains a fixed allocation of **only 152 bytes** in its reading path, regardless of column counts or row counts, representing a **96% memory reduction** compared to Sep and **99.7% reduction** compared to Sylvan.
+- **Low-Allocation Raw Scanning**: The raw row/column scanning benchmarks above allocate **152 bytes** per operation. This does not include column-to-string conversion, typed binding, or owned PipeReader rows, which have their own allocation costs.
 - **Scan-Ahead Row Batches**: one SIMD pass records the column ends of a batch of rows into a pooled buffer; advancing to the next row is index arithmetic rather than re-entering the parser. This removed the per-row fixed cost that dominated at 5-25 columns.
 - **AVX-512 & AVX2 Quote-Aware SIMD**: Uses branchless PCLMULQDQ carry-less multiplication to mask quotes at maximum hardware throughput; chunks with quotes but no line ending are resolved inline.
 - **UTF-16 Pack-and-Saturate**: each chunk of chars is packed into one byte vector with saturation and shares the UTF-8 dispatch, so `string` input runs at byte-path speed.
@@ -98,3 +98,51 @@ To execute these benchmarks on your local hardware:
 ```bash
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net10.0 -- --vs-sep-reading
 ```
+
+### PipeReader Column Decoding A/B (September 2026)
+
+`CsvPipeColumnDecodingBenchmarks` measures only column-to-string conversion, not
+end-to-end pipe reading. It covers plain text, doubled quotes, explicit escapes,
+Unicode, and long escaped fields, for both owned and two-segment borrowed columns.
+
+Run the same benchmark fixture against both implementations on the same machine:
+
+```bash
+dotnet run -c Release -f net10.0 --project benchmarks/HeroParser.Benchmarks -- --csv-pipe --filter '*CsvPipeColumnDecodingBenchmarks*' --job short --artifacts BenchmarkDotNet.Artifacts/pipe-column-before
+dotnet run -c Release -f net10.0 --project benchmarks/HeroParser.Benchmarks -- --csv-pipe --filter '*CsvPipeColumnDecodingBenchmarks*' --job short --artifacts BenchmarkDotNet.Artifacts/pipe-column-after
+```
+
+The first command must use the original decoder and the second the optimized
+decoder; running both against the same checkout does not constitute an A/B test.
+The fixture was added on top of base commit `626f8af`, before production changes,
+for the baseline below.
+
+Measured on Windows 11, AMD Ryzen AI 9 HX PRO 370, .NET SDK 10.0.401/runtime
+10.0.12, BenchmarkDotNet 0.15.8, concurrent server GC. Both runs used ShortRun
+(one launch, three warmups, three measured iterations) and the same fixtures.
+
+| Column | Scenario | Before Mean | After Mean | Before Allocated | After Allocated |
+|---|---|---:|---:|---:|---:|
+| Owned | Plain | 88.27 ns | 39.35 ns | 96 B | 96 B |
+| Segmented | Plain | 177.54 ns | 101.27 ns | 160 B | 96 B |
+| Owned | Doubled quotes | 219.53 ns | 64.72 ns | 312 B | 88 B |
+| Segmented | Doubled quotes | 712.18 ns | 75.22 ns | 368 B | 88 B |
+| Owned | Explicit escapes | 225.31 ns | 68.94 ns | 312 B | 88 B |
+| Segmented | Explicit escapes | 340.48 ns | 66.94 ns | 368 B | 88 B |
+| Owned | Unicode with quotes | 148.45 ns | 37.00 ns | 192 B | 48 B |
+| Segmented | Unicode with quotes | 208.72 ns | 80.41 ns | 240 B | 48 B |
+| Owned | Long escaped | 15,511.65 ns | 5,232.54 ns | 23,672 B | 7,192 B |
+| Segmented | Long escaped | 19,886.33 ns | 7,806.62 ns | 27,792 B | 7,192 B |
+
+Allocation counts are the primary evidence. Several timing cases were noisy:
+the original segmented doubled-quote standard deviation was 416.75 ns, and the
+optimized owned doubled-quote standard deviation was 22.78 ns. ShortRun is not
+enough to claim a precise throughput multiplier or an end-to-end speedup.
+Use longer, repeated A/B runs before making such claims.
+
+Both column types now share one decoder. Plain contiguous fields decode directly;
+short scratch buffers use the stack, and larger or segmented scratch buffers use
+`ArrayPool` and are returned in `finally`. Escaped fields are decoded before
+unescaping to preserve invalid UTF-8 replacement semantics. Only the resulting
+string remains allocated in these warmed-up cases; pool growth can allocate on
+cold calls, and owned-row allocations are outside this microbenchmark.

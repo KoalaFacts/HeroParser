@@ -179,6 +179,10 @@ public class CsvException : Exception
             $"Row exceeds maximum size of {maxRowSize:N0} {(isUtf8 ? "bytes" : "characters")}. Ensure rows have proper line endings.")
         { IsRowSizeLimitExceeded = true };
 
+    internal static CsvException InputSizeLimitExceeded(long maxInputSize, bool isUtf8)
+        => new(CsvErrorCode.InputSizeExceeded,
+            $"Schema inference exceeds maximum scanned input size of {maxInputSize:N0} {(isUtf8 ? "bytes" : "characters")}.");
+
     private static string BuildUnterminatedQuoteMessage(int row, int? sourceLineNumber, string message, int? quoteStartPosition)
     {
         var prefix = sourceLineNumber.HasValue

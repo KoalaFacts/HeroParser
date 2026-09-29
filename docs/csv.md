@@ -1190,7 +1190,8 @@ var options = new CsvSchemaInferenceOptions
     Delimiter  = ';',    // Auto-detects if null
     SampleRows = 200,    // Default: 100
     MaxColumnCount = 100, // Default: 100
-    MaxRowSize = 1024 * 1024 // Default: 1 MiB per row
+    MaxRowSize = 1024 * 1024, // Default: 1 MiB per row
+    MaxScannedInputSize = 128L * 1024 * 1024 // Default: 128 MiB total scan budget
 };
 
 var schema = Csv.InferSchema(csvData, options);
@@ -1205,13 +1206,16 @@ var schema = await Csv.InferSchemaFileAsync("data.csv", new CsvSchemaInferenceOp
     Delimiter = ';',         // Optional; auto-detected from at most 64 KiB when omitted
     SampleRows = 200,       // Default: 100
     MaxColumnCount = 1000,  // Default: 100
-    MaxRowSize = 1024 * 1024 // Default: 1 MiB per row
+    MaxRowSize = 1024 * 1024, // Default: 1 MiB per row
+    MaxScannedInputSize = 128L * 1024 * 1024 // Default: 128 MiB total scan budget
 });
 ```
 
 `InferSchemaFileAsync` supports UTF-8 (with or without BOM) and BOM-marked UTF-16 LE/BE. UTF-16 is transcoded incrementally to UTF-8 before parsing. The string API also ignores a leading BOM character. All inference entry points accept quoted fields containing newlines and enforce `SampleRows` and `MaxColumnCount`. Inference stops after the configured number of data rows; its types and nullability describe only that sample, not the entire input. Use CSV validation separately when every row must be checked.
 
-Inference rejects sampled rows above `MaxRowSize` instead of returning a partial schema. The default is 1,048,576 units; set a larger positive value (up to 134,217,728 units) only when trusted input requires it. The limit counts characters for string input and UTF-8 bytes for file or stream input (after transcoding BOM-marked UTF-16). A quoted field spanning physical lines is one logical row. This is a per-row limit, not a total input-byte budget.
+Inference rejects sampled rows above `MaxRowSize` instead of returning a partial schema. The default is 1,048,576 units; set a larger positive value (up to 134,217,728 units) only when trusted input requires it. The limit counts characters for string input and UTF-8 bytes for file or stream input (after transcoding BOM-marked UTF-16). A quoted field spanning physical lines is one logical row.
+
+`MaxScannedInputSize` is a separate total scan budget, including skipped empty rows and delimiter detection. It defaults to 128 MiB, counts characters for string input and original encoded bytes (including any BOM) for file or stream input, and throws `CsvException` with `CsvErrorCode.InputSizeExceeded` if the next required sample would exceed it. Input after the requested sample is not checked; this remains sample-based inference, not full-file validation. Increase the budget explicitly for trusted input when necessary.
 
 For a caller-owned stream, use `InferSchemaAsync` with the same options. The stream stays open. A seekable stream returns to its original position, including on failure or cancellation:
 

@@ -154,15 +154,8 @@ public static class CsvSchemaInference
                 options.Delimiter is null ? DETECTION_SAMPLE_BYTES : 2)];
             int length = await ReadPrefixAsync(stream, prefix, cancellationToken).ConfigureAwait(false);
             bool hasMore = stream.CanSeek && stream.Position < stream.Length;
-            char delimiter;
-            try
-            {
-                delimiter = options.Delimiter ?? DetectSampleDelimiter(prefix.AsSpan(0, length), hasMore);
-            }
-            catch (InvalidOperationException) when (hasMore && length == options.MaxScannedInputSize)
-            {
-                throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: true);
-            }
+            char delimiter = options.Delimiter ?? DetectSampleDelimiter(prefix.AsSpan(0, length),
+                hasMore && length < options.MaxScannedInputSize);
             Encoding? encoding = GetUtf16Encoding(prefix.AsSpan(0, length));
 
             int bomLength = encoding is null ? 0 : 2;
@@ -522,14 +515,7 @@ public static class CsvSchemaInference
         Encoding.UTF8.GetBytes(prefix, encoded);
         int length = Math.Min(encoded.Length, DETECTION_SAMPLE_BYTES);
         bool hasMore = prefix.Length < data.Length || encoded.Length > length;
-        try
-        {
-            return DetectSampleDelimiter(encoded.AsSpan(0, length), hasMore);
-        }
-        catch (InvalidOperationException) when (hasMore && prefix.Length == maxScannedInputSize)
-        {
-            throw CsvException.InputSizeLimitExceeded(maxScannedInputSize, isUtf8: false);
-        }
+        return DetectSampleDelimiter(encoded.AsSpan(0, length), hasMore && prefix.Length < maxScannedInputSize);
     }
 
     private static void ThrowIfRowTooLarge(ReadOnlySpan<char> row, int maxRowSize)

@@ -151,6 +151,20 @@ public class CsvAsyncStreamReaderTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task AsyncStreamReader_RejectsDisallowedQuotedNewlineBeforeRowSizeLimit()
+    {
+        string csv = "A,\"x\n" + new string('x', 100);
+        var options = new CsvReadOptions { MaxRowSize = 8 };
+        await using var reader = CreateReader(csv, options, bufferSize: 4);
+
+        var error = await Assert.ThrowsAsync<CsvException>(() =>
+            reader.MoveNextAsync(TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(CsvErrorCode.ParseError, error.ErrorCode);
+        Assert.Contains("Newlines inside quoted fields", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task AsyncStreamReader_HandlesLargeInputWithSmallMaxRowSize()
     {
         var sb = new StringBuilder();

@@ -3,6 +3,15 @@ import path from "path";
 
 const rootDir = path.resolve(import.meta.dirname, "../..");
 
+function readOptional(path) {
+  try {
+    return fs.readFileSync(path, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 // 1. Read version from Directory.Build.props
 const propsPath = path.join(rootDir, "Directory.Build.props");
 const propsContent = fs.readFileSync(propsPath, "utf8");
@@ -25,8 +34,8 @@ if (pkg.version !== version) {
 
 // 3. Update snap/snapcraft.yaml
 const snapPath = path.join(rootDir, "snap/snapcraft.yaml");
-if (fs.existsSync(snapPath)) {
-  let snapContent = fs.readFileSync(snapPath, "utf8");
+let snapContent = readOptional(snapPath);
+if (snapContent !== null) {
   snapContent = snapContent.replace(/version:\s*['"]?.*['"]?/, `version: '${version}'`);
   fs.writeFileSync(snapPath, snapContent);
   console.log(`Updated snapcraft.yaml version to ${version}`);
@@ -34,8 +43,8 @@ if (fs.existsSync(snapPath)) {
 
 // 4. Update install.sh
 const installPath = path.join(rootDir, "install.sh");
-if (fs.existsSync(installPath)) {
-  let installContent = fs.readFileSync(installPath, "utf8");
+let installContent = readOptional(installPath);
+if (installContent !== null) {
   installContent = installContent.replace(/DEFAULT_VERSION=".*"/, `DEFAULT_VERSION="${version}"`);
   fs.writeFileSync(installPath, installContent);
   console.log(`Updated install.sh version to ${version}`);
@@ -43,8 +52,8 @@ if (fs.existsSync(installPath)) {
 
 // 5. Update README.md CLI version references
 const readmePath = path.join(rootDir, "README.md");
-if (fs.existsSync(readmePath)) {
-  let readmeContent = fs.readFileSync(readmePath, "utf8");
+let readmeContent = readOptional(readmePath);
+if (readmeContent !== null) {
   readmeContent = readmeContent.replace(/--version\s+\d+\.\d+\.\d+/g, `--version ${version}`);
   fs.writeFileSync(readmePath, readmeContent);
   console.log(`Updated README.md version references to ${version}`);
@@ -52,8 +61,8 @@ if (fs.existsSync(readmePath)) {
 
 // 6. Update docs/cli.md version references
 const docsCliPath = path.join(rootDir, "docs/cli.md");
-if (fs.existsSync(docsCliPath)) {
-  let docsCliContent = fs.readFileSync(docsCliPath, "utf8");
+let docsCliContent = readOptional(docsCliPath);
+if (docsCliContent !== null) {
   docsCliContent = docsCliContent.replace(/--version\s+\d+\.\d+\.\d+/g, `--version ${version}`);
   fs.writeFileSync(docsCliPath, docsCliContent);
   console.log(`Updated docs/cli.md version references to ${version}`);
@@ -61,8 +70,8 @@ if (fs.existsSync(docsCliPath)) {
 
 // 7. Update snap/README.md snap package version references
 const snapReadmePath = path.join(rootDir, "snap/README.md");
-if (fs.existsSync(snapReadmePath)) {
-  let snapReadmeContent = fs.readFileSync(snapReadmePath, "utf8");
+let snapReadmeContent = readOptional(snapReadmePath);
+if (snapReadmeContent !== null) {
   snapReadmeContent = snapReadmeContent.replace(
     /heroparser_\d+\.\d+\.\d+_amd64\.snap/g,
     `heroparser_${version}_amd64.snap`,
@@ -73,8 +82,8 @@ if (fs.existsSync(snapReadmePath)) {
 
 // 8. Update CHANGELOG.md (auto-insert release header under Unreleased if missing)
 const changelogPath = path.join(rootDir, "CHANGELOG.md");
-if (fs.existsSync(changelogPath)) {
-  let changelogContent = fs.readFileSync(changelogPath, "utf8");
+let changelogContent = readOptional(changelogPath);
+if (changelogContent !== null) {
   const versionHeader = `## [${version}]`;
   if (!changelogContent.includes(versionHeader)) {
     const today = new Date().toISOString().split("T")[0];
@@ -87,8 +96,8 @@ if (fs.existsSync(changelogPath)) {
 
 // 9. Update src/HeroParser/HeroParser.csproj PackageReleaseNotes
 const csprojPath = path.join(rootDir, "src/HeroParser/HeroParser.csproj");
-if (fs.existsSync(csprojPath)) {
-  let csprojContent = fs.readFileSync(csprojPath, "utf8");
+let csprojContent = readOptional(csprojPath);
+if (csprojContent !== null) {
   csprojContent = csprojContent.replace(
     /<PackageReleaseNotes>v\d+\.\d+\.\d+/,
     `<PackageReleaseNotes>v${version}`,

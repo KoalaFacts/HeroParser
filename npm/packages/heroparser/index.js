@@ -4,17 +4,9 @@ let initialized = false;
 export async function init() {
   if (initialized) return;
 
-  const frameworkDir = "_framework";
-  const loaderName = "dotnet.js";
-  let dotnetUrl = `./${frameworkDir}/${loaderName}`;
-
-  if (typeof document !== "undefined") {
-    const base = document.baseURI || window.location.href;
-    dotnetUrl = new URL(`${frameworkDir}/${loaderName}`, base).href;
-  } else {
-    const metaUrl = import.meta.url;
-    dotnetUrl = new URL(`./${frameworkDir}/${loaderName}`, metaUrl).href;
-  }
+  const base =
+    typeof document !== "undefined" ? document.baseURI || window.location.href : import.meta.url;
+  const dotnetUrl = new URL("./_framework/dotnet.js", base).href;
 
   const { dotnet } = await import(/* @vite-ignore */ dotnetUrl);
 

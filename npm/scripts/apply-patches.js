@@ -8,6 +8,15 @@ const __dirname = path.dirname(__filename);
 // Target node_modules directory
 const rootDir = path.resolve(__dirname, "../node_modules/onnxruntime-web/dist");
 
+function readOptional(path) {
+  try {
+    return fs.readFileSync(path, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 const quotePatch = `if (typeof window !== 'undefined') {
   const cleanUrl = (url) => {
     if (typeof url === 'string' && url.includes('huggingface.co') && (url.includes('%22') || url.includes('"'))) {
@@ -42,9 +51,10 @@ const quotePatch = `if (typeof window !== 'undefined') {
 
 // 1. Patch WebGPU Bundle
 const webgpuPath = path.join(rootDir, "ort.webgpu.bundle.min.mjs");
-if (fs.existsSync(webgpuPath)) {
+const webgpuContent = readOptional(webgpuPath);
+if (webgpuContent !== null) {
   console.log("Patching ort.webgpu.bundle.min.mjs...");
-  let content = fs.readFileSync(webgpuPath, "utf8");
+  let content = webgpuContent;
 
   // Insert quote patch at the very top
   if (!content.includes("_quoteCleanPatched")) {
@@ -145,9 +155,10 @@ if (fs.existsSync(webgpuPath)) {
 
 // 2. Patch CPU Bundle
 const cpuPath = path.join(rootDir, "ort.bundle.min.mjs");
-if (fs.existsSync(cpuPath)) {
+const cpuContent = readOptional(cpuPath);
+if (cpuContent !== null) {
   console.log("Patching ort.bundle.min.mjs...");
-  let content = fs.readFileSync(cpuPath, "utf8");
+  let content = cpuContent;
 
   // Insert quote patch at the very top
   if (!content.includes("_quoteCleanPatched")) {

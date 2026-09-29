@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>HeroParser.Benchmarks.VsSepReadingBenchmarks-20260929-090222</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.5 LTS (Noble Numbat)
+AMD EPYC 7763 3.24GHz, 1 CPU, 4 logical and 2 physical cores
+.NET SDK 10.0.401
+  [Host]     : .NET 10.0.12 (10.0.12, 10.0.1226.42308), X64 RyuJIT x86-64-v3
+  Job-INMAZI : .NET 10.0.12 (10.0.12, 10.0.1226.42308), X64 RyuJIT x86-64-v3
+</code></pre>
+<pre><code>IterationCount=5  RunStrategy=Throughput  WarmupCount=3  
+</code></pre>
+
+<table>
+<thead><tr><th>Method                </th><th>Rows</th><th>Columns</th><th>WithQuotes</th><th>Mean </th><th>Error</th><th>StdDev</th><th>Ratio</th><th>RatioSD</th><th>Gen0</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>Sep</td><td>10000</td><td>25</td><td>False</td><td>638.4 &mu;s</td><td>5.98 &mu;s</td><td>0.93 &mu;s</td><td>1.00</td><td>0.00</td><td>-</td><td>3952 B</td><td>1.00</td>
+</tr><tr><td>Sylvan</td><td>10000</td><td>25</td><td>False</td><td>792.6 &mu;s</td><td>20.33 &mu;s</td><td>5.28 &mu;s</td><td>1.24</td><td>0.01</td><td>3.9063</td><td>43529 B</td><td>11.01</td>
+</tr><tr><td>CsvHelper</td><td>10000</td><td>25</td><td>False</td><td>13,500.1 &mu;s</td><td>179.35 &mu;s</td><td>27.76 &mu;s</td><td>21.15</td><td>0.05</td><td>-</td><td>21328 B</td><td>5.40</td>
+</tr><tr><td>&#39;HeroParser UTF-16 (string)&#39;</td><td>10000</td><td>25</td><td>False</td><td>677.1 &mu;s</td><td>33.27 &mu;s</td><td>5.15 &mu;s</td><td>1.06</td><td>0.01</td><td>-</td><td>176 B</td><td>0.04</td>
+</tr><tr><td>&#39;HeroParser UTF-8 (byte[])&#39;</td><td>10000</td><td>25</td><td>False</td><td>598.8 &mu;s</td><td>1.50 &mu;s</td><td>0.23 &mu;s</td><td>0.94</td><td>0.00</td><td>-</td><td>176 B</td><td>0.04</td>
+</tr><tr><td>Sep</td><td>10000</td><td>25</td><td>True</td><td>1,566.2 &mu;s</td><td>123.74 &mu;s</td><td>19.15 &mu;s</td><td>1.00</td><td>0.02</td><td>-</td><td>4048 B</td><td>1.00</td>
+</tr><tr><td>Sylvan</td><td>10000</td><td>25</td><td>True</td><td>4,733.3 &mu;s</td><td>65.75 &mu;s</td><td>17.08 &mu;s</td><td>3.02</td><td>0.03</td><td>-</td><td>43530 B</td><td>10.75</td>
+</tr><tr><td>CsvHelper</td><td>10000</td><td>25</td><td>True</td><td>15,046.2 &mu;s</td><td>375.91 &mu;s</td><td>58.17 &mu;s</td><td>9.61</td><td>0.11</td><td>-</td><td>21328 B</td><td>5.27</td>
+</tr><tr><td>&#39;HeroParser UTF-16 (string)&#39;</td><td>10000</td><td>25</td><td>True</td><td>827.7 &mu;s</td><td>7.09 &mu;s</td><td>1.84 &mu;s</td><td>0.53</td><td>0.01</td><td>-</td><td>176 B</td><td>0.04</td>
+</tr><tr><td>&#39;HeroParser UTF-8 (byte[])&#39;</td><td>10000</td><td>25</td><td>True</td><td>767.6 &mu;s</td><td>48.59 &mu;s</td><td>12.62 &mu;s</td><td>0.49</td><td>0.01</td><td>-</td><td>176 B</td><td>0.04</td>
+</tr></tbody></table>
+</body>
+</html>

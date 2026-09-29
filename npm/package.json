@@ -7,19 +7,8 @@
     "tests"
   ],
   "type": "module",
-  "devEngines": {
-    "packageManager": {
-      "name": "npm",
-      "version": ">=12.0.0",
-      "onFail": "error"
-    }
-  },
-  "allowScripts": {
-    "fsevents": false,
-    "onnxruntime-node": false,
-    "protobufjs": false
-  },
   "scripts": {
+    "presync-version": "node scripts/require-npm12.js",
     "sync-version": "node scripts/sync-version.js",
     "postinstall": "node scripts/apply-patches.js"
   },
@@ -33,5 +22,20 @@
     "adm-zip": "^0.6.0",
     "sharp": "^0.35.3",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": ">=12.0.0",
+      "onFail": "error"
+    }
+  },
+  "engines": {
+    "npm": ">=12.0.0"
+  },
+  "allowScripts": {
+    "fsevents": false,
+    "onnxruntime-node": false,
+    "protobufjs": false
   }
 }

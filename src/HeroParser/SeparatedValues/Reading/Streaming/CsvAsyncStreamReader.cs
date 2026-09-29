@@ -39,6 +39,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private int currentColumnCount;
     private int currentRowNumber;
     private int currentSourceLineNumber;
+    // Inference uses this to distinguish a complete CR boundary from a truncated final row.
+    internal bool CurrentHadLineEnding { get; private set; }
 
     // Shared scan-ahead cursor (null when the options keep this reader on the per-row parser).
     // It drives the batch / refill / fallback protocol over the buffered window; see CsvRowBatchCursor.
@@ -241,6 +243,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             currentColumnCount = result.ColumnCount;
             currentRowNumber = rowCount;
             currentSourceLineNumber = trackLineNumbers ? rowStartLine : rowCount;
+            CurrentHadLineEnding = result.CharsConsumed > result.RowLength;
             return true;
         }
     }
@@ -274,6 +277,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         currentBatchRow = row;
         currentRowNumber = rowCount;
         currentSourceLineNumber = trackLineNumbers ? row.SourceLine : rowCount;
+        int rowEnd = cursor!.WindowBase + row.RowEnd;
+        CurrentHadLineEnding = rowEnd < length && buffer[rowEnd] is ((byte)'\r' or (byte)'\n');
         return true;
     }
 

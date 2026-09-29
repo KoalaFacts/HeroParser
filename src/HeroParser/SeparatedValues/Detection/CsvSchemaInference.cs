@@ -166,8 +166,9 @@ public static class CsvSchemaInference
             Encoding? encoding = GetUtf16Encoding(prefix.AsSpan(0, length));
 
             int bomLength = encoding is null ? 0 : 2;
-            Stream input = new CsvPrefixReadStream(stream, prefix.AsMemory(bomLength, length - bomLength),
+            var boundedInput = new CsvPrefixReadStream(stream, prefix.AsMemory(bomLength, length - bomLength),
                 options.MaxScannedInputSize, length);
+            Stream input = boundedInput;
             if (encoding is not null)
                 input = new Utf16ToUtf8ReadStream(input, encoding);
 
@@ -181,7 +182,7 @@ public static class CsvSchemaInference
                 .TrackSourceLineNumbers()
                 .FromStreamAsync(ownedInput, leaveOpen: true);
 
-            return await InferRowsAsync(reader, options, cancellationToken).ConfigureAwait(false);
+            return await InferRowsAsync(reader, boundedInput, options, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -191,10 +192,27 @@ public static class CsvSchemaInference
     }
 
     private static async Task<CsvSchemaInferenceResult> InferRowsAsync(
-        CsvAsyncStreamReader reader, CsvSchemaInferenceOptions options, CancellationToken cancellationToken)
+        CsvAsyncStreamReader reader, CsvPrefixReadStream boundedInput, CsvSchemaInferenceOptions options,
+        CancellationToken cancellationToken)
     {
-        if (!await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        bool hasHeader;
+        try
+        {
+            hasHeader = await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (CsvException ex) when (boundedInput.HasMoreThanBudget && !ex.IsRowSizeLimitExceeded)
+        {
+            throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: true);
+        }
+        if (!hasHeader)
+        {
+            if (boundedInput.HasMoreThanBudget)
+                throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: true);
             throw new InvalidOperationException("Cannot infer schema from empty data.");
+        }
+        if (!reader.CurrentHadLineEnding &&
+            await boundedInput.HasMoreAfterBudgetAsync(cancellationToken).ConfigureAwait(false))
+            throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: true);
 
         var header = reader.Current;
         var headers = new string[header.ColumnCount];
@@ -217,16 +235,26 @@ public static class CsvSchemaInference
             {
                 hasRow = await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false);
             }
+            catch (CsvException ex) when (boundedInput.HasMoreThanBudget && !ex.IsRowSizeLimitExceeded)
+            {
+                throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: true);
+            }
             catch (CsvException ex) when (ex.ErrorCode == CsvErrorCode.ParseError && !ex.IsRowSizeLimitExceeded)
             {
                 break;
             }
             if (!hasRow)
             {
+                if (boundedInput.HasMoreThanBudget)
+                    throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: true);
                 if (reader.NextSourceLineNumber > expectedNextLine)
                     hasSkippedEmptyRows = true;
                 break;
             }
+
+            if (!reader.CurrentHadLineEnding &&
+                await boundedInput.HasMoreAfterBudgetAsync(cancellationToken).ConfigureAwait(false))
+                throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: true);
 
             var row = reader.Current;
             if (row.SourceLineNumber > expectedNextLine)
@@ -366,6 +394,11 @@ public static class CsvSchemaInference
         {
             throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
         }
+        catch (CsvException ex) when (budgetTruncated && ex.ErrorCode == CsvErrorCode.TooManyColumns &&
+            !HasLineEnding(csv, reader.RemainingInputLength))
+        {
+            throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
+        }
         ThrowIfBudgetCutsOffRow(csv, reader.RemainingInputLength, budgetTruncated, options.MaxScannedInputSize);
         if (!hasHeader)
         {
@@ -436,6 +469,11 @@ public static class CsvSchemaInference
                 }
             }
         }
+        catch (CsvException ex) when (budgetTruncated && ex.ErrorCode == CsvErrorCode.TooManyColumns &&
+            !HasLineEnding(csv, reader.RemainingInputLength))
+        {
+            throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
+        }
         catch (CsvException ex) when (ex.ErrorCode == CsvErrorCode.ParseError && !ex.IsRowSizeLimitExceeded)
         {
             if (ex.QuoteStartPosition.HasValue && reader.RemainingInputLength > options.MaxRowSize)
@@ -491,9 +529,12 @@ public static class CsvSchemaInference
     private static void ThrowIfBudgetCutsOffRow(
         ReadOnlySpan<char> csv, int remainingInputLength, bool budgetTruncated, long maxScannedInputSize)
     {
-        if (budgetTruncated && remainingInputLength == 0 && csv[^1] != '\n')
+        if (budgetTruncated && remainingInputLength == 0 && csv[^1] is not ('\r' or '\n'))
             throw CsvException.InputSizeLimitExceeded(maxScannedInputSize, isUtf8: false);
     }
+
+    private static bool HasLineEnding(ReadOnlySpan<char> csv, int remainingInputLength)
+        => csv[^remainingInputLength..].IndexOfAny('\r', '\n') >= 0;
 
     private static int CountNewlines(ReadOnlySpan<char> span)
     {

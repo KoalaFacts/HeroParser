@@ -1,5 +1,3 @@
-using HeroParser.SeparatedValues.Core;
-
 namespace HeroParser.SeparatedValues.Detection;
 
 // Replays delimiter/BOM probe bytes and bounds source reads without owning the caller's stream.
@@ -8,7 +6,23 @@ internal sealed class CsvPrefixReadStream(
 {
     private int prefixOffset;
     private long sourceBytesRead = initiallyReadBytes;
+    private bool probedAtLimit;
     private bool disposed;
+
+    internal bool HasMoreThanBudget { get; private set; }
+
+    internal async ValueTask<bool> HasMoreAfterBudgetAsync(CancellationToken cancellationToken)
+    {
+        if (sourceBytesRead < maxScannedInputSize)
+            return false;
+        if (probedAtLimit)
+            return HasMoreThanBudget;
+
+        probedAtLimit = true;
+        byte[] probe = new byte[1];
+        HasMoreThanBudget = await source.ReadAsync(probe, cancellationToken).ConfigureAwait(false) != 0;
+        return HasMoreThanBudget;
+    }
 
     public override bool CanRead => !disposed && source.CanRead;
     public override bool CanSeek => false;
@@ -39,9 +53,12 @@ internal sealed class CsvPrefixReadStream(
 
         if (sourceBytesRead == maxScannedInputSize)
         {
+            if (probedAtLimit)
+                return 0;
+            probedAtLimit = true;
+            // Let the parser finish a CR-terminated row; inference rejects unfinished rows after this probe.
             Span<byte> probe = stackalloc byte[1];
-            if (source.Read(probe) != 0)
-                throw CsvException.InputSizeLimitExceeded(maxScannedInputSize, isUtf8: true);
+            HasMoreThanBudget = source.Read(probe) != 0;
             return 0;
         }
 
@@ -71,9 +88,8 @@ internal sealed class CsvPrefixReadStream(
 
         if (sourceBytesRead == maxScannedInputSize)
         {
-            byte[] probe = new byte[1];
-            if (await source.ReadAsync(probe, cancellationToken).ConfigureAwait(false) != 0)
-                throw CsvException.InputSizeLimitExceeded(maxScannedInputSize, isUtf8: true);
+            // The caller checks the result before accepting an unfinished final row.
+            await HasMoreAfterBudgetAsync(cancellationToken).ConfigureAwait(false);
             return 0;
         }
 

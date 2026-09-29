@@ -293,6 +293,62 @@ public sealed class SchemaInferenceParityTests
     }
 
     [Fact]
+    public async Task CutoffRowColumnError_ReportsScanLimitAcrossSources()
+    {
+        const string csv = "A\n1,2,3";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            MaxColumnCount = 2,
+            MaxScannedInputSize = 6
+        };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
+    public async Task CompletedCrSampleAtBudgetBoundary_IsAcceptedAcrossSources()
+    {
+        const string csv = "A\r1\rX";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            SampleRows = 1,
+            MaxScannedInputSize = 4
+        };
+
+        await AssertSourcesAgreeAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
+    public async Task CrBoundaryWithoutEnoughSamples_ReportsScanLimitAcrossSources()
+    {
+        const string csv = "A\r1\rX";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            SampleRows = 2,
+            MaxScannedInputSize = 4
+        };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
+    public async Task UnfinishedRowAtBudgetBoundary_ReportsScanLimitAcrossSources()
+    {
+        const string csv = "A\n1x";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            SampleRows = 1,
+            MaxScannedInputSize = 3
+        };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
     public async Task LeadingBom_IsIncludedInScanBudget()
     {
         const string csv = "\uFEFFA\n1";

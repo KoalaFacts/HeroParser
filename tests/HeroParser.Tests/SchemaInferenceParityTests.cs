@@ -349,6 +349,21 @@ public sealed class SchemaInferenceParityTests
     }
 
     [Fact]
+    public async Task OversizedOverColumnCutoffRow_PreservesRowSizeErrorAcrossSources()
+    {
+        const string csv = "A\n1,2,3xxxx";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            MaxColumnCount = 2,
+            MaxRowSize = 3,
+            MaxScannedInputSize = 7
+        };
+
+        await AssertRowSizeLimitAcrossSourcesAsync(csv, options);
+    }
+
+    [Fact]
     public async Task CompletedColumnErrorWithQuotedNewline_RemainsColumnError()
     {
         const string csv = "A\n\"1\n2\",3,4\nX";

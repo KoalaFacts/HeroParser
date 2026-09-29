@@ -395,6 +395,12 @@ public static class CsvSchemaInference
             throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
         }
         catch (CsvException ex) when (budgetTruncated && ex.ErrorCode == CsvErrorCode.TooManyColumns &&
+            !HasUnquotedLineEnding(csv, reader.RemainingInputLength) &&
+            reader.RemainingInputLength > options.MaxRowSize)
+        {
+            throw CsvException.RowSizeLimitExceeded(options.MaxRowSize, isUtf8: false);
+        }
+        catch (CsvException ex) when (budgetTruncated && ex.ErrorCode == CsvErrorCode.TooManyColumns &&
             !HasUnquotedLineEnding(csv, reader.RemainingInputLength))
         {
             throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
@@ -468,6 +474,12 @@ public static class CsvSchemaInference
                     hasSkippedEmptyRows = true;
                 }
             }
+        }
+        catch (CsvException ex) when (budgetTruncated && ex.ErrorCode == CsvErrorCode.TooManyColumns &&
+            !HasUnquotedLineEnding(csv, reader.RemainingInputLength) &&
+            reader.RemainingInputLength > options.MaxRowSize)
+        {
+            throw CsvException.RowSizeLimitExceeded(options.MaxRowSize, isUtf8: false);
         }
         catch (CsvException ex) when (budgetTruncated && ex.ErrorCode == CsvErrorCode.TooManyColumns &&
             !HasUnquotedLineEnding(csv, reader.RemainingInputLength))
@@ -546,7 +558,7 @@ public static class CsvSchemaInference
                 else
                     inQuotes = !inQuotes;
             }
-            else if (!inQuotes && row[i] is '\r' or '\n')
+            else if (!inQuotes && (row[i] == '\r' || row[i] == '\n'))
             {
                 return true;
             }

@@ -182,7 +182,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                     ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer.Span)
                     : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer.Span);
             }
-            catch (CsvException ex) when (!endOfStream && (ex.QuoteStartPosition.HasValue || span.IndexOfAny((byte)'\n', (byte)'\r') < 0))
+            catch (CsvException ex) when (!endOfStream &&
+                (ex.QuoteStartPosition.HasValue || !HasUnquotedLineEnding(span)))
             {
                 // An open quote, or a row with no line ending anywhere in the buffered data yet, is a
                 // partial row: a limit it seems to break (field length, column count) must be judged on
@@ -246,6 +247,32 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             CurrentHadLineEnding = result.CharsConsumed > result.RowLength;
             return true;
         }
+    }
+
+    private bool HasUnquotedLineEnding(ReadOnlySpan<byte> row)
+    {
+        bool inQuotes = false;
+        byte quote = (byte)options.Quote;
+        byte? escape = options.EscapeCharacter is char escapeCharacter ? (byte)escapeCharacter : null;
+        for (int i = 0; i < row.Length; i++)
+        {
+            if (escape.HasValue && row[i] == escape && i + 1 < row.Length)
+            {
+                i++;
+            }
+            else if (options.EnableQuotedFields && row[i] == quote)
+            {
+                if (inQuotes && i + 1 < row.Length && row[i + 1] == quote)
+                    i++;
+                else
+                    inQuotes = !inQuotes;
+            }
+            else if (!inQuotes && (row[i] == (byte)'\r' || row[i] == (byte)'\n'))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

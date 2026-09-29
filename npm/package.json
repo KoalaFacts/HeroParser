@@ -7,6 +7,13 @@
     "tests"
   ],
   "type": "module",
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": ">=12.0.0",
+      "onFail": "error"
+    }
+  },
   "scripts": {
     "sync-version": "node scripts/sync-version.js",
     "postinstall": "node scripts/apply-patches.js"

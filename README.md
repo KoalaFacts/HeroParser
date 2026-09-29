@@ -78,7 +78,7 @@ scoop install heroparser/heroparser
 
 ### WebAssembly / JavaScript (Node.js & Browser)
 
-The JavaScript package is an unpublished preview in this repository, not yet available from npm. Build the WebAssembly runtime locally before using the workspace package; see [the package README](npm/packages/heroparser/README.md). The browser demo is separate from an npm release.
+The JavaScript package is an unpublished preview in this repository, not yet available from npm. The workspace requires npm 12 or newer. Build the WebAssembly runtime locally before using the workspace package; see [the package README](npm/packages/heroparser/README.md). The browser demo is separate from an npm release.
 
 #### Interactive Playground Demo
 Try the interactive WebAssembly sandbox directly in your browser:

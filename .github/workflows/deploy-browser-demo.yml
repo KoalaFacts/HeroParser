@@ -52,6 +52,11 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'npm/package-lock.json'
 
+      - name: Upgrade npm
+        run: |
+          npm install --global npm@12
+          npm --version
+
       - name: Install workspace dependencies
         run: npm install --prefix npm --legacy-peer-deps
 

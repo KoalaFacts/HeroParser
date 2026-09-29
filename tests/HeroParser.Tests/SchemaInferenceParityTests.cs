@@ -307,6 +307,67 @@ public sealed class SchemaInferenceParityTests
     }
 
     [Fact]
+    public async Task CutoffRowWithQuotedNewline_ReportsScanLimitAcrossSources()
+    {
+        const string csv = "A\n\"1\n2\",3,4x";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            MaxColumnCount = 2,
+            MaxScannedInputSize = 10
+        };
+
+        await AssertScanLimitAcrossSourcesAsync(csv, Encoding.UTF8.GetBytes(csv), options);
+    }
+
+    [Fact]
+    public async Task OversizedCutoffRow_PreservesRowSizeErrorAcrossSources()
+    {
+        const string csv = "A\nxxxxxxxxxx";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            MaxRowSize = 3,
+            MaxScannedInputSize = 6
+        };
+
+        await AssertRowSizeLimitAcrossSourcesAsync(csv, options);
+    }
+
+    [Fact]
+    public async Task OversizedCutoffHeader_PreservesRowSizeErrorAcrossSources()
+    {
+        const string csv = "xxxxxxxxxx\n1";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            MaxRowSize = 3,
+            MaxScannedInputSize = 4
+        };
+
+        await AssertRowSizeLimitAcrossSourcesAsync(csv, options);
+    }
+
+    [Fact]
+    public async Task CompletedColumnErrorWithQuotedNewline_RemainsColumnError()
+    {
+        const string csv = "A\n\"1\n2\",3,4\nX";
+        var options = new CsvSchemaInferenceOptions
+        {
+            Delimiter = ',',
+            MaxColumnCount = 2,
+            MaxScannedInputSize = 12
+        };
+
+        Assert.Equal(CsvErrorCode.TooManyColumns,
+            Assert.Throws<CsvException>(() => Csv.InferSchema(csv, options)).ErrorCode);
+        using var stream = new ChunkedReadStream(Encoding.UTF8.GetBytes(csv), 1);
+        Assert.Equal(CsvErrorCode.TooManyColumns,
+            (await Assert.ThrowsAsync<CsvException>(() => Csv.InferSchemaAsync(stream, options,
+                TestContext.Current.CancellationToken))).ErrorCode);
+    }
+
+    [Fact]
     public async Task CompletedCrSampleAtBudgetBoundary_IsAcceptedAcrossSources()
     {
         const string csv = "A\r1\rX";

@@ -395,11 +395,10 @@ public static class CsvSchemaInference
             throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
         }
         catch (CsvException ex) when (budgetTruncated && ex.ErrorCode == CsvErrorCode.TooManyColumns &&
-            !HasLineEnding(csv, reader.RemainingInputLength))
+            !HasUnquotedLineEnding(csv, reader.RemainingInputLength))
         {
             throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
         }
-        ThrowIfBudgetCutsOffRow(csv, reader.RemainingInputLength, budgetTruncated, options.MaxScannedInputSize);
         if (!hasHeader)
         {
             if (budgetTruncated)
@@ -408,6 +407,7 @@ public static class CsvSchemaInference
         }
         CsvRow<char> headerRow = reader.Current;
         ThrowIfRowTooLarge(headerRow.Line, options.MaxRowSize);
+        ThrowIfBudgetCutsOffRow(csv, reader.RemainingInputLength, budgetTruncated, options.MaxScannedInputSize);
 
         int columnCount = headerRow.ColumnCount;
         var headers = new string[columnCount];
@@ -433,9 +433,9 @@ public static class CsvSchemaInference
 
             while (sampledRows < maxSampleRows && reader.MoveNext())
             {
-                ThrowIfBudgetCutsOffRow(csv, reader.RemainingInputLength, budgetTruncated, options.MaxScannedInputSize);
                 var row = reader.Current;
                 ThrowIfRowTooLarge(row.Line, options.MaxRowSize);
+                ThrowIfBudgetCutsOffRow(csv, reader.RemainingInputLength, budgetTruncated, options.MaxScannedInputSize);
                 sampledRows++;
 
                 if (row.SourceLineNumber > expectedNextLine)
@@ -470,7 +470,7 @@ public static class CsvSchemaInference
             }
         }
         catch (CsvException ex) when (budgetTruncated && ex.ErrorCode == CsvErrorCode.TooManyColumns &&
-            !HasLineEnding(csv, reader.RemainingInputLength))
+            !HasUnquotedLineEnding(csv, reader.RemainingInputLength))
         {
             throw CsvException.InputSizeLimitExceeded(options.MaxScannedInputSize, isUtf8: false);
         }
@@ -533,8 +533,26 @@ public static class CsvSchemaInference
             throw CsvException.InputSizeLimitExceeded(maxScannedInputSize, isUtf8: false);
     }
 
-    private static bool HasLineEnding(ReadOnlySpan<char> csv, int remainingInputLength)
-        => csv[^remainingInputLength..].IndexOfAny('\r', '\n') >= 0;
+    private static bool HasUnquotedLineEnding(ReadOnlySpan<char> csv, int remainingInputLength)
+    {
+        ReadOnlySpan<char> row = csv[^remainingInputLength..];
+        bool inQuotes = false;
+        for (int i = 0; i < row.Length; i++)
+        {
+            if (row[i] == '"')
+            {
+                if (inQuotes && i + 1 < row.Length && row[i + 1] == '"')
+                    i++;
+                else
+                    inQuotes = !inQuotes;
+            }
+            else if (!inQuotes && row[i] is '\r' or '\n')
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private static int CountNewlines(ReadOnlySpan<char> span)
     {

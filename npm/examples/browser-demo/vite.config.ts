@@ -1,23 +1,23 @@
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
+import { defineConfig, lazyPlugins } from "vite-plus";
+import vue from "@vitejs/plugin-vue";
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: './',
-  plugins: [
+  base: "./",
+  plugins: lazyPlugins(() => [
     vue({
-      vapor: true
-    } as any)
-  ],
+      vapor: true,
+    } as any),
+  ]),
   build: {
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/onnxruntime-web/')) {
-            return 'onnxruntime-web'
+          if (id.includes("node_modules/onnxruntime-web/")) {
+            return "onnxruntime-web";
           }
-        }
-      }
-    }
-  }
-})
+        },
+      },
+    },
+  },
+});

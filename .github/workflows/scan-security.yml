@@ -79,14 +79,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Audit npm workspace for vulnerabilities
         run: |
           set -euo pipefail
           # Reads package-lock.json directly, so no install is needed. Exits
           # non-zero when anything at or above the level is present.
-          npm audit --audit-level=high --prefix npm | tee npm-audit.txt
+          npm audit --audit-level=moderate --prefix npm | tee npm-audit.txt
 
       - name: Upload audit report
         if: always()

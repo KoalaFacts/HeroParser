@@ -4,11 +4,11 @@ High-performance tabular data parser (CSV, Fixed-Width, Excel) for JavaScript/Ty
 
 ## Features
 
-* **High Performance**: Leverages the SIMD-accelerated C# HeroParser engine via compiled WebAssembly.
-* **Unified Formats**: Support for CSV, Fixed-Width, and Excel (.xlsx) files under a single lightweight package.
-* **Smart Delimiter Detection**: Instantly analyzes CSV samples to detect the correct column delimiter.
-* **AI-Native Repair**: Built-in support to clean and repair incomplete, truncated, or markdown-wrapped tabular LLM outputs.
-* **Fully Portable**: Runs inside any modern web browser or Node.js environment.
+- **High Performance**: Leverages the SIMD-accelerated C# HeroParser engine via compiled WebAssembly.
+- **Unified Formats**: Support for CSV, Fixed-Width, and Excel (.xlsx) files under a single lightweight package.
+- **Smart Delimiter Detection**: Instantly analyzes CSV samples to detect the correct column delimiter.
+- **AI-Native Repair**: Built-in support to clean and repair incomplete, truncated, or markdown-wrapped tabular LLM outputs.
+- **Fully Portable**: Runs inside any modern web browser or Node.js environment.
 
 ---
 
@@ -32,15 +32,15 @@ Try the interactive WebAssembly sandbox directly in your browser:
 ### 1. Basic CSV Reading
 
 ```javascript
-import { init, readCsv } from 'heroparser';
+import { init, readCsv } from "heroparser";
 
 // Initialize the WebAssembly runtime
 await init();
 
 // Read CSV string with headers
 const records = readCsv("Name,Age,Role\nAlice,30,Developer\nBob,25,Designer", {
-    delimiter: ',',
-    hasHeader: true
+  delimiter: ",",
+  hasHeader: true,
 });
 
 console.log(records);
@@ -54,14 +54,14 @@ console.log(records);
 ### 2. Fixed-Width Reading
 
 ```javascript
-import { init, readFixedWidth } from 'heroparser';
+import { init, readFixedWidth } from "heroparser";
 
 await init();
 
 const specs = [
-    { name: "Name", start: 0, length: 10 },
-    { name: "Age", start: 10, length: 10 },
-    { name: "Role", start: 20, length: 11 }
+  { name: "Name", start: 0, length: 10 },
+  { name: "Age", start: 10, length: 10 },
+  { name: "Role", start: 20, length: 11 },
 ];
 
 const text = "Alice     30        Developer \nBob       25        Designer  ";
@@ -71,7 +71,7 @@ const records = readFixedWidth(text, specs);
 ### 3. Excel (.xlsx) Reading
 
 ```javascript
-import { init, readExcel } from 'heroparser';
+import { init, readExcel } from "heroparser";
 
 await init();
 
@@ -82,23 +82,23 @@ const records = readExcel(excelBytesArray, "Sheet1", true);
 ### 4. Serializing & Writing (CSV, Fixed-Width, Excel)
 
 ```javascript
-import { init, writeCsv, writeFixedWidth, writeExcel } from 'heroparser';
+import { init, writeCsv, writeFixedWidth, writeExcel } from "heroparser";
 
 await init();
 
 const records = [
-    { Name: "Alice", Age: "30", Role: "Developer" },
-    { Name: "Bob", Age: "25", Role: "Designer" }
+  { Name: "Alice", Age: "30", Role: "Developer" },
+  { Name: "Bob", Age: "25", Role: "Designer" },
 ];
 
 // Write to CSV format
-const csv = writeCsv(records, { delimiter: ',', hasHeader: true });
+const csv = writeCsv(records, { delimiter: ",", hasHeader: true });
 
 // Write to Fixed-Width format
 const specs = [
-    { name: "Name", start: 0, length: 10 },
-    { name: "Age", start: 10, length: 5 },
-    { name: "Role", start: 15, length: 15 }
+  { name: "Name", start: 0, length: 10 },
+  { name: "Age", start: 10, length: 5 },
+  { name: "Role", start: 15, length: 15 },
 ];
 const fwText = writeFixedWidth(records, specs);
 
@@ -111,30 +111,40 @@ const excelBytes = writeExcel(records, "Sheet1", true);
 ## API Reference
 
 ### `init(): Promise<void>`
+
 Initializes the underlying WebAssembly runtime. This must be awaited once before invoking other read/write methods.
 
 ### `readCsv(csvText: string, options?: WasmCsvOptions): any[]`
+
 Reads CSV text content into a JSON array of objects or values.
-* `options.delimiter`: Column delimiter character (e.g. `","`, `";"`). Defaults to auto-detect.
-* `options.hasHeader`: Set `true` to map rows to object keys based on the header row, or `false` to return raw string arrays.
+
+- `options.delimiter`: Column delimiter character (e.g. `","`, `";"`). Defaults to auto-detect.
+- `options.hasHeader`: Set `true` to map rows to object keys based on the header row, or `false` to return raw string arrays.
 
 ### `readFixedWidth(text: string, specs: WasmColumnSpec[]): any[]`
+
 Reads fixed-width column blocks into a JSON array based on the given boundaries.
-* `specs`: Array of `{ name: string, start: number, length: number }`.
+
+- `specs`: Array of `{ name: string, start: number, length: number }`.
 
 ### `readExcel(excelBytes: Uint8Array, sheetName?: string, hasHeader?: boolean): any[]`
+
 Reads Excel spreadsheet workbook byte arrays and returns parsed rows.
 
 ### `detectCsvDelimiter(sampleRows: string): string`
+
 Analyzes a sample text chunk to identify the most confident CSV separator character.
 
 ### `writeCsv(records: any[], options?: WasmCsvOptions): string`
+
 Serializes a list of object records back to CSV format.
 
 ### `writeFixedWidth(records: any[], specs: WasmColumnSpec[]): string`
+
 Serializes a list of object records back to fixed-width format.
 
 ### `writeExcel(records: any[], sheetName?: string, hasHeader?: boolean): Uint8Array`
+
 Serializes a list of object records back to Excel (.xlsx) binary bytes.
 ---
 

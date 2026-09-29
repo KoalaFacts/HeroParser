@@ -1,12 +1,21 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Target node_modules directory
-const rootDir = path.resolve(__dirname, '../node_modules/onnxruntime-web/dist');
+const rootDir = path.resolve(__dirname, "../node_modules/onnxruntime-web/dist");
+
+function readOptional(path) {
+  try {
+    return fs.readFileSync(path, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
 
 const quotePatch = `if (typeof window !== 'undefined') {
   const cleanUrl = (url) => {
@@ -41,18 +50,19 @@ const quotePatch = `if (typeof window !== 'undefined') {
 `;
 
 // 1. Patch WebGPU Bundle
-const webgpuPath = path.join(rootDir, 'ort.webgpu.bundle.min.mjs');
-if (fs.existsSync(webgpuPath)) {
-  console.log('Patching ort.webgpu.bundle.min.mjs...');
-  let content = fs.readFileSync(webgpuPath, 'utf8');
+const webgpuPath = path.join(rootDir, "ort.webgpu.bundle.min.mjs");
+const webgpuContent = readOptional(webgpuPath);
+if (webgpuContent !== null) {
+  console.log("Patching ort.webgpu.bundle.min.mjs...");
+  let content = webgpuContent;
 
   // Insert quote patch at the very top
-  if (!content.includes('_quoteCleanPatched')) {
+  if (!content.includes("_quoteCleanPatched")) {
     content = quotePatch + content;
   }
 
   // Insert InferenceSession.create patch
-  const target = 'let[d,l]=await _r(a),c=await d.createInferenceSessionHandler(i,l);';
+  const target = "let[d,l]=await _r(a),c=await d.createInferenceSessionHandler(i,l);";
   const patchCode = `
       // [PATCHED LOGIC]
       let isEmbedTokens = false;
@@ -134,28 +144,29 @@ if (fs.existsSync(webgpuPath)) {
       }
   `;
 
-  if (content.includes(target) && !content.includes('[PATCHED LOGIC]')) {
+  if (content.includes(target) && !content.includes("[PATCHED LOGIC]")) {
     content = content.replace(target, patchCode + target);
-    fs.writeFileSync(webgpuPath, content, 'utf8');
-    console.log('Successfully patched ort.webgpu.bundle.min.mjs!');
+    fs.writeFileSync(webgpuPath, content, "utf8");
+    console.log("Successfully patched ort.webgpu.bundle.min.mjs!");
   } else {
-    console.log('ort.webgpu.bundle.min.mjs already patched or target not found.');
+    console.log("ort.webgpu.bundle.min.mjs already patched or target not found.");
   }
 }
 
 // 2. Patch CPU Bundle
-const cpuPath = path.join(rootDir, 'ort.bundle.min.mjs');
-if (fs.existsSync(cpuPath)) {
-  console.log('Patching ort.bundle.min.mjs...');
-  let content = fs.readFileSync(cpuPath, 'utf8');
+const cpuPath = path.join(rootDir, "ort.bundle.min.mjs");
+const cpuContent = readOptional(cpuPath);
+if (cpuContent !== null) {
+  console.log("Patching ort.bundle.min.mjs...");
+  let content = cpuContent;
 
   // Insert quote patch at the very top
-  if (!content.includes('_quoteCleanPatched')) {
+  if (!content.includes("_quoteCleanPatched")) {
     content = quotePatch + content;
   }
 
   // Insert InferenceSession.create patch
-  const target = 'let[a,u]=await ln(s),l=await a.createInferenceSessionHandler(n,u);';
+  const target = "let[a,u]=await ln(s),l=await a.createInferenceSessionHandler(n,u);";
   const patchCode = `
       // [PATCHED LOGIC]
       let isEmbedTokens = false;
@@ -223,11 +234,11 @@ if (fs.existsSync(cpuPath)) {
       }
   `;
 
-  if (content.includes(target) && !content.includes('[PATCHED LOGIC]')) {
+  if (content.includes(target) && !content.includes("[PATCHED LOGIC]")) {
     content = content.replace(target, patchCode + target);
-    fs.writeFileSync(cpuPath, content, 'utf8');
-    console.log('Successfully patched ort.bundle.min.mjs!');
+    fs.writeFileSync(cpuPath, content, "utf8");
+    console.log("Successfully patched ort.bundle.min.mjs!");
   } else {
-    console.log('ort.bundle.min.mjs already patched or target not found.');
+    console.log("ort.bundle.min.mjs already patched or target not found.");
   }
 }

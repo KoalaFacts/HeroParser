@@ -17,6 +17,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 - Fast-path buffered CSV `PipeReader` rows.
 
 ### Fixed
+- Upgrade the unpublished browser demo to Vite+ 1.0.0 with patched Vitest 5.0.1, removing vulnerable `vitest` and `@vitest/mocker` development dependencies. npm CI now fails on moderate or higher advisories.
 - Align schema inference results across input sources and handle nullability correctly at terminal line endings.
 - Bound schema inference row size and total scanning for untrusted input; the default total scan budget is 128 MiB, measured in characters for string input and original bytes for file and stream input.
 - Address CSV CLI and parser review findings, including reliable CLI exit codes.

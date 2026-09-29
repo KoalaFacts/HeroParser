@@ -1,12 +1,12 @@
 export interface CsvOptions {
-    delimiter?: string;
-    hasHeader?: boolean;
+  delimiter?: string;
+  hasHeader?: boolean;
 }
 
 export interface ColumnSpec {
-    name: string;
-    start: number;
-    length: number;
+  name: string;
+  start: number;
+  length: number;
 }
 
 export function init(): Promise<void>;

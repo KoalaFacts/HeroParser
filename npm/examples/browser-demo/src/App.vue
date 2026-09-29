@@ -1,20 +1,20 @@
 <script setup vapor>
-import { ref, onMounted } from 'vue'
-import { init } from 'heroparser'
-import { useCsv } from './composables/useCsv'
-import { useFixedWidth } from './composables/useFixedWidth'
-import { useExcel } from './composables/useExcel'
-import { useAiCopilot } from './composables/useAiCopilot'
+import { ref, onMounted } from "vue";
+import { init } from "heroparser";
+import { useCsv } from "./composables/useCsv";
+import { useFixedWidth } from "./composables/useFixedWidth";
+import { useExcel } from "./composables/useExcel";
+import { useAiCopilot } from "./composables/useAiCopilot";
 
 // Bootstrap state
-const initialized = ref(false)
-const initStatus = ref('Initializing HeroParser WASM Engine...')
+const initialized = ref(false);
+const initStatus = ref("Initializing HeroParser WASM Engine...");
 
 // Tab selection
-const activeTab = ref('csv')
+const activeTab = ref("csv");
 const switchTab = (tab) => {
-  activeTab.value = tab
-}
+  activeTab.value = tab;
+};
 
 // Load parsing states
 const {
@@ -25,17 +25,10 @@ const {
   csvTime,
   csvCount,
   runCsvParse,
-  runCsvDelimiterDetect
-} = useCsv()
+  runCsvDelimiterDetect,
+} = useCsv();
 
-const {
-  fwInput,
-  fwSpecs,
-  fwOutput,
-  fwTime,
-  fwCount,
-  runFixedWidthParse
-} = useFixedWidth()
+const { fwInput, fwSpecs, fwOutput, fwTime, fwCount, runFixedWidthParse } = useFixedWidth();
 
 const {
   excelSheetName,
@@ -47,8 +40,8 @@ const {
   excelCount,
   handleExcelSelect,
   handleExcelDrop,
-  runExcelParse
-} = useExcel()
+  runExcelParse,
+} = useExcel();
 
 const {
   aiModelLoaded,
@@ -66,26 +59,26 @@ const {
   startModelDownload,
   runAiAgent,
   clearAiCache,
-  checkCacheOnMount
-} = useAiCopilot()
+  checkCacheOnMount,
+} = useAiCopilot();
 
-const faviconUrl = './favicon.svg'
-const iconsUrl = './icons.svg'
+const faviconUrl = "./favicon.svg";
+const iconsUrl = "./icons.svg";
 
 onMounted(async () => {
   // Check local cache settings on startup
-  checkCacheOnMount()
-  
+  checkCacheOnMount();
+
   try {
-    console.log("Bootstrapping WASM inside Vue Vapor SFC...")
-    await init()
-    console.log("WASM Initialized successfully!")
-    initialized.value = true
+    console.log("Bootstrapping WASM inside Vue Vapor SFC...");
+    await init();
+    console.log("WASM Initialized successfully!");
+    initialized.value = true;
   } catch (err) {
-    console.error("Initialization failed:", err)
-    initStatus.value = 'Failed to load WASM engine. Check dev console logs.'
+    console.error("Initialization failed:", err);
+    initStatus.value = "Failed to load WASM engine. Check dev console logs.";
   }
-})
+});
 </script>
 
 <template>
@@ -97,32 +90,92 @@ onMounted(async () => {
 
   <div class="container">
     <!-- Header link bar -->
-    <div style="display: flex; justify-content: flex-end; gap: 1.5rem; margin-bottom: 1.5rem; font-size: 0.95rem;">
-      <a href="https://github.com/KoalaFacts/HeroParser" target="_blank" style="display: flex; align-items: center; gap: 0.4rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">
-        <svg style="width: 18px; height: 18px; fill: currentColor;"><use :href="`${iconsUrl}#github-icon`"></use></svg>
+    <div
+      style="
+        display: flex;
+        justify-content: flex-end;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.95rem;
+      "
+    >
+      <a
+        href="https://github.com/KoalaFacts/HeroParser"
+        target="_blank"
+        style="
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          color: var(--text-muted);
+          text-decoration: none;
+          transition: color 0.2s;
+        "
+        onmouseover="this.style.color = &quot;var(--text)&quot;;"
+        onmouseout="this.style.color = &quot;var(--text-muted)&quot;;"
+      >
+        <svg style="width: 18px; height: 18px; fill: currentColor">
+          <use :href="`${iconsUrl}#github-icon`"></use>
+        </svg>
         GitHub
       </a>
-      <a href="https://github.com/KoalaFacts/HeroParser#readme" target="_blank" style="display: flex; align-items: center; gap: 0.4rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">
-        <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor;"><use :href="`${iconsUrl}#documentation-icon`"></use></svg>
+      <a
+        href="https://github.com/KoalaFacts/HeroParser#readme"
+        target="_blank"
+        style="
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          color: var(--text-muted);
+          text-decoration: none;
+          transition: color 0.2s;
+        "
+        onmouseover="this.style.color = &quot;var(--text)&quot;;"
+        onmouseout="this.style.color = &quot;var(--text-muted)&quot;;"
+      >
+        <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor">
+          <use :href="`${iconsUrl}#documentation-icon`"></use>
+        </svg>
         Documentation
       </a>
     </div>
 
     <!-- Header title -->
     <header>
-      <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 0.5rem;">
-        <img :src="faviconUrl" alt="HeroParser Logo" style="width: 48px; height: 48px;" />
-        <h1 style="margin: 0;">HeroParser WASM</h1>
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          margin-bottom: 0.5rem;
+        "
+      >
+        <img :src="faviconUrl" alt="HeroParser Logo" style="width: 48px; height: 48px" />
+        <h1 style="margin: 0">HeroParser WASM</h1>
       </div>
-      <p class="tagline">High-performance, zero-allocation C# tabular parser running at native speed directly inside a browser.</p>
+      <p class="tagline">
+        High-performance, zero-allocation C# tabular parser running at native speed directly inside
+        a browser.
+      </p>
     </header>
 
     <!-- Tabs Nav -->
     <div class="tabs-nav">
-      <button :class="['tab-btn', { active: activeTab === 'csv' }]" @click="switchTab('csv')">CSV Parser</button>
-      <button :class="['tab-btn', { active: activeTab === 'fixedwidth' }]" @click="switchTab('fixedwidth')">Fixed-Width</button>
-      <button :class="['tab-btn', { active: activeTab === 'excel' }]" @click="switchTab('excel')">Excel (.xlsx)</button>
-      <button :class="['tab-btn', { active: activeTab === 'ai' }]" @click="switchTab('ai')">AI Copilot (WebGPU)</button>
+      <button :class="['tab-btn', { active: activeTab === 'csv' }]" @click="switchTab('csv')">
+        CSV Parser
+      </button>
+      <button
+        :class="['tab-btn', { active: activeTab === 'fixedwidth' }]"
+        @click="switchTab('fixedwidth')"
+      >
+        Fixed-Width
+      </button>
+      <button :class="['tab-btn', { active: activeTab === 'excel' }]" @click="switchTab('excel')">
+        Excel (.xlsx)
+      </button>
+      <button :class="['tab-btn', { active: activeTab === 'ai' }]" @click="switchTab('ai')">
+        AI Copilot (WebGPU)
+      </button>
     </div>
 
     <!-- CSV Content -->
@@ -136,10 +189,10 @@ onMounted(async () => {
         <div class="options-grid">
           <div class="form-group">
             <label for="csv-delimiter">Delimiter</label>
-            <input type="text" id="csv-delimiter" v-model="csvDelimiter" maxlength="1">
+            <input type="text" id="csv-delimiter" v-model="csvDelimiter" maxlength="1" />
           </div>
           <div class="flex-center-gap margin-top-large">
-            <input type="checkbox" id="csv-header" v-model="csvHasHeader" class="checkbox-custom">
+            <input type="checkbox" id="csv-header" v-model="csvHasHeader" class="checkbox-custom" />
             <label for="csv-header" class="cursor-pointer">Has Header Row</label>
           </div>
         </div>
@@ -154,8 +207,12 @@ onMounted(async () => {
           <pre id="csv-output" class="output-pre">{{ csvOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>Parse Time: <span id="csv-metric-time" class="metric-value">{{ csvTime }}</span></div>
-          <div>Records: <span id="csv-metric-count" class="metric-value">{{ csvCount }}</span></div>
+          <div>
+            Parse Time: <span id="csv-metric-time" class="metric-value">{{ csvTime }}</span>
+          </div>
+          <div>
+            Records: <span id="csv-metric-count" class="metric-value">{{ csvCount }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -166,11 +223,15 @@ onMounted(async () => {
         <div class="panel-title">Fixed-Width Input</div>
         <div class="form-group">
           <label for="fw-input">Fixed-Width Text Data</label>
-          <textarea id="fw-input" v-model="fwInput" placeholder="Alice     30        Developer"></textarea>
+          <textarea
+            id="fw-input"
+            v-model="fwInput"
+            placeholder="Alice     30        Developer"
+          ></textarea>
         </div>
         <div class="form-group">
           <label for="fw-specs">Column Ranges (JSON Specification)</label>
-          <textarea id="fw-specs" v-model="fwSpecs" style="min-height: 120px;"></textarea>
+          <textarea id="fw-specs" v-model="fwSpecs" style="min-height: 120px"></textarea>
         </div>
         <button class="btn" @click="runFixedWidthParse">Parse Fixed-Width</button>
       </div>
@@ -180,8 +241,12 @@ onMounted(async () => {
           <pre id="fw-output" class="output-pre">{{ fwOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>Parse Time: <span id="fw-metric-time" class="metric-value">{{ fwTime }}</span></div>
-          <div>Records: <span id="fw-metric-count" class="metric-value">{{ fwCount }}</span></div>
+          <div>
+            Parse Time: <span id="fw-metric-time" class="metric-value">{{ fwTime }}</span>
+          </div>
+          <div>
+            Records: <span id="fw-metric-count" class="metric-value">{{ fwCount }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -190,24 +255,53 @@ onMounted(async () => {
     <div v-if="activeTab === 'excel'" id="tab-excel" class="tab-content active">
       <div class="panel">
         <div class="panel-title">Excel (.xlsx) Upload</div>
-        <div id="excel-dropzone" class="dropzone" @click="document.getElementById('excel-file').click()" @dragover.prevent @drop.prevent="handleExcelDrop">
+        <div
+          id="excel-dropzone"
+          class="dropzone"
+          @click="document.getElementById('excel-file').click()"
+          @dragover.prevent
+          @drop.prevent="handleExcelDrop"
+        >
           <span class="dropzone-icon">📥</span>
-          <span class="dropzone-text">Drag and drop an Excel (.xlsx) file here, or click to browse</span>
-          <span v-if="excelFileInfo" id="excel-file-info" class="dropzone-file-info" style="display: block;">{{ excelFileInfo }}</span>
-          <input type="file" id="excel-file" accept=".xlsx" style="display: none;" @change="handleExcelSelect">
+          <span class="dropzone-text"
+            >Drag and drop an Excel (.xlsx) file here, or click to browse</span
+          >
+          <span
+            v-if="excelFileInfo"
+            id="excel-file-info"
+            class="dropzone-file-info"
+            style="display: block"
+            >{{ excelFileInfo }}</span
+          >
+          <input
+            type="file"
+            id="excel-file"
+            accept=".xlsx"
+            style="display: none"
+            @change="handleExcelSelect"
+          />
         </div>
         <div class="options-grid">
           <div class="form-group">
             <label for="excel-sheet">Sheet Name (leave empty for first sheet)</label>
-            <input type="text" id="excel-sheet" v-model="excelSheetName" placeholder="Sheet1">
+            <input type="text" id="excel-sheet" v-model="excelSheetName" placeholder="Sheet1" />
           </div>
           <div class="flex-center-gap margin-top-large">
-            <input type="checkbox" id="excel-header" v-model="excelHasHeader" class="checkbox-custom">
+            <input
+              type="checkbox"
+              id="excel-header"
+              v-model="excelHasHeader"
+              class="checkbox-custom"
+            />
             <label for="excel-header" class="cursor-pointer">Has Header Row</label>
           </div>
         </div>
-        <button class="btn" id="btn-parse-excel" @click="runExcelParse" :disabled="!excelFileInfo">Parse Excel Sheet</button>
-        <div v-if="excelError" id="excel-error" class="alert-error" style="display: block;">{{ excelError }}</div>
+        <button class="btn" id="btn-parse-excel" @click="runExcelParse" :disabled="!excelFileInfo">
+          Parse Excel Sheet
+        </button>
+        <div v-if="excelError" id="excel-error" class="alert-error" style="display: block">
+          {{ excelError }}
+        </div>
       </div>
       <div class="panel">
         <div class="panel-title">JSON Output</div>
@@ -215,8 +309,12 @@ onMounted(async () => {
           <pre id="excel-output" class="output-pre">{{ excelOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>Parse Time: <span id="excel-metric-time" class="metric-value">{{ excelTime }}</span></div>
-          <div>Records: <span id="excel-metric-count" class="metric-value">{{ excelCount }}</span></div>
+          <div>
+            Parse Time: <span id="excel-metric-time" class="metric-value">{{ excelTime }}</span>
+          </div>
+          <div>
+            Records: <span id="excel-metric-count" class="metric-value">{{ excelCount }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -225,28 +323,40 @@ onMounted(async () => {
     <div v-if="activeTab === 'ai'" id="tab-ai" class="tab-content active">
       <div class="panel">
         <div class="panel-title">Local AI Configuration (WebGPU)</div>
-        
+
         <div class="ai-card">
           <div class="ai-header-bar">
-            <span style="font-weight: 600; font-size: 0.95rem;">Gemma 4 (E2B) AI Model</span>
+            <span style="font-weight: 600; font-size: 0.95rem">Gemma 4 (E2B) AI Model</span>
             <span class="ai-meta-size">~1.1 GB (Quantized)</span>
           </div>
 
           <div class="flex-column-gap">
             <div class="flex-between">
-              <span class="status-badge" :class="aiModelLoaded ? 'ready' : (aiLoading ? 'loading' : 'not-loaded')">
+              <span
+                class="status-badge"
+                :class="aiModelLoaded ? 'ready' : aiLoading ? 'loading' : 'not-loaded'"
+              >
                 <span v-if="aiModelLoaded">🟢 Loaded & Ready</span>
                 <span v-else-if="aiLoading">🟡 Downloading...</span>
                 <span v-else>⚪ Not Loaded</span>
               </span>
-              <button v-if="!aiModelLoaded" class="btn btn-secondary btn-small" @click="triggerDownloadWarning" :disabled="aiLoading">
+              <button
+                v-if="!aiModelLoaded"
+                class="btn btn-secondary btn-small"
+                @click="triggerDownloadWarning"
+                :disabled="aiLoading"
+              >
                 Load AI Model
               </button>
-              <button v-else class="btn btn-secondary btn-small btn-danger-outline" @click="clearAiCache">
+              <button
+                v-else
+                class="btn btn-secondary btn-small btn-danger-outline"
+                @click="clearAiCache"
+              >
                 Clear Cache
               </button>
             </div>
-            
+
             <div v-if="aiLoading || aiModelLoaded" class="progress-container">
               <div class="progress-bar-fill" :style="{ width: aiProgress + '%' }"></div>
             </div>
@@ -258,10 +368,18 @@ onMounted(async () => {
 
         <div class="form-group margin-top-small">
           <label for="ai-input">Unstructured Data Input</label>
-          <textarea id="ai-input" v-model="aiInput" placeholder="Enter unstructured text..."></textarea>
+          <textarea
+            id="ai-input"
+            v-model="aiInput"
+            placeholder="Enter unstructured text..."
+          ></textarea>
         </div>
 
-        <button class="btn" @click="runAiAgent" :disabled="!aiModelLoaded || aiLoading || aiInferenceActive">
+        <button
+          class="btn"
+          @click="runAiAgent"
+          :disabled="!aiModelLoaded || aiLoading || aiInferenceActive"
+        >
           <span v-if="aiInferenceActive">Generating...</span>
           <span v-else-if="aiLoading">Loading...</span>
           <span v-else>Run AI Agent</span>
@@ -274,8 +392,12 @@ onMounted(async () => {
           <pre id="ai-output" class="output-pre output-blue">{{ aiOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>Inference Time: <span id="ai-metric-time" class="metric-value">{{ aiTime }}</span></div>
-          <div>Speed: <span id="ai-metric-speed" class="metric-value">{{ aiTokensPerSec }}</span></div>
+          <div>
+            Inference Time: <span id="ai-metric-time" class="metric-value">{{ aiTime }}</span>
+          </div>
+          <div>
+            Speed: <span id="ai-metric-speed" class="metric-value">{{ aiTokensPerSec }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -289,9 +411,11 @@ onMounted(async () => {
         <span class="modal-title-text">Confirm Model Download</span>
       </div>
       <div class="modal-body">
-        You are about to download the <strong>Gemma 4 (E2B) AI model (~1.1 GB)</strong> directly to your local browser storage.
-        <br/><br/>
-        This model runs completely locally on your device via <strong>WebGPU</strong> (with automatic CPU fallback), ensuring 100% data privacy. However, the download requires a stable internet connection and may take a few minutes.
+        You are about to download the <strong>Gemma 4 (E2B) AI model (~1.1 GB)</strong> directly to
+        your local browser storage. <br /><br />
+        This model runs completely locally on your device via <strong>WebGPU</strong> (with
+        automatic CPU fallback), ensuring 100% data privacy. However, the download requires a stable
+        internet connection and may take a few minutes.
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" @click="cancelDownload">Cancel</button>

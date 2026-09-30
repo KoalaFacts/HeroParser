@@ -157,6 +157,48 @@ are outside the measured interval, but runtime/GC noise is not eliminated.
 These are warmed-up measurements: they do not prove cold-start pool allocation,
 peak memory, concurrent-reader scaling, or network performance.
 
+### Independent CI Diagnostics
+
+Use the manual `pipe_profile` input to run only the read-only diagnostic job on
+an independent hosted VM; it does not depend on or bypass the A/A acceptance job.
+No production parser optimization is enabled by this input.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_profile=true -f baseline_sha=FULL_BASELINE_SHA
+```
+
+The job builds baseline and candidate parser/model assemblies once and validates
+all nine Plain cases before profiling. It records CPU/runtime context and pins
+the currently verified `dotnet-trace` release, 10.0.745401. Each side and transport
+runs in a fresh process, warms the real 2000-row Generated consumer for at least
+10 seconds and 100 reads, then publishes an atomic readiness signal with its PID.
+The sampler attaches to that PID for 30 seconds. Results/checksums are validated
+on every full read. Normal runtime tiering and PGO remain enabled.
+
+This uses `dotnet-sampled-thread-time,dotnet-common`, not the misleading old
+`cpu-sampling` name. Managed sampled thread time is **not precise on-CPU time**;
+native/kernel attribution is incomplete. See the official
+[dotnet-trace documentation](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace).
+The workload includes the benchmark consumer's checksum; separate that cost
+from parser, binding and decoding when interpreting hotspots. Raw traces retain
+runtime/JIT events. Speedscope and inclusive/exclusive top-method reports provide
+managed-stack views; conversion is lossy, so retain the original `.nettrace`.
+
+JIT assembly is collected in two additional contiguous-input processes, not
+during the stack captures or accepted timing runs. `DOTNET_JitDisasm` selects
+`*TryBind* *GetValue*`; methods fully inlined into callers may not have separate
+listings. Inspect caller assembly and observed compilation tiers rather than
+claiming missing listings prove a method costs nothing. No no-inline, tiering,
+PGO or affinity override is applied. Relevant runtime switches are documented
+in the [runtime JIT configuration source](https://github.com/dotnet/runtime/blob/main/src/coreclr/jit/jitconfigvalues.h).
+
+The `csv-pipe-profile-<run-id>-<attempt>` artifact retains raw traces, converted
+stacks, method reports, JIT output, checked consumer logs, source SHAs and module
+IDs for 30 days, even after failure. Partial diagnostics are labelled incomplete.
+Diagnostic elapsed/CPU counters are not paired timing results, and neither
+success nor a hotspot report establishes a speedup, no regression or permission
+to merge. Keep the fixed A/A and A/B protocol unchanged for subsequent patches.
+
 ### Initial Correctness Gate (September 2026)
 
 Comparing base `626f8af` and merged decoder improvement `8309abf`, with 37 rows,

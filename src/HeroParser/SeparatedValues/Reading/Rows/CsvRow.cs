@@ -34,6 +34,9 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     // per-row parser (row-relative ends); the row start for scan-ahead batches (absolute ends).
     private readonly int baseOffset;
     private readonly CsvReadOptions? parserOptions;
+    private readonly char valueQuote;
+    private readonly char? valueEscape;
+    private readonly bool decodeQuotedFields;
 
     internal CsvRow(
         ReadOnlySpan<T> line,
@@ -52,6 +55,9 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         this.trimFields = trimFields;
         this.baseOffset = baseOffset;
         this.parserOptions = parserOptions;
+        valueQuote = parserOptions?.Quote ?? default;
+        valueEscape = parserOptions?.EscapeCharacter;
+        decodeQuotedFields = parserOptions?.EnableQuotedFields ?? false;
         // columnEnds has columnCount + 1 entries (including the leading sentinel)
         columnEnds = columnEndsBuffer[..(columnCount + 1)];
     }
@@ -75,7 +81,7 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     public CsvColumn<T> GetValue(int index)
     {
         var column = this[index];
-        if (parserOptions is null || !RequiresValueDecoding(column.Span))
+        if (!RequiresValueDecoding(column.Span))
             return column;
 
         return DecodeValue(column);
@@ -84,9 +90,8 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool RequiresValueDecoding(ReadOnlySpan<T> span)
     {
-        var options = parserOptions!;
-        return (options.EscapeCharacter is char escape && span.Contains(FromChar(escape))) ||
-            (options.EnableQuotedFields && span.Contains(FromChar(options.Quote)));
+        return (valueEscape is char escape && span.Contains(FromChar(escape))) ||
+            (decodeQuotedFields && span.Contains(FromChar(valueQuote)));
     }
 
     private CsvColumn<T> DecodeValue(CsvColumn<T> column)
@@ -132,7 +137,7 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     public string GetValueString(int index)
     {
         var column = this[index];
-        if (parserOptions is null || !RequiresValueDecoding(column.Span))
+        if (!RequiresValueDecoding(column.Span))
             return column.ToString();
 
         return DecodeValueString(column.Span);

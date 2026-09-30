@@ -83,8 +83,8 @@ pwsh -NoProfile -File benchmarks/CsvPipeABProbe/run.ps1 -BaselineDll BASELINE_DL
 ```
 
 `-Rows`, `-Pairs`, `-WarmupPairs`, and `-MinSampleMs` adjust the experiment (defaults:
-2000, 20, 6 and 30). Protocol v2 first pilots a shared repeat count, warms both
-sides for at least ten seconds and the requested warmup-pair count, then performs
+2000, 20, 6 and 30). Protocol v2 first pilots a shared repeat count, runs paired
+warmup for at least ten seconds and the requested warmup-pair count, then performs
 final calibration with 25% duration headroom. Calibration is capped at 65536
 repeats and fails rather than accepting an undersized batch at that cap.
 Warmup/calibration records are separate from measured pairs. Actual batch times

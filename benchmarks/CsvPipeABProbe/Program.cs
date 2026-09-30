@@ -124,8 +124,21 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
                 before.Add(a);
                 after.Add(b);
                 if (ratio < 1) wins++;
-                Write(new { kind = "pair", scenario, transport, path, pair, candidateFirst, repeats, baseline = a, candidate = b,
-                    baselineBatchMs = a.Milliseconds * repeats, candidateBatchMs = b.Milliseconds * repeats, ratio });
+                Write(new
+                {
+                    kind = "pair",
+                    scenario,
+                    transport,
+                    path,
+                    pair,
+                    candidateFirst,
+                    repeats,
+                    baseline = a,
+                    candidate = b,
+                    baselineBatchMs = a.Milliseconds * repeats,
+                    candidateBatchMs = b.Milliseconds * repeats,
+                    ratio
+                });
             }
 
             Write(new

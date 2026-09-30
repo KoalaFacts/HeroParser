@@ -321,3 +321,112 @@ still applies. These candidates do not identify the dominant hot instruction.
 accepted timings before considering scanner-produced field-normalization
 metadata or type-specific binding changes. Do not infer that configuration access
 or cross-segment copying is the dominant cost from these unsuccessful trials.
+
+## Independent Managed-Stack and JIT Diagnostics
+
+[Diagnostic run 36674016698](https://github.com/KoalaFacts/HeroParser/actions/runs/36674016698)
+completed successfully in a separate manual job. The other benchmark and A/A/A/B
+jobs were skipped in that run; profiler settings did not enter accepted timing
+processes. The runner was Ubuntu 24.04.5 LTS, .NET SDK 10.0.401/runtime 10.0.12,
+AMD EPYC 7763, four logical processors, workstation GC, without affinity or
+tiering/PGO overrides. This was a hosted VM, not exclusive physical hardware.
+
+Baseline source was `5c549d193a510a06fa24e23627b23a2df0cf0188`; candidate was
+`7b15b096184c5a51e41dd97bdbc076ab9ae19332`. Candidate parser/model module IDs were
+`353dc947-f23c-4733-9fdf-f3de8707ba99` /
+`5ddc1053-7a96-4220-bc6d-90382ba562ad`; independently built baseline IDs were
+`a7445e61-88db-45d2-98ba-7ddd948b8caa` /
+`610033d7-c049-40d1-9032-cb5ca08b3924`. All eight processes recorded these same
+fingerprints. Production row code still matched corrected source `4c21dbe`;
+this diagnostic implementation did not introduce another parser optimization.
+
+The nine Plain correctness cases passed before profiling. Every complete read
+in all six stack captures and two JIT processes passed its independent row/count
+checksum. Each process warmed for at least ten seconds and 100 reads. Six
+negative diagnostic-argument checks passed. Tool version was `dotnet-trace`
+10.0.745401, using `dotnet-sampled-thread-time,dotnet-common`. Six 30-second
+captures, their Speedscope conversions and both independent JIT listings were
+present; summary state was `diagnostics-complete-not-performance-approval`.
+
+### Workload-Thread Attribution
+
+The all-thread `topN` reports are not usable as workload CPU percentages. For
+example, a contiguous capture attributed about half its global report to an
+initialization thread whose converted timeline lasted only about 13-15 ms,
+while the reading thread spanned approximately 30 seconds. Filtering by a
+method name in that global report would not repair its denominator.
+
+The following descriptive shares were calculated from each evented Speedscope
+timeline separately. Positive intervals between consecutive events were assigned
+to the active stack; inclusive attribution counted each frame once per interval,
+and exclusive attribution used the leaf method beneath the synthetic `CPU_TIME`
+marker. Open/close frames were checked for balance. The selected thread executed
+the checked `Case.BaselineAsync` or `Case.CandidateAsync` consumer for over 99.9%
+of its approximately 30-second active-stack timeline. The denominator is that
+thread's reconstructed stack time, **not precise on-CPU time**, and shares are
+not comparable elapsed-time ratios or confidence intervals.
+
+| Transport / Side | Reading Thread | Binding Wrapper Inclusive | Reader Slow State Machine Inclusive |
+|---|---:|---:|---:|
+| Contiguous / Baseline | 3097 | 26.21% | 5.44% |
+| Contiguous / Candidate | 3174 | 32.98% | 5.16% |
+| Segmented128 / Baseline | 3270 | 16.03% | 42.82% |
+| Segmented128 / Candidate | 3376 | 21.16% | 38.61% |
+
+For candidate contiguous input, the record enumerator and binding wrapper had
+27.12% and 24.96% exclusive shares; `ScanCore` had 5.07% inclusive share. These
+are useful areas to investigate, not isolated instruction costs: inlined code
+is attributed to callers, and the consumer also includes checksum work.
+Segmented input has a substantially larger reader slow-path share, but this
+does not isolate copying from scanning or async bookkeeping.
+
+Stream4096 is inconclusive for CPU hotspot selection. The reading threads
+(baseline 3511, candidate 3587) attributed 74.19% / 62.17% exclusive stack time
+to `Monitor.Enter_Slowpath`; waits and runtime polling contaminate the timeline.
+Do not conclude that those locks consume equivalent CPU or that stream binding
+is cheap. Native/kernel CPU attribution remains unmeasured by this diagnostic.
+
+### Independent Tier-1 JIT Evidence
+
+The separate contiguous JIT processes retained normal tiering and PGO and did
+not run under the stack sampler. Their actual Tier1 listings show:
+
+| Method | Baseline Bytes | Candidate Bytes |
+|---|---:|---:|
+| Generated `PipeRecord` byte binder `TryBind` | 4757 | 8848 |
+| `Csv.TryBindPipeSequenceRow` | 6632 | 11054 |
+
+The generated binder grew about 86%; its wrapper grew about 67%. Candidate
+caller assembly contains repeated field-normalization/marker-check sequences;
+inlining means separate getter listings cannot account for all their cost.
+This establishes code expansion in a sampled hot binding path. It does **not**
+establish instruction-cache misses, their CPU cost, or that code size alone
+caused the observed regression.
+
+**Next controlled hypothesis:** reduce forced inlining or separate cold
+normalization from the ordinary-field generated-binding path, preserving all
+quoted/escaped semantics. Compare against the corrected source incrementally,
+then against the original baseline using the unchanged A/A/A/B protocol. Reject
+an experiment unless correctness, controls and repeated timing improvement all
+support it. Do not prioritize scanner/copy changes merely from global `topN`.
+
+### Separate Timing Check
+
+[Unprofiled run 36674017463](https://github.com/KoalaFacts/HeroParser/actions/runs/36674017463)
+used the unchanged protocol on the same candidate SHA in another runner job.
+All 12 A/A transport/run controls passed, as did the full 36-case fixed/fixed
+preflights and nine Plain old/fixed cases. Its state `stable-controls-review-ab`
+means correct and stable, not performance approval. A/B elapsed-time medians
+were contiguous 1.2328/1.2345, segmented 1.1413/1.1914, and streamed
+1.2254/1.2382: regression remains. Do not combine these ratios with profiling
+process read counts or compare absolute times across the two jobs. The existing
+shorter-after-warmup calibration limitation still applies.
+
+Artifact `csv-pipe-profile-36674016698-1` retains raw traces, converted timelines,
+method reports, JIT assembly, verification logs, module/source fingerprints and
+runner context. `csv-pipe-paired-36674017463-1` retains the separate timing series.
+Both expire after 30 days. Initial diagnostic run 36673771235 failed before
+capture on an IDE0010 switch-exhaustiveness analyzer error; the explicit default
+case fixed it. That failed run is incomplete evidence, not a timing-control
+failure. PR performance acceptance remains pending; no merge is authorized by
+either successful job.

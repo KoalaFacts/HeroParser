@@ -183,6 +183,11 @@ The workload includes the benchmark consumer's checksum; separate that cost
 from parser, binding and decoding when interpreting hotspots. Raw traces retain
 runtime/JIT events. Speedscope and inclusive/exclusive top-method reports provide
 managed-stack views; conversion is lossy, so retain the original `.nettrace`.
+Do not interpret the all-thread `topN` percentages as workload CPU shares:
+short-lived diagnostic initialization threads and blocked stacks can dominate
+that report. Inspect individual Speedscope thread timelines, identify threads
+executing the checked consumer, and state the denominator explicitly. Even those
+thread-local stack-time shares do not distinguish CPU execution from waiting.
 
 JIT assembly is collected in two additional contiguous-input processes, not
 during the stack captures or accepted timing runs. `DOTNET_JitDisasm` selects

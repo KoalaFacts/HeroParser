@@ -95,11 +95,19 @@ configuration consistent, particularly on heterogeneous laptop CPUs.
 
 ### Isolated CI Series
 
-The existing Performance Benchmarks workflow has an opt-in manual `pipe_ab`
-input. It runs only one paired experiment job, without the normal benchmark
-matrix. All builds and measurements are serial within that job. A hosted VM is
-isolated from this project's other jobs, not guaranteed exclusive physical
-hardware; A/A controls remain mandatory.
+The Performance Benchmarks workflow automatically runs the paired experiment for
+relevant pull requests and main-branch pushes, including parser, benchmark,
+workflow and shared build-configuration changes. PRs compare the exact base SHA
+with the head SHA (not GitHub's synthetic merge commit); pushes compare the
+previous SHA with the new commit. The job has read-only repository permissions,
+including on fork PRs, and does not publish PR comments or merge anything.
+
+An opt-in manual `pipe_ab` input remains available to run only the paired job,
+without the normal benchmark matrix. All builds and measurements are serial
+within that job. A hosted VM is isolated from this project's other jobs, not
+guaranteed exclusive physical hardware; A/A controls remain mandatory. CI owns
+the expensive builds, correctness checks and measurements; a locally idle
+machine is not a prerequisite.
 
 ```sh
 gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_ab=true -f baseline_sha=FULL_BASELINE_SHA
@@ -121,8 +129,11 @@ A/B. An unstable post-control also returns exit 2: A/B is inconclusive, not a
 regression verdict. Builds use disabled build servers and occur outside timing;
 there is a ten-second settling interval after each preparation phase.
 
-The artifact contains every NDJSON run plus `series-summary.json`, with refs,
-module IDs, fixed thresholds, and gate outcomes. Exit 0 only means correctness
+The CI job summary displays every control and both A/B runs, with source SHAs,
+ratios, percentile ranges and whole-read allocation deltas. The artifact contains
+every NDJSON run, `series-summary.json`, and CPU/runtime context, with refs,
+module IDs, fixed thresholds, and gate outcomes. Artifact names include the run
+attempt so a rerun preserves earlier evidence. Exit 0 only means correctness
 and controls passed; inspect repeated A/B ratios before accepting performance.
 This does not time the broken old baseline's escaped cases, establish a full
 matrix timing result, or permit comparing elapsed times across different runner

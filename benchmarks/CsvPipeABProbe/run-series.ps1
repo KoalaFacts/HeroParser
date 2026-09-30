@@ -128,8 +128,39 @@ finally {
         Controls = @($controls); Comparisons = @($comparisons)
     } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'series-summary.json')
     if ($env:GITHUB_STEP_SUMMARY) {
-        "## CSV pipe paired experiment`nState: **$state**. Stable controls permit reviewing A/B; they do not prove no regression or authorize merging." |
-            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+        $summary = @(
+            '## CSV Pipe Paired Experiment'
+            "State: **$state**."
+            "Baseline: ``$BaselineSha``. Candidate: ``$candidateSha``."
+            'Correctness and stable controls are not performance approval or authorization to merge.'
+            'Scope: full candidate/candidate correctness; Plain Generated timing only.'
+            '2000 rows, 30 pairs, 10 warmup pairs, 100 ms calibration target (not guaranteed final batch duration).'
+            ''
+            '### A/A Controls'
+            'All runs must have median [0.95, 1.05], p10 >= 0.90 and p90 <= 1.10.'
+            '| Phase | Run | Transport | Median | p10 | p90 | Stable |'
+            '|---|---:|---|---:|---:|---:|---|'
+        )
+        foreach ($control in $controls) {
+            foreach ($case in $control.Cases) {
+                $summary += '| {0} | {1} | {2} | {3:F4} | {4:F4} | {5:F4} | {6} |' -f
+                    $control.Phase, $control.Run, $case.Transport, $case.Median, $case.P10, $case.P90, $case.Stable
+            }
+        }
+        $summary += @('', '### A/B Measurements',
+            'Ratios are candidate/baseline elapsed time. Above 1 is slower; review both runs and all controls.',
+            'Allocation delta is per complete 2000-row read, not per row.',
+            '| Run | Transport | Median | p10 | p90 | Allocation Delta (B) |',
+            '|---:|---|---:|---:|---:|---:|')
+        foreach ($comparison in $comparisons) {
+            foreach ($case in $comparison.Cases) {
+                $summary += '| {0} | {1} | {2:F4} | {3:F4} | {4:F4} | {5:F2} |' -f
+                    $comparison.Run, $case.transport, $case.medianRatio, $case.p10Ratio, $case.p90Ratio,
+                    ($case.candidateBytes - $case.baselineBytes)
+            }
+        }
+        $summary += @('', 'Raw pairs, module IDs, runner context and gate outcomes are retained in the workflow artifact.')
+        $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
     }
     if ($worktreeAdded) {
         $resolved = (Resolve-Path -LiteralPath $baselineDirectory).Path

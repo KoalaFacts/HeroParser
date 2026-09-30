@@ -7,11 +7,18 @@ on:
       - 'src/**'
       - 'benchmarks/**'
       - '.github/workflows/benchmarks.yml'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
   push:
     branches: [ main ]
     paths:
       - 'src/**'
       - 'benchmarks/**'
+      - '.github/workflows/benchmarks.yml'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
   workflow_dispatch:
     inputs:
       pipe_ab:
@@ -25,7 +32,7 @@ on:
 
 # Cancel in-progress runs for the same workflow and ref
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -212,8 +219,8 @@ jobs:
           }
 
   pipe-ab:
-    if: github.event_name == 'workflow_dispatch' && inputs.pipe_ab
-    name: Paired CSV Pipe Experiment
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.pipe_ab)
+    name: CSV Pipe Correctness and Timing Controls
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -221,6 +228,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
       - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
@@ -231,10 +240,17 @@ jobs:
         shell: pwsh
         run: ./benchmarks/CsvPipeABProbe/test-control.ps1
 
+      - name: Record runner context
+        shell: bash
+        run: |
+          mkdir -p BenchmarkDotNet.Artifacts/pipe-series
+          lscpu > BenchmarkDotNet.Artifacts/pipe-runner-context.txt
+          dotnet --info >> BenchmarkDotNet.Artifacts/pipe-runner-context.txt
+
       - name: Run serial A/A and A/B series
         shell: pwsh
         env:
-          BASELINE_SHA: ${{ inputs.baseline_sha }}
+          BASELINE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || inputs.baseline_sha }}
         run: |
           ./benchmarks/CsvPipeABProbe/run-series.ps1 -BaselineSha $env:BASELINE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series"
 
@@ -242,6 +258,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: csv-pipe-paired-${{ github.run_id }}
-          path: BenchmarkDotNet.Artifacts/pipe-series/**
+          name: csv-pipe-paired-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            BenchmarkDotNet.Artifacts/pipe-series/**
+            BenchmarkDotNet.Artifacts/pipe-runner-context.txt
           retention-days: 30

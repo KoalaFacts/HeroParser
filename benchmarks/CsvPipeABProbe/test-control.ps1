@@ -1,4 +1,11 @@
 $ErrorActionPreference = 'Stop'
+foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1') {
+    $tokens = $null
+    $errors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
+    if ($errors.Count -ne 0) { throw "Invalid PowerShell syntax in $($file.Name): $errors" }
+}
+Write-Host 'PASS: all probe PowerShell scripts parse successfully'
 . (Join-Path $PSScriptRoot 'control.ps1')
 
 function New-ControlRecords {

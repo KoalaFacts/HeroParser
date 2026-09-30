@@ -524,3 +524,93 @@ source/module fingerprints, runner context and diagnostic outputs for 30 days.
 The successful original-baseline job does not erase the failed incremental job.
 No second production hypothesis was attempted, no merge is authorized, and
 smaller caller assembly alone is not grounds to ship this change.
+
+## Timing Protocol V2: Duration Valid, Stability Not Accepted
+
+Revision `80f25deb75bbe6057598da17f50a335b2945ad72` changes benchmark tooling
+only. Production parser and tests match main
+`d6e84c03511a88d8785deee5335ed987a6366a77`. No cold-decoding isolation or new
+inlining experiment was attempted. Protocol
+`csv-pipe-v2-post-warmup-calibration` distinguishes these measurements from v1;
+do not combine their ratios to infer a parser improvement.
+
+V2 runs a pilot, at least ten seconds of paired warmup and ten pairs per
+transport, then final shared-repeat calibration targeting 125 ms. Every measured
+batch must actually last at least 100 ms. The 65536-repeat cap fails closed if
+calibration cannot meet its target. Normal tiering/PGO, fixture, consumer,
+checksum and A/A bounds remain unchanged: median [0.95, 1.05], p10 >= 0.90,
+p90 <= 1.10. Ten seconds of warmup is not proof of JIT or runner stability.
+
+### Fixed Three-Process Controls
+
+[Controls-only run 36683148952](https://github.com/KoalaFacts/HeroParser/actions/runs/36683148952/job/109782893129)
+built two independent copies of revision `80f25deb`, passed all 36 correctness
+preflight cases, and completed the predetermined three fresh A/A processes.
+All three logs are valid, but the third process fails the unchanged stability
+gate. State is **`unstable-controls-only-no-ab`**. There are no A/B samples.
+
+| Process | Transport | Median | p10 | p90 | Min A Batch (ms) | Min B Batch (ms) | Stable |
+|---|---|---:|---:|---:|---:|---:|---|
+| 1 | Contiguous | 1.010042 | 1.000405 | 1.021510 | 195.6532 | 198.7968 | Yes |
+| 1 | Segmented128 | 1.011753 | 1.003048 | 1.015865 | 206.2072 | 208.7529 | Yes |
+| 1 | Stream4096 | 1.011464 | 1.007591 | 1.017723 | 202.3875 | 205.1678 | Yes |
+| 2 | Contiguous | 1.035833 | 1.029293 | 1.040198 | 196.5088 | 204.2348 | Yes |
+| 2 | Segmented128 | 0.990777 | 0.985654 | 0.997565 | 217.4145 | 216.3389 | Yes |
+| 2 | Stream4096 | 1.023477 | 1.020044 | 1.027049 | 204.7850 | 209.6725 | Yes |
+| 3 | Contiguous | 0.964752 | 0.960226 | 0.969568 | 208.6357 | 200.7604 | Yes |
+| 3 | Segmented128 | **0.939834** | 0.935889 | 0.945571 | 210.9594 | 197.6384 | **No** |
+| 3 | Stream4096 | 0.985978 | 0.980473 | 0.991431 | 209.1866 | 205.6639 | Yes |
+
+All 270 raw pairs (540 actual batches), calibration ordering, duration products
+and reported percentiles were revalidated against the committed checker using
+downloaded artifacts. The shortest batch was 195.6532 ms; all nine paired
+warmups lasted 10.0145-10.2799 seconds. Each process ended with zero invalid
+cases. The duration floor is satisfied in this run, but overall measurement
+acceptance is not. The failed segmented percentiles cluster below 0.95 rather
+than merely having noisy tails. This is evidence of side asymmetry within that
+process, not proof of its cause or any production performance change.
+
+### Automatic PR Controls Also Fail Closed
+
+[PR paired job 36683150159](https://github.com/KoalaFacts/HeroParser/actions/runs/36683150159/job/109783227155)
+passed its 36-case preflight and completed both scheduled pre-A/B controls.
+The first segmented median was 0.934859 (p10 0.928366, p90 0.941351), below
+0.95; the second process passed for all transports. State is
+**`unstable-before-ab-skipped`**: A/B and post-A/B controls never ran. Both logs
+were revalidated; all 180 pairs (360 batches) met the duration floor, with a
+193.3602 ms minimum. All six paired warmups exceeded ten seconds. This separate
+failure is retained, not substituted for or averaged with the fixed three-run
+experiment. Other benchmark jobs do not waive this gate.
+
+### Environment, Preparation and Decision
+
+Both jobs reported AMD EPYC 7763, Ubuntu 24.04.5 LTS, four logical processors,
+SDK 10.0.401/runtime 10.0.12, workstation GC and no affinity override. Parser
+module IDs were baseline `fe24812e-2556-4424-ae03-7a1717c8154b` and candidate
+`2e93d683-4c53-4cfe-9bb5-fff608627492`; model IDs were baseline
+`7bdd7296-a772-4ca3-8b0f-5b887c1dd9df` and candidate
+`d2b84df5-cbfc-499f-9c69-571c55d670da`. These fingerprints were consistent
+across the five timing processes. Both A/A sides used the same source revision,
+but independent assemblies. Hosted virtual hardware is not an exclusive
+physical runner; module layout, JIT state and runtime/runner effects remain
+unisolated hypotheses, not established causes.
+
+The manual job passed 31 PowerShell parsing/control assertions; every build in
+that job reported zero warnings and errors. Initial revision `0c8fe9df` failed
+before timing in runs 36682682234 and 36682675556 on IDE0055 formatting errors.
+Revision `80f25deb` corrected the new initializer formatting without changing
+parameters. Those preparation failures are not timing-control failures and
+provide no timing samples. No local .NET build/test/benchmark or timing test ran;
+local work was limited to static checks and downloaded-evidence analysis.
+
+Artifacts `csv-pipe-paired-36683148952-1` and
+`csv-pipe-paired-36683150159-1` retain raw records, summaries, fingerprints and
+runner context for 30 days; `csv-pipe-paired-36682682234-1` retains the initial
+incomplete preparation result. Previous v1 failures remain recorded above.
+No instability retry or relaxed threshold was used to obtain acceptance.
+
+**Decision:** keep the PR draft. Actual batch-duration enforcement is verified,
+but stable A/A measurement is not. Investigate the two-side asymmetry before
+another production candidate; cold-decoding isolation remains deferred. Neither
+these jobs nor unrelated green CI establish throughput benefit or authorize a
+merge.

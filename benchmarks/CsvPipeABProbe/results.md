@@ -828,3 +828,24 @@ permissions and retains three fixed fresh pairs, the same warmup/calibration,
 batch floors and control bounds. This is a new labelled hypothesis, not a retry
 of the failed v3 trial. A/B and cold-decoding changes remain suspended. Its
 validation is pending CI; no valid failed timing trial will be rerun until green.
+
+### Pinned isolated v4 trial (retained failure)
+
+Run `36732093817`, job `109944181858`, source `89c0681`, artifact
+`csv-pipe-paired-36732093817-1`: all three fixed pairs completed validly on CPU 0,
+with identical binary fingerprints, 216 correctness checks and 270 timing pairs.
+Eight of nine cases passed the unchanged bounds. Cycle two Segmented128 failed:
+median `1.0528456844634384`, p10 `1.0491837765458325`, p90 `1.0559225612269472`.
+State remains `unstable-isolated-controls-no-ab`; no A/B was executed.
+
+| Cycle | Contiguous median | Segmented128 median | Stream4096 median |
+| --- | ---: | ---: | ---: |
+| 1 | 1.002877 | 1.042781 | 0.998036 |
+| 2 | 0.960718 | 1.052846 | 0.995756 |
+| 3 | 0.994428 | 1.014256 | 0.991575 |
+
+Same-CPU placement alone did not establish reliable timing. The next step is
+independent native on-CPU/JIT evidence for frozen-source Segmented128 workers,
+not another A/A attempt or a cold-decoding patch. Collection is pending CI.
+Its instrumented results cannot reproduce the old PIDs or establish a gain,
+the cause of their divergence, timing acceptance or merge readiness.

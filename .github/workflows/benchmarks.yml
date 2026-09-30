@@ -29,6 +29,10 @@ on:
         description: 'Run only independent warmed managed-stack and JIT diagnostics (not A/B acceptance)'
         type: boolean
         default: false
+      pipe_native_profile:
+        description: 'Collect native on-CPU/JIT evidence for the frozen failed segmented workload; never A/A or A/B'
+        type: boolean
+        default: false
       pipe_controls:
         description: 'Run only three fixed isolated same-CPU A/A checks of timing protocol v4; never A/B'
         type: boolean
@@ -48,7 +52,7 @@ on:
 
 # Cancel in-progress runs for the same workflow and ref
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.pipe_native_profile && 'native-profile' || (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
   cancel-in-progress: true
 
 permissions:
@@ -60,7 +64,7 @@ env:
 
 jobs:
   setup:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
@@ -270,6 +274,10 @@ jobs:
           LEGACY_AB: ${{ inputs.pipe_ab }}
         run: |
           if ($env:LEGACY_AB -eq 'true') { throw 'A/B is suspended until isolated same-source controls have been accepted; use pipe_controls.' }
+          # Diagnostic plumbing must not retrial an unchanged, already-failed workload.
+          git diff --quiet 89c06810e76c4623ebad3cfc89c4bcdef41acd59 HEAD -- src Directory.Build.props Directory.Build.targets Directory.Packages.props global.json benchmarks/CsvPipeABProbe/Program.cs benchmarks/CsvPipeABProbe/IsolatedWorker.cs benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj benchmarks/CsvPipeABProbe/Models benchmarks/CsvPipeABProbe/run-isolated.ps1 benchmarks/CsvPipeABProbe/control.ps1
+          if ($LASTEXITCODE -eq 0) { throw 'Timing acceptance remains FAILED at run 36732093817 (Segmented128 1.052845684 > 1.05). Unchanged workload: no A/A retrial. Native diagnostic success cannot waive this failure.' }
+          if ($LASTEXITCODE -ne 1) { throw 'Could not verify frozen workload; refusing timing.' }
           ./benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha $env:SOURCE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series" -PinSameCpu
 
       - name: Upload paired experiment evidence
@@ -283,7 +291,7 @@ jobs:
           retention-days: 30
 
   pipe-profile:
-    if: github.event_name == 'workflow_dispatch' && inputs.pipe_profile && !inputs.pipe_bias
+    if: github.event_name == 'workflow_dispatch' && inputs.pipe_profile && !inputs.pipe_bias && !inputs.pipe_native_profile
     name: CSV Pipe Managed Stack and JIT Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -329,7 +337,7 @@ jobs:
           retention-days: 30
 
   pipe-bias:
-    if: github.event_name == 'workflow_dispatch' && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
+    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_native_profile && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
     name: CSV Pipe Same-Source Bias Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -379,4 +387,56 @@ jobs:
           path: |
             BenchmarkDotNet.Artifacts/pipe-bias/**
             BenchmarkDotNet.Artifacts/bias-runner-context.txt
+          retention-days: 30
+
+  pipe-native-profile:
+    if: github.event_name == 'workflow_dispatch' && inputs.pipe_native_profile
+    name: CSV Pipe Native CPU and JIT Evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require isolated diagnostic mode
+        shell: pwsh
+        env:
+          OTHER_MODES: ${{ inputs.pipe_ab || inputs.pipe_profile || inputs.pipe_controls || inputs.pipe_bias || inputs.pipe_bias_jit_only }}
+        run: |
+          if ($env:OTHER_MODES -eq 'true') { throw 'Native diagnostics cannot be combined with timing or legacy diagnostics.' }
+      - name: Checkout diagnostic source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install native profiling tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-tools-generic binutils
+          PERF=$(find /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)
+          test -n "$PERF"
+          "$PERF" --version
+          echo "HERO_PARSER_PERF=$PERF" >> "$GITHUB_ENV"
+      - name: Validate diagnostics and capture runner context
+        shell: pwsh
+        run: |
+          ./benchmarks/CsvPipeABProbe/test-control.ps1
+          ./benchmarks/CsvPipeABProbe/test-native-profile.ps1
+          New-Item -ItemType Directory -Path BenchmarkDotNet.Artifacts/pipe-native -Force | Out-Null
+          lscpu > BenchmarkDotNet.Artifacts/pipe-native/runner-context.txt
+          uname -a >> BenchmarkDotNet.Artifacts/pipe-native/runner-context.txt
+          dotnet --info >> BenchmarkDotNet.Artifacts/pipe-native/runner-context.txt
+          Get-Content /proc/sys/kernel/perf_event_paranoid >> BenchmarkDotNet.Artifacts/pipe-native/runner-context.txt
+      - name: Collect fixed native evidence without timing retrials
+        shell: pwsh
+        run: |
+          ./benchmarks/CsvPipeABProbe/native-profile.ps1 -WorkloadSha 89c06810e76c4623ebad3cfc89c4bcdef41acd59 -Workspace "$env:RUNNER_TEMP/pipe-native" -PerfTool $env:HERO_PARSER_PERF
+      - name: Retain native evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csv-pipe-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: BenchmarkDotNet.Artifacts/pipe-native/**
           retention-days: 30

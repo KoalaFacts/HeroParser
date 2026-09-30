@@ -371,6 +371,38 @@ Diagnostic elapsed/CPU counters are not paired timing results, and neither
 success nor a hotspot report establishes a speedup, no regression or permission
 to merge. Keep the fixed A/A and A/B protocol unchanged for subsequent patches.
 
+### Native On-CPU Evidence (Diagnostic Only)
+
+`pipe_native_profile` builds the frozen failed v4 workload at
+`89c06810e76c4623ebad3cfc89c4bcdef41acd59`. It does not invoke the timing runner.
+Two identical single-module workers complete the 36-case correctness matrix,
+warm up on one inherited CPU, then run serial Segmented128 diagnostic batches.
+Each capture attaches Linux perf to the actual worker PID for 30 seconds using
+`cpu-clock:u`, 199 Hz and DWARF call chains. The peer remains idle.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_native_profile=true
+```
+
+`DOTNET_PerfMapEnabled=1` exports native JIT code/maps in those same processes;
+`perf inject --jit` resolves the captured addresses and `perf annotate` retains
+hot-method assembly. See the official [runtime profiling settings](https://learn.microsoft.com/en-us/dotnet/core/runtime-config/debugging-profiling#export-perf-maps-and-jit-dumps)
+and [Linux perf JIT injection documentation](https://github.com/torvalds/linux/blob/v6.8/tools/perf/Documentation/perf-inject.txt).
+This is user-space on-CPU sampling, not managed sampled thread time, kernel CPU
+attribution or hardware cache/branch-counter evidence. Instrumentation affects
+execution; diagnostic batch durations are not throughput results.
+
+Artifacts retain raw perf data, same-PID jitdump/native bytes, code sizes,
+addresses, raw code hashes (not relocation-normalized), exclusive hotspot
+reports, stacks, assembly, source/binary fingerprints and worker transcripts.
+Collection rejects lost samples, fewer than 500 samples per worker, more than
+20% unresolved sampled period, missing workload symbols or missing assembly.
+These are collection-quality checks, not performance acceptance thresholds.
+The original failed VM/PIDs cannot be recaptured: this identifies hotspots in
+the frozen source on a new runner, not the cause of the old 5.28% divergence.
+The automatic timing job remains failed without retrial when its workload is
+unchanged. No diagnostic success can waive A/A failure or authorize merging.
+
 ### Initial Correctness Gate (September 2026)
 
 Comparing base `626f8af` and merged decoder improvement `8309abf`, with 37 rows,

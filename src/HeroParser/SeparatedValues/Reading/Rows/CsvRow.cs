@@ -71,7 +71,6 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     /// backing storage; use <see cref="GetValueString"/> when a string is needed instead.
     /// The indexer continues to expose raw CSV fields.
     /// </remarks>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public CsvColumn<T> GetValue(int index)
     {
         var column = this[index];
@@ -121,7 +120,6 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     /// <summary>Decodes a logical field using this row's CSV quote and escape settings.</summary>
     /// <param name="index">Zero-based column index.</param>
     /// <returns>An owned string with CSV quoting and escaping removed.</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public string GetValueString(int index)
     {
         var column = this[index];

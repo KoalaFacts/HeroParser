@@ -49,6 +49,10 @@ Write(new
     candidateModelsMvid = typeof(CandidateRecord).Module.ModuleVersionId,
     baselineRef = Environment.GetEnvironmentVariable("HERO_PARSER_AB_BASELINE_REF"),
     candidateRef = Environment.GetEnvironmentVariable("HERO_PARSER_AB_CANDIDATE_REF"),
+    protocol = settings.ProfileSide is null ? "csv-pipe-v2-post-warmup-calibration" : "csv-pipe-profile-v1",
+    minWarmupSeconds = 10,
+    calibrationHeadroom = 1.25,
+    maxCalibrationRepeats = 65536,
     settings.Rows,
     settings.Pairs,
     settings.WarmupPairs,
@@ -85,34 +89,34 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
             Write(new { kind = "verified", scenario, transport, path, fixture.Rows, bytes = fixture.Bytes.Length, candidateCheck.SplitFields });
             if (settings.VerifyOnly) continue;
 
-            // Warm the actual consumer before calibrating; cold JIT time would undersize batches.
+            // The pilot only sizes warmup batches; final calibration follows the full warmup.
             for (int warm = 0; warm < 8; warm++)
             {
                 run.Validate(await run.ReadAsync(candidate: false, inspectSegments: false));
                 run.Validate(await run.ReadAsync(candidate: true, inspectSegments: false));
             }
-            int repeats = 1;
-            while (true)
+            int repeats = await CalibrateAsync(run, scenario, transport, path, 1, settings.MinSampleMs, "pilot");
+            var warmup = Stopwatch.StartNew();
+            int warmedPairs = 0;
+            do
             {
-                var calibrationA = await run.MeasureAsync(candidate: false, repeats);
-                var calibrationB = await run.MeasureAsync(candidate: true, repeats);
-                if (Math.Min(calibrationA.Milliseconds, calibrationB.Milliseconds) * repeats >= settings.MinSampleMs || repeats == 1000)
-                {
-                    Write(new { kind = "calibration", scenario, transport, path, repeats, baselineBatchMs = calibrationA.Milliseconds * repeats, candidateBatchMs = calibrationB.Milliseconds * repeats });
-                    break;
-                }
-                repeats = Math.Min(repeats * 2, 1000);
-            }
+                bool candidateFirst = (warmedPairs & 1) == 0;
+                await run.MeasureAsync(candidateFirst, repeats);
+                await run.MeasureAsync(!candidateFirst, repeats);
+                warmedPairs++;
+            } while (warmedPairs < settings.WarmupPairs || warmup.Elapsed.TotalSeconds < 10);
+            warmup.Stop();
+            Write(new { kind = "warmup", scenario, transport, path, pairs = warmedPairs, elapsedSeconds = warmup.Elapsed.TotalSeconds });
+            repeats = await CalibrateAsync(run, scenario, transport, path, repeats, settings.MinSampleMs * 1.25, "post-warmup");
             var ratios = new List<double>();
             var before = new List<Measurement>();
             var after = new List<Measurement>();
             int wins = 0;
-            for (int pair = -settings.WarmupPairs; pair < settings.Pairs; pair++)
+            for (int pair = 0; pair < settings.Pairs; pair++)
             {
                 bool candidateFirst = (pair & 1) == 0;
                 var first = await run.MeasureAsync(candidateFirst, repeats);
                 var second = await run.MeasureAsync(!candidateFirst, repeats);
-                if (pair < 0) continue;
                 var a = candidateFirst ? second : first;
                 var b = candidateFirst ? first : second;
                 double ratio = b.Milliseconds / a.Milliseconds;
@@ -120,7 +124,8 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
                 before.Add(a);
                 after.Add(b);
                 if (ratio < 1) wins++;
-                Write(new { kind = "pair", scenario, transport, path, pair, candidateFirst, repeats, baseline = a, candidate = b, ratio });
+                Write(new { kind = "pair", scenario, transport, path, pair, candidateFirst, repeats, baseline = a, candidate = b,
+                    baselineBatchMs = a.Milliseconds * repeats, candidateBatchMs = b.Milliseconds * repeats, ratio });
             }
 
             Write(new
@@ -136,6 +141,8 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
                 candidateMs = Percentile(after.Select(x => x.Milliseconds), .5),
                 baselineBytes = Percentile(before.Select(x => (double)x.AllocatedBytes), .5),
                 candidateBytes = Percentile(after.Select(x => (double)x.AllocatedBytes), .5),
+                baselineMinBatchMs = before.Min(x => x.Milliseconds) * repeats,
+                candidateMinBatchMs = after.Min(x => x.Milliseconds) * repeats,
                 medianRatio = Percentile(ratios, .5),
                 p10Ratio = Percentile(ratios, .1),
                 p90Ratio = Percentile(ratios, .9),
@@ -149,6 +156,32 @@ Write(new { kind = "complete", invalidCases });
 Environment.ExitCode = invalidCases == 0 ? 0 : 1;
 
 static void Write<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value));
+
+static async Task<int> CalibrateAsync(Case run, string scenario, string transport, string path,
+    int repeats, double targetBatchMs, string stage)
+{
+    for (int attempt = 0; ; attempt++)
+    {
+        bool candidateFirst = (attempt & 1) == 0;
+        var first = await run.MeasureAsync(candidateFirst, repeats);
+        var second = await run.MeasureAsync(!candidateFirst, repeats);
+        var a = candidateFirst ? second : first;
+        var b = candidateFirst ? first : second;
+        double baselineBatchMs = a.Milliseconds * repeats;
+        double candidateBatchMs = b.Milliseconds * repeats;
+        if (Math.Min(baselineBatchMs, candidateBatchMs) >= targetBatchMs)
+        {
+            Write(new { kind = "calibration", scenario, transport, path, stage, repeats, targetBatchMs, baselineBatchMs, candidateBatchMs });
+            return repeats;
+        }
+        if (repeats == 65536)
+        {
+            Write(new { kind = "calibration-limit", scenario, transport, path, stage, repeats, targetBatchMs, baselineBatchMs, candidateBatchMs });
+            throw new InvalidOperationException("Calibration repeat limit reached without meeting the batch target.");
+        }
+        repeats = Math.Min(repeats * 2, 65536);
+    }
+}
 
 static async Task RunProfileAsync(Settings settings)
 {

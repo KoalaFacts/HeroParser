@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-fA-F]{40}$')][string]$BaselineSha,
     [Parameter(Mandatory = $true)][string]$Workspace,
-    [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-series'
+    [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-series',
+    [switch]$ControlsOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,7 @@ if ((Test-Path -LiteralPath $OutputDirectory) -and @(Get-ChildItem -LiteralPath 
 $null = New-Item -ItemType Directory -Path $Workspace, $OutputDirectory -Force
 $candidateSha = (& git -C $root rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Could not identify candidate revision.' }
+if ($ControlsOnly -and $BaselineSha -ne $candidateSha) { throw 'Controls-only requires the candidate SHA as its baseline.' }
 $resolvedBaseline = (& git -C $root rev-parse --verify "$BaselineSha^{commit}").Trim()
 if ($LASTEXITCODE -ne 0 -or $resolvedBaseline -ne $BaselineSha) { throw 'Baseline SHA is not an available commit.' }
 $dirty = @(& git -C $root status --porcelain)
@@ -58,27 +60,41 @@ function Prepare-Probe([string]$Ref, [string]$Phase, [switch]$FullMatrix) {
 
 function Measure-Series([string]$Phase, [switch]$Control) {
     $runs = @()
-    for ($run = 1; $run -le 2; $run++) {
+    $runCount = if ($ControlsOnly) { 3 } else { 2 }
+    for ($run = 1; $run -le $runCount; $run++) {
         $log = Join-Path $OutputDirectory "$Phase-$run.ndjson"
         & dotnet $program --rows 2000 --pairs 30 --warmup-pairs 10 --min-sample-ms 100 `
             --scenario Plain --path Generated | Tee-Object -FilePath $log | Out-Host
-        if ($LASTEXITCODE -ne 0) { throw "Measurement failed: $Phase run $run." }
+        if ($LASTEXITCODE -ne 0) {
+            if (!$ControlsOnly) { throw "Measurement failed: $Phase run $run." }
+            $runs += [pscustomobject]@{ Phase = $Phase; Run = $run; Valid = $false; Stable = $false; Cases = @(); Error = 'Measurement process failed.' }
+            continue
+        }
         $records = @(Get-Content -LiteralPath $log | ForEach-Object { $_ | ConvertFrom-Json })
         $environment = @($records | Where-Object kind -eq 'environment')
-        if ($environment.Count -ne 1 -or $environment[0].candidateRef -ne $candidateSha) {
+        $expectedBaseline = if ($Control) { $candidateSha } else { $BaselineSha }
+        if ($environment.Count -ne 1 -or $environment[0].candidateRef -ne $candidateSha -or
+            $environment[0].baselineRef -ne $expectedBaseline) {
             throw 'Measurement environment or candidate source is missing.'
         }
         $fingerprint = $environment[0] | Select-Object runtime, os, processors, serverGc, affinity,
-            candidateRef, candidateMvid, candidateModelsMvid | ConvertTo-Json -Compress
+            candidateRef, candidateMvid, candidateModelsMvid, protocol | ConvertTo-Json -Compress
         if ($null -ne $script:fingerprint -and $script:fingerprint -ne $fingerprint) {
             throw 'Candidate modules or runtime settings changed during the paired series.'
         }
         $script:fingerprint = $fingerprint
         if ($Control) {
-            $result = Get-CsvPipeControlResult -Records $records
-            $runs += [pscustomobject]@{ Phase = $Phase; Run = $run; Stable = $result.Stable; Cases = $result.Cases }
+            try {
+                $result = Get-CsvPipeControlResult -Records $records
+                $runs += [pscustomobject]@{ Phase = $Phase; Run = $run; Valid = $true; Stable = $result.Stable; Cases = $result.Cases }
+            }
+            catch {
+                if (!$ControlsOnly) { throw }
+                $runs += [pscustomobject]@{ Phase = $Phase; Run = $run; Valid = $false; Stable = $false; Cases = @(); Error = $_.Exception.Message }
+            }
         }
         else {
+            $null = Get-CsvPipeTimingResult -Records $records
             if (@($records | Where-Object kind -eq 'summary').Count -ne 3 -or
                 @($records | Where-Object kind -eq 'pair').Count -ne 90 -or
                 $records[-1].kind -ne 'complete' -or $records[-1].invalidCases -ne 0) {
@@ -96,9 +112,16 @@ try {
     & git -C $root worktree add --detach $baselineDirectory $candidateSha
     if ($LASTEXITCODE -ne 0) { throw 'Could not create independent baseline worktree.' }
     $worktreeAdded = $true
-    Prepare-Probe -Ref $candidateSha -Phase 'aa-before' -FullMatrix
-    $controls += @(Measure-Series -Phase 'aa-before' -Control)
-    if (@($controls | Where-Object { !$_.Stable }).Count -ne 0) {
+    $firstPhase = if ($ControlsOnly) { 'aa-only' } else { 'aa-before' }
+    Prepare-Probe -Ref $candidateSha -Phase $firstPhase -FullMatrix
+    $controls += @(Measure-Series -Phase $firstPhase -Control)
+    if ($ControlsOnly) {
+        $state = if (@($controls | Where-Object { !$_.Valid }).Count -ne 0) { 'invalid-controls-only-no-ab' }
+            elseif (@($controls | Where-Object { !$_.Stable }).Count -ne 0) { 'unstable-controls-only-no-ab' }
+            else { 'stable-controls-only-no-ab' }
+        $exitCode = if ($state -eq 'stable-controls-only-no-ab') { 0 } else { 2 }
+    }
+    elseif (@($controls | Where-Object { !$_.Stable }).Count -ne 0) {
         $state = 'unstable-before-ab-skipped'
         $exitCode = 2
     }
@@ -122,6 +145,8 @@ finally {
     $env:HERO_PARSER_AB_CANDIDATE_REF = $oldCandidate
     [pscustomobject]@{
         State = $state; BaselineSha = $BaselineSha; CandidateSha = $candidateSha
+        Protocol = 'csv-pipe-v2-post-warmup-calibration'; ControlsOnly = [bool]$ControlsOnly
+        MinWarmupSeconds = 10; CalibrationHeadroom = 1.25; MaxCalibrationRepeats = 65536
         Rows = 2000; Pairs = 30; WarmupPairs = 10; MinSampleMs = 100
         Affinity = $env:HERO_PARSER_AB_AFFINITY
         MedianBounds = @(.95, 1.05); P10Minimum = .90; P90Maximum = 1.10
@@ -134,18 +159,22 @@ finally {
             "Baseline: ``$BaselineSha``. Candidate: ``$candidateSha``."
             'Correctness and stable controls are not performance approval or authorization to merge.'
             'Scope: full candidate/candidate correctness; Plain Generated timing only.'
-            '2000 rows, 30 pairs, 10 warmup pairs, 100 ms calibration target (not guaranteed final batch duration).'
+            'Protocol v2: 2000 rows, 30 pairs, at least 10 warmup pairs and 10 seconds, then final calibration.'
+            '100 ms measured-batch floor; final calibration targets 125 ms. Every actual batch is validated.'
+            "Controls-only: **$([bool]$ControlsOnly)**. Three fixed fresh processes; no A/B in that mode."
             ''
             '### A/A Controls'
             'All runs must have median [0.95, 1.05], p10 >= 0.90 and p90 <= 1.10.'
-            '| Phase | Run | Transport | Median | p10 | p90 | Stable |'
-            '|---|---:|---|---:|---:|---:|---|'
+            '| Phase | Run | Transport | Median | p10 | p90 | Min A Batch (ms) | Min B Batch (ms) | Stable |'
+            '|---|---:|---|---:|---:|---:|---:|---:|---|'
         )
         foreach ($control in $controls) {
             foreach ($case in $control.Cases) {
-                $summary += '| {0} | {1} | {2} | {3:F4} | {4:F4} | {5:F4} | {6} |' -f
-                    $control.Phase, $control.Run, $case.Transport, $case.Median, $case.P10, $case.P90, $case.Stable
+                $summary += '| {0} | {1} | {2} | {3:F4} | {4:F4} | {5:F4} | {6:F2} | {7:F2} | {8} |' -f
+                    $control.Phase, $control.Run, $case.Transport, $case.Median, $case.P10, $case.P90,
+                    $case.MinBaselineBatchMs, $case.MinCandidateBatchMs, $case.Stable
             }
+            if (!$control.Valid) { $summary += "Invalid run $($control.Run): $($control.Error)" }
         }
         $summary += @('', '### A/B Measurements',
             'Ratios are candidate/baseline elapsed time. Above 1 is slower; review both runs and all controls.',

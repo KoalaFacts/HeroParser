@@ -83,9 +83,12 @@ pwsh -NoProfile -File benchmarks/CsvPipeABProbe/run.ps1 -BaselineDll BASELINE_DL
 ```
 
 `-Rows`, `-Pairs`, `-WarmupPairs`, and `-MinSampleMs` adjust the experiment (defaults:
-2000, 20, 6 and 30). The probe calibrates a shared repeat count per case, capped at
-1000. Warmups precede measured pairs; calibration and warmups are not reported as
-measurements. `-Scenario` and `-Path` select one exact named value, failing on
+2000, 20, 6 and 30). Protocol v2 first pilots a shared repeat count, warms both
+sides for at least ten seconds and the requested warmup-pair count, then performs
+final calibration with 25% duration headroom. Calibration is capped at 65536
+repeats and fails rather than accepting an undersized batch at that cap.
+Warmup/calibration records are separate from measured pairs. Actual batch times
+are recorded for both sides of every pair. `-Scenario` and `-Path` select one exact named value, failing on
 unknown values. Repeat runs on an otherwise idle machine; optional environment
 variable `HERO_PARSER_AB_AFFINITY` is a hexadecimal CPU affinity mask on Windows
 or Linux. Affinity is not changed by default. Keep runtime, GC, affinity and power
@@ -113,14 +116,48 @@ machine is not a prerequisite.
 gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_ab=true -f baseline_sha=FULL_BASELINE_SHA
 ```
 
-The committed `run-series.ps1` protocol is deliberately fixed before observing
-timings: 2000 rows, 30 measured pairs, 10 warmup pairs, 100 ms calibration target,
-and two independent process runs per phase. It first verifies all 36 cases on
+The committed `run-series.ps1` protocol v2 is deliberately fixed before observing
+timings: 2000 rows, 30 measured pairs, at least 10 warmup pairs and 10 seconds,
+100 ms minimum actual batch duration, then final calibration targeting 125 ms.
+There are two independent process runs per phase. It first verifies all 36 cases on
 independently built candidate/candidate assemblies, then times the three Plain
 Generated transports twice. Every A/A transport in every run must have a median
 ratio in [0.95, 1.05], p10 >= 0.90 and p90 <= 1.10. The gate recomputes these
 percentiles from all raw pairs and rejects incomplete or mismatched evidence.
+It also requires the v2 protocol ID, correctly ordered pilot/warmup/final
+calibration records, and actual batch durations matching each pair's per-read
+time and repeat count. Every measured batch must reach 100 ms, even if warmup or
+final calibration appeared adequate. A/B evidence gets these same duration,
+completion and consistency checks without applying the A/A ratio bounds to A/B.
 These are experimental noise thresholds, not a statistical proof of equality.
+
+V1 calibrated before batch warmup and could time much shorter batches afterward.
+Its existing raw records and failures remain retained; v2 is a new protocol,
+not a retry that changes the meaning of those results. Reproduce v1 with its
+recorded source revision, not the v2 checker. Do not combine v1/v2 ratios to claim
+a parser speedup. Ten seconds of warmup does not prove JIT or runner stability.
+
+### Fixed Controls-Only Validation
+
+Before another parser experiment, run the manual `pipe_controls` lane. It skips
+the ordinary benchmark matrix and never enters A/B. It checks the full 36-case
+candidate/candidate correctness matrix and then runs exactly three fresh A/A
+processes on the same independently built candidate-source assemblies. It does
+not retry failed controls, discard failed processes, disable tiering/PGO or change
+affinity. Invalid timing records and unstable controls are separate failures;
+each process's raw output is retained. Only all three valid, stable runs produce
+`stable-controls-only-no-ab`. This is limited harness evidence, not a throughput
+gain, universal stability guarantee or permission to merge.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_controls=true
+```
+
+For direct `run-series.ps1 -ControlsOnly` use, the required baseline SHA must be
+the candidate HEAD SHA. The workflow supplies it automatically. The summary
+records the protocol ID, controls-only mode and minimum actual batch durations.
+
+### Paired-Series Acceptance
 
 Unstable initial controls skip A/B and return exit 2. Otherwise the chosen old
 baseline is independently built and Plain correctness is checked before two A/B

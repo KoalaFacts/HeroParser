@@ -29,6 +29,10 @@ on:
         description: 'Run only independent warmed managed-stack and JIT diagnostics (not A/B acceptance)'
         type: boolean
         default: false
+      pipe_controls:
+        description: 'Run only three fixed fresh-process A/A checks of timing protocol v2; never A/B'
+        type: boolean
+        default: false
       baseline_sha:
         description: 'Full baseline commit SHA for the paired pipe experiment'
         type: string
@@ -36,7 +40,7 @@ on:
 
 # Cancel in-progress runs for the same workflow and ref
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.pipe_profile && 'profile' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
   cancel-in-progress: true
 
 permissions:
@@ -48,7 +52,7 @@ env:
 
 jobs:
   setup:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_controls)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
@@ -223,7 +227,7 @@ jobs:
           }
 
   pipe-ab:
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.pipe_ab)
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.pipe_ab || inputs.pipe_controls))
     name: CSV Pipe Correctness and Timing Controls
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -251,12 +255,14 @@ jobs:
           lscpu > BenchmarkDotNet.Artifacts/pipe-runner-context.txt
           dotnet --info >> BenchmarkDotNet.Artifacts/pipe-runner-context.txt
 
-      - name: Run serial A/A and A/B series
+      - name: Run serial timing validation
         shell: pwsh
         env:
-          BASELINE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || inputs.baseline_sha }}
+          BASELINE_SHA: ${{ inputs.pipe_controls && github.sha || github.event.pull_request.base.sha || github.event.before || inputs.baseline_sha }}
+          CONTROLS_ONLY: ${{ inputs.pipe_controls }}
         run: |
-          ./benchmarks/CsvPipeABProbe/run-series.ps1 -BaselineSha $env:BASELINE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series"
+          $controlsOnly = $env:CONTROLS_ONLY -eq 'true'
+          ./benchmarks/CsvPipeABProbe/run-series.ps1 -BaselineSha $env:BASELINE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series" -ControlsOnly:$controlsOnly
 
       - name: Upload paired experiment evidence
         if: always()

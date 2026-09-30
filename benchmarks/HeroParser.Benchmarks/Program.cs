@@ -9,6 +9,7 @@ public class Program
         typeof(ThroughputBenchmarks),
         typeof(CsvStreamingBenchmarks),
         typeof(CsvPipeReaderBenchmarks),
+        typeof(CsvPipeColumnDecodingBenchmarks),
         typeof(CsvTypedPipeReaderBenchmarks),
         typeof(VsSepReadingBenchmarks),
         typeof(VsSepWritingBenchmarks),
@@ -50,6 +51,7 @@ public class Program
         ["--csv-pipe"] =
         [
             typeof(CsvPipeReaderBenchmarks),
+            typeof(CsvPipeColumnDecodingBenchmarks),
             typeof(CsvTypedPipeReaderBenchmarks)
         ],
         ["--vs-sep-reading"] = [typeof(VsSepReadingBenchmarks)],

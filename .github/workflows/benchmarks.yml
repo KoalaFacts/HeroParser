@@ -413,9 +413,10 @@ jobs:
       - name: Install native profiling tools
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y linux-tools-generic binutils
-          PERF=$(find /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)
+          mkdir -p BenchmarkDotNet.Artifacts/pipe-native
+          sudo apt-get update 2>&1 | tee BenchmarkDotNet.Artifacts/pipe-native/tools-update.txt
+          sudo apt-get install -y linux-tools-generic binutils 2>&1 | tee BenchmarkDotNet.Artifacts/pipe-native/tools-install.txt
+          PERF=$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)
           test -n "$PERF"
           "$PERF" --version
           echo "HERO_PARSER_PERF=$PERF" >> "$GITHUB_ENV"

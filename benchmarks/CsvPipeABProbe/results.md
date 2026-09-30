@@ -849,3 +849,8 @@ independent native on-CPU/JIT evidence for frozen-source Segmented128 workers,
 not another A/A attempt or a cold-decoding patch. Collection is pending CI.
 Its instrumented results cannot reproduce the old PIDs or establish a gain,
 the cause of their divergence, timing acceptance or merge readiness.
+
+The first native setup run `36785575557` failed before tests, builds or workload
+launch: tool discovery did not follow package-directory symlinks after apt
+installed perf. Its job log is retained; no CPU samples or raw trace were created.
+The next diagnostic revision corrects tool discovery, not the timing protocol.

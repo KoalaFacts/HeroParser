@@ -34,9 +34,6 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     // per-row parser (row-relative ends); the row start for scan-ahead batches (absolute ends).
     private readonly int baseOffset;
     private readonly CsvReadOptions? parserOptions;
-    private readonly char valueQuote;
-    private readonly char? valueEscape;
-    private readonly bool decodeQuotedFields;
 
     internal CsvRow(
         ReadOnlySpan<T> line,
@@ -55,9 +52,6 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         this.trimFields = trimFields;
         this.baseOffset = baseOffset;
         this.parserOptions = parserOptions;
-        valueQuote = parserOptions?.Quote ?? default;
-        valueEscape = parserOptions?.EscapeCharacter;
-        decodeQuotedFields = parserOptions?.EnableQuotedFields ?? false;
         // columnEnds has columnCount + 1 entries (including the leading sentinel)
         columnEnds = columnEndsBuffer[..(columnCount + 1)];
     }
@@ -81,28 +75,23 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     public CsvColumn<T> GetValue(int index)
     {
         var column = this[index];
-        if (!RequiresValueDecoding(column.Span))
+        if (parserOptions is null)
             return column;
 
-        return DecodeValue(column);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool RequiresValueDecoding(ReadOnlySpan<T> span)
-    {
-        return (valueEscape is char escape && span.Contains(FromChar(escape))) ||
-            (decodeQuotedFields && span.Contains(FromChar(valueQuote)));
-    }
-
-    private CsvColumn<T> DecodeValue(CsvColumn<T> column)
-    {
-        var options = parserOptions!;
         var span = column.Span;
-        T quote = FromChar(options.Quote);
-        if (options.EnableQuotedFields)
+        T quote = FromChar(parserOptions.Quote);
+        if (parserOptions.EnableQuotedFields)
             span = column.Unquote(quote);
 
-        T escape = options.EscapeCharacter is char escapeChar ? FromChar(escapeChar) : default;
+        T escape = parserOptions.EscapeCharacter is char escapeChar ? FromChar(escapeChar) : default;
+        bool hasSpecialCharacters = (parserOptions.EscapeCharacter.HasValue && span.Contains(escape)) ||
+            (parserOptions.EnableQuotedFields && span.Contains(quote));
+        return hasSpecialCharacters ? UnescapeValue(index, span, quote, escape) : new CsvColumn<T>(span);
+    }
+
+    private CsvColumn<T> UnescapeValue(int index, ReadOnlySpan<T> span, T quote, T escape)
+    {
+        var options = parserOptions!;
         bool needsUnescape = false;
         for (int i = 0; i + 1 < span.Length; i++)
         {
@@ -116,8 +105,7 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         if (!needsUnescape)
             return new CsvColumn<T>(span);
 
-        // Decode the original field so surrounding quotes are removed exactly once.
-        string value = DecodeValueString(column.Span);
+        string value = GetValueString(index);
         if (typeof(T) == typeof(char))
         {
             var chars = value.AsSpan();
@@ -137,27 +125,22 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     public string GetValueString(int index)
     {
         var column = this[index];
-        if (!RequiresValueDecoding(column.Span))
+        if (parserOptions is null)
             return column.ToString();
 
-        return DecodeValueString(column.Span);
-    }
-
-    private string DecodeValueString(ReadOnlySpan<T> span)
-    {
-        var options = parserOptions!;
+        var span = column.Span;
         if (typeof(T) == typeof(byte))
         {
             var bytes = MemoryMarshal.CreateReadOnlySpan(
                 ref Unsafe.As<T, byte>(ref MemoryMarshal.GetReference(span)), span.Length);
-            return CsvPipeColumnText.Decode(bytes, (byte)options.Quote,
-                options.EscapeCharacter is char escape ? (byte)escape : null, options.EnableQuotedFields);
+            return CsvPipeColumnText.Decode(bytes, (byte)parserOptions.Quote,
+                parserOptions.EscapeCharacter is char escape ? (byte)escape : null, parserOptions.EnableQuotedFields);
         }
         if (typeof(T) == typeof(char))
         {
             var chars = MemoryMarshal.CreateReadOnlySpan(
                 ref Unsafe.As<T, char>(ref MemoryMarshal.GetReference(span)), span.Length);
-            return CsvPipeColumnText.Decode(chars, options.Quote, options.EscapeCharacter, options.EnableQuotedFields);
+            return CsvPipeColumnText.Decode(chars, parserOptions.Quote, parserOptions.EscapeCharacter, parserOptions.EnableQuotedFields);
         }
         throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
     }

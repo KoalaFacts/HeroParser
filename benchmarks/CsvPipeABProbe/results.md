@@ -250,3 +250,74 @@ the binding/normalization path next, then repeat this same protocol. Cross-segme
 copy/scanning remains a later candidate. The noise gate is resolved for this
 experiment, but PR performance acceptance is not: keep the repair in draft until
 the repeatable ordinary-field regression is addressed.
+
+## Ordinary-Field Candidates: Not Accepted
+
+Two narrowly scoped candidates were evaluated entirely in CI using the same
+2000-row, 30-pair, 10-warmup-pair, 100 ms calibration-target protocol and unchanged
+A/A bounds. Neither establishes a useful, repeatable ordinary-field speedup.
+The production changes were withdrawn; the additional edge-case regression tests
+remain. The production row implementation again matches corrected source
+`4c21dbe086fe2f345094a0d958a6398981149aef` exactly. This is not performance approval.
+
+### Fast/Slow Getter Split
+
+Candidate `6aeffa47d35df54c8d08b4bdb9bb14da3b4bd1bb` isolated marker-free
+fields from generic quote/escape decoding and avoided re-indexing escaped fields.
+[Incremental run 36670170696](https://github.com/KoalaFacts/HeroParser/actions/runs/36670170696)
+compared it with corrected source `4c21dbe`. All four A/A runs passed; all 36
+candidate/candidate correctness cases passed before and after timing, as did the
+nine Plain baseline/candidate cases. Ratios are candidate/baseline elapsed time.
+
+| Transport | Run 1 Median | Run 1 p10-p90 | Run 2 Median | Run 2 p10-p90 |
+|---|---:|---:|---:|---:|
+| Contiguous | 1.0385 | 0.9940-1.0621 | 0.9896 | 0.9728-1.0106 |
+| Segmented128 | 0.9546 | 0.9495-0.9581 | 1.0110 | 1.0074-1.0158 |
+| Stream4096 | 0.9900 | 0.9841-0.9945 | 0.9919 | 0.9851-0.9973 |
+
+The contiguous and segmented directions changed between fresh process runs.
+The approximately 1% streamed change does not justify a general speedup claim.
+Allocation median deltas were zero, except -0.1875 bytes for one contiguous run,
+per complete read, not per row.
+
+[Original-baseline run 36670170564](https://github.com/KoalaFacts/HeroParser/actions/runs/36670170564)
+also passed all correctness cases and A/A gates against `5c549d1`. Its A/B medians
+were contiguous 1.1635/1.1569, segmented 1.0869/1.0849 and streamed 1.1661/1.1507.
+The original-baseline regression therefore remained approximately 8-17% on that
+runner. Do not combine these ratios with the incremental job to estimate gains;
+each job has its own VM, process and compilation context.
+
+### Cached Row Settings
+
+Candidate `360e52693e3bad2dadcba356f9dc9faad1c9c25f` additionally cached immutable
+quote/escape settings inside each row, without a row-wide prescan.
+[Incremental run 36670922231](https://github.com/KoalaFacts/HeroParser/actions/runs/36670922231)
+compared it with `6aeffa4`. All correctness cases and four A/A runs passed.
+
+| Transport | Run 1 Median | Run 1 p10-p90 | Run 2 Median | Run 2 p10-p90 |
+|---|---:|---:|---:|---:|
+| Contiguous | 1.0080 | 0.9886-1.0305 | 1.0074 | 0.9879-1.0322 |
+| Segmented128 | 0.9738 | 0.9644-0.9777 | 0.9766 | 0.9675-0.9832 |
+| Stream4096 | 1.0094 | 1.0015-1.0164 | 1.0109 | 1.0045-1.0196 |
+
+The small segmented difference lies within the same-job A/A median range
+(0.9627-0.9963 for segmented input). Continuous and streamed input did not improve.
+Allocation median deltas again were zero except one -0.1875-byte value.
+
+[Original-baseline run 36670922832](https://github.com/KoalaFacts/HeroParser/actions/runs/36670922832)
+correctly failed closed: a post-A/B contiguous A/A median of 1.0597 exceeded the
+unchanged 1.05 ceiling. Its state is `unstable-after-ab-inconclusive`. The observed
+slowdown is not a validated estimate; do not rerun solely to discard this failure
+or relax the bounds. Both the unstable run and the stable incremental run are
+retained in the evidence.
+
+Artifacts are named `csv-pipe-paired-<run-id>-1`, retain raw pairs, verification
+logs and CPU/runtime context, and expire after 30 days. All speed measurements
+cover only Plain Generated on .NET 10; quoted/escaped inputs have correctness
+coverage, not timing evidence. The shorter-after-warmup calibration caveat above
+still applies. These candidates do not identify the dominant hot instruction.
+
+**Next:** collect CPU/JIT profiling in a separate diagnostic CI phase outside
+accepted timings before considering scanner-produced field-normalization
+metadata or type-specific binding changes. Do not infer that configuration access
+or cross-segment copying is the dominant cost from these unsuccessful trials.

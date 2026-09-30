@@ -30,7 +30,7 @@ on:
         type: boolean
         default: false
       pipe_controls:
-        description: 'Run only three fixed isolated-process A/A checks of timing protocol v3; never A/B'
+        description: 'Run only three fixed isolated same-CPU A/A checks of timing protocol v4; never A/B'
         type: boolean
         default: false
       pipe_bias:
@@ -270,7 +270,7 @@ jobs:
           LEGACY_AB: ${{ inputs.pipe_ab }}
         run: |
           if ($env:LEGACY_AB -eq 'true') { throw 'A/B is suspended until isolated same-source controls have been accepted; use pipe_controls.' }
-          ./benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha $env:SOURCE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series"
+          ./benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha $env:SOURCE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series" -PinSameCpu
 
       - name: Upload paired experiment evidence
         if: always()

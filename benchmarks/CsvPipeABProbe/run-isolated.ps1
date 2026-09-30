@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$SourceSha,
     [Parameter(Mandatory = $true)][string]$Workspace,
-    [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-series'
+    [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-series',
+    [switch]$PinSameCpu
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,6 +23,16 @@ $runs = @()
 $state = 'incomplete-isolated-controls-no-ab'
 $exitCode = 1
 $script:workerFingerprint = $null
+$protocol = if ($PinSameCpu) { 'csv-pipe-isolated-v4-same-cpu' } else { 'csv-pipe-isolated-v3' }
+$pinnedCpu = $null
+if ($PinSameCpu) {
+    if (!$IsLinux -or !(Get-Command taskset -ErrorAction SilentlyContinue)) { throw 'Pinned controls require Linux taskset.' }
+    $allowed = Get-Content -LiteralPath '/proc/self/status' | Select-String '^Cpus_allowed_list:\s*([0-9,-]+)$'
+    if (@($allowed).Count -ne 1) { throw 'Could not read coordinator CPU permissions.' }
+    $pinnedCpu = (($allowed.Matches[0].Groups[1].Value -split ',')[0] -split '-')[0]
+    if ($pinnedCpu -notmatch '^\d+$') { throw 'Could not select an allowed CPU.' }
+    Write-Host "Pinned control variable: both workers start on allowed CPU $pinnedCpu."
+}
 
 function Build-Probe([string[]]$Arguments) {
     & dotnet build @Arguments --disable-build-servers -p:UseSharedCompilation=false | Out-Host
@@ -29,16 +40,21 @@ function Build-Probe([string[]]$Arguments) {
 }
 
 function Start-Worker([string]$Directory, [string]$Name) {
-    $info = [Diagnostics.ProcessStartInfo]::new('dotnet')
+    $info = [Diagnostics.ProcessStartInfo]::new($(if ($PinSameCpu) { 'taskset' } else { 'dotnet' }))
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.RedirectStandardInput = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    if ($PinSameCpu) {
+        foreach ($argument in @('--cpu-list', $pinnedCpu, 'dotnet')) { $info.ArgumentList.Add($argument) }
+    }
     $info.ArgumentList.Add((Join-Path $Directory 'CsvPipeABProbe.dll'))
     $info.ArgumentList.Add('--rows')
     $info.ArgumentList.Add('2000')
     $info.Environment['HERO_PARSER_WORKER_REF'] = $SourceSha
+    $info.Environment['HERO_PARSER_WORKER_PROTOCOL'] = $protocol
+    if ($PinSameCpu) { $info.Environment['HERO_PARSER_WORKER_CPU'] = $pinnedCpu }
     $process = [Diagnostics.Process]::Start($info)
     $worker = [pscustomobject]@{ Process = $process; Sequence = 0; Name = $Name; Environment = $null
         ErrorTask = $process.StandardError.ReadToEndAsync()
@@ -147,13 +163,13 @@ try {
                 $a = Start-Worker (Join-Path $Workspace 'a') "$cycle-a"
                 $b = Start-Worker (Join-Path $Workspace 'b') "$cycle-b"
             }
-            Write-Record @{ kind = 'environment'; protocol = 'csv-pipe-isolated-v3'; baselineRef = $SourceSha; candidateRef = $SourceSha
+            Write-Record @{ kind = 'environment'; protocol = $protocol; baselineRef = $SourceSha; candidateRef = $SourceSha
                 Rows = 2000; Pairs = 30; WarmupPairs = 10; MinSampleMs = 100; Scenario = 'Plain'; Path = 'Generated'
                 minWarmupSeconds = 10; calibrationHeadroom = 1.25; maxCalibrationRepeats = 65536
                 baselineWorker = $a.Environment; candidateWorker = $b.Environment; cycle = $cycle; candidateLaunchedFirst = ($cycle -eq 2) }
             $null = Assert-CsvPipeWorkerEnvironment $a.Environment $b.Environment $SourceSha $SourceSha
             $fingerprint = $a.Environment | Select-Object sourceRef, runtime, os, processors, serverGc, affinity,
-                parserName, modelsName, parserMvid, modelsMvid, parserHash, modelsHash, consumerHash | ConvertTo-Json -Compress
+                protocol, pinnedCpu, allowedCpus, parserName, modelsName, parserMvid, modelsMvid, parserHash, modelsHash, consumerHash | ConvertTo-Json -Compress
             if ($null -ne $script:workerFingerprint -and $script:workerFingerprint -ne $fingerprint) {
                 throw 'Worker artifacts or runtime settings changed between fixed control cycles.'
             }
@@ -217,7 +233,7 @@ try {
     $exitCode = if ($state -eq 'stable-isolated-controls-no-ab') { 0 } else { 2 }
 }
 finally {
-    @{ Protocol = 'csv-pipe-isolated-v3'; SourceSha = $SourceSha; State = $state; Controls = $runs; Comparisons = @() } |
+    @{ Protocol = $protocol; SourceSha = $SourceSha; PinnedCpu = $pinnedCpu; State = $state; Controls = $runs; Comparisons = @() } |
         ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'series-summary.json')
 }
 exit $exitCode

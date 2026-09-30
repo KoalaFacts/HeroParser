@@ -26,8 +26,10 @@ function Get-CsvPipeTimingResult {
     }
     $lastCommand = @{ baseline = 1; candidate = 1 }
     if ($Isolated) {
-        if ($BiasMode -or $JitDiagnostic -or $environment.protocol -ne 'csv-pipe-isolated-v3' -or
+        if ($BiasMode -or $JitDiagnostic -or $environment.protocol -notin @('csv-pipe-isolated-v3', 'csv-pipe-isolated-v4-same-cpu') -or
             $environment.BiasMode -or $environment.diagnosticOnly -eq $true) { throw 'Wrong isolated timing protocol.' }
+        if ($environment.protocol -ne $environment.baselineWorker.protocol -or
+            $environment.protocol -ne $environment.candidateWorker.protocol) { throw 'Coordinator and worker protocols differ.' }
         Assert-CsvPipeWorkerEnvironment $environment.baselineWorker $environment.candidateWorker $environment.baselineRef $environment.candidateRef
         $checks = @($Records | Where-Object kind -eq 'worker-verification')
         if ($checks.Count -ne 2) { throw 'Both workers require full correctness evidence.' }
@@ -217,7 +219,7 @@ function Assert-CsvPipeWorkerEnvironment($A, $B, [string]$BaselineRef, [string]$
     if ($A.pid -eq $B.pid -or $A.sourceRef -ne $BaselineRef -or $B.sourceRef -ne $CandidateRef -or
         $A.consumerHash -ne $B.consumerHash) { throw 'Workers require distinct processes, correct source refs and identical consumers.' }
     foreach ($worker in @($A, $B)) {
-        if ($worker.protocol -ne 'csv-pipe-isolated-v3' -or $worker.Rows -ne 2000 -or
+        if ($worker.protocol -notin @('csv-pipe-isolated-v3', 'csv-pipe-isolated-v4-same-cpu') -or $worker.Rows -ne 2000 -or
             $worker.parserName -ne 'HeroParser' -or $worker.modelsName -ne 'CsvPipeABModels' -or
             ![double]::IsFinite([double]$worker.pid) -or $worker.pid -le 0 -or $worker.pid -ne [Math]::Truncate([double]$worker.pid) -or
             $worker.jitDisasm -or $worker.jitDisasmAssemblies -or
@@ -227,8 +229,12 @@ function Assert-CsvPipeWorkerEnvironment($A, $B, [string]$BaselineRef, [string]$
         foreach ($hash in @('parserHash', 'modelsHash', 'consumerHash')) {
             if ($worker.$hash -cnotmatch '^[0-9a-f]{64}$') { throw 'Missing worker binary fingerprint.' }
         }
+        if ($worker.protocol -eq 'csv-pipe-isolated-v4-same-cpu' -and
+            ($worker.pinnedCpu -cnotmatch '^\d+$' -or $worker.allowedCpus -ne $worker.pinnedCpu)) {
+            throw 'Pinned workers must have exactly one requested allowed CPU.'
+        }
     }
-    foreach ($setting in @('runtime', 'os', 'processors', 'serverGc', 'affinity')) {
+    foreach ($setting in @('runtime', 'os', 'processors', 'serverGc', 'affinity', 'protocol', 'pinnedCpu')) {
         if ($A.$setting -ne $B.$setting) { throw 'Worker runtime settings differ.' }
     }
     if (!$A.runtime -or !$A.os -or $A.processors -le 0 -or $A.serverGc -isnot [bool]) { throw 'Worker runtime context is missing.' }

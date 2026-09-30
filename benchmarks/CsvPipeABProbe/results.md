@@ -781,7 +781,8 @@ replacement for comparing independent source versions. A future isolation change
 needs its own fixed A/A validation and must retain every existing failure; do not
 accept this PR or begin a production cold-decoding experiment based only on a
 successful diagnostic collection.
-# Isolated-worker protocol v3 validation
+
+## Isolated-worker protocol v3 validation
 
 The previous head `9067d12` retained the module-bias diagnosis and did not modify
 production code. Its automatic timing job in run `36699090534` failed the original
@@ -797,5 +798,33 @@ warmup/calibration/batch floors and A/A ratio bounds. Both sides complete the
 36-case correctness matrix before timing. IPC/startup/fixture construction are
 outside the worker's existing `Case.MeasureAsync` stopwatch. Separate transcripts
 and binary fingerprints are retained. The automatic lane is controls-only;
-A/B and cold-decoding optimization are suspended. Validation is pending CI,
-not a performance approval or a claim that the earlier root cause is proven.
+A/B and cold-decoding optimization are suspended. Validation is not a performance
+approval or a claim that the earlier root cause is proven.
+
+### First unpinned isolated trial (retained failure)
+
+Source `af2115b369cf2087c48abfa3fbfcfedff598097e`, workflow run `36729744485`,
+job `109935870495`, artifact `csv-pipe-paired-36729744485-1`:
+all three fixed worker pairs completed validly, including reverse launch order
+in cycle two. State: `unstable-isolated-controls-no-ab`; comparisons are empty.
+The gate retained all nine transport cases and did not stop/retry on instability.
+
+| Cycle | Contiguous median | Segmented128 median | Stream4096 median | Within original bounds |
+| --- | ---: | ---: | ---: | --- |
+| 1 | 0.969276 | 0.946037 | 0.982740 | 2/3 |
+| 2 | 0.851478 | 0.958478 | 0.859915 | 1/3 |
+| 3 | 0.873599 | 0.960082 | 0.873691 | 1/3 |
+
+Single-module isolation is verified, but it is **not sufficient** to establish
+reliable timing. Identical parser/model/consumer binaries still diverged by up
+to 14.9%; the previous same-process double-module boundary is therefore not a
+necessary condition for this bias. Neither CPU placement nor JIT/code layout is
+proven causal by this trial. This is not a throughput improvement.
+
+One next controlled experiment changes CPU placement only: protocol
+`csv-pipe-isolated-v4-same-cpu` launches both workers on the first permitted Linux
+CPU using `taskset`, before runtime initialization. It verifies inherited CPU
+permissions and retains three fixed fresh pairs, the same warmup/calibration,
+batch floors and control bounds. This is a new labelled hypothesis, not a retry
+of the failed v3 trial. A/B and cold-decoding changes remain suspended. Its
+validation is pending CI; no valid failed timing trial will be rerun until green.

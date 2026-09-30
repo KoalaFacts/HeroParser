@@ -205,6 +205,32 @@ foreach ($summary in @($unstable | Where-Object kind -eq 'summary')) {
 if ((Get-CsvPipeIsolatedControlResult -Records $unstable).Stable) { throw 'Isolated controls bypassed the original stability bounds.' }
 Write-Host 'PASS: isolated controls preserve original stability bounds'
 
+function New-PinnedRecords {
+    $records = New-IsolatedRecords
+    $records[0].protocol = 'csv-pipe-isolated-v4-same-cpu'
+    foreach ($worker in @($records[0].baselineWorker, $records[0].candidateWorker)) {
+        $worker.protocol = 'csv-pipe-isolated-v4-same-cpu'
+        $worker | Add-Member -NotePropertyName pinnedCpu -NotePropertyValue '0'
+        $worker | Add-Member -NotePropertyName allowedCpus -NotePropertyValue '0'
+    }
+    return $records
+}
+if (!(Get-CsvPipeIsolatedControlResult -Records (New-PinnedRecords)).Stable) { throw 'Valid pinned controls were rejected.' }
+Write-Host 'PASS: pinned controls accept matching single-CPU workers'
+foreach ($fault in @('DifferentCpu', 'MultipleAllowedCpus', 'MissingCpu', 'ProtocolMismatch')) {
+    $records = New-PinnedRecords
+    switch ($fault) {
+        'DifferentCpu' { $records[0].candidateWorker.pinnedCpu = '1'; $records[0].candidateWorker.allowedCpus = '1' }
+        'MultipleAllowedCpus' { $records[0].candidateWorker.allowedCpus = '0-3' }
+        'MissingCpu' { $records[0].candidateWorker.pinnedCpu = $null }
+        'ProtocolMismatch' { $records[0].candidateWorker.protocol = 'csv-pipe-isolated-v3' }
+    }
+    $rejected = $false
+    try { $null = Get-CsvPipeIsolatedControlResult -Records $records } catch { $rejected = $true }
+    if (!$rejected) { throw "Pinned controls accepted $fault." }
+    Write-Host "PASS: pinned controls reject $fault"
+}
+
 $records = New-ControlRecords
 foreach ($sample in @($records | Where-Object kind -eq 'pair')) {
     $sample.ratio = 1.2

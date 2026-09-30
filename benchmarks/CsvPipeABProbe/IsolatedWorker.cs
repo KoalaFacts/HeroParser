@@ -17,10 +17,20 @@ internal static class IsolatedWorker
         var consumer = typeof(IsolatedWorker).Assembly;
         if (parser.GetName().Name != "HeroParser" || models.GetName().Name != "CsvPipeABModels")
             throw new InvalidOperationException("Workers require the normal parser and model identities.");
+        string protocol = Environment.GetEnvironmentVariable("HERO_PARSER_WORKER_PROTOCOL") ?? "csv-pipe-isolated-v3";
+        string? pinnedCpu = Environment.GetEnvironmentVariable("HERO_PARSER_WORKER_CPU");
+        string? allowedCpus = OperatingSystem.IsLinux()
+            ? File.ReadLines("/proc/self/status").Single(line => line.StartsWith("Cpus_allowed_list:", StringComparison.Ordinal)).Split(':')[1].Trim()
+            : null;
+        if (protocol is not ("csv-pipe-isolated-v3" or "csv-pipe-isolated-v4-same-cpu") ||
+            (protocol == "csv-pipe-isolated-v4-same-cpu" && (pinnedCpu is null || allowedCpus != pinnedCpu)))
+            throw new InvalidOperationException("Pinned workers must inherit exactly the requested CPU at startup.");
         Write(new
         {
             kind = "worker-environment",
-            protocol = "csv-pipe-isolated-v3",
+            protocol,
+            pinnedCpu,
+            allowedCpus,
             pid = Environment.ProcessId,
             sourceRef = Environment.GetEnvironmentVariable("HERO_PARSER_WORKER_REF"),
             runtime = RuntimeInformation.FrameworkDescription,

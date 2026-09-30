@@ -104,7 +104,7 @@ configuration consistent, particularly on heterogeneous laptop CPUs.
 ### Isolated Worker Controls
 
 ```powershell
-pwsh -NoProfile -File benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha HEAD_SHA -Workspace FRESH_WORKSPACE
+pwsh -NoProfile -File benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha HEAD_SHA -Workspace FRESH_WORKSPACE -PinSameCpu
 ```
 
 `HEAD_SHA` must be the full current committed SHA. The script builds one parser
@@ -144,7 +144,18 @@ The v2 checker rejects v3 records; archived v2 logs remain reproducible using
 their recorded harness revision. Stable v3 controls validate this control trial,
 not a throughput gain or a proven root cause for older same-process bias.
 
-Automatic PR/push jobs and manual `pipe_controls=true` now run this controls-only
+The first unpinned v3 trial completed all three controls but failed five of nine
+transport bounds. Separate processes alone did not eliminate the bias. The next
+fixed trial changes only CPU placement: `-PinSameCpu` selects the first CPU in
+the coordinator's Linux allowed-CPU list and starts both workers via `taskset`.
+Affinity is inherited **before runtime startup**, including runtime-created
+threads. Workers report and verify that their own allowed-CPU list is exactly
+that single CPU. The separately labelled `csv-pipe-isolated-v4-same-cpu` protocol
+retains all timing settings and ratio bounds. .NET's reported processor count
+may decrease under affinity; both workers must match. Without `-PinSameCpu`, v3
+remains reproducible; its failed result is not reclassified or discarded.
+
+Automatic PR/push jobs and manual `pipe_controls=true` now run the v4 controls-only
 gate. `pipe_ab=true` explicitly fails while A/B is suspended. Bias and profile
 jobs retain the old dual-module harness for diagnostic evidence only.
 

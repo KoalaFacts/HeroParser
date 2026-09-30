@@ -894,3 +894,53 @@ ownership guard: downloaded data belongs to the runner user, while analysis was
 started as root. No new workload or samples were created. Its failure artifact
 is retained. Replay now runs unprivileged; it neither forces past the guard nor
 changes input ownership or sample-validation thresholds.
+
+### Accepted single-capture native attribution (not timing acceptance)
+
+[Replay run 36789199966](https://github.com/KoalaFacts/HeroParser/actions/runs/36789199966)
+at `efc1de8` passed 83 control-gate and 51 native-evidence assertions. It rebuilt
+no parser and launched no workload: it reprocessed the original `36787620269`
+first-worker trace. State is explicitly
+`native-replay-attribution-complete-not-full-two-worker-collection-or-performance-approval`.
+The original capture job remains failed, and the second worker was not sampled.
+Artifact `csv-pipe-native-36789199966-1` retains regenerated stacks, native ELF
+files, exclusive reports and three checked assembly annotations.
+
+Source `89c0681`, PID 3465, EPYC 7763, CPU 0, Ubuntu 24.04.5, .NET 10.0.12,
+workstation GC. Parser/model/consumer fingerprints match the failed v4 trial;
+this is still a different VM and instrumented execution, not its old process.
+The raw trace SHA-256 before and after replay is
+`59d7127bef15bbf6667fb9906b1ec7c911de27f73b1dda3905ba34ca648ffd50`.
+There are 5,967 samples, zero reported lost samples, 15,660 validated native
+code-load records and 6.2343% unresolved sampled period.
+
+| Exclusive native symbol | Samples | Process user-space sampled period | Tier1 native bytes |
+| --- | ---: | ---: | ---: |
+| CsvPipeSequenceReader slow-path state machine | 2248 | 37.67% | 9846 |
+| Csv.TryBindPipeSequenceRow | 1007 | 16.88% | 12845 |
+| Case.CandidateAsync consumer state machine | 486 | 8.14% | 10374 |
+| Record enumerator state machine | 304 | 5.09% | not separately annotated |
+| CsvPipeSequenceReader.get_Current | 226 | 3.79% | not separately annotated |
+
+The denominator includes consumer checksums, runtime work and unresolved samples,
+not only parser time. Fully inlined descendants are charged to the native caller;
+this is not an inclusive managed-stack percentage or exact source-line cost.
+CPU-clock sample IPs can skid; individual instruction percentages are not precise
+hardware-event attribution, cache misses or an optimization's expected speedup.
+DWARF stack capture does not guarantee complete managed unwinding.
+
+The reader annotation shows a 984-byte stack reservation and a zeroing loop at
+ELF offsets `0xb0..0xc6`, holding about 10.72% of this method's sampled period.
+Its per-byte scan/cursor region has heavily sampled stack loads and checked
+position arithmetic near `0x62c` and `0x641`. The binder reserves 1592 stack
+bytes; its zeroing loop at `0xb9..0xcf` holds about 30.29% of that method's
+sampled period. These observations support investigating hot/cold method size,
+local-variable pressure and segmented cursor bookkeeping. They do not prove
+copying, decoding, stack clearing or JIT layout caused the old A/A divergence.
+
+Next: map those native regions to the frozen source and design one bounded
+reader/stack-pressure experiment. Do not change production, extend warmup,
+relax thresholds, retry failed controls or claim cold-path isolation is faster
+from this single capture. Timing acceptance remains failed and merging remains
+unauthorized. Current review threads are empty; review-provider quota exhaustion
+is not approval, and ordinary CI completion is tracked separately.

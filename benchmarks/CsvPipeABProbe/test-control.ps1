@@ -17,6 +17,9 @@ function New-ControlRecords {
             Rows = 2000; Pairs = 30; WarmupPairs = 10; MinSampleMs = 100
             Scenario = 'Plain'; Path = 'Generated'
             protocol = 'csv-pipe-v2-post-warmup-calibration'
+            BiasMode = $null; diagnosticOnly = $false
+            logicalBaselineModule = 'Baseline'; logicalCandidateModule = 'Candidate'
+            jitDisasm = $null; jitDisasmAssemblies = $null
             minWarmupSeconds = 10; calibrationHeadroom = 1.25; maxCalibrationRepeats = 65536
         }
     )
@@ -136,3 +139,64 @@ foreach ($summary in @($records | Where-Object kind -eq 'summary')) {
 }
 if ((Get-CsvPipeControlResult -Records $records).Stable) { throw 'A stable median hid noisy tails.' }
 Write-Host 'PASS: stable medians with noisy tails fail stability gate'
+
+function New-BiasRecords([string]$Mode) {
+    $records = New-ControlRecords
+    $records[0].protocol = 'csv-pipe-bias-v1-diagnostic-only'
+    $records[0].BiasMode = $Mode
+    $records[0].diagnosticOnly = $true
+    $records[0].logicalBaselineModule = if ($Mode -in @('Swapped', 'CandidateSelf')) { 'Candidate' } else { 'Baseline' }
+    $records[0].logicalCandidateModule = if ($Mode -in @('Swapped', 'BaselineSelf')) { 'Baseline' } else { 'Candidate' }
+    return $records
+}
+
+foreach ($mode in @('Independent', 'Swapped', 'BaselineSelf', 'CandidateSelf')) {
+    $records = New-BiasRecords $mode
+    $result = Get-CsvPipeBiasResult -Records $records -Mode $mode
+    if (!$result.Stable -or $result.Cases[0].CandidateFirstMedian -ne 1 -or
+        $result.Cases[0].BaselineFirstMedian -ne 1 -or $result.Cases[0].FirstHalfMedian -ne 1 -or
+        $result.Cases[0].SecondHalfMedian -ne 1) { throw 'Incorrect diagnostic cohorts.' }
+    $rejected = $false
+    try { $null = Get-CsvPipeControlResult -Records $records }
+    catch { $rejected = $true }
+    if (!$rejected) { throw 'Diagnostic evidence was accepted as performance controls.' }
+    Write-Host "PASS: validates $mode diagnostics but rejects them for acceptance"
+}
+foreach ($mutation in @('routing', 'mode', 'source', 'protocol', 'duration', 'jit')) {
+    $records = New-BiasRecords 'Swapped'
+    switch ($mutation) {
+        'routing' { $records[0].logicalBaselineModule = 'Baseline' }
+        'mode' { $records[0].BiasMode = 'Independent' }
+        'source' { $records[0].candidateRef = '2' * 40 }
+        'protocol' { $records[0].protocol = 'csv-pipe-v2-post-warmup-calibration' }
+        'duration' { ($records | Where-Object kind -eq 'pair' | Select-Object -First 1).baselineBatchMs = 99 }
+        'jit' { $records[0].jitDisasm = '*' }
+    }
+    $rejected = $false
+    try { $null = Get-CsvPipeBiasResult -Records $records -Mode 'Swapped' }
+    catch { $rejected = $true }
+    if (!$rejected) { throw "Malformed diagnostics accepted: $mutation." }
+    Write-Host "PASS: rejects mismatched diagnostic $mutation"
+}
+$records = New-BiasRecords 'Independent'
+$records[0].jitDisasm = '*'
+$records[0].jitDisasmAssemblies = 'HeroParser;HeroParser.Baseline;CsvPipeABModels.Candidate;CsvPipeABModels.Baseline;CsvPipeABProbe'
+$null = Get-CsvPipeBiasResult -Records $records -Mode 'Independent' -JitDiagnostic
+Write-Host 'PASS: separately validates instrumented diagnostic evidence'
+Assert-Rejected 'JIT-instrumented acceptance data' { param($r) $r[0].jitDisasm = '*'; $r }
+
+$records = New-BiasRecords 'Independent'
+foreach ($sample in @($records | Where-Object kind -eq 'pair')) {
+    $sample.ratio = if ($sample.candidateFirst) { .98 } else { 1.02 }
+    $sample.candidate.Milliseconds = $sample.ratio * 1.25
+    $sample.candidateBatchMs = $sample.ratio * 125
+}
+foreach ($summary in @($records | Where-Object kind -eq 'summary')) {
+    $summary.p10Ratio = .98; $summary.p90Ratio = 1.02; $summary.candidateMinBatchMs = 122.5
+}
+$result = Get-CsvPipeBiasResult -Records $records -Mode 'Independent'
+foreach ($case in $result.Cases) {
+    if ($case.CandidateFirstMedian -ne .98 -or $case.BaselineFirstMedian -ne 1.02 -or
+        $case.FirstHalfMedian -ne .98 -or $case.SecondHalfMedian -ne 1.02) { throw 'Diagnostic cohort indexing is wrong.' }
+}
+Write-Host 'PASS: order/time cohorts preserve nonuniform raw-pair medians'

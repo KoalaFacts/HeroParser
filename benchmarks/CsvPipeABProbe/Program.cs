@@ -35,6 +35,11 @@ if ((OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
     process.ProcessorAffinity = (nint)long.Parse(affinity, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
 }
 
+bool baselineSide = settings.BiasMode is "Swapped" or "CandidateSelf";
+bool candidateSide = settings.BiasMode is not ("Swapped" or "BaselineSelf");
+string protocol = "csv-pipe-v2-post-warmup-calibration";
+if (settings.ProfileSide is not null) protocol = "csv-pipe-profile-v1";
+else if (settings.BiasMode is not null) protocol = "csv-pipe-bias-v1-diagnostic-only";
 Write(new
 {
     kind = "environment",
@@ -49,7 +54,13 @@ Write(new
     candidateModelsMvid = typeof(CandidateRecord).Module.ModuleVersionId,
     baselineRef = Environment.GetEnvironmentVariable("HERO_PARSER_AB_BASELINE_REF"),
     candidateRef = Environment.GetEnvironmentVariable("HERO_PARSER_AB_CANDIDATE_REF"),
-    protocol = settings.ProfileSide is null ? "csv-pipe-v2-post-warmup-calibration" : "csv-pipe-profile-v1",
+    protocol,
+    settings.BiasMode,
+    diagnosticOnly = settings.BiasMode is not null,
+    logicalBaselineModule = baselineSide ? "Candidate" : "Baseline",
+    logicalCandidateModule = candidateSide ? "Candidate" : "Baseline",
+    jitDisasm = Environment.GetEnvironmentVariable("DOTNET_JitDisasm"),
+    jitDisasmAssemblies = Environment.GetEnvironmentVariable("DOTNET_JitDisasmAssemblies"),
     minWarmupSeconds = 10,
     calibrationHeadroom = 1.25,
     maxCalibrationRepeats = 65536,
@@ -76,8 +87,8 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
         foreach (string path in new[] { "Scan", "Decode", "Generated" }.Where(x => settings.Path is null || x == settings.Path))
         {
             var run = new Case(fixture, transport, path);
-            var baselineCheck = await run.ReadAsync(candidate: false, inspectSegments: true);
-            var candidateCheck = await run.ReadAsync(candidate: true, inspectSegments: true);
+            var baselineCheck = await run.ReadAsync(baselineSide, inspectSegments: true);
+            var candidateCheck = await run.ReadAsync(candidateSide, inspectSegments: true);
             if (!run.IsValid(baselineCheck) || !run.IsValid(candidateCheck))
             {
                 invalidCases++;
@@ -92,22 +103,22 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
             // The pilot only sizes warmup batches; final calibration follows the full warmup.
             for (int warm = 0; warm < 8; warm++)
             {
-                run.Validate(await run.ReadAsync(candidate: false, inspectSegments: false));
-                run.Validate(await run.ReadAsync(candidate: true, inspectSegments: false));
+                run.Validate(await run.ReadAsync(baselineSide, inspectSegments: false));
+                run.Validate(await run.ReadAsync(candidateSide, inspectSegments: false));
             }
-            int repeats = await CalibrateAsync(run, scenario, transport, path, 1, settings.MinSampleMs, "pilot");
+            int repeats = await CalibrateAsync(run, scenario, transport, path, 1, settings.MinSampleMs, "pilot", baselineSide, candidateSide);
             var warmup = Stopwatch.StartNew();
             int warmedPairs = 0;
             do
             {
                 bool candidateFirst = (warmedPairs & 1) == 0;
-                await run.MeasureAsync(candidateFirst, repeats);
-                await run.MeasureAsync(!candidateFirst, repeats);
+                await run.MeasureAsync(candidateFirst ? candidateSide : baselineSide, repeats);
+                await run.MeasureAsync(candidateFirst ? baselineSide : candidateSide, repeats);
                 warmedPairs++;
             } while (warmedPairs < settings.WarmupPairs || warmup.Elapsed.TotalSeconds < 10);
             warmup.Stop();
             Write(new { kind = "warmup", scenario, transport, path, pairs = warmedPairs, elapsedSeconds = warmup.Elapsed.TotalSeconds });
-            repeats = await CalibrateAsync(run, scenario, transport, path, repeats, settings.MinSampleMs * 1.25, "post-warmup");
+            repeats = await CalibrateAsync(run, scenario, transport, path, repeats, settings.MinSampleMs * 1.25, "post-warmup", baselineSide, candidateSide);
             var ratios = new List<double>();
             var before = new List<Measurement>();
             var after = new List<Measurement>();
@@ -115,8 +126,8 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
             for (int pair = 0; pair < settings.Pairs; pair++)
             {
                 bool candidateFirst = (pair & 1) == 0;
-                var first = await run.MeasureAsync(candidateFirst, repeats);
-                var second = await run.MeasureAsync(!candidateFirst, repeats);
+                var first = await run.MeasureAsync(candidateFirst ? candidateSide : baselineSide, repeats);
+                var second = await run.MeasureAsync(candidateFirst ? baselineSide : candidateSide, repeats);
                 var a = candidateFirst ? second : first;
                 var b = candidateFirst ? first : second;
                 double ratio = b.Milliseconds / a.Milliseconds;
@@ -171,13 +182,13 @@ Environment.ExitCode = invalidCases == 0 ? 0 : 1;
 static void Write<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value));
 
 static async Task<int> CalibrateAsync(Case run, string scenario, string transport, string path,
-    int repeats, double targetBatchMs, string stage)
+    int repeats, double targetBatchMs, string stage, bool baselineSide, bool candidateSide)
 {
     for (int attempt = 0; ; attempt++)
     {
         bool candidateFirst = (attempt & 1) == 0;
-        var first = await run.MeasureAsync(candidateFirst, repeats);
-        var second = await run.MeasureAsync(!candidateFirst, repeats);
+        var first = await run.MeasureAsync(candidateFirst ? candidateSide : baselineSide, repeats);
+        var second = await run.MeasureAsync(candidateFirst ? baselineSide : candidateSide, repeats);
         var a = candidateFirst ? second : first;
         var b = candidateFirst ? first : second;
         double baselineBatchMs = a.Milliseconds * repeats;
@@ -257,13 +268,13 @@ static double Percentile(IEnumerable<double> values, double percentile)
 }
 
 internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSampleMs, bool VerifyOnly, string? Scenario, string? Path,
-    string? ProfileSide, string? ProfileTransport, string? ProfileReadyFile, int ProfileSeconds)
+    string? ProfileSide, string? ProfileTransport, string? ProfileReadyFile, int ProfileSeconds, string? BiasMode)
 {
     public static Settings Parse(string[] args)
     {
         int rows = 2000, pairs = 20, warmup = 6, minSampleMs = 30;
         bool verify = false;
-        string? scenario = null, path = null;
+        string? scenario = null, path = null, biasMode = null;
         string? profileSide = null, profileTransport = null, profileReadyFile = null;
         int profileSeconds = 45;
         bool profileRequested = false;
@@ -271,6 +282,14 @@ internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSam
         {
             if (args[i] == "--verify-only") { verify = true; continue; }
             string option = args[i];
+            if (option == "--bias-mode")
+            {
+                if (i + 1 == args.Length) throw new ArgumentException("Missing value for --bias-mode.");
+                biasMode = args[++i];
+                if (biasMode is not ("Independent" or "Swapped" or "BaselineSelf" or "CandidateSelf"))
+                    throw new ArgumentException("Unknown bias diagnostic mode.");
+                continue;
+            }
             if (option is "--profile-side" or "--profile-transport" or "--profile-ready-file")
             {
                 profileRequested = true;
@@ -313,6 +332,9 @@ internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSam
                 default: throw new ArgumentException($"Unknown option: {option}.");
             }
         }
+        if (biasMode is not null && (profileRequested ||
+            (!verify && (scenario != "Plain" || path != "Generated"))))
+            throw new ArgumentException("Bias diagnostics require Plain Generated timing or verification, and cannot profile.");
         if (profileRequested)
         {
             if (profileSide is not ("Baseline" or "Candidate") ||
@@ -321,7 +343,7 @@ internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSam
                 throw new ArgumentException("Profiling requires a side, transport and readiness file, with 1-120 seconds and no benchmark selectors.");
         }
         return new Settings(rows, pairs, warmup, minSampleMs, verify, scenario, path,
-            profileSide, profileTransport, profileReadyFile, profileSeconds);
+            profileSide, profileTransport, profileReadyFile, profileSeconds, biasMode);
     }
 }
 

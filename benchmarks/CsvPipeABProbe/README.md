@@ -157,6 +157,61 @@ For direct `run-series.ps1 -ControlsOnly` use, the required baseline SHA must be
 the candidate HEAD SHA. The workflow supplies it automatically. The summary
 records the protocol ID, controls-only mode and minimum actual batch durations.
 
+### Same-Source Bias Diagnosis
+
+When A/A is biased despite valid durations, use `pipe_bias` on a committed
+benchmark-only revision. This is a diagnostic experiment, not a retry of timing
+acceptance. Its records use `csv-pipe-bias-v1-diagnostic-only`; the normal
+acceptance checker rejects them, including records produced with JIT output.
+Do not combine this input with other experiment modes.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_bias=true
+```
+
+Two independent parser/model assemblies are built from the same HEAD. Full
+36-case correctness is checked normally and for each of four routing modes:
+
+| Mode | Logical A Consumer/Module | Logical B Consumer/Module |
+|---|---|---|
+| Independent | Baseline | Candidate |
+| Swapped | Candidate | Baseline |
+| BaselineSelf | Baseline | Baseline |
+| CandidateSelf | Candidate | Candidate |
+
+The same timed `MeasureAsync`/`ReadAsync` implementation is used in every mode;
+routing occurs outside each timed batch. Self modes still load both assemblies,
+but both measurements execute one consumer/module. Swapped reverses consumer
+routing, not assembly names, loader metadata or the built binaries.
+
+Exactly three cycles run, each mode in a fresh process: cycles 1 and 3 use the
+table order; cycle 2 reverses it. There is no adaptive retry or early termination
+on valid-but-biased ratios. Invalid measurement logs are retained separately.
+Preparation/correctness failures stop the experiment. All transports use the
+same 2000-row, 30-pair, paired ten-second warmup, 125 ms final calibration and
+100 ms actual duration checks. Original ratio bounds remain visible, not waived.
+Raw pairs are also split into candidate-first/baseline-first and first/second
+half medians, with 15 pairs per cohort. Here A/B labels are logical measurement
+slots, not different source revisions; no production A/B phase runs.
+
+A thirteenth process collects JIT output separately using Independent routing.
+Only parser, model and probe assemblies are selected by `DOTNET_JitDisasmAssemblies`;
+normal tiering/PGO stays enabled. Inspect actual observed tiers, both consumer
+state machines and generated binders, not just code size. See the official
+[JIT output documentation](https://github.com/dotnet/runtime/blob/main/docs/design/coreclr/jit/viewing-jit-dumps.md).
+That process's durations are never uninstrumented timing evidence. The
+`csv-pipe-bias-<run-id>-<attempt>` artifact contains all logs, module/source
+fingerprints, runner context, cohort results and raw JIT assembly for 30 days.
+
+If both self modes are near unity but dual-module modes remain biased, that
+narrows investigation toward module/consumer-specific effects; it does not
+identify assembly layout, generic specialization or dynamic PGO as the cause.
+Order/time cohorts can expose temporal drift. Fresh-process variation and
+different warmup histories prevent assuming independent and swapped ratios must
+be exact reciprocals. A complete diagnostic job is not stable A/A acceptance,
+a throughput benefit, permission to merge or permission to begin cold-decoding
+isolation. Preserve earlier failed acceptance runs.
+
 ### Paired-Series Acceptance
 
 Unstable initial controls skip A/B and return exit 2. Otherwise the chosen old

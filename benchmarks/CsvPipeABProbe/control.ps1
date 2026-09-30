@@ -4,7 +4,9 @@ function Get-CsvPipeTimingResult {
         [int]$Rows = 2000,
         [int]$Pairs = 30,
         [int]$WarmupPairs = 10,
-        [int]$MinSampleMs = 100
+        [int]$MinSampleMs = 100,
+        [ValidateSet('', 'Independent', 'Swapped', 'BaselineSelf', 'CandidateSelf')][string]$BiasMode = '',
+        [switch]$JitDiagnostic
     )
 
     $environment = @($Records | Where-Object kind -eq 'environment')
@@ -21,8 +23,30 @@ function Get-CsvPipeTimingResult {
         $environment.Scenario -ne 'Plain' -or $environment.Path -ne 'Generated') {
         throw 'Timing source revisions or measurement settings do not match.'
     }
-    if ($environment.protocol -ne 'csv-pipe-v2-post-warmup-calibration' -or
-        $environment.minWarmupSeconds -ne 10 -or $environment.calibrationHeadroom -ne 1.25 -or
+    if ($BiasMode) {
+        $aModule = if ($BiasMode -in @('Swapped', 'CandidateSelf')) { 'Candidate' } else { 'Baseline' }
+        $bModule = if ($BiasMode -in @('Swapped', 'BaselineSelf')) { 'Baseline' } else { 'Candidate' }
+        if ($environment.protocol -ne 'csv-pipe-bias-v1-diagnostic-only' -or
+            $environment.BiasMode -ne $BiasMode -or $environment.diagnosticOnly -ne $true -or
+            $environment.baselineRef -ne $environment.candidateRef -or
+            $environment.logicalBaselineModule -ne $aModule -or $environment.logicalCandidateModule -ne $bModule) {
+            throw 'Mismatched same-source bias diagnostic or module routing.'
+        }
+    }
+    elseif ($environment.protocol -ne 'csv-pipe-v2-post-warmup-calibration' -or
+        $environment.BiasMode -or $environment.diagnosticOnly -eq $true) {
+        throw 'Diagnostic records cannot be used for timing acceptance.'
+    }
+    if ($JitDiagnostic) {
+        if (!$BiasMode -or $environment.jitDisasm -ne '*' -or
+            $environment.jitDisasmAssemblies -ne 'HeroParser;HeroParser.Baseline;CsvPipeABModels.Candidate;CsvPipeABModels.Baseline;CsvPipeABProbe') {
+            throw 'Missing separate JIT diagnostic instrumentation.'
+        }
+    }
+    elseif ($environment.jitDisasm -or $environment.jitDisasmAssemblies) {
+        throw 'JIT-instrumented records cannot be used as uninstrumented timing.'
+    }
+    if ($environment.minWarmupSeconds -ne 10 -or $environment.calibrationHeadroom -ne 1.25 -or
         $environment.maxCalibrationRepeats -ne 65536) {
         throw 'Unknown or mismatched timing protocol.'
     }
@@ -152,4 +176,29 @@ function Get-CsvPipeControlResult {
         throw 'A/A requires identical source revisions.'
     }
     Get-CsvPipeTimingResult -Records $Records -Rows $Rows -Pairs $Pairs -WarmupPairs $WarmupPairs -MinSampleMs $MinSampleMs
+}
+
+function Get-CsvPipeBiasResult {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Records,
+        [Parameter(Mandatory = $true)][ValidateSet('Independent', 'Swapped', 'BaselineSelf', 'CandidateSelf')][string]$Mode,
+        [switch]$JitDiagnostic
+    )
+    $result = Get-CsvPipeTimingResult -Records $Records -BiasMode $Mode -JitDiagnostic:$JitDiagnostic
+    foreach ($case in $result.Cases) {
+        $samples = @($Records | Where-Object { $_.kind -eq 'pair' -and $_.transport -eq $case.Transport })
+        foreach ($group in @('CandidateFirst', 'BaselineFirst', 'FirstHalf', 'SecondHalf')) {
+            $subset = @($samples | Where-Object {
+                switch ($group) {
+                    'CandidateFirst' { $_.candidateFirst -eq $true }
+                    'BaselineFirst' { $_.candidateFirst -eq $false }
+                    'FirstHalf' { $_.pair -lt 15 }
+                    'SecondHalf' { $_.pair -ge 15 }
+                }
+            } | Sort-Object ratio)
+            if ($subset.Count -ne 15) { throw 'Incomplete order/time diagnostic cohort.' }
+            $case | Add-Member -NotePropertyName "${group}Median" -NotePropertyValue $subset[7].ratio
+        }
+    }
+    return $result
 }

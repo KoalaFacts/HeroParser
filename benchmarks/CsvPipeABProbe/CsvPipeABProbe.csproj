@@ -6,13 +6,22 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="Models/**" />
     <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
     <Reference Include="HeroParser.Baseline">
       <HintPath>$(BaselineDll)</HintPath>
       <Aliases>baseline</Aliases>
     </Reference>
+    <Reference Include="CsvPipeABModels.Baseline">
+      <HintPath>$(BaselineModelsDll)</HintPath>
+      <Aliases>baselineModels</Aliases>
+    </Reference>
+    <Reference Include="CsvPipeABModels.Candidate">
+      <HintPath>$(CandidateModelsDll)</HintPath>
+    </Reference>
   </ItemGroup>
-  <Target Name="RequireBaseline" BeforeTargets="ResolveReferences" Condition="'$(BaselineDll)' == ''">
-    <Error Text="Pass -p:BaselineDll=&lt;path to an independently built baseline assembly&gt;." />
+  <Target Name="RequireBaseline" BeforeTargets="ResolveReferences"
+          Condition="!Exists('$(BaselineDll)') Or !Exists('$(BaselineModelsDll)') Or !Exists('$(CandidateModelsDll)')">
+    <Error Text="Build both generated model assemblies, then pass BaselineDll, BaselineModelsDll and CandidateModelsDll. See this probe's README." />
   </Target>
 </Project>

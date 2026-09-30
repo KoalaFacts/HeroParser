@@ -1,85 +1,382 @@
 extern alias baseline;
+extern alias baselineModels;
+using System.Buffers;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Pipelines;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using BaselineCsv = baseline::HeroParser.Csv;
 using BaselineOptions = baseline::HeroParser.SeparatedValues.Core.CsvReadOptions;
+using BaselineRecord = baselineModels::CsvPipeABModels.PipeRecord;
+using BaselineRecordOptions = baseline::HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions;
 using CandidateCsv = HeroParser.Csv;
 using CandidateOptions = HeroParser.SeparatedValues.Core.CsvReadOptions;
+using CandidateRecord = CsvPipeABModels.PipeRecord;
+using CandidateRecordOptions = HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions;
 
+var settings = Settings.Parse(args);
+string? affinity = Environment.GetEnvironmentVariable("HERO_PARSER_AB_AFFINITY");
 if ((OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
-    && Environment.GetEnvironmentVariable("HERO_PARSER_AB_AFFINITY") is { Length: > 0 } affinity)
+    && affinity is { Length: > 0 })
 {
-    Process.GetCurrentProcess().ProcessorAffinity = (nint)long.Parse(affinity, System.Globalization.NumberStyles.HexNumber);
+    using var process = Process.GetCurrentProcess();
+    process.ProcessorAffinity = (nint)long.Parse(affinity, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
 }
 
-Console.WriteLine($"baseline={typeof(BaselineCsv).Assembly.GetName().Name}, candidate={typeof(CandidateCsv).Assembly.GetName().Name}");
-foreach (int columns in new[] { 4, 8 })
+Write(new
 {
-    var builder = new StringBuilder();
-    for (int row = 0; row < 100_000; row++)
+    kind = "environment",
+    runtime = RuntimeInformation.FrameworkDescription,
+    os = RuntimeInformation.OSDescription,
+    processors = Environment.ProcessorCount,
+    serverGc = System.Runtime.GCSettings.IsServerGC,
+    affinity,
+    baselineMvid = typeof(BaselineCsv).Module.ModuleVersionId,
+    candidateMvid = typeof(CandidateCsv).Module.ModuleVersionId,
+    baselineModelsMvid = typeof(BaselineRecord).Module.ModuleVersionId,
+    candidateModelsMvid = typeof(CandidateRecord).Module.ModuleVersionId,
+    baselineRef = Environment.GetEnvironmentVariable("HERO_PARSER_AB_BASELINE_REF"),
+    candidateRef = Environment.GetEnvironmentVariable("HERO_PARSER_AB_CANDIDATE_REF"),
+    settings.Rows,
+    settings.Pairs,
+    settings.WarmupPairs,
+    settings.MinSampleMs,
+    settings.Scenario,
+    settings.Path
+});
+
+int invalidCases = 0;
+foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped" }.Where(x => settings.Scenario is null || x == settings.Scenario))
+{
+    var fixture = Fixture.Create(scenario, settings.Rows);
+    foreach (string transport in new[] { "Contiguous", "Segmented128", "Stream4096" })
     {
-        for (int column = 0; column < columns; column++)
+        foreach (string path in new[] { "Scan", "Decode", "Generated" }.Where(x => settings.Path is null || x == settings.Path))
         {
-            if (column != 0) builder.Append(',');
-            builder.Append("val").Append(row).Append('_').Append(column);
+            var run = new Case(fixture, transport, path);
+            var baselineCheck = await run.ReadAsync(candidate: false, inspectSegments: true);
+            var candidateCheck = await run.ReadAsync(candidate: true, inspectSegments: true);
+            if (!run.IsValid(baselineCheck) || !run.IsValid(candidateCheck))
+            {
+                invalidCases++;
+                Write(new { kind = "invalid", scenario, transport, path, expectedRows = fixture.Rows, expectedChecksum = fixture.Checksum, baseline = baselineCheck, candidate = candidateCheck });
+                continue;
+            }
+            if (transport == "Segmented128" && path != "Generated" && candidateCheck.SplitFields == 0)
+                throw new InvalidOperationException("The segmented fixture did not exercise split text fields.");
+            Write(new { kind = "verified", scenario, transport, path, fixture.Rows, bytes = fixture.Bytes.Length, candidateCheck.SplitFields });
+            if (settings.VerifyOnly) continue;
+
+            // Warm the actual consumer before calibrating; cold JIT time would undersize batches.
+            for (int warm = 0; warm < 8; warm++)
+            {
+                run.Validate(await run.ReadAsync(candidate: false, inspectSegments: false));
+                run.Validate(await run.ReadAsync(candidate: true, inspectSegments: false));
+            }
+            int repeats = 1;
+            while (true)
+            {
+                var calibrationA = await run.MeasureAsync(candidate: false, repeats);
+                var calibrationB = await run.MeasureAsync(candidate: true, repeats);
+                if (Math.Min(calibrationA.Milliseconds, calibrationB.Milliseconds) * repeats >= settings.MinSampleMs || repeats == 1000)
+                {
+                    Write(new { kind = "calibration", scenario, transport, path, repeats, baselineBatchMs = calibrationA.Milliseconds * repeats, candidateBatchMs = calibrationB.Milliseconds * repeats });
+                    break;
+                }
+                repeats = Math.Min(repeats * 2, 1000);
+            }
+            var ratios = new List<double>();
+            var before = new List<Measurement>();
+            var after = new List<Measurement>();
+            int wins = 0;
+            for (int pair = -settings.WarmupPairs; pair < settings.Pairs; pair++)
+            {
+                bool candidateFirst = (pair & 1) == 0;
+                var first = await run.MeasureAsync(candidateFirst, repeats);
+                var second = await run.MeasureAsync(!candidateFirst, repeats);
+                if (pair < 0) continue;
+                var a = candidateFirst ? second : first;
+                var b = candidateFirst ? first : second;
+                double ratio = b.Milliseconds / a.Milliseconds;
+                ratios.Add(ratio);
+                before.Add(a);
+                after.Add(b);
+                if (ratio < 1) wins++;
+                Write(new { kind = "pair", scenario, transport, path, pair, candidateFirst, repeats, baseline = a, candidate = b, ratio });
+            }
+
+            Write(new
+            {
+                kind = "summary",
+                scenario,
+                transport,
+                path,
+                fixture.Rows,
+                bytes = fixture.Bytes.Length,
+                repeats,
+                baselineMs = Percentile(before.Select(x => x.Milliseconds), .5),
+                candidateMs = Percentile(after.Select(x => x.Milliseconds), .5),
+                baselineBytes = Percentile(before.Select(x => (double)x.AllocatedBytes), .5),
+                candidateBytes = Percentile(after.Select(x => (double)x.AllocatedBytes), .5),
+                medianRatio = Percentile(ratios, .5),
+                p10Ratio = Percentile(ratios, .1),
+                p90Ratio = Percentile(ratios, .9),
+                wins,
+                settings.Pairs
+            });
         }
-        builder.Append('\n');
     }
-    byte[] data = Encoding.UTF8.GetBytes(builder.ToString());
-    var ratios = new List<double>();
-    int wins = 0;
-    for (int pair = -6; pair < 20; pair++)
-    {
-        bool candidateFirst = (pair & 1) == 0;
-        double first = await MeasureAsync(data, columns, candidateFirst);
-        double second = await MeasureAsync(data, columns, !candidateFirst);
-        if (pair < 0) continue;
-        double candidate = candidateFirst ? first : second;
-        double baseline = candidateFirst ? second : first;
-        ratios.Add(candidate / baseline);
-        if (candidate < baseline) wins++;
-    }
-    ratios.Sort();
-    Console.WriteLine($"{columns} cols: median={ratios[10]:F3}, p10={ratios[2]:F3}, p90={ratios[18]:F3}, wins={wins}/20");
+}
+Write(new { kind = "complete", invalidCases });
+Environment.ExitCode = invalidCases == 0 ? 0 : 1;
+
+static void Write<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value));
+
+static double Percentile(IEnumerable<double> values, double percentile)
+{
+    double[] sorted = [.. values.Order()];
+    double index = (sorted.Length - 1) * percentile;
+    int lower = (int)index;
+    return sorted[lower] + (sorted[(int)Math.Ceiling(index)] - sorted[lower]) * (index - lower);
 }
 
-static async Task<double> MeasureAsync(byte[] data, int columns, bool candidate)
+internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSampleMs, bool VerifyOnly, string? Scenario, string? Path)
 {
-    double elapsed = 0;
-    for (int repeat = 0; repeat < 10; repeat++)
+    public static Settings Parse(string[] args)
     {
-        elapsed += candidate ? await CandidateAsync(data, columns) : await BaselineAsync(data, columns);
+        int rows = 2000, pairs = 20, warmup = 6, minSampleMs = 30;
+        bool verify = false;
+        string? scenario = null, path = null;
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--verify-only") { verify = true; continue; }
+            string option = args[i];
+            if (option is "--scenario" or "--path")
+            {
+                if (i + 1 == args.Length) throw new ArgumentException($"Missing value for {option}.");
+                string selected = args[++i];
+                if (option == "--scenario")
+                {
+                    if (selected is not ("Plain" or "Escaped" or "Unicode" or "LongEscaped")) throw new ArgumentException("Unknown scenario.");
+                    scenario = selected;
+                }
+                else
+                {
+                    if (selected is not ("Scan" or "Decode" or "Generated")) throw new ArgumentException("Unknown path.");
+                    path = selected;
+                }
+                continue;
+            }
+            if (i + 1 == args.Length || !int.TryParse(args[++i], CultureInfo.InvariantCulture, out int value) || value <= 0)
+                throw new ArgumentException($"Expected a positive integer after {option}.");
+            switch (option)
+            {
+                case "--rows": rows = value; break;
+                case "--pairs": pairs = value; break;
+                case "--warmup-pairs": warmup = value; break;
+                case "--min-sample-ms": minSampleMs = value; break;
+                default: throw new ArgumentException($"Unknown option: {option}.");
+            }
+        }
+        return new Settings(rows, pairs, warmup, minSampleMs, verify, scenario, path);
     }
-    return elapsed;
 }
 
-static async Task<double> CandidateAsync(byte[] data, int columns)
+internal readonly record struct Result(int Rows, ulong Checksum, int SplitFields);
+internal readonly record struct Measurement(double Milliseconds, double AllocatedBytes);
+
+internal sealed record Fixture(byte[] Bytes, ReadOnlySequence<byte> Segmented, int Rows, ulong Checksum)
 {
-    using var stream = new MemoryStream(data, writable: false);
-    await using var reader = CandidateCsv.CreatePipeSequenceReader(PipeReader.Create(stream), new CandidateOptions
+    public static Fixture Create(string scenario, int rows)
     {
-        MaxColumnCount = columns + 4,
-        MaxRowCount = 100_100
-    });
-    long start = Stopwatch.GetTimestamp();
-    int count = 0;
-    while (await reader.MoveNextAsync()) count += reader.Current.ColumnCount;
-    if (count != 100_000 * columns) throw new Exception($"Bad candidate count: {count}");
-    return Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+        var builder = new StringBuilder("Id,Name,Amount,Note\n");
+        ulong checksum = 0;
+        for (int i = 1; i <= rows; i++)
+        {
+            string name = scenario == "Unicode" ? $"\u4F60\u597D_{i}\uD83D\uDE00" : $"name_{i}";
+            string note = scenario switch
+            {
+                "Plain" => $"note_{i}",
+                "Escaped" => $"said \"hello\", row {i}",
+                "Unicode" => $"\u4E16\u754C \"\u4F60\u597D\" \uD83D\uDE00 {i}",
+                "LongEscaped" => new string('x', 2048) + $" \"end\", {i}",
+                _ => throw new ArgumentException("Unknown scenario.", nameof(scenario))
+            };
+            int amount = i % 997;
+            builder.Append(i.ToString(CultureInfo.InvariantCulture)).Append(',');
+            AppendField(builder, name);
+            builder.Append(',').Append(amount.ToString(CultureInfo.InvariantCulture)).Append(',');
+            AppendField(builder, note);
+            builder.Append('\n');
+            checksum = Hash(checksum, i, amount, name, note);
+        }
+        byte[] bytes = Encoding.UTF8.GetBytes(builder.ToString());
+        var first = new Segment(bytes.AsMemory(0, Math.Min(128, bytes.Length)));
+        var last = first;
+        for (int offset = first.Memory.Length; offset < bytes.Length; offset += 128)
+            last = last.Append(bytes.AsMemory(offset, Math.Min(128, bytes.Length - offset)));
+        return new Fixture(bytes, new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length), rows, checksum);
+    }
+
+    private static void AppendField(StringBuilder builder, string value)
+    {
+        if (value.AsSpan().IndexOfAny(',', '"', '\n') < 0) { builder.Append(value); return; }
+        builder.Append('"').Append(value.Replace("\"", "\"\"", StringComparison.Ordinal)).Append('"');
+    }
+
+    public static ulong Hash(ulong hash, int id, int amount, string name, string note)
+    {
+        unchecked
+        {
+            hash = (hash ^ (uint)id) * 1099511628211UL;
+            hash = (hash ^ (uint)amount) * 1099511628211UL;
+            foreach (char c in name) hash = (hash ^ c) * 1099511628211UL;
+            hash = (hash ^ 0xFFFF) * 1099511628211UL;
+            foreach (char c in note) hash = (hash ^ c) * 1099511628211UL;
+            return (hash ^ 0xFFFF) * 1099511628211UL;
+        }
+    }
 }
 
-static async Task<double> BaselineAsync(byte[] data, int columns)
+internal sealed class Case(Fixture fixture, string transport, string path)
 {
-    using var stream = new MemoryStream(data, writable: false);
-    await using var reader = BaselineCsv.CreatePipeSequenceReader(PipeReader.Create(stream), new BaselineOptions
+    public bool IsValid(Result result)
+        => result.Rows == fixture.Rows && (path == "Scan" || result.Checksum == fixture.Checksum);
+
+    public void Validate(Result result)
     {
-        MaxColumnCount = columns + 4,
-        MaxRowCount = 100_100
-    });
-    long start = Stopwatch.GetTimestamp();
-    int count = 0;
-    while (await reader.MoveNextAsync()) count += reader.Current.ColumnCount;
-    if (count != 100_000 * columns) throw new Exception($"Bad baseline count: {count}");
-    return Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+        if (!IsValid(result))
+            throw new InvalidOperationException($"Incorrect {path} result: {result}.");
+    }
+
+    public async Task<Measurement> MeasureAsync(bool candidate, int repeats)
+    {
+        long allocated = GC.GetTotalAllocatedBytes(precise: true);
+        long start = Stopwatch.GetTimestamp();
+        for (int i = 0; i < repeats; i++)
+        {
+            var result = await ReadAsync(candidate, inspectSegments: false);
+            Validate(result);
+        }
+        double elapsed = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+        return new Measurement(elapsed / repeats, (double)(GC.GetTotalAllocatedBytes(precise: true) - allocated) / repeats);
+    }
+
+    public async Task<Result> ReadAsync(bool candidate, bool inspectSegments)
+    {
+        using var stream = transport == "Stream4096" ? new MemoryStream(fixture.Bytes, writable: false) : null;
+        PipeReader pipe = stream is not null
+            ? PipeReader.Create(stream, new StreamPipeReaderOptions(bufferSize: 4096, minimumReadSize: 4096, leaveOpen: true))
+            : new BufferedReader(transport == "Contiguous" ? new ReadOnlySequence<byte>(fixture.Bytes) : fixture.Segmented);
+        try
+        {
+            return candidate ? await CandidateAsync(pipe, inspectSegments) : await BaselineAsync(pipe, inspectSegments);
+        }
+        finally
+        {
+            await pipe.CompleteAsync();
+        }
+    }
+
+    private async Task<Result> CandidateAsync(PipeReader pipe, bool inspectSegments)
+    {
+        var options = new CandidateOptions { MaxColumnCount = 4, MaxRowCount = fixture.Rows + 1 };
+        int rows = 0, split = 0;
+        ulong checksum = 0;
+        if (path == "Generated")
+        {
+            await foreach (var record in CandidateCsv.DeserializeRecordsAsync<CandidateRecord>(pipe, new CandidateRecordOptions { HasHeaderRow = true }, options))
+            {
+                checksum = Fixture.Hash(checksum, record.Id, record.Amount, record.Name, record.Note);
+                rows++;
+            }
+        }
+        else
+        {
+            await using var reader = CandidateCsv.CreatePipeSequenceReader(pipe, options);
+            bool header = true;
+            while (await reader.MoveNextAsync())
+            {
+                var row = reader.Current;
+                if (row.ColumnCount != 4) throw new InvalidOperationException("Incorrect column count.");
+                if (header) { header = false; continue; }
+                if (inspectSegments) split += (row[1].Sequence.IsSingleSegment ? 0 : 1) + (row[3].Sequence.IsSingleSegment ? 0 : 1);
+                if (path == "Decode")
+                    checksum = Fixture.Hash(checksum, int.Parse(row[0].ToUnquotedString(), CultureInfo.InvariantCulture), int.Parse(row[2].ToUnquotedString(), CultureInfo.InvariantCulture), row[1].ToUnquotedString(), row[3].ToUnquotedString());
+                rows++;
+            }
+        }
+        return new Result(rows, checksum, split);
+    }
+
+    private async Task<Result> BaselineAsync(PipeReader pipe, bool inspectSegments)
+    {
+        var options = new BaselineOptions { MaxColumnCount = 4, MaxRowCount = fixture.Rows + 1 };
+        int rows = 0, split = 0;
+        ulong checksum = 0;
+        if (path == "Generated")
+        {
+            await foreach (var record in BaselineCsv.DeserializeRecordsAsync<BaselineRecord>(pipe, new BaselineRecordOptions { HasHeaderRow = true }, options))
+            {
+                checksum = Fixture.Hash(checksum, record.Id, record.Amount, record.Name, record.Note);
+                rows++;
+            }
+        }
+        else
+        {
+            await using var reader = BaselineCsv.CreatePipeSequenceReader(pipe, options);
+            bool header = true;
+            while (await reader.MoveNextAsync())
+            {
+                var row = reader.Current;
+                if (row.ColumnCount != 4) throw new InvalidOperationException("Incorrect column count.");
+                if (header) { header = false; continue; }
+                if (inspectSegments) split += (row[1].Sequence.IsSingleSegment ? 0 : 1) + (row[3].Sequence.IsSingleSegment ? 0 : 1);
+                if (path == "Decode")
+                    checksum = Fixture.Hash(checksum, int.Parse(row[0].ToUnquotedString(), CultureInfo.InvariantCulture), int.Parse(row[2].ToUnquotedString(), CultureInfo.InvariantCulture), row[1].ToUnquotedString(), row[3].ToUnquotedString());
+                rows++;
+            }
+        }
+        return new Result(rows, checksum, split);
+    }
+}
+
+internal sealed class Segment : ReadOnlySequenceSegment<byte>
+{
+    public Segment(ReadOnlyMemory<byte> memory)
+    {
+        Memory = memory;
+    }
+
+    public Segment Append(ReadOnlyMemory<byte> memory)
+    {
+        var segment = new Segment(memory) { RunningIndex = RunningIndex + Memory.Length };
+        Next = segment;
+        return segment;
+    }
+}
+
+internal sealed class BufferedReader(ReadOnlySequence<byte> buffer) : PipeReader
+{
+    private ReadOnlySequence<byte> remaining = buffer;
+    private bool completed;
+
+    public override void AdvanceTo(SequencePosition consumed) => AdvanceTo(consumed, consumed);
+    public override void AdvanceTo(SequencePosition consumed, SequencePosition examined) => remaining = remaining.Slice(consumed);
+    public override void CancelPendingRead() => throw new NotSupportedException();
+    public override void Complete(Exception? exception = null) => completed = true;
+    public override bool TryRead(out ReadResult result)
+    {
+        if (completed) throw new InvalidOperationException("Reading a completed pipe.");
+        result = new ReadResult(remaining, isCanceled: false, isCompleted: true);
+        return true;
+    }
+    public override ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        TryRead(out var result);
+        return ValueTask.FromResult(result);
+    }
 }

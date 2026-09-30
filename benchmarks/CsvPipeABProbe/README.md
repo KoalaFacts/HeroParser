@@ -107,16 +107,17 @@ are outside the measured interval, but runtime/GC noise is not eliminated.
 These are warmed-up measurements: they do not prove cold-start pool allocation,
 peak memory, concurrent-reader scaling, or network performance.
 
-### Known Correctness Gate (September 2026)
+### Initial Correctness Gate (September 2026)
 
 Comparing base `626f8af` and merged decoder improvement `8309abf`, with 37 rows,
 27 of 36 cases passed. All nine `Generated` cases for Escaped/Unicode/LongEscaped
 returned an incorrect logical checksum in **both** versions. The generated
-string binder decodes the raw column span directly; it does not unquote/unescape
-it. The independent expected checksum prevents the identical defect on both
+string binder at those revisions decoded the raw column span directly, without
+unquoting/unescaping it. The independent expected checksum prevents the identical defect on both
 sides from being accepted as proof of correctness.
 
 These nine cases are excluded from timing conclusions. The tool deliberately
-returns nonzero for the full matrix until those semantics are fixed. Fix and
-regression-test generated string quoting before choosing a typed-binding
-optimization from escaped workloads. See [measured evidence](results.md).
+returns nonzero if either side has an incorrect result, including an unfixed
+baseline compared with a corrected candidate. Use two independently built fixed
+revisions for a fully passing preflight; never weaken the expected checksum to
+time the broken baseline. See [measured evidence and repair validation](results.md).

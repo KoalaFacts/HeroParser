@@ -216,7 +216,8 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
                 result.ColumnCount,
                 rowNumber,
                 trackLineNumbers ? rowStartLine : rowNumber,
-                parserOptions.TrimFields);
+                parserOptions.TrimFields,
+                parserOptions: parserOptions);
 
             if (binder.NeedsHeaderResolution)
             {

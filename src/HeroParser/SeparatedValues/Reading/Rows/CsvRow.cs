@@ -2,6 +2,8 @@ using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Shared;
 
 namespace HeroParser.SeparatedValues.Reading.Rows;
 
@@ -31,6 +33,7 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     // Offset subtracted from every entry in columnEnds to make it relative to `line`. Zero for the
     // per-row parser (row-relative ends); the row start for scan-ahead batches (absolute ends).
     private readonly int baseOffset;
+    private readonly CsvReadOptions? parserOptions;
 
     internal CsvRow(
         ReadOnlySpan<T> line,
@@ -39,7 +42,8 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         int lineNumber,
         int sourceLineNumber,
         bool trimFields = false,
-        int baseOffset = 0)
+        int baseOffset = 0,
+        CsvReadOptions? parserOptions = null)
     {
         this.line = line;
         this.columnCount = columnCount;
@@ -47,6 +51,7 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         this.sourceLineNumber = sourceLineNumber;
         this.trimFields = trimFields;
         this.baseOffset = baseOffset;
+        this.parserOptions = parserOptions;
         // columnEnds has columnCount + 1 entries (including the leading sentinel)
         columnEnds = columnEndsBuffer[..(columnCount + 1)];
     }
@@ -55,6 +60,103 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     public int ColumnCount => columnCount;
 
     internal ReadOnlySpan<T> Line => line;
+
+    internal CsvReadOptions? ParserOptions => parserOptions;
+
+    /// <summary>Gets a logical field value using this row's CSV quote and escape settings.</summary>
+    /// <param name="index">Zero-based column index.</param>
+    /// <returns>A column with CSV quoting and escaping removed, without trimming quoted content.</returns>
+    /// <remarks>
+    /// Surrounding quotes are removed without allocating. Fields requiring unescaping allocate
+    /// backing storage; use <see cref="GetValueString"/> when a string is needed instead.
+    /// The indexer continues to expose raw CSV fields.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public CsvColumn<T> GetValue(int index)
+    {
+        var column = this[index];
+        if (parserOptions is null)
+            return column;
+
+        var span = column.Span;
+        T quote = FromChar(parserOptions.Quote);
+        if (parserOptions.EnableQuotedFields)
+            span = column.Unquote(quote);
+
+        T escape = parserOptions.EscapeCharacter is char escapeChar ? FromChar(escapeChar) : default;
+        bool hasSpecialCharacters = (parserOptions.EscapeCharacter.HasValue && span.Contains(escape)) ||
+            (parserOptions.EnableQuotedFields && span.Contains(quote));
+        return hasSpecialCharacters ? UnescapeValue(index, span, quote, escape) : new CsvColumn<T>(span);
+    }
+
+    private CsvColumn<T> UnescapeValue(int index, ReadOnlySpan<T> span, T quote, T escape)
+    {
+        var options = parserOptions!;
+        bool needsUnescape = false;
+        for (int i = 0; i + 1 < span.Length; i++)
+        {
+            if ((options.EscapeCharacter.HasValue && span[i].Equals(escape)) ||
+                (options.EnableQuotedFields && span[i].Equals(quote) && span[i + 1].Equals(quote)))
+            {
+                needsUnescape = true;
+                break;
+            }
+        }
+        if (!needsUnescape)
+            return new CsvColumn<T>(span);
+
+        string value = GetValueString(index);
+        if (typeof(T) == typeof(char))
+        {
+            var chars = value.AsSpan();
+            return new CsvColumn<T>(MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<char, T>(ref MemoryMarshal.GetReference(chars)), chars.Length));
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(value);
+        return new CsvColumn<T>(MemoryMarshal.CreateReadOnlySpan(
+            ref Unsafe.As<byte, T>(ref MemoryMarshal.GetArrayDataReference(bytes)), bytes.Length));
+    }
+
+    /// <summary>Decodes a logical field using this row's CSV quote and escape settings.</summary>
+    /// <param name="index">Zero-based column index.</param>
+    /// <returns>An owned string with CSV quoting and escaping removed.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public string GetValueString(int index)
+    {
+        var column = this[index];
+        if (parserOptions is null)
+            return column.ToString();
+
+        var span = column.Span;
+        if (typeof(T) == typeof(byte))
+        {
+            var bytes = MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<T, byte>(ref MemoryMarshal.GetReference(span)), span.Length);
+            return CsvPipeColumnText.Decode(bytes, (byte)parserOptions.Quote,
+                parserOptions.EscapeCharacter is char escape ? (byte)escape : null, parserOptions.EnableQuotedFields);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            var chars = MemoryMarshal.CreateReadOnlySpan(
+                ref Unsafe.As<T, char>(ref MemoryMarshal.GetReference(span)), span.Length);
+            return CsvPipeColumnText.Decode(chars, parserOptions.Quote, parserOptions.EscapeCharacter, parserOptions.EnableQuotedFields);
+        }
+        throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static T FromChar(char value)
+    {
+        if (typeof(T) == typeof(char))
+            return Unsafe.As<char, T>(ref value);
+        if (typeof(T) == typeof(byte))
+        {
+            byte ascii = (byte)value;
+            return Unsafe.As<byte, T>(ref ascii);
+        }
+        throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
+    }
 
 
     /// <summary>
@@ -280,12 +382,12 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         var charLine = MemoryMarshal.CreateReadOnlySpan(
             ref Unsafe.As<T, char>(ref MemoryMarshal.GetReference(line)), line.Length);
 
-        const char quote = '"';
+        char quote = parserOptions?.Quote ?? '"';
         const char space = ' ';
         const char tab = '\t';
 
         // Skip quoted fields (they start and end with quotes)
-        if (end - start >= 2 && charLine[start] == quote && charLine[end - 1] == quote)
+        if ((parserOptions?.EnableQuotedFields ?? true) && end - start >= 2 && charLine[start] == quote && charLine[end - 1] == quote)
         {
             return (start, end);
         }
@@ -311,12 +413,12 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         var byteLine = MemoryMarshal.CreateReadOnlySpan(
             ref Unsafe.As<T, byte>(ref MemoryMarshal.GetReference(line)), line.Length);
 
-        const byte quote = (byte)'"';
+        byte quote = (byte)(parserOptions?.Quote ?? '"');
         const byte space = (byte)' ';
         const byte tab = (byte)'\t';
 
         // Skip quoted fields (they start and end with quotes)
-        if (end - start >= 2 && byteLine[start] == quote && byteLine[end - 1] == quote)
+        if ((parserOptions?.EnableQuotedFields ?? true) && end - start >= 2 && byteLine[start] == quote && byteLine[end - 1] == quote)
         {
             return (start, end);
         }
@@ -348,7 +450,7 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     {
         var newLine = line.ToArray();
         var newEnds = columnEnds.ToArray();
-        return new CsvRow<T>(newLine, newEnds, columnCount, lineNumber, sourceLineNumber, trimFields, baseOffset);
+        return new CsvRow<T>(newLine, newEnds, columnCount, lineNumber, sourceLineNumber, trimFields, baseOffset, parserOptions);
     }
 
     /// <summary>

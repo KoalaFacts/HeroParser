@@ -1544,6 +1544,17 @@ public class Person
 
 The source generator emits a binder alongside the class — no separate package required (generators ship inside the main `HeroParser` package).
 
+Generated CSV binders consume logical field values: surrounding quotes and escape
+sequences are decoded before type conversion, header matching, null-value checks,
+and validation. They use the parser's `Quote`, `EscapeCharacter`, and
+`EnableQuotedFields` settings. Excel cells remain literal cell values, not CSV text.
+
+For manual row reads, `row[i]` and `row.GetString(i)` retain the raw field.
+`row.GetValueString(i)` returns its decoded string using the reader's settings;
+`row.GetValue(i)` provides a logical column for span-based type parsing. Removing
+surrounding quotes does not allocate, but unescaping a logical column may allocate
+backing storage. Prefer `GetValueString` when the final result is a string.
+
 **With explicit column mapping:**
 
 ```csharp

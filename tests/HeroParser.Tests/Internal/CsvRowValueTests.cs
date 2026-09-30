@@ -15,6 +15,9 @@ public class CsvRowValueTests
     [InlineData("\"a\\\\b\"", "\"a\\b\"", '"', '\\', false)]
     [InlineData("\"abc\"", "\"abc\"", '"', null, false)]
     [InlineData("plain", "plain", '"', null, true)]
+    [InlineData("\"abc\"", "abc", '"', null, true)]
+    [InlineData("plain", "plain", '"', '\\', true)]
+    [InlineData("\u4F60\u597D \uD83D\uDE00", "\u4F60\u597D \uD83D\uDE00", '"', null, true)]
     public void LogicalValues_PreserveRawFieldsAndClones(string raw, string expected, char quote, char? escape, bool quotes)
     {
         foreach (bool simd in new[] { false, true })
@@ -38,6 +41,42 @@ public class CsvRowValueTests
             Assert.False(chars.MoveNext());
             Assert.Equal(expected, charClone.GetValueString(0));
         }
+    }
+
+    [Theory]
+    [InlineData("", "", '"', null, true)]
+    [InlineData("\"\"\"\"\"\"", "\"\"", '"', null, true)]
+    [InlineData("a\"\"b", "a\"b", '"', null, true)]
+    [InlineData("a\"b", "a\"b", '"', null, true)]
+    [InlineData("1121", "12", '1', null, true)]
+    [InlineData("abc\\", "abc\\", '"', '\\', true)]
+    [InlineData("a\"\"b", "a\"\"b", '"', null, false)]
+    [InlineData("a\\b", "ab", '"', '\\', false)]
+    public void LogicalValues_HandleFastAndSlowPathBoundaries(string raw, string expected, char quote, char? escape, bool quotes)
+    {
+        var options = new CsvReadOptions { Quote = quote, EscapeCharacter = escape, EnableQuotedFields = quotes };
+        var chars = new CsvRow<char>(raw.AsSpan(), [-1, raw.Length], 1, 1, 1, parserOptions: options);
+        Assert.Equal(raw, chars[0].ToString());
+        Assert.Equal(expected, chars.GetValueString(0));
+        Assert.Equal(expected, chars.GetValue(0).ToString());
+
+        var data = Encoding.UTF8.GetBytes(raw);
+        var bytes = new CsvRow<byte>(data, [-1, data.Length], 1, 1, 1, parserOptions: options);
+        Assert.Equal(raw, bytes[0].ToString());
+        Assert.Equal(expected, bytes.GetValueString(0));
+        Assert.Equal(expected, bytes.GetValue(0).ToString());
+    }
+
+    [Theory]
+    [InlineData(false, "\u0080")]
+    [InlineData(true, "\uFFFD\uFFFD")]
+    public void ByteValues_PreserveUtf8ReplacementBeforeUnescaping(bool escaped, string expected)
+    {
+        byte[] data = escaped ? [0xC2, (byte)'\\', 0x80] : [0xC2, 0x80];
+        var options = new CsvReadOptions { EscapeCharacter = '\\' };
+        var row = new CsvRow<byte>(data, [-1, data.Length], 1, 1, 1, parserOptions: options);
+        Assert.Equal(expected, row.GetValueString(0));
+        Assert.Equal(expected, row.GetValue(0).ToString());
     }
 
     [Fact]

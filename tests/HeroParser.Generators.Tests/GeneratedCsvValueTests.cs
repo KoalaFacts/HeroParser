@@ -16,6 +16,12 @@ public class GeneratedCsvValueTests
     public static TheoryData<string, string, char, char?, bool> Cases => new()
     {
         { "Alice,42", "Alice", '"', null, true },
+        { ",42", "", '"', null, true },
+        { "Alice,42", "Alice", '"', '\\', true },
+        { "Alice,\"42\"", "Alice", '"', null, true },
+        { "Alice,1421", "Alice", '1', null, true },
+        { "\u4F60\u597D \uD83D\uDE00,42", "\u4F60\u597D \uD83D\uDE00", '"', null, true },
+        { "\"\"\"\"\"\",42", "\"\"", '"', null, true },
         { "\"Alice\",\"42\"", "Alice", '"', null, true },
         { "\"said \"\"hello\"\", row 1\",42", "said \"hello\", row 1", '"', null, true },
         { "\"\u4F60\u597D \"\"\u4E16\u754C\"\" \uD83D\uDE00\",42", "\u4F60\u597D \"\u4E16\u754C\" \uD83D\uDE00", '"', null, true },

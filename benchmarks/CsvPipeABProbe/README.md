@@ -194,12 +194,13 @@ Raw pairs are also split into candidate-first/baseline-first and first/second
 half medians, with 15 pairs per cohort. Here A/B labels are logical measurement
 slots, not different source revisions; no production A/B phase runs.
 
-A thirteenth process collects JIT output separately using Independent routing.
-Only parser, model and probe assemblies are selected by `DOTNET_JitDisasmAssemblies`;
-normal tiering/PGO stays enabled. Inspect actual observed tiers, both consumer
+Two additional processes collect JIT output separately using Independent routing,
+one selecting baseline parser/model assemblies and one candidate assemblies.
+`DOTNET_JitDisasm` uses assembly-qualified `assembly!method` patterns; both also
+select the probe. Normal tiering/PGO stays enabled. Inspect actual observed tiers, both consumer
 state machines and generated binders, not just code size. See the official
-[JIT output documentation](https://github.com/dotnet/runtime/blob/main/docs/design/coreclr/jit/viewing-jit-dumps.md).
-That process's durations are never uninstrumented timing evidence. The
+[.NET 10 JIT output documentation](https://github.com/dotnet/runtime/blob/v10.0.0/docs/design/coreclr/jit/viewing-jit-dumps.md).
+These processes' durations are never uninstrumented timing evidence. The
 `csv-pipe-bias-<run-id>-<attempt>` artifact contains all logs, module/source
 fingerprints, runner context, cohort results and raw JIT assembly for 30 days.
 
@@ -211,6 +212,17 @@ different warmup histories prevent assuming independent and swapped ratios must
 be exact reciprocals. A complete diagnostic job is not stable A/A acceptance,
 a throughput benefit, permission to merge or permission to begin cold-decoding
 isolation. Preserve earlier failed acceptance runs.
+
+To repair or extend JIT evidence without repeating any timing controls, add
+`-f pipe_bias_jit_only=true` to the dispatch above. This mode verifies correctness
+and runs only the two instrumented, side-labelled processes; `BiasRuns` stays
+empty and the state explicitly says `bias-jit-only-complete-not-performance-approval`.
+It cannot establish reproducibility of a prior timing process's machine code.
+Initial capture 36695424639 requested `DOTNET_JitDisasmAssemblies`, which did not
+filter the .NET 10 output; retain that mixed dump as limited evidence, not a
+reliably side-labelled parser listing. Revalidate it with its recorded revision,
+not the corrected selector checker. Its uninstrumented timing matrix remains
+unchanged and is not repeated to obtain a pass.
 
 ### Paired-Series Acceptance
 

@@ -38,8 +38,9 @@ function Get-CsvPipeTimingResult {
         throw 'Diagnostic records cannot be used for timing acceptance.'
     }
     if ($JitDiagnostic) {
-        if (!$BiasMode -or $environment.jitDisasm -ne '*' -or
-            $environment.jitDisasmAssemblies -ne 'HeroParser;HeroParser.Baseline;CsvPipeABModels.Candidate;CsvPipeABModels.Baseline;CsvPipeABProbe') {
+        if ($BiasMode -ne 'Independent' -or $environment.jitDisasmAssemblies -or
+            $environment.jitDisasm -notin @('HeroParser.Baseline!* CsvPipeABModels.Baseline!* CsvPipeABProbe!*',
+                'HeroParser!* CsvPipeABModels.Candidate!* CsvPipeABProbe!*')) {
             throw 'Missing separate JIT diagnostic instrumentation.'
         }
     }

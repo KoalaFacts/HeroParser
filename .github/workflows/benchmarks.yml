@@ -37,6 +37,10 @@ on:
         description: 'Run only fixed same-source module/self/swap bias diagnostics and separate JIT output; not acceptance'
         type: boolean
         default: false
+      pipe_bias_jit_only:
+        description: 'With pipe_bias: collect only two side-labelled JIT processes, not timing controls'
+        type: boolean
+        default: false
       baseline_sha:
         description: 'Full baseline commit SHA for the paired pipe experiment'
         type: string
@@ -44,7 +48,7 @@ on:
 
 # Cancel in-progress runs for the same workflow and ref
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.pipe_bias && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
   cancel-in-progress: true
 
 permissions:
@@ -56,7 +60,7 @@ env:
 
 jobs:
   setup:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_controls && !inputs.pipe_bias)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
@@ -325,7 +329,7 @@ jobs:
           retention-days: 30
 
   pipe-bias:
-    if: github.event_name == 'workflow_dispatch' && inputs.pipe_bias
+    if: github.event_name == 'workflow_dispatch' && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
     name: CSV Pipe Same-Source Bias Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -334,8 +338,10 @@ jobs:
         shell: pwsh
         env:
           OTHER_MODES: ${{ inputs.pipe_ab || inputs.pipe_profile || inputs.pipe_controls }}
+          BIAS_MODE: ${{ inputs.pipe_bias }}
         run: |
           if ($env:OTHER_MODES -eq 'true') { throw 'pipe_bias cannot be combined with other manual experiment modes.' }
+          if ($env:BIAS_MODE -ne 'true') { throw 'pipe_bias_jit_only requires pipe_bias.' }
 
       - name: Checkout exact diagnostic source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -360,8 +366,10 @@ jobs:
         shell: pwsh
         env:
           SOURCE_SHA: ${{ github.sha }}
+          JIT_ONLY: ${{ inputs.pipe_bias_jit_only }}
         run: |
-          ./benchmarks/CsvPipeABProbe/run-series.ps1 -BaselineSha $env:SOURCE_SHA -Workspace "$env:RUNNER_TEMP/pipe-bias" -OutputDirectory BenchmarkDotNet.Artifacts/pipe-bias -BiasDiagnostics
+          $jitOnly = $env:JIT_ONLY -eq 'true'
+          ./benchmarks/CsvPipeABProbe/run-series.ps1 -BaselineSha $env:SOURCE_SHA -Workspace "$env:RUNNER_TEMP/pipe-bias" -OutputDirectory BenchmarkDotNet.Artifacts/pipe-bias -BiasDiagnostics -BiasJitOnly:$jitOnly
 
       - name: Upload diagnostic evidence even on failure
         if: always()

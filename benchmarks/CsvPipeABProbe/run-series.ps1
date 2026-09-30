@@ -3,11 +3,13 @@ param(
     [Parameter(Mandatory = $true)][string]$Workspace,
     [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-series',
     [switch]$ControlsOnly,
-    [switch]$BiasDiagnostics
+    [switch]$BiasDiagnostics,
+    [switch]$BiasJitOnly
 )
 
 $ErrorActionPreference = 'Stop'
 if ($ControlsOnly -and $BiasDiagnostics) { throw 'Choose controls-only or bias diagnostics, not both.' }
+if ($BiasJitOnly -and !$BiasDiagnostics) { throw 'BiasJitOnly requires BiasDiagnostics.' }
 . (Join-Path $PSScriptRoot 'control.ps1')
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $Workspace = [IO.Path]::GetFullPath($Workspace)
@@ -31,7 +33,7 @@ $baselineDll = Join-Path $baselineDirectory 'src/HeroParser/bin/Release/net10.0/
 $controls = @()
 $comparisons = @()
 $biasRuns = @()
-$jitRun = $null
+$jitRuns = @()
 $state = 'incomplete'
 $exitCode = 1
 $worktreeAdded = $false
@@ -110,8 +112,10 @@ function Measure-Series([string]$Phase, [switch]$Control) {
     return $runs
 }
 
-function Invoke-BiasProbe([string]$Mode, [int]$Cycle, [switch]$Verify, [switch]$Jit) {
-    $name = if ($Verify) { "bias-$Mode-verify" } elseif ($Jit) { 'bias-independent-jit' } else { "bias-$Cycle-$Mode" }
+function Invoke-BiasProbe([string]$Mode, [int]$Cycle, [switch]$Verify, [switch]$Jit,
+    [ValidateSet('', 'Baseline', 'Candidate')][string]$JitModule = '') {
+    if ([bool]$Jit -ne [bool]$JitModule) { throw 'JIT capture requires an explicit physical module side.' }
+    $name = if ($Verify) { "bias-$Mode-verify" } elseif ($Jit) { "bias-independent-jit-$JitModule" } else { "bias-$Cycle-$Mode" }
     $log = Join-Path $OutputDirectory "$name.ndjson"
     $info = [Diagnostics.ProcessStartInfo]::new('dotnet')
     $info.UseShellExecute = $false
@@ -124,10 +128,11 @@ function Invoke-BiasProbe([string]$Mode, [int]$Cycle, [switch]$Verify, [switch]$
     else {
         foreach ($argument in @('--scenario', 'Plain', '--path', 'Generated')) { $info.ArgumentList.Add($argument) }
     }
-    $jitFile = Join-Path $OutputDirectory 'bias-independent-jit.asm'
+    $jitFile = Join-Path $OutputDirectory "$name.asm"
     if ($Jit) {
-        $info.Environment['DOTNET_JitDisasm'] = '*'
-        $info.Environment['DOTNET_JitDisasmAssemblies'] = 'HeroParser;HeroParser.Baseline;CsvPipeABModels.Candidate;CsvPipeABModels.Baseline;CsvPipeABProbe'
+        $info.Environment['DOTNET_JitDisasm'] = if ($JitModule -eq 'Baseline') {
+            'HeroParser.Baseline!* CsvPipeABModels.Baseline!* CsvPipeABProbe!*'
+        } else { 'HeroParser!* CsvPipeABModels.Candidate!* CsvPipeABProbe!*' }
         $info.Environment['DOTNET_JitDisasmDiffable'] = '1'
         $info.Environment['DOTNET_JitStdOutFile'] = $jitFile
     }
@@ -161,12 +166,12 @@ function Invoke-BiasProbe([string]$Mode, [int]$Cycle, [switch]$Verify, [switch]$
             !(Select-String -LiteralPath $jitFile -Pattern 'Assembly listing for method' -Quiet))) { throw 'No JIT assembly was produced.' }
         Write-Host "Completed diagnostic cycle $Cycle mode $Mode (JIT=$Jit); within original bounds: $($result.Stable)"
         return [pscustomobject]@{ Mode = $Mode; Cycle = $Cycle; Valid = $true; Jit = [bool]$Jit;
-            WithinOriginalBounds = $result.Stable; Environment = $environment[0]; Cases = $result.Cases }
+            JitModule = $JitModule; WithinOriginalBounds = $result.Stable; Environment = $environment[0]; Cases = $result.Cases }
     }
     catch {
         if ($Verify) { throw }
         Write-Host "Invalid diagnostic cycle $Cycle mode ${Mode}: $($_.Exception.Message)"
-        return [pscustomobject]@{ Mode = $Mode; Cycle = $Cycle; Valid = $false; Jit = [bool]$Jit; Error = $_.Exception.Message; Cases = @() }
+        return [pscustomobject]@{ Mode = $Mode; Cycle = $Cycle; Valid = $false; Jit = [bool]$Jit; JitModule = $JitModule; Error = $_.Exception.Message; Cases = @() }
     }
     finally {
         if (!$child.HasExited) { $child.Kill($true); $child.WaitForExit() }
@@ -194,16 +199,20 @@ try {
                 throw 'Invalid diagnostic arguments were not rejected.'
             }
         }
-        $modes = @('Independent', 'Swapped', 'BaselineSelf', 'CandidateSelf')
+        $modes = if ($BiasJitOnly) { @('Independent') } else { @('Independent', 'Swapped', 'BaselineSelf', 'CandidateSelf') }
         foreach ($mode in $modes) { Invoke-BiasProbe -Mode $mode -Cycle 0 -Verify }
-        for ($cycle = 1; $cycle -le 3; $cycle++) {
+        for ($cycle = 1; !$BiasJitOnly -and $cycle -le 3; $cycle++) {
             $order = if ($cycle -eq 2) { @('CandidateSelf', 'BaselineSelf', 'Swapped', 'Independent') } else { $modes }
             foreach ($mode in $order) { $biasRuns += Invoke-BiasProbe -Mode $mode -Cycle $cycle }
         }
-        $jitRun = Invoke-BiasProbe -Mode 'Independent' -Cycle 0 -Jit
-        $state = if (@($biasRuns | Where-Object { !$_.Valid }).Count -ne 0 -or !$jitRun.Valid) { 'invalid-bias-diagnostics-no-ab' }
+        foreach ($module in @('Baseline', 'Candidate')) {
+            $jitRuns += Invoke-BiasProbe -Mode 'Independent' -Cycle 0 -Jit -JitModule $module
+        }
+        $state = if (@($biasRuns | Where-Object { !$_.Valid }).Count -ne 0 -or
+            @($jitRuns | Where-Object { !$_.Valid }).Count -ne 0) { 'invalid-bias-diagnostics-no-ab' }
+            elseif ($BiasJitOnly) { 'bias-jit-only-complete-not-performance-approval' }
             else { 'bias-diagnostics-complete-not-performance-approval' }
-        $exitCode = if ($state -eq 'bias-diagnostics-complete-not-performance-approval') { 0 } else { 1 }
+        $exitCode = if ($state -eq 'invalid-bias-diagnostics-no-ab') { 1 } else { 0 }
     }
     else {
         $controls += @(Measure-Series -Phase $firstPhase -Control)
@@ -239,12 +248,12 @@ finally {
     [pscustomobject]@{
         State = $state; BaselineSha = $BaselineSha; CandidateSha = $candidateSha
         Protocol = if ($BiasDiagnostics) { 'csv-pipe-bias-v1-diagnostic-only' } else { 'csv-pipe-v2-post-warmup-calibration' }
-        ControlsOnly = [bool]$ControlsOnly; BiasDiagnostics = [bool]$BiasDiagnostics
+        ControlsOnly = [bool]$ControlsOnly; BiasDiagnostics = [bool]$BiasDiagnostics; BiasJitOnly = [bool]$BiasJitOnly
         MinWarmupSeconds = 10; CalibrationHeadroom = 1.25; MaxCalibrationRepeats = 65536
         Rows = 2000; Pairs = 30; WarmupPairs = 10; MinSampleMs = 100
         Affinity = $env:HERO_PARSER_AB_AFFINITY
         MedianBounds = @(.95, 1.05); P10Minimum = .90; P90Maximum = 1.10
-        Controls = @($controls); Comparisons = @($comparisons); BiasRuns = @($biasRuns); JitRun = $jitRun
+        Controls = @($controls); Comparisons = @($comparisons); BiasRuns = @($biasRuns); JitRuns = @($jitRuns)
     } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'series-summary.json')
     if ($env:GITHUB_STEP_SUMMARY) {
         $summary = @(
@@ -284,7 +293,7 @@ finally {
         }
         if ($BiasDiagnostics) {
             $summary += @('', '### Bias Diagnostics (Not Acceptance)',
-                'Fixed three cycles of four fresh-process modes. Reverse mode order in cycle 2; never retry until stable.',
+                "JIT-only: $([bool]$BiasJitOnly). Otherwise fixed three cycles of four fresh-process modes, with reverse order in cycle 2.",
                 'Self comparisons route both logical sides through one module/consumer. Swapped reverses module routing, not assembly names.',
                 'Original bounds are reported, not waived. These diagnostic records cannot satisfy normal A/A or A/B acceptance.',
                 '| Cycle | Mode | Transport | Median | p10 | p90 | Candidate First | Baseline First | First Half | Second Half | Within Bounds |',
@@ -297,7 +306,10 @@ finally {
                 }
                 if (!$run.Valid) { $summary += "Invalid cycle $($run.Cycle) mode $($run.Mode): $($run.Error)" }
             }
-            $summary += "Separate JIT process valid: $($jitRun.Valid). Its elapsed times are not uninstrumented timing evidence."
+            foreach ($jitRun in $jitRuns) {
+                $summary += "Separate JIT module $($jitRun.JitModule) valid: $($jitRun.Valid). Its elapsed times are not uninstrumented timing evidence."
+                if (!$jitRun.Valid) { $summary += "JIT error: $($jitRun.Error)" }
+            }
         }
         $summary += @('', 'Raw pairs, module IDs, runner context and gate outcomes are retained in the workflow artifact.')
         $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

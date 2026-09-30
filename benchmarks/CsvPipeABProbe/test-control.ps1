@@ -179,8 +179,7 @@ foreach ($mutation in @('routing', 'mode', 'source', 'protocol', 'duration', 'ji
     Write-Host "PASS: rejects mismatched diagnostic $mutation"
 }
 $records = New-BiasRecords 'Independent'
-$records[0].jitDisasm = '*'
-$records[0].jitDisasmAssemblies = 'HeroParser;HeroParser.Baseline;CsvPipeABModels.Candidate;CsvPipeABModels.Baseline;CsvPipeABProbe'
+$records[0].jitDisasm = 'HeroParser.Baseline!* CsvPipeABModels.Baseline!* CsvPipeABProbe!*'
 $null = Get-CsvPipeBiasResult -Records $records -Mode 'Independent' -JitDiagnostic
 Write-Host 'PASS: separately validates instrumented diagnostic evidence'
 Assert-Rejected 'JIT-instrumented acceptance data' { param($r) $r[0].jitDisasm = '*'; $r }
@@ -200,3 +199,15 @@ foreach ($case in $result.Cases) {
         $case.FirstHalfMedian -ne .98 -or $case.SecondHalfMedian -ne 1.02) { throw 'Diagnostic cohort indexing is wrong.' }
 }
 Write-Host 'PASS: order/time cohorts preserve nonuniform raw-pair medians'
+
+$records = New-BiasRecords 'Independent'
+$records[0].jitDisasm = 'HeroParser!* CsvPipeABModels.Candidate!* CsvPipeABProbe!*'
+$null = Get-CsvPipeBiasResult -Records $records -Mode 'Independent' -JitDiagnostic
+Write-Host 'PASS: validates separate candidate-module JIT selector'
+$records[0].jitDisasm = '*'
+$records[0].jitDisasmAssemblies = 'HeroParser;HeroParser.Baseline'
+$rejected = $false
+try { $null = Get-CsvPipeBiasResult -Records $records -Mode 'Independent' -JitDiagnostic }
+catch { $rejected = $true }
+if (!$rejected) { throw 'Legacy ineffective assembly filtering was accepted.' }
+Write-Host 'PASS: rejects ineffective mixed-module JIT selector'

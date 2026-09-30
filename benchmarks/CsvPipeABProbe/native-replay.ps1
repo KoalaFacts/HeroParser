@@ -29,7 +29,8 @@ $results = @()
 $state = 'incomplete-native-replay-not-performance-approval'
 $failure = $null
 function Invoke-ReplayPerf([string[]]$Arguments, [string]$Name) {
-    & sudo -n $PerfTool @Arguments 1> "$Name-stdout.txt" 2> "$Name-stderr.txt"
+    # Downloaded data belongs to this user; offline analysis needs no root access.
+    & $PerfTool @Arguments 1> "$Name-stdout.txt" 2> "$Name-stderr.txt"
     if ($LASTEXITCODE -ne 0) { throw "Replay tool failed: $(Split-Path -Leaf $Name). Retaining original data." }
 }
 try {
@@ -85,8 +86,6 @@ try {
 }
 catch { $failure = $_.Exception.Message; throw }
 finally {
-    & sudo -n chown -R "$((& id -u).Trim()):$((& id -g).Trim())" $OutputDirectory
-    if ($LASTEXITCODE -ne 0) { Write-Warning 'Could not restore replay artifact ownership.' }
     @{ State = $state; Failure = $failure; DiagnosticOnly = $true; OriginRun = $OriginRun
         OriginManifest = $origin.Manifest; ReplaySha = (& git rev-parse HEAD).Trim(); Runs = $results } |
         ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'replay-summary.json')

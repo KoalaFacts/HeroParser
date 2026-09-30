@@ -888,3 +888,9 @@ No second worker was sampled. The next revision repairs report-format handling
 and replays this artifact, without rebuilding or resampling the workload.
 Only the explicit unavailable-IPC placeholder is accepted as an extra column;
 other unexpected columns still fail. Native attribution is pending replay CI.
+
+Replay run `36788723003` passed 51 native assertions but stopped at perf's input
+ownership guard: downloaded data belongs to the runner user, while analysis was
+started as root. No new workload or samples were created. Its failure artifact
+is retained. Replay now runs unprivileged; it neither forces past the guard nor
+changes input ownership or sample-validation thresholds.

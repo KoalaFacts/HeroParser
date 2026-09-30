@@ -6,7 +6,8 @@ function Get-CsvPipeTimingResult {
         [int]$WarmupPairs = 10,
         [int]$MinSampleMs = 100,
         [ValidateSet('', 'Independent', 'Swapped', 'BaselineSelf', 'CandidateSelf')][string]$BiasMode = '',
-        [switch]$JitDiagnostic
+        [switch]$JitDiagnostic,
+        [switch]$Isolated
     )
 
     $environment = @($Records | Where-Object kind -eq 'environment')
@@ -23,7 +24,23 @@ function Get-CsvPipeTimingResult {
         $environment.Scenario -ne 'Plain' -or $environment.Path -ne 'Generated') {
         throw 'Timing source revisions or measurement settings do not match.'
     }
-    if ($BiasMode) {
+    $lastCommand = @{ baseline = 1; candidate = 1 }
+    if ($Isolated) {
+        if ($BiasMode -or $JitDiagnostic -or $environment.protocol -ne 'csv-pipe-isolated-v3' -or
+            $environment.BiasMode -or $environment.diagnosticOnly -eq $true) { throw 'Wrong isolated timing protocol.' }
+        Assert-CsvPipeWorkerEnvironment $environment.baselineWorker $environment.candidateWorker $environment.baselineRef $environment.candidateRef
+        $checks = @($Records | Where-Object kind -eq 'worker-verification')
+        if ($checks.Count -ne 2) { throw 'Both workers require full correctness evidence.' }
+        foreach ($worker in @($environment.baselineWorker, $environment.candidateWorker)) {
+            $verification = @($checks | Where-Object { $_.response.pid -eq $worker.pid })
+            if ($verification.Count -ne 1 -or [Array]::IndexOf($Records, $verification[0]) -ge
+                [Array]::IndexOf($Records, @($Records | Where-Object kind -eq 'verified')[0])) {
+                throw 'Worker correctness must precede timing.'
+            }
+            Assert-CsvPipeWorkerVerification $verification[0].response
+        }
+    }
+    elseif ($BiasMode) {
         $aModule = if ($BiasMode -in @('Swapped', 'CandidateSelf')) { 'Candidate' } else { 'Baseline' }
         $bModule = if ($BiasMode -in @('Swapped', 'BaselineSelf')) { 'Baseline' } else { 'Candidate' }
         if ($environment.protocol -ne 'csv-pipe-bias-v1-diagnostic-only' -or
@@ -51,7 +68,7 @@ function Get-CsvPipeTimingResult {
         $environment.maxCalibrationRepeats -ne 65536) {
         throw 'Unknown or mismatched timing protocol.'
     }
-    foreach ($prefix in @('', 'Models')) {
+    foreach ($prefix in $(if ($Isolated) { @() } else { @('', 'Models') })) {
         $a = [guid]$environment."baseline${prefix}Mvid"
         $b = [guid]$environment."candidate${prefix}Mvid"
         if ($a -eq [guid]::Empty -or $b -eq [guid]::Empty -or $a -eq $b) {
@@ -111,6 +128,23 @@ function Get-CsvPipeTimingResult {
         }
         for ($i = 0; $i -lt $Pairs; $i++) {
             $sample = $samples[$i]
+            if ($Isolated) {
+                foreach ($side in @('baseline', 'candidate')) {
+                    $response = $sample."${side}Response"
+                    $worker = $environment."${side}Worker"
+                    if ($response.kind -ne 'worker-batch' -or $response.pid -ne $worker.pid -or
+                        $response.transport -ne $transport -or $response.repeats -ne $sample.repeats -or
+                        ![double]::IsFinite([double]$response.Id) -or $response.Id -le $lastCommand[$side] -or
+                        $response.Id -ne [Math]::Truncate([double]$response.Id) -or
+                        $response.batchMs -ne $sample."${side}BatchMs" -or
+                        $response.measurement.Milliseconds -ne $sample.$side.Milliseconds -or
+                        ![double]::IsFinite([double]$response.measurement.AllocatedBytes) -or $response.measurement.AllocatedBytes -lt 0 -or
+                        $response.measurement.AllocatedBytes -ne $sample.$side.AllocatedBytes) {
+                        throw 'Isolated batch response or command correlation is invalid.'
+                    }
+                    $lastCommand[$side] = $response.Id
+                }
+            }
             $a = [double]$sample.baseline.Milliseconds
             $b = [double]$sample.candidate.Milliseconds
             $ratio = [double]$sample.ratio
@@ -177,6 +211,58 @@ function Get-CsvPipeControlResult {
         throw 'A/A requires identical source revisions.'
     }
     Get-CsvPipeTimingResult -Records $Records -Rows $Rows -Pairs $Pairs -WarmupPairs $WarmupPairs -MinSampleMs $MinSampleMs
+}
+
+function Assert-CsvPipeWorkerEnvironment($A, $B, [string]$BaselineRef, [string]$CandidateRef) {
+    if ($A.pid -eq $B.pid -or $A.sourceRef -ne $BaselineRef -or $B.sourceRef -ne $CandidateRef -or
+        $A.consumerHash -ne $B.consumerHash) { throw 'Workers require distinct processes, correct source refs and identical consumers.' }
+    foreach ($worker in @($A, $B)) {
+        if ($worker.protocol -ne 'csv-pipe-isolated-v3' -or $worker.Rows -ne 2000 -or
+            $worker.parserName -ne 'HeroParser' -or $worker.modelsName -ne 'CsvPipeABModels' -or
+            ![double]::IsFinite([double]$worker.pid) -or $worker.pid -le 0 -or $worker.pid -ne [Math]::Truncate([double]$worker.pid) -or
+            $worker.jitDisasm -or $worker.jitDisasmAssemblies -or
+            [guid]$worker.parserMvid -eq [guid]::Empty -or [guid]$worker.modelsMvid -eq [guid]::Empty) {
+            throw 'Invalid or instrumented single-module worker.'
+        }
+        foreach ($hash in @('parserHash', 'modelsHash', 'consumerHash')) {
+            if ($worker.$hash -cnotmatch '^[0-9a-f]{64}$') { throw 'Missing worker binary fingerprint.' }
+        }
+    }
+    foreach ($setting in @('runtime', 'os', 'processors', 'serverGc', 'affinity')) {
+        if ($A.$setting -ne $B.$setting) { throw 'Worker runtime settings differ.' }
+    }
+    if (!$A.runtime -or !$A.os -or $A.processors -le 0 -or $A.serverGc -isnot [bool]) { throw 'Worker runtime context is missing.' }
+    if ($BaselineRef -eq $CandidateRef -and
+        ($A.parserHash -ne $B.parserHash -or $A.modelsHash -ne $B.modelsHash -or
+         $A.parserMvid -ne $B.parserMvid -or $A.modelsMvid -ne $B.modelsMvid)) {
+        throw 'Isolated A/A requires identical parser and model binaries, not only source labels.'
+    }
+}
+
+function Assert-CsvPipeWorkerVerification($Response) {
+    if ($Response.kind -ne 'worker-verified' -or $Response.Id -ne 1 -or @($Response.checks).Count -ne 36) {
+        throw 'Worker did not complete its full correctness matrix.'
+    }
+    foreach ($scenario in @('Plain', 'Escaped', 'Unicode', 'LongEscaped')) {
+        foreach ($transport in @('Contiguous', 'Segmented128', 'Stream4096')) {
+            foreach ($path in @('Scan', 'Decode', 'Generated')) {
+                $check = @($Response.checks | Where-Object { $_.scenario -eq $scenario -and $_.transport -eq $transport -and $_.path -eq $path })
+                if ($check.Count -ne 1 -or $check[0].Rows -ne 2000 -or
+                    ($transport -eq 'Segmented128' -and $path -ne 'Generated' -and $check[0].SplitFields -le 0)) {
+                    throw 'Incomplete, duplicate or invalid worker correctness case.'
+                }
+            }
+        }
+    }
+}
+
+function Get-CsvPipeIsolatedControlResult {
+    param([Parameter(Mandatory = $true)][object[]]$Records)
+    $environment = @($Records | Where-Object kind -eq 'environment')
+    if ($environment.Count -ne 1 -or $environment[0].baselineRef -ne $environment[0].candidateRef) {
+        throw 'Isolated controls require identical source revisions.'
+    }
+    Get-CsvPipeTimingResult -Records $Records -Isolated
 }
 
 function Get-CsvPipeBiasResult {

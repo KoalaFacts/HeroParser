@@ -1,6 +1,11 @@
 # CSV PipeReader end-to-end paired A/B probe
 
-This opt-in probe loads independently built baseline and candidate parser
+The active CI timing gate now uses **two isolated single-module workers**,
+not the historical dual-module process described below. Protocol v3 is currently
+controls-only: A/B and production optimizations remain suspended while validating
+this changed execution boundary. See [Isolated Worker Controls](#isolated-worker-controls).
+
+The historical opt-in probe loads independently built baseline and candidate parser
 assemblies into the **same process**. Both sides use the same generated fixture,
 transport, row limits, header, checksum consumer, warmup and repetition count.
 Baseline-first and candidate-first pairs alternate. Do not replace the baseline
@@ -96,9 +101,56 @@ configuration consistent, particularly on heterogeneous laptop CPUs.
 
 ## Evidence and Interpretation
 
-### Isolated CI Series
+### Isolated Worker Controls
 
-The Performance Benchmarks workflow automatically runs the paired experiment for
+```powershell
+pwsh -NoProfile -File benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha HEAD_SHA -Workspace FRESH_WORKSPACE
+```
+
+`HEAD_SHA` must be the full current committed SHA. The script builds one parser
+and generated model with their normal identities (`HeroParser`, `CsvPipeABModels`),
+then builds the existing fixture/consumer code with `SingleModule=true`. Each
+worker executes only `Case.CandidateAsync`; the second consumer and aliased
+parser/model references are absent from that build. Identical artifacts are
+copied into two directories and launched as distinct persistent processes.
+This A/A proves process isolation against identical **binaries**, not the old
+renamed independent-build asymmetry. It does not by itself validate future A/B
+artifact construction, where each parser and generator must be built from its
+own source and then paired with an identical consumer executable.
+
+Exactly three fresh worker pairs run, reversing launch order in cycle two.
+Both workers complete all 36 correctness cases before timing. The coordinator
+requests one batch, waits for its response, then requests the other; first side
+alternates for every pair. The peer remains idle on stdin. IPC, process startup,
+fixture creation, JSON and file writes are outside the worker's timed batch;
+reader creation/reading/checksum/validation/disposal remain inside the unchanged
+`Case.MeasureAsync`. Normal tiering/PGO, affinity and GC settings are unchanged.
+
+Pilot calibration, at least ten paired warmup batches and ten seconds across
+both workers, 125ms final calibration target, 100ms measured-batch floor,
+65536-repeat cap, 2000 rows and 30 measured pairs per transport are unchanged.
+The same median [0.95, 1.05], p10 >= 0.90 and p90 <= 1.10 control bounds apply.
+Every valid-but-unstable cycle is retained; remaining fixed cycles still run.
+There is no A/B, retry-until-green, threshold relaxation or cold-decoding change.
+
+`csv-pipe-isolated-v3` evidence records source refs, distinct PIDs, normal module
+names, MVIDs, SHA-256 parser/model/consumer fingerprints and matching runtime
+settings. The verifier requires identical A/A binaries/consumers, each complete
+correctness matrix, monotonic batch command IDs, matching worker response times,
+repeat counts and transport, all calibration/warmup records and raw percentiles.
+Separate command, stdout and stderr transcripts are retained alongside the paired
+NDJSON and `series-summary.json`; incomplete/invalid evidence fails closed.
+The v2 checker rejects v3 records; archived v2 logs remain reproducible using
+their recorded harness revision. Stable v3 controls validate this control trial,
+not a throughput gain or a proven root cause for older same-process bias.
+
+Automatic PR/push jobs and manual `pipe_controls=true` now run this controls-only
+gate. `pipe_ab=true` explicitly fails while A/B is suspended. Bias and profile
+jobs retain the old dual-module harness for diagnostic evidence only.
+
+### Historical Dual-Module CI Series
+
+Before the v3 isolation change, the Performance Benchmarks workflow automatically ran the paired experiment for
 relevant pull requests and main-branch pushes, including parser, benchmark,
 workflow and shared build-configuration changes. PRs compare the exact base SHA
 with the head SHA (not GitHub's synthetic merge commit); pushes compare the

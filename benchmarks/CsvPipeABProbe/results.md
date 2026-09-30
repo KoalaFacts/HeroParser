@@ -781,3 +781,21 @@ replacement for comparing independent source versions. A future isolation change
 needs its own fixed A/A validation and must retain every existing failure; do not
 accept this PR or begin a production cold-decoding experiment based only on a
 successful diagnostic collection.
+# Isolated-worker protocol v3 validation
+
+The previous head `9067d12` retained the module-bias diagnosis and did not modify
+production code. Its automatic timing job in run `36699090534` failed the original
+same-source A/A gate: the second Segmented128 control median was `0.945745939`
+(p10 `0.940152987`, p90 `0.951140104`). That is a failed control, not a 5.4% gain.
+The failure remains evidence; no retry or relaxed bounds is authorized.
+
+The next controlled change replaces the active comparison boundary with two
+single-module processes running identical normal-identity parser/model binaries
+and one identical consumer executable. Protocol `csv-pipe-isolated-v3` fixes
+three fresh worker pairs (reverse launch order in cycle two), the original
+warmup/calibration/batch floors and A/A ratio bounds. Both sides complete the
+36-case correctness matrix before timing. IPC/startup/fixture construction are
+outside the worker's existing `Case.MeasureAsync` stopwatch. Separate transcripts
+and binary fingerprints are retained. The automatic lane is controls-only;
+A/B and cold-decoding optimization are suspended. Validation is pending CI,
+not a performance approval or a claim that the earlier root cause is proven.

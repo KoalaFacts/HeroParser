@@ -1,5 +1,7 @@
+#if !SINGLE_MODULE
 extern alias baseline;
 extern alias baselineModels;
+#endif
 using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
@@ -7,10 +9,12 @@ using System.IO.Pipelines;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+#if !SINGLE_MODULE
 using BaselineCsv = baseline::HeroParser.Csv;
 using BaselineOptions = baseline::HeroParser.SeparatedValues.Core.CsvReadOptions;
 using BaselineRecord = baselineModels::CsvPipeABModels.PipeRecord;
 using BaselineRecordOptions = baseline::HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions;
+#endif
 using CandidateCsv = HeroParser.Csv;
 using CandidateOptions = HeroParser.SeparatedValues.Core.CsvReadOptions;
 using CandidateRecord = CsvPipeABModels.PipeRecord;
@@ -35,6 +39,9 @@ if ((OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
     process.ProcessorAffinity = (nint)long.Parse(affinity, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
 }
 
+#if SINGLE_MODULE
+await IsolatedWorker.RunAsync(settings);
+#else
 bool baselineSide = settings.BiasMode is "Swapped" or "CandidateSelf";
 bool candidateSide = settings.BiasMode is not ("Swapped" or "BaselineSelf");
 string protocol = "csv-pipe-v2-post-warmup-calibration";
@@ -267,6 +274,8 @@ static double Percentile(IEnumerable<double> values, double percentile)
     return sorted[lower] + (sorted[(int)Math.Ceiling(index)] - sorted[lower]) * (index - lower);
 }
 
+#endif
+
 internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSampleMs, bool VerifyOnly, string? Scenario, string? Path,
     string? ProfileSide, string? ProfileTransport, string? ProfileReadyFile, int ProfileSeconds, string? BiasMode)
 {
@@ -435,7 +444,12 @@ internal sealed class Case(Fixture fixture, string transport, string path)
             : new BufferedReader(transport == "Contiguous" ? new ReadOnlySequence<byte>(fixture.Bytes) : fixture.Segmented);
         try
         {
+#if SINGLE_MODULE
+            return candidate ? await CandidateAsync(pipe, inspectSegments)
+                : throw new InvalidOperationException("The isolated worker has only one consumer.");
+#else
             return candidate ? await CandidateAsync(pipe, inspectSegments) : await BaselineAsync(pipe, inspectSegments);
+#endif
         }
         finally
         {
@@ -474,6 +488,7 @@ internal sealed class Case(Fixture fixture, string transport, string path)
         return new Result(rows, checksum, split);
     }
 
+#if !SINGLE_MODULE
     private async Task<Result> BaselineAsync(PipeReader pipe, bool inspectSegments)
     {
         var options = new BaselineOptions { MaxColumnCount = 4, MaxRowCount = fixture.Rows + 1 };
@@ -504,6 +519,7 @@ internal sealed class Case(Fixture fixture, string transport, string path)
         }
         return new Result(rows, checksum, split);
     }
+#endif
 }
 
 internal sealed class Segment : ReadOnlySequenceSegment<byte>

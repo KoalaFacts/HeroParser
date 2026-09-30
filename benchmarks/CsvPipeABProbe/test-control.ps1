@@ -114,6 +114,97 @@ $records[0].baselineRef = '2' * 40
 if (!(Get-CsvPipeTimingResult -Records $records).Stable) { throw 'Valid A/B timing evidence was rejected.' }
 Write-Host 'PASS: validates A/B timing without requiring identical source revisions'
 
+function New-IsolatedRecords {
+    $records = New-ControlRecords
+    $records[0].protocol = 'csv-pipe-isolated-v3'
+    foreach ($side in @('baseline', 'candidate')) {
+        $worker = [pscustomobject]@{ kind = 'worker-environment'; protocol = 'csv-pipe-isolated-v3'; pid = $(if ($side -eq 'baseline') { 101 } else { 102 })
+            sourceRef = '1' * 40; Rows = 2000; parserName = 'HeroParser'; modelsName = 'CsvPipeABModels'
+            parserMvid = $records[0].candidateMvid; modelsMvid = $records[0].candidateModelsMvid
+            parserHash = 'a' * 64; modelsHash = 'b' * 64; consumerHash = 'c' * 64
+            runtime = '.NET 10'; os = 'test'; processors = 4; serverGc = $false; affinity = $null
+            jitDisasm = $null; jitDisasmAssemblies = $null }
+        $records[0] | Add-Member -NotePropertyName "${side}Worker" -NotePropertyValue $worker
+    }
+    $verifications = foreach ($worker in @($records[0].baselineWorker, $records[0].candidateWorker)) {
+        $checks = foreach ($scenario in @('Plain', 'Escaped', 'Unicode', 'LongEscaped')) {
+            foreach ($transport in @('Contiguous', 'Segmented128', 'Stream4096')) {
+                foreach ($path in @('Scan', 'Decode', 'Generated')) {
+                    [pscustomobject]@{ scenario = $scenario; transport = $transport; path = $path; Rows = 2000; SplitFields = 1; Checksum = 1 }
+                }
+            }
+        }
+        [pscustomobject]@{ kind = 'worker-verification'; response = [pscustomobject]@{ kind = 'worker-verified'; Id = 1; pid = $worker.pid; checks = @($checks) } }
+    }
+    $command = 1
+    foreach ($sample in @($records | Where-Object kind -eq 'pair')) {
+        $command++
+        foreach ($side in @('baseline', 'candidate')) {
+            $sample.$side | Add-Member -NotePropertyName AllocatedBytes -NotePropertyValue 256
+            $sample | Add-Member -NotePropertyName "${side}Response" -NotePropertyValue ([pscustomobject]@{
+                kind = 'worker-batch'; Id = $command; pid = $records[0]."${side}Worker".pid; transport = $sample.transport; repeats = 100
+                measurement = [pscustomobject]@{ Milliseconds = 1.25; AllocatedBytes = 256 }; batchMs = 125
+            })
+        }
+    }
+    return @($records[0]) + @($verifications) + @($records | Select-Object -Skip 1)
+}
+
+function Assert-IsolatedRejected([string]$Name, [scriptblock]$Mutate) {
+    $records = & $Mutate (New-IsolatedRecords)
+    $rejected = $false
+    try { $null = Get-CsvPipeIsolatedControlResult -Records $records }
+    catch { $rejected = $true }
+    if (!$rejected) { throw "Isolated gate accepted malformed evidence: $Name." }
+    Write-Host "PASS: isolated gate rejects $Name"
+}
+
+if (!(Get-CsvPipeIsolatedControlResult -Records (New-IsolatedRecords)).Stable) { throw 'Valid isolated controls were rejected.' }
+Write-Host 'PASS: isolated gate accepts two processes with identical normal-identity binaries'
+Assert-IsolatedRejected 'same process' { param($r) $r[0].candidateWorker.pid = $r[0].baselineWorker.pid; $r }
+Assert-IsolatedRejected 'different source labels' { param($r) $r[0].candidateRef = '2' * 40; $r }
+Assert-IsolatedRejected 'wrong worker source' { param($r) $r[0].baselineWorker.sourceRef = '2' * 40; $r }
+Assert-IsolatedRejected 'renamed parser' { param($r) $r[0].baselineWorker.parserName = 'HeroParser.Baseline'; $r }
+Assert-IsolatedRejected 'renamed models' { param($r) $r[0].baselineWorker.modelsName = 'CsvPipeABModels.Baseline'; $r }
+Assert-IsolatedRejected 'missing binary hash' { param($r) $r[0].baselineWorker.parserHash = $null; $r }
+Assert-IsolatedRejected 'different parser binaries' { param($r) $r[0].baselineWorker.parserHash = 'd' * 64; $r }
+Assert-IsolatedRejected 'different model binaries' { param($r) $r[0].baselineWorker.modelsHash = 'd' * 64; $r }
+Assert-IsolatedRejected 'different consumers' { param($r) $r[0].baselineWorker.consumerHash = 'd' * 64; $r }
+Assert-IsolatedRejected 'different runtime' { param($r) $r[0].baselineWorker.runtime = 'other'; $r }
+Assert-IsolatedRejected 'different GC' { param($r) $r[0].baselineWorker.serverGc = $true; $r }
+Assert-IsolatedRejected 'different affinity' { param($r) $r[0].baselineWorker.affinity = '1'; $r }
+Assert-IsolatedRejected 'instrumented worker' { param($r) $r[0].baselineWorker.jitDisasm = '*'; $r }
+Assert-IsolatedRejected 'missing worker preflight' { param($r) $r | Where-Object kind -ne 'worker-verification' }
+Assert-IsolatedRejected 'incomplete worker matrix' { param($r) $r[1].response.checks = @($r[1].response.checks | Select-Object -Skip 1); $r }
+Assert-IsolatedRejected 'duplicate correctness case' { param($r) $r[1].response.checks[1].path = 'Scan'; $r }
+Assert-IsolatedRejected 'fake split coverage' { param($r) ($r[1].response.checks | Where-Object { $_.transport -eq 'Segmented128' -and $_.path -eq 'Decode' } | Select-Object -First 1).SplitFields = 0; $r }
+Assert-IsolatedRejected 'wrong response process' { param($r) ($r | Where-Object kind -eq 'pair' | Select-Object -First 1).baselineResponse.pid = 102; $r }
+Assert-IsolatedRejected 'reused response' { param($r) ($r | Where-Object kind -eq 'pair' | Select-Object -Skip 1 -First 1).baselineResponse.Id = 2; $r }
+Assert-IsolatedRejected 'wrong response transport' { param($r) ($r | Where-Object kind -eq 'pair' | Select-Object -First 1).baselineResponse.transport = 'Stream4096'; $r }
+Assert-IsolatedRejected 'wrong response repeats' { param($r) ($r | Where-Object kind -eq 'pair' | Select-Object -First 1).baselineResponse.repeats = 99; $r }
+Assert-IsolatedRejected 'response time mismatch' { param($r) ($r | Where-Object kind -eq 'pair' | Select-Object -First 1).baselineResponse.measurement.Milliseconds = 2; $r }
+Assert-IsolatedRejected 'response duration mismatch' { param($r) ($r | Where-Object kind -eq 'pair' | Select-Object -First 1).baselineResponse.batchMs = 126; $r }
+Assert-IsolatedRejected 'response allocation mismatch' { param($r) ($r | Where-Object kind -eq 'pair' | Select-Object -First 1).baselineResponse.measurement.AllocatedBytes = 0; $r }
+Assert-IsolatedRejected 'short warmup' { param($r) ($r | Where-Object kind -eq 'warmup' | Select-Object -First 1).elapsedSeconds = 9; $r }
+Assert-IsolatedRejected 'short batch' { param($r) ($r | Where-Object kind -eq 'pair' | Select-Object -First 1).baselineBatchMs = 99; $r }
+Assert-IsolatedRejected 'dishonest summary' { param($r) ($r | Where-Object kind -eq 'summary' | Select-Object -First 1).medianRatio = .99; $r }
+Assert-IsolatedRejected 'missing completion' { param($r) $r | Where-Object kind -ne 'complete' }
+Assert-IsolatedRejected 'legacy protocol' { param($r) $r[0].protocol = 'csv-pipe-v2-post-warmup-calibration'; $r }
+$legacyRejected = $false
+try { $null = Get-CsvPipeControlResult -Records (New-IsolatedRecords) } catch { $legacyRejected = $true }
+if (!$legacyRejected) { throw 'Legacy checker accepted isolated evidence.' }
+Write-Host 'PASS: legacy checker rejects isolated evidence'
+$unstable = New-IsolatedRecords
+foreach ($sample in @($unstable | Where-Object kind -eq 'pair')) {
+    $sample.candidate.Milliseconds = 1.175; $sample.candidateBatchMs = 117.5; $sample.ratio = .94
+    $sample.candidateResponse.measurement.Milliseconds = 1.175; $sample.candidateResponse.batchMs = 117.5
+}
+foreach ($summary in @($unstable | Where-Object kind -eq 'summary')) {
+    $summary.medianRatio = .94; $summary.p10Ratio = .94; $summary.p90Ratio = .94; $summary.candidateMinBatchMs = 117.5
+}
+if ((Get-CsvPipeIsolatedControlResult -Records $unstable).Stable) { throw 'Isolated controls bypassed the original stability bounds.' }
+Write-Host 'PASS: isolated controls preserve original stability bounds'
+
 $records = New-ControlRecords
 foreach ($sample in @($records | Where-Object kind -eq 'pair')) {
     $sample.ratio = 1.2

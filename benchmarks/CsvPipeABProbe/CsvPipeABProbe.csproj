@@ -4,24 +4,34 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefineConstants Condition="'$(SingleModule)' == 'true'">$(DefineConstants);SINGLE_MODULE</DefineConstants>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Models/**" />
-    <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
-    <Reference Include="HeroParser.Baseline">
+    <ProjectReference Include="../../src/HeroParser/HeroParser.csproj"
+                      GlobalPropertiesToRemove="SingleModule;CandidateModelsDll;BaseIntermediateOutputPath;OutputPath" />
+    <Reference Include="HeroParser.Baseline" Condition="'$(SingleModule)' != 'true'">
       <HintPath>$(BaselineDll)</HintPath>
       <Aliases>baseline</Aliases>
     </Reference>
-    <Reference Include="CsvPipeABModels.Baseline">
+    <Reference Include="CsvPipeABModels.Baseline" Condition="'$(SingleModule)' != 'true'">
       <HintPath>$(BaselineModelsDll)</HintPath>
       <Aliases>baselineModels</Aliases>
     </Reference>
-    <Reference Include="CsvPipeABModels.Candidate">
+    <Reference Include="CsvPipeABModels.Candidate" Condition="'$(SingleModule)' != 'true'">
+      <HintPath>$(CandidateModelsDll)</HintPath>
+    </Reference>
+    <Reference Include="CsvPipeABModels" Condition="'$(SingleModule)' == 'true'">
       <HintPath>$(CandidateModelsDll)</HintPath>
     </Reference>
   </ItemGroup>
   <Target Name="RequireBaseline" BeforeTargets="ResolveReferences"
-          Condition="!Exists('$(BaselineDll)') Or !Exists('$(BaselineModelsDll)') Or !Exists('$(CandidateModelsDll)')">
+          Condition="'$(SingleModule)' != 'true' And (!Exists('$(BaselineDll)') Or !Exists('$(BaselineModelsDll)') Or !Exists('$(CandidateModelsDll)'))">
     <Error Text="Build both generated model assemblies, then pass BaselineDll, BaselineModelsDll and CandidateModelsDll. See this probe's README." />
+  </Target>
+  <Target Name="RequireWorkerModel" BeforeTargets="ResolveReferences"
+          Condition="'$(SingleModule)' == 'true' And !Exists('$(CandidateModelsDll)')">
+    <Error Text="Build the normal-identity generated models before the isolated worker." />
   </Target>
 </Project>

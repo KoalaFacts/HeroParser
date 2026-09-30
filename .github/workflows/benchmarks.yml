@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       pipe_ab:
-        description: 'Run only the paired CSV pipe experiment with A/A stability gates'
+        description: 'Suspended: A/B fails explicitly until isolated A/A controls are accepted'
         type: boolean
         default: false
       pipe_profile:
@@ -30,7 +30,7 @@ on:
         type: boolean
         default: false
       pipe_controls:
-        description: 'Run only three fixed fresh-process A/A checks of timing protocol v2; never A/B'
+        description: 'Run only three fixed isolated-process A/A checks of timing protocol v3; never A/B'
         type: boolean
         default: false
       pipe_bias:
@@ -263,14 +263,14 @@ jobs:
           lscpu > BenchmarkDotNet.Artifacts/pipe-runner-context.txt
           dotnet --info >> BenchmarkDotNet.Artifacts/pipe-runner-context.txt
 
-      - name: Run serial timing validation
+      - name: Run fixed isolated same-source controls
         shell: pwsh
         env:
-          BASELINE_SHA: ${{ inputs.pipe_controls && github.sha || github.event.pull_request.base.sha || github.event.before || inputs.baseline_sha }}
-          CONTROLS_ONLY: ${{ inputs.pipe_controls }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          LEGACY_AB: ${{ inputs.pipe_ab }}
         run: |
-          $controlsOnly = $env:CONTROLS_ONLY -eq 'true'
-          ./benchmarks/CsvPipeABProbe/run-series.ps1 -BaselineSha $env:BASELINE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series" -ControlsOnly:$controlsOnly
+          if ($env:LEGACY_AB -eq 'true') { throw 'A/B is suspended until isolated same-source controls have been accepted; use pipe_controls.' }
+          ./benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha $env:SOURCE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series"
 
       - name: Upload paired experiment evidence
         if: always()

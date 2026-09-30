@@ -235,6 +235,7 @@ internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSam
                     case "--profile-side": profileSide = selected; break;
                     case "--profile-transport": profileTransport = selected; break;
                     case "--profile-ready-file": profileReadyFile = selected; break;
+                    default: throw new ArgumentException($"Unknown profiling option: {option}.");
                 }
                 continue;
             }

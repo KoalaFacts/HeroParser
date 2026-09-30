@@ -190,6 +190,7 @@ function Get-CsvPipeBiasResult {
         $samples = @($Records | Where-Object { $_.kind -eq 'pair' -and $_.transport -eq $case.Transport })
         foreach ($group in @('CandidateFirst', 'BaselineFirst', 'FirstHalf', 'SecondHalf')) {
             $subset = @($samples | Where-Object {
+                # switch rebinds $_; preserve the pair before selecting its cohort.
                 $sample = $_
                 switch ($group) {
                     'CandidateFirst' { $sample.candidateFirst -eq $true }

@@ -614,3 +614,170 @@ but stable A/A measurement is not. Investigate the two-side asymmetry before
 another production candidate; cold-decoding isolation remains deferred. Neither
 these jobs nor unrelated green CI establish throughput benefit or authorize a
 merge.
+
+## Same-Source Bias Diagnosis: Dual-Consumer Effects Remain
+
+[Fixed diagnostic run 36695424639](https://github.com/KoalaFacts/HeroParser/actions/runs/36695424639/job/109822124545)
+used source `a0a2f4ccd9a1ffea1ac0c905ce6ed86eb16d7590` for both independently
+built parser/model copies. Production parser and tests still match main. Its
+protocol is `csv-pipe-bias-v1-diagnostic-only`; these records cannot satisfy
+ordinary A/A or A/B acceptance. Job success means the predetermined diagnostics
+completed with valid records, **not** that every ratio passed the original gates.
+
+### Fixed Experiment and Verified Raw Records
+
+The four modes route logical A/B measurement slots to different consumers:
+Independent uses baseline/candidate, Swapped uses candidate/baseline, BaselineSelf
+uses baseline/baseline, and CandidateSelf uses candidate/candidate. Routing is
+outside the timed batch. `Case.MeasureAsync` and `ReadAsync` implementations
+remain shared and unchanged. Self modes load both assemblies but execute just
+one consumer; swapped mode does not rename assemblies or reverse loader metadata.
+
+Each mode ran in three fresh processes, in a fixed order, reversed in cycle 2.
+All twelve processes completed, including the biased ones. All 1080 raw pairs
+(2160 uninstrumented batches) were revalidated against the checker. Minimum batch
+duration was 192.9130 ms; the 36 paired warmups lasted 10.0017-10.3832 seconds.
+Every process ended with zero invalid cases. Preparation passed the original
+36-case matrix and each mode's full 36-case matrix (180 verified cases total).
+The job passed 44 script parsing/control assertions and all builds reported
+zero warnings/errors. Five invalid diagnostic argument forms were rejected
+before timing. No local builds, tests or timing ran.
+
+| Cycle | Mode | Contiguous Median | Segmented128 Median | Stream4096 Median | Cases Within Original Bounds |
+|---:|---|---:|---:|---:|---:|
+| 1 | Independent | 1.009225 | 1.026547 | 1.008359 | 3/3 |
+| 1 | Swapped | **1.099555** | **1.093302** | **1.186900** | **0/3** |
+| 1 | BaselineSelf | 0.999751 | 1.000980 | 0.999820 | 3/3 |
+| 1 | CandidateSelf | 0.999272 | 1.000626 | 0.999646 | 3/3 |
+| 2 | CandidateSelf | 0.999171 | 0.999924 | 1.000137 | 3/3 |
+| 2 | BaselineSelf | 0.999684 | 1.000245 | 0.998947 | 3/3 |
+| 2 | Swapped | 0.993126 | 1.012361 | 1.007594 | 3/3 |
+| 2 | Independent | 0.973023 | **1.060531** | 0.976607 | **2/3** |
+| 3 | Independent | 1.009189 | 0.984455 | 1.002628 | 3/3 |
+| 3 | Swapped | 0.987241 | 0.986048 | 0.984988 | 3/3 |
+| 3 | BaselineSelf | 1.000287 | 0.998889 | 1.000599 | 3/3 |
+| 3 | CandidateSelf | 1.000715 | 0.999637 | 1.000998 | 3/3 |
+
+All eighteen self-comparison cases passed the unchanged bounds, with medians
+0.998889-1.000998. Four of eighteen dual-consumer cases failed. The failed cases
+remain biased in both ordering cohorts and both time halves (15 pairs per group):
+
+| Cycle/Mode/Transport | p10-p90 | Logical B First | Logical A First | First Half | Second Half |
+|---|---:|---:|---:|---:|---:|
+| 1/Swapped/Contiguous | 1.092635-1.105071 | 1.101008 | 1.099356 | 1.100013 | 1.099356 |
+| 1/Swapped/Segmented128 | 1.088239-1.096528 | 1.094119 | 1.091617 | 1.094114 | 1.091838 |
+| 1/Swapped/Stream4096 | 1.147429-1.193019 | 1.190176 | 1.186212 | 1.187218 | 1.186295 |
+| 2/Independent/Segmented128 | 1.052456-1.070798 | 1.059539 | 1.061522 | 1.058467 | 1.061823 |
+
+The common clock/batch/order mechanism did not produce a comparable bias when
+both slots executed the same consumer. This narrows investigation toward
+dual-consumer/module execution and its specialization/warmup/JIT state. It does
+not isolate assembly naming, loader/code layout, shared generic specialization,
+dynamic PGO or runtime effects as a cause. Self mode also changes execution
+history, so it is not a proof that module identity alone causes the bias.
+Independent and swapped processes are not exact reciprocal experiments: their
+fresh JIT histories differ. No single physical side was consistently faster.
+
+The runner reported EPYC 7763, Ubuntu 24.04.5 LTS, SDK 10.0.401/runtime 10.0.12,
+four logical processors, workstation GC and no affinity override. All twelve
+timing processes had identical source/module/runtime fingerprints. Parser IDs
+were baseline `e1cce837-203a-44c5-b468-2c1cff0da38e` and candidate
+`6fc6b3e6-beb1-446b-af26-ae9671d31e27`; model IDs were baseline
+`8b0c0b1b-a0e8-42a3-9ce3-d527b2731220` and candidate
+`b1bbc742-325c-4bc4-93ba-0ec634ccc8bc`. Virtual-runner limitations still apply.
+
+### JIT Evidence Has Separate Limits
+
+The thirteenth, instrumented Independent process produced a mixed JIT dump.
+The requested `DOTNET_JitDisasmAssemblies` setting did not filter this .NET 10
+output: unrelated runtime/JSON methods appear. Identically named parser/model
+methods from the two assemblies cannot be reliably assigned to sides merely
+by their dump order. Retain this raw dump, but do not describe it as a reliably
+side-labelled parser capture or accepted timing.
+
+The distinctly named benchmark consumer state machines can be identified:
+baseline/candidate both initially had 2703-byte Tier1-OSR listings; candidate
+also had a later 2481-byte OSR listing. Their observed final Tier1 listings were
+4971/4966 bytes. This demonstrates compilation-state variation, not its CPU
+cost or a causal explanation for a different, uninstrumented timing process.
+It does not establish instruction-cache behavior or a production gain.
+
+Revision `e45cdafc3ced4b4b1813af041c0a034a00c79fba` corrects capture to the
+[.NET 10 assembly-qualified method selector](https://github.com/dotnet/runtime/blob/v10.0.0/docs/design/coreclr/jit/viewing-jit-dumps.md#specifying-method-names):
+`DOTNET_JitDisasm=assembly!method`. Two separately labelled Independent processes
+select baseline or candidate parser/model assemblies plus the probe. JIT-only
+mode collects these without repeating the twelve uninstrumented processes.
+Corrected JIT collection results are recorded separately below.
+
+### Preparation Failures and Other Automatic Jobs
+
+Initial revision `593ead14e945c17df6d0c097763c74b2f9b28c83` failed in run
+36695200414 before builds/timing: PowerShell `switch` rebound `$_` while selecting
+cohorts. The new tests caught the empty group. Revision `a0a2f4cc` preserves the
+sample in a separate variable and passed uniform and nonuniform cohort tests.
+The preparation failure produced no timing data and was not a stability failure.
+
+Automatic documentation-head run 36685052211 subsequently completed with
+`stable-controls-review-ab`: all twelve A/A transport cases passed, as did
+36/9/36-case preflights and raw duration checks. Segmented main/head A/B medians
+were 0.974402 and 1.022769 despite no production change. Automatic run 36695402769
+also completed its paired job with stable controls on `a0a2f4cc`. These jobs are
+not repeats of the fixed failed manual trial, do not erase either earlier
+failure, and do not establish a performance gain. Do not pool their ratios with
+diagnostic modes or choose only favorable jobs.
+
+Artifact `csv-pipe-bias-36695424639-1` retains all raw pairs, per-mode checks,
+cohorts, fingerprints, runner context and the limited mixed dump for 30 days.
+The unchanged acceptance failures above remain authoritative evidence. **Keep
+the PR draft and production cold-decoding isolation deferred:** the problematic
+comparison boundary is narrower, but stable dual-source measurement and the
+precise native mechanism are still unproven. No merge is authorized.
+
+### Corrected Side-Labelled JIT Collection
+
+[JIT-only run 36698185404](https://github.com/KoalaFacts/HeroParser/actions/runs/36698185404/job/109831104982)
+completed on `e45cdafc`. Its state is
+`bias-jit-only-complete-not-performance-approval`, with **zero uninstrumented
+timing runs** and two independently validated JIT processes. The original twelve
+timing processes were not repeated. All 46 script parsing/control assertions,
+the normal 36-case preflight and Independent 36-case preflight passed; builds
+reported zero warnings/errors. One instrumented process was outside the original
+ratio bounds; it remains recorded, not used as uninstrumented acceptance evidence.
+
+Assembly-qualified selectors produced baseline/candidate dumps with 551/550
+listings respectively and no unrelated `System.Text.Json` listings. Each file
+has one selected parser/model side plus both benchmark consumers. Actual observed
+Tier1 listings in these **different diagnostic processes** were:
+
+| Method | Baseline-Selected Process | Candidate-Selected Process |
+|---|---:|---:|
+| Selected generated byte binder `TryBind` | 8876 bytes | 8825 bytes |
+| Selected `Csv.TryBindPipeSequenceRow` | 11378 bytes | 11342 bytes |
+| Probe baseline consumer `MoveNext` | 4966 bytes | 4971 bytes |
+| Probe candidate consumer `MoveNext` | 4966 bytes | 4971 bytes |
+
+The two consumers had equal final sizes within each process, yet changed between
+processes. In the baseline-selected process both had a later 2476-byte OSR
+listing; the candidate-selected process had later baseline/candidate OSR listings
+of 2476/2481 bytes. These are observed compilation states, not proof that either
+side's generated code caused an uninstrumented regression. Equal sizes also do
+not imply identical code or cost. No instruction-cache counters or precise
+native on-CPU attribution were collected.
+
+Both processes used the same source/module/runtime fingerprints on EPYC 7763,
+Ubuntu 24.04.5 LTS, runtime 10.0.12/SDK 10.0.401, four logical processors,
+workstation GC and no affinity override. Parser IDs were baseline
+`adf97ef9-6f9d-4427-9b12-5428a6229a24` and candidate
+`0667130f-1063-4970-8ced-db017a274720`; model IDs were baseline
+`6362029e-3a57-4bfb-8749-f508a512f1cc` and candidate
+`ab3f431f-302e-4591-a1b5-68c65c020fec`. These are not the twelve timing processes'
+fingerprints or their machine-code capture. Artifact
+`csv-pipe-bias-36698185404-1` retains the two labelled dumps, raw checked records,
+source/module metadata and runner context for 30 days.
+
+**Next measurement candidate:** isolate the comparison execution boundary before
+changing decoding. Same-consumer self checks are useful harness controls, not a
+replacement for comparing independent source versions. A future isolation change
+needs its own fixed A/A validation and must retain every existing failure; do not
+accept this PR or begin a production cold-decoding experiment based only on a
+successful diagnostic collection.

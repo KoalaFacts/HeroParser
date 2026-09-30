@@ -258,6 +258,8 @@ jobs:
       with:
         fail-on-severity: high
         deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0
+        retry-on-snapshot-warnings: true
+        retry-on-snapshot-warnings-timeout: 120
         comment-summary-in-pr: ${{ github.event_name == 'pull_request' && 'always' || 'never' }}
         # For push events, compare against previous commit
         # For PRs, these are automatically detected

@@ -67,3 +67,14 @@ foreach ($summary in @($records | Where-Object kind -eq 'summary')) {
 }
 if ((Get-CsvPipeControlResult -Records $records).Stable) { throw 'Unstable controls passed the gate.' }
 Write-Host 'PASS: complete but biased controls fail stability gate'
+
+$records = New-ControlRecords
+foreach ($sample in @($records | Where-Object kind -eq 'pair')) {
+    $sample.ratio = if ($sample.pair -lt 4) { .8 } elseif ($sample.pair -ge 26) { 1.2 } else { 1.0 }
+    $sample.candidate.Milliseconds = $sample.ratio
+}
+foreach ($summary in @($records | Where-Object kind -eq 'summary')) {
+    $summary.p10Ratio = .8; $summary.p90Ratio = 1.2
+}
+if ((Get-CsvPipeControlResult -Records $records).Stable) { throw 'A stable median hid noisy tails.' }
+Write-Host 'PASS: stable medians with noisy tails fail stability gate'

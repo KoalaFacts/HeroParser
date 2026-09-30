@@ -177,3 +177,76 @@ The correctness repair is ready for code review, but performance acceptance is
 still pending. Repeat both controls and A/B in an idle or exclusive environment
 before accepting the timing impact or choosing the next optimization. Keep the
 performance-sensitive change in draft until this gate is resolved.
+
+## Same-Job CI Retest
+
+The local host could not be made idle, so the follow-up used the opt-in paired
+job in [workflow run 36665706975](https://github.com/KoalaFacts/HeroParser/actions/runs/36665706975).
+It completed successfully on Ubuntu 24.04.5 LTS, .NET 10.0.12, four logical
+processors, workstation GC and no affinity override. This is a job-isolated
+hosted VM, not a claim of exclusive physical hardware. All preparation and
+measurements were serial; normal benchmark jobs were skipped in this run.
+
+Baseline source: `5c549d193a510a06fa24e23627b23a2df0cf0188`. Candidate source:
+`2870c2bc63ebceac5161617633f44dce371cd634`, whose production fix is unchanged
+from `429b166`. Candidate parser/model module IDs remained
+`73db4a0b-35f4-44fa-9933-644ff785bf30` /
+`195c5616-f3e1-4617-a117-55b86d5fa03c` throughout the series. Independent
+candidate-source baseline IDs were `2cf1febb-cf34-4120-93d6-086e0575509b` /
+`4ea32d96-dac7-4613-adef-f38edee60beb`; old-source baseline IDs were
+`a7445e61-88db-45d2-98ba-7ddd948b8caa` /
+`619b5bf8-95d3-4327-9112-279aa24f74fb`.
+
+Full fixed/fixed correctness preflight passed all 36 cases both before and after
+A/B. Old/fixed preflight passed the nine Plain cases; the old escaped generated
+cases were not timed. Each timed run selected only Plain Generated and used
+2000 rows, 30 measured pairs, 10 warmup pairs and a 100 ms calibration target.
+Two fresh process runs occurred per phase: A/A before, A/B, A/A after.
+
+### Controls Passed, Performance Did Not
+
+All 12 A/A transport/run combinations passed the precommitted gate: median
+[0.95, 1.05], p10 >= 0.90 and p90 <= 1.10. Downloaded raw pairs were revalidated
+locally against those same thresholds. The table gives the range of four run
+medians and extremes of per-run percentiles, not a pooled distribution.
+
+| Transport | A/A Median Range | Lowest Run p10 | Highest Run p90 |
+|---|---:|---:|---:|
+| Contiguous | 0.9981-1.0052 | 0.9770 | 1.0228 |
+| Segmented128 | 1.0073-1.0326 | 0.9966 | 1.0355 |
+| Stream4096 | 1.0043-1.0086 | 0.9934 | 1.0173 |
+
+Both A/B runs show an elapsed-time increase beyond those control ranges:
+
+| Transport | Run 1 Median | Run 1 p10-p90 | Run 2 Median | Run 2 p10-p90 |
+|---|---:|---:|---:|---:|
+| Contiguous | 1.1858 | 1.1662-1.2088 | 1.1914 | 1.1753-1.2073 |
+| Segmented128 | 1.1541 | 1.1453-1.1603 | 1.0905 | 1.0844-1.0972 |
+| Stream4096 | 1.1924 | 1.1821-1.1988 | 1.1966 | 1.1932-1.2037 |
+
+This supports a plain generated-binding regression on this runner: approximately
+19-20% for contiguous/streamed input and 9-15% for segmented input. Segmented
+magnitude varies between runs; these are descriptive paired percentiles, not
+confidence intervals or a universal slowdown estimate. Allocation median deltas
+were approximately +8 bytes per complete 2000-row read, not per row.
+
+The calibration target is not the final measured batch duration. Contiguous A/B
+batches shortened after warmup to baseline medians 33.5/34.1 ms and candidate
+medians 39.9/40.6 ms, despite calibration exceeding 100 ms. Segmented/streamed
+batch medians were about 138-167 ms. Controls still passed, but a future harness
+improvement should recalibrate after warmup rather than assume the target holds.
+
+Artifact `csv-pipe-paired-36665706975` contains `aa-before-verify.ndjson`,
+`ab-verify.ndjson`, `aa-after-verify.ndjson`, two timed logs per phase, and
+`series-summary.json` (state `stable-controls-review-ab`). Artifact retention is
+30 days. There are 360 measured A/A pairs and 180 A/B pairs; this is not full
+matrix timing evidence.
+
+**Decision:** prioritize the ordinary-field generated-binding fast path while
+preserving the quoted/escaped correctness repair. Regression with contiguous
+input means cross-segment copying alone cannot explain it. This is prioritization
+evidence, not identification of a particular hot instruction; profile and test
+the binding/normalization path next, then repeat this same protocol. Cross-segment
+copy/scanning remains a later candidate. The noise gate is resolved for this
+experiment, but PR performance acceptance is not: keep the repair in draft until
+the repeatable ordinary-field regression is addressed.

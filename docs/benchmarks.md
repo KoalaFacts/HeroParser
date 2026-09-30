@@ -146,3 +146,13 @@ short scratch buffers use the stack, and larger or segmented scratch buffers use
 unescaping to preserve invalid UTF-8 replacement semantics. Only the resulting
 string remains allocated in these warmed-up cases; pool growth can allocate on
 cold calls, and owned-row allocations are outside this microbenchmark.
+
+### Checked End-to-End PipeReader A/B
+
+The opt-in [paired probe](../benchmarks/CsvPipeABProbe/README.md) compares independent
+parser/generator builds in one process, consumes complete records, verifies an
+input-derived checksum, and retains every paired sample. It covers fixed
+segmentation and real stream-backed pipe reading, with same-source A/A controls.
+The [initial evidence](../benchmarks/CsvPipeABProbe/results.md) confirms allocation
+reductions but rejects throughput claims under a noisy local environment. It also
+exposes a generated-binding quoting discrepancy; invalid cases are not timed.

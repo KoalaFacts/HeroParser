@@ -104,7 +104,8 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvSourceBinder<char, T> 
                     0,
                     charRow.LineNumber,
                     charRow.SourceLineNumber,
-                    trimFields: false),
+                    trimFields: false,
+                    parserOptions: charRow.ParserOptions),
                 null,
                 null);
         }
@@ -171,7 +172,8 @@ internal sealed class CsvCharToByteBinderAdapter<T> : ICsvSourceBinder<char, T> 
             columnCount,
             charRow.LineNumber,
             charRow.SourceLineNumber,
-            trimFields: false);
+            trimFields: false,
+            parserOptions: charRow.ParserOptions);
 
         return new PooledByteRowConversion(byteRow, rentedBuffer, rentedColumnEnds);
     }

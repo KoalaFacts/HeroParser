@@ -184,6 +184,9 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("private readonly bool _caseSensitiveHeaders;");
         builder.AppendLine("private readonly bool _allowMissingColumns;");
         builder.AppendLine("private readonly byte[][]? _nullValuesUtf8;");
+        bool hasStrings = members.Any(member => member.BaseTypeName == "string");
+        if (hasStrings)
+            builder.AppendLine("private readonly char[][]? _nullValuesChar;");
         builder.AppendLine();
 
         // Emit column index fields
@@ -205,6 +208,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("_nullValuesUtf8 = options?.NullValues is { Count: > 0 }");
         builder.AppendLine("    ? CreateNullValues(options.NullValues)");
         builder.AppendLine("    : null;");
+        if (hasStrings)
+        {
+            builder.AppendLine("_nullValuesChar = options?.NullValues is { Count: > 0 }");
+            builder.AppendLine("    ? CreateNullValuesChar(options.NullValues)");
+            builder.AppendLine("    : null;");
+        }
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -227,6 +236,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         EmitByteIsNullValueMethod(builder);
         EmitByteCreateParseExceptionMethod(builder);
         EmitByteIsAllAsciiWhiteSpaceMethod(builder);
+        if (hasStrings)
+        {
+            EmitCharIsNullValueMethod(builder, "CreateNullValuesChar");
+            EmitCharIsAllAsciiWhiteSpaceMethod(builder);
+        }
 
         // Emit factory method for registration
         builder.AppendLine($"public static {BYTE_BINDER_INTERFACE_TYPE}{fullyQualifiedName}> Create({OPTIONS_TYPE}? options)");
@@ -311,7 +325,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         foreach (var member in members)
         {
-            EmitByteInlinePropertyBinding(builder, member);
+            if (member.BaseTypeName == "string")
+                EmitCharInlinePropertyBinding(builder, member);
+            else
+                EmitByteInlinePropertyBinding(builder, member);
         }
 
         builder.AppendLine(anyValidation ? "return valid;" : "return true;");
@@ -328,7 +345,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"if ((uint){indexField} < (uint)columnCount)");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine($"var column = row[{indexField}];");
+        builder.AppendLine($"var column = row.GetValue({indexField});");
         builder.AppendLine("var utf8 = column.Span;");
         builder.AppendLine("bool isNullVal = _nullValuesUtf8 is not null && IsNullValue(utf8, _nullValuesUtf8);");
 
@@ -523,7 +540,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -541,7 +558,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -569,7 +586,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -587,7 +604,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -606,7 +623,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(utf8, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -620,7 +637,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("for (int i = 0; i < count; i++)");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine("if (comparer.Equals(Encoding.UTF8.GetString(headerRow[i].Span), name))");
+        builder.AppendLine("if (comparer.Equals(headerRow.GetValueString(i), name))");
         builder.AppendLine("    return i;");
         builder.Unindent();
         builder.AppendLine("}");
@@ -810,7 +827,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
         builder.AppendLine($"Rule = \"{rule}\",");
         builder.AppendLine($"Message = \"{EscapeString(message)}\",");
-        builder.AppendLine($"RawValue = Encoding.UTF8.GetString(utf8)");
+        builder.AppendLine($"RawValue = row[{indexField}].ToString()");
         builder.Unindent();
         builder.AppendLine("});");
     }
@@ -1565,8 +1582,16 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"if ((uint){indexField} < (uint)columnCount)");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine($"var column = row[{indexField}];");
-        builder.AppendLine("var span = column.Span;");
+        if (member.BaseTypeName == "string")
+        {
+            builder.AppendLine($"var text = row.GetValueString({indexField});");
+            builder.AppendLine("var span = text.AsSpan();");
+        }
+        else
+        {
+            builder.AppendLine($"var column = row.GetValue({indexField});");
+            builder.AppendLine("var span = column.Span;");
+        }
         builder.AppendLine("bool isNullVal = _nullValuesChar is not null && IsNullValue(span, _nullValuesChar);");
 
         if (member.ValidationNotNull || member.ValidationNotEmpty)
@@ -1626,7 +1651,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         switch (baseType)
         {
             case "string":
-                builder.AppendLine($"instance.{propertyName} = new string(span);");
+                builder.AppendLine($"instance.{propertyName} = text;");
                 break;
 
             case "int":
@@ -1756,7 +1781,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(span, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -1774,7 +1799,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(span, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -1800,7 +1825,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(span, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -1818,7 +1843,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(span, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -1837,7 +1862,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
-            builder.AppendLine($"    throw CreateParseException(span, \"{member.HeaderName}\", rowNumber, {indexField});");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
         }
     }
 
@@ -1851,7 +1876,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("for (int i = 0; i < count; i++)");
         builder.AppendLine("{");
         builder.Indent();
-        builder.AppendLine("if (comparer.Equals(new string(headerRow[i].Span), name))");
+        builder.AppendLine("if (comparer.Equals(headerRow.GetValueString(i), name))");
         builder.AppendLine("    return i;");
         builder.Unindent();
         builder.AppendLine("}");
@@ -1861,10 +1886,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    private static void EmitCharIsNullValueMethod(SourceBuilder builder)
+    private static void EmitCharIsNullValueMethod(SourceBuilder builder, string factoryName = "CreateNullValues")
     {
         builder.AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        builder.AppendLine("private static char[][] CreateNullValues(IReadOnlyList<string> nullValues)");
+        builder.AppendLine($"private static char[][] {factoryName}(IReadOnlyList<string> nullValues)");
         builder.AppendLine("{");
         builder.Indent();
         builder.AppendLine("var encoded = new char[nullValues.Count][];");
@@ -2019,7 +2044,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
         builder.AppendLine($"Rule = \"{rule}\",");
         builder.AppendLine($"Message = \"{EscapeString(message)}\",");
-        builder.AppendLine($"RawValue = new string(span)");
+        builder.AppendLine($"RawValue = row[{indexField}].ToString()");
         builder.Unindent();
         builder.AppendLine("});");
     }

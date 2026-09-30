@@ -8,6 +8,7 @@ param(
     [int]$WarmupPairs = 6,
     [int]$MinSampleMs = 30,
     [switch]$VerifyOnly,
+    [switch]$DisableBuildServers,
     [string]$Scenario = '',
     [string]$Path = '',
     [string]$Output = ''
@@ -27,6 +28,7 @@ $baselineModels = Join-Path $PSScriptRoot 'Models/bin/Release/baseline/CsvPipeAB
 $candidateModels = Join-Path $PSScriptRoot 'Models/bin/Release/candidate/CsvPipeABModels.Candidate.dll'
 
 function Invoke-Build([string[]]$BuildArgs) {
+    if ($DisableBuildServers) { $BuildArgs += @('--disable-build-servers', '-p:UseSharedCompilation=false') }
     & dotnet build @BuildArgs | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE." }
 }

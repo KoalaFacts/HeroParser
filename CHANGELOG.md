@@ -4,6 +4,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+### Fixed
+- Decode CSV quoting and escapes before generated record binding, header matching, null-value checks, and validation. Respect custom quotes and disabled quote parsing without changing raw column access or Excel cell values.
+
 ## [2.8.0] - 2026-09-29
 
 ### Added

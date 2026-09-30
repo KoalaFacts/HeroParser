@@ -357,7 +357,8 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                     options.TrimFields,
                     quote,
                     escape,
-                    baseOffset: row.RowStart);
+                    baseOffset: row.RowStart,
+                    parserOptions: options);
             }
 
             return new CsvPipeSequenceRow(
@@ -369,7 +370,8 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 options.TrimFields,
                 quote,
                 escape,
-                baseOffset: 0);
+                baseOffset: 0,
+                parserOptions: options);
         }
     }
 
@@ -761,6 +763,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 /// </summary>
 public readonly ref struct CsvPipeSequenceRow
 {
+    private readonly CsvReadOptions? parserOptions;
     private readonly ReadOnlySequence<byte> data;
     private readonly ReadOnlySpan<int> columnEnds;
     private readonly int columnCount;
@@ -778,7 +781,8 @@ public readonly ref struct CsvPipeSequenceRow
         bool trimFields,
         byte quote,
         byte? escape,
-        int baseOffset)
+        int baseOffset,
+        CsvReadOptions? parserOptions = null)
     {
         this.data = data;
         this.columnEnds = columnEnds;
@@ -787,6 +791,7 @@ public readonly ref struct CsvPipeSequenceRow
         this.quote = quote;
         this.escape = escape;
         this.baseOffset = baseOffset;
+        this.parserOptions = parserOptions;
         RowNumber = rowNumber;
         SourceLineNumber = sourceLineNumber;
     }
@@ -845,7 +850,8 @@ public readonly ref struct CsvPipeSequenceRow
             RowNumber,
             SourceLineNumber,
             trimFields,
-            baseOffset);
+            baseOffset,
+            parserOptions);
 
     internal CsvPipeRow ToOwnedRow()
     {

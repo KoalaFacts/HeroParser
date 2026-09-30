@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace HeroParser.SeparatedValues.Reading.Shared;
@@ -34,9 +35,10 @@ internal static class CsvPipeColumnText
         }
     }
 
-    public static string Decode(ReadOnlySpan<byte> value, byte quote, byte? escape)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static string Decode(ReadOnlySpan<byte> value, byte quote, byte? escape, bool enableQuotedFields = true)
     {
-        if (value.Length >= 2 && value[0] == quote && value[^1] == quote)
+        if (enableQuotedFields && value.Length >= 2 && value[0] == quote && value[^1] == quote)
         {
             value = value[1..^1];
         }
@@ -46,14 +48,18 @@ internal static class CsvPipeColumnText
             return string.Empty;
         }
 
-        bool hasSpecialCharacters = escape is byte escapeByte
-            ? value.IndexOfAny(quote, escapeByte) >= 0
-            : value.Contains(quote);
+        bool hasSpecialCharacters = (escape is byte escapeByte && value.Contains(escapeByte)) ||
+            (enableQuotedFields && value.Contains(quote));
         if (!hasSpecialCharacters)
         {
             return Encoding.UTF8.GetString(value);
         }
 
+        return DecodeEscaped(value, quote, escape, enableQuotedFields);
+    }
+
+    private static string DecodeEscaped(ReadOnlySpan<byte> value, byte quote, byte? escape, bool enableQuotedFields)
+    {
         char[]? rented = null;
         // UTF-8 decoding with the default replacement fallback produces at most one char per byte.
         Span<char> chars = value.Length <= STACK_CHAR_LIMIT
@@ -73,7 +79,7 @@ internal static class CsvPipeColumnText
                 {
                     current = chars[++i];
                 }
-                else if (current == quoteChar && i + 1 < count && chars[i + 1] == quoteChar)
+                else if (enableQuotedFields && current == quoteChar && i + 1 < count && chars[i + 1] == quoteChar)
                 {
                     i++;
                 }
@@ -89,6 +95,47 @@ internal static class CsvPipeColumnText
             {
                 ArrayPool<char>.Shared.Return(rented);
             }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static string Decode(ReadOnlySpan<char> value, char quote, char? escape, bool enableQuotedFields)
+    {
+        if (enableQuotedFields && value.Length >= 2 && value[0] == quote && value[^1] == quote)
+            value = value[1..^1];
+
+        bool hasSpecialCharacters = (escape is char escapeChar && value.Contains(escapeChar)) ||
+            (enableQuotedFields && value.Contains(quote));
+        if (!hasSpecialCharacters)
+            return new string(value);
+
+        return DecodeEscaped(value, quote, escape, enableQuotedFields);
+    }
+
+    private static string DecodeEscaped(ReadOnlySpan<char> value, char quote, char? escape, bool enableQuotedFields)
+    {
+        char[]? rented = null;
+        Span<char> chars = value.Length <= STACK_CHAR_LIMIT
+            ? stackalloc char[value.Length]
+            : (rented = ArrayPool<char>.Shared.Rent(value.Length));
+        try
+        {
+            int written = 0;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char current = value[i];
+                if (current == escape && i + 1 < value.Length)
+                    current = value[++i];
+                else if (enableQuotedFields && current == quote && i + 1 < value.Length && value[i + 1] == quote)
+                    i++;
+                chars[written++] = current;
+            }
+            return new string(chars[..written]);
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<char>.Shared.Return(rented);
         }
     }
 }

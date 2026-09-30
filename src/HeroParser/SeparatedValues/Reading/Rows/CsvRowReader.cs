@@ -168,7 +168,8 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
                 result.ColumnCount,
                 rowCount,
                 trackLineNumbers ? rowStartLine : rowCount, // Use rowCount as fallback when tracking disabled
-                options.TrimFields);
+                options.TrimFields,
+                parserOptions: options);
 
             position += result.CharsConsumed;
             if (rowCount > options.MaxRowCount)

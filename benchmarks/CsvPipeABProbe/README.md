@@ -93,6 +93,56 @@ configuration consistent, particularly on heterogeneous laptop CPUs.
 
 ## Evidence and Interpretation
 
+### Isolated CI Series
+
+The Performance Benchmarks workflow automatically runs the paired experiment for
+relevant pull requests and main-branch pushes, including parser, benchmark,
+workflow and shared build-configuration changes. PRs compare the exact base SHA
+with the head SHA (not GitHub's synthetic merge commit); pushes compare the
+previous SHA with the new commit. The job has read-only repository permissions,
+including on fork PRs, and does not publish PR comments or merge anything.
+
+An opt-in manual `pipe_ab` input remains available to run only the paired job,
+without the normal benchmark matrix. All builds and measurements are serial
+within that job. A hosted VM is isolated from this project's other jobs, not
+guaranteed exclusive physical hardware; A/A controls remain mandatory. CI owns
+the expensive builds, correctness checks and measurements; a locally idle
+machine is not a prerequisite.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_ab=true -f baseline_sha=FULL_BASELINE_SHA
+```
+
+The committed `run-series.ps1` protocol is deliberately fixed before observing
+timings: 2000 rows, 30 measured pairs, 10 warmup pairs, 100 ms calibration target,
+and two independent process runs per phase. It first verifies all 36 cases on
+independently built candidate/candidate assemblies, then times the three Plain
+Generated transports twice. Every A/A transport in every run must have a median
+ratio in [0.95, 1.05], p10 >= 0.90 and p90 <= 1.10. The gate recomputes these
+percentiles from all raw pairs and rejects incomplete or mismatched evidence.
+These are experimental noise thresholds, not a statistical proof of equality.
+
+Unstable initial controls skip A/B and return exit 2. Otherwise the chosen old
+baseline is independently built and Plain correctness is checked before two A/B
+runs. Full candidate/candidate correctness and two A/A runs are repeated after
+A/B. An unstable post-control also returns exit 2: A/B is inconclusive, not a
+regression verdict. Builds use disabled build servers and occur outside timing;
+there is a ten-second settling interval after each preparation phase.
+
+The CI job summary displays every control and both A/B runs, with source SHAs,
+ratios, percentile ranges and whole-read allocation deltas. The artifact contains
+every NDJSON run, `series-summary.json`, and CPU/runtime context, with refs,
+module IDs, fixed thresholds, and gate outcomes. Artifact names include the run
+attempt so a rerun preserves earlier evidence. Exit 0 only means correctness
+and controls passed; inspect repeated A/B ratios before accepting performance.
+This does not time the broken old baseline's escaped cases, establish a full
+matrix timing result, or permit comparing elapsed times across different runner
+jobs. The tests for the evidence gate can run independently:
+
+```powershell
+pwsh -NoProfile -File benchmarks/CsvPipeABProbe/test-control.ps1
+```
+
 Output is NDJSON: environment/source refs/module IDs, correctness results, every
 measured pair, per-case summaries, and final invalid-case count. Ratios are
 candidate/baseline time; below 1 favors candidate. Summary times and allocated
@@ -107,16 +157,64 @@ are outside the measured interval, but runtime/GC noise is not eliminated.
 These are warmed-up measurements: they do not prove cold-start pool allocation,
 peak memory, concurrent-reader scaling, or network performance.
 
-### Known Correctness Gate (September 2026)
+### Independent CI Diagnostics
+
+Use the manual `pipe_profile` input to run only the read-only diagnostic job on
+an independent hosted VM; it does not depend on or bypass the A/A acceptance job.
+No production parser optimization is enabled by this input.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_profile=true -f baseline_sha=FULL_BASELINE_SHA
+```
+
+The job builds baseline and candidate parser/model assemblies once and validates
+all nine Plain cases before profiling. It records CPU/runtime context and pins
+the currently verified `dotnet-trace` release, 10.0.745401. Each side and transport
+runs in a fresh process, warms the real 2000-row Generated consumer for at least
+10 seconds and 100 reads, then publishes an atomic readiness signal with its PID.
+The sampler attaches to that PID for 30 seconds. Results/checksums are validated
+on every full read. Normal runtime tiering and PGO remain enabled.
+
+This uses `dotnet-sampled-thread-time,dotnet-common`, not the misleading old
+`cpu-sampling` name. Managed sampled thread time is **not precise on-CPU time**;
+native/kernel attribution is incomplete. See the official
+[dotnet-trace documentation](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace).
+The workload includes the benchmark consumer's checksum; separate that cost
+from parser, binding and decoding when interpreting hotspots. Raw traces retain
+runtime/JIT events. Speedscope and inclusive/exclusive top-method reports provide
+managed-stack views; conversion is lossy, so retain the original `.nettrace`.
+Do not interpret the all-thread `topN` percentages as workload CPU shares:
+short-lived diagnostic initialization threads and blocked stacks can dominate
+that report. Inspect individual Speedscope thread timelines, identify threads
+executing the checked consumer, and state the denominator explicitly. Even those
+thread-local stack-time shares do not distinguish CPU execution from waiting.
+
+JIT assembly is collected in two additional contiguous-input processes, not
+during the stack captures or accepted timing runs. `DOTNET_JitDisasm` selects
+`*TryBind* *GetValue*`; methods fully inlined into callers may not have separate
+listings. Inspect caller assembly and observed compilation tiers rather than
+claiming missing listings prove a method costs nothing. No no-inline, tiering,
+PGO or affinity override is applied. Relevant runtime switches are documented
+in the [runtime JIT configuration source](https://github.com/dotnet/runtime/blob/main/src/coreclr/jit/jitconfigvalues.h).
+
+The `csv-pipe-profile-<run-id>-<attempt>` artifact retains raw traces, converted
+stacks, method reports, JIT output, checked consumer logs, source SHAs and module
+IDs for 30 days, even after failure. Partial diagnostics are labelled incomplete.
+Diagnostic elapsed/CPU counters are not paired timing results, and neither
+success nor a hotspot report establishes a speedup, no regression or permission
+to merge. Keep the fixed A/A and A/B protocol unchanged for subsequent patches.
+
+### Initial Correctness Gate (September 2026)
 
 Comparing base `626f8af` and merged decoder improvement `8309abf`, with 37 rows,
 27 of 36 cases passed. All nine `Generated` cases for Escaped/Unicode/LongEscaped
 returned an incorrect logical checksum in **both** versions. The generated
-string binder decodes the raw column span directly; it does not unquote/unescape
-it. The independent expected checksum prevents the identical defect on both
+string binder at those revisions decoded the raw column span directly, without
+unquoting/unescaping it. The independent expected checksum prevents the identical defect on both
 sides from being accepted as proof of correctness.
 
 These nine cases are excluded from timing conclusions. The tool deliberately
-returns nonzero for the full matrix until those semantics are fixed. Fix and
-regression-test generated string quoting before choosing a typed-binding
-optimization from escaped workloads. See [measured evidence](results.md).
+returns nonzero if either side has an incorrect result, including an unfixed
+baseline compared with a corrected candidate. Use two independently built fixed
+revisions for a fully passing preflight; never weaken the expected checksum to
+time the broken baseline. See [measured evidence and repair validation](results.md).

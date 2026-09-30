@@ -208,7 +208,8 @@ internal sealed class CsvRowBatchCursor : IDisposable
             rowNumber,
             trackLineNumbers ? row.SourceLine : sourceLineFallback,
             options.TrimFields,
-            baseOffset: row.RowStart);
+            baseOffset: row.RowStart,
+            parserOptions: options);
     }
 
     /// <summary>Returns the pooled arrays; safe to call more than once.</summary>

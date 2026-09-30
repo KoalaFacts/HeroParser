@@ -65,7 +65,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
                 currentColumnCount,
                 currentRowNumber,
                 currentSourceLineNumber,
-                options.TrimFields);
+                options.TrimFields,
+                parserOptions: options);
         }
     }
 

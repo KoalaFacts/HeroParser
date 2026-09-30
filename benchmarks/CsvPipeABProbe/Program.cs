@@ -16,7 +16,17 @@ using CandidateOptions = HeroParser.SeparatedValues.Core.CsvReadOptions;
 using CandidateRecord = CsvPipeABModels.PipeRecord;
 using CandidateRecordOptions = HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions;
 
-var settings = Settings.Parse(args);
+Settings settings;
+try
+{
+    settings = Settings.Parse(args);
+}
+catch (ArgumentException error)
+{
+    Console.Error.WriteLine(error.Message);
+    Environment.ExitCode = 2;
+    return;
+}
 string? affinity = Environment.GetEnvironmentVariable("HERO_PARSER_AB_AFFINITY");
 if ((OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
     && affinity is { Length: > 0 })
@@ -46,6 +56,12 @@ Write(new
     settings.Scenario,
     settings.Path
 });
+
+if (settings.ProfileSide is not null)
+{
+    await RunProfileAsync(settings);
+    return;
+}
 
 int invalidCases = 0;
 foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped" }.Where(x => settings.Scenario is null || x == settings.Scenario))
@@ -134,6 +150,58 @@ Environment.ExitCode = invalidCases == 0 ? 0 : 1;
 
 static void Write<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value));
 
+static async Task RunProfileAsync(Settings settings)
+{
+    bool candidate = settings.ProfileSide == "Candidate";
+    var fixture = Fixture.Create("Plain", settings.Rows);
+    var run = new Case(fixture, settings.ProfileTransport!, "Generated");
+    var check = await run.ReadAsync(candidate, inspectSegments: false);
+    run.Validate(check);
+    Write(new { kind = "profile-verified", side = settings.ProfileSide, transport = settings.ProfileTransport, check.Rows, check.Checksum });
+
+    // Keep normal tiering/PGO enabled and attach the sampler only after this warmup.
+    var warmup = Stopwatch.StartNew();
+    int warmedReads = 0;
+    do
+    {
+        run.Validate(await run.ReadAsync(candidate, inspectSegments: false));
+        warmedReads++;
+    } while (warmup.Elapsed.TotalSeconds < 10 || warmedReads < 100);
+    warmup.Stop();
+    string readyFile = settings.ProfileReadyFile!;
+    File.WriteAllText(readyFile + ".tmp", JsonSerializer.Serialize(new
+    {
+        pid = Environment.ProcessId,
+        side = settings.ProfileSide,
+        transport = settings.ProfileTransport,
+        warmupSeconds = warmup.Elapsed.TotalSeconds,
+        warmedReads
+    }));
+    File.Move(readyFile + ".tmp", readyFile);
+
+    using var process = Process.GetCurrentProcess();
+    var cpuBefore = process.TotalProcessorTime;
+    var duration = Stopwatch.StartNew();
+    int reads = 0;
+    do
+    {
+        run.Validate(await run.ReadAsync(candidate, inspectSegments: false));
+        reads++;
+    } while (duration.Elapsed.TotalSeconds < settings.ProfileSeconds);
+    Write(new
+    {
+        kind = "profile-complete",
+        side = settings.ProfileSide,
+        transport = settings.ProfileTransport,
+        reads,
+        warmupSeconds = warmup.Elapsed.TotalSeconds,
+        elapsedSeconds = duration.Elapsed.TotalSeconds,
+        cpuSeconds = (process.TotalProcessorTime - cpuBefore).TotalSeconds,
+        invalidCases = 0,
+        diagnosticOnly = true
+    });
+}
+
 static double Percentile(IEnumerable<double> values, double percentile)
 {
     double[] sorted = [.. values.Order()];
@@ -142,17 +210,35 @@ static double Percentile(IEnumerable<double> values, double percentile)
     return sorted[lower] + (sorted[(int)Math.Ceiling(index)] - sorted[lower]) * (index - lower);
 }
 
-internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSampleMs, bool VerifyOnly, string? Scenario, string? Path)
+internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSampleMs, bool VerifyOnly, string? Scenario, string? Path,
+    string? ProfileSide, string? ProfileTransport, string? ProfileReadyFile, int ProfileSeconds)
 {
     public static Settings Parse(string[] args)
     {
         int rows = 2000, pairs = 20, warmup = 6, minSampleMs = 30;
         bool verify = false;
         string? scenario = null, path = null;
+        string? profileSide = null, profileTransport = null, profileReadyFile = null;
+        int profileSeconds = 45;
+        bool profileRequested = false;
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--verify-only") { verify = true; continue; }
             string option = args[i];
+            if (option is "--profile-side" or "--profile-transport" or "--profile-ready-file")
+            {
+                profileRequested = true;
+                if (i + 1 == args.Length) throw new ArgumentException($"Missing value for {option}.");
+                string selected = args[++i];
+                switch (option)
+                {
+                    case "--profile-side": profileSide = selected; break;
+                    case "--profile-transport": profileTransport = selected; break;
+                    case "--profile-ready-file": profileReadyFile = selected; break;
+                    default: throw new ArgumentException($"Unknown profiling option: {option}.");
+                }
+                continue;
+            }
             if (option is "--scenario" or "--path")
             {
                 if (i + 1 == args.Length) throw new ArgumentException($"Missing value for {option}.");
@@ -177,10 +263,19 @@ internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSam
                 case "--pairs": pairs = value; break;
                 case "--warmup-pairs": warmup = value; break;
                 case "--min-sample-ms": minSampleMs = value; break;
+                case "--profile-seconds": profileRequested = true; profileSeconds = value; break;
                 default: throw new ArgumentException($"Unknown option: {option}.");
             }
         }
-        return new Settings(rows, pairs, warmup, minSampleMs, verify, scenario, path);
+        if (profileRequested)
+        {
+            if (profileSide is not ("Baseline" or "Candidate") ||
+                profileTransport is not ("Contiguous" or "Segmented128" or "Stream4096") ||
+                string.IsNullOrWhiteSpace(profileReadyFile) || profileSeconds > 120 || verify || scenario is not null || path is not null)
+                throw new ArgumentException("Profiling requires a side, transport and readiness file, with 1-120 seconds and no benchmark selectors.");
+        }
+        return new Settings(rows, pairs, warmup, minSampleMs, verify, scenario, path,
+            profileSide, profileTransport, profileReadyFile, profileSeconds);
     }
 }
 

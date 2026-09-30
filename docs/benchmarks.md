@@ -156,3 +156,4 @@ segmentation and real stream-backed pipe reading, with same-source A/A controls.
 The [initial evidence](../benchmarks/CsvPipeABProbe/results.md) confirms allocation
 reductions but rejects throughput claims under a noisy local environment. It also
 exposes a generated-binding quoting discrepancy; invalid cases are not timed.
+The same report records the follow-up logical-value repair and its validation.

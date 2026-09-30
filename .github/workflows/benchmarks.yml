@@ -7,16 +7,36 @@ on:
       - 'src/**'
       - 'benchmarks/**'
       - '.github/workflows/benchmarks.yml'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
   push:
     branches: [ main ]
     paths:
       - 'src/**'
       - 'benchmarks/**'
-  workflow_dispatch:  # Allow manual trigger
+      - '.github/workflows/benchmarks.yml'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'global.json'
+  workflow_dispatch:
+    inputs:
+      pipe_ab:
+        description: 'Run only the paired CSV pipe experiment with A/A stability gates'
+        type: boolean
+        default: false
+      pipe_profile:
+        description: 'Run only independent warmed managed-stack and JIT diagnostics (not A/B acceptance)'
+        type: boolean
+        default: false
+      baseline_sha:
+        description: 'Full baseline commit SHA for the paired pipe experiment'
+        type: string
+        default: '5c549d193a510a06fa24e23627b23a2df0cf0188'
 
 # Cancel in-progress runs for the same workflow and ref
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.pipe_profile && 'profile' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
   cancel-in-progress: true
 
 permissions:
@@ -28,6 +48,7 @@ env:
 
 jobs:
   setup:
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
@@ -200,3 +221,95 @@ jobs:
               body: sections.join('\n\n')
             });
           }
+
+  pipe-ab:
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.pipe_ab)
+    name: CSV Pipe Correctness and Timing Controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test control gate
+        shell: pwsh
+        run: ./benchmarks/CsvPipeABProbe/test-control.ps1
+
+      - name: Record runner context
+        shell: bash
+        run: |
+          mkdir -p BenchmarkDotNet.Artifacts/pipe-series
+          lscpu > BenchmarkDotNet.Artifacts/pipe-runner-context.txt
+          dotnet --info >> BenchmarkDotNet.Artifacts/pipe-runner-context.txt
+
+      - name: Run serial A/A and A/B series
+        shell: pwsh
+        env:
+          BASELINE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || inputs.baseline_sha }}
+        run: |
+          ./benchmarks/CsvPipeABProbe/run-series.ps1 -BaselineSha $env:BASELINE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series"
+
+      - name: Upload paired experiment evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csv-pipe-paired-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            BenchmarkDotNet.Artifacts/pipe-series/**
+            BenchmarkDotNet.Artifacts/pipe-runner-context.txt
+          retention-days: 30
+
+  pipe-profile:
+    if: github.event_name == 'workflow_dispatch' && inputs.pipe_profile
+    name: CSV Pipe Managed Stack and JIT Diagnostics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact diagnostic source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install verified trace tool release
+        shell: bash
+        run: dotnet tool install dotnet-trace --tool-path "$RUNNER_TEMP/trace-tools" --version 10.0.745401
+
+      - name: Validate scripts and record diagnostic context
+        shell: pwsh
+        run: |
+          ./benchmarks/CsvPipeABProbe/test-control.ps1
+          New-Item -ItemType Directory -Path BenchmarkDotNet.Artifacts -Force | Out-Null
+          lscpu > BenchmarkDotNet.Artifacts/profile-runner-context.txt
+          dotnet --info >> BenchmarkDotNet.Artifacts/profile-runner-context.txt
+
+      - name: Collect serial warmed stacks and separate JIT output
+        shell: pwsh
+        env:
+          BASELINE_SHA: ${{ inputs.baseline_sha }}
+        run: |
+          ./benchmarks/CsvPipeABProbe/profile.ps1 -BaselineSha $env:BASELINE_SHA -Workspace "$env:RUNNER_TEMP/pipe-profile" -TraceTool "$env:RUNNER_TEMP/trace-tools/dotnet-trace"
+
+      - name: Upload diagnostic evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csv-pipe-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            BenchmarkDotNet.Artifacts/pipe-profile/**
+            BenchmarkDotNet.Artifacts/profile-runner-context.txt
+          retention-days: 30

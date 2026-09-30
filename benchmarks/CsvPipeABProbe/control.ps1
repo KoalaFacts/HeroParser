@@ -189,11 +189,12 @@ function Get-CsvPipeBiasResult {
         $samples = @($Records | Where-Object { $_.kind -eq 'pair' -and $_.transport -eq $case.Transport })
         foreach ($group in @('CandidateFirst', 'BaselineFirst', 'FirstHalf', 'SecondHalf')) {
             $subset = @($samples | Where-Object {
+                $sample = $_
                 switch ($group) {
-                    'CandidateFirst' { $_.candidateFirst -eq $true }
-                    'BaselineFirst' { $_.candidateFirst -eq $false }
-                    'FirstHalf' { $_.pair -lt 15 }
-                    'SecondHalf' { $_.pair -ge 15 }
+                    'CandidateFirst' { $sample.candidateFirst -eq $true }
+                    'BaselineFirst' { $sample.candidateFirst -eq $false }
+                    'FirstHalf' { $sample.pair -lt 15 }
+                    'SecondHalf' { $sample.pair -ge 15 }
                 }
             } | Sort-Object ratio)
             if ($subset.Count -ne 15) { throw 'Incomplete order/time diagnostic cohort.' }

@@ -430,3 +430,97 @@ capture on an IDE0010 switch-exhaustiveness analyzer error; the explicit default
 case fixed it. That failed run is incomplete evidence, not a timing-control
 failure. PR performance acceptance remains pending; no merge is authorized by
 either successful job.
+
+## JIT-Selected Getter Inlining: Not Accepted
+
+Candidate `5fdd1900b8b6dc95489e3ad2419eab82ca12b1a4` removed only the two
+`AggressiveInlining` attributes on `CsvRow.GetValue` and `GetValueString`.
+No `NoInlining`, decoding-path split, semantics change, package update or
+benchmark adjustment was introduced. Corrected main baseline was
+`d6e84c03511a88d8785deee5335ed987a6366a77`. This single experiment ran entirely
+in CI. The production change was withdrawn because it did not establish a
+repeatable incremental throughput benefit, not because a regression was proven
+against corrected main. Production row code again matches that main baseline.
+
+### Incremental Comparison Failed Closed
+
+[Incremental run 36676057014](https://github.com/KoalaFacts/HeroParser/actions/runs/36676057014/job/109761163748)
+passed all 36 independently checked candidate/candidate correctness cases.
+The first pre-A/B A/A process had Stream4096 median 0.947322, below the unchanged
+0.95 floor (p10 0.939878, p90 0.953999). Other transports and the second A/A
+process passed. Raw pairs were revalidated against the committed gate.
+State was `unstable-before-ab-skipped`: there are **no incremental A/B samples**,
+and no post-A/B controls. This is inconclusive timing evidence, not a correctness
+failure or proof that removing the attributes hurts or helps throughput. It was
+not retried, waived, or replaced by an unrelated job's stable controls.
+
+### Original-Baseline Comparison
+
+[Run 36676085300](https://github.com/KoalaFacts/HeroParser/actions/runs/36676085300)
+compared the same candidate against original source
+`5c549d193a510a06fa24e23627b23a2df0cf0188`. Full 36-case fixed/fixed correctness
+passed before and after A/B, as did the nine Plain old/fixed cases. All 12 A/A
+transport/run controls passed the original bounds; raw control pairs were also
+revalidated locally. State was `stable-controls-review-ab`, not optimization
+approval. Elapsed-time ratios below are candidate/original baseline.
+
+| Transport | Run 1 Median | Run 1 p10-p90 | Run 2 Median | Run 2 p10-p90 |
+|---|---:|---:|---:|---:|
+| Contiguous | 1.1692 | 1.1345-1.1809 | 1.0439 | 1.0275-1.3148 |
+| Segmented128 | 1.0912 | 1.0818-1.1069 | 1.1135 | 1.0803-1.1242 |
+| Stream4096 | 1.1629 | 1.1456-1.1729 | 1.2942 | 1.2747-1.3062 |
+
+Regression against the original baseline remains, with appreciable fresh-process
+variation. This does not quantify incremental improvement over corrected main.
+Do not compare these ratios with prior original-baseline jobs to estimate gains:
+this VM reported AMD EPYC 9V45, whereas the incremental VM reported EPYC 7763.
+All jobs used Ubuntu 24.04.5 LTS, SDK 10.0.401/runtime 10.0.12, four logical
+processors, workstation GC and no affinity override. Whole-read allocation
+median deltas were +8 bytes per 2000-row read against the original baseline,
+not per row or an incremental allocation result.
+
+The fixed 2000-row/30-pair/10-warmup-pair/100 ms calibration-target protocol was
+unchanged. Two fresh processes ran per phase when controls permitted proceeding.
+The shorter-after-warmup calibration limitation, hosted-VM limitations and Plain
+Generated-only timing scope still apply. No local .NET build/test/benchmark ran.
+
+### JIT Hypothesis Partially Verified, Speed Unproven
+
+[Independent diagnostic run 36676099576](https://github.com/KoalaFacts/HeroParser/actions/runs/36676099576)
+completed all six warmed managed-stack captures and two separate JIT processes
+against corrected main on EPYC 7763. All nine Plain preflight cases and every
+profiled full read passed. Normal tiering/PGO remained enabled; neither JIT dumps
+nor sampling ran inside accepted timing processes. Actual Tier1 sizes in this
+single job were:
+
+| Method | Corrected Main Bytes | Candidate Bytes |
+|---|---:|---:|
+| Generated `PipeRecord` byte binder `TryBind` | 8839 | 2503 |
+| `Csv.TryBindPipeSequenceRow` | 11038 | 9833 |
+| `CsvRow<byte>.GetValue` | 1496 | 1496 |
+| `CsvRow<byte>.GetValueString` | 1865 | 1865 |
+
+The binder shrank about 72%; its wrapper shrank about 11%. Getter listings were
+unchanged. This verifies a caller code-size effect, not reduced total native
+code across the application, instruction-cache misses, CPU cost or a throughput
+gain. Do not treat the unpaired diagnostic process read counts as a substitute
+for the skipped incremental A/B. The managed sampled-thread-time and global
+initialization/wait-stack limitations described above remain; this is not
+precise native/kernel on-CPU evidence.
+
+Diagnostic baseline parser/model IDs were `d70eba4f-bf8c-4481-80fe-ae4be5fef040`
+/ `94e83124-7c02-4c96-94f0-1705787ca18a`. Candidate IDs were
+`83b06080-8feb-43c3-a33b-23b1a0040444` /
+`5c431987-ad0a-4fa1-8f85-9000001a664b`, consistent across all eight diagnostic
+processes and both timing jobs. Independent candidate-source A/A baseline IDs
+were `d4f1dfa8-3de9-4238-a0e5-c3aff832f373` /
+`fa1c34e8-dc71-4486-8e83-a9d6d0be25b5`. Original-source A/B baseline IDs were
+`a7445e61-88db-45d2-98ba-7ddd948b8caa` /
+`2d9b3922-ed7f-4539-b6c7-b5ce8583d279`.
+
+Artifacts `csv-pipe-paired-36676057014-1`, `csv-pipe-paired-36676085300-1` and
+`csv-pipe-profile-36676099576-1` retain the raw failed controls, valid timing,
+source/module fingerprints, runner context and diagnostic outputs for 30 days.
+The successful original-baseline job does not erase the failed incremental job.
+No second production hypothesis was attempted, no merge is authorized, and
+smaller caller assembly alone is not grounds to ship this change.

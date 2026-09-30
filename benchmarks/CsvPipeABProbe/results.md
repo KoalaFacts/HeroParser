@@ -854,3 +854,19 @@ The first native setup run `36785575557` failed before tests, builds or workload
 launch: tool discovery did not follow package-directory symlinks after apt
 installed perf. Its job log is retained; no CPU samples or raw trace were created.
 The next diagnostic revision corrects tool discovery, not the timing protocol.
+
+Run `36785902272` passed 83 control-gate and 45 native-evidence assertions and
+three builds with zero warnings/errors. Both workers completed their 36-case
+correctness matrix. The first worker's 30-second `cpu-clock:u` capture retained
+5,965 samples and a 94.710 MB raw trace, but collection stopped on an absent
+legacy `perfinfo` file. Artifact `csv-pipe-native-36785902272-1` retains this
+partial capture. Inspection also rejected its malformed jitdump: offset 427
+declares a 65,622-byte record for `stub ReportStubBlock<Unknown>`, with only
+32,854 bytes remaining. No native method attribution is accepted from it.
+
+The metadata repair makes `perfinfo` optional, waits for clean worker shutdown,
+and uses the runtime's individual-stub export flag instead of reserved-block
+export. This avoids that record type; it is not proof of the runtime write
+failure's exact cause. The strict jitdump bounds check remains unchanged.
+Flat exclusive reporting disables call-chain display while raw stacks remain
+retained. No A/A or A/B is repeated by these instrumentation repairs.

@@ -83,7 +83,7 @@ function Assert-CsvPipeNativeManifest($Manifest) {
     if ($Manifest.Protocol -ne 'csv-pipe-nativecpu-v1-diagnostic-only' -or $Manifest.DiagnosticOnly -ne $true -or
         $Manifest.WorkloadSha -notmatch '^[0-9a-f]{40}$' -or $Manifest.DiagnosticSha -notmatch '^[0-9a-f]{40}$' -or
         $Manifest.Event -ne 'cpu-clock:u' -or $Manifest.Frequency -ne 199 -or $Manifest.DurationSeconds -ne 30 -or
-        $Manifest.PerfMapEnabled -ne 1 -or @($Manifest.Runs).Count -ne 2) { throw 'Incomplete or mismatched native diagnostic manifest.' }
+        $Manifest.PerfMapEnabled -ne 1 -or $Manifest.PerfMapStubGranularity -ne 2 -or @($Manifest.Runs).Count -ne 2) { throw 'Incomplete or mismatched native diagnostic manifest.' }
     $a = $Manifest.Runs[0].Environment
     $b = $Manifest.Runs[1].Environment
     Assert-CsvPipeWorkerEnvironment $a $b $Manifest.WorkloadSha $Manifest.WorkloadSha

@@ -25,7 +25,7 @@ function New-NativeManifest {
     }
     [pscustomobject]@{ Protocol = 'csv-pipe-nativecpu-v1-diagnostic-only'; DiagnosticOnly = $true
         WorkloadSha = '1' * 40; DiagnosticSha = '2' * 40; Event = 'cpu-clock:u'; Frequency = 199
-        DurationSeconds = 30; PerfMapEnabled = 1; Runs = @($runs) }
+        DurationSeconds = 30; PerfMapEnabled = 1; PerfMapStubGranularity = 2; Runs = @($runs) }
 }
 
 Assert-CsvPipeNativeManifest (New-NativeManifest)
@@ -38,6 +38,7 @@ foreach ($field in @('Samples', 'UnknownFraction', 'WarmupSeconds', 'JitMethodCo
     }
 }
 Assert-NativeReject 'acceptance-labelled manifest' { $m = New-NativeManifest; $m.DiagnosticOnly = $false; Assert-CsvPipeNativeManifest $m }
+Assert-NativeReject 'reserved stub-block export' { $m = New-NativeManifest; $m.PerfMapStubGranularity = 0; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'wrong JIT owner' { $m = New-NativeManifest; $m.Runs[0].JitPid++; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'different binaries' { $m = New-NativeManifest; $m.Runs[1].Environment.parserHash = 'd' * 64; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'short capture batch' { $m = New-NativeManifest; $m.Runs[0].Batch.batchMs = 31000; Assert-CsvPipeNativeManifest $m }

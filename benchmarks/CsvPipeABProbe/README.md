@@ -388,6 +388,11 @@ gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_native_profile=true
 `perf inject --jit` resolves the captured addresses and `perf annotate` retains
 hot-method assembly. See the official [runtime profiling settings](https://learn.microsoft.com/en-us/dotnet/core/runtime-config/debugging-profiling#export-perf-maps-and-jit-dumps)
 and [Linux perf JIT injection documentation](https://github.com/torvalds/linux/blob/v6.8/tools/perf/Documentation/perf-inject.txt).
+The collector explicitly sets `DOTNET_PerfMapStubGranularity=2` to export
+individual stubs rather than reserved blocks; this is an instrumentation-only
+setting, not a JIT optimization experiment. The [runtime exporter source](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/vm/perfmap.cpp)
+defines this flag and emits `perf-<pid>.map`, not a required `perfinfo` file.
+Native metadata is copied only after graceful worker shutdown.
 This is user-space on-CPU sampling, not managed sampled thread time, kernel CPU
 attribution or hardware cache/branch-counter evidence. Instrumentation affects
 execution; diagnostic batch durations are not throughput results.

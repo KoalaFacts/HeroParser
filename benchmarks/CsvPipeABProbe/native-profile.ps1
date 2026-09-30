@@ -30,7 +30,7 @@ if (@($allowed).Count -ne 1) { throw 'CPU permissions unavailable.' }
 $cpu = (($allowed.Matches[0].Groups[1].Value -split ',')[0] -split '-')[0]
 $manifest = [pscustomobject]@{ Protocol = 'csv-pipe-nativecpu-v1-diagnostic-only'; DiagnosticOnly = $true
     DiagnosticSha = $diagnosticSha; WorkloadSha = $WorkloadSha; PerfVersion = $perfVersion
-    Event = 'cpu-clock:u'; Frequency = 199; DurationSeconds = 30; PerfMapEnabled = 1; Cpu = $cpu; Runs = @() }
+    Event = 'cpu-clock:u'; Frequency = 199; DurationSeconds = 30; PerfMapEnabled = 1; PerfMapStubGranularity = 2; Cpu = $cpu; Runs = @() }
 
 function Build-Workload([string[]]$Arguments) {
     & dotnet build @Arguments --disable-build-servers -p:UseSharedCompilation=false | Out-Host
@@ -125,6 +125,8 @@ try {
         $info.Environment['HERO_PARSER_WORKER_CPU'] = $cpu
         $info.Environment['DOTNET_PerfMapEnabled'] = '1'
         $info.Environment['DOTNET_PerfMapShowOptimizationTiers'] = '1'
+        # Export individual stubs, not reserved blocks whose native bytes may be unreadable.
+        $info.Environment['DOTNET_PerfMapStubGranularity'] = '2'
         $process = [Diagnostics.Process]::Start($info)
         $worker = [pscustomobject]@{ Process = $process; Directory = $directory; Sequence = 0; Environment = $null
             Errors = $process.StandardError.ReadToEndAsync() }
@@ -158,12 +160,14 @@ try {
         $response = Read-Worker $worker
         Assert-Response $worker $response 'batch' 65536
         if ($response.batchMs -lt 32000) { throw 'Diagnostic workload did not span the full capture window.' }
-        foreach ($file in @("/tmp/jit-$processId.dump", "/tmp/perf-$processId.map", "/tmp/perfinfo-$processId.map")) {
+        $null = Send-Worker $worker 'stop'
+        if (!$worker.Process.WaitForExit(10000) -or $worker.Process.ExitCode -ne 0) { throw 'Native worker did not exit cleanly.' }
+        foreach ($file in @("/tmp/jit-$processId.dump", "/tmp/perf-$processId.map")) {
             if (!(Test-Path -LiteralPath $file)) { throw "Missing runtime native metadata: $(Split-Path -Leaf $file)" }
             Copy-Item -LiteralPath $file -Destination $directory
         }
-        $null = Send-Worker $worker 'stop'
-        if (!$worker.Process.WaitForExit(10000) -or $worker.Process.ExitCode -ne 0) { throw 'Native worker did not exit cleanly.' }
+        $legacyInfo = "/tmp/perfinfo-$processId.map"
+        if (Test-Path -LiteralPath $legacyInfo) { Copy-Item -LiteralPath $legacyInfo -Destination $directory }
         $dump = Read-CsvPipeJitDump -Path (Join-Path $directory "jit-$processId.dump") -ExpectedPid $processId
         $dump | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $directory 'jit-methods.json')
         $injected = Join-Path $directory 'cpu.jit.perf.data'
@@ -174,7 +178,7 @@ try {
         if (@(Select-String -Path (Join-Path $directory 'stacks-*.txt'), (Join-Path $directory 'record-stderr.txt') -Pattern '\bLOST\b|lost\s+[1-9]\d*\s+events').Count) {
             throw 'Native trace lost samples; refusing hotspot acceptance.'
         }
-        Invoke-Perf @('report', '--stdio', '--no-children', '--percent-limit', '0', '--show-nr-samples', '--show-total-period',
+        Invoke-Perf @('report', '--stdio', '--no-children', '--call-graph', 'none', '--percent-limit', '0', '--show-nr-samples', '--show-total-period',
             '--field-separator', '|', '--sort', 'pid,symbol,dso', '-i', $injected) (Join-Path $directory 'exclusive') $directory
         $report = Read-CsvPipePerfReport -Lines (Get-Content -LiteralPath (Join-Path $directory 'exclusive-stdout.txt')) -ExpectedPid $processId
         $assemblyCount = 0

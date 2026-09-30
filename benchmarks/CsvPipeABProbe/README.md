@@ -378,7 +378,9 @@ to merge. Keep the fixed A/A and A/B protocol unchanged for subsequent patches.
 Two identical single-module workers complete the 36-case correctness matrix,
 warm up on one inherited CPU, then run serial Segmented128 diagnostic batches.
 Each capture attaches Linux perf to the actual worker PID for 30 seconds using
-`cpu-clock:u`, 199 Hz and DWARF call chains. The peer remains idle.
+`cpu-clock:u`, the monotonic clock required by JIT injection, 199 Hz and DWARF
+call chains. The peer remains idle. The report's misleadingly named Pid column
+contains thread IDs; retained process-group snapshots verify their worker owner.
 
 ```sh
 gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_native_profile=true

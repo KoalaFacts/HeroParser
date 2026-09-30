@@ -24,7 +24,7 @@ function New-NativeManifest {
             LostSamples = 0; Samples = 1000; UnknownFraction = .01; Hotspots = @('HeroParser.Hot') }
     }
     [pscustomobject]@{ Protocol = 'csv-pipe-nativecpu-v1-diagnostic-only'; DiagnosticOnly = $true
-        WorkloadSha = '1' * 40; DiagnosticSha = '2' * 40; Event = 'cpu-clock:u'; Frequency = 199
+        WorkloadSha = '1' * 40; DiagnosticSha = '2' * 40; Event = 'cpu-clock:u'; Clock = 'mono'; Frequency = 199
         DurationSeconds = 30; PerfMapEnabled = 1; PerfMapStubGranularity = 2; Runs = @($runs) }
 }
 
@@ -39,6 +39,7 @@ foreach ($field in @('Samples', 'UnknownFraction', 'WarmupSeconds', 'JitMethodCo
 }
 Assert-NativeReject 'acceptance-labelled manifest' { $m = New-NativeManifest; $m.DiagnosticOnly = $false; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'reserved stub-block export' { $m = New-NativeManifest; $m.PerfMapStubGranularity = 0; Assert-CsvPipeNativeManifest $m }
+Assert-NativeReject 'incompatible JIT clock' { $m = New-NativeManifest; $m.Clock = 'default'; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'wrong JIT owner' { $m = New-NativeManifest; $m.Runs[0].JitPid++; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'different binaries' { $m = New-NativeManifest; $m.Runs[1].Environment.parserHash = 'd' * 64; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'short capture batch' { $m = New-NativeManifest; $m.Runs[0].Batch.batchMs = 31000; Assert-CsvPipeNativeManifest $m }
@@ -46,16 +47,20 @@ Assert-NativeReject 'nonfinite batch' { $m = New-NativeManifest; $m.Runs[0].Batc
 Assert-NativeReject 'lost samples' { $m = New-NativeManifest; $m.Runs[0].LostSamples = 1; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'unresolved symbols' { $m = New-NativeManifest; $m.Runs[0].UnknownFraction = .21; Assert-CsvPipeNativeManifest $m }
 
-$lines = @('# perf report', '80.00%|800|800000|dotnet:1234|[.] HeroParser.Hot|jitted.so', '20.00%|200|200000|dotnet:1234|[.] native|libc.so')
+$lines = @('# perf report', '80.00%|800|800000|1234:dotnet|[.] HeroParser.Hot|jitted.so', '20.00%|200|200000|1234:dotnet|[.] native|libc.so')
 $report = Read-CsvPipePerfReport $lines 1234
 if ($report.Samples -ne 1000 -or $report.Period -ne 1000000 -or $report.UnknownFraction -ne 0 -or $report.Workload.Count -ne 1) {
     throw 'Native report totals were not calculated correctly.'
 }
 $checks++
 Assert-NativeReject 'wrong sample PID' { Read-CsvPipePerfReport $lines 12 }
-Assert-NativeReject 'short report' { Read-CsvPipePerfReport @('100.00%|499|100|1234|HeroParser.Hot|jit.so') 1234 }
-Assert-NativeReject 'unknown-heavy report' { Read-CsvPipePerfReport @($lines[1], '30.00%|300|300001|1234|[unknown]|[unknown]') 1234 }
-Assert-NativeReject 'no workload symbol' { Read-CsvPipePerfReport @('100.00%|1000|1000|1234|native|libc.so') 1234 }
+Assert-NativeReject 'short report' { Read-CsvPipePerfReport @('100.00%|499|100|1234:dotnet|HeroParser.Hot|jit.so') 1234 }
+Assert-NativeReject 'unknown-heavy report' { Read-CsvPipePerfReport @($lines[1], '30.00%|300|300001|1234:dotnet|[unknown]|[unknown]') 1234 }
+Assert-NativeReject 'no workload symbol' { Read-CsvPipePerfReport @('100.00%|1000|1000|1234:dotnet|native|libc.so') 1234 }
+Assert-NativeReject 'foreign worker thread' { Read-CsvPipePerfReport @('100.00%|1000|1000|5678:dotnet|HeroParser.Hot|jit.so') 1234 }
+$threadReport = Read-CsvPipePerfReport @('100.00%|1000|1000|1235:worker|HeroParser.Hot|jit.so') 1234 @(1234, 1235)
+if ($threadReport.Hotspots[0].Tid -ne 1235 -or $threadReport.Hotspots[0].Pid -ne 1234) { throw 'Thread/process identity was conflated.' }
+$checks++
 Assert-NativeReject 'malformed report columns' { Read-CsvPipePerfReport @('100.00%|1000|1234|HeroParser.Hot') 1234 }
 
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('native-fixture-' + [guid]::NewGuid())

@@ -870,3 +870,11 @@ export. This avoids that record type; it is not proof of the runtime write
 failure's exact cause. The strict jitdump bounds check remains unchanged.
 Flat exclusive reporting disables call-chain display while raw stacks remain
 retained. No A/A or A/B is repeated by these instrumentation repairs.
+
+Run `36786944328` passed 46 native assertions and retained 5,963 first-worker
+CPU samples plus a complete 2,913,747-byte jitdump. JIT injection rejected the
+trace's default clock (`jitted code must be sampled with perf record -k 1`).
+Artifact `csv-pipe-native-36786944328-1` remains incomplete, with no accepted
+hotspot report. The next revision explicitly records on the monotonic clock
+and verifies reported thread IDs against captured worker process-group records.
+It does not weaken native dump/sample validation or retry performance controls.

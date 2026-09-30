@@ -57,16 +57,19 @@ function Read-CsvPipeJitDump {
 }
 
 function Read-CsvPipePerfReport {
-    param([Parameter(Mandatory = $true)][string[]]$Lines, [Parameter(Mandatory = $true)][int]$ExpectedPid)
+    param([Parameter(Mandatory = $true)][string[]]$Lines, [Parameter(Mandatory = $true)][int]$ExpectedPid,
+        [int[]]$ExpectedTids = @($ExpectedPid))
     $rows = foreach ($line in $Lines) {
         if ($line.TrimStart().StartsWith('#') -or [string]::IsNullOrWhiteSpace($line)) { continue }
         $fields = $line.Split('|').Trim()
         if ($fields.Count -ne 6 -or $fields[0] -notmatch '^\d+(\.\d+)?%$' -or $fields[1] -notmatch '^\d+$' -or
-            $fields[2] -notmatch '^\d+$' -or $fields[3] -notmatch "\b$ExpectedPid\b") {
+            $fields[2] -notmatch '^\d+$' -or $fields[3] -notmatch '^(\d+):') {
             throw "Unexpected native perf report row: $line"
         }
+        $threadId = [int]$Matches[1]
+        if ($threadId -notin $ExpectedTids) { throw 'Native sample thread does not belong to the captured worker.' }
         [pscustomobject]@{ Percent = [double]::Parse($fields[0].TrimEnd('%'), [Globalization.CultureInfo]::InvariantCulture)
-            Samples = [long]$fields[1]; Period = [long]$fields[2]; Pid = $ExpectedPid
+            Samples = [long]$fields[1]; Period = [long]$fields[2]; Pid = $ExpectedPid; Tid = $threadId
             Symbol = ($fields[4] -replace '^\[.\]\s*', ''); Dso = $fields[5] }
     }
     $samples = ($rows.Samples | Measure-Object -Sum).Sum
@@ -82,7 +85,7 @@ function Read-CsvPipePerfReport {
 function Assert-CsvPipeNativeManifest($Manifest) {
     if ($Manifest.Protocol -ne 'csv-pipe-nativecpu-v1-diagnostic-only' -or $Manifest.DiagnosticOnly -ne $true -or
         $Manifest.WorkloadSha -notmatch '^[0-9a-f]{40}$' -or $Manifest.DiagnosticSha -notmatch '^[0-9a-f]{40}$' -or
-        $Manifest.Event -ne 'cpu-clock:u' -or $Manifest.Frequency -ne 199 -or $Manifest.DurationSeconds -ne 30 -or
+        $Manifest.Event -ne 'cpu-clock:u' -or $Manifest.Clock -ne 'mono' -or $Manifest.Frequency -ne 199 -or $Manifest.DurationSeconds -ne 30 -or
         $Manifest.PerfMapEnabled -ne 1 -or $Manifest.PerfMapStubGranularity -ne 2 -or @($Manifest.Runs).Count -ne 2) { throw 'Incomplete or mismatched native diagnostic manifest.' }
     $a = $Manifest.Runs[0].Environment
     $b = $Manifest.Runs[1].Environment

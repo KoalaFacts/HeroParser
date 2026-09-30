@@ -30,7 +30,7 @@ if (@($allowed).Count -ne 1) { throw 'CPU permissions unavailable.' }
 $cpu = (($allowed.Matches[0].Groups[1].Value -split ',')[0] -split '-')[0]
 $manifest = [pscustomobject]@{ Protocol = 'csv-pipe-nativecpu-v1-diagnostic-only'; DiagnosticOnly = $true
     DiagnosticSha = $diagnosticSha; WorkloadSha = $WorkloadSha; PerfVersion = $perfVersion
-    Event = 'cpu-clock:u'; Frequency = 199; DurationSeconds = 30; PerfMapEnabled = 1; PerfMapStubGranularity = 2; Cpu = $cpu; Runs = @() }
+    Event = 'cpu-clock:u'; Clock = 'mono'; Frequency = 199; DurationSeconds = 30; PerfMapEnabled = 1; PerfMapStubGranularity = 2; Cpu = $cpu; Runs = @() }
 
 function Build-Workload([string[]]$Arguments) {
     & dotnet build @Arguments --disable-build-servers -p:UseSharedCompilation=false | Out-Host
@@ -95,6 +95,15 @@ function Assert-Response($Worker, $Response, [string]$Operation, [int]$Repeats) 
     }
 }
 
+function Get-WorkerThreads([int]$Owner) {
+    foreach ($task in Get-ChildItem -LiteralPath "/proc/$Owner/task") {
+        $status = Get-Content -LiteralPath (Join-Path $task.FullName 'status')
+        $group = @($status | Select-String '^Tgid:\s*(\d+)$')
+        if ($group.Count -ne 1 -or [int]$group[0].Matches[0].Groups[1].Value -ne $Owner) { throw 'Native worker thread ownership mismatch.' }
+        [int]$task.Name
+    }
+}
+
 try {
     & git -C $root worktree add --detach $workload $WorkloadSha
     if ($LASTEXITCODE -ne 0) { throw 'Frozen workload checkout failed.' }
@@ -151,15 +160,18 @@ try {
         $processId = $worker.Process.Id
         Get-Content -LiteralPath "/proc/$processId/maps" | Set-Content -LiteralPath (Join-Path $directory 'process-maps.txt')
         Get-Content -LiteralPath "/proc/$processId/status" | Set-Content -LiteralPath (Join-Path $directory 'process-status.txt')
+        $threads = @(Get-WorkerThreads $processId)
         # One long diagnostic batch, not measured A/A pairs; keep the peer idle throughout capture.
         Send-Worker $worker 'batch' 65536 -NoWait
         $raw = Join-Path $directory 'cpu.perf.data'
-        $capture = Start-CaptureProcess 'sudo' @('-n', $PerfTool, 'record', '-e', 'cpu-clock:u', '-F', '199',
+        $capture = Start-CaptureProcess 'sudo' @('-n', $PerfTool, 'record', '--clockid', 'mono', '-e', 'cpu-clock:u', '-F', '199',
             '--call-graph', 'dwarf,16384', '--timestamp', '-p', "$processId", '-o', $raw, '--', 'sleep', '30') $directory
         Finish-CaptureProcess $capture (Join-Path $directory 'record')
         $response = Read-Worker $worker
         Assert-Response $worker $response 'batch' 65536
         if ($response.batchMs -lt 32000) { throw 'Diagnostic workload did not span the full capture window.' }
+        $threads = @(@($threads) + @(Get-WorkerThreads $processId) | Sort-Object -Unique)
+        @{ Pid = $processId; Tids = $threads } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'thread-owners.json')
         $null = Send-Worker $worker 'stop'
         if (!$worker.Process.WaitForExit(10000) -or $worker.Process.ExitCode -ne 0) { throw 'Native worker did not exit cleanly.' }
         foreach ($file in @("/tmp/jit-$processId.dump", "/tmp/perf-$processId.map")) {
@@ -180,7 +192,7 @@ try {
         }
         Invoke-Perf @('report', '--stdio', '--no-children', '--call-graph', 'none', '--percent-limit', '0', '--show-nr-samples', '--show-total-period',
             '--field-separator', '|', '--sort', 'pid,symbol,dso', '-i', $injected) (Join-Path $directory 'exclusive') $directory
-        $report = Read-CsvPipePerfReport -Lines (Get-Content -LiteralPath (Join-Path $directory 'exclusive-stdout.txt')) -ExpectedPid $processId
+        $report = Read-CsvPipePerfReport -Lines (Get-Content -LiteralPath (Join-Path $directory 'exclusive-stdout.txt')) -ExpectedPid $processId -ExpectedTids $threads
         $assemblyCount = 0
         foreach ($symbol in @($report.Workload | Sort-Object Period -Descending | Select-Object -First 3 -ExpandProperty Symbol -Unique)) {
             $assemblyCount++

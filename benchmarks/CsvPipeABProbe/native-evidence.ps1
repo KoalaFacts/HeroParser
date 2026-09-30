@@ -57,12 +57,14 @@ function Read-CsvPipeJitDump {
 }
 
 function Read-CsvPipePerfReport {
-    param([Parameter(Mandatory = $true)][string[]]$Lines, [Parameter(Mandatory = $true)][int]$ExpectedPid,
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string[]]$Lines, [Parameter(Mandatory = $true)][int]$ExpectedPid,
         [int[]]$ExpectedTids = @($ExpectedPid))
     $rows = foreach ($line in $Lines) {
         if ($line.TrimStart().StartsWith('#') -or [string]::IsNullOrWhiteSpace($line)) { continue }
         $fields = $line.Split('|').Trim()
-        if ($fields.Count -ne 6 -or $fields[0] -notmatch '^\d+(\.\d+)?%$' -or $fields[1] -notmatch '^\d+$' -or
+        # Newer perf appends unavailable IPC counters to software-event reports.
+        if (($fields.Count -ne 6 -and ($fields.Count -ne 7 -or $fields[6] -notmatch '^-\s+-$')) -or
+            $fields[0] -notmatch '^\d+(\.\d+)?%$' -or $fields[1] -notmatch '^\d+$' -or
             $fields[2] -notmatch '^\d+$' -or $fields[3] -notmatch '^(\d+):') {
             throw "Unexpected native perf report row: $line"
         }

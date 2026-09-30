@@ -386,6 +386,12 @@ contains thread IDs; retained process-group snapshots verify their worker owner.
 gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_native_profile=true
 ```
 
+To repair analysis without resampling an existing capture, also pass
+`-f pipe_native_replay_run=ORIGINAL_RUN_ID`. Replay launches only perf analysis
+tools; it does not build or launch a parser worker. It retains the input run,
+source/binary context and raw-data hash. A single-worker replay is explicitly
+not a completed two-worker capture or timing approval.
+
 `DOTNET_PerfMapEnabled=1` exports native JIT code/maps in those same processes;
 `perf inject --jit` resolves the captured addresses and `perf annotate` retains
 hot-method assembly. See the official [runtime profiling settings](https://learn.microsoft.com/en-us/dotnet/core/runtime-config/debugging-profiling#export-perf-maps-and-jit-dumps)

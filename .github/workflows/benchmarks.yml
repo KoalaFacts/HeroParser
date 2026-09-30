@@ -33,6 +33,10 @@ on:
         description: 'Collect native on-CPU/JIT evidence for the frozen failed segmented workload; never A/A or A/B'
         type: boolean
         default: false
+      pipe_native_replay_run:
+        description: 'With native profile: replay retained artifact from this run instead of launching any workload'
+        type: string
+        default: ''
       pipe_controls:
         description: 'Run only three fixed isolated same-CPU A/A checks of timing protocol v4; never A/B'
         type: boolean
@@ -64,7 +68,7 @@ env:
 
 jobs:
   setup:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
@@ -239,7 +243,7 @@ jobs:
           }
 
   pipe-ab:
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_bias && (inputs.pipe_ab || inputs.pipe_controls))
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && (inputs.pipe_ab || inputs.pipe_controls))
     name: CSV Pipe Correctness and Timing Controls
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -390,17 +394,22 @@ jobs:
           retention-days: 30
 
   pipe-native-profile:
-    if: github.event_name == 'workflow_dispatch' && inputs.pipe_native_profile
+    if: github.event_name == 'workflow_dispatch' && (inputs.pipe_native_profile || inputs.pipe_native_replay_run)
     name: CSV Pipe Native CPU and JIT Evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Require isolated diagnostic mode
         shell: pwsh
         env:
           OTHER_MODES: ${{ inputs.pipe_ab || inputs.pipe_profile || inputs.pipe_controls || inputs.pipe_bias || inputs.pipe_bias_jit_only }}
+          NATIVE_MODE: ${{ inputs.pipe_native_profile }}
         run: |
           if ($env:OTHER_MODES -eq 'true') { throw 'Native diagnostics cannot be combined with timing or legacy diagnostics.' }
+          if ($env:NATIVE_MODE -ne 'true') { throw 'Native artifact replay requires pipe_native_profile.' }
       - name: Checkout diagnostic source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -432,7 +441,17 @@ jobs:
           Get-Content /proc/sys/kernel/perf_event_paranoid >> BenchmarkDotNet.Artifacts/pipe-native/runner-context.txt
       - name: Collect fixed native evidence without timing retrials
         shell: pwsh
+        env:
+          PROFILE_RUN: ${{ inputs.pipe_native_replay_run }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          if ($env:PROFILE_RUN) {
+            if ($env:PROFILE_RUN -notmatch '^\d+$') { throw 'Invalid native artifact run ID.' }
+            gh run download $env:PROFILE_RUN --repo $env:GITHUB_REPOSITORY -n "csv-pipe-native-$($env:PROFILE_RUN)-1" -D "$env:RUNNER_TEMP/native-input"
+            if ($LASTEXITCODE -ne 0) { throw 'Could not download retained native evidence.' }
+            ./benchmarks/CsvPipeABProbe/native-replay.ps1 -InputDirectory "$env:RUNNER_TEMP/native-input" -PerfTool $env:HERO_PARSER_PERF -OriginRun $env:PROFILE_RUN
+            exit 0
+          }
           ./benchmarks/CsvPipeABProbe/native-profile.ps1 -WorkloadSha 89c06810e76c4623ebad3cfc89c4bcdef41acd59 -Workspace "$env:RUNNER_TEMP/pipe-native" -PerfTool $env:HERO_PARSER_PERF
       - name: Retain native evidence even on failure
         if: always()

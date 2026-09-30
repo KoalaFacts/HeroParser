@@ -47,7 +47,7 @@ Assert-NativeReject 'nonfinite batch' { $m = New-NativeManifest; $m.Runs[0].Batc
 Assert-NativeReject 'lost samples' { $m = New-NativeManifest; $m.Runs[0].LostSamples = 1; Assert-CsvPipeNativeManifest $m }
 Assert-NativeReject 'unresolved symbols' { $m = New-NativeManifest; $m.Runs[0].UnknownFraction = .21; Assert-CsvPipeNativeManifest $m }
 
-$lines = @('# perf report', '80.00%|800|800000|1234:dotnet|[.] HeroParser.Hot|jitted.so', '20.00%|200|200000|1234:dotnet|[.] native|libc.so')
+$lines = @('# perf report', '', '80.00%|800|800000|1234:dotnet|[.] HeroParser.Hot|jitted.so', '20.00%|200|200000|1234:dotnet|[.] native|libc.so')
 $report = Read-CsvPipePerfReport $lines 1234
 if ($report.Samples -ne 1000 -or $report.Period -ne 1000000 -or $report.UnknownFraction -ne 0 -or $report.Workload.Count -ne 1) {
     throw 'Native report totals were not calculated correctly.'
@@ -55,12 +55,16 @@ if ($report.Samples -ne 1000 -or $report.Period -ne 1000000 -or $report.UnknownF
 $checks++
 Assert-NativeReject 'wrong sample PID' { Read-CsvPipePerfReport $lines 12 }
 Assert-NativeReject 'short report' { Read-CsvPipePerfReport @('100.00%|499|100|1234:dotnet|HeroParser.Hot|jit.so') 1234 }
-Assert-NativeReject 'unknown-heavy report' { Read-CsvPipePerfReport @($lines[1], '30.00%|300|300001|1234:dotnet|[unknown]|[unknown]') 1234 }
+Assert-NativeReject 'unknown-heavy report' { Read-CsvPipePerfReport @($lines[2], '30.00%|300|300001|1234:dotnet|[unknown]|[unknown]') 1234 }
 Assert-NativeReject 'no workload symbol' { Read-CsvPipePerfReport @('100.00%|1000|1000|1234:dotnet|native|libc.so') 1234 }
 Assert-NativeReject 'foreign worker thread' { Read-CsvPipePerfReport @('100.00%|1000|1000|5678:dotnet|HeroParser.Hot|jit.so') 1234 }
 $threadReport = Read-CsvPipePerfReport @('100.00%|1000|1000|1235:worker|HeroParser.Hot|jit.so') 1234 @(1234, 1235)
 if ($threadReport.Hotspots[0].Tid -ne 1235 -or $threadReport.Hotspots[0].Pid -ne 1234) { throw 'Thread/process identity was conflated.' }
 $checks++
+$ipcReport = Read-CsvPipePerfReport @('100.00%|1000|1000|1234:dotnet|HeroParser.Hot|jit.so|-      -') 1234
+if ($ipcReport.Samples -ne 1000) { throw 'Software-event IPC placeholder was misparsed.' }
+$checks++
+Assert-NativeReject 'unexpected report column' { Read-CsvPipePerfReport @('100.00%|1000|1000|1234:dotnet|HeroParser.Hot|jit.so|unexpected') 1234 }
 Assert-NativeReject 'malformed report columns' { Read-CsvPipePerfReport @('100.00%|1000|1234|HeroParser.Hot') 1234 }
 
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('native-fixture-' + [guid]::NewGuid())

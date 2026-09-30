@@ -878,3 +878,13 @@ Artifact `csv-pipe-native-36786944328-1` remains incomplete, with no accepted
 hotspot report. The next revision explicitly records on the monotonic clock
 and verifies reported thread IDs against captured worker process-group records.
 It does not weaken native dump/sample validation or retry performance controls.
+
+Run `36787620269` completed a monotonic first-worker capture and JIT injection,
+but the report reader rejected a blank input line during parameter binding.
+The raw report also contains perf 6.17's extra unavailable-IPC placeholder.
+Artifact `csv-pipe-native-36787620269-1` retains the original native trace,
+complete jitdump, generated native ELF files, stacks and exclusive report.
+No second worker was sampled. The next revision repairs report-format handling
+and replays this artifact, without rebuilding or resampling the workload.
+Only the explicit unavailable-IPC placeholder is accepted as an extra column;
+other unexpected columns still fail. Native attribution is pending replay CI.

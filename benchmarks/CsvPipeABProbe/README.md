@@ -93,6 +93,45 @@ configuration consistent, particularly on heterogeneous laptop CPUs.
 
 ## Evidence and Interpretation
 
+### Isolated CI Series
+
+The existing Performance Benchmarks workflow has an opt-in manual `pipe_ab`
+input. It runs only one paired experiment job, without the normal benchmark
+matrix. All builds and measurements are serial within that job. A hosted VM is
+isolated from this project's other jobs, not guaranteed exclusive physical
+hardware; A/A controls remain mandatory.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_ab=true -f baseline_sha=FULL_BASELINE_SHA
+```
+
+The committed `run-series.ps1` protocol is deliberately fixed before observing
+timings: 2000 rows, 30 measured pairs, 10 warmup pairs, 100 ms calibration target,
+and two independent process runs per phase. It first verifies all 36 cases on
+independently built candidate/candidate assemblies, then times the three Plain
+Generated transports twice. Every A/A transport in every run must have a median
+ratio in [0.95, 1.05], p10 >= 0.90 and p90 <= 1.10. The gate recomputes these
+percentiles from all raw pairs and rejects incomplete or mismatched evidence.
+These are experimental noise thresholds, not a statistical proof of equality.
+
+Unstable initial controls skip A/B and return exit 2. Otherwise the chosen old
+baseline is independently built and Plain correctness is checked before two A/B
+runs. Full candidate/candidate correctness and two A/A runs are repeated after
+A/B. An unstable post-control also returns exit 2: A/B is inconclusive, not a
+regression verdict. Builds use disabled build servers and occur outside timing;
+there is a ten-second settling interval after each preparation phase.
+
+The artifact contains every NDJSON run plus `series-summary.json`, with refs,
+module IDs, fixed thresholds, and gate outcomes. Exit 0 only means correctness
+and controls passed; inspect repeated A/B ratios before accepting performance.
+This does not time the broken old baseline's escaped cases, establish a full
+matrix timing result, or permit comparing elapsed times across different runner
+jobs. The tests for the evidence gate can run independently:
+
+```powershell
+pwsh -NoProfile -File benchmarks/CsvPipeABProbe/test-control.ps1
+```
+
 Output is NDJSON: environment/source refs/module IDs, correctness results, every
 measured pair, per-case summaries, and final invalid-case count. Ratios are
 candidate/baseline time; below 1 favors candidate. Summary times and allocated

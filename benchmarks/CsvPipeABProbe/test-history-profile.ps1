@@ -58,6 +58,9 @@ $workers = @{ '42' = @{ Methods = @($method); Windows = @($window) } }
 $correlated = Get-CsvPipeCpuCorrelation @('42 42 2.000000000: cpu-clock:u: 1001') $workers 1000
 if ($correlated.Quality[0].Mapped -ne 1 -or $correlated.Windows[0].CodeIndex -ne 1) { throw 'Native address/window correlation failed.' }
 $checks++
+$combined = Get-CsvPipeCpuCorrelation @('42/42 2.000000000: cpu-clock:u: 1001', '') $workers 1000
+if ($combined.Quality[0].Mapped -ne 1 -or $combined.Windows[0].CodeIndex -ne 1) { throw 'Combined perf PID/TID or empty separator parsing failed.' }
+$checks++
 Assert-HistoryReject { Get-CsvPipeCpuCorrelation @('99 99 2.000000000: cpu-clock:u: 1001') $workers 1000 }
 Assert-HistoryReject { Get-CsvPipeCpuCorrelation @('unexpected sample') $workers 1000 }
 Assert-HistoryReject { Get-CsvPipeCpuCorrelation @('42 42 2.000000000: cpu-clock:u: 1001') $workers 0 }

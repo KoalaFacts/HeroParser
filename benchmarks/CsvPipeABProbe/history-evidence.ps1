@@ -156,7 +156,7 @@ function Set-CsvPipeWorkerEnvironment {
 }
 
 function Get-CsvPipeCpuCorrelation {
-    param([Parameter(Mandatory = $true)][string[]]$Lines,
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string[]]$Lines,
         [Parameter(Mandatory = $true)][hashtable]$Workers,
         [Parameter(Mandatory = $true)][long]$StopwatchFrequency)
     if ($StopwatchFrequency -le 0) { throw 'CPU correlation clock unavailable.' }
@@ -177,7 +177,7 @@ function Get-CsvPipeCpuCorrelation {
     }
     foreach ($line in $Lines) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        if ($line -notmatch '^\s*(?<owner>\d+)\s+(?<thread>\d+)\s+(?<time>\d+\.\d+):\s+cpu-clock:u:\s+(?<ip>[0-9a-f]+)\s*$') {
+        if ($line -notmatch '^\s*(?<owner>\d+)(?:/|\s+)(?<thread>\d+)\s+(?<time>\d+\.\d+):\s+cpu-clock:u:\s+(?<ip>[0-9a-f]+)\s*$') {
             throw 'Unexpected CPU sample format; cannot silently discard evidence.'
         }
         $owner = $Matches.owner

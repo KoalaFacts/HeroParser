@@ -9,11 +9,19 @@ on:
       - 'benchmarks/CsvPipeABProbe/test-history-profile.ps1'
       - 'benchmarks/CsvPipeDiagnostics/**'
   workflow_dispatch:
+    inputs:
+      replay_run:
+        description: 'Retained capture to analyze without any measured worker startup'
+        type: string
+        default: ''
   workflow_call:
     inputs:
       other_modes:
         type: boolean
         default: false
+      replay_run:
+        type: string
+        default: ''
 
 concurrency:
   group: csv-pipe-history-${{ github.ref }}-${{ github.event_name }}
@@ -37,8 +45,10 @@ jobs:
         shell: pwsh
         env:
           OTHER_MODES: ${{ inputs.other_modes }}
+          REPLAY_RUN: ${{ inputs.replay_run }}
         run: |
           if ($env:OTHER_MODES -eq 'true') { throw 'Historical evidence cannot be combined with other experiment modes.' }
+          if ($env:REPLAY_RUN -and $env:REPLAY_RUN -ne '36807711817') { throw 'Only the retained, predeclared capture may be replayed.' }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -68,7 +78,7 @@ jobs:
           dotnet format benchmarks/CsvPipeDiagnostics/CsvPipeDiagnostics.csproj --verify-no-changes --no-restore
           if ($LASTEXITCODE -ne 0) { throw 'Runtime decoder formatting failed.' }
       - name: Prepare Linux evidence tools and common scheduler accounting
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.replay_run == ''
         shell: bash
         run: |
           set -euo pipefail
@@ -88,10 +98,20 @@ jobs:
           uname -a >> BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
           dotnet --info >> BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
       - name: Collect four predeclared pairs, no acceptance or retries
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.replay_run == ''
         shell: pwsh
         run: |
           ./benchmarks/CsvPipeABProbe/history-profile.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series" -Workspace "$env:RUNNER_TEMP/history-workload" -PerfTool $env:HERO_PARSER_PERF -AnalyzerDll benchmarks/CsvPipeDiagnostics/bin/Release/net10.0/CsvPipeDiagnostics.dll
+      - name: Recover retained files only, never launch a measured worker
+        if: github.event_name == 'workflow_dispatch' && inputs.replay_run != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPLAY_RUN: ${{ inputs.replay_run }}
+        run: |
+          gh run download $env:REPLAY_RUN --repo KoalaFacts/HeroParser -n "csv-pipe-history-$env:REPLAY_RUN-1" -D "$env:RUNNER_TEMP/history-capture"
+          if ($LASTEXITCODE -ne 0) { throw 'Original capture unavailable; no replacement sampling.' }
+          ./benchmarks/CsvPipeABProbe/history-replay.ps1 -InputDirectory "$env:RUNNER_TEMP/history-capture/study" -SourceRun $env:REPLAY_RUN -AnalyzerDll benchmarks/CsvPipeDiagnostics/bin/Release/net10.0/CsvPipeDiagnostics.dll
       - name: Retain partial and negative evidence
         if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

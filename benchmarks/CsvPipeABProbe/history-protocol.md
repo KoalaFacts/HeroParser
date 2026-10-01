@@ -111,5 +111,23 @@ The guard now recognizes its documented boolean values without passing it into
 workers, and reports all unknown flag names together (never their values).
 Both setup failures remain recorded and contain no measured batches.
 
-Implementation status: collection not yet verified. No new root cause or
-performance acceptance is claimed.
+## Retained Capture And Artifact Recovery
+
+[Capture 36807711817](https://github.com/KoalaFacts/HeroParser/actions/runs/36807711817)
+at `7252c32` completed all four fixed measurement histories and retained raw native,
+runtime and scheduling files. Original CI status remains failure: postprocessing
+rejected the blank line emitted by `perf script`; its combined `PID/TID` format
+also differed from the parser fixture. Neither error requires replacement sampling.
+The parser now accepts blank separators and both explicitly supported PID/TID
+formats, while still rejecting malformed samples and unknown owners.
+
+Artifact-only recovery uses `pipe_history=true` and
+`pipe_history_replay_run=36807711817` in the existing benchmark workflow. It skips
+tools/scheduler setup and all measured worker startup, preserves the complete
+original capture under `original/`, revalidates original command/response/binary
+identities, decodes the same runtime traces and correlates original sample IPs.
+New derived output never changes the old failed manifest or any timing. This is
+analysis recovery, not a new trial, green acceptance or root-cause intervention.
+
+Implementation status: artifact recovery not yet verified in CI. No new root
+cause or performance acceptance is claimed.

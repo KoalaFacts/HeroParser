@@ -45,6 +45,10 @@ on:
         description: 'Replay the hash-pinned failed batch history in four fixed process pairs; diagnostic only, no acceptance'
         type: boolean
         default: false
+      pipe_history_replay_run:
+        description: 'With history mode: analyze the retained capture without launching measured workers'
+        type: string
+        default: ''
       pipe_controls:
         description: 'Run only three fixed isolated same-CPU A/A checks of timing protocol v4; never A/B'
         type: boolean
@@ -64,8 +68,8 @@ on:
 
 # Cancel in-progress runs for the same workflow and ref
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.pipe_history && 'history' || inputs.pipe_native_profile && 'native-profile' || (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
-  cancel-in-progress: ${{ !inputs.pipe_history }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ (inputs.pipe_history || inputs.pipe_history_replay_run != '') && 'history' || inputs.pipe_native_profile && 'native-profile' || (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
+  cancel-in-progress: ${{ !inputs.pipe_history && inputs.pipe_history_replay_run == '' }}
 
 permissions:
   contents: read
@@ -76,7 +80,7 @@ env:
 
 jobs:
   setup:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_history && !inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
@@ -251,7 +255,7 @@ jobs:
           }
 
   pipe-ab:
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls))
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls))
     name: CSV Pipe Correctness and Timing Controls
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -303,7 +307,7 @@ jobs:
           retention-days: 30
 
   pipe-profile:
-    if: github.event_name == 'workflow_dispatch' && inputs.pipe_profile && !inputs.pipe_history && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe
+    if: github.event_name == 'workflow_dispatch' && inputs.pipe_profile && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe
     name: CSV Pipe Managed Stack and JIT Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -349,7 +353,7 @@ jobs:
           retention-days: 30
 
   pipe-bias:
-    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
+    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
     name: CSV Pipe Same-Source Bias Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -402,16 +406,17 @@ jobs:
           retention-days: 30
 
   pipe-history:
-    if: github.event_name == 'workflow_dispatch' && inputs.pipe_history
+    if: github.event_name == 'workflow_dispatch' && (inputs.pipe_history || inputs.pipe_history_replay_run != '')
     permissions:
       contents: read
       actions: read
     uses: ./.github/workflows/csv-pipe-history.yml
     with:
       other_modes: ${{ inputs.pipe_ab || inputs.pipe_profile || inputs.pipe_controls || inputs.pipe_bias || inputs.pipe_bias_jit_only || inputs.pipe_native_profile || inputs.pipe_native_replay_run != '' || inputs.pipe_native_history_probe }}
+      replay_run: ${{ inputs.pipe_history_replay_run }}
 
   pipe-native-profile:
-    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_history && (inputs.pipe_native_profile || inputs.pipe_native_replay_run || inputs.pipe_native_history_probe)
+    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && (inputs.pipe_native_profile || inputs.pipe_native_replay_run || inputs.pipe_native_history_probe)
     name: CSV Pipe Native CPU and JIT Evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 20

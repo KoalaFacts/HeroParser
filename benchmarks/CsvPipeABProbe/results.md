@@ -976,5 +976,26 @@ The old one-worker native trace used Segmented-only warmup, unlike the failed
 controls' Contiguous-before-Segmented history. A new diagnostic mode collects
 both PIDs under two fixed preparation histories with CPU/wall/fault and scheduler
 snapshots, while keeping the frozen workload and failed timing gate intact.
-No production change, acceptance rerun or root-cause conclusion is introduced.
-Implementation and the diagnostic are awaiting CI; all outcomes will be retained.
+No production change or acceptance rerun is introduced.
+
+[Run 36797617555](https://github.com/KoalaFacts/HeroParser/actions/runs/36797617555)
+at `a9fff81` completed both histories once each: 84 native diagnostic checks,
+144 workload correctness cases, six build invocations with zero warnings/errors,
+and four traces with zero reported lost samples. Artifact validation confirms
+matching frozen parser/model/consumer hashes and the declared process/JIT owners.
+SegmentedOnly and ContiguousPrelude diagnostic batch B/A are 0.996944 and
+0.996841; neither reproduces the old 1.052846 median. These single instrumented
+long batches are not acceptance distributions and do not supersede failed controls.
+
+The reader's Tier1 bodies are 9823/9838 bytes in SegmentedOnly and 5319/5319 in
+ContiguousPrelude. Sampled work shifts from the reader state machine to a separate
+column-aware `TryReadRow`; its annotated scalar cursor/checked-position loop maps
+to the same frozen source. This supports investigating JIT/history sensitivity,
+not declaring it the bias's cause. Method size differences also occur within
+near-equal pairs. Scheduler statistics are disabled, and nearly equal process
+CPU/observer-wall time does not exclude GC or frequency effects.
+
+The failed second cycle used 135 Contiguous batches and 22463 parses per worker
+before segmented preparation, not the diagnostic's fixed prelude. The report
+records this mismatch and the next same-PID evidence boundary. Root cause remains
+unresolved; no throughput optimization or merge is approved.

@@ -81,8 +81,94 @@ other. Missing frequency/scheduler evidence cannot be treated as zero cost.
 This diagnostic may identify a discriminating signal, but a new runner cannot
 recover the old failing PIDs or prove their root cause by correlation alone.
 
-Initial status: diagnostic implementation awaiting CI; root cause unresolved.
-The next step after evidence is a single predeclared, counterbalanced causal
-intervention for the best-supported hypothesis, not a throughput patch or a
-repeat-until-green control run. If no difference is reproduced, retain that
-negative result and do not declare the earlier failure solved.
+## Completed Diagnostic: Bias Not Reproduced
+
+[Run 36797617555](https://github.com/KoalaFacts/HeroParser/actions/runs/36797617555)
+at diagnostic revision `a9fff81` completed both conditions on one runner, without
+retries. The diagnostic self-tests passed 84 checks; six workload/model/consumer
+build invocations reported zero warnings and errors. The four workers passed
+144 correctness cases in total. All four parser/model/consumer SHA-256 values
+match each other and the frozen failed-control binaries. Each native trace has
+zero reported lost samples. Re-reading the downloaded manifests, correctness
+responses, binary hashes and jitdump records also passes artifact validation.
+
+| History | PID A / B | A / B diagnostic batch ms | Batch B/A | Process CPU B/A | Samples A / B | Unresolved period A / B |
+| --- | --- | --- | ---: | ---: | --- | --- |
+| SegmentedOnly | 3458 / 3468 | 51778.0447 / 51619.7877 | 0.996944 | 0.996909 | 5961 / 5964 | 8.3375% / 6.6566% |
+| ContiguousPrelude | 3916 / 3925 | 52859.5890 / 52692.6302 | 0.996841 | 0.996973 | 5969 / 5956 | 5.8469% / 5.2888% |
+
+These are single long, instrumented diagnostic batches, not 30-pair acceptance
+distributions. Neither pair reproduces the old 1.052846 median. The negative
+result does not make the failed control stable or establish a performance gain.
+Process CPU/observer-wall ratios are 0.999363, 0.999514, 0.999563 and 0.999766,
+respectively. They do not support a large whole-process CPU deficit in these
+windows, but include all threads and cannot exclude concurrent runtime work,
+GC, frequency changes or the old trial's off-CPU time. `sched_schedstats` is zero
+in all four snapshots: disabled scheduler counters are unavailable evidence.
+ContiguousPrelude B has 1991 minor faults versus A's 48, yet similar batch time;
+fault counts alone are not a demonstrated explanation. Major-fault deltas are
+zero in all four windows.
+
+### Native Shape and Hotspot Location
+
+| History / side | Reader Tier1 bytes | Binder Tier1 bytes | Consumer Tier1 bytes | Reader exclusive period | Separately sampled column-aware TryReadRow period |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SegmentedOnly A | 9823 | 12859 | 8571 | 36.81% | not in the retained top-hotspot list |
+| SegmentedOnly B | 9838 | 12766 | 10356 | 38.03% | not in the retained top-hotspot list |
+| ContiguousPrelude A | 5319 | 11057 | 8361 | 6.00% | 32.12% |
+| ContiguousPrelude B | 5319 | 11054 | 8587 | 5.76% | 33.73% |
+
+Select exact `[OptimizedTier1]` methods in each `jit-methods.json`, not similarly
+named OSR versions; match annotations using their PID and code index. Both
+histories contain a compiled column-aware `TryReadRow`, so its mere existence
+does not prove whether a caller inlines it. The SegmentedOnly reader annotation
+contains the scalar cursor loop, consistent with the earlier structural inline
+match. The ContiguousPrelude A top annotation instead locates that loop directly
+inside `Csv.TryReadRow`, code index 15569, size 5957, address `0x7effcb6f4a00`.
+Its ELF entry is `0x80`; subtract `0x80` to obtain method-relative offsets.
+
+| ContiguousPrelude A ELF offsets | Observed operations | Frozen source structural match |
+| --- | --- | --- |
+| `0x442..0x461` | Length initialization test, length minus consumed, exit test | `reader.Remaining > 0` at [Csv.PipeReader.cs:179](https://github.com/KoalaFacts/HeroParser/blob/89c06810e76c4623ebad3cfc89c4bcdef41acd59/src/HeroParser/Csv.PipeReader.cs#L179) |
+| `0x467..0x4b9` | End/index checks, byte load, index/consumed increments, segment-end check | `reader.TryRead(out byte current)` at [Csv.PipeReader.cs:181](https://github.com/KoalaFacts/HeroParser/blob/89c06810e76c4623ebad3cfc89c4bcdef41acd59/src/HeroParser/Csv.PipeReader.cs#L181) |
+| `0x4bf..0x4d6` | Subtract one, overflow branch, signed-int round-trip check | `checked((int)(reader.Consumed - 1))` at [Csv.PipeReader.cs:184](https://github.com/KoalaFacts/HeroParser/blob/89c06810e76c4623ebad3cfc89c4bcdef41acd59/src/HeroParser/Csv.PipeReader.cs#L184) |
+
+This confirms that hotspot attribution depends on generated native shape and
+that the earlier single-history reader percentage cannot simply be applied to
+the failed controls. It does not establish history, PGO or inlining as the old
+bias's cause. History conditions run in fixed order; early runtime profiling and
+long diagnostic batches differ from the failing trial. Within SegmentedOnly,
+the two consumer sizes differ substantially despite near-equal batch times:
+native byte count or a relocated code hash is not a causal performance metric.
+Instruction percentages remain sampled local period, not exact operation cost.
+
+## Next Evidence Boundary, Not Yet Implemented
+
+The retained failed cycle-two command transcripts give a concrete mismatch to
+remove: each worker ran 135 Contiguous batches totaling 22463 parses before
+`prepare Segmented128` (command ID 138). Counts by repeat size are
+`1x1, 2x1, 4x1, 8x1, 16x1, 32x1, 64x96, 128x1, 256x1, 512x31`.
+The diagnostic's fixed 512-repeat prelude is not this calibration, warmup and
+measured history. Matching counts cannot recreate past scheduling or JIT timing.
+
+The next bounded investigation should preserve the original request ordering,
+calibration policy and measurement windows, with normal runtime settings and no
+startup profiler. It must associate any reproduced bias with evidence from those
+same PIDs, rather than compare a failed uninstrumented trial with another VM's
+long profiled batch. Post-window native capture is a candidate; it records code
+at capture time, not necessarily every version active during earlier timings.
+Before publishing any memory dump, give workers a curated non-secret environment
+and verify that CI credentials cannot be inherited into it. A dump is not GC
+pause history; GC event collection needs its own explicit observer-effect check.
+
+Predeclare a fixed process-pair budget and launch-order counterbalance, retain
+every outcome, and label this investigation separately from acceptance. If bias
+does not reproduce, report that result rather than rerun until it does. Only
+after reproducible same-PID evidence discriminates a hypothesis should one
+counterbalanced causal intervention be selected. Do not disable PGO merely to
+make a non-reproducing diagnostic appear stable.
+
+Current status: four-worker native/context evidence complete, bias not reproduced,
+root cause unresolved, original timing acceptance still failed. Old workers have
+exited without native/GC capture; their missing process state cannot be recovered
+from aggregate timing logs. No production optimization or merge is approved.

@@ -130,13 +130,16 @@ function Get-CsvPipeSchedulingDelta {
 
 function Assert-CsvPipeParentRuntimeEnvironment {
     param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Variables)
+    $unknown = @()
     foreach ($variable in $Variables) {
         # setup-dotnet sets this SDK flag; it does not apply to the frozen net10.0 worker.
         if ($variable.Name -eq 'DOTNET_MULTILEVEL_LOOKUP' -and $variable.Value -eq '0') { continue }
+        if ($variable.Name -eq 'DOTNET_NOLOGO' -and $variable.Value -in @('true', '1', 'yes', 'false', '0', 'no')) { continue }
         if ($variable.Name -match '^(DOTNET_|COMPlus_)' -and $variable.Name -notin @('DOTNET_ROOT', 'DOTNET_CLI_TELEMETRY_OPTOUT', 'DOTNET_SKIP_FIRST_TIME_EXPERIENCE')) {
-            throw "Uncontrolled parent runtime override: $($variable.Name)"
+            $unknown += $variable.Name
         }
     }
+    if ($unknown.Count) { throw "Uncontrolled parent runtime overrides: $($unknown -join ', ')" }
 }
 
 function Set-CsvPipeWorkerEnvironment {

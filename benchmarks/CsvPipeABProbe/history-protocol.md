@@ -105,5 +105,11 @@ limits its application to targets through .NET 6. Unknown flags and other values
 remain rejected; workers must match the original .NET runtime/GC/processor count.
 This is a repaired setup prerequisite, not a retrial of measured pairs.
 
+[Setup-only dispatch 36807286588](https://github.com/KoalaFacts/HeroParser/actions/runs/36807286588)
+also stopped before workload build or worker startup, on `DOTNET_NOLOGO`.
+The guard now recognizes its documented boolean values without passing it into
+workers, and reports all unknown flag names together (never their values).
+Both setup failures remain recorded and contain no measured batches.
+
 Implementation status: collection not yet verified. No new root cause or
 performance acceptance is claimed.

@@ -78,4 +78,7 @@ Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_MULTI
 $checks++
 Assert-HistoryReject { Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_MULTILEVEL_LOOKUP'; Value = '1' }) }
 Assert-HistoryReject { Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_TieredPGO'; Value = '0' }) }
+Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_NOLOGO'; Value = 'true' })
+$checks++
+Assert-HistoryReject { Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_NOLOGO'; Value = 'unknown' }) }
 Write-Host "PASS: $checks historical correlation checks; no parser or profiler executed"

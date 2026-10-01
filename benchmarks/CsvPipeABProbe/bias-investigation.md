@@ -290,3 +290,66 @@ Next boundary: reproduce within a predeclared same-hardware/run budget and keep
 the reproducing control alongside the causal arm. Current evidence supports
 examining on-CPU/native/runtime differences, not blaming GC wait or a particular
 source line. No production optimization, relaxed acceptance or merge is approved.
+
+## Fixed Same-Run Control And Reverse Difference
+
+The six-pair budget and reproduction rules were committed at `4bb4f48` before
+the only dispatch, [36814110508](https://github.com/KoalaFacts/HeroParser/actions/runs/36814110508).
+All conditions completed on one recorded EPYC 7763 runner boot/CPU 0; all 12
+hardware checkpoints matched. The fixed 30-minute budget was not extended
+(job duration 14m26s). Frozen histories/fingerprints, 432 correctness cases,
+540 pairs / 1080 batches and eight runtime/native owners were independently
+validated. Every trace reports zero loss; GC-only JIT-event counts are zero.
+The [protocol](history-protocol.md) retains all six distributions and manifests.
+
+The job FAILED the predeclared gate: neither full-keyword control reproduced
+the old B-slower difference. Do not retrofit a B-faster gate, discard the first
+reference, or claim keyword removal fixed the old failure. Both GC-only arms
+also have substantial reverse differences, and the first reference is not
+within [0.98, 1.02]. All negative/raw evidence and the original failure remain;
+no additional pair or rerun followed.
+
+Same-PID segmented sums over the original 30 measured windows per worker:
+
+| Condition / side | PID | Batch ms | Suspension overlap ms | Surviving-task run ms | Queue ms | Process CPU ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| GC+JIT / A-first / A | 3657 | 6525.4635 | 15.9357 | 6528.648706 | 17.909167 | 6520 |
+| GC+JIT / A-first / B | 3666 | 6078.9394 | 16.6136 | 6082.685115 | 29.218972 | 6080 |
+| GC-only / B-first / A | 3814 | 11018.1182 | 23.1219 | 11019.835032 | 45.675727 | 11030 |
+| GC-only / B-first / B | 3805 | 10259.9877 | 22.6404 | 10257.329548 | 46.113031 | 10260 |
+| GC-only / A-first / A | 3909 | 11002.3052 | 24.3728 | 11002.897004 | 43.174530 | 11010 |
+| GC-only / A-first / B | 3919 | 10035.4781 | 23.3576 | 10036.297920 | 47.265323 | 10010 |
+| GC+JIT / B-first / A | 4021 | 10142.9217 | 21.9239 | 10145.109298 | 38.939268 | 10150 |
+| GC+JIT / B-first / B | 4012 | 9460.1897 | 22.0870 | 9461.784760 | 42.726849 | 9470 |
+
+In GC-only/A-first the extra A batch time is 966.8271 ms and extra recorded
+surviving-task run time 966.599084 ms, versus only 1.0152 ms more suspension
+overlap and 4.090793 ms LESS recorded queue time. Own-main-PID switch/wakeup
+events exist for all eight observed workers (279/277, 281/283, 281/281, 279/285
+wakeups in A/B order). These constrain recorded wait-only explanations for
+THIS reverse difference, not the earlier B-slower failure. Process counters
+are quantized at 10 ms; task statistics cover surviving equal-start-time threads
+only; GC UTC overlap includes IPC and is approximate, not exact consumer CPU
+accounting. Frequency, other on-CPU runtime work and native/code shape remain
+uncontrolled. Cross-condition absolute totals are not comparable as speedups.
+
+Native code-version associations were checked against same-PID jitdump indices,
+addresses, extents and hashes. In GC-only/A-first, A emits only QuickJitted and
+OSR `TryReadRow` versions (3525 and 5858 bytes), while B also emits Instrumented
+and OptimizedTier1 versions (3525 and 6590 bytes). During measured segmented
+requests, A has 871 samples assigned to optimized `MoveNextSlowAsync.MoveNext`
+and none assigned to a standalone `TryReadRow`; B has 89 and 701 respectively.
+Across all four observed conditions, the optimized slow state machine has
+10209-byte bodies on A (code index 15658), versus 5319-byte bodies on B (16631,
+except B-first/full-keyword index 16629). Both startup orders and keyword
+settings retain this shape difference. Code hashes, emitted versions and raw
+addresses remain in each owner's `jit-methods.json`/jitdump; body size alone
+does not establish inline behavior or explain CPU cost.
+This is an observed native call-site/code-shape difference worth examining in
+the retained artifacts, not proof that a particular inline decision caused the
+time difference. No optimized native-to-IL/inline source map is available.
+
+The sampling budget is exhausted. Continue with artifact-only investigation of
+the actual caller/callee code versions before proposing any new predeclared
+experiment. Root cause, timing acceptance and production optimization remain
+unproven; no merge is approved.

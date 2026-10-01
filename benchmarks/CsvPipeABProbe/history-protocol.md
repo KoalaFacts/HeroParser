@@ -206,12 +206,12 @@ The next predeclared diagnostic uses `pipe_history=true` and
 one runner boot, one pinned logical CPU and one frozen workload build serve all
 six process pairs in this exact order:
 
-1. Uninstrumented reference, B-first.
+1. Boundary-only reference (no EventPipe/perf), B-first.
 2. Full GC+JIT observer control, A-first.
 3. GC-only keyword intervention, B-first.
 4. GC-only keyword intervention, A-first.
 5. Full GC+JIT observer control, B-first.
-6. Uninstrumented reference, A-first.
+6. Boundary-only reference (no EventPipe/perf), A-first.
 
 References flank the study; full-keyword controls flank the GC-only conditions.
 Both startup orders occur once per arm. Every worker replays the same 292
@@ -249,4 +249,58 @@ remain published; no averaging across arms or hiding non-segmented instability.
 fingerprints, per-request windows, GC/JIT traces, native code versions and
 CPU/scheduler samples. The original failed A/A gate stays failed regardless of
 this diagnostic outcome. Production parser code and timing acceptance are
-unchanged. This protocol has not yet been executed at this documentation revision.
+unchanged. The predeclared implementation was committed at `4bb4f48` before
+the single dispatch below; no criteria or sampling budget changed afterward.
+
+## Same-Run Result: No Reproducing Control
+
+[Run 36814110508](https://github.com/KoalaFacts/HeroParser/actions/runs/36814110508)
+at `4bb4f48` completed all six pairs in 14m26s, within the fixed 30-minute job
+budget. It deliberately FAILED at the predeclared reproduction gate, not at
+collection: `no-reproducing-same-run-control`, zero qualifying controls,
+`CausalComparisonQualified=false`. No sampling retry was dispatched.
+
+All 12 checkpoints match AMD EPYC 7763, kernel `6.17.0-1022-azure`, CPU 0,
+coordinator allowed CPUs 0-3 and one hashed boot identity. Every worker reports
+actual allowed CPUs 0, one processor and the original .NET 10.0.12 workstation
+GC/binary fingerprints. This is within-job runner identity, not proof of an
+exclusive or unmigrated physical host; it is not the old EPYC 9V74 machine.
+
+Independent artifact validation confirms all three historical input hashes,
+the six ordered conditions, all 292 requests/responses per worker, 432 verified
+cases, 540 measured pairs / 1080 batches, unique persistent PIDs, original
+alternation and recomputed per-transport percentiles. All eight runtime traces
+report zero lost events and 956 GC starts each. GC-only Method counts are zero;
+full-keyword counts are A/B 5977/6895 and 5998/6904. Same-PID workload-attributed
+CPU samples range from 5335 to 6734. The raw capture and decision artifacts are
+retained together, with an operator-local offline copy separate from git.
+
+| Fixed condition | Segmented median B/A | p10 | p90 | Contiguous median | Stream4096 median |
+| --- | --- | --- | --- | --- | --- |
+| Reference / B-first | 0.956523 | 0.939608 | 0.962882 | 0.999214 | 0.983473 |
+| GC+JIT / A-first | 0.930464 | 0.923399 | 0.939802 | 1.010148 | 1.003765 |
+| GC-only / B-first | 0.930775 | 0.926861 | 0.934537 | 0.984096 | 0.985608 |
+| GC-only / A-first | 0.911461 | 0.908561 | 0.915247 | 0.997474 | 0.984920 |
+| GC+JIT / B-first | 0.938820 | 0.935837 | 0.961803 | 1.003475 | 0.998234 |
+| Reference / A-first | 1.006985 | 0.999434 | 1.012756 | 1.020404 | 1.024273 |
+
+The original side-B-slower hypothesis did not reproduce. All four observed
+segmented conditions instead have a substantial opposite-direction difference,
+including both GC-only conditions and both startup orders. The first reference
+is also outside the predeclared [0.98, 1.02] stable-reference interval. Do not flip
+the reproduction rule after seeing results, average away that reference, treat
+GC-only as a fix, or call the reverse difference a throughput improvement:
+both sides have identical production binaries. This preserves useful negative
+evidence but does not determine the old failure's cause or qualify causal
+interpretation under this protocol. Diagnostic minimum batches range from
+195.225 to 346.500 ms across condition/transport summaries; old elapsed-time/JIT
+history and calibrated timing acceptance still have not been recreated.
+
+CI passed 81 historical correlation and 84 native checks. Decoder plus three
+frozen workload builds reported zero warnings/errors; decoder formatting passed.
+[Ordinary build/test CI at the measured revision](https://github.com/KoalaFacts/HeroParser/actions/runs/36813982693)
+also passed all 24 jobs, separately from the deliberately failed measurement
+gate. Further sampling requires a new approved, predeclared design; this budget
+is exhausted. Existing same-PID artifacts can still be analyzed without launching
+workers. Original A/A acceptance stays failed; production optimization and merge
+remain unauthorized.

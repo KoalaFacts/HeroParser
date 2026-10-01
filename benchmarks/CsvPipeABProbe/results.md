@@ -1045,3 +1045,28 @@ Within-job comparisons are same-runner; cross-job absolute timing comparisons
 are not. Diagnostic batches as short as ~103 ms are not a passed calibrated
 acceptance protocol. Both raw histories, every condition and the original failed
 gate remain retained. Root cause unresolved; no production patch or merge.
+
+## Fixed Same-Run Budget: Reproduction Gate Failed
+
+[Run 36814110508](https://github.com/KoalaFacts/HeroParser/actions/runs/36814110508)
+at `4bb4f48` completed exactly six predeclared reference/full-keyword/GC-only
+pairs on one AMD EPYC 7763 runner boot and CPU 0 in 14m26s. Twelve hardware
+checkpoints matched. Independent artifact checks validate 432 correctness cases,
+540 measured pairs / 1080 batches, 292 historical requests per worker, original
+fingerprints/order and every distribution. Eight runtime traces report zero
+loss; GC-only JIT-event counts are zero. CI passed 81 history and 84 native
+checks with warning/error-free decoder and frozen workload builds. Ordinary
+build/test CI at the measured revision separately passed all 24 jobs.
+
+Neither full-keyword positive control reproduced the old B-slower bias:
+segmented medians are 0.930464 and 0.938820, while GC-only medians are 0.930775
+and 0.911461. Boundary-only reference medians are 0.956523 and 1.006985; the first
+is outside the predeclared stable-reference interval. The result is
+`no-reproducing-same-run-control` and the measurement job deliberately FAILED.
+The opposite-direction differences are not parser improvements or proof of the
+old cause. No criteria were reversed, conditions dropped, extra pairs collected
+or retries dispatched. The [protocol](history-protocol.md) publishes every
+transport/condition and the [investigation](bias-investigation.md) retains the
+same-PID runtime/native/scheduling association. This budget is exhausted;
+existing artifacts remain analyzable without new sampling. Original acceptance
+remains failed and no production optimization or merge is approved.

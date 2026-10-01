@@ -38,11 +38,7 @@ $diagnosticSha = (& git -C $root rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Diagnostic revision unavailable.' }
 if (Test-Path -LiteralPath $Workspace) { throw 'Use a fresh history workspace.' }
 if ((Test-Path -LiteralPath $OutputDirectory) -and @(Get-ChildItem $OutputDirectory -Force).Count) { throw 'Do not overwrite historical evidence.' }
-foreach ($variable in Get-ChildItem Env:) {
-    if ($variable.Name -match '^(DOTNET_|COMPlus_)' -and $variable.Name -notin @('DOTNET_ROOT', 'DOTNET_CLI_TELEMETRY_OPTOUT', 'DOTNET_SKIP_FIRST_TIME_EXPERIENCE')) {
-        throw "Uncontrolled parent runtime override: $($variable.Name)"
-    }
-}
+Assert-CsvPipeParentRuntimeEnvironment @(Get-ChildItem Env:)
 $clockTicks = (& getconf CLK_TCK | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $clockTicks -notmatch '^[1-9]\d*$') { throw 'Process accounting clock unavailable.' }
 $allowed = Get-Content '/proc/self/status' | Select-String '^Cpus_allowed_list:\s*([0-9,-]+)$'
@@ -150,6 +146,9 @@ function Start-HistoryWorker([string]$Directory, [bool]$Observed) {
     try {
         $worker.Environment = Read-HistoryWorker $worker
         if ($worker.Environment.pid -ne $process.Id) { throw 'Historical worker PID mismatch.' }
+        foreach ($field in @('runtime', 'serverGc', 'processors')) {
+            if ($worker.Environment.$field -ne $original.baselineWorker.$field) { throw "Historical runtime setting mismatch: $field" }
+        }
         foreach ($field in @('parserHash', 'modelsHash', 'consumerHash')) {
             if ($worker.Environment.$field -ne $original.baselineWorker.$field) { throw "Frozen historical binary mismatch: $field" }
         }

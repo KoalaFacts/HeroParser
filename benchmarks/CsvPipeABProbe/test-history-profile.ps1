@@ -74,4 +74,8 @@ Assert-HistoryReject { Get-CsvPipeSchedulingDelta $after $before }
 $reused = @{ Tasks = @(@{ Tid = 42; StartTicks = 99; SchedStat = '0 0 0' }) }
 if ((Get-CsvPipeSchedulingDelta $before $reused).MatchedLifetimeTasks -ne 0) { throw 'Reused TID was counted as a surviving thread.' }
 $checks++
+Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_MULTILEVEL_LOOKUP'; Value = '0' })
+$checks++
+Assert-HistoryReject { Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_MULTILEVEL_LOOKUP'; Value = '1' }) }
+Assert-HistoryReject { Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_TieredPGO'; Value = '0' }) }
 Write-Host "PASS: $checks historical correlation checks; no parser or profiler executed"

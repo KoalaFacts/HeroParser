@@ -88,5 +88,22 @@ intervention for a subsequent experiment; disabling PGO or changing cold paths
 is not part of this capture. Neither collection success nor ordinary green CI
 authorizes a performance claim or merge.
 
-Implementation status: protocol added; CI validation/collection pending. No new
-root cause or performance acceptance is claimed.
+## Setup And Validation Record
+
+PR validation run `36806718078` passed 24 history and 84 native checks, then
+rejected use of a discouraged TraceEvent clock API and one style violation.
+No parser or profiler ran. Revision `d2645dc` uses supported relative/UTC trace
+timestamps; [validation 36806892762](https://github.com/KoalaFacts/HeroParser/actions/runs/36806892762)
+passed checks, decoder build (zero warnings/errors) and formatting.
+
+[Setup-only dispatch 36806977366](https://github.com/KoalaFacts/HeroParser/actions/runs/36806977366)
+retained its tools/context artifact and failed before the frozen workload build
+or worker startup because setup-dotnet supplied `DOTNET_MULTILEVEL_LOOKUP=0`.
+The guard now recognizes only this SDK configuration, without passing it into
+workers. [Official runtime-variable documentation](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-environment-variables#dotnet_multilevel_lookup)
+limits its application to targets through .NET 6. Unknown flags and other values
+remain rejected; workers must match the original .NET runtime/GC/processor count.
+This is a repaired setup prerequisite, not a retrial of measured pairs.
+
+Implementation status: collection not yet verified. No new root cause or
+performance acceptance is claimed.

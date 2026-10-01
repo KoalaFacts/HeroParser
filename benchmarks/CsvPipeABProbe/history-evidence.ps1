@@ -128,6 +128,17 @@ function Get-CsvPipeSchedulingDelta {
         Scope = 'surviving-same-start-time-threads-not-complete-process-or-consumer-window' }
 }
 
+function Assert-CsvPipeParentRuntimeEnvironment {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Variables)
+    foreach ($variable in $Variables) {
+        # setup-dotnet sets this SDK flag; it does not apply to the frozen net10.0 worker.
+        if ($variable.Name -eq 'DOTNET_MULTILEVEL_LOOKUP' -and $variable.Value -eq '0') { continue }
+        if ($variable.Name -match '^(DOTNET_|COMPlus_)' -and $variable.Name -notin @('DOTNET_ROOT', 'DOTNET_CLI_TELEMETRY_OPTOUT', 'DOTNET_SKIP_FIRST_TIME_EXPERIENCE')) {
+            throw "Uncontrolled parent runtime override: $($variable.Name)"
+        }
+    }
+}
+
 function Set-CsvPipeWorkerEnvironment {
     param([Parameter(Mandatory = $true)][Diagnostics.ProcessStartInfo]$Info)
     $parent = @{}

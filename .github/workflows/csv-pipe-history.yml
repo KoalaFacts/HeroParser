@@ -1,0 +1,101 @@
+name: CSV Pipe Historical Process Evidence
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '.github/workflows/csv-pipe-history.yml'
+      - 'benchmarks/CsvPipeABProbe/history-*.ps1'
+      - 'benchmarks/CsvPipeABProbe/test-history-profile.ps1'
+      - 'benchmarks/CsvPipeDiagnostics/**'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      other_modes:
+        type: boolean
+        default: false
+
+concurrency:
+  group: csv-pipe-history-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  history:
+    name: Validate Historical Evidence And Optional Fixed Collection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require isolated history mode
+        shell: pwsh
+        env:
+          OTHER_MODES: ${{ inputs.other_modes }}
+        run: |
+          if ($env:OTHER_MODES -eq 'true') { throw 'Historical evidence cannot be combined with other experiment modes.' }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Download retained failed cycle, not new timings
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 36732093817 --repo KoalaFacts/HeroParser -n csv-pipe-paired-36732093817-1 -D "$env:RUNNER_TEMP/history-input"
+          if ($LASTEXITCODE -ne 0) { throw 'Historical evidence unavailable; no substitute trial.' }
+      - name: Validate gates, reconstruction, clocks and privacy
+        shell: pwsh
+        run: |
+          ./benchmarks/CsvPipeABProbe/test-control.ps1
+          ./benchmarks/CsvPipeABProbe/test-native-profile.ps1
+          ./benchmarks/CsvPipeABProbe/test-history-profile.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series"
+      - name: Build and check runtime decoder
+        shell: pwsh
+        run: |
+          dotnet build benchmarks/CsvPipeDiagnostics/CsvPipeDiagnostics.csproj -c Release --disable-build-servers -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime decoder build failed.' }
+          dotnet format benchmarks/CsvPipeDiagnostics/CsvPipeDiagnostics.csproj --verify-no-changes --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime decoder formatting failed.' }
+      - name: Prepare Linux evidence tools and common scheduler accounting
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p BenchmarkDotNet.Artifacts/pipe-history
+          sudo apt-get update 2>&1 | tee BenchmarkDotNet.Artifacts/pipe-history/tools-update.txt
+          sudo apt-get install -y linux-tools-generic binutils 2>&1 | tee BenchmarkDotNet.Artifacts/pipe-history/tools-install.txt
+          PERF=$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)
+          test -n "$PERF"
+          "$PERF" --version > BenchmarkDotNet.Artifacts/pipe-history/perf-version.txt
+          echo "HERO_PARSER_PERF=$PERF" >> "$GITHUB_ENV"
+          cat /proc/sys/kernel/sched_schedstats > BenchmarkDotNet.Artifacts/pipe-history/schedstats-before.txt
+          sudo sysctl -w kernel.sched_schedstats=1
+          if [ ! -d /sys/kernel/tracing/events/sched/sched_switch ]; then
+            sudo mount -t tracefs tracefs /sys/kernel/tracing
+          fi
+          lscpu > BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
+          uname -a >> BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
+          dotnet --info >> BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
+      - name: Collect four predeclared pairs, no acceptance or retries
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          ./benchmarks/CsvPipeABProbe/history-profile.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series" -Workspace "$env:RUNNER_TEMP/history-workload" -PerfTool $env:HERO_PARSER_PERF -AnalyzerDll benchmarks/CsvPipeDiagnostics/bin/Release/net10.0/CsvPipeDiagnostics.dll
+      - name: Retain partial and negative evidence
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csv-pipe-history-${{ github.run_id }}-${{ github.run_attempt }}
+          path: BenchmarkDotNet.Artifacts/pipe-history/**
+          retention-days: 30

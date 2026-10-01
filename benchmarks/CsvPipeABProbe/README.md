@@ -438,3 +438,11 @@ returns nonzero if either side has an incorrect result, including an unfixed
 baseline compared with a corrected candidate. Use two independently built fixed
 revisions for a fully passing preflight; never weaken the expected checksum to
 time the broken baseline. See [measured evidence and repair validation](results.md).
+## Historical Same-PID Evidence
+
+Use `pipe_history=true` alone on the benchmark workflow for the hash-pinned,
+four-pair [historical replay protocol](history-protocol.md). It retains exact old
+request counts/order with new same-PID runtime, native and scheduling evidence,
+and boundary-only reference pairs for observer-effect comparison. It is not an
+acceptance rerun; the original failed timing gate stays failed. PR validation
+runs reconstruction tests and builds the decoder without launching parser timings.

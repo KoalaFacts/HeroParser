@@ -198,3 +198,55 @@ Status: same-PID correlation and one single-variable test implemented and
 validated; root cause unresolved, original timing acceptance failed. Further
 causal work needs a reproducing control in the same hardware/run budget, not
 another unqualified retry or a production cold-path optimization. No merge approved.
+
+## Fixed Same-Run Control Budget
+
+The next predeclared diagnostic uses `pipe_history=true` and
+`pipe_history_same_run=true`, without any other experiment/replay flag. One job,
+one runner boot, one pinned logical CPU and one frozen workload build serve all
+six process pairs in this exact order:
+
+1. Uninstrumented reference, B-first.
+2. Full GC+JIT observer control, A-first.
+3. GC-only keyword intervention, B-first.
+4. GC-only keyword intervention, A-first.
+5. Full GC+JIT observer control, B-first.
+6. Uninstrumented reference, A-first.
+
+References flank the study; full-keyword controls flank the GC-only conditions.
+Both startup orders occur once per arm. Every worker replays the same 292
+hash-pinned requests, including all historical preparation batches. Budget:
+12 workers, 432 correctness cases, 540 measured pairs / 1080 measured batches,
+eight runtime traces, maximum 30 job minutes, zero retries or extra calibration.
+The plan, input hashes, ordered conditions, limits and hardware identity are
+written before building/starting measured workers. All conditions are attempted
+even when a distribution does not reproduce the bias; no result-driven stopping,
+additional pairs, selective omission or replacing a failed condition is allowed.
+Prerequisite failures can stop the study and retain partial evidence.
+
+CPU vendor/family/model/name/stepping/flags, kernel, hashed boot identity,
+coordinator allowed CPUs and pinned CPU must match before and after every pair
+(12 checkpoints). Identity mismatch fails closed; it cannot start a substitute
+runner. A hosted VM's recorded identity is not proof of exclusive physical
+hardware, stable frequency, no VM migration or absence of neighboring workloads.
+Only comparisons inside this job qualify; old jobs remain historical evidence,
+not interchangeable hardware controls.
+
+Predeclared gate: BOTH full GC+JIT Segmented128 distributions must have median
+B/A > 1.05 and p10 > 1.0. Missing/incomplete evidence or zero/one reproducing
+control makes the job fail with an inconclusive diagnostic outcome after the
+fixed budget, while retaining every completed distribution and raw trace.
+If both controls reproduce, a GC-only or reference condition meeting that bias
+rule shows the JIT keyword is not necessary for observed bias. Otherwise, both
+reference and both GC-only medians within [0.98, 1.02] support a keyword effect
+requiring independent confirmation; remaining outcomes are inconclusive.
+The `CausalComparisonQualified` flag means the positive-control prerequisite
+passed, not a demonstrated root cause. Distributions for all three transports
+remain published; no averaging across arms or hiding non-segmented instability.
+
+`fixed-budget.json`, `runner-identity.json`, `hardware-checkpoints.ndjson` and
+`same-run-decision.json` accompany the existing historical commands, binary
+fingerprints, per-request windows, GC/JIT traces, native code versions and
+CPU/scheduler samples. The original failed A/A gate stays failed regardless of
+this diagnostic outcome. Production parser code and timing acceptance are
+unchanged. This protocol has not yet been executed at this documentation revision.

@@ -4,11 +4,13 @@ param(
     [Parameter(Mandatory = $true)][string]$PerfTool,
     [Parameter(Mandatory = $true)][string]$AnalyzerDll,
     [switch]$JitEventControl,
+    [switch]$SameRunControl,
     [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-history/study'
 )
 
 $ErrorActionPreference = 'Stop'
 if (!$IsLinux) { throw 'Historical correlation requires Linux.' }
+if ($JitEventControl -and $SameRunControl) { throw 'Choose one fixed intervention protocol.' }
 . (Join-Path $PSScriptRoot 'control.ps1')
 . (Join-Path $PSScriptRoot 'native-evidence.ps1')
 . (Join-Path $PSScriptRoot 'history-evidence.ps1')
@@ -71,6 +73,32 @@ if ($JitEventControl) {
         @{ Name = 'gc-only-b-first'; Observed = $true; BFirst = $true; JitEvents = $false },
         @{ Name = 'jit-events-a-first'; Observed = $true; BFirst = $false; JitEvents = $true }
     )
+}
+if ($SameRunControl) { $conditions = @(Get-CsvPipeSameRunConditions) }
+$hardware = $null
+$hardwareChecks = 0
+$decision = $null
+$budget = $null
+if ($SameRunControl) {
+    $hardware = Get-CsvPipeHardwareIdentity $cpu
+    $hardware | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'runner-identity.json')
+    $budget = [pscustomobject]@{ Protocol = 'csv-pipe-same-run-control-v1'; SourceSha = $source
+        HistoricalInputHashes = $hashes; Conditions = $conditions; ProcessPairs = 6; Workers = 12
+        RequestsPerWorker = $plan.Count; CorrectnessCases = 432; MeasuredPairs = 540; MeasuredBatches = 1080
+        RuntimeTraces = 8; HardwareCheckpoints = 12; Retries = 0
+        ReproductionRule = 'Both full-keyword Segmented128 medians > 1.05 and p10 > 1.0'
+        StableReferenceRule = 'Both reference and both GC-only Segmented128 medians within [0.98, 1.02]'
+        WallClockLimitMinutes = 30; NoAcceptanceOrProductionChange = $true }
+    $budget | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'fixed-budget.json')
+}
+
+function Assert-HistoryHardware([string]$Condition, [string]$Phase) {
+    if (!$SameRunControl) { return }
+    $actual = Get-CsvPipeHardwareIdentity $cpu
+    [pscustomobject]@{ Condition = $Condition; Phase = $Phase; Utc = [DateTime]::UtcNow.ToString('O'); Identity = $actual } |
+        ConvertTo-Json -Depth 5 -Compress | Add-Content (Join-Path $OutputDirectory 'hardware-checkpoints.ndjson')
+    Assert-CsvPipeHardwareMatch $hardware $actual
+    $script:hardwareChecks++
 }
 
 function Start-HistoryProcess([string]$File, [string[]]$Arguments, [string]$Directory) {
@@ -212,6 +240,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Frozen history build failed.' }
     }
     foreach ($condition in $conditions) {
+        Assert-HistoryHardware $condition.Name 'before'
         $workers = @{}; $captures = @(); $pairs = @(); $complete = $false; $conditionError = $null
         $directory = Join-Path $OutputDirectory $condition.Name
         $null = New-Item -ItemType Directory -Path $directory -Force
@@ -221,7 +250,7 @@ try {
                 $workerDirectory = Join-Path $directory $side
                 $null = New-Item -ItemType Directory -Path $workerDirectory
                 Copy-Item -Path (Join-Path $probe 'bin/Release/isolated/*') -Destination $workerDirectory -Recurse
-                $jitEvents = !$JitEventControl -or $condition.JitEvents
+                $jitEvents = !($JitEventControl -or $SameRunControl) -or $condition.JitEvents
                 $workers[$side] = Start-HistoryWorker $workerDirectory $condition.Observed $jitEvents
             }
             Assert-CsvPipeWorkerEnvironment $workers.a.Environment $workers.b.Environment $source $source
@@ -267,7 +296,7 @@ try {
                     if ($dump.Flags -ne 0) { throw 'JIT timestamps are not monotonic nanoseconds.' }
                     $dump | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $worker.Directory 'jit-methods.json')
                     $decodeArguments = @($AnalyzerDll, (Join-Path $worker.Directory 'runtime.nettrace'), $owner, $worker.Directory)
-                    if ($JitEventControl -and !$condition.JitEvents) { $decodeArguments += 'gc-only' }
+                    if (($JitEventControl -or $SameRunControl) -and !$condition.JitEvents) { $decodeArguments += 'gc-only' }
                     & dotnet @decodeArguments
                     if ($LASTEXITCODE -ne 0) { throw 'Runtime decoder rejected incomplete GC/JIT evidence.' }
                     $events = @(Get-Content (Join-Path $worker.Directory 'runtime-events.ndjson') | ForEach-Object { $_ | ConvertFrom-Json })
@@ -307,6 +336,7 @@ try {
                     if ($quality.Samples -lt 500 -or $quality.WorkloadAssigned -lt 500) { throw 'Insufficient same-PID native/request attribution.' }
                 }
             }
+            Assert-HistoryHardware $condition.Name 'after'
             $complete = $true
         }
         catch { $conditionError = $_.Exception.Message }
@@ -337,14 +367,24 @@ try {
         }
     }
     if (@($results | Where-Object { !$_.Complete }).Count) { throw 'Fixed history study incomplete; retained every condition, no retry.' }
+    if ($SameRunControl) {
+        $decision = Get-CsvPipeSameRunDecision $results ($hardwareChecks -eq 12)
+        $decision | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'same-run-decision.json')
+        if (!$decision.CausalComparisonQualified) { throw 'Same-run controls did not both reproduce the bias; fixed budget exhausted, no causal comparison or retry.' }
+    }
 }
 catch { $failure = $_.Exception.Message; throw }
 finally {
+    if ($SameRunControl -and !$decision) {
+        $decision = Get-CsvPipeSameRunDecision $results ($hardwareChecks -eq 12)
+        $decision | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'same-run-decision.json')
+    }
     [pscustomobject]@{ Protocol = 'csv-pipe-history-v1-diagnostic-only'; DiagnosticOnly = $true
         SourceRun = '36732093817'; HistoricalCycle = 2; SourceSha = $source; DiagnosticSha = $diagnosticSha
-        Intervention = if ($JitEventControl) { 'eventpipe-jit-keyword-only' } else { 'none-observer-bundle-comparison' }
+        Intervention = if ($SameRunControl) { 'same-run-reference-and-eventpipe-jit-keyword' } elseif ($JitEventControl) { 'eventpipe-jit-keyword-only' } else { 'none-observer-bundle-comparison' }
         Cpu = $cpu; ClockTicksPerSecond = [long]$clockTicks; StopwatchFrequency = [Diagnostics.Stopwatch]::Frequency
         SchedulingStatisticsEnabled = $true; Failure = $failure; Results = $results
+        FixedBudget = $budget; HardwareIdentity = $hardware; HardwareCheckpointsPassed = $hardwareChecks; Decision = $decision
         State = 'history-evidence-not-timing-acceptance-or-root-cause-proof' } |
         ConvertTo-Json -Depth 12 | Set-Content (Join-Path $OutputDirectory 'history-summary.json')
     if ($added) {

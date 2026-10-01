@@ -95,4 +95,78 @@ if ($full.Environment.Count -ne $gcOnly.Environment.Count -or $different.Count -
     $different[0] -ne 'DOTNET_EventPipeConfig' -or $full.Environment[$different[0]] -ne 'Microsoft-Windows-DotNETRuntime:11:5' -or
     $gcOnly.Environment[$different[0]] -ne 'Microsoft-Windows-DotNETRuntime:1:5') { throw 'JIT event intervention changed more than one runtime setting.' }
 $checks++
+$conditions = @(Get-CsvPipeSameRunConditions)
+if (($conditions.Name -join ',') -ne 'reference-b-first,jit-events-a-first,gc-only-b-first,gc-only-a-first,jit-events-b-first,reference-a-first' -or
+    @($conditions | Where-Object Observed).Count -ne 4 -or @($conditions | Where-Object BFirst).Count -ne 3 -or
+    @($conditions | Where-Object { $_.Observed -and !$_.JitEvents }).Count -ne 2) { throw 'Fixed same-run budget/order changed.' }
+$checks++
+$identity = [ordered]@{ PinnedCpu = '0'; vendor_id = 'test-vendor'; 'cpu family' = 'test-family'; model = 'test-model'
+    'model name' = 'test-name'; stepping = 'test-stepping'; flags = 'test-flags'; Kernel = 'test-kernel'
+    BootIdHash = 'a' * 64; AllowedCpus = '0-1' }
+Assert-CsvPipeHardwareMatch ([pscustomobject]$identity) ([pscustomobject]$identity)
+$checks++
+foreach ($field in $identity.Keys) {
+    $changedIdentity = [pscustomobject]$identity | ConvertTo-Json | ConvertFrom-Json
+    $changedIdentity.$field = 'changed'
+    Assert-HistoryReject { Assert-CsvPipeHardwareMatch ([pscustomobject]$identity) $changedIdentity }
+    $changedIdentity.$field = $null
+    Assert-HistoryReject { Assert-CsvPipeHardwareMatch ([pscustomobject]$identity) $changedIdentity }
+}
+function New-HistoryDecisionFixture {
+    return @($conditions | ForEach-Object {
+        [pscustomobject]@{ Condition = $_; Complete = $true; Summaries = @(
+            [pscustomobject]@{ Transport = 'Segmented128'; Pairs = 30; MedianRatio = 1.0; P10Ratio = .99; P90Ratio = 1.01 }) }
+    }) | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+}
+function Assert-HistoryDecision($Results, [bool]$HardwareVerified, [string]$State, [int]$Reproduced, [bool]$Qualified) {
+    $decision = Get-CsvPipeSameRunDecision $Results $HardwareVerified
+    if ($decision.State -ne $State -or $decision.ReproducingControls -ne $Reproduced -or
+        $decision.CausalComparisonQualified -ne $Qualified) { throw 'Same-run fail-closed decision incorrect.' }
+    $script:checks++
+}
+$fixture = @(New-HistoryDecisionFixture)
+Assert-HistoryDecision $fixture $true 'no-reproducing-same-run-control' 0 $false
+Assert-HistoryDecision $fixture $false 'incomplete-same-run-evidence' 0 $false
+Assert-HistoryDecision @() $true 'incomplete-same-run-evidence' 0 $false
+Assert-HistoryDecision $fixture[0..4] $true 'incomplete-same-run-evidence' 0 $false
+$fixture[0].Complete = $false
+Assert-HistoryDecision $fixture $true 'incomplete-same-run-evidence' 0 $false
+$fixture[0].Complete = $true
+$fixture[1].Summaries[0].MedianRatio = 1.06; $fixture[1].Summaries[0].P10Ratio = 1.055; $fixture[1].Summaries[0].P90Ratio = 1.07
+Assert-HistoryDecision $fixture $true 'no-reproducing-same-run-control' 1 $false
+$fixture[4].Summaries[0].MedianRatio = 1.06; $fixture[4].Summaries[0].P10Ratio = 1.055; $fixture[4].Summaries[0].P90Ratio = 1.07
+Assert-HistoryDecision $fixture $true 'keyword-effect-supported-needs-independent-confirmation' 2 $true
+$fixture[4].Summaries[0].P10Ratio = 1.0
+Assert-HistoryDecision $fixture $true 'no-reproducing-same-run-control' 1 $false
+$fixture[4].Summaries[0].P10Ratio = 1.055
+$fixture[2].Summaries[0].MedianRatio = 1.06; $fixture[2].Summaries[0].P10Ratio = 1.055; $fixture[2].Summaries[0].P90Ratio = 1.07
+Assert-HistoryDecision $fixture $true 'jit-keyword-not-necessary-for-observed-bias' 2 $true
+$fixture[2].Summaries[0].MedianRatio = 1.03; $fixture[2].Summaries[0].P10Ratio = 1.01; $fixture[2].Summaries[0].P90Ratio = 1.04
+Assert-HistoryDecision $fixture $true 'reproducing-control-with-inconclusive-intervention' 2 $true
+$fixture[2].Summaries[0].MedianRatio = 1.0; $fixture[2].Summaries[0].P10Ratio = .99; $fixture[2].Summaries[0].P90Ratio = 1.01
+$fixture[0].Summaries[0].MedianRatio = 1.06; $fixture[0].Summaries[0].P10Ratio = 1.055; $fixture[0].Summaries[0].P90Ratio = 1.07
+Assert-HistoryDecision $fixture $true 'jit-keyword-not-necessary-for-observed-bias' 2 $true
+foreach ($field in @('Observed', 'BFirst', 'JitEvents')) {
+    $invalid = @(New-HistoryDecisionFixture)
+    $invalid[0].Condition.$field = !$invalid[0].Condition.$field
+    Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
+    $invalid[0].Condition.$field = 'true'
+    Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
+}
+$invalid = @(New-HistoryDecisionFixture); $invalid[1].Condition.Name = $invalid[0].Condition.Name
+Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
+$invalid = @(New-HistoryDecisionFixture)
+Assert-HistoryReject { Get-CsvPipeSameRunDecision @($invalid[1], $invalid[0], $invalid[2], $invalid[3], $invalid[4], $invalid[5]) $true }
+$invalid = @(New-HistoryDecisionFixture); $invalid[0].Complete = 'true'
+Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
+$invalid = @(New-HistoryDecisionFixture); $invalid[0].Summaries[0].Pairs = 29
+Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
+$invalid = @(New-HistoryDecisionFixture); $invalid[0].Summaries = @($invalid[0].Summaries[0], $invalid[0].Summaries[0])
+Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
+foreach ($ratio in @([double]::NaN, [double]::PositiveInfinity, 0.0, -1.0, $null)) {
+    $invalid = @(New-HistoryDecisionFixture); $invalid[0].Summaries[0].MedianRatio = $ratio
+    Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
+}
+$invalid = @(New-HistoryDecisionFixture); $invalid[0].Summaries[0].P10Ratio = 1.1
+Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
 Write-Host "PASS: $checks historical correlation checks; no parser or profiler executed"

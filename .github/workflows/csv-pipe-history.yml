@@ -18,6 +18,10 @@ on:
         description: 'Change only the EventPipe JIT keyword in four predeclared observed pairs'
         type: boolean
         default: false
+      same_run_control:
+        description: 'Six fixed pairs on one runner with flanking references and reproducing controls; no retry'
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       other_modes:
@@ -27,6 +31,9 @@ on:
         type: string
         default: ''
       jit_event_control:
+        type: boolean
+        default: false
+      same_run_control:
         type: boolean
         default: false
 
@@ -54,10 +61,16 @@ jobs:
           OTHER_MODES: ${{ inputs.other_modes }}
           REPLAY_RUN: ${{ inputs.replay_run }}
           JIT_EVENT_CONTROL: ${{ inputs.jit_event_control }}
+          SAME_RUN_CONTROL: ${{ inputs.same_run_control }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           if ($env:OTHER_MODES -eq 'true') { throw 'Historical evidence cannot be combined with other experiment modes.' }
           if ($env:REPLAY_RUN -and $env:REPLAY_RUN -ne '36807711817') { throw 'Only the retained, predeclared capture may be replayed.' }
           if ($env:REPLAY_RUN -and $env:JIT_EVENT_CONTROL -eq 'true') { throw 'Artifact replay and causal intervention cannot be combined.' }
+          if ($env:SAME_RUN_CONTROL -eq 'true') {
+            if ($env:REPLAY_RUN -or $env:JIT_EVENT_CONTROL -eq 'true') { throw 'Same-run controls require their own fixed protocol.' }
+            if ($env:RUN_ATTEMPT -ne '1') { throw 'Same-run sampling budget prohibits workflow retries.' }
+          }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -106,13 +119,14 @@ jobs:
           lscpu > BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
           uname -a >> BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
           dotnet --info >> BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
-      - name: Collect four predeclared pairs, no acceptance or retries
+      - name: Collect fixed predeclared pairs, no acceptance or retries
         if: github.event_name == 'workflow_dispatch' && inputs.replay_run == ''
         shell: pwsh
         env:
           JIT_EVENT_CONTROL: ${{ inputs.jit_event_control }}
+          SAME_RUN_CONTROL: ${{ inputs.same_run_control }}
         run: |
-          ./benchmarks/CsvPipeABProbe/history-profile.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series" -Workspace "$env:RUNNER_TEMP/history-workload" -PerfTool $env:HERO_PARSER_PERF -AnalyzerDll benchmarks/CsvPipeDiagnostics/bin/Release/net10.0/CsvPipeDiagnostics.dll -JitEventControl:($env:JIT_EVENT_CONTROL -eq 'true')
+          ./benchmarks/CsvPipeABProbe/history-profile.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series" -Workspace "$env:RUNNER_TEMP/history-workload" -PerfTool $env:HERO_PARSER_PERF -AnalyzerDll benchmarks/CsvPipeDiagnostics/bin/Release/net10.0/CsvPipeDiagnostics.dll -JitEventControl:($env:JIT_EVENT_CONTROL -eq 'true') -SameRunControl:($env:SAME_RUN_CONTROL -eq 'true')
       - name: Recover retained files only, never launch a measured worker
         if: github.event_name == 'workflow_dispatch' && inputs.replay_run != ''
         shell: pwsh

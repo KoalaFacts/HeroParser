@@ -450,4 +450,8 @@ runs reconstruction tests and builds the decoder without launching parser timing
 Use `pipe_history_replay_run=36807711817` with history mode for artifact-only
 recovery, or `pipe_history_jit_control=true` for the separately predeclared
 single-variable observer test. Never combine those modes. The first keyword
-control was inconclusive; see the protocol and retained investigation results.
+test did not reproduce its positive controls. Use `pipe_history_same_run=true`
+with history mode for the predeclared six-pair same-runner reference/control/
+intervention study described in [history-protocol.md](history-protocol.md).
+Do not combine it with replay or the four-pair keyword mode; it refuses workflow
+retries and fails closed if both positive controls do not reproduce the bias.

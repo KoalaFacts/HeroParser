@@ -167,6 +167,96 @@ function Set-CsvPipeHistoryTraceEnvironment {
     $Info.Environment['DOTNET_EventPipeCircularMB'] = '40'
 }
 
+function Get-CsvPipeSameRunConditions {
+    return @(
+        @{ Name = 'reference-b-first'; Observed = $false; BFirst = $true; JitEvents = $true },
+        @{ Name = 'jit-events-a-first'; Observed = $true; BFirst = $false; JitEvents = $true },
+        @{ Name = 'gc-only-b-first'; Observed = $true; BFirst = $true; JitEvents = $false },
+        @{ Name = 'gc-only-a-first'; Observed = $true; BFirst = $false; JitEvents = $false },
+        @{ Name = 'jit-events-b-first'; Observed = $true; BFirst = $true; JitEvents = $true },
+        @{ Name = 'reference-a-first'; Observed = $false; BFirst = $false; JitEvents = $true }
+    )
+}
+
+function Get-CsvPipeHardwareIdentity {
+    param([Parameter(Mandatory = $true)][string]$Cpu)
+    if (!$IsLinux -or $Cpu -notmatch '^\d+$') { throw 'Linux CPU identity required.' }
+    $info = [IO.File]::ReadAllText('/proc/cpuinfo')
+    $identity = [ordered]@{ PinnedCpu = $Cpu }
+    foreach ($field in @('vendor_id', 'cpu family', 'model', 'model name', 'stepping', 'flags')) {
+        $values = @([regex]::Matches($info, "(?m)^$([regex]::Escape($field))\s*:\s*(.+)$") |
+            ForEach-Object { $_.Groups[1].Value.Trim() } | Sort-Object -Unique)
+        if ($values.Count -ne 1 -or !$values[0]) { throw "Missing or heterogeneous CPU identity: $field" }
+        $identity[$field] = $values[0]
+    }
+    $kernel = (& uname -r | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or !$kernel) { throw 'Kernel identity unavailable.' }
+    $boot = [IO.File]::ReadAllText('/proc/sys/kernel/random/boot_id').Trim()
+    if ($boot -notmatch '^[0-9a-f-]{36}$' -or [guid]$boot -eq [guid]::Empty) { throw 'Boot identity unavailable.' }
+    $allowed = [regex]::Match([IO.File]::ReadAllText('/proc/self/status'), '(?m)^Cpus_allowed_list:\s*([0-9,-]+)$')
+    if (!$allowed.Success) { throw 'Coordinator affinity unavailable.' }
+    $identity['Kernel'] = $kernel
+    $identity['BootIdHash'] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($boot))).ToLowerInvariant()
+    $identity['AllowedCpus'] = $allowed.Groups[1].Value
+    return [pscustomobject]$identity
+}
+
+function Assert-CsvPipeHardwareMatch {
+    param([Parameter(Mandatory = $true)]$Expected, [Parameter(Mandatory = $true)]$Actual)
+    foreach ($field in @('PinnedCpu', 'vendor_id', 'cpu family', 'model', 'model name', 'stepping', 'flags', 'Kernel', 'BootIdHash', 'AllowedCpus')) {
+        if ([string]::IsNullOrWhiteSpace([string]$Expected.$field) -or [string]::IsNullOrWhiteSpace([string]$Actual.$field) -or
+            $Expected.$field -cne $Actual.$field) { throw "Runner identity changed or missing: $field" }
+    }
+}
+
+function Get-CsvPipeSameRunDecision {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Results,
+        [Parameter(Mandatory = $true)][bool]$HardwareVerified)
+    $expected = @(Get-CsvPipeSameRunConditions)
+    if (!$HardwareVerified -or $Results.Count -ne 6 -or @($Results | Where-Object { !$_.Complete }).Count) {
+        return [pscustomobject]@{ State = 'incomplete-same-run-evidence'; ReproducingControls = 0; CausalComparisonQualified = $false }
+    }
+    $cases = @{}
+    if (($Results.Condition.Name -join ',') -cne ($expected.Name -join ',')) { throw 'Same-run condition order changed.' }
+    foreach ($condition in $expected) {
+        $result = @($Results | Where-Object { $_.Condition.Name -eq $condition.Name })
+        if ($result.Count -ne 1) { throw 'Missing or duplicate same-run condition.' }
+        if ($result[0].Complete -isnot [bool]) { throw 'Invalid same-run completion evidence.' }
+        foreach ($field in @('Observed', 'BFirst', 'JitEvents')) {
+            if ($result[0].Condition.$field -isnot [bool] -or $result[0].Condition.$field -ne $condition.$field) { throw 'Same-run treatment changed.' }
+        }
+        $summary = @($result[0].Summaries | Where-Object Transport -eq 'Segmented128')
+        if ($summary.Count -ne 1 -or $summary[0].Pairs -ne 30) { throw 'Same-run segmented distribution incomplete.' }
+        foreach ($field in @('MedianRatio', 'P10Ratio', 'P90Ratio')) {
+            if ($null -eq $summary[0].$field -or ![double]::IsFinite([double]$summary[0].$field) -or $summary[0].$field -le 0) { throw 'Invalid same-run ratio.' }
+        }
+        if ($summary[0].P10Ratio -gt $summary[0].MedianRatio -or $summary[0].MedianRatio -gt $summary[0].P90Ratio) { throw 'Same-run percentiles inconsistent.' }
+        $cases[$condition.Name] = $summary[0]
+    }
+    $reproduced = @(@('jit-events-a-first', 'jit-events-b-first') | Where-Object {
+        $cases[$_].MedianRatio -gt 1.05 -and $cases[$_].P10Ratio -gt 1.0
+    }).Count
+    $state = 'no-reproducing-same-run-control'
+    if ($reproduced -eq 2) {
+        $referenceBias = @(@('reference-a-first', 'reference-b-first') | Where-Object {
+            $cases[$_].MedianRatio -gt 1.05 -and $cases[$_].P10Ratio -gt 1.0
+        }).Count
+        $gcBias = @(@('gc-only-a-first', 'gc-only-b-first') | Where-Object {
+            $cases[$_].MedianRatio -gt 1.05 -and $cases[$_].P10Ratio -gt 1.0
+        }).Count
+        $referencesStable = @(@('reference-a-first', 'reference-b-first') | Where-Object {
+            $cases[$_].MedianRatio -ge .98 -and $cases[$_].MedianRatio -le 1.02
+        }).Count -eq 2
+        $gcStable = @(@('gc-only-a-first', 'gc-only-b-first') | Where-Object {
+            $cases[$_].MedianRatio -ge .98 -and $cases[$_].MedianRatio -le 1.02
+        }).Count -eq 2
+        $state = if ($referenceBias -or $gcBias) { 'jit-keyword-not-necessary-for-observed-bias' }
+            elseif ($referencesStable -and $gcStable) { 'keyword-effect-supported-needs-independent-confirmation' }
+            else { 'reproducing-control-with-inconclusive-intervention' }
+    }
+    return [pscustomobject]@{ State = $state; ReproducingControls = $reproduced; CausalComparisonQualified = ($reproduced -eq 2) }
+}
+
 function Get-CsvPipeCpuCorrelation {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string[]]$Lines,
         [Parameter(Mandatory = $true)][hashtable]$Workers,

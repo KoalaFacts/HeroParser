@@ -142,7 +142,7 @@ the two consumer sizes differ substantially despite near-equal batch times:
 native byte count or a relocated code hash is not a causal performance metric.
 Instruction percentages remain sampled local period, not exact operation cost.
 
-## Next Evidence Boundary, Not Yet Implemented
+## Historical Evidence Boundary
 
 The retained failed cycle-two command transcripts give a concrete mismatch to
 remove: each worker ran 135 Contiguous batches totaling 22463 parses before
@@ -151,7 +151,7 @@ remove: each worker ran 135 Contiguous batches totaling 22463 parses before
 The diagnostic's fixed 512-repeat prelude is not this calibration, warmup and
 measured history. Matching counts cannot recreate past scheduling or JIT timing.
 
-The next bounded investigation should preserve the original request ordering,
+The follow-up requirement was to preserve the original request ordering,
 calibration policy and measurement windows, with normal runtime settings and no
 startup profiler. It must associate any reproduced bias with evidence from those
 same PIDs, rather than compare a failed uninstrumented trial with another VM's
@@ -168,7 +168,125 @@ after reproducible same-PID evidence discriminates a hypothesis should one
 counterbalanced causal intervention be selected. Do not disable PGO merely to
 make a non-reproducing diagnostic appear stable.
 
-Current status: four-worker native/context evidence complete, bias not reproduced,
-root cause unresolved, original timing acceptance still failed. Old workers have
+At the preceding diagnostic's completion, four-worker native/context evidence
+was complete but bias was not reproduced. Old workers have
 exited without native/GC capture; their missing process state cannot be recovered
 from aggregate timing logs. No production optimization or merge is approved.
+
+## Historical Same-PID Capture And Recovery
+
+[Protocol and single-variable plan](history-protocol.md) now implement the exact
+cycle-two command/repeat history, not new adaptive calibration. Four fixed pairs
+retain 292 requests per worker, including the complete correctness matrix,
+Contiguous's 135 batches / 22463 parses, all original segmented/stream requests,
+and 30 measured pairs per transport. Elapsed history and scheduling cannot be
+recreated. Reference conditions include boundary accounting and enabled scheduler
+statistics; they are not pristine replicas of the old failed control.
+
+[Capture 36807711817](https://github.com/KoalaFacts/HeroParser/actions/runs/36807711817)
+at `7252c32` ran all four histories once. It retained a postprocessing failure on
+blank perf separators and combined PID/TID formatting, not a workload failure.
+[Artifact recovery 36808849164](https://github.com/KoalaFacts/HeroParser/actions/runs/36808849164)
+at `6ed56f2` revalidated 288 correctness cases and 360 pairs / 720 batches,
+decoded the same runtime traces and recovered native/request attribution without
+new workers or sampling. The original failed manifest and all 210 source files
+remain byte-identical. All eight workers match original parser/model/consumer
+hashes, runtime .NET 10.0.12, workstation GC and CPU 0.
+
+| Fixed condition | A PID | B PID | Contiguous median B/A | Segmented128 median B/A | Stream4096 median B/A |
+| --- | --- | --- | --- | --- | --- |
+| reference-b-first | 3674 | 3666 | 0.991894 | 0.993049 | 0.990934 |
+| observed-a-first | 3724 | 3733 | 0.997355 | 1.020581 | 0.997290 |
+| observed-b-first | 3824 | 3815 | 1.004805 | 1.065718 | 1.106059 |
+| reference-a-first | 3909 | 3917 | 0.997878 | 1.001352 | 0.993741 |
+
+Observed-b-first segmented p10/p90 are 1.057814/1.070424. Its B-side divergence
+is not confined to one measured outlier. However, the two reference pairs do
+not reproduce the old 5.28% bias; the GC/JIT/native/scheduler collection bundle,
+fixed condition order, startup/JIT history and VM drift remain confounders.
+These diagnostic ratios neither clear the original failed gate nor prove that
+instrumentation is sufficient or necessary for the old failure.
+
+### Same-PID Runtime And Scheduling Association
+
+All four observed runtime traces report zero lost events, 956 GC starts each,
+and 6013/6871/6118/6904 Method events respectively. Native captures have
+7325/7797/7365/8292 samples; 6108/6505/6188/6792 match preceding same-PID JIT
+ranges and request windows, and 4949/5273/5003/5532 belong to named workloads.
+The remaining IPs are not assigned to JIT code by this mapper; they are not
+silently charged to parser work. Kernel switch/wakeup records are retained.
+
+The following sums cover the 30 Segmented128 measured request windows, not the
+entire history. Batch time is per-parse consumer time multiplied by its original
+repeat count, not the sum of normalized per-parse `Milliseconds`.
+
+| Condition/side | Batch total ms | Runtime suspension overlap ms | Surviving-task run ms | Surviving-task run-queue ms | Process CPU ms |
+| --- | --- | --- | --- | --- | --- |
+| observed-a-first A / 3724 | 6014.2051 | 27.5413 | 6020.3455 | 33.7579 | 6020 |
+| observed-a-first B / 3733 | 6132.1821 | 26.5480 | 6135.1895 | 35.3324 | 6130 |
+| observed-b-first A / 3824 | 6127.3754 | 25.6034 | 6130.4481 | 29.3147 | 6130 |
+| observed-b-first B / 3815 | 6521.2078 | 24.8454 | 6524.3142 | 29.8079 | 6530 |
+
+In the larger divergence, batch difference is 393.8324 ms and recorded task-run
+difference 393.8661 ms, versus 0.4932 ms extra run-queue time and 0.7580 ms *less*
+runtime suspension overlap on B. These records constrain a model where extra
+recorded suspension or queue waiting alone explains this pair; they do not
+exclude GC-related on-CPU work, absent threads, CPU frequency or observer effects.
+Runtime overlap is trace-UTC/coordinator-UTC approximate, scheduling sums cover
+same-start-time survivors (8 or 9 tasks), and process CPU has 10 ms resolution.
+Do not add overlap/queue/runtime counts as independent exclusive costs.
+
+### Native Versions Active During The Same Requests
+
+Segmented samples match versions loaded before those request windows. For
+observed-b-first, A's separate `TryReadRow` is index 17258 / 6583 bytes and B's
+17907 / 6590 bytes; both receive 389 sampled hits. `TryBindPipeSequenceRow` is
+A index 15618 / 11024 bytes / 105 samples versus B 16771 / 11375 / 135.
+The record enumerator receives 49 versus 103 hits, while consumer checksum
+state-machine hits are 132 versus 112. Exclusive sampled hits are not inclusive
+operation costs; neither size nor relocated code hash proves slower instructions.
+Reader slow-path bodies remain separate (A 5334 bytes, B 5313 bytes).
+
+This evidence narrows this observed pair to additional on-CPU/runtime/native work
+without identifying a responsible source edit. Optimized inline/local maps remain
+unavailable. Source ownership uses the same authenticated frozen source/PDB chain
+as [the earlier map](native-source-map.md), not a claim of exact line-level cost.
+
+The predeclared single-variable test changes only the EventPipe JIT keyword
+(GC+JIT versus GC-only), preserving native code/GC/scheduler evidence and the
+same history in four new counterbalanced pairs. It does not disable PGO or edit
+the parser. Its setup and interpretation rules are in the protocol. No new
+root-cause or throughput claim follows merely from collection success.
+
+## Single-Variable Result
+
+[Run 36809723846](https://github.com/KoalaFacts/HeroParser/actions/runs/36809723846)
+at `25c95d4` completed its fixed four pairs once. 31 history and 84 native checks
+passed; decoder and three frozen workload builds were warning/error-free. The
+downloaded artifacts independently validate 288 correctness cases and 360 pairs /
+720 batches, all original commands, frozen fingerprints, eight native/runtime
+owners and the intended JIT-event treatment. Every trace has 956 GC starts and
+zero reported loss; all four GC-only workers have zero Method events.
+
+| Condition | A PID | B PID | Contiguous median B/A | Segmented128 median B/A | Stream4096 median B/A |
+| --- | --- | --- | --- | --- | --- |
+| GC+JIT / B-first | 3386 | 3377 | 0.988890 | 0.991572 | 0.987253 |
+| GC-only / A-first | 3451 | 3460 | 1.086810 | 1.015000 | 1.004745 |
+| GC-only / B-first | 3533 | 3524 | 0.985896 | 0.996265 | 0.984565 |
+| GC+JIT / A-first | 3604 | 3613 | 1.166577 | 0.977545 | 1.000925 |
+
+The predeclared outcome is **inconclusive**: the two GC+JIT segmented controls
+do not reproduce the prior large B-side bias, so near-equal GC-only results do
+not establish a fix or a JIT-keyword cause. Contiguous still diverges strongly
+in one GC+JIT condition (p90 1.399485). No additional process pairs were run.
+
+The control's runner is AMD EPYC 9V45, versus AMD EPYC 9V74 in the preceding
+same-PID capture. Conditions within each job are same-runner; the two jobs are
+not the same machine. Frozen counts now yield minimum batches around 103-120 ms,
+not the old calibrated ~200 ms. This is diagnostic history replay, not a passed
+adaptive timing protocol or evidence of a twofold parser speedup.
+
+Next boundary: reproduce within a predeclared same-hardware/run budget and keep
+the reproducing control alongside the causal arm. Current evidence supports
+examining on-CPU/native/runtime differences, not blaming GC wait or a particular
+source line. No production optimization, relaxed acceptance or merge is approved.

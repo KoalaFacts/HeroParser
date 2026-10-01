@@ -446,3 +446,8 @@ request counts/order with new same-PID runtime, native and scheduling evidence,
 and boundary-only reference pairs for observer-effect comparison. It is not an
 acceptance rerun; the original failed timing gate stays failed. PR validation
 runs reconstruction tests and builds the decoder without launching parser timings.
+
+Use `pipe_history_replay_run=36807711817` with history mode for artifact-only
+recovery, or `pipe_history_jit_control=true` for the separately predeclared
+single-variable observer test. Never combine those modes. The first keyword
+control was inconclusive; see the protocol and retained investigation results.

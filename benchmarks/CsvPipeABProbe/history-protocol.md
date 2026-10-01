@@ -162,5 +162,39 @@ including failure to reproduce the GC+JIT condition, are inconclusive. Do not
 average away divergent conditions or add process pairs. This small fixed design
 does not eliminate time/VM drift or establish the old uninstrumented bias's cause.
 
-Status: single-variable collection not yet executed. Root cause unresolved;
-original timing acceptance failed, no production optimization or merge approved.
+## Single-Variable Result: Inconclusive
+
+[Control 36809723846](https://github.com/KoalaFacts/HeroParser/actions/runs/36809723846)
+at `25c95d4` completed all four fixed pairs once. CI passed 31 history and 84
+native checks; decoder and three frozen workload builds had zero warnings/errors.
+Independent artifact validation confirms 288 correctness cases, 360 pairs / 720
+batches, all 292 historical requests per worker and the original binary/runtime
+fingerprints. All eight runtime traces report zero loss and 956 GC starts each.
+GC-only Method-event counts are exactly zero; GC+JIT counts are 6139/6079 and
+6058/6106. Same-PID attributed workload samples range from 2668 to 2971.
+
+| Fixed condition | Segmented128 median B/A | p10 | p90 |
+| --- | --- | --- | --- |
+| GC+JIT / B-first | 0.991572 | 0.984608 | 1.020160 |
+| GC-only / A-first | 1.015000 | 0.991981 | 1.028927 |
+| GC-only / B-first | 0.996265 | 0.983741 | 1.029785 |
+| GC+JIT / A-first | 0.977545 | 0.950782 | 0.990602 |
+
+Neither GC+JIT condition reproduced the earlier large side-B segmented bias.
+Under the predeclared rules this is inconclusive, not evidence that removing JIT
+events solved the old failure or that JIT events were its cause. The GC+JIT
+A-first Contiguous median is 1.166577 (p90 1.399485); do not hide instability in
+another transport by reporting only segmented medians. Minimum diagnostic batches
+are about 103-120 ms, shorter than the old calibrated duration. No new calibration
+or warmup was added, and these runs cannot substitute for timing acceptance.
+
+All four conditions within the control shared one runner. Its recorded model
+is AMD EPYC 9V45, whereas the preceding capture used AMD EPYC 9V74. Do not compare
+absolute times across those jobs or describe them as the same physical machine.
+Request history preservation is not elapsed-time/JIT-history reproduction. No
+condition was rerun or added after seeing results.
+
+Status: same-PID correlation and one single-variable test implemented and
+validated; root cause unresolved, original timing acceptance failed. Further
+causal work needs a reproducing control in the same hardware/run budget, not
+another unqualified retry or a production cold-path optimization. No merge approved.

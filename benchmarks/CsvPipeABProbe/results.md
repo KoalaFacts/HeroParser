@@ -999,3 +999,49 @@ The failed second cycle used 135 Contiguous batches and 22463 parses per worker
 before segmented preparation, not the diagnostic's fixed prelude. The report
 records this mismatch and the next same-PID evidence boundary. Root cause remains
 unresolved; no throughput optimization or merge is approved.
+
+### Historical Same-PID Evidence
+
+[Capture 36807711817](https://github.com/KoalaFacts/HeroParser/actions/runs/36807711817)
+at `7252c32` completed four fixed original cycle-two histories. The capture CI
+remains failed on perf-text postprocessing; [artifact recovery 36808849164](https://github.com/KoalaFacts/HeroParser/actions/runs/36808849164)
+at `6ed56f2` recovered them without new workers or sampling. All 210 original
+files are unchanged; 288 correctness cases, 360 pairs / 720 batches, original
+requests, frozen hashes and runtime identities were revalidated. Decoder build
+had zero warnings/errors; 30 history and 84 native diagnostic checks passed.
+
+Segmented128 medians B/A in fixed order are 0.993049 (reference/B-first),
+1.020581 (observed/A-first), 1.065718 (observed/B-first), 1.001352
+(reference/A-first). Reference pairs do not reproduce the old bias; an observed
+pair shows over 5% B-side bias, but instrumentation/time/JIT history remain confounders. Raw same-PID
+code, runtime events and kernel scheduling evidence are now associated with its
+actual measured requests, not another later profiled process.
+
+In the larger observed segmented divergence, additional batch time is 393.8324 ms,
+recorded surviving-task run time 393.8661 ms, extra run-queue time 0.4932 ms,
+and runtime suspension overlap 0.7580 ms lower on B. Native sampled versions
+differ, including the binding wrapper's 11024 versus 11375 byte bodies. These
+observations constrain recorded wait-only explanations, not GC on-CPU work,
+frequency, layout or observer effects. [The investigation](bias-investigation.md)
+retains exact PIDs, code indices, coverage counts and scope limitations.
+
+A separately predeclared four-pair test changes only the EventPipe JIT keyword,
+not tiering/PGO or production code. Original timing acceptance stays failed;
+collection/replay success is not a root-cause verdict or merge approval.
+
+[Single-variable run 36809723846](https://github.com/KoalaFacts/HeroParser/actions/runs/36809723846)
+at `25c95d4` completed all four new fixed pairs once. GC+JIT/B-first,
+GC-only/A-first, GC-only/B-first, GC+JIT/A-first segmented medians are 0.991572,
+1.015000, 0.996265 and 0.977545. The GC+JIT conditions did not reproduce the
+earlier large bias; the predeclared result is inconclusive, not a JIT-keyword
+root cause or fix. Contiguous GC+JIT/A-first median remains 1.166577 (p90 1.399485).
+All eight runtime traces report zero loss; GC-only Method-event counts are zero.
+288 correctness cases, 360 pairs / 720 batches and all historical requests/frozen
+fingerprints were independently validated. 31 history and 84 native checks passed,
+with zero warnings/errors in decoder and frozen workload builds.
+
+The control runner model is AMD EPYC 9V45, not the preceding capture's EPYC 9V74.
+Within-job comparisons are same-runner; cross-job absolute timing comparisons
+are not. Diagnostic batches as short as ~103 ms are not a passed calibrated
+acceptance protocol. Both raw histories, every condition and the original failed
+gate remain retained. Root cause unresolved; no production patch or merge.

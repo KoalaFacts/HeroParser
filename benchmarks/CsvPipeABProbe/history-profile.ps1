@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Workspace,
     [Parameter(Mandatory = $true)][string]$PerfTool,
     [Parameter(Mandatory = $true)][string]$AnalyzerDll,
+    [switch]$JitEventControl,
     [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-history/study'
 )
 
@@ -63,6 +64,14 @@ $conditions = @(
     @{ Name = 'observed-b-first'; Observed = $true; BFirst = $true },
     @{ Name = 'reference-a-first'; Observed = $false; BFirst = $false }
 )
+if ($JitEventControl) {
+    $conditions = @(
+        @{ Name = 'jit-events-b-first'; Observed = $true; BFirst = $true; JitEvents = $true },
+        @{ Name = 'gc-only-a-first'; Observed = $true; BFirst = $false; JitEvents = $false },
+        @{ Name = 'gc-only-b-first'; Observed = $true; BFirst = $true; JitEvents = $false },
+        @{ Name = 'jit-events-a-first'; Observed = $true; BFirst = $false; JitEvents = $true }
+    )
+}
 
 function Start-HistoryProcess([string]$File, [string[]]$Arguments, [string]$Directory) {
     $info = [Diagnostics.ProcessStartInfo]::new($File)
@@ -121,7 +130,7 @@ function Read-HistoryWorker($Worker) {
     return $line | ConvertFrom-Json
 }
 
-function Start-HistoryWorker([string]$Directory, [bool]$Observed) {
+function Start-HistoryWorker([string]$Directory, [bool]$Observed, [bool]$JitEvents) {
     $info = [Diagnostics.ProcessStartInfo]::new('taskset')
     $info.UseShellExecute = $false; $info.CreateNoWindow = $true
     $info.RedirectStandardInput = $true; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
@@ -131,13 +140,7 @@ function Start-HistoryWorker([string]$Directory, [bool]$Observed) {
     $info.Environment['HERO_PARSER_WORKER_PROTOCOL'] = 'csv-pipe-isolated-v4-same-cpu'
     $info.Environment['HERO_PARSER_WORKER_CPU'] = $cpu
     if ($Observed) {
-        $info.Environment['DOTNET_PerfMapEnabled'] = '1'
-        $info.Environment['DOTNET_PerfMapShowOptimizationTiers'] = '1'
-        $info.Environment['DOTNET_PerfMapStubGranularity'] = '2'
-        $info.Environment['DOTNET_EnableEventPipe'] = '1'
-        $info.Environment['DOTNET_EventPipeConfig'] = 'Microsoft-Windows-DotNETRuntime:11:5'
-        $info.Environment['DOTNET_EventPipeOutputPath'] = Join-Path $Directory 'runtime.nettrace'
-        $info.Environment['DOTNET_EventPipeCircularMB'] = '40'
+        Set-CsvPipeHistoryTraceEnvironment $info (Join-Path $Directory 'runtime.nettrace') $JitEvents
     }
     @($info.Environment.Keys | Sort-Object) | ConvertTo-Json | Set-Content (Join-Path $Directory 'worker-environment-keys.json')
     $process = [Diagnostics.Process]::Start($info)
@@ -218,7 +221,8 @@ try {
                 $workerDirectory = Join-Path $directory $side
                 $null = New-Item -ItemType Directory -Path $workerDirectory
                 Copy-Item -Path (Join-Path $probe 'bin/Release/isolated/*') -Destination $workerDirectory -Recurse
-                $workers[$side] = Start-HistoryWorker $workerDirectory $condition.Observed
+                $jitEvents = !$JitEventControl -or $condition.JitEvents
+                $workers[$side] = Start-HistoryWorker $workerDirectory $condition.Observed $jitEvents
             }
             Assert-CsvPipeWorkerEnvironment $workers.a.Environment $workers.b.Environment $source $source
             foreach ($side in @('a', 'b')) {
@@ -262,7 +266,9 @@ try {
                     $dump = Read-CsvPipeJitDump $jit $owner
                     if ($dump.Flags -ne 0) { throw 'JIT timestamps are not monotonic nanoseconds.' }
                     $dump | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $worker.Directory 'jit-methods.json')
-                    & dotnet $AnalyzerDll (Join-Path $worker.Directory 'runtime.nettrace') $owner $worker.Directory
+                    $decodeArguments = @($AnalyzerDll, (Join-Path $worker.Directory 'runtime.nettrace'), $owner, $worker.Directory)
+                    if ($JitEventControl -and !$condition.JitEvents) { $decodeArguments += 'gc-only' }
+                    & dotnet @decodeArguments
                     if ($LASTEXITCODE -ne 0) { throw 'Runtime decoder rejected incomplete GC/JIT evidence.' }
                     $events = @(Get-Content (Join-Path $worker.Directory 'runtime-events.ndjson') | ForEach-Object { $_ | ConvertFrom-Json })
                     $pauses = @(Get-CsvPipeGcPauses $events $owner)
@@ -336,6 +342,7 @@ catch { $failure = $_.Exception.Message; throw }
 finally {
     [pscustomobject]@{ Protocol = 'csv-pipe-history-v1-diagnostic-only'; DiagnosticOnly = $true
         SourceRun = '36732093817'; HistoricalCycle = 2; SourceSha = $source; DiagnosticSha = $diagnosticSha
+        Intervention = if ($JitEventControl) { 'eventpipe-jit-keyword-only' } else { 'none-observer-bundle-comparison' }
         Cpu = $cpu; ClockTicksPerSecond = [long]$clockTicks; StopwatchFrequency = [Diagnostics.Stopwatch]::Frequency
         SchedulingStatisticsEnabled = $true; Failure = $failure; Results = $results
         State = 'history-evidence-not-timing-acceptance-or-root-cause-proof' } |

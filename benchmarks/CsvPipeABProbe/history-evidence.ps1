@@ -155,6 +155,18 @@ function Set-CsvPipeWorkerEnvironment {
     $Info.Environment['DOTNET_SKIP_FIRST_TIME_EXPERIENCE'] = '1'
 }
 
+function Set-CsvPipeHistoryTraceEnvironment {
+    param([Parameter(Mandatory = $true)][Diagnostics.ProcessStartInfo]$Info,
+        [Parameter(Mandatory = $true)][string]$TracePath, [Parameter(Mandatory = $true)][bool]$JitEvents)
+    $Info.Environment['DOTNET_PerfMapEnabled'] = '1'
+    $Info.Environment['DOTNET_PerfMapShowOptimizationTiers'] = '1'
+    $Info.Environment['DOTNET_PerfMapStubGranularity'] = '2'
+    $Info.Environment['DOTNET_EnableEventPipe'] = '1'
+    $Info.Environment['DOTNET_EventPipeConfig'] = if ($JitEvents) { 'Microsoft-Windows-DotNETRuntime:11:5' } else { 'Microsoft-Windows-DotNETRuntime:1:5' }
+    $Info.Environment['DOTNET_EventPipeOutputPath'] = $TracePath
+    $Info.Environment['DOTNET_EventPipeCircularMB'] = '40'
+}
+
 function Get-CsvPipeCpuCorrelation {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string[]]$Lines,
         [Parameter(Mandatory = $true)][hashtable]$Workers,

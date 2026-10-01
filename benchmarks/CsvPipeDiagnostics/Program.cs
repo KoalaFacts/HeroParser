@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Microsoft.Diagnostics.Tracing;
 
-if (args.Length != 3 || !int.TryParse(args[1], out int expectedPid) || expectedPid <= 0)
-    throw new ArgumentException("Usage: CsvPipeDiagnostics trace.nettrace expected-pid output-directory");
+if (args.Length is not (3 or 4) || (args.Length == 4 && args[3] != "gc-only") ||
+    !int.TryParse(args[1], out int expectedPid) || expectedPid <= 0)
+    throw new ArgumentException("Usage: CsvPipeDiagnostics trace.nettrace expected-pid output-directory [gc-only]");
+bool expectJitEvents = args.Length == 3;
 
 Directory.CreateDirectory(args[2]);
 using var source = new EventPipeEventSource(args[0]);
@@ -45,9 +47,10 @@ File.WriteAllText(Path.Combine(args[2], "runtime-summary.json"), JsonSerializer.
     source.EventsLost,
     GcStarts = gcStarts,
     JitEvents = jitEvents,
+    ExpectJitEvents = expectJitEvents,
     ExportedEvents = exported,
     Clock = "EventPipe-relative-time-with-trace-derived-UTC",
     DecoderVersion = typeof(EventPipeEventSource).Assembly.GetName().Version?.ToString()
 }, new JsonSerializerOptions { WriteIndented = true }));
-if (source.EventsLost != 0 || gcStarts == 0 || jitEvents == 0)
+if (source.EventsLost != 0 || gcStarts == 0 || (expectJitEvents ? jitEvents == 0 : jitEvents != 0))
     throw new InvalidDataException("Missing or lost runtime events; no complete GC/JIT evidence claim.");

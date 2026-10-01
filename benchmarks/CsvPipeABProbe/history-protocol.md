@@ -129,5 +129,38 @@ identities, decodes the same runtime traces and correlates original sample IPs.
 New derived output never changes the old failed manifest or any timing. This is
 analysis recovery, not a new trial, green acceptance or root-cause intervention.
 
-Implementation status: artifact recovery not yet verified in CI. No new root
-cause or performance acceptance is claimed.
+[Artifact recovery 36808849164](https://github.com/KoalaFacts/HeroParser/actions/runs/36808849164)
+at `6ed56f2` passed without new workloads. It revalidated 288 correctness cases,
+360 measured pairs / 720 batches and recovered all four observed CPU/runtime
+owners. All 210 original files match the downloaded capture byte-for-byte.
+Four runtime traces report zero lost events and include GC/JIT events; native
+workload attribution is 4949, 5273, 5003 and 5532 samples. The old capture failure
+remains recorded, not changed to success.
+
+## Single-Variable JIT Event Control
+
+The first observer bundle has Segmented128 median B/A 0.993049 and 1.001352 in
+reference pairs, versus 1.020581 and 1.065718 in observed pairs. Instrumentation,
+fixed condition order and runtime/code variation cannot yet be separated. The
+next test changes only the EventPipe JIT keyword: `0x11` (GC+JIT) versus `0x1`
+(GC). It does not disable tiering/PGO, change GC mode, parser binaries, buffer size,
+native mappings, sampling frequency, scheduling capture or historical requests.
+
+Dispatch with `pipe_history=true` and `pipe_history_jit_control=true`, without
+artifact replay or other modes. Exactly four new observed pairs run once:
+GC+JIT/B-first, GC-only/A-first, GC-only/B-first, GC+JIT/A-first. Every result and
+failure is retained. Both sides of each pair have the same provider keywords.
+GC-only decoding requires GC events and zero Method events; native code-version
+evidence still comes from same-PID jitdump and CPU samples, not EventPipe JIT events.
+
+Predeclared hypothesis: the additional JIT keyword is necessary for persistent
+side-B segmented bias in this observed setup. A GC-only pair whose Segmented128
+median exceeds 1.05 and p10 exceeds 1.0 contradicts that necessity. Consistent
+GC+JIT bias in both startup orders with both GC-only medians within [0.98, 1.02]
+would support a keyword effect worth independent confirmation. Other results,
+including failure to reproduce the GC+JIT condition, are inconclusive. Do not
+average away divergent conditions or add process pairs. This small fixed design
+does not eliminate time/VM drift or establish the old uninstrumented bias's cause.
+
+Status: single-variable collection not yet executed. Root cause unresolved;
+original timing acceptance failed, no production optimization or merge approved.

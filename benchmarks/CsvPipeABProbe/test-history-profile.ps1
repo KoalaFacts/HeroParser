@@ -84,4 +84,15 @@ Assert-HistoryReject { Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]
 Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_NOLOGO'; Value = 'true' })
 $checks++
 Assert-HistoryReject { Assert-CsvPipeParentRuntimeEnvironment @([pscustomobject]@{ Name = 'DOTNET_NOLOGO'; Value = 'unknown' }) }
+$full = [Diagnostics.ProcessStartInfo]::new('unused')
+$gcOnly = [Diagnostics.ProcessStartInfo]::new('unused')
+Set-CsvPipeWorkerEnvironment $full
+Set-CsvPipeWorkerEnvironment $gcOnly
+Set-CsvPipeHistoryTraceEnvironment $full 'runtime.nettrace' $true
+Set-CsvPipeHistoryTraceEnvironment $gcOnly 'runtime.nettrace' $false
+$different = @($full.Environment.Keys | Where-Object { $full.Environment[$_] -ne $gcOnly.Environment[$_] })
+if ($full.Environment.Count -ne $gcOnly.Environment.Count -or $different.Count -ne 1 -or
+    $different[0] -ne 'DOTNET_EventPipeConfig' -or $full.Environment[$different[0]] -ne 'Microsoft-Windows-DotNETRuntime:11:5' -or
+    $gcOnly.Environment[$different[0]] -ne 'Microsoft-Windows-DotNETRuntime:1:5') { throw 'JIT event intervention changed more than one runtime setting.' }
+$checks++
 Write-Host "PASS: $checks historical correlation checks; no parser or profiler executed"

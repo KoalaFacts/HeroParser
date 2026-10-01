@@ -28,8 +28,73 @@ function New-NativeManifest {
         DurationSeconds = 30; PerfMapEnabled = 1; PerfMapStubGranularity = 2; Runs = @($runs) }
 }
 
+function New-ProcStatLine {
+    $fields = @('R') + @('0') * 21
+    $fields[7] = '17'; $fields[9] = '2'; $fields[11] = '100'; $fields[12] = '3'
+    $fields[17] = '9'; $fields[19] = '99'; $fields[21] = '42'
+    return '1234 (dotnet ) worker) ' + ($fields -join ' ')
+}
+
+$statLine = New-ProcStatLine
+$stat = Read-CsvPipeProcStat $statLine 1234
+if ($stat.MinorFaults -ne 17 -or $stat.MajorFaults -ne 2 -or $stat.UserTicks -ne 100 -or
+    $stat.SystemTicks -ne 3 -or $stat.Threads -ne 9 -or $stat.StartTicks -ne 99 -or $stat.RssPages -ne 42) {
+    throw 'Process stat fields shifted with parentheses/spaces in comm.'
+}
+$checks++
+foreach ($line in @('1234 dotnet 0', '1234 (dotnet) R 0', ($statLine -replace ' R ', ' 0 '),
+    ($statLine -replace ' 17 ', ' -17 '), ($statLine -replace ' 100 ', ' NaN '),
+    ($statLine -replace ' 100 ', ' 9223372036854775808 '), ($statLine -replace ' 99 ', ' 0 '))) {
+    Assert-NativeReject 'malformed process stat' { Read-CsvPipeProcStat $line 1234 }
+}
+Assert-NativeReject 'wrong process stat owner' { Read-CsvPipeProcStat $statLine 5678 }
+$before = [pscustomobject]@{ Stat = $stat; MonotonicTicks = [Diagnostics.Stopwatch]::Frequency * 10 }
+$afterStat = Read-CsvPipeProcStat $statLine 1234
+$afterStat.UserTicks = 150; $afterStat.SystemTicks = 13; $afterStat.MinorFaults = 19
+$after = [pscustomobject]@{ Stat = $afterStat; MonotonicTicks = [Diagnostics.Stopwatch]::Frequency * 11 }
+$delta = Get-CsvPipeProcessDelta $before $after 100
+if ($delta.CpuMs -ne 600 -or $delta.ObserverWallMs -ne 1000 -or
+    $delta.CpuToObserverWall -ne .6 -or $delta.MinorFaults -ne 2 -or !$delta.DiagnosticOnly) { throw 'Wrong process delta units.' }
+$checks++
+Assert-NativeReject 'process clock absent' { Get-CsvPipeProcessDelta $before $after 0 }
+foreach ($field in @('UserTicks', 'SystemTicks', 'MinorFaults', 'MajorFaults')) {
+    foreach ($value in @($null, -1, [double]::NaN, [double]::PositiveInfinity)) {
+        Assert-NativeReject "invalid process $field" {
+            $copy = [pscustomobject]@{ Stat = Read-CsvPipeProcStat $statLine 1234; MonotonicTicks = $after.MonotonicTicks }
+            $copy.Stat.$field = $value
+            Get-CsvPipeProcessDelta $before $copy 100
+        }
+    }
+}
+Assert-NativeReject 'regressed CPU accounting' {
+    $copy = [pscustomobject]@{ Stat = Read-CsvPipeProcStat $statLine 1234; MonotonicTicks = $after.MonotonicTicks }
+    $copy.Stat.UserTicks = 99; Get-CsvPipeProcessDelta $before $copy 100
+}
+Assert-NativeReject 'PID reused between snapshots' {
+    $copy = [pscustomobject]@{ Stat = Read-CsvPipeProcStat $statLine 1234; MonotonicTicks = $after.MonotonicTicks }
+    $copy.Stat.StartTicks++; Get-CsvPipeProcessDelta $before $copy 100
+}
+Assert-NativeReject 'non-increasing snapshot clock' { Get-CsvPipeProcessDelta $before $before 100 }
+Assert-NativeReject 'nonfinite snapshot clock' {
+    $copy = [pscustomobject]@{ Stat = $afterStat; MonotonicTicks = [double]::NaN }
+    Get-CsvPipeProcessDelta $before $copy 100
+}
+
 Assert-CsvPipeNativeManifest (New-NativeManifest)
 $checks++
+$contextManifest = New-NativeManifest
+$contextManifest | Add-Member -NotePropertyName ContextProtocol -NotePropertyValue 'linux-proc-boundaries-v1'
+$contextManifest | Add-Member -NotePropertyName PreparationHistory -NotePropertyValue 'SegmentedOnly'
+$contextManifest | Add-Member -NotePropertyName ClockTicksPerSecond -NotePropertyValue 100
+foreach ($run in $contextManifest.Runs) {
+    $copy = $delta | Select-Object *; $copy.Pid = $run.Environment.pid
+    $run | Add-Member -NotePropertyName ProcessDelta -NotePropertyValue $copy
+}
+Assert-CsvPipeNativeManifest $contextManifest
+$checks++
+Assert-NativeReject 'missing declared process boundary context' {
+    $contextManifest.Runs[0].ProcessDelta = $null; Assert-CsvPipeNativeManifest $contextManifest
+}
 foreach ($field in @('Samples', 'UnknownFraction', 'WarmupSeconds', 'JitMethodCount', 'NativeAssemblyCount', 'LostSamples')) {
     foreach ($value in @($null, -1, [double]::NaN, [double]::PositiveInfinity)) {
         Assert-NativeReject "invalid $field counter ($value)" {

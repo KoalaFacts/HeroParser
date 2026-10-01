@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$WorkloadSha,
     [Parameter(Mandatory = $true)][string]$Workspace,
     [Parameter(Mandatory = $true)][string]$PerfTool,
-    [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-native'
+    [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-native',
+    [ValidateSet('SegmentedOnly', 'ContiguousPrelude')][string]$PreparationHistory = 'SegmentedOnly'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,12 +26,16 @@ $failure = $null
 $added = $false
 $perfVersion = (& $PerfTool --version | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Perf executable unavailable.' }
+$clockTicks = (& getconf CLK_TCK | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $clockTicks -notmatch '^[1-9]\d*$') { throw 'Process accounting clock unavailable.' }
+$clockTicks = [long]$clockTicks
 $allowed = Get-Content /proc/self/status | Select-String '^Cpus_allowed_list:\s*([0-9,-]+)$'
 if (@($allowed).Count -ne 1) { throw 'CPU permissions unavailable.' }
 $cpu = (($allowed.Matches[0].Groups[1].Value -split ',')[0] -split '-')[0]
 $manifest = [pscustomobject]@{ Protocol = 'csv-pipe-nativecpu-v1-diagnostic-only'; DiagnosticOnly = $true
     DiagnosticSha = $diagnosticSha; WorkloadSha = $WorkloadSha; PerfVersion = $perfVersion
-    Event = 'cpu-clock:u'; Clock = 'mono'; Frequency = 199; DurationSeconds = 30; PerfMapEnabled = 1; PerfMapStubGranularity = 2; Cpu = $cpu; Runs = @() }
+    Event = 'cpu-clock:u'; Clock = 'mono'; Frequency = 199; DurationSeconds = 30; PerfMapEnabled = 1; PerfMapStubGranularity = 2; Cpu = $cpu; Runs = @()
+    PreparationHistory = $PreparationHistory; ContextProtocol = 'linux-proc-boundaries-v1'; ClockTicksPerSecond = $clockTicks }
 
 function Build-Workload([string[]]$Arguments) {
     & dotnet build @Arguments --disable-build-servers -p:UseSharedCompilation=false | Out-Host
@@ -75,22 +80,23 @@ function Read-Worker($Worker) {
     return ($line | ConvertFrom-Json)
 }
 
-function Send-Worker($Worker, [string]$Operation, [int]$Repeats = 0, [switch]$NoWait) {
+function Send-Worker($Worker, [string]$Operation, [int]$Repeats = 0, [switch]$NoWait, [string]$Transport = 'Segmented128') {
     $Worker.Sequence++
-    $command = @{ Id = $Worker.Sequence; Operation = $Operation; Transport = 'Segmented128'; Repeats = $Repeats } | ConvertTo-Json -Compress
+    $command = @{ Id = $Worker.Sequence; Operation = $Operation; Transport = $Transport; Repeats = $Repeats } | ConvertTo-Json -Compress
     $command | Add-Content -LiteralPath (Join-Path $Worker.Directory 'commands.ndjson')
     $Worker.Process.StandardInput.WriteLine($command)
     $Worker.Process.StandardInput.Flush()
     if ($NoWait) { return }
     $response = Read-Worker $Worker
-    Assert-Response $Worker $response $Operation $Repeats
+    Assert-Response $Worker $response $Operation $Repeats $Transport
     return $response
 }
 
-function Assert-Response($Worker, $Response, [string]$Operation, [int]$Repeats) {
+function Assert-Response($Worker, $Response, [string]$Operation, [int]$Repeats, [string]$Transport = 'Segmented128') {
     $kind = switch ($Operation) { 'verify' { 'worker-verified' } 'prepare' { 'worker-prepared' } 'batch' { 'worker-batch' } 'stop' { 'worker-stopped' } }
     if ($Response.Id -ne $Worker.Sequence -or $Response.pid -ne $Worker.Process.Id -or $Response.kind -ne $kind -or
-        ($Operation -eq 'batch' -and ($Response.transport -ne 'Segmented128' -or $Response.repeats -ne $Repeats))) {
+        ($Operation -in @('prepare', 'batch') -and $Response.transport -ne $Transport) -or
+        ($Operation -eq 'batch' -and $Response.repeats -ne $Repeats)) {
         throw 'Diagnostic worker response correlation failed.'
     }
 }
@@ -102,6 +108,29 @@ function Get-WorkerThreads([int]$Owner) {
         if ($group.Count -ne 1 -or [int]$group[0].Matches[0].Groups[1].Value -ne $Owner) { throw 'Native worker thread ownership mismatch.' }
         [int]$task.Name
     }
+}
+
+function Read-OptionalContext([string]$Path) {
+    if (Test-Path -LiteralPath $Path) { return [IO.File]::ReadAllText($Path) }
+    return $null
+}
+
+function Get-ProcessSnapshot($Worker) {
+    $owner = $Worker.Process.Id
+    $rawStat = [IO.File]::ReadAllText("/proc/$owner/stat")
+    $stat = Read-CsvPipeProcStat $rawStat $owner
+    $tasks = foreach ($thread in @(Get-WorkerThreads $owner)) {
+        [pscustomobject]@{ Tid = $thread
+            SchedStat = Read-OptionalContext "/proc/$owner/task/$thread/schedstat"
+            Status = Read-OptionalContext "/proc/$owner/task/$thread/status" }
+    }
+    return [pscustomobject]@{ Stat = $stat; RawStat = $rawStat; Tasks = @($tasks)
+        Cgroup = Read-OptionalContext "/proc/$owner/cgroup"
+        SysFsCgroupRootCpuStat = Read-OptionalContext '/sys/fs/cgroup/cpu.stat'
+        SchedStatsEnabled = Read-OptionalContext '/proc/sys/kernel/sched_schedstats'
+        SystemCpuStat = Read-OptionalContext '/proc/stat'
+        ScalingCurFreq = Read-OptionalContext "/sys/devices/system/cpu/cpu$cpu/cpufreq/scaling_cur_freq"
+        MonotonicTicks = [Diagnostics.Stopwatch]::GetTimestamp() }
 }
 
 try {
@@ -144,23 +173,30 @@ try {
         if ($worker.Environment.pid -ne $process.Id) { throw 'Worker PID mismatch.' }
         $verification = Send-Worker $worker 'verify'
         Assert-CsvPipeWorkerVerification $verification
-        $null = Send-Worker $worker 'prepare'
     }
     Assert-CsvPipeWorkerEnvironment $workers[0].Environment $workers[1].Environment $WorkloadSha $WorkloadSha
-    $warmup = [Diagnostics.Stopwatch]::StartNew()
-    $pairs = 0
-    do {
-        $order = if (($pairs % 2) -eq 0) { @(1, 0) } else { @(0, 1) }
-        foreach ($index in $order) { $null = Send-Worker $workers[$index] 'batch' 512 }
-        $pairs++
-    } while ($pairs -lt 10 -or $warmup.Elapsed.TotalSeconds -lt 10)
-    $warmup.Stop()
+    $history = if ($PreparationHistory -eq 'ContiguousPrelude') { @('Contiguous', 'Segmented128') } else { @('Segmented128') }
+    foreach ($transport in $history) {
+        foreach ($worker in $workers) { $null = Send-Worker $worker 'prepare' -Transport $transport }
+        $warmup = [Diagnostics.Stopwatch]::StartNew()
+        $pairs = 0
+        do {
+            $order = if (($pairs % 2) -eq 0) { @(1, 0) } else { @(0, 1) }
+            foreach ($index in $order) { $null = Send-Worker $workers[$index] 'batch' 512 -Transport $transport }
+            $pairs++
+        } while ($pairs -lt 10 -or $warmup.Elapsed.TotalSeconds -lt 10)
+        $warmup.Stop()
+        @{ Transport = $transport; Pairs = $pairs; Seconds = $warmup.Elapsed.TotalSeconds } |
+            ConvertTo-Json -Compress | Add-Content -LiteralPath (Join-Path $OutputDirectory 'preparation.ndjson')
+    }
     foreach ($worker in $workers) {
         $directory = $worker.Directory
         $processId = $worker.Process.Id
         Get-Content -LiteralPath "/proc/$processId/maps" | Set-Content -LiteralPath (Join-Path $directory 'process-maps.txt')
         Get-Content -LiteralPath "/proc/$processId/status" | Set-Content -LiteralPath (Join-Path $directory 'process-status.txt')
         $threads = @(Get-WorkerThreads $processId)
+        $before = Get-ProcessSnapshot $worker
+        $before | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $directory 'process-before.json')
         # One long diagnostic batch, not measured A/A pairs; keep the peer idle throughout capture.
         Send-Worker $worker 'batch' 65536 -NoWait
         $raw = Join-Path $directory 'cpu.perf.data'
@@ -169,6 +205,10 @@ try {
         Finish-CaptureProcess $capture (Join-Path $directory 'record')
         $response = Read-Worker $worker
         Assert-Response $worker $response 'batch' 65536
+        $after = Get-ProcessSnapshot $worker
+        $after | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $directory 'process-after.json')
+        $processDelta = Get-CsvPipeProcessDelta $before $after $clockTicks
+        $processDelta | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'process-delta.json')
         if ($response.batchMs -lt 32000) { throw 'Diagnostic workload did not span the full capture window.' }
         $threads = @(@($threads) + @(Get-WorkerThreads $processId) | Sort-Object -Unique)
         @{ Pid = $processId; Tids = $threads } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'thread-owners.json')
@@ -206,7 +246,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Could not retain readable native artifacts.' }
         $runs += [pscustomobject]@{ Environment = $worker.Environment; Batch = $response; WarmupSeconds = $warmup.Elapsed.TotalSeconds
             JitPid = $dump.Pid; JitMethodCount = $dump.Methods.Count; NativeAssemblyCount = $assemblyCount; LostSamples = 0
-            Samples = $report.Samples; UnknownFraction = $report.UnknownFraction; Hotspots = $report.Hotspots }
+            Samples = $report.Samples; UnknownFraction = $report.UnknownFraction; Hotspots = $report.Hotspots; ProcessDelta = $processDelta }
     }
     $manifest.Runs = $runs
     Assert-CsvPipeNativeManifest $manifest

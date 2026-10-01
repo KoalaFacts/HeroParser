@@ -386,6 +386,14 @@ contains thread IDs; retained process-group snapshots verify their worker owner.
 gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_native_profile=true
 ```
 
+To investigate the isolated bias, add `-f pipe_native_history_probe=true`.
+This collects both fixed preparation histories once, with before/after process
+CPU/fault and per-task scheduling context, under separate `SegmentedOnly` and
+`ContiguousPrelude` artifact directories. It never runs acceptance controls.
+The same flag selects those directories for artifact-only replay with
+`pipe_native_replay_run`; replay still launches no parser. See the
+[root-cause investigation protocol and evidence limits](bias-investigation.md).
+
 To repair analysis without resampling an existing capture, also pass
 `-f pipe_native_replay_run=ORIGINAL_RUN_ID`. Replay launches only perf analysis
 tools; it does not build or launch a parser worker. It retains the input run,

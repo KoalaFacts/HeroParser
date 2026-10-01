@@ -961,3 +961,20 @@ hypothesis. Neither is an accepted optimization. Do not extend warmup, relax
 thresholds, retry failed controls or claim cold-path isolation is faster from
 this capture. Timing acceptance remains failed and merging remains unauthorized.
 PR review and latest-head CI are tracked separately from this static report.
+
+### Root-cause investigation of isolated bias
+
+[The investigation protocol](bias-investigation.md) records an artifact-only
+order/cohort analysis of the failed v4 run. Segmented128 is slower on side B in
+89 of 90 pairs across the three process pairs. Cycle two's median is 1.054107
+when B executes first and 1.053117 when A executes first; early/late cohorts are
+1.052042/1.052089. Allocated bytes match on every segmented pair in cycles one
+and two. These observations narrow simple order/outlier/allocation-amount models;
+they do not exclude GC pauses, scheduling, JIT/heap history or layout.
+
+The old one-worker native trace used Segmented-only warmup, unlike the failed
+controls' Contiguous-before-Segmented history. A new diagnostic mode collects
+both PIDs under two fixed preparation histories with CPU/wall/fault and scheduler
+snapshots, while keeping the frozen workload and failed timing gate intact.
+No production change, acceptance rerun or root-cause conclusion is introduced.
+Implementation and the diagnostic are awaiting CI; all outcomes will be retained.

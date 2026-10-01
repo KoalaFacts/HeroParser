@@ -1,3 +1,48 @@
+function Read-CsvPipeProcStat {
+    param([Parameter(Mandatory = $true)][string]$Line, [Parameter(Mandatory = $true)][int]$ExpectedPid)
+    # comm can contain spaces and closing parentheses; the suffix begins after the last one.
+    $end = $Line.LastIndexOf(')')
+    if ($ExpectedPid -le 0 -or $Line -notmatch '^(\d+) \(' -or [long]$Matches[1] -ne $ExpectedPid -or $end -lt 0) {
+        throw 'Process stat owner or command delimiter mismatch.'
+    }
+    $fields = $Line.Substring($end + 1).Trim() -split '\s+'
+    if ($fields.Count -lt 22 -or $fields[0] -notmatch '^[A-Z]$') { throw 'Truncated process stat.' }
+    $result = [ordered]@{ Pid = $ExpectedPid }
+    foreach ($entry in @(@('MinorFaults', 7), @('MajorFaults', 9), @('UserTicks', 11), @('SystemTicks', 12),
+        @('Threads', 17), @('StartTicks', 19), @('RssPages', 21))) {
+        $value = $fields[$entry[1]]
+        if ($value -notmatch '^\d+$') { throw 'Invalid process stat counter.' }
+        $result[$entry[0]] = [long]$value
+    }
+    if (!$result.Threads -or !$result.StartTicks) { throw 'Missing process stat lifetime or threads.' }
+    return [pscustomobject]$result
+}
+
+function Get-CsvPipeProcessDelta {
+    param([Parameter(Mandatory = $true)]$Before, [Parameter(Mandatory = $true)]$After,
+        [Parameter(Mandatory = $true)][long]$ClockTicksPerSecond)
+    foreach ($snapshot in @($Before, $After)) {
+        foreach ($value in @($snapshot.Stat.Pid, $snapshot.Stat.StartTicks, $snapshot.MonotonicTicks)) {
+            if ([string]$value -notmatch '^[1-9]\d*$') { throw 'Missing or invalid process observation identity/clock.' }
+        }
+    }
+    if ($ClockTicksPerSecond -le 0 -or $Before.Stat.Pid -ne $After.Stat.Pid -or
+        $Before.Stat.StartTicks -ne $After.Stat.StartTicks -or $After.MonotonicTicks -le $Before.MonotonicTicks) {
+        throw 'Process observation lifetime, clock or window mismatch.'
+    }
+    $delta = [ordered]@{ DiagnosticOnly = $true; Pid = $Before.Stat.Pid; StartTicks = $Before.Stat.StartTicks
+        ClockTicksPerSecond = $ClockTicksPerSecond
+        ObserverWallMs = ($After.MonotonicTicks - $Before.MonotonicTicks) * 1000.0 / [Diagnostics.Stopwatch]::Frequency }
+    foreach ($field in @('UserTicks', 'SystemTicks', 'MinorFaults', 'MajorFaults')) {
+        if ([string]$Before.Stat.$field -notmatch '^\d+$' -or [string]$After.Stat.$field -notmatch '^\d+$' -or
+            $After.Stat.$field -lt $Before.Stat.$field) { throw 'Process counters regressed or are missing.' }
+        $delta[$field] = $After.Stat.$field - $Before.Stat.$field
+    }
+    $delta['CpuMs'] = ($delta.UserTicks + $delta.SystemTicks) * 1000.0 / $ClockTicksPerSecond
+    $delta['CpuToObserverWall'] = $delta.CpuMs / $delta.ObserverWallMs
+    return [pscustomobject]$delta
+}
+
 function Read-CsvPipeJitDump {
     param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][int]$ExpectedPid)
     $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($Path))
@@ -93,6 +138,18 @@ function Assert-CsvPipeNativeManifest($Manifest) {
     $b = $Manifest.Runs[1].Environment
     Assert-CsvPipeWorkerEnvironment $a $b $Manifest.WorkloadSha $Manifest.WorkloadSha
     foreach ($run in $Manifest.Runs) {
+        if ($Manifest.ContextProtocol) {
+            $delta = $run.ProcessDelta
+            if ($Manifest.ContextProtocol -ne 'linux-proc-boundaries-v1' -or
+                $Manifest.PreparationHistory -notin @('SegmentedOnly', 'ContiguousPrelude') -or
+                $delta.DiagnosticOnly -ne $true -or $delta.Pid -ne $run.Environment.pid -or
+                $delta.ClockTicksPerSecond -ne $Manifest.ClockTicksPerSecond) { throw 'Process boundary context mismatch.' }
+            foreach ($field in @('ObserverWallMs', 'CpuMs', 'CpuToObserverWall')) {
+                if ($null -eq $delta.$field -or ![double]::IsFinite([double]$delta.$field) -or $delta.$field -le 0) {
+                    throw 'Invalid process boundary CPU/wall counters.'
+                }
+            }
+        }
         foreach ($number in @('Samples', 'UnknownFraction', 'WarmupSeconds', 'JitMethodCount', 'NativeAssemblyCount', 'LostSamples')) {
             if ($null -eq $run.$number -or ![double]::IsFinite([double]$run.$number) -or $run.$number -lt 0) {
                 throw 'Native evidence contains missing, negative or nonfinite counters.'

@@ -37,6 +37,10 @@ on:
         description: 'With native profile: replay retained artifact from this run instead of launching any workload'
         type: string
         default: ''
+      pipe_native_history_probe:
+        description: 'With native profile: collect both fixed preparation histories once, diagnostic only; with replay select their retained subdirectories'
+        type: boolean
+        default: false
       pipe_controls:
         description: 'Run only three fixed isolated same-CPU A/A checks of timing protocol v4; never A/B'
         type: boolean
@@ -68,7 +72,7 @@ env:
 
 jobs:
   setup:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
@@ -243,7 +247,7 @@ jobs:
           }
 
   pipe-ab:
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && (inputs.pipe_ab || inputs.pipe_controls))
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls))
     name: CSV Pipe Correctness and Timing Controls
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -295,7 +299,7 @@ jobs:
           retention-days: 30
 
   pipe-profile:
-    if: github.event_name == 'workflow_dispatch' && inputs.pipe_profile && !inputs.pipe_bias && !inputs.pipe_native_profile
+    if: github.event_name == 'workflow_dispatch' && inputs.pipe_profile && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe
     name: CSV Pipe Managed Stack and JIT Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -341,7 +345,7 @@ jobs:
           retention-days: 30
 
   pipe-bias:
-    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_native_profile && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
+    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
     name: CSV Pipe Same-Source Bias Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -394,7 +398,7 @@ jobs:
           retention-days: 30
 
   pipe-native-profile:
-    if: github.event_name == 'workflow_dispatch' && (inputs.pipe_native_profile || inputs.pipe_native_replay_run)
+    if: github.event_name == 'workflow_dispatch' && (inputs.pipe_native_profile || inputs.pipe_native_replay_run || inputs.pipe_native_history_probe)
     name: CSV Pipe Native CPU and JIT Evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -443,13 +447,34 @@ jobs:
         shell: pwsh
         env:
           PROFILE_RUN: ${{ inputs.pipe_native_replay_run }}
+          HISTORY_PROBE: ${{ inputs.pipe_native_history_probe }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if ($env:PROFILE_RUN) {
             if ($env:PROFILE_RUN -notmatch '^\d+$') { throw 'Invalid native artifact run ID.' }
             gh run download $env:PROFILE_RUN --repo $env:GITHUB_REPOSITORY -n "csv-pipe-native-$($env:PROFILE_RUN)-1" -D "$env:RUNNER_TEMP/native-input"
             if ($LASTEXITCODE -ne 0) { throw 'Could not download retained native evidence.' }
-            ./benchmarks/CsvPipeABProbe/native-replay.ps1 -InputDirectory "$env:RUNNER_TEMP/native-input" -PerfTool $env:HERO_PARSER_PERF -OriginRun $env:PROFILE_RUN
+            if ($env:HISTORY_PROBE -eq 'true') {
+              foreach ($history in @('SegmentedOnly', 'ContiguousPrelude')) {
+                ./benchmarks/CsvPipeABProbe/native-replay.ps1 -InputDirectory "$env:RUNNER_TEMP/native-input/$history" -PerfTool $env:HERO_PARSER_PERF -OriginRun $env:PROFILE_RUN -OutputDirectory "BenchmarkDotNet.Artifacts/pipe-native/replay/$history"
+              }
+            } else {
+              ./benchmarks/CsvPipeABProbe/native-replay.ps1 -InputDirectory "$env:RUNNER_TEMP/native-input" -PerfTool $env:HERO_PARSER_PERF -OriginRun $env:PROFILE_RUN
+            }
+            exit 0
+          }
+          if ($env:HISTORY_PROBE -eq 'true') {
+            $results = @()
+            foreach ($history in @('SegmentedOnly', 'ContiguousPrelude')) {
+              try {
+                ./benchmarks/CsvPipeABProbe/native-profile.ps1 -WorkloadSha 89c06810e76c4623ebad3cfc89c4bcdef41acd59 -Workspace "$env:RUNNER_TEMP/pipe-native-$history" -PerfTool $env:HERO_PARSER_PERF -OutputDirectory "BenchmarkDotNet.Artifacts/pipe-native/$history" -PreparationHistory $history
+                $results += @{ History = $history; Complete = $true }
+              } catch {
+                $results += @{ History = $history; Complete = $false; Error = $_.Exception.Message }
+              }
+            }
+            $results | ConvertTo-Json | Set-Content BenchmarkDotNet.Artifacts/pipe-native/history-probe.json
+            if (@($results | Where-Object { !$_.Complete }).Count) { throw 'Fixed history diagnosis incomplete; no retry or acceptance.' }
             exit 0
           }
           ./benchmarks/CsvPipeABProbe/native-profile.ps1 -WorkloadSha 89c06810e76c4623ebad3cfc89c4bcdef41acd59 -Workspace "$env:RUNNER_TEMP/pipe-native" -PerfTool $env:HERO_PARSER_PERF

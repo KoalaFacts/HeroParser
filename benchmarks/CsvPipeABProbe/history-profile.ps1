@@ -52,6 +52,9 @@ if ($cpu -notmatch '^\d+$' -or ([IO.File]::ReadAllText('/proc/sys/kernel/sched_s
     throw 'CPU identity or enabled scheduling statistics unavailable.'
 }
 $null = New-Item -ItemType Directory -Path $Workspace, $OutputDirectory -Force
+$historicalInput = Join-Path $OutputDirectory 'historical-input'
+$null = New-Item -ItemType Directory -Path $historicalInput
+foreach ($name in $hashes.Keys) { Copy-Item -LiteralPath (Join-Path $InputDirectory $name) -Destination $historicalInput }
 $plan | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'request-plan.json')
 $hashes | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'historical-input-hashes.json')
 $workload = Join-Path $Workspace 'workload'

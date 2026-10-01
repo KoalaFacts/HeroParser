@@ -30,7 +30,6 @@ source.Clr.All += data =>
         Pid = data.ProcessID,
         Tid = data.ThreadID,
         UtcTicks = data.TimeStamp.ToUniversalTime().Ticks,
-        Qpc = data.TimeStampQPC,
         RelativeMs = data.TimeStampRelativeMSec,
         Name = name,
         Payload = payload
@@ -43,11 +42,11 @@ File.WriteAllText(Path.Combine(args[2], "runtime-summary.json"), JsonSerializer.
 {
     DiagnosticOnly = true,
     Pid = expectedPid,
-    EventsLost = source.EventsLost,
+    source.EventsLost,
     GcStarts = gcStarts,
     JitEvents = jitEvents,
     ExportedEvents = exported,
-    Clock = "EventPipe-QPC-with-trace-derived-UTC",
+    Clock = "EventPipe-relative-time-with-trace-derived-UTC",
     DecoderVersion = typeof(EventPipeEventSource).Assembly.GetName().Version?.ToString()
 }, new JsonSerializerOptions { WriteIndented = true }));
 if (source.EventsLost != 0 || gcStarts == 0 || jitEvents == 0)

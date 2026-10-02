@@ -119,6 +119,22 @@ jobs:
           lscpu > BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
           uname -a >> BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
           dotnet --info >> BenchmarkDotNet.Artifacts/pipe-history/runner-context.txt
+      - name: Decode retained same-run native bodies without starting workers
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 36814110508 --repo KoalaFacts/HeroParser -n csv-pipe-history-36814110508-1 -D "$env:RUNNER_TEMP/native-history"
+          if ($LASTEXITCODE -ne 0) { throw 'Retained native bodies unavailable; never replace with sampling.' }
+          ./benchmarks/CsvPipeABProbe/history-machine-code.ps1 -InputDirectory "$env:RUNNER_TEMP/native-history/study" -OriginRun 36814110508 -OutputDirectory BenchmarkDotNet.Artifacts/pipe-machine-code
+      - name: Retain offline instruction evidence
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csv-pipe-machine-code-${{ github.run_id }}-${{ github.run_attempt }}
+          path: BenchmarkDotNet.Artifacts/pipe-machine-code/**
+          retention-days: 30
       - name: Collect fixed predeclared pairs, no acceptance or retries
         if: github.event_name == 'workflow_dispatch' && inputs.replay_run == ''
         shell: pwsh

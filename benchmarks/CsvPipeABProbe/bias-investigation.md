@@ -353,3 +353,12 @@ The sampling budget is exhausted. Continue with artifact-only investigation of
 the actual caller/callee code versions before proposing any new predeclared
 experiment. Root cause, timing acceptance and production optimization remain
 unproven; no merge is approved.
+
+Artifact-only follow-up now records [instruction evidence](history-machine-code.md):
+all 12 selected native bodies decode completely, with measured samples mapped
+to cursor instructions rather than just method extents. A's current byte is
+spilled/reloaded in the larger caller; B retains it in a register in the sampled
+standalone-reader path. Caller stack reservation also differs, but B's separate
+reader has its own frame. Earlier B-slower evidence lacks this large caller
+split. These observations narrow a code-generation lead without establishing
+latency, an exact inline tree, the old cause or a production improvement.

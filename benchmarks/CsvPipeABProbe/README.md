@@ -5,6 +5,16 @@ not the historical dual-module process described below. Protocol v3 is currently
 controls-only: A/B and production optimizations remain suspended while validating
 this changed execution boundary. See [Isolated Worker Controls](#isolated-worker-controls).
 
+Automatic CI distinguishes **CSV Pipe Infrastructure Validation** from
+**CSV Pipe Timing Acceptance**. Infrastructure regression tests can pass without
+sampling; acceptance remains failed at retained run `36732093817` (Segmented128
+median `1.052845684 > 1.05`). The separate acceptance job exposes that failure in
+its summary and `retained-acceptance.json`, with `TimingAcceptancePassed=false`
+and zero measured workers. No failed sample, percentile threshold or historical
+decision is changed. Only explicitly authorized manual dispatch can start new
+controls, after infrastructure passes; retries and unchanged-workload retrials
+remain rejected. `test-workflow-gates.ps1` tests this boundary without sampling.
+
 The historical opt-in probe loads independently built baseline and candidate parser
 assemblies into the **same process**. Both sides use the same generated fixture,
 transport, row limits, header, checksum consumer, warmup and repetition count.

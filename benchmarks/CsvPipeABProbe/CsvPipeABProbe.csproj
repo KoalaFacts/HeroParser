@@ -4,24 +4,44 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefineConstants Condition="'$(SingleModule)' == 'true'">$(DefineConstants);SINGLE_MODULE</DefineConstants>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Models/**" />
-    <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
-    <Reference Include="HeroParser.Baseline">
+    <!-- Nested model outputs otherwise become candidate assemblies before the explicit HintPath. -->
+    <None Remove="Models/**" />
+    <ProjectReference Include="../../src/HeroParser/HeroParser.csproj"
+                      Condition="'$(FrozenParserDll)' == ''"
+                      GlobalPropertiesToRemove="SingleModule;CandidateModelsDll;BaseIntermediateOutputPath;OutputPath" />
+    <Reference Include="HeroParser" Condition="'$(FrozenParserDll)' != '' And '$(SingleModule)' == 'true'">
+      <HintPath>$(FrozenParserDll)</HintPath>
+    </Reference>
+    <Reference Include="HeroParser.Baseline" Condition="'$(SingleModule)' != 'true'">
       <HintPath>$(BaselineDll)</HintPath>
       <Aliases>baseline</Aliases>
     </Reference>
-    <Reference Include="CsvPipeABModels.Baseline">
+    <Reference Include="CsvPipeABModels.Baseline" Condition="'$(SingleModule)' != 'true'">
       <HintPath>$(BaselineModelsDll)</HintPath>
       <Aliases>baselineModels</Aliases>
     </Reference>
-    <Reference Include="CsvPipeABModels.Candidate">
+    <Reference Include="CsvPipeABModels.Candidate" Condition="'$(SingleModule)' != 'true'">
+      <HintPath>$(CandidateModelsDll)</HintPath>
+    </Reference>
+    <Reference Include="CsvPipeABModels" Condition="'$(SingleModule)' == 'true'">
       <HintPath>$(CandidateModelsDll)</HintPath>
     </Reference>
   </ItemGroup>
   <Target Name="RequireBaseline" BeforeTargets="ResolveReferences"
-          Condition="!Exists('$(BaselineDll)') Or !Exists('$(BaselineModelsDll)') Or !Exists('$(CandidateModelsDll)')">
+          Condition="'$(SingleModule)' != 'true' And (!Exists('$(BaselineDll)') Or !Exists('$(BaselineModelsDll)') Or !Exists('$(CandidateModelsDll)'))">
     <Error Text="Build both generated model assemblies, then pass BaselineDll, BaselineModelsDll and CandidateModelsDll. See this probe's README." />
+  </Target>
+  <Target Name="RequireWorkerModel" BeforeTargets="ResolveReferences"
+          Condition="'$(SingleModule)' == 'true' And !Exists('$(CandidateModelsDll)')">
+    <Error Text="Build the normal-identity generated models before the isolated worker." />
+  </Target>
+  <Target Name="RequireFrozenParser" BeforeTargets="ResolveReferences" Condition="'$(FrozenParserDll)' != ''">
+    <Error Condition="'$(SingleModule)' != 'true' Or !Exists('$(FrozenParserDll)')"
+           Text="FrozenParserDll requires an existing parser DLL and the isolated diagnostic worker." />
   </Target>
 </Project>

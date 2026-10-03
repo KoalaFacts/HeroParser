@@ -1,6 +1,11 @@
 # CSV PipeReader end-to-end paired A/B probe
 
-This opt-in probe loads independently built baseline and candidate parser
+The active CI timing gate now uses **two isolated single-module workers**,
+not the historical dual-module process described below. Protocol v3 is currently
+controls-only: A/B and production optimizations remain suspended while validating
+this changed execution boundary. See [Isolated Worker Controls](#isolated-worker-controls).
+
+The historical opt-in probe loads independently built baseline and candidate parser
 assemblies into the **same process**. Both sides use the same generated fixture,
 transport, row limits, header, checksum consumer, warmup and repetition count.
 Baseline-first and candidate-first pairs alternate. Do not replace the baseline
@@ -83,9 +88,12 @@ pwsh -NoProfile -File benchmarks/CsvPipeABProbe/run.ps1 -BaselineDll BASELINE_DL
 ```
 
 `-Rows`, `-Pairs`, `-WarmupPairs`, and `-MinSampleMs` adjust the experiment (defaults:
-2000, 20, 6 and 30). The probe calibrates a shared repeat count per case, capped at
-1000. Warmups precede measured pairs; calibration and warmups are not reported as
-measurements. `-Scenario` and `-Path` select one exact named value, failing on
+2000, 20, 6 and 30). Protocol v2 first pilots a shared repeat count, runs paired
+warmup for at least ten seconds and the requested warmup-pair count, then performs
+final calibration with 25% duration headroom. Calibration is capped at 65536
+repeats and fails rather than accepting an undersized batch at that cap.
+Warmup/calibration records are separate from measured pairs. Actual batch times
+are recorded for both sides of every pair. `-Scenario` and `-Path` select one exact named value, failing on
 unknown values. Repeat runs on an otherwise idle machine; optional environment
 variable `HERO_PARSER_AB_AFFINITY` is a hexadecimal CPU affinity mask on Windows
 or Linux. Affinity is not changed by default. Keep runtime, GC, affinity and power
@@ -93,9 +101,67 @@ configuration consistent, particularly on heterogeneous laptop CPUs.
 
 ## Evidence and Interpretation
 
-### Isolated CI Series
+### Isolated Worker Controls
 
-The Performance Benchmarks workflow automatically runs the paired experiment for
+```powershell
+pwsh -NoProfile -File benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha HEAD_SHA -Workspace FRESH_WORKSPACE -PinSameCpu
+```
+
+`HEAD_SHA` must be the full current committed SHA. The script builds one parser
+and generated model with their normal identities (`HeroParser`, `CsvPipeABModels`),
+then builds the existing fixture/consumer code with `SingleModule=true`. Each
+worker executes only `Case.CandidateAsync`; the second consumer and aliased
+parser/model references are absent from that build. Identical artifacts are
+copied into two directories and launched as distinct persistent processes.
+This A/A proves process isolation against identical **binaries**, not the old
+renamed independent-build asymmetry. It does not by itself validate future A/B
+artifact construction, where each parser and generator must be built from its
+own source and then paired with an identical consumer executable.
+
+Exactly three fresh worker pairs run, reversing launch order in cycle two.
+Both workers complete all 36 correctness cases before timing. The coordinator
+requests one batch, waits for its response, then requests the other; first side
+alternates for every pair. The peer remains idle on stdin. IPC, process startup,
+fixture creation, JSON and file writes are outside the worker's timed batch;
+reader creation/reading/checksum/validation/disposal remain inside the unchanged
+`Case.MeasureAsync`. Normal tiering/PGO, affinity and GC settings are unchanged.
+
+Pilot calibration, at least ten paired warmup batches and ten seconds across
+both workers, 125ms final calibration target, 100ms measured-batch floor,
+65536-repeat cap, 2000 rows and 30 measured pairs per transport are unchanged.
+The same median [0.95, 1.05], p10 >= 0.90 and p90 <= 1.10 control bounds apply.
+Every valid-but-unstable cycle is retained; remaining fixed cycles still run.
+There is no A/B, retry-until-green, threshold relaxation or cold-decoding change.
+
+`csv-pipe-isolated-v3` evidence records source refs, distinct PIDs, normal module
+names, MVIDs, SHA-256 parser/model/consumer fingerprints and matching runtime
+settings. The verifier requires identical A/A binaries/consumers, each complete
+correctness matrix, monotonic batch command IDs, matching worker response times,
+repeat counts and transport, all calibration/warmup records and raw percentiles.
+Separate command, stdout and stderr transcripts are retained alongside the paired
+NDJSON and `series-summary.json`; incomplete/invalid evidence fails closed.
+The v2 checker rejects v3 records; archived v2 logs remain reproducible using
+their recorded harness revision. Stable v3 controls validate this control trial,
+not a throughput gain or a proven root cause for older same-process bias.
+
+The first unpinned v3 trial completed all three controls but failed five of nine
+transport bounds. Separate processes alone did not eliminate the bias. The next
+fixed trial changes only CPU placement: `-PinSameCpu` selects the first CPU in
+the coordinator's Linux allowed-CPU list and starts both workers via `taskset`.
+Affinity is inherited **before runtime startup**, including runtime-created
+threads. Workers report and verify that their own allowed-CPU list is exactly
+that single CPU. The separately labelled `csv-pipe-isolated-v4-same-cpu` protocol
+retains all timing settings and ratio bounds. .NET's reported processor count
+may decrease under affinity; both workers must match. Without `-PinSameCpu`, v3
+remains reproducible; its failed result is not reclassified or discarded.
+
+Automatic PR/push jobs and manual `pipe_controls=true` now run the v4 controls-only
+gate. `pipe_ab=true` explicitly fails while A/B is suspended. Bias and profile
+jobs retain the old dual-module harness for diagnostic evidence only.
+
+### Historical Dual-Module CI Series
+
+Before the v3 isolation change, the Performance Benchmarks workflow automatically ran the paired experiment for
 relevant pull requests and main-branch pushes, including parser, benchmark,
 workflow and shared build-configuration changes. PRs compare the exact base SHA
 with the head SHA (not GitHub's synthetic merge commit); pushes compare the
@@ -113,14 +179,115 @@ machine is not a prerequisite.
 gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_ab=true -f baseline_sha=FULL_BASELINE_SHA
 ```
 
-The committed `run-series.ps1` protocol is deliberately fixed before observing
-timings: 2000 rows, 30 measured pairs, 10 warmup pairs, 100 ms calibration target,
-and two independent process runs per phase. It first verifies all 36 cases on
+The committed `run-series.ps1` protocol v2 is deliberately fixed before observing
+timings: 2000 rows, 30 measured pairs, at least 10 warmup pairs and 10 seconds,
+100 ms minimum actual batch duration, then final calibration targeting 125 ms.
+There are two independent process runs per phase. It first verifies all 36 cases on
 independently built candidate/candidate assemblies, then times the three Plain
 Generated transports twice. Every A/A transport in every run must have a median
 ratio in [0.95, 1.05], p10 >= 0.90 and p90 <= 1.10. The gate recomputes these
 percentiles from all raw pairs and rejects incomplete or mismatched evidence.
+It also requires the v2 protocol ID, correctly ordered pilot/warmup/final
+calibration records, and actual batch durations matching each pair's per-read
+time and repeat count. Every measured batch must reach 100 ms, even if warmup or
+final calibration appeared adequate. A/B evidence gets these same duration,
+completion and consistency checks without applying the A/A ratio bounds to A/B.
 These are experimental noise thresholds, not a statistical proof of equality.
+
+V1 calibrated before batch warmup and could time much shorter batches afterward.
+Its existing raw records and failures remain retained; v2 is a new protocol,
+not a retry that changes the meaning of those results. Reproduce v1 with its
+recorded source revision, not the v2 checker. Do not combine v1/v2 ratios to claim
+a parser speedup. Ten seconds of warmup does not prove JIT or runner stability.
+
+### Fixed Controls-Only Validation
+
+Before another parser experiment, run the manual `pipe_controls` lane. It skips
+the ordinary benchmark matrix and never enters A/B. It checks the full 36-case
+candidate/candidate correctness matrix and then runs exactly three fresh A/A
+processes on the same independently built candidate-source assemblies. It does
+not retry failed controls, discard failed processes, disable tiering/PGO or change
+affinity. Invalid timing records and unstable controls are separate failures;
+each process's raw output is retained. Only all three valid, stable runs produce
+`stable-controls-only-no-ab`. This is limited harness evidence, not a throughput
+gain, universal stability guarantee or permission to merge.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_controls=true
+```
+
+For direct `run-series.ps1 -ControlsOnly` use, the required baseline SHA must be
+the candidate HEAD SHA. The workflow supplies it automatically. The summary
+records the protocol ID, controls-only mode and minimum actual batch durations.
+
+### Same-Source Bias Diagnosis
+
+When A/A is biased despite valid durations, use `pipe_bias` on a committed
+benchmark-only revision. This is a diagnostic experiment, not a retry of timing
+acceptance. Its records use `csv-pipe-bias-v1-diagnostic-only`; the normal
+acceptance checker rejects them, including records produced with JIT output.
+Do not combine this input with other experiment modes.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_bias=true
+```
+
+Two independent parser/model assemblies are built from the same HEAD. Full
+36-case correctness is checked normally and for each of four routing modes:
+
+| Mode | Logical A Consumer/Module | Logical B Consumer/Module |
+|---|---|---|
+| Independent | Baseline | Candidate |
+| Swapped | Candidate | Baseline |
+| BaselineSelf | Baseline | Baseline |
+| CandidateSelf | Candidate | Candidate |
+
+The same timed `MeasureAsync`/`ReadAsync` implementation is used in every mode;
+routing occurs outside each timed batch. Self modes still load both assemblies,
+but both measurements execute one consumer/module. Swapped reverses consumer
+routing, not assembly names, loader metadata or the built binaries.
+
+Exactly three cycles run, each mode in a fresh process: cycles 1 and 3 use the
+table order; cycle 2 reverses it. There is no adaptive retry or early termination
+on valid-but-biased ratios. Invalid measurement logs are retained separately.
+Preparation/correctness failures stop the experiment. All transports use the
+same 2000-row, 30-pair, paired ten-second warmup, 125 ms final calibration and
+100 ms actual duration checks. Original ratio bounds remain visible, not waived.
+Raw pairs are also split into candidate-first/baseline-first and first/second
+half medians, with 15 pairs per cohort. Here A/B labels are logical measurement
+slots, not different source revisions; no production A/B phase runs.
+
+Two additional processes collect JIT output separately using Independent routing,
+one selecting baseline parser/model assemblies and one candidate assemblies.
+`DOTNET_JitDisasm` uses assembly-qualified `assembly!method` patterns; both also
+select the probe. Normal tiering/PGO stays enabled. Inspect actual observed tiers, both consumer
+state machines and generated binders, not just code size. See the official
+[.NET 10 JIT output documentation](https://github.com/dotnet/runtime/blob/v10.0.0/docs/design/coreclr/jit/viewing-jit-dumps.md).
+These processes' durations are never uninstrumented timing evidence. The
+`csv-pipe-bias-<run-id>-<attempt>` artifact contains all logs, module/source
+fingerprints, runner context, cohort results and raw JIT assembly for 30 days.
+
+If both self modes are near unity but dual-module modes remain biased, that
+narrows investigation toward module/consumer-specific effects; it does not
+identify assembly layout, generic specialization or dynamic PGO as the cause.
+Order/time cohorts can expose temporal drift. Fresh-process variation and
+different warmup histories prevent assuming independent and swapped ratios must
+be exact reciprocals. A complete diagnostic job is not stable A/A acceptance,
+a throughput benefit, permission to merge or permission to begin cold-decoding
+isolation. Preserve earlier failed acceptance runs.
+
+To repair or extend JIT evidence without repeating any timing controls, add
+`-f pipe_bias_jit_only=true` to the dispatch above. This mode verifies correctness
+and runs only the two instrumented, side-labelled processes; `BiasRuns` stays
+empty and the state explicitly says `bias-jit-only-complete-not-performance-approval`.
+It cannot establish reproducibility of a prior timing process's machine code.
+Initial capture 36695424639 requested `DOTNET_JitDisasmAssemblies`, which did not
+filter the .NET 10 output; retain that mixed dump as limited evidence, not a
+reliably side-labelled parser listing. Revalidate it with its recorded revision,
+not the corrected selector checker. Its uninstrumented timing matrix remains
+unchanged and is not repeated to obtain a pass.
+
+### Paired-Series Acceptance
 
 Unstable initial controls skip A/B and return exit 2. Otherwise the chosen old
 baseline is independently built and Plain correctness is checked before two A/B
@@ -204,6 +371,59 @@ Diagnostic elapsed/CPU counters are not paired timing results, and neither
 success nor a hotspot report establishes a speedup, no regression or permission
 to merge. Keep the fixed A/A and A/B protocol unchanged for subsequent patches.
 
+### Native On-CPU Evidence (Diagnostic Only)
+
+`pipe_native_profile` builds the frozen failed v4 workload at
+`89c06810e76c4623ebad3cfc89c4bcdef41acd59`. It does not invoke the timing runner.
+Two identical single-module workers complete the 36-case correctness matrix,
+warm up on one inherited CPU, then run serial Segmented128 diagnostic batches.
+Each capture attaches Linux perf to the actual worker PID for 30 seconds using
+`cpu-clock:u`, the monotonic clock required by JIT injection, 199 Hz and DWARF
+call chains. The peer remains idle. The report's misleadingly named Pid column
+contains thread IDs; retained process-group snapshots verify their worker owner.
+
+```sh
+gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_native_profile=true
+```
+
+To investigate the isolated bias, add `-f pipe_native_history_probe=true`.
+This collects both fixed preparation histories once, with before/after process
+CPU/fault and per-task scheduling context, under separate `SegmentedOnly` and
+`ContiguousPrelude` artifact directories. It never runs acceptance controls.
+The same flag selects those directories for artifact-only replay with
+`pipe_native_replay_run`; replay still launches no parser. See the
+[root-cause investigation protocol and evidence limits](bias-investigation.md).
+
+To repair analysis without resampling an existing capture, also pass
+`-f pipe_native_replay_run=ORIGINAL_RUN_ID`. Replay launches only perf analysis
+tools; it does not build or launch a parser worker. It retains the input run,
+source/binary context and raw-data hash. A single-worker replay is explicitly
+not a completed two-worker capture or timing approval.
+
+`DOTNET_PerfMapEnabled=1` exports native JIT code/maps in those same processes;
+`perf inject --jit` resolves the captured addresses and `perf annotate` retains
+hot-method assembly. See the official [runtime profiling settings](https://learn.microsoft.com/en-us/dotnet/core/runtime-config/debugging-profiling#export-perf-maps-and-jit-dumps)
+and [Linux perf JIT injection documentation](https://github.com/torvalds/linux/blob/v6.8/tools/perf/Documentation/perf-inject.txt).
+The collector explicitly sets `DOTNET_PerfMapStubGranularity=2` to export
+individual stubs rather than reserved blocks; this is an instrumentation-only
+setting, not a JIT optimization experiment. The [runtime exporter source](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/vm/perfmap.cpp)
+defines this flag and emits `perf-<pid>.map`, not a required `perfinfo` file.
+Native metadata is copied only after graceful worker shutdown.
+This is user-space on-CPU sampling, not managed sampled thread time, kernel CPU
+attribution or hardware cache/branch-counter evidence. Instrumentation affects
+execution; diagnostic batch durations are not throughput results.
+
+Artifacts retain raw perf data, same-PID jitdump/native bytes, code sizes,
+addresses, raw code hashes (not relocation-normalized), exclusive hotspot
+reports, stacks, assembly, source/binary fingerprints and worker transcripts.
+Collection rejects lost samples, fewer than 500 samples per worker, more than
+20% unresolved sampled period, missing workload symbols or missing assembly.
+These are collection-quality checks, not performance acceptance thresholds.
+The original failed VM/PIDs cannot be recaptured: this identifies hotspots in
+the frozen source on a new runner, not the cause of the old 5.28% divergence.
+The automatic timing job remains failed without retrial when its workload is
+unchanged. No diagnostic success can waive A/A failure or authorize merging.
+
 ### Initial Correctness Gate (September 2026)
 
 Comparing base `626f8af` and merged decoder improvement `8309abf`, with 37 rows,
@@ -218,3 +438,20 @@ returns nonzero if either side has an incorrect result, including an unfixed
 baseline compared with a corrected candidate. Use two independently built fixed
 revisions for a fully passing preflight; never weaken the expected checksum to
 time the broken baseline. See [measured evidence and repair validation](results.md).
+## Historical Same-PID Evidence
+
+Use `pipe_history=true` alone on the benchmark workflow for the hash-pinned,
+four-pair [historical replay protocol](history-protocol.md). It retains exact old
+request counts/order with new same-PID runtime, native and scheduling evidence,
+and boundary-only reference pairs for observer-effect comparison. It is not an
+acceptance rerun; the original failed timing gate stays failed. PR validation
+runs reconstruction tests and builds the decoder without launching parser timings.
+
+Use `pipe_history_replay_run=36807711817` with history mode for artifact-only
+recovery, or `pipe_history_jit_control=true` for the separately predeclared
+single-variable observer test. Never combine those modes. The first keyword
+test did not reproduce its positive controls. Use `pipe_history_same_run=true`
+with history mode for the predeclared six-pair same-runner reference/control/
+intervention study described in [history-protocol.md](history-protocol.md).
+Do not combine it with replay or the four-pair keyword mode; it refuses workflow
+retries and fails closed if both positive controls do not reproduce the bias.

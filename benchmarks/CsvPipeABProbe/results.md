@@ -430,3 +430,643 @@ capture on an IDE0010 switch-exhaustiveness analyzer error; the explicit default
 case fixed it. That failed run is incomplete evidence, not a timing-control
 failure. PR performance acceptance remains pending; no merge is authorized by
 either successful job.
+
+## JIT-Selected Getter Inlining: Not Accepted
+
+Candidate `5fdd1900b8b6dc95489e3ad2419eab82ca12b1a4` removed only the two
+`AggressiveInlining` attributes on `CsvRow.GetValue` and `GetValueString`.
+No `NoInlining`, decoding-path split, semantics change, package update or
+benchmark adjustment was introduced. Corrected main baseline was
+`d6e84c03511a88d8785deee5335ed987a6366a77`. This single experiment ran entirely
+in CI. The production change was withdrawn because it did not establish a
+repeatable incremental throughput benefit, not because a regression was proven
+against corrected main. Production row code again matches that main baseline.
+
+### Incremental Comparison Failed Closed
+
+[Incremental run 36676057014](https://github.com/KoalaFacts/HeroParser/actions/runs/36676057014/job/109761163748)
+passed all 36 independently checked candidate/candidate correctness cases.
+The first pre-A/B A/A process had Stream4096 median 0.947322, below the unchanged
+0.95 floor (p10 0.939878, p90 0.953999). Other transports and the second A/A
+process passed. Raw pairs were revalidated against the committed gate.
+State was `unstable-before-ab-skipped`: there are **no incremental A/B samples**,
+and no post-A/B controls. This is inconclusive timing evidence, not a correctness
+failure or proof that removing the attributes hurts or helps throughput. It was
+not retried, waived, or replaced by an unrelated job's stable controls.
+
+### Original-Baseline Comparison
+
+[Run 36676085300](https://github.com/KoalaFacts/HeroParser/actions/runs/36676085300)
+compared the same candidate against original source
+`5c549d193a510a06fa24e23627b23a2df0cf0188`. Full 36-case fixed/fixed correctness
+passed before and after A/B, as did the nine Plain old/fixed cases. All 12 A/A
+transport/run controls passed the original bounds; raw control pairs were also
+revalidated locally. State was `stable-controls-review-ab`, not optimization
+approval. Elapsed-time ratios below are candidate/original baseline.
+
+| Transport | Run 1 Median | Run 1 p10-p90 | Run 2 Median | Run 2 p10-p90 |
+|---|---:|---:|---:|---:|
+| Contiguous | 1.1692 | 1.1345-1.1809 | 1.0439 | 1.0275-1.3148 |
+| Segmented128 | 1.0912 | 1.0818-1.1069 | 1.1135 | 1.0803-1.1242 |
+| Stream4096 | 1.1629 | 1.1456-1.1729 | 1.2942 | 1.2747-1.3062 |
+
+Regression against the original baseline remains, with appreciable fresh-process
+variation. This does not quantify incremental improvement over corrected main.
+Do not compare these ratios with prior original-baseline jobs to estimate gains:
+this VM reported AMD EPYC 9V45, whereas the incremental VM reported EPYC 7763.
+All jobs used Ubuntu 24.04.5 LTS, SDK 10.0.401/runtime 10.0.12, four logical
+processors, workstation GC and no affinity override. Whole-read allocation
+median deltas were +8 bytes per 2000-row read against the original baseline,
+not per row or an incremental allocation result.
+
+The fixed 2000-row/30-pair/10-warmup-pair/100 ms calibration-target protocol was
+unchanged. Two fresh processes ran per phase when controls permitted proceeding.
+The shorter-after-warmup calibration limitation, hosted-VM limitations and Plain
+Generated-only timing scope still apply. No local .NET build/test/benchmark ran.
+
+### JIT Hypothesis Partially Verified, Speed Unproven
+
+[Independent diagnostic run 36676099576](https://github.com/KoalaFacts/HeroParser/actions/runs/36676099576)
+completed all six warmed managed-stack captures and two separate JIT processes
+against corrected main on EPYC 7763. All nine Plain preflight cases and every
+profiled full read passed. Normal tiering/PGO remained enabled; neither JIT dumps
+nor sampling ran inside accepted timing processes. Actual Tier1 sizes in this
+single job were:
+
+| Method | Corrected Main Bytes | Candidate Bytes |
+|---|---:|---:|
+| Generated `PipeRecord` byte binder `TryBind` | 8839 | 2503 |
+| `Csv.TryBindPipeSequenceRow` | 11038 | 9833 |
+| `CsvRow<byte>.GetValue` | 1496 | 1496 |
+| `CsvRow<byte>.GetValueString` | 1865 | 1865 |
+
+The binder shrank about 72%; its wrapper shrank about 11%. Getter listings were
+unchanged. This verifies a caller code-size effect, not reduced total native
+code across the application, instruction-cache misses, CPU cost or a throughput
+gain. Do not treat the unpaired diagnostic process read counts as a substitute
+for the skipped incremental A/B. The managed sampled-thread-time and global
+initialization/wait-stack limitations described above remain; this is not
+precise native/kernel on-CPU evidence.
+
+Diagnostic baseline parser/model IDs were `d70eba4f-bf8c-4481-80fe-ae4be5fef040`
+/ `94e83124-7c02-4c96-94f0-1705787ca18a`. Candidate IDs were
+`83b06080-8feb-43c3-a33b-23b1a0040444` /
+`5c431987-ad0a-4fa1-8f85-9000001a664b`, consistent across all eight diagnostic
+processes and both timing jobs. Independent candidate-source A/A baseline IDs
+were `d4f1dfa8-3de9-4238-a0e5-c3aff832f373` /
+`fa1c34e8-dc71-4486-8e83-a9d6d0be25b5`. Original-source A/B baseline IDs were
+`a7445e61-88db-45d2-98ba-7ddd948b8caa` /
+`2d9b3922-ed7f-4539-b6c7-b5ce8583d279`.
+
+Artifacts `csv-pipe-paired-36676057014-1`, `csv-pipe-paired-36676085300-1` and
+`csv-pipe-profile-36676099576-1` retain the raw failed controls, valid timing,
+source/module fingerprints, runner context and diagnostic outputs for 30 days.
+The successful original-baseline job does not erase the failed incremental job.
+No second production hypothesis was attempted, no merge is authorized, and
+smaller caller assembly alone is not grounds to ship this change.
+
+## Timing Protocol V2: Duration Valid, Stability Not Accepted
+
+Revision `80f25deb75bbe6057598da17f50a335b2945ad72` changes benchmark tooling
+only. Production parser and tests match main
+`d6e84c03511a88d8785deee5335ed987a6366a77`. No cold-decoding isolation or new
+inlining experiment was attempted. Protocol
+`csv-pipe-v2-post-warmup-calibration` distinguishes these measurements from v1;
+do not combine their ratios to infer a parser improvement.
+
+V2 runs a pilot, at least ten seconds of paired warmup and ten pairs per
+transport, then final shared-repeat calibration targeting 125 ms. Every measured
+batch must actually last at least 100 ms. The 65536-repeat cap fails closed if
+calibration cannot meet its target. Normal tiering/PGO, fixture, consumer,
+checksum and A/A bounds remain unchanged: median [0.95, 1.05], p10 >= 0.90,
+p90 <= 1.10. Ten seconds of warmup is not proof of JIT or runner stability.
+
+### Fixed Three-Process Controls
+
+[Controls-only run 36683148952](https://github.com/KoalaFacts/HeroParser/actions/runs/36683148952/job/109782893129)
+built two independent copies of revision `80f25deb`, passed all 36 correctness
+preflight cases, and completed the predetermined three fresh A/A processes.
+All three logs are valid, but the third process fails the unchanged stability
+gate. State is **`unstable-controls-only-no-ab`**. There are no A/B samples.
+
+| Process | Transport | Median | p10 | p90 | Min A Batch (ms) | Min B Batch (ms) | Stable |
+|---|---|---:|---:|---:|---:|---:|---|
+| 1 | Contiguous | 1.010042 | 1.000405 | 1.021510 | 195.6532 | 198.7968 | Yes |
+| 1 | Segmented128 | 1.011753 | 1.003048 | 1.015865 | 206.2072 | 208.7529 | Yes |
+| 1 | Stream4096 | 1.011464 | 1.007591 | 1.017723 | 202.3875 | 205.1678 | Yes |
+| 2 | Contiguous | 1.035833 | 1.029293 | 1.040198 | 196.5088 | 204.2348 | Yes |
+| 2 | Segmented128 | 0.990777 | 0.985654 | 0.997565 | 217.4145 | 216.3389 | Yes |
+| 2 | Stream4096 | 1.023477 | 1.020044 | 1.027049 | 204.7850 | 209.6725 | Yes |
+| 3 | Contiguous | 0.964752 | 0.960226 | 0.969568 | 208.6357 | 200.7604 | Yes |
+| 3 | Segmented128 | **0.939834** | 0.935889 | 0.945571 | 210.9594 | 197.6384 | **No** |
+| 3 | Stream4096 | 0.985978 | 0.980473 | 0.991431 | 209.1866 | 205.6639 | Yes |
+
+All 270 raw pairs (540 actual batches), calibration ordering, duration products
+and reported percentiles were revalidated against the committed checker using
+downloaded artifacts. The shortest batch was 195.6532 ms; all nine paired
+warmups lasted 10.0145-10.2799 seconds. Each process ended with zero invalid
+cases. The duration floor is satisfied in this run, but overall measurement
+acceptance is not. The failed segmented percentiles cluster below 0.95 rather
+than merely having noisy tails. This is evidence of side asymmetry within that
+process, not proof of its cause or any production performance change.
+
+### Automatic PR Controls Also Fail Closed
+
+[PR paired job 36683150159](https://github.com/KoalaFacts/HeroParser/actions/runs/36683150159/job/109783227155)
+passed its 36-case preflight and completed both scheduled pre-A/B controls.
+The first segmented median was 0.934859 (p10 0.928366, p90 0.941351), below
+0.95; the second process passed for all transports. State is
+**`unstable-before-ab-skipped`**: A/B and post-A/B controls never ran. Both logs
+were revalidated; all 180 pairs (360 batches) met the duration floor, with a
+193.3602 ms minimum. All six paired warmups exceeded ten seconds. This separate
+failure is retained, not substituted for or averaged with the fixed three-run
+experiment. Other benchmark jobs do not waive this gate.
+
+### Environment, Preparation and Decision
+
+Both jobs reported AMD EPYC 7763, Ubuntu 24.04.5 LTS, four logical processors,
+SDK 10.0.401/runtime 10.0.12, workstation GC and no affinity override. Parser
+module IDs were baseline `fe24812e-2556-4424-ae03-7a1717c8154b` and candidate
+`2e93d683-4c53-4cfe-9bb5-fff608627492`; model IDs were baseline
+`7bdd7296-a772-4ca3-8b0f-5b887c1dd9df` and candidate
+`d2b84df5-cbfc-499f-9c69-571c55d670da`. These fingerprints were consistent
+across the five timing processes. Both A/A sides used the same source revision,
+but independent assemblies. Hosted virtual hardware is not an exclusive
+physical runner; module layout, JIT state and runtime/runner effects remain
+unisolated hypotheses, not established causes.
+
+The manual job passed 31 PowerShell parsing/control assertions; every build in
+that job reported zero warnings and errors. Initial revision `0c8fe9df` failed
+before timing in runs 36682682234 and 36682675556 on IDE0055 formatting errors.
+Revision `80f25deb` corrected the new initializer formatting without changing
+parameters. Those preparation failures are not timing-control failures and
+provide no timing samples. No local .NET build/test/benchmark or timing test ran;
+local work was limited to static checks and downloaded-evidence analysis.
+
+Artifacts `csv-pipe-paired-36683148952-1` and
+`csv-pipe-paired-36683150159-1` retain raw records, summaries, fingerprints and
+runner context for 30 days; `csv-pipe-paired-36682682234-1` retains the initial
+incomplete preparation result. Previous v1 failures remain recorded above.
+No instability retry or relaxed threshold was used to obtain acceptance.
+
+**Decision:** keep the PR draft. Actual batch-duration enforcement is verified,
+but stable A/A measurement is not. Investigate the two-side asymmetry before
+another production candidate; cold-decoding isolation remains deferred. Neither
+these jobs nor unrelated green CI establish throughput benefit or authorize a
+merge.
+
+## Same-Source Bias Diagnosis: Dual-Consumer Effects Remain
+
+[Fixed diagnostic run 36695424639](https://github.com/KoalaFacts/HeroParser/actions/runs/36695424639/job/109822124545)
+used source `a0a2f4ccd9a1ffea1ac0c905ce6ed86eb16d7590` for both independently
+built parser/model copies. Production parser and tests still match main. Its
+protocol is `csv-pipe-bias-v1-diagnostic-only`; these records cannot satisfy
+ordinary A/A or A/B acceptance. Job success means the predetermined diagnostics
+completed with valid records, **not** that every ratio passed the original gates.
+
+### Fixed Experiment and Verified Raw Records
+
+The four modes route logical A/B measurement slots to different consumers:
+Independent uses baseline/candidate, Swapped uses candidate/baseline, BaselineSelf
+uses baseline/baseline, and CandidateSelf uses candidate/candidate. Routing is
+outside the timed batch. `Case.MeasureAsync` and `ReadAsync` implementations
+remain shared and unchanged. Self modes load both assemblies but execute just
+one consumer; swapped mode does not rename assemblies or reverse loader metadata.
+
+Each mode ran in three fresh processes, in a fixed order, reversed in cycle 2.
+All twelve processes completed, including the biased ones. All 1080 raw pairs
+(2160 uninstrumented batches) were revalidated against the checker. Minimum batch
+duration was 192.9130 ms; the 36 paired warmups lasted 10.0017-10.3832 seconds.
+Every process ended with zero invalid cases. Preparation passed the original
+36-case matrix and each mode's full 36-case matrix (180 verified cases total).
+The job passed 44 script parsing/control assertions and all builds reported
+zero warnings/errors. Five invalid diagnostic argument forms were rejected
+before timing. No local builds, tests or timing ran.
+
+| Cycle | Mode | Contiguous Median | Segmented128 Median | Stream4096 Median | Cases Within Original Bounds |
+|---:|---|---:|---:|---:|---:|
+| 1 | Independent | 1.009225 | 1.026547 | 1.008359 | 3/3 |
+| 1 | Swapped | **1.099555** | **1.093302** | **1.186900** | **0/3** |
+| 1 | BaselineSelf | 0.999751 | 1.000980 | 0.999820 | 3/3 |
+| 1 | CandidateSelf | 0.999272 | 1.000626 | 0.999646 | 3/3 |
+| 2 | CandidateSelf | 0.999171 | 0.999924 | 1.000137 | 3/3 |
+| 2 | BaselineSelf | 0.999684 | 1.000245 | 0.998947 | 3/3 |
+| 2 | Swapped | 0.993126 | 1.012361 | 1.007594 | 3/3 |
+| 2 | Independent | 0.973023 | **1.060531** | 0.976607 | **2/3** |
+| 3 | Independent | 1.009189 | 0.984455 | 1.002628 | 3/3 |
+| 3 | Swapped | 0.987241 | 0.986048 | 0.984988 | 3/3 |
+| 3 | BaselineSelf | 1.000287 | 0.998889 | 1.000599 | 3/3 |
+| 3 | CandidateSelf | 1.000715 | 0.999637 | 1.000998 | 3/3 |
+
+All eighteen self-comparison cases passed the unchanged bounds, with medians
+0.998889-1.000998. Four of eighteen dual-consumer cases failed. The failed cases
+remain biased in both ordering cohorts and both time halves (15 pairs per group):
+
+| Cycle/Mode/Transport | p10-p90 | Logical B First | Logical A First | First Half | Second Half |
+|---|---:|---:|---:|---:|---:|
+| 1/Swapped/Contiguous | 1.092635-1.105071 | 1.101008 | 1.099356 | 1.100013 | 1.099356 |
+| 1/Swapped/Segmented128 | 1.088239-1.096528 | 1.094119 | 1.091617 | 1.094114 | 1.091838 |
+| 1/Swapped/Stream4096 | 1.147429-1.193019 | 1.190176 | 1.186212 | 1.187218 | 1.186295 |
+| 2/Independent/Segmented128 | 1.052456-1.070798 | 1.059539 | 1.061522 | 1.058467 | 1.061823 |
+
+The common clock/batch/order mechanism did not produce a comparable bias when
+both slots executed the same consumer. This narrows investigation toward
+dual-consumer/module execution and its specialization/warmup/JIT state. It does
+not isolate assembly naming, loader/code layout, shared generic specialization,
+dynamic PGO or runtime effects as a cause. Self mode also changes execution
+history, so it is not a proof that module identity alone causes the bias.
+Independent and swapped processes are not exact reciprocal experiments: their
+fresh JIT histories differ. No single physical side was consistently faster.
+
+The runner reported EPYC 7763, Ubuntu 24.04.5 LTS, SDK 10.0.401/runtime 10.0.12,
+four logical processors, workstation GC and no affinity override. All twelve
+timing processes had identical source/module/runtime fingerprints. Parser IDs
+were baseline `e1cce837-203a-44c5-b468-2c1cff0da38e` and candidate
+`6fc6b3e6-beb1-446b-af26-ae9671d31e27`; model IDs were baseline
+`8b0c0b1b-a0e8-42a3-9ce3-d527b2731220` and candidate
+`b1bbc742-325c-4bc4-93ba-0ec634ccc8bc`. Virtual-runner limitations still apply.
+
+### JIT Evidence Has Separate Limits
+
+The thirteenth, instrumented Independent process produced a mixed JIT dump.
+The requested `DOTNET_JitDisasmAssemblies` setting did not filter this .NET 10
+output: unrelated runtime/JSON methods appear. Identically named parser/model
+methods from the two assemblies cannot be reliably assigned to sides merely
+by their dump order. Retain this raw dump, but do not describe it as a reliably
+side-labelled parser capture or accepted timing.
+
+The distinctly named benchmark consumer state machines can be identified:
+baseline/candidate both initially had 2703-byte Tier1-OSR listings; candidate
+also had a later 2481-byte OSR listing. Their observed final Tier1 listings were
+4971/4966 bytes. This demonstrates compilation-state variation, not its CPU
+cost or a causal explanation for a different, uninstrumented timing process.
+It does not establish instruction-cache behavior or a production gain.
+
+Revision `e45cdafc3ced4b4b1813af041c0a034a00c79fba` corrects capture to the
+[.NET 10 assembly-qualified method selector](https://github.com/dotnet/runtime/blob/v10.0.0/docs/design/coreclr/jit/viewing-jit-dumps.md#specifying-method-names):
+`DOTNET_JitDisasm=assembly!method`. Two separately labelled Independent processes
+select baseline or candidate parser/model assemblies plus the probe. JIT-only
+mode collects these without repeating the twelve uninstrumented processes.
+Corrected JIT collection results are recorded separately below.
+
+### Preparation Failures and Other Automatic Jobs
+
+Initial revision `593ead14e945c17df6d0c097763c74b2f9b28c83` failed in run
+36695200414 before builds/timing: PowerShell `switch` rebound `$_` while selecting
+cohorts. The new tests caught the empty group. Revision `a0a2f4cc` preserves the
+sample in a separate variable and passed uniform and nonuniform cohort tests.
+The preparation failure produced no timing data and was not a stability failure.
+
+Automatic documentation-head run 36685052211 subsequently completed with
+`stable-controls-review-ab`: all twelve A/A transport cases passed, as did
+36/9/36-case preflights and raw duration checks. Segmented main/head A/B medians
+were 0.974402 and 1.022769 despite no production change. Automatic run 36695402769
+also completed its paired job with stable controls on `a0a2f4cc`. These jobs are
+not repeats of the fixed failed manual trial, do not erase either earlier
+failure, and do not establish a performance gain. Do not pool their ratios with
+diagnostic modes or choose only favorable jobs.
+
+Artifact `csv-pipe-bias-36695424639-1` retains all raw pairs, per-mode checks,
+cohorts, fingerprints, runner context and the limited mixed dump for 30 days.
+The unchanged acceptance failures above remain authoritative evidence. **Keep
+the PR draft and production cold-decoding isolation deferred:** the problematic
+comparison boundary is narrower, but stable dual-source measurement and the
+precise native mechanism are still unproven. No merge is authorized.
+
+### Corrected Side-Labelled JIT Collection
+
+[JIT-only run 36698185404](https://github.com/KoalaFacts/HeroParser/actions/runs/36698185404/job/109831104982)
+completed on `e45cdafc`. Its state is
+`bias-jit-only-complete-not-performance-approval`, with **zero uninstrumented
+timing runs** and two independently validated JIT processes. The original twelve
+timing processes were not repeated. All 46 script parsing/control assertions,
+the normal 36-case preflight and Independent 36-case preflight passed; builds
+reported zero warnings/errors. One instrumented process was outside the original
+ratio bounds; it remains recorded, not used as uninstrumented acceptance evidence.
+
+Assembly-qualified selectors produced baseline/candidate dumps with 551/550
+listings respectively and no unrelated `System.Text.Json` listings. Each file
+has one selected parser/model side plus both benchmark consumers. Actual observed
+Tier1 listings in these **different diagnostic processes** were:
+
+| Method | Baseline-Selected Process | Candidate-Selected Process |
+|---|---:|---:|
+| Selected generated byte binder `TryBind` | 8876 bytes | 8825 bytes |
+| Selected `Csv.TryBindPipeSequenceRow` | 11378 bytes | 11342 bytes |
+| Probe baseline consumer `MoveNext` | 4966 bytes | 4971 bytes |
+| Probe candidate consumer `MoveNext` | 4966 bytes | 4971 bytes |
+
+The two consumers had equal final sizes within each process, yet changed between
+processes. In the baseline-selected process both had a later 2476-byte OSR
+listing; the candidate-selected process had later baseline/candidate OSR listings
+of 2476/2481 bytes. These are observed compilation states, not proof that either
+side's generated code caused an uninstrumented regression. Equal sizes also do
+not imply identical code or cost. No instruction-cache counters or precise
+native on-CPU attribution were collected.
+
+Both processes used the same source/module/runtime fingerprints on EPYC 7763,
+Ubuntu 24.04.5 LTS, runtime 10.0.12/SDK 10.0.401, four logical processors,
+workstation GC and no affinity override. Parser IDs were baseline
+`adf97ef9-6f9d-4427-9b12-5428a6229a24` and candidate
+`0667130f-1063-4970-8ced-db017a274720`; model IDs were baseline
+`6362029e-3a57-4bfb-8749-f508a512f1cc` and candidate
+`ab3f431f-302e-4591-a1b5-68c65c020fec`. These are not the twelve timing processes'
+fingerprints or their machine-code capture. Artifact
+`csv-pipe-bias-36698185404-1` retains the two labelled dumps, raw checked records,
+source/module metadata and runner context for 30 days.
+
+**Next measurement candidate:** isolate the comparison execution boundary before
+changing decoding. Same-consumer self checks are useful harness controls, not a
+replacement for comparing independent source versions. A future isolation change
+needs its own fixed A/A validation and must retain every existing failure; do not
+accept this PR or begin a production cold-decoding experiment based only on a
+successful diagnostic collection.
+
+## Isolated-worker protocol v3 validation
+
+The previous head `9067d12` retained the module-bias diagnosis and did not modify
+production code. Its automatic timing job in run `36699090534` failed the original
+same-source A/A gate: the second Segmented128 control median was `0.945745939`
+(p10 `0.940152987`, p90 `0.951140104`). That is a failed control, not a 5.4% gain.
+The failure remains evidence; no retry or relaxed bounds is authorized.
+
+The next controlled change replaces the active comparison boundary with two
+single-module processes running identical normal-identity parser/model binaries
+and one identical consumer executable. Protocol `csv-pipe-isolated-v3` fixes
+three fresh worker pairs (reverse launch order in cycle two), the original
+warmup/calibration/batch floors and A/A ratio bounds. Both sides complete the
+36-case correctness matrix before timing. IPC/startup/fixture construction are
+outside the worker's existing `Case.MeasureAsync` stopwatch. Separate transcripts
+and binary fingerprints are retained. The automatic lane is controls-only;
+A/B and cold-decoding optimization are suspended. Validation is not a performance
+approval or a claim that the earlier root cause is proven.
+
+### First unpinned isolated trial (retained failure)
+
+Source `af2115b369cf2087c48abfa3fbfcfedff598097e`, workflow run `36729744485`,
+job `109935870495`, artifact `csv-pipe-paired-36729744485-1`:
+all three fixed worker pairs completed validly, including reverse launch order
+in cycle two. State: `unstable-isolated-controls-no-ab`; comparisons are empty.
+The gate retained all nine transport cases and did not stop/retry on instability.
+
+| Cycle | Contiguous median | Segmented128 median | Stream4096 median | Within original bounds |
+| --- | ---: | ---: | ---: | --- |
+| 1 | 0.969276 | 0.946037 | 0.982740 | 2/3 |
+| 2 | 0.851478 | 0.958478 | 0.859915 | 1/3 |
+| 3 | 0.873599 | 0.960082 | 0.873691 | 1/3 |
+
+Single-module isolation is verified, but it is **not sufficient** to establish
+reliable timing. Identical parser/model/consumer binaries still diverged by up
+to 14.9%; the previous same-process double-module boundary is therefore not a
+necessary condition for this bias. Neither CPU placement nor JIT/code layout is
+proven causal by this trial. This is not a throughput improvement.
+
+One next controlled experiment changes CPU placement only: protocol
+`csv-pipe-isolated-v4-same-cpu` launches both workers on the first permitted Linux
+CPU using `taskset`, before runtime initialization. It verifies inherited CPU
+permissions and retains three fixed fresh pairs, the same warmup/calibration,
+batch floors and control bounds. This is a new labelled hypothesis, not a retry
+of the failed v3 trial. A/B and cold-decoding changes remain suspended. Its
+validation is pending CI; no valid failed timing trial will be rerun until green.
+
+### Pinned isolated v4 trial (retained failure)
+
+Run `36732093817`, job `109944181858`, source `89c0681`, artifact
+`csv-pipe-paired-36732093817-1`: all three fixed pairs completed validly on CPU 0,
+with identical binary fingerprints, 216 correctness checks and 270 timing pairs.
+Eight of nine cases passed the unchanged bounds. Cycle two Segmented128 failed:
+median `1.0528456844634384`, p10 `1.0491837765458325`, p90 `1.0559225612269472`.
+State remains `unstable-isolated-controls-no-ab`; no A/B was executed.
+
+| Cycle | Contiguous median | Segmented128 median | Stream4096 median |
+| --- | ---: | ---: | ---: |
+| 1 | 1.002877 | 1.042781 | 0.998036 |
+| 2 | 0.960718 | 1.052846 | 0.995756 |
+| 3 | 0.994428 | 1.014256 | 0.991575 |
+
+Same-CPU placement alone did not establish reliable timing. The next step is
+independent native on-CPU/JIT evidence for frozen-source Segmented128 workers,
+not another A/A attempt or a cold-decoding patch. Collection is pending CI.
+Its instrumented results cannot reproduce the old PIDs or establish a gain,
+the cause of their divergence, timing acceptance or merge readiness.
+
+The first native setup run `36785575557` failed before tests, builds or workload
+launch: tool discovery did not follow package-directory symlinks after apt
+installed perf. Its job log is retained; no CPU samples or raw trace were created.
+The next diagnostic revision corrects tool discovery, not the timing protocol.
+
+Run `36785902272` passed 83 control-gate and 45 native-evidence assertions and
+three builds with zero warnings/errors. Both workers completed their 36-case
+correctness matrix. The first worker's 30-second `cpu-clock:u` capture retained
+5,965 samples and a 94.710 MB raw trace, but collection stopped on an absent
+legacy `perfinfo` file. Artifact `csv-pipe-native-36785902272-1` retains this
+partial capture. Inspection also rejected its malformed jitdump: offset 427
+declares a 65,622-byte record for `stub ReportStubBlock<Unknown>`, with only
+32,854 bytes remaining. No native method attribution is accepted from it.
+
+The metadata repair makes `perfinfo` optional, waits for clean worker shutdown,
+and uses the runtime's individual-stub export flag instead of reserved-block
+export. This avoids that record type; it is not proof of the runtime write
+failure's exact cause. The strict jitdump bounds check remains unchanged.
+Flat exclusive reporting disables call-chain display while raw stacks remain
+retained. No A/A or A/B is repeated by these instrumentation repairs.
+
+Run `36786944328` passed 46 native assertions and retained 5,963 first-worker
+CPU samples plus a complete 2,913,747-byte jitdump. JIT injection rejected the
+trace's default clock (`jitted code must be sampled with perf record -k 1`).
+Artifact `csv-pipe-native-36786944328-1` remains incomplete, with no accepted
+hotspot report. The next revision explicitly records on the monotonic clock
+and verifies reported thread IDs against captured worker process-group records.
+It does not weaken native dump/sample validation or retry performance controls.
+
+Run `36787620269` completed a monotonic first-worker capture and JIT injection,
+but the report reader rejected a blank input line during parameter binding.
+The raw report also contains perf 6.17's extra unavailable-IPC placeholder.
+Artifact `csv-pipe-native-36787620269-1` retains the original native trace,
+complete jitdump, generated native ELF files, stacks and exclusive report.
+No second worker was sampled. The next revision repairs report-format handling
+and replays this artifact, without rebuilding or resampling the workload.
+Only the explicit unavailable-IPC placeholder is accepted as an extra column;
+other unexpected columns still fail. Native attribution is pending replay CI.
+
+Replay run `36788723003` passed 51 native assertions but stopped at perf's input
+ownership guard: downloaded data belongs to the runner user, while analysis was
+started as root. No new workload or samples were created. Its failure artifact
+is retained. Replay now runs unprivileged; it neither forces past the guard nor
+changes input ownership or sample-validation thresholds.
+
+### Accepted single-capture native attribution (not timing acceptance)
+
+[Replay run 36789199966](https://github.com/KoalaFacts/HeroParser/actions/runs/36789199966)
+at `efc1de8` passed 83 control-gate and 51 native-evidence assertions. It rebuilt
+no parser and launched no workload: it reprocessed the original `36787620269`
+first-worker trace. State is explicitly
+`native-replay-attribution-complete-not-full-two-worker-collection-or-performance-approval`.
+The original capture job remains failed, and the second worker was not sampled.
+Artifact `csv-pipe-native-36789199966-1` retains regenerated stacks, native ELF
+files, exclusive reports and three checked assembly annotations.
+
+Source `89c0681`, PID 3465, EPYC 7763, CPU 0, Ubuntu 24.04.5, .NET 10.0.12,
+workstation GC. Parser/model/consumer fingerprints match the failed v4 trial;
+this is still a different VM and instrumented execution, not its old process.
+The raw trace SHA-256 before and after replay is
+`59d7127bef15bbf6667fb9906b1ec7c911de27f73b1dda3905ba34ca648ffd50`.
+There are 5,967 samples, zero reported lost samples, 15,660 validated native
+code-load records and 6.2343% unresolved sampled period.
+
+| Exclusive native symbol | Samples | Process user-space sampled period | Tier1 native bytes |
+| --- | ---: | ---: | ---: |
+| CsvPipeSequenceReader slow-path state machine | 2248 | 37.67% | 9846 |
+| Csv.TryBindPipeSequenceRow | 1007 | 16.88% | 12845 |
+| Case.CandidateAsync consumer state machine | 486 | 8.14% | 10374 |
+| Record enumerator state machine | 304 | 5.09% | not separately annotated |
+| CsvPipeSequenceReader.get_Current | 226 | 3.79% | not separately annotated |
+
+The denominator includes consumer checksums, runtime work and unresolved samples,
+not only parser time. Fully inlined descendants are charged to the native caller;
+this is not an inclusive managed-stack percentage or exact source-line cost.
+CPU-clock sample IPs can skid; individual instruction percentages are not precise
+hardware-event attribution, cache misses or an optimization's expected speedup.
+DWARF stack capture does not guarantee complete managed unwinding.
+
+The reader annotation shows a 984-byte stack reservation and a zeroing loop at
+ELF offsets `0xb0..0xc6`, holding about 10.72% of this method's sampled period.
+Its per-byte scan/cursor region has heavily sampled stack loads and checked
+position arithmetic near `0x62c` and `0x641`. The binder reserves 1592 stack
+bytes; its zeroing loop at `0xb9..0xcf` holds about 30.29% of that method's
+sampled period. These observations support investigating hot/cold method size,
+local-variable pressure and segmented cursor bookkeeping. They do not prove
+copying, decoding, stack clearing or JIT layout caused the old A/A divergence.
+
+### Artifact-only source mapping
+
+[Native hotspots to frozen source](native-source-map.md) records the JIT-version
+identities, ELF-to-method/process address conversion and confidence of each match.
+The reader's scalar loop structurally matches `Remaining`, `TryRead` cursor
+maintenance and the checked consumed-position expression. The binder's fixed
+entry-frame zeroing is distinct from the later dynamic split-row `stackalloc`;
+an exclusive helper-call sample does not measure inclusive copy cost.
+
+The original model PE/PDB identities match, and its embedded generated byte
+binder was recovered without regeneration. Recomputed document SHA-256 matches
+the PDB checksum, confirming numeric and string binding source call chains.
+Escaped decoding already has a separate helper. Exact native-to-IL/inlining and
+native-local maps are absent, so no particular C# local is blamed for the frame.
+The consumer's FNV checksum loops are also identified, not charged to parser work.
+
+No production changes, builds, tests, sampling or timing trials were introduced
+by this mapping. A segment-local reader scan is the next bounded experiment
+candidate, with binding held constant; fixed-frame pressure is a separate later
+hypothesis. Neither is an accepted optimization. Do not extend warmup, relax
+thresholds, retry failed controls or claim cold-path isolation is faster from
+this capture. Timing acceptance remains failed and merging remains unauthorized.
+PR review and latest-head CI are tracked separately from this static report.
+
+### Root-cause investigation of isolated bias
+
+[The investigation protocol](bias-investigation.md) records an artifact-only
+order/cohort analysis of the failed v4 run. Segmented128 is slower on side B in
+89 of 90 pairs across the three process pairs. Cycle two's median is 1.054107
+when B executes first and 1.053117 when A executes first; early/late cohorts are
+1.052042/1.052089. Allocated bytes match on every segmented pair in cycles one
+and two. These observations narrow simple order/outlier/allocation-amount models;
+they do not exclude GC pauses, scheduling, JIT/heap history or layout.
+
+The old one-worker native trace used Segmented-only warmup, unlike the failed
+controls' Contiguous-before-Segmented history. A new diagnostic mode collects
+both PIDs under two fixed preparation histories with CPU/wall/fault and scheduler
+snapshots, while keeping the frozen workload and failed timing gate intact.
+No production change or acceptance rerun is introduced.
+
+[Run 36797617555](https://github.com/KoalaFacts/HeroParser/actions/runs/36797617555)
+at `a9fff81` completed both histories once each: 84 native diagnostic checks,
+144 workload correctness cases, six build invocations with zero warnings/errors,
+and four traces with zero reported lost samples. Artifact validation confirms
+matching frozen parser/model/consumer hashes and the declared process/JIT owners.
+SegmentedOnly and ContiguousPrelude diagnostic batch B/A are 0.996944 and
+0.996841; neither reproduces the old 1.052846 median. These single instrumented
+long batches are not acceptance distributions and do not supersede failed controls.
+
+The reader's Tier1 bodies are 9823/9838 bytes in SegmentedOnly and 5319/5319 in
+ContiguousPrelude. Sampled work shifts from the reader state machine to a separate
+column-aware `TryReadRow`; its annotated scalar cursor/checked-position loop maps
+to the same frozen source. This supports investigating JIT/history sensitivity,
+not declaring it the bias's cause. Method size differences also occur within
+near-equal pairs. Scheduler statistics are disabled, and nearly equal process
+CPU/observer-wall time does not exclude GC or frequency effects.
+
+The failed second cycle used 135 Contiguous batches and 22463 parses per worker
+before segmented preparation, not the diagnostic's fixed prelude. The report
+records this mismatch and the next same-PID evidence boundary. Root cause remains
+unresolved; no throughput optimization or merge is approved.
+
+### Historical Same-PID Evidence
+
+[Capture 36807711817](https://github.com/KoalaFacts/HeroParser/actions/runs/36807711817)
+at `7252c32` completed four fixed original cycle-two histories. The capture CI
+remains failed on perf-text postprocessing; [artifact recovery 36808849164](https://github.com/KoalaFacts/HeroParser/actions/runs/36808849164)
+at `6ed56f2` recovered them without new workers or sampling. All 210 original
+files are unchanged; 288 correctness cases, 360 pairs / 720 batches, original
+requests, frozen hashes and runtime identities were revalidated. Decoder build
+had zero warnings/errors; 30 history and 84 native diagnostic checks passed.
+
+Segmented128 medians B/A in fixed order are 0.993049 (reference/B-first),
+1.020581 (observed/A-first), 1.065718 (observed/B-first), 1.001352
+(reference/A-first). Reference pairs do not reproduce the old bias; an observed
+pair shows over 5% B-side bias, but instrumentation/time/JIT history remain confounders. Raw same-PID
+code, runtime events and kernel scheduling evidence are now associated with its
+actual measured requests, not another later profiled process.
+
+In the larger observed segmented divergence, additional batch time is 393.8324 ms,
+recorded surviving-task run time 393.8661 ms, extra run-queue time 0.4932 ms,
+and runtime suspension overlap 0.7580 ms lower on B. Native sampled versions
+differ, including the binding wrapper's 11024 versus 11375 byte bodies. These
+observations constrain recorded wait-only explanations, not GC on-CPU work,
+frequency, layout or observer effects. [The investigation](bias-investigation.md)
+retains exact PIDs, code indices, coverage counts and scope limitations.
+
+A separately predeclared four-pair test changes only the EventPipe JIT keyword,
+not tiering/PGO or production code. Original timing acceptance stays failed;
+collection/replay success is not a root-cause verdict or merge approval.
+
+[Single-variable run 36809723846](https://github.com/KoalaFacts/HeroParser/actions/runs/36809723846)
+at `25c95d4` completed all four new fixed pairs once. GC+JIT/B-first,
+GC-only/A-first, GC-only/B-first, GC+JIT/A-first segmented medians are 0.991572,
+1.015000, 0.996265 and 0.977545. The GC+JIT conditions did not reproduce the
+earlier large bias; the predeclared result is inconclusive, not a JIT-keyword
+root cause or fix. Contiguous GC+JIT/A-first median remains 1.166577 (p90 1.399485).
+All eight runtime traces report zero loss; GC-only Method-event counts are zero.
+288 correctness cases, 360 pairs / 720 batches and all historical requests/frozen
+fingerprints were independently validated. 31 history and 84 native checks passed,
+with zero warnings/errors in decoder and frozen workload builds.
+
+The control runner model is AMD EPYC 9V45, not the preceding capture's EPYC 9V74.
+Within-job comparisons are same-runner; cross-job absolute timing comparisons
+are not. Diagnostic batches as short as ~103 ms are not a passed calibrated
+acceptance protocol. Both raw histories, every condition and the original failed
+gate remain retained. Root cause unresolved; no production patch or merge.
+
+## Fixed Same-Run Budget: Reproduction Gate Failed
+
+[Run 36814110508](https://github.com/KoalaFacts/HeroParser/actions/runs/36814110508)
+at `4bb4f48` completed exactly six predeclared reference/full-keyword/GC-only
+pairs on one AMD EPYC 7763 runner boot and CPU 0 in 14m26s. Twelve hardware
+checkpoints matched. Independent artifact checks validate 432 correctness cases,
+540 measured pairs / 1080 batches, 292 historical requests per worker, original
+fingerprints/order and every distribution. Eight runtime traces report zero
+loss; GC-only JIT-event counts are zero. CI passed 81 history and 84 native
+checks with warning/error-free decoder and frozen workload builds. Ordinary
+build/test CI at the measured revision separately passed all 24 jobs.
+
+Neither full-keyword positive control reproduced the old B-slower bias:
+segmented medians are 0.930464 and 0.938820, while GC-only medians are 0.930775
+and 0.911461. Boundary-only reference medians are 0.956523 and 1.006985; the first
+is outside the predeclared stable-reference interval. The result is
+`no-reproducing-same-run-control` and the measurement job deliberately FAILED.
+The opposite-direction differences are not parser improvements or proof of the
+old cause. No criteria were reversed, conditions dropped, extra pairs collected
+or retries dispatched. The [protocol](history-protocol.md) publishes every
+transport/condition and the [investigation](bias-investigation.md) retains the
+same-PID runtime/native/scheduling association. This budget is exhausted;
+existing artifacts remain analyzable without new sampling. Original acceptance
+remains failed and no production optimization or merge is approved.

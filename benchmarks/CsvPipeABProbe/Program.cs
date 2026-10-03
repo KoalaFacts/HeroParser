@@ -1,5 +1,7 @@
+#if !SINGLE_MODULE
 extern alias baseline;
 extern alias baselineModels;
+#endif
 using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
@@ -7,10 +9,12 @@ using System.IO.Pipelines;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+#if !SINGLE_MODULE
 using BaselineCsv = baseline::HeroParser.Csv;
 using BaselineOptions = baseline::HeroParser.SeparatedValues.Core.CsvReadOptions;
 using BaselineRecord = baselineModels::CsvPipeABModels.PipeRecord;
 using BaselineRecordOptions = baseline::HeroParser.SeparatedValues.Reading.Records.CsvRecordOptions;
+#endif
 using CandidateCsv = HeroParser.Csv;
 using CandidateOptions = HeroParser.SeparatedValues.Core.CsvReadOptions;
 using CandidateRecord = CsvPipeABModels.PipeRecord;
@@ -35,6 +39,14 @@ if ((OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
     process.ProcessorAffinity = (nint)long.Parse(affinity, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
 }
 
+#if SINGLE_MODULE
+await IsolatedWorker.RunAsync(settings);
+#else
+bool baselineSide = settings.BiasMode is "Swapped" or "CandidateSelf";
+bool candidateSide = settings.BiasMode is not ("Swapped" or "BaselineSelf");
+string protocol = "csv-pipe-v2-post-warmup-calibration";
+if (settings.ProfileSide is not null) protocol = "csv-pipe-profile-v1";
+else if (settings.BiasMode is not null) protocol = "csv-pipe-bias-v1-diagnostic-only";
 Write(new
 {
     kind = "environment",
@@ -49,6 +61,16 @@ Write(new
     candidateModelsMvid = typeof(CandidateRecord).Module.ModuleVersionId,
     baselineRef = Environment.GetEnvironmentVariable("HERO_PARSER_AB_BASELINE_REF"),
     candidateRef = Environment.GetEnvironmentVariable("HERO_PARSER_AB_CANDIDATE_REF"),
+    protocol,
+    settings.BiasMode,
+    diagnosticOnly = settings.BiasMode is not null,
+    logicalBaselineModule = baselineSide ? "Candidate" : "Baseline",
+    logicalCandidateModule = candidateSide ? "Candidate" : "Baseline",
+    jitDisasm = Environment.GetEnvironmentVariable("DOTNET_JitDisasm"),
+    jitDisasmAssemblies = Environment.GetEnvironmentVariable("DOTNET_JitDisasmAssemblies"),
+    minWarmupSeconds = 10,
+    calibrationHeadroom = 1.25,
+    maxCalibrationRepeats = 65536,
     settings.Rows,
     settings.Pairs,
     settings.WarmupPairs,
@@ -72,8 +94,8 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
         foreach (string path in new[] { "Scan", "Decode", "Generated" }.Where(x => settings.Path is null || x == settings.Path))
         {
             var run = new Case(fixture, transport, path);
-            var baselineCheck = await run.ReadAsync(candidate: false, inspectSegments: true);
-            var candidateCheck = await run.ReadAsync(candidate: true, inspectSegments: true);
+            var baselineCheck = await run.ReadAsync(baselineSide, inspectSegments: true);
+            var candidateCheck = await run.ReadAsync(candidateSide, inspectSegments: true);
             if (!run.IsValid(baselineCheck) || !run.IsValid(candidateCheck))
             {
                 invalidCases++;
@@ -85,34 +107,34 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
             Write(new { kind = "verified", scenario, transport, path, fixture.Rows, bytes = fixture.Bytes.Length, candidateCheck.SplitFields });
             if (settings.VerifyOnly) continue;
 
-            // Warm the actual consumer before calibrating; cold JIT time would undersize batches.
+            // The pilot only sizes warmup batches; final calibration follows the full warmup.
             for (int warm = 0; warm < 8; warm++)
             {
-                run.Validate(await run.ReadAsync(candidate: false, inspectSegments: false));
-                run.Validate(await run.ReadAsync(candidate: true, inspectSegments: false));
+                run.Validate(await run.ReadAsync(baselineSide, inspectSegments: false));
+                run.Validate(await run.ReadAsync(candidateSide, inspectSegments: false));
             }
-            int repeats = 1;
-            while (true)
+            int repeats = await CalibrateAsync(run, scenario, transport, path, 1, settings.MinSampleMs, "pilot", baselineSide, candidateSide);
+            var warmup = Stopwatch.StartNew();
+            int warmedPairs = 0;
+            do
             {
-                var calibrationA = await run.MeasureAsync(candidate: false, repeats);
-                var calibrationB = await run.MeasureAsync(candidate: true, repeats);
-                if (Math.Min(calibrationA.Milliseconds, calibrationB.Milliseconds) * repeats >= settings.MinSampleMs || repeats == 1000)
-                {
-                    Write(new { kind = "calibration", scenario, transport, path, repeats, baselineBatchMs = calibrationA.Milliseconds * repeats, candidateBatchMs = calibrationB.Milliseconds * repeats });
-                    break;
-                }
-                repeats = Math.Min(repeats * 2, 1000);
-            }
+                bool candidateFirst = (warmedPairs & 1) == 0;
+                await run.MeasureAsync(candidateFirst ? candidateSide : baselineSide, repeats);
+                await run.MeasureAsync(candidateFirst ? baselineSide : candidateSide, repeats);
+                warmedPairs++;
+            } while (warmedPairs < settings.WarmupPairs || warmup.Elapsed.TotalSeconds < 10);
+            warmup.Stop();
+            Write(new { kind = "warmup", scenario, transport, path, pairs = warmedPairs, elapsedSeconds = warmup.Elapsed.TotalSeconds });
+            repeats = await CalibrateAsync(run, scenario, transport, path, repeats, settings.MinSampleMs * 1.25, "post-warmup", baselineSide, candidateSide);
             var ratios = new List<double>();
             var before = new List<Measurement>();
             var after = new List<Measurement>();
             int wins = 0;
-            for (int pair = -settings.WarmupPairs; pair < settings.Pairs; pair++)
+            for (int pair = 0; pair < settings.Pairs; pair++)
             {
                 bool candidateFirst = (pair & 1) == 0;
-                var first = await run.MeasureAsync(candidateFirst, repeats);
-                var second = await run.MeasureAsync(!candidateFirst, repeats);
-                if (pair < 0) continue;
+                var first = await run.MeasureAsync(candidateFirst ? candidateSide : baselineSide, repeats);
+                var second = await run.MeasureAsync(candidateFirst ? baselineSide : candidateSide, repeats);
                 var a = candidateFirst ? second : first;
                 var b = candidateFirst ? first : second;
                 double ratio = b.Milliseconds / a.Milliseconds;
@@ -120,7 +142,21 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
                 before.Add(a);
                 after.Add(b);
                 if (ratio < 1) wins++;
-                Write(new { kind = "pair", scenario, transport, path, pair, candidateFirst, repeats, baseline = a, candidate = b, ratio });
+                Write(new
+                {
+                    kind = "pair",
+                    scenario,
+                    transport,
+                    path,
+                    pair,
+                    candidateFirst,
+                    repeats,
+                    baseline = a,
+                    candidate = b,
+                    baselineBatchMs = a.Milliseconds * repeats,
+                    candidateBatchMs = b.Milliseconds * repeats,
+                    ratio
+                });
             }
 
             Write(new
@@ -136,6 +172,8 @@ foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped"
                 candidateMs = Percentile(after.Select(x => x.Milliseconds), .5),
                 baselineBytes = Percentile(before.Select(x => (double)x.AllocatedBytes), .5),
                 candidateBytes = Percentile(after.Select(x => (double)x.AllocatedBytes), .5),
+                baselineMinBatchMs = before.Min(x => x.Milliseconds) * repeats,
+                candidateMinBatchMs = after.Min(x => x.Milliseconds) * repeats,
                 medianRatio = Percentile(ratios, .5),
                 p10Ratio = Percentile(ratios, .1),
                 p90Ratio = Percentile(ratios, .9),
@@ -149,6 +187,32 @@ Write(new { kind = "complete", invalidCases });
 Environment.ExitCode = invalidCases == 0 ? 0 : 1;
 
 static void Write<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value));
+
+static async Task<int> CalibrateAsync(Case run, string scenario, string transport, string path,
+    int repeats, double targetBatchMs, string stage, bool baselineSide, bool candidateSide)
+{
+    for (int attempt = 0; ; attempt++)
+    {
+        bool candidateFirst = (attempt & 1) == 0;
+        var first = await run.MeasureAsync(candidateFirst ? candidateSide : baselineSide, repeats);
+        var second = await run.MeasureAsync(candidateFirst ? baselineSide : candidateSide, repeats);
+        var a = candidateFirst ? second : first;
+        var b = candidateFirst ? first : second;
+        double baselineBatchMs = a.Milliseconds * repeats;
+        double candidateBatchMs = b.Milliseconds * repeats;
+        if (Math.Min(baselineBatchMs, candidateBatchMs) >= targetBatchMs)
+        {
+            Write(new { kind = "calibration", scenario, transport, path, stage, repeats, targetBatchMs, baselineBatchMs, candidateBatchMs });
+            return repeats;
+        }
+        if (repeats == 65536)
+        {
+            Write(new { kind = "calibration-limit", scenario, transport, path, stage, repeats, targetBatchMs, baselineBatchMs, candidateBatchMs });
+            throw new InvalidOperationException("Calibration repeat limit reached without meeting the batch target.");
+        }
+        repeats = Math.Min(repeats * 2, 65536);
+    }
+}
 
 static async Task RunProfileAsync(Settings settings)
 {
@@ -210,14 +274,16 @@ static double Percentile(IEnumerable<double> values, double percentile)
     return sorted[lower] + (sorted[(int)Math.Ceiling(index)] - sorted[lower]) * (index - lower);
 }
 
+#endif
+
 internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSampleMs, bool VerifyOnly, string? Scenario, string? Path,
-    string? ProfileSide, string? ProfileTransport, string? ProfileReadyFile, int ProfileSeconds)
+    string? ProfileSide, string? ProfileTransport, string? ProfileReadyFile, int ProfileSeconds, string? BiasMode)
 {
     public static Settings Parse(string[] args)
     {
         int rows = 2000, pairs = 20, warmup = 6, minSampleMs = 30;
         bool verify = false;
-        string? scenario = null, path = null;
+        string? scenario = null, path = null, biasMode = null;
         string? profileSide = null, profileTransport = null, profileReadyFile = null;
         int profileSeconds = 45;
         bool profileRequested = false;
@@ -225,6 +291,14 @@ internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSam
         {
             if (args[i] == "--verify-only") { verify = true; continue; }
             string option = args[i];
+            if (option == "--bias-mode")
+            {
+                if (i + 1 == args.Length) throw new ArgumentException("Missing value for --bias-mode.");
+                biasMode = args[++i];
+                if (biasMode is not ("Independent" or "Swapped" or "BaselineSelf" or "CandidateSelf"))
+                    throw new ArgumentException("Unknown bias diagnostic mode.");
+                continue;
+            }
             if (option is "--profile-side" or "--profile-transport" or "--profile-ready-file")
             {
                 profileRequested = true;
@@ -267,6 +341,9 @@ internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSam
                 default: throw new ArgumentException($"Unknown option: {option}.");
             }
         }
+        if (biasMode is not null && (profileRequested ||
+            (!verify && (scenario != "Plain" || path != "Generated"))))
+            throw new ArgumentException("Bias diagnostics require Plain Generated timing or verification, and cannot profile.");
         if (profileRequested)
         {
             if (profileSide is not ("Baseline" or "Candidate") ||
@@ -275,7 +352,7 @@ internal sealed record Settings(int Rows, int Pairs, int WarmupPairs, int MinSam
                 throw new ArgumentException("Profiling requires a side, transport and readiness file, with 1-120 seconds and no benchmark selectors.");
         }
         return new Settings(rows, pairs, warmup, minSampleMs, verify, scenario, path,
-            profileSide, profileTransport, profileReadyFile, profileSeconds);
+            profileSide, profileTransport, profileReadyFile, profileSeconds, biasMode);
     }
 }
 
@@ -367,7 +444,12 @@ internal sealed class Case(Fixture fixture, string transport, string path)
             : new BufferedReader(transport == "Contiguous" ? new ReadOnlySequence<byte>(fixture.Bytes) : fixture.Segmented);
         try
         {
+#if SINGLE_MODULE
+            return candidate ? await CandidateAsync(pipe, inspectSegments)
+                : throw new InvalidOperationException("The isolated worker has only one consumer.");
+#else
             return candidate ? await CandidateAsync(pipe, inspectSegments) : await BaselineAsync(pipe, inspectSegments);
+#endif
         }
         finally
         {
@@ -406,6 +488,7 @@ internal sealed class Case(Fixture fixture, string transport, string path)
         return new Result(rows, checksum, split);
     }
 
+#if !SINGLE_MODULE
     private async Task<Result> BaselineAsync(PipeReader pipe, bool inspectSegments)
     {
         var options = new BaselineOptions { MaxColumnCount = 4, MaxRowCount = fixture.Rows + 1 };
@@ -436,6 +519,7 @@ internal sealed class Case(Fixture fixture, string transport, string path)
         }
         return new Result(rows, checksum, split);
     }
+#endif
 }
 
 internal sealed class Segment : ReadOnlySequenceSegment<byte>

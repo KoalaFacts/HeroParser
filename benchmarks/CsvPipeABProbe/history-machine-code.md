@@ -120,3 +120,57 @@ other runtime CPU work, layout and observer/history effects remain uncontrolled.
 The next causal proposal would need to isolate one code-shape variable while
 retaining a reproducing same-run control. That experiment is not implemented
 or authorized here; the exhausted sampling budget is not extended.
+
+## Preparation Boundary Follow-Up
+
+Retained JIT timestamps place the optimized slow caller BEFORE segmented
+preparation: all four observed A versions are loaded 6.46-6.48 seconds after
+their verification request starts, after Contiguous warmup request 17. B
+versions load at 7.92-8.01 seconds, around Contiguous warmup requests 32-39.
+The separately emitted B optimized row reader follows segmented prepare
+request 138. Identical commands/counts do not imply identical code-generation
+history; merely lengthening segmented warmup does not undo an already emitted
+optimized caller. These timestamps locate code-load events, not compiler-start
+times or exact profile snapshots.
+
+The timing driver executes a 36-case matrix first: four scenarios, three
+transports, three paths. This exposes hot methods to verification workloads
+before the Plain/Generated timing fixture. Dynamic PGO uses earlier instrumented
+execution to optimize later code; see the [.NET 10.0.12 runtime design](https://github.com/dotnet/runtime/blob/v10.0.12/docs/design/features/DynamicPgo-InstrumentedTiers.md).
+That establishes a shared profiling boundary in the harness, not a demonstrated
+cause of the old timing failure. Register allocation and inlining consequences
+are still candidates, not proven causal mechanisms.
+
+`VerificationBoundaryControl` implements a candidate boundary repair without
+enabling it by default: a separate process must successfully complete all 36
+checks and exit before any timed worker starts. In the isolated treatment,
+timed workers acknowledge this external verification without executing its
+matrix. Preparation still validates eight Plain/Generated parses, and every
+timed parse retains row/checksum validation. A fresh verifier's completed PID,
+same parser/model hashes and revised driver hash are required. Normal legacy
+acceptance rejects the diagnostic protocol; it cannot silently replace v4.
+
+The dedicated, opt-in diagnostic fixes the scope BEFORE dispatch: matrix/B-first,
+external/A-first, external/B-first, matrix/A-first; eight timed workers plus
+one separate verifier, eight runtime traces, 180 full-matrix correctness cases,
+360 measured pairs / 720 batches, the original 292 requests per timed worker,
+10 hardware checkpoints, 30 job minutes, zero retries. All arms use the same
+new driver and unchanged historical parser, generated models and consumer
+source. Only verification location changes; runtime/PGO/tiering, observer
+settings, target workload and historical non-verification commands stay intact.
+Wall-clock history, heap state and mixed-input profile change together with
+verification location, so this is not a JIT-only intervention.
+
+Predeclared diagnostic prerequisite: BOTH matrix controls have segmented medians
+outside [0.95, 1.05] in the SAME direction, with p10 > 1 for B-slower or p90 < 1
+for B-faster. This new, explicitly two-direction diagnostic does not revise the
+old one-direction study's failed decision. Missing/opposite/non-reproducing
+controls remain inconclusive. Support for isolation additionally requires both
+external arms, all three transports: median [0.98, 1.02], p10 >= 0.95,
+p90 <= 1.05. No native code-size result alone qualifies improvement. The output
+always reports `TimingAcceptancePassed=false`; even a supported treatment needs
+independent confirmation and does not identify JIT versus heap/history effects.
+
+Implementation/CI protocol tests are not sampling authorization. No new root
+experiment is dispatched unless the user approves this separate fixed budget.
+The old records, failed gates and exhausted six-pair budget remain untouched.

@@ -7,6 +7,8 @@ on:
       - '.github/workflows/csv-pipe-history.yml'
       - 'benchmarks/CsvPipeABProbe/history-*.ps1'
       - 'benchmarks/CsvPipeABProbe/test-history-profile.ps1'
+      - 'benchmarks/CsvPipeABProbe/IsolatedWorker.cs'
+      - 'benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj'
       - 'benchmarks/CsvPipeDiagnostics/**'
   workflow_dispatch:
     inputs:
@@ -22,6 +24,10 @@ on:
         description: 'Six fixed pairs on one runner with flanking references and reproducing controls; no retry'
         type: boolean
         default: false
+      verification_boundary_control:
+        description: 'Fixed four-pair diagnostic of verification-process isolation; one separate verifier, no retries or acceptance'
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       other_modes:
@@ -34,6 +40,9 @@ on:
         type: boolean
         default: false
       same_run_control:
+        type: boolean
+        default: false
+      verification_boundary_control:
         type: boolean
         default: false
 
@@ -62,9 +71,14 @@ jobs:
           REPLAY_RUN: ${{ inputs.replay_run }}
           JIT_EVENT_CONTROL: ${{ inputs.jit_event_control }}
           SAME_RUN_CONTROL: ${{ inputs.same_run_control }}
+          VERIFICATION_BOUNDARY_CONTROL: ${{ inputs.verification_boundary_control }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           if ($env:OTHER_MODES -eq 'true') { throw 'Historical evidence cannot be combined with other experiment modes.' }
+          if ($env:VERIFICATION_BOUNDARY_CONTROL -eq 'true') {
+            if ($env:REPLAY_RUN -or $env:JIT_EVENT_CONTROL -eq 'true' -or $env:SAME_RUN_CONTROL -eq 'true') { throw 'Verification boundary requires its own fixed experiment.' }
+            if ($env:RUN_ATTEMPT -ne '1') { throw 'Verification-boundary sampling prohibits retries.' }
+          }
           if ($env:REPLAY_RUN -and $env:REPLAY_RUN -ne '36807711817') { throw 'Only the retained, predeclared capture may be replayed.' }
           if ($env:REPLAY_RUN -and $env:JIT_EVENT_CONTROL -eq 'true') { throw 'Artifact replay and causal intervention cannot be combined.' }
           if ($env:SAME_RUN_CONTROL -eq 'true') {
@@ -99,6 +113,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Runtime decoder build failed.' }
           dotnet format benchmarks/CsvPipeDiagnostics/CsvPipeDiagnostics.csproj --verify-no-changes --no-restore
           if ($LASTEXITCODE -ne 0) { throw 'Runtime decoder formatting failed.' }
+      - name: Compile diagnostic verification driver without timings
+        shell: pwsh
+        run: |
+          dotnet build src/HeroParser/HeroParser.csproj -c Release -f net10.0 --disable-build-servers -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'Parser test build failed.' }
+          $parser = "$PWD/src/HeroParser/bin/Release/net10.0/HeroParser.dll"
+          dotnet build benchmarks/CsvPipeABProbe/Models/CsvPipeABModels.csproj -c Release -p:AssemblyName=CsvPipeABModels "-p:ParserDll=$parser" -p:BaseIntermediateOutputPath=obj/boundary/ -p:OutputPath=bin/Release/boundary/ --disable-build-servers -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic model test build failed.' }
+          $models = "$PWD/benchmarks/CsvPipeABProbe/Models/bin/Release/boundary/CsvPipeABModels.dll"
+          dotnet build benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj -c Release -p:SingleModule=true "-p:FrozenParserDll=$parser" "-p:CandidateModelsDll=$models" -p:BaseIntermediateOutputPath=obj/boundary-test/ -p:OutputPath=bin/Release/boundary-test/ --disable-build-servers -p:UseSharedCompilation=false
+          if ($LASTEXITCODE -ne 0) { throw 'Diagnostic driver build failed.' }
+          ./benchmarks/CsvPipeABProbe/history-test-verification-worker.ps1 -WorkerDll benchmarks/CsvPipeABProbe/bin/Release/boundary-test/CsvPipeABProbe.dll
       - name: Prepare Linux evidence tools and common scheduler accounting
         if: github.event_name == 'workflow_dispatch' && inputs.replay_run == ''
         shell: bash
@@ -141,8 +167,9 @@ jobs:
         env:
           JIT_EVENT_CONTROL: ${{ inputs.jit_event_control }}
           SAME_RUN_CONTROL: ${{ inputs.same_run_control }}
+          VERIFICATION_BOUNDARY_CONTROL: ${{ inputs.verification_boundary_control }}
         run: |
-          ./benchmarks/CsvPipeABProbe/history-profile.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series" -Workspace "$env:RUNNER_TEMP/history-workload" -PerfTool $env:HERO_PARSER_PERF -AnalyzerDll benchmarks/CsvPipeDiagnostics/bin/Release/net10.0/CsvPipeDiagnostics.dll -JitEventControl:($env:JIT_EVENT_CONTROL -eq 'true') -SameRunControl:($env:SAME_RUN_CONTROL -eq 'true')
+          ./benchmarks/CsvPipeABProbe/history-profile.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series" -Workspace "$env:RUNNER_TEMP/history-workload" -PerfTool $env:HERO_PARSER_PERF -AnalyzerDll benchmarks/CsvPipeDiagnostics/bin/Release/net10.0/CsvPipeDiagnostics.dll -JitEventControl:($env:JIT_EVENT_CONTROL -eq 'true') -SameRunControl:($env:SAME_RUN_CONTROL -eq 'true') -VerificationBoundaryControl:($env:VERIFICATION_BOUNDARY_CONTROL -eq 'true')
       - name: Recover retained files only, never launch a measured worker
         if: github.event_name == 'workflow_dispatch' && inputs.replay_run != ''
         shell: pwsh

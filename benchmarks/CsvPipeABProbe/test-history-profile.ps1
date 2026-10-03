@@ -170,3 +170,56 @@ foreach ($ratio in @([double]::NaN, [double]::PositiveInfinity, 0.0, -1.0, $null
 $invalid = @(New-HistoryDecisionFixture); $invalid[0].Summaries[0].P10Ratio = 1.1
 Assert-HistoryReject { Get-CsvPipeSameRunDecision $invalid $true }
 Write-Host "PASS: $checks historical correlation checks; no parser or profiler executed"
+
+$boundary = @(Get-CsvPipeVerificationBoundaryConditions)
+function New-BoundaryFixture {
+    return @($boundary | ForEach-Object {
+        [pscustomobject]@{ Condition = $_; Complete = $true; Summaries = @(
+            foreach ($transport in @('Contiguous', 'Segmented128', 'Stream4096')) {
+                [pscustomobject]@{ Transport = $transport; Pairs = 30; MedianRatio = 1.0; P10Ratio = .99; P90Ratio = 1.01 }
+            }) }
+    }) | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+}
+function Assert-BoundaryState($Fixture, [string]$State, [bool]$Qualified) {
+    $actual = Get-CsvPipeVerificationBoundaryDecision $Fixture $true
+    if ($actual.State -ne $State -or $actual.CausalComparisonQualified -ne $Qualified -or $actual.TimingAcceptancePassed) {
+        throw 'Verification-boundary decision is incorrect or waived acceptance.'
+    }
+    $script:checks++
+}
+$fixture = @(New-BoundaryFixture)
+Assert-BoundaryState $fixture 'no-reproducing-verification-control' $false
+foreach ($i in @(0, 3)) {
+    $fixture[$i].Summaries[1].MedianRatio = 1.06
+    $fixture[$i].Summaries[1].P10Ratio = 1.055
+    $fixture[$i].Summaries[1].P90Ratio = 1.07
+}
+Assert-BoundaryState $fixture 'verification-isolation-supported-needs-confirmation' $true
+$fixture[1].Summaries[2].P90Ratio = 1.06
+Assert-BoundaryState $fixture 'verification-isolation-insufficient' $true
+$fixture[1].Summaries[2].P90Ratio = 1.01
+foreach ($i in @(0, 3)) {
+    $fixture[$i].Summaries[1].MedianRatio = .93
+    $fixture[$i].Summaries[1].P10Ratio = .92
+    $fixture[$i].Summaries[1].P90Ratio = .94
+}
+Assert-BoundaryState $fixture 'verification-isolation-supported-needs-confirmation' $true
+$fixture[3].Summaries[1].MedianRatio = 1.06
+$fixture[3].Summaries[1].P10Ratio = 1.055
+$fixture[3].Summaries[1].P90Ratio = 1.07
+Assert-BoundaryState $fixture 'no-reproducing-verification-control' $false
+$incomplete = Get-CsvPipeVerificationBoundaryDecision $fixture $false
+if ($incomplete.CausalComparisonQualified) { throw 'Missing hardware qualified the boundary experiment.' }
+Assert-BoundaryState $fixture[0..2] 'incomplete-verification-boundary' $false
+foreach ($field in @('Observed', 'BFirst', 'VerificationMode')) {
+    $invalid = @(New-BoundaryFixture); $invalid[0].Condition.$field = $null
+    Assert-HistoryReject { Get-CsvPipeVerificationBoundaryDecision $invalid $true }
+}
+$response = [pscustomobject]@{ kind = 'worker-verified'; Id = 1; pid = 2; verificationMode = 'external'; checks = @() }
+Assert-CsvPipeExternalVerification $response 2 1 $true
+Assert-HistoryReject { Assert-CsvPipeExternalVerification $response 2 2 $true }
+Assert-HistoryReject { Assert-CsvPipeExternalVerification $response 2 1 $false }
+Assert-HistoryReject { Assert-CsvPipeWorkerVerification $response }
+$response.checks = @([pscustomobject]@{ scenario = 'Plain' })
+Assert-HistoryReject { Assert-CsvPipeExternalVerification $response 2 1 $true }
+Write-Host "PASS: $checks history and verification-boundary checks; no parser or profiler executed"

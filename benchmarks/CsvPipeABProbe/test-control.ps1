@@ -190,6 +190,7 @@ Assert-IsolatedRejected 'short batch' { param($r) ($r | Where-Object kind -eq 'p
 Assert-IsolatedRejected 'dishonest summary' { param($r) ($r | Where-Object kind -eq 'summary' | Select-Object -First 1).medianRatio = .99; $r }
 Assert-IsolatedRejected 'missing completion' { param($r) $r | Where-Object kind -ne 'complete' }
 Assert-IsolatedRejected 'legacy protocol' { param($r) $r[0].protocol = 'csv-pipe-v2-post-warmup-calibration'; $r }
+Assert-IsolatedRejected 'diagnostic verification boundary' { param($r) $r[0].baselineWorker.protocol = 'csv-pipe-verification-boundary-v1'; $r }
 $legacyRejected = $false
 try { $null = Get-CsvPipeControlResult -Records (New-IsolatedRecords) } catch { $legacyRejected = $true }
 if (!$legacyRejected) { throw 'Legacy checker accepted isolated evidence.' }

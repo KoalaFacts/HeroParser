@@ -298,6 +298,9 @@ jobs:
           LEGACY_AB: ${{ inputs.pipe_ab }}
         run: |
           if ($env:LEGACY_AB -eq 'true') { throw 'A/B is suspended until isolated same-source controls have been accepted; use pipe_controls.' }
+          if ('${{ github.event_name }}' -ne 'workflow_dispatch') {
+            throw 'Timing acceptance remains FAILED at run 36732093817. Automatic infrastructure validation cannot authorize a new sampling budget.'
+          }
           # Diagnostic plumbing must not retrial an unchanged, already-failed workload.
           git diff --quiet 89c06810e76c4623ebad3cfc89c4bcdef41acd59 HEAD -- src Directory.Build.props Directory.Build.targets Directory.Packages.props global.json benchmarks/CsvPipeABProbe/Program.cs benchmarks/CsvPipeABProbe/IsolatedWorker.cs benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj benchmarks/CsvPipeABProbe/Models benchmarks/CsvPipeABProbe/run-isolated.ps1 benchmarks/CsvPipeABProbe/control.ps1
           if ($LASTEXITCODE -eq 0) { throw 'Timing acceptance remains FAILED at run 36732093817 (Segmented128 1.052845684 > 1.05). Unchanged workload: no A/A retrial. Native diagnostic success cannot waive this failure.' }

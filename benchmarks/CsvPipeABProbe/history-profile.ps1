@@ -5,12 +5,13 @@ param(
     [Parameter(Mandatory = $true)][string]$AnalyzerDll,
     [switch]$JitEventControl,
     [switch]$SameRunControl,
+    [switch]$VerificationBoundaryControl,
     [string]$OutputDirectory = 'BenchmarkDotNet.Artifacts/pipe-history/study'
 )
 
 $ErrorActionPreference = 'Stop'
 if (!$IsLinux) { throw 'Historical correlation requires Linux.' }
-if ($JitEventControl -and $SameRunControl) { throw 'Choose one fixed intervention protocol.' }
+if (@(@($JitEventControl, $SameRunControl, $VerificationBoundaryControl) | Where-Object { $_ }).Count -gt 1) { throw 'Choose one fixed intervention protocol.' }
 . (Join-Path $PSScriptRoot 'control.ps1')
 . (Join-Path $PSScriptRoot 'native-evidence.ps1')
 . (Join-Path $PSScriptRoot 'history-evidence.ps1')
@@ -75,6 +76,10 @@ if ($JitEventControl) {
     )
 }
 if ($SameRunControl) { $conditions = @(Get-CsvPipeSameRunConditions) }
+if ($VerificationBoundaryControl) { $conditions = @(Get-CsvPipeVerificationBoundaryConditions) }
+$boundaryConsumerHash = $null
+$externalVerifierPid = 0
+$externalVerifierComplete = $false
 $hardware = $null
 $hardwareChecks = 0
 $decision = $null
@@ -91,9 +96,22 @@ if ($SameRunControl) {
         WallClockLimitMinutes = 30; NoAcceptanceOrProductionChange = $true }
     $budget | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'fixed-budget.json')
 }
+if ($VerificationBoundaryControl) {
+    $hardware = Get-CsvPipeHardwareIdentity $cpu
+    $hardware | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'runner-identity.json')
+    $budget = [pscustomobject]@{ Protocol = 'csv-pipe-verification-boundary-v1'; SourceSha = $source
+        ConsumerSha = $diagnosticSha; HistoricalInputHashes = $hashes; Conditions = $conditions
+        ProcessPairs = 4; TimedWorkers = 8; ExternalVerifiers = 1; RequestsPerWorker = $plan.Count
+        CorrectnessCases = 180; MeasuredPairs = 360; MeasuredBatches = 720; RuntimeTraces = 8
+        HardwareCheckpoints = 10; Retries = 0; WallClockLimitMinutes = 30
+        ReproductionRule = 'Both matrix segmented controls outside [0.95,1.05] in the same direction; p10>1 or p90<1'
+        ExternalRule = 'Both orders/all transports: median [0.98,1.02], p10>=0.95, p90<=1.05'
+        NoAcceptanceOrProductionChange = $true }
+    $budget | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $OutputDirectory 'fixed-budget.json')
+}
 
 function Assert-HistoryHardware([string]$Condition, [string]$Phase) {
-    if (!$SameRunControl) { return }
+    if (!$SameRunControl -and !$VerificationBoundaryControl) { return }
     $actual = Get-CsvPipeHardwareIdentity $cpu
     [pscustomobject]@{ Condition = $Condition; Phase = $Phase; Utc = [DateTime]::UtcNow.ToString('O'); Identity = $actual } |
         ConvertTo-Json -Depth 5 -Compress | Add-Content (Join-Path $OutputDirectory 'hardware-checkpoints.ndjson')
@@ -158,7 +176,7 @@ function Read-HistoryWorker($Worker) {
     return $line | ConvertFrom-Json
 }
 
-function Start-HistoryWorker([string]$Directory, [bool]$Observed, [bool]$JitEvents) {
+function Start-HistoryWorker([string]$Directory, [bool]$Observed, [bool]$JitEvents, [string]$VerificationMode = 'matrix') {
     $info = [Diagnostics.ProcessStartInfo]::new('taskset')
     $info.UseShellExecute = $false; $info.CreateNoWindow = $true
     $info.RedirectStandardInput = $true; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
@@ -167,6 +185,10 @@ function Start-HistoryWorker([string]$Directory, [bool]$Observed, [bool]$JitEven
     $info.Environment['HERO_PARSER_WORKER_REF'] = $source
     $info.Environment['HERO_PARSER_WORKER_PROTOCOL'] = 'csv-pipe-isolated-v4-same-cpu'
     $info.Environment['HERO_PARSER_WORKER_CPU'] = $cpu
+    if ($VerificationBoundaryControl) {
+        $info.Environment['HERO_PARSER_WORKER_PROTOCOL'] = 'csv-pipe-verification-boundary-v1'
+        $info.Environment['HERO_PARSER_WORKER_VERIFICATION_MODE'] = $VerificationMode
+    }
     if ($Observed) {
         Set-CsvPipeHistoryTraceEnvironment $info (Join-Path $Directory 'runtime.nettrace') $JitEvents
     }
@@ -181,8 +203,11 @@ function Start-HistoryWorker([string]$Directory, [bool]$Observed, [bool]$JitEven
             if ($worker.Environment.$field -ne $original.baselineWorker.$field) { throw "Historical runtime setting mismatch: $field" }
         }
         foreach ($field in @('parserHash', 'modelsHash', 'consumerHash')) {
-            if ($worker.Environment.$field -ne $original.baselineWorker.$field) { throw "Frozen historical binary mismatch: $field" }
+            $expected = if ($field -eq 'consumerHash' -and $VerificationBoundaryControl) { $boundaryConsumerHash } else { $original.baselineWorker.$field }
+            if ($worker.Environment.$field -ne $expected) { throw "Frozen historical binary mismatch: $field" }
         }
+        if ($VerificationBoundaryControl -and ($worker.Environment.protocol -ne 'csv-pipe-verification-boundary-v1' -or
+            $worker.Environment.verificationMode -ne $VerificationMode)) { throw 'Boundary worker treatment mismatch.' }
         return $worker
     }
     catch { $process.Kill($true); $process.WaitForExit(); $process.Dispose(); throw }
@@ -201,7 +226,12 @@ function Send-HistoryRequest($Worker, $Request) {
     $kind = switch ($Request.Operation) { 'verify' { 'worker-verified' } 'prepare' { 'worker-prepared' } 'batch' { 'worker-batch' } 'stop' { 'worker-stopped' } }
     if ($response.kind -ne $kind -or $response.Id -ne $Request.Id -or $response.pid -ne $Worker.Process.Id) { throw 'Historical response identity mismatch.' }
     if ($Request.Operation -in @('prepare', 'batch') -and $response.transport -ne $Request.Transport) { throw 'Historical transport mismatch.' }
-    if ($Request.Operation -eq 'verify') { Assert-CsvPipeWorkerVerification $response }
+    if ($Request.Operation -eq 'verify') {
+        if ($VerificationBoundaryControl -and $Worker.Environment.verificationMode -eq 'external') {
+            Assert-CsvPipeExternalVerification $response $Worker.Process.Id $externalVerifierPid $externalVerifierComplete
+        }
+        else { Assert-CsvPipeWorkerVerification $response }
+    }
     if ($Request.Operation -eq 'batch' -and ($response.repeats -ne $Request.Repeats -or
         ![double]::IsFinite([double]$response.batchMs) -or $response.batchMs -le 0)) { throw 'Invalid historical batch response.' }
     if ($null -ne $before) {
@@ -230,14 +260,46 @@ try {
     $probe = Join-Path $workload 'benchmarks/CsvPipeABProbe'
     $parser = Join-Path $workload 'src/HeroParser/bin/Release/net10.0/HeroParser.dll'
     $models = Join-Path $probe 'Models/bin/Release/isolated/CsvPipeABModels.dll'
+    $consumerProbe = $probe
+    $consumerArguments = @()
+    $workerOutput = 'bin/Release/isolated'
+    if ($VerificationBoundaryControl) {
+        if ((Get-FileHash (Join-Path $probe 'Program.cs')).Hash -ne (Get-FileHash (Join-Path $PSScriptRoot 'Program.cs')).Hash) {
+            throw 'The benchmark consumer must remain byte-identical to the historical source.'
+        }
+        $consumerProbe = $PSScriptRoot
+        $consumerArguments = @("-p:FrozenParserDll=$parser")
+        $workerOutput = 'bin/Release/boundary'
+    }
     $builds = @(
         @((Join-Path $workload 'src/HeroParser/HeroParser.csproj'), '-c', 'Release', '-f', 'net10.0'),
         @((Join-Path $probe 'Models/CsvPipeABModels.csproj'), '-c', 'Release', '-p:AssemblyName=CsvPipeABModels', "-p:ParserDll=$parser", '-p:BaseIntermediateOutputPath=obj/isolated/', '-p:OutputPath=bin/Release/isolated/'),
-        @((Join-Path $probe 'CsvPipeABProbe.csproj'), '-c', 'Release', '-p:SingleModule=true', "-p:CandidateModelsDll=$models", '-p:BaseIntermediateOutputPath=obj/isolated/', '-p:OutputPath=bin/Release/isolated/')
+        (@((Join-Path $consumerProbe 'CsvPipeABProbe.csproj'), '-c', 'Release', '-p:SingleModule=true', "-p:CandidateModelsDll=$models", "-p:BaseIntermediateOutputPath=obj/$(if ($VerificationBoundaryControl) { 'boundary' } else { 'isolated' })/", "-p:OutputPath=$workerOutput/") + $consumerArguments)
     )
     foreach ($arguments in $builds) {
         & dotnet build @arguments --disable-build-servers -p:UseSharedCompilation=false | Out-Host
         if ($LASTEXITCODE -ne 0) { throw 'Frozen history build failed.' }
+    }
+    if ($VerificationBoundaryControl) {
+        $boundaryConsumerHash = (Get-FileHash (Join-Path $consumerProbe "$workerOutput/CsvPipeABProbe.dll") -Algorithm SHA256).Hash.ToLowerInvariant()
+        $directory = Join-Path $OutputDirectory 'external-verifier'
+        $null = New-Item -ItemType Directory -Path $directory
+        Copy-Item -Path (Join-Path $consumerProbe "$workerOutput/*") -Destination $directory -Recurse
+        Assert-HistoryHardware 'external-verifier' 'before'
+        $verifier = Start-HistoryWorker $directory $false $true 'matrix'
+        try {
+            $null = Send-HistoryRequest $verifier $plan[0]
+            $null = Send-HistoryRequest $verifier ([pscustomobject]@{ Id = 2; Operation = 'stop'; Transport = ''; Repeats = 0 })
+            if (!$verifier.Process.WaitForExit(10000) -or $verifier.Process.ExitCode -ne 0) { throw 'External full-matrix verifier did not exit cleanly.' }
+            $externalVerifierPid = $verifier.Process.Id
+            Assert-HistoryHardware 'external-verifier' 'after'
+            $externalVerifierComplete = $true
+        }
+        finally {
+            if (!$verifier.Process.HasExited) { $verifier.Process.Kill($true); $verifier.Process.WaitForExit() }
+            $verifier.Errors.GetAwaiter().GetResult() | Set-Content (Join-Path $directory 'worker-stderr.txt')
+            $verifier.Process.Dispose()
+        }
     }
     foreach ($condition in $conditions) {
         Assert-HistoryHardware $condition.Name 'before'
@@ -249,11 +311,15 @@ try {
             foreach ($side in $launch) {
                 $workerDirectory = Join-Path $directory $side
                 $null = New-Item -ItemType Directory -Path $workerDirectory
-                Copy-Item -Path (Join-Path $probe 'bin/Release/isolated/*') -Destination $workerDirectory -Recurse
+                Copy-Item -Path (Join-Path $consumerProbe "$workerOutput/*") -Destination $workerDirectory -Recurse
                 $jitEvents = !($JitEventControl -or $SameRunControl) -or $condition.JitEvents
-                $workers[$side] = Start-HistoryWorker $workerDirectory $condition.Observed $jitEvents
+                $mode = if ($VerificationBoundaryControl) { $condition.VerificationMode } else { 'matrix' }
+                $workers[$side] = Start-HistoryWorker $workerDirectory $condition.Observed $jitEvents $mode
             }
-            Assert-CsvPipeWorkerEnvironment $workers.a.Environment $workers.b.Environment $source $source
+            if ($VerificationBoundaryControl) {
+                Assert-CsvPipeBoundaryEnvironment $workers.a.Environment $workers.b.Environment $source $condition.VerificationMode
+            }
+            else { Assert-CsvPipeWorkerEnvironment $workers.a.Environment $workers.b.Environment $source $source }
             foreach ($side in @('a', 'b')) {
                 Get-Content "/proc/$($workers[$side].Process.Id)/maps" | Set-Content (Join-Path $workers[$side].Directory 'process-maps.txt')
             }
@@ -372,16 +438,29 @@ try {
         $decision | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'same-run-decision.json')
         if (!$decision.CausalComparisonQualified) { throw 'Same-run controls did not both reproduce the bias; fixed budget exhausted, no causal comparison or retry.' }
     }
+    if ($VerificationBoundaryControl) {
+        $decision = Get-CsvPipeVerificationBoundaryDecision $results ($hardwareChecks -eq 10 -and $externalVerifierComplete)
+        $decision | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'verification-boundary-decision.json')
+        if (!$decision.CausalComparisonQualified -or !$decision.ExternalDistributionsStable) {
+            throw 'Verification isolation did not qualify within the fixed budget; no retry or acceptance waiver.'
+        }
+    }
 }
 catch { $failure = $_.Exception.Message; throw }
 finally {
+    if ($VerificationBoundaryControl -and !$decision) {
+        $decision = Get-CsvPipeVerificationBoundaryDecision $results ($hardwareChecks -eq 10 -and $externalVerifierComplete)
+        $decision | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'verification-boundary-decision.json')
+    }
     if ($SameRunControl -and !$decision) {
         $decision = Get-CsvPipeSameRunDecision $results ($hardwareChecks -eq 12)
         $decision | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'same-run-decision.json')
     }
-    [pscustomobject]@{ Protocol = 'csv-pipe-history-v1-diagnostic-only'; DiagnosticOnly = $true
+    [pscustomobject]@{ Protocol = if ($VerificationBoundaryControl) { 'csv-pipe-verification-boundary-v1-diagnostic-only' } else { 'csv-pipe-history-v1-diagnostic-only' }; DiagnosticOnly = $true
         SourceRun = '36732093817'; HistoricalCycle = 2; SourceSha = $source; DiagnosticSha = $diagnosticSha
-        Intervention = if ($SameRunControl) { 'same-run-reference-and-eventpipe-jit-keyword' } elseif ($JitEventControl) { 'eventpipe-jit-keyword-only' } else { 'none-observer-bundle-comparison' }
+        Intervention = if ($VerificationBoundaryControl) { 'full-matrix-verification-location-only' } elseif ($SameRunControl) { 'same-run-reference-and-eventpipe-jit-keyword' } elseif ($JitEventControl) { 'eventpipe-jit-keyword-only' } else { 'none-observer-bundle-comparison' }
+        ConsumerSha = if ($VerificationBoundaryControl) { $diagnosticSha } else { $source }
+        ConsumerHash = $boundaryConsumerHash; ExternalVerifierPid = $externalVerifierPid; ExternalVerifierComplete = $externalVerifierComplete
         Cpu = $cpu; ClockTicksPerSecond = [long]$clockTicks; StopwatchFrequency = [Diagnostics.Stopwatch]::Frequency
         SchedulingStatisticsEnabled = $true; Failure = $failure; Results = $results
         FixedBudget = $budget; HardwareIdentity = $hardware; HardwareCheckpointsPassed = $hardwareChecks; Decision = $decision

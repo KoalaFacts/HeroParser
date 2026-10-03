@@ -18,17 +18,22 @@ internal static class IsolatedWorker
         if (parser.GetName().Name != "HeroParser" || models.GetName().Name != "CsvPipeABModels")
             throw new InvalidOperationException("Workers require the normal parser and model identities.");
         string protocol = Environment.GetEnvironmentVariable("HERO_PARSER_WORKER_PROTOCOL") ?? "csv-pipe-isolated-v3";
+        string verificationMode = Environment.GetEnvironmentVariable("HERO_PARSER_WORKER_VERIFICATION_MODE") ?? "matrix";
+        bool verificationBoundary = protocol == "csv-pipe-verification-boundary-v1";
+        if (verificationMode is not ("matrix" or "external") || (!verificationBoundary && verificationMode != "matrix"))
+            throw new InvalidOperationException("External verification requires the explicit diagnostic boundary protocol.");
         string? pinnedCpu = Environment.GetEnvironmentVariable("HERO_PARSER_WORKER_CPU");
         string? allowedCpus = OperatingSystem.IsLinux()
             ? File.ReadLines("/proc/self/status").Single(line => line.StartsWith("Cpus_allowed_list:", StringComparison.Ordinal)).Split(':')[1].Trim()
             : null;
-        if (protocol is not ("csv-pipe-isolated-v3" or "csv-pipe-isolated-v4-same-cpu") ||
-            (protocol == "csv-pipe-isolated-v4-same-cpu" && (pinnedCpu is null || allowedCpus != pinnedCpu)))
+        if (protocol is not ("csv-pipe-isolated-v3" or "csv-pipe-isolated-v4-same-cpu" or "csv-pipe-verification-boundary-v1") ||
+            (protocol != "csv-pipe-isolated-v3" && (pinnedCpu is null || allowedCpus != pinnedCpu)))
             throw new InvalidOperationException("Pinned workers must inherit exactly the requested CPU at startup.");
         Write(new
         {
             kind = "worker-environment",
             protocol,
+            verificationMode,
             pinnedCpu,
             allowedCpus,
             pid = Environment.ProcessId,
@@ -64,6 +69,13 @@ internal static class IsolatedWorker
                 case "verify":
                     if (verified || run is not null) throw new InvalidOperationException("Verify once before timing.");
                     var checks = new List<object>();
+                    // The diagnostic coordinator attests a separate full-matrix process before any timed worker starts.
+                    if (verificationMode == "external")
+                    {
+                        verified = true;
+                        Write(new { kind = "worker-verified", command.Id, pid = Environment.ProcessId, verificationMode, checks });
+                        break;
+                    }
                     foreach (string scenario in new[] { "Plain", "Escaped", "Unicode", "LongEscaped" })
                     {
                         var fixture = Fixture.Create(scenario, settings.Rows);
@@ -81,7 +93,7 @@ internal static class IsolatedWorker
                         }
                     }
                     verified = true;
-                    Write(new { kind = "worker-verified", command.Id, pid = Environment.ProcessId, checks });
+                    Write(new { kind = "worker-verified", command.Id, pid = Environment.ProcessId, verificationMode, checks });
                     break;
                 case "prepare":
                     if (!verified || command.Transport is not ("Contiguous" or "Segmented128" or "Stream4096"))

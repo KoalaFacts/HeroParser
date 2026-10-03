@@ -10,7 +10,11 @@
   <ItemGroup>
     <Compile Remove="Models/**" />
     <ProjectReference Include="../../src/HeroParser/HeroParser.csproj"
+                      Condition="'$(FrozenParserDll)' == ''"
                       GlobalPropertiesToRemove="SingleModule;CandidateModelsDll;BaseIntermediateOutputPath;OutputPath" />
+    <Reference Include="HeroParser" Condition="'$(FrozenParserDll)' != '' And '$(SingleModule)' == 'true'">
+      <HintPath>$(FrozenParserDll)</HintPath>
+    </Reference>
     <Reference Include="HeroParser.Baseline" Condition="'$(SingleModule)' != 'true'">
       <HintPath>$(BaselineDll)</HintPath>
       <Aliases>baseline</Aliases>
@@ -33,5 +37,9 @@
   <Target Name="RequireWorkerModel" BeforeTargets="ResolveReferences"
           Condition="'$(SingleModule)' == 'true' And !Exists('$(CandidateModelsDll)')">
     <Error Text="Build the normal-identity generated models before the isolated worker." />
+  </Target>
+  <Target Name="RequireFrozenParser" BeforeTargets="ResolveReferences" Condition="'$(FrozenParserDll)' != ''">
+    <Error Condition="'$(SingleModule)' != 'true' Or !Exists('$(FrozenParserDll)')"
+           Text="FrozenParserDll requires an existing parser DLL and the isolated diagnostic worker." />
   </Target>
 </Project>

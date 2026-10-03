@@ -178,6 +178,88 @@ function Get-CsvPipeSameRunConditions {
     )
 }
 
+function Get-CsvPipeVerificationBoundaryConditions {
+    return @(
+        @{ Name = 'matrix-b-first'; Observed = $true; BFirst = $true; VerificationMode = 'matrix' },
+        @{ Name = 'external-a-first'; Observed = $true; BFirst = $false; VerificationMode = 'external' },
+        @{ Name = 'external-b-first'; Observed = $true; BFirst = $true; VerificationMode = 'external' },
+        @{ Name = 'matrix-a-first'; Observed = $true; BFirst = $false; VerificationMode = 'matrix' }
+    )
+}
+
+function Assert-CsvPipeBoundaryEnvironment($A, $B, [string]$Source, [string]$Mode) {
+    foreach ($worker in @($A, $B)) {
+        if ($worker.protocol -ne 'csv-pipe-verification-boundary-v1' -or $worker.verificationMode -ne $Mode) {
+            throw 'Verification-boundary treatment or protocol mismatch.'
+        }
+    }
+    # Reuse identity/affinity validation on copies, never relabel recorded diagnostic evidence as acceptance.
+    $copies = @($A, $B) | ConvertTo-Json -Depth 6 | ConvertFrom-Json
+    foreach ($copy in $copies) { $copy.protocol = 'csv-pipe-isolated-v4-same-cpu' }
+    Assert-CsvPipeWorkerEnvironment $copies[0] $copies[1] $Source $Source
+}
+
+function Assert-CsvPipeExternalVerification($Response, [int]$Pid, [int]$VerifierPid, [bool]$VerifierComplete) {
+    if (!$VerifierComplete -or $VerifierPid -le 0 -or $VerifierPid -eq $Pid -or
+        $Response.pid -ne $Pid -or $Response.kind -ne 'worker-verified' -or $Response.Id -ne 1 -or
+        $Response.verificationMode -ne 'external' -or $null -eq $Response.checks -or @($Response.checks).Count) {
+        throw 'External verification has no separate completed full-matrix owner.'
+    }
+}
+
+function Get-CsvPipeVerificationBoundaryDecision([object[]]$Results, [bool]$HardwareVerified) {
+    $expected = @(Get-CsvPipeVerificationBoundaryConditions)
+    $incomplete = [pscustomobject]@{ State = 'incomplete-verification-boundary'; ReproducingControls = 0; CausalComparisonQualified = $false }
+    if (!$HardwareVerified -or $Results.Count -ne 4) { return $incomplete }
+    $cases = @{}
+    for ($i = 0; $i -lt 4; $i++) {
+        $result = $Results[$i]; $condition = $expected[$i]
+        if ($result.Complete -isnot [bool] -or !$result.Complete -or $result.Condition.Name -ne $condition.Name) { return $incomplete }
+        foreach ($field in @('Observed', 'BFirst', 'VerificationMode')) {
+            if ($result.Condition.$field -cne $condition.$field -or $result.Condition.$field.GetType() -ne $condition.$field.GetType()) {
+                throw 'Verification-boundary conditions changed.'
+            }
+        }
+        foreach ($transport in @('Contiguous', 'Segmented128', 'Stream4096')) {
+            $rows = @($result.Summaries | Where-Object Transport -eq $transport)
+            if ($rows.Count -ne 1 -or $rows[0].Pairs -ne 30) { return $incomplete }
+            foreach ($field in @('MedianRatio', 'P10Ratio', 'P90Ratio')) {
+                if ($null -eq $rows[0].$field -or ![double]::IsFinite([double]$rows[0].$field) -or $rows[0].$field -le 0) {
+                    throw 'Invalid verification-boundary distribution.'
+                }
+            }
+            if ($rows[0].P10Ratio -gt $rows[0].MedianRatio -or $rows[0].P90Ratio -lt $rows[0].MedianRatio) {
+                throw 'Verification-boundary percentiles inconsistent.'
+            }
+            $cases["$($condition.Name)/$transport"] = $rows[0]
+        }
+    }
+    $directions = foreach ($name in @('matrix-b-first', 'matrix-a-first')) {
+        $case = $cases["$name/Segmented128"]
+        if ($case.MedianRatio -gt 1.05 -and $case.P10Ratio -gt 1) { 1 }
+        elseif ($case.MedianRatio -lt .95 -and $case.P90Ratio -lt 1) { -1 }
+        else { 0 }
+    }
+    $qualified = $directions[0] -ne 0 -and $directions[0] -eq $directions[1]
+    $stable = $true
+    foreach ($name in @('external-a-first', 'external-b-first')) {
+        foreach ($transport in @('Contiguous', 'Segmented128', 'Stream4096')) {
+            $case = $cases["$name/$transport"]
+            if ($case.MedianRatio -lt .98 -or $case.MedianRatio -gt 1.02 -or $case.P10Ratio -lt .95 -or $case.P90Ratio -gt 1.05) {
+                $stable = $false
+            }
+        }
+    }
+    return [pscustomobject]@{
+        State = if (!$qualified) { 'no-reproducing-verification-control' }
+            elseif ($stable) { 'verification-isolation-supported-needs-confirmation' }
+            else { 'verification-isolation-insufficient' }
+        ReproducingControls = @($directions | Where-Object { $_ -ne 0 }).Count
+        CausalComparisonQualified = $qualified; ExternalDistributionsStable = $stable
+        TimingAcceptancePassed = $false
+    }
+}
+
 function Get-CsvPipeHardwareIdentity {
     param([Parameter(Mandatory = $true)][string]$Cpu)
     if (!$IsLinux -or $Cpu -notmatch '^\d+$') { throw 'Linux CPU identity required.' }

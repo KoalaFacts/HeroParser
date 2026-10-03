@@ -118,8 +118,8 @@ JIT chose that shape, whether it causes the timing difference, or whether
 changing inlining or scanning would improve production throughput. Frequency,
 other runtime CPU work, layout and observer/history effects remain uncontrolled.
 The next causal proposal would need to isolate one code-shape variable while
-retaining a reproducing same-run control. That experiment is not implemented
-or authorized here; the exhausted sampling budget is not extended.
+retaining a reproducing same-run control. At that analysis revision the follow-up
+was not implemented or authorized; the exhausted sampling budget was not extended.
 
 ## Preparation Boundary Follow-Up
 
@@ -174,3 +174,37 @@ independent confirmation and does not identify JIT versus heap/history effects.
 Implementation/CI protocol tests are not sampling authorization. No new root
 experiment is dispatched unless the user approves this separate fixed budget.
 The old records, failed gates and exhausted six-pair budget remain untouched.
+
+## Verification Boundary Setup Failure
+
+The separately authorized single dispatch [37089514161](https://github.com/KoalaFacts/HeroParser/actions/runs/37089514161)
+at `bcd47b1` failed before any timed worker or verification command. One external
+verifier emitted its environment and was rejected on the parser hash. No matrix,
+timed pair, batch or runtime trace was collected; no retry followed. Its raw
+partial artifacts and `incomplete-verification-boundary` decision remain retained.
+This is a setup failure, not a result supporting or rejecting PGO isolation.
+
+The loaded parser/model version and PDB SourceLink pointed to the diagnostic
+revision. That initially suggested rebuild drift, but the unmeasured regression
+[37110752215](https://github.com/KoalaFacts/HeroParser/actions/runs/37110752215)
+at `14ca65c` distinguishes the phases: frozen parser/models rebuilds exactly match
+the historical SHA-256 hashes and `89c0681` SourceLink; the driver output copies
+instead match the preceding HEAD builds. Source rebuilding was not the culprit.
+
+The retained `diagnostic-driver.binlog` confirms that `ResolveAssemblyReference`
+selected HEAD DLLs under `Models/bin/Release/boundary` through
+`{CandidateAssemblyFiles}`, despite the correct frozen `HintPath` values.
+The SDK searches candidate files before hint paths, and MSBuild supplies
+`@(Content);@(None)` as candidates. Excluding model files from `Compile` alone
+did not exclude their nested build outputs from implicit `None` items.
+Both assemblies share the normal names/version `2.8.0.0`, so identity resolution
+accepted the wrong builds before the runtime hash gate caught them.
+
+The narrow repair removes `Models/**` from the probe's `None` items. The regression
+deliberately leaves prior HEAD outputs in place, builds the frozen projects,
+links the diagnostic driver and requires all source/copied DLL hashes to match
+authenticated history. It records phase hashes, product versions, PDB SourceLink
+and three binlogs while starting zero workers. A separate pre-start guard now
+checks source and copied DLL hashes before even launching the external verifier.
+No binary-hash check, old timing threshold or reproduction prerequisite is relaxed.
+The failed regression is preserved; validation of the repair is recorded separately.

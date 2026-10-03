@@ -281,6 +281,16 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Frozen history build failed.' }
     }
     if ($VerificationBoundaryControl) {
+        foreach ($file in @(
+            @{ Name = 'HeroParser.dll'; Input = $parser; Hash = $original.baselineWorker.parserHash },
+            @{ Name = 'CsvPipeABModels.dll'; Input = $models; Hash = $original.baselineWorker.modelsHash }
+        )) {
+            foreach ($path in @($file.Input, (Join-Path $consumerProbe "$workerOutput/$($file.Name)"))) {
+                if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.Hash) {
+                    throw "Frozen build/copy mismatch before worker startup: $($file.Name)"
+                }
+            }
+        }
         $boundaryConsumerHash = (Get-FileHash (Join-Path $consumerProbe "$workerOutput/CsvPipeABProbe.dll") -Algorithm SHA256).Hash.ToLowerInvariant()
         $directory = Join-Path $OutputDirectory 'external-verifier'
         $null = New-Item -ItemType Directory -Path $directory

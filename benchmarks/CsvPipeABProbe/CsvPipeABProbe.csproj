@@ -9,6 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Models/**" />
+    <!-- Nested model outputs otherwise become candidate assemblies before the explicit HintPath. -->
+    <None Remove="Models/**" />
     <ProjectReference Include="../../src/HeroParser/HeroParser.csproj"
                       Condition="'$(FrozenParserDll)' == ''"
                       GlobalPropertiesToRemove="SingleModule;CandidateModelsDll;BaseIntermediateOutputPath;OutputPath" />

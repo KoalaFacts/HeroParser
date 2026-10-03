@@ -199,9 +199,9 @@ function Assert-CsvPipeBoundaryEnvironment($A, $B, [string]$Source, [string]$Mod
     Assert-CsvPipeWorkerEnvironment $copies[0] $copies[1] $Source $Source
 }
 
-function Assert-CsvPipeExternalVerification($Response, [int]$Pid, [int]$VerifierPid, [bool]$VerifierComplete) {
-    if (!$VerifierComplete -or $VerifierPid -le 0 -or $VerifierPid -eq $Pid -or
-        $Response.pid -ne $Pid -or $Response.kind -ne 'worker-verified' -or $Response.Id -ne 1 -or
+function Assert-CsvPipeExternalVerification($Response, [int]$WorkerPid, [int]$VerifierPid, [bool]$VerifierComplete) {
+    if (!$VerifierComplete -or $VerifierPid -le 0 -or $VerifierPid -eq $WorkerPid -or
+        $Response.pid -ne $WorkerPid -or $Response.kind -ne 'worker-verified' -or $Response.Id -ne 1 -or
         $Response.verificationMode -ne 'external' -or $null -eq $Response.checks -or @($Response.checks).Count) {
         throw 'External verification has no separate completed full-matrix owner.'
     }

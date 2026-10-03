@@ -30,9 +30,12 @@ Assert-WorkflowBoundary $retained.Success 'automatic acceptance has an explicit 
 Assert-WorkflowBoundary ($retained.Groups['settings'].Value -match "if: github.event_name != 'workflow_dispatch'") 'automatic events retain failure instead of sampling'
 $code = $retained.Groups['code'].Value -replace '(?m)^          ', ''
 $tokens = $null; $errors = $null
-$null = [Management.Automation.Language.Parser]::ParseInput($code, [ref]$tokens, [ref]$errors)
+$ast = [Management.Automation.Language.Parser]::ParseInput($code, [ref]$tokens, [ref]$errors)
 Assert-WorkflowBoundary ($errors.Count -eq 0) 'retained-failure PowerShell parses'
-Assert-WorkflowBoundary ($code -notmatch 'run-isolated|run-series|dotnet|Start-Process') 'retained-failure reporting contains no timing invocation'
+$commands = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.CommandAst] }, $true))
+$allowed = @('New-Item', 'ConvertTo-Json', 'Set-Content', 'Join-Path')
+Assert-WorkflowBoundary (@($commands | Where-Object { $_.GetCommandName() -notin $allowed }).Count -eq 0) 'retained-failure reporting invokes only data-output commands'
+Assert-WorkflowBoundary (@($ast.FindAll({ param($node) $node -is [Management.Automation.Language.InvokeMemberExpressionAst] }, $true)).Count -eq 0) 'retained-failure reporting has no hidden member invocation'
 
 $timing = [regex]::Match($acceptance,
     '(?ms)^      - name: Run fixed isolated same-source controls\r?\n(?<settings>.*?)^        run: \|\r?\n(?<code>.*?)(?=^      - |\z)')

@@ -264,7 +264,7 @@ jobs:
 
   pipe-ab:
     if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls))
-    name: CSV Pipe Correctness and Timing Controls
+    name: CSV Pipe Infrastructure Validation
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -284,7 +284,62 @@ jobs:
         shell: pwsh
         run: ./benchmarks/CsvPipeABProbe/test-control.ps1
 
+      - name: Test infrastructure and acceptance separation
+        shell: pwsh
+        run: ./benchmarks/CsvPipeABProbe/test-workflow-gates.ps1
+
+      - name: Report infrastructure scope
+        shell: pwsh
+        run: |
+          '## CSV Pipe Infrastructure Validation' >> $env:GITHUB_STEP_SUMMARY
+          'Control-gate and workflow-boundary regression tests passed. No timing worker was started; this is not performance acceptance.' >> $env:GITHUB_STEP_SUMMARY
+
+  pipe-timing-acceptance:
+    needs: pipe-ab
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls)))
+    name: CSV Pipe Timing Acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Retain failed historical timing acceptance without sampling
+        if: github.event_name != 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $directory = 'BenchmarkDotNet.Artifacts/pipe-series'
+          $null = New-Item -ItemType Directory -Path $directory -Force
+          [pscustomobject]@{
+            State = 'retained-timing-acceptance-failed'
+            HistoricalRun = '36732093817'
+            SourceSha = '89c06810e76c4623ebad3cfc89c4bcdef41acd59'
+            Transport = 'Segmented128'
+            HistoricalMedianRatio = 1.052845684
+            MedianUpperLimit = 1.05
+            TimingAcceptancePassed = $false
+            ControlsAccepted = $false
+            MeasuredWorkersStarted = 0
+          } | ConvertTo-Json | Set-Content (Join-Path $directory 'retained-acceptance.json')
+          @(
+            '## CSV Pipe Timing Acceptance: FAILED'
+            '[Retained failed run 36732093817](https://github.com/KoalaFacts/HeroParser/actions/runs/36732093817): Segmented128 median 1.052845684 > unchanged limit 1.05.'
+            'No timing worker was started. Infrastructure validation cannot waive this failure or authorize a sampling budget.'
+          ) >> $env:GITHUB_STEP_SUMMARY
+          throw 'CSV Pipe timing acceptance remains FAILED at run 36732093817. This is the retained performance gate, not an infrastructure regression; no sampling was started.'
+
+      - name: Setup .NET 10 SDK for explicit timing only
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+
       - name: Record runner context
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           mkdir -p BenchmarkDotNet.Artifacts/pipe-series
@@ -292,15 +347,22 @@ jobs:
           dotnet --info >> BenchmarkDotNet.Artifacts/pipe-runner-context.txt
 
       - name: Run fixed isolated same-source controls
+        if: github.event_name == 'workflow_dispatch'
         shell: pwsh
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           LEGACY_AB: ${{ inputs.pipe_ab }}
+          INFRASTRUCTURE_RESULT: ${{ needs.pipe-ab.result }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
+          if ($env:INFRASTRUCTURE_RESULT -ne 'success') { throw 'Infrastructure validation failed; refusing timing.' }
+          if ($env:RUN_ATTEMPT -ne '1') { throw 'Timing-control sampling prohibits retries.' }
           if ($env:LEGACY_AB -eq 'true') { throw 'A/B is suspended until isolated same-source controls have been accepted; use pipe_controls.' }
-          if ('${{ github.event_name }}' -ne 'workflow_dispatch') {
-            throw 'Timing acceptance remains FAILED at run 36732093817. Automatic infrastructure validation cannot authorize a new sampling budget.'
-          }
+          $source = '89c06810e76c4623ebad3cfc89c4bcdef41acd59'
+          & git fetch --no-tags --no-write-fetch-head origin $source
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen source unavailable; refusing timing.' }
+          $resolved = (& git rev-parse --verify "$source^{commit}").Trim()
+          if ($LASTEXITCODE -ne 0 -or $resolved -cne $source) { throw 'Frozen source identity mismatch; refusing timing.' }
           # Diagnostic plumbing must not retrial an unchanged, already-failed workload.
           git diff --quiet 89c06810e76c4623ebad3cfc89c4bcdef41acd59 HEAD -- src Directory.Build.props Directory.Build.targets Directory.Packages.props global.json benchmarks/CsvPipeABProbe/Program.cs benchmarks/CsvPipeABProbe/IsolatedWorker.cs benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj benchmarks/CsvPipeABProbe/Models benchmarks/CsvPipeABProbe/run-isolated.ps1 benchmarks/CsvPipeABProbe/control.ps1
           if ($LASTEXITCODE -eq 0) { throw 'Timing acceptance remains FAILED at run 36732093817 (Segmented128 1.052845684 > 1.05). Unchanged workload: no A/A retrial. Native diagnostic success cannot waive this failure.' }

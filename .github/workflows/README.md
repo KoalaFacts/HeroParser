@@ -157,6 +157,18 @@ This directory contains automated CI/CD workflows for HeroParser.
 2. Tests on .NET 8, 9, and 10
 3. Uploads benchmark results as artifacts
 4. Posts results as PR comment (for PRs)
+5. Reports **CSV Pipe Infrastructure Validation** separately from **CSV Pipe Timing Acceptance**
+
+The infrastructure check runs regression tests for the evidence gate and workflow
+boundary without starting timing workers. Its success is not performance approval.
+The timing-acceptance check remains **failed** on automatic PR/push events while
+retaining run `36732093817`: Segmented128 median `1.052845684` exceeds the unchanged
+`1.05` upper limit. It publishes the failed state in both the job summary and
+`retained-acceptance.json`; it is not skipped or converted to a warning.
+Manual control sampling still requires explicit dispatch, passing infrastructure
+validation, the original protocol and a separately authorized budget. Workflow
+retries are rejected. This separation changes reporting, not numerical thresholds,
+the failed historical decision, or authorization for further sampling.
 
 **Usage:**
 - Benchmarks run automatically on relevant PRs

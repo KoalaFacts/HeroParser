@@ -125,6 +125,17 @@ jobs:
           dotnet build benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj -c Release -p:SingleModule=true "-p:FrozenParserDll=$parser" "-p:CandidateModelsDll=$models" -p:BaseIntermediateOutputPath=obj/boundary-test/ -p:OutputPath=bin/Release/boundary-test/ --disable-build-servers -p:UseSharedCompilation=false
           if ($LASTEXITCODE -ne 0) { throw 'Diagnostic driver build failed.' }
           ./benchmarks/CsvPipeABProbe/history-test-verification-worker.ps1 -WorkerDll benchmarks/CsvPipeABProbe/bin/Release/boundary-test/CsvPipeABProbe.dll
+      - name: Validate frozen build and copy provenance without worker startup
+        shell: pwsh
+        run: |
+          ./benchmarks/CsvPipeABProbe/history-test-frozen-build.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series" -Workspace "$env:RUNNER_TEMP/history-build-regression"
+      - name: Retain build provenance including setup failures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csv-pipe-build-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: BenchmarkDotNet.Artifacts/pipe-build-provenance/**
+          retention-days: 30
       - name: Prepare Linux evidence tools and common scheduler accounting
         if: github.event_name == 'workflow_dispatch' && inputs.replay_run == ''
         shell: bash

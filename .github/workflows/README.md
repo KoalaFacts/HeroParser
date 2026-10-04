@@ -175,8 +175,9 @@ diagnostic results, synthetic test fixtures and other revisions cannot.
 Evidence validation cannot be combined with other modes. All sampling jobs are
 excluded in that mode. Ordinary benchmark jobs are also excluded for the narrow
 allowlist of reporting/evidence-only files; production, consumer and unknown
-changes retain ordinary benchmark collection. Changes to the benchmark job or
-global runtime environment also retain collection, even in an allowlisted file.
+changes retain ordinary benchmark collection. Changes to the benchmark job,
+setup outputs/configuration extraction or global runtime environment also retain
+collection, even in an allowlisted file.
 This does not waive acceptance.
 Manual control sampling still requires explicit dispatch, passing infrastructure
 validation, the original protocol and a separately authorized budget. Workflow

@@ -112,6 +112,32 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
+          function Test-BenchmarkConfigurationChanged([string]$Before, [string]$After) {
+            $jobPattern = '(?ms)^  benchmark:\n.*?(?=^  [a-z][a-z0-9-]*:|\z)'
+            $gateLine = "    if: needs.setup.outputs.run-benchmarks == 'true'`n"
+            $setupPattern = '(?ms)^  setup:\n.*?(?=^  [a-z][a-z0-9-]*:|\z)'
+            $headerPattern = '(?ms)\A.*?(?=^    steps:\n)'
+            $extractPattern = '(?ms)^      - name: Extract configuration\n.*?(?=^      - |\z)'
+            $envPattern = '(?ms)^env:\n.*?(?=^[a-z]|\z)'
+            $configurations = foreach ($text in @($Before, $After)) {
+              $job = [regex]::Match($text, $jobPattern)
+              $setup = [regex]::Match($text, $setupPattern)
+              $header = [regex]::Match($setup.Value, $headerPattern)
+              $extract = [regex]::Matches($setup.Value, $extractPattern)
+              $stepNames = [regex]::Matches($setup.Value, '(?m)^      - name: (.+)$')
+              if (!$job.Success -or !$header.Success -or $extract.Count -ne 1 -or
+                  @($stepNames | Where-Object { $_.Groups[1].Value -notin @('Checkout code',
+                    'Identify infrastructure-only changes without sampling', 'Extract configuration') }).Count) {
+                return $true
+              }
+              # Only this infrastructure gate and its evidence-only route are exempt.
+              $setupHeader = $header.Value.Replace(' && !inputs.pipe_acceptance_run', '')
+              $setupHeader = $setupHeader -replace '(?m)^      run-benchmarks: [^\n]+\n', ''
+              @($job.Value.Replace($gateLine, '').TrimEnd(), $setupHeader,
+                $extract[0].Value.TrimEnd(), [regex]::Match($text, $envPattern).Value) -join "`n"
+            }
+            return $configurations[0] -cne $configurations[1]
+          }
           $measure = $true
           if ($env:BASE_SHA -match '^[0-9a-f]{40}$' -and $env:BASE_SHA -ne ('0' * 40)) {
             & git fetch --no-tags --no-write-fetch-head origin $env:BASE_SHA
@@ -128,16 +154,7 @@ jobs:
               $before = (& git show "$($env:BASE_SHA):.github/workflows/benchmarks.yml") -join "`n"
               if ($LASTEXITCODE -ne 0) { throw 'Prior benchmark definition is unavailable.' }
               $after = [IO.File]::ReadAllText('.github/workflows/benchmarks.yml').Replace("`r", '')
-              $jobPattern = '(?ms)^  benchmark:\n.*?(?=^  [a-z][a-z0-9-]*:|\z)'
-              $gateLine = "    if: needs.setup.outputs.run-benchmarks == 'true'`n"
-              $oldJob = [regex]::Match($before, $jobPattern)
-              $newJob = [regex]::Match($after, $jobPattern)
-              $envPattern = '(?ms)^env:\n.*?(?=^[a-z]|\z)'
-              if (!$oldJob.Success -or !$newJob.Success -or
-                  $oldJob.Value.Replace($gateLine, '').TrimEnd() -cne $newJob.Value.Replace($gateLine, '').TrimEnd() -or
-                  [regex]::Match($before, $envPattern).Value -cne [regex]::Match($after, $envPattern).Value) {
-                $measure = $true
-              }
+              $measure = Test-BenchmarkConfigurationChanged $before $after
             }
           }
           "run-benchmarks=$($measure.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT

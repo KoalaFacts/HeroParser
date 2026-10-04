@@ -10,7 +10,13 @@ $jobs = @([pscustomobject]@{ name = 'CSV Pipe Timing Acceptance'; run_id = 42; h
     steps = @(@{ name = 'Run fixed isolated same-source controls'; status = 'completed'; conclusion = 'success' }) })
 $artifact = [pscustomobject]@{ name = 'csv-pipe-paired-42-1'; expired = $false; workflow_run = @{ id = 42; head_sha = $sha } }
 Assert-CsvPipeAcceptanceOrigin $origin $jobs $artifact $sha '42'
-foreach ($fault in @('Source', 'Repository', 'Event', 'Workflow', 'Retry', 'Incomplete', 'Failed', 'Artifact', 'Expired', 'ArtifactSource', 'JobSource', 'JobRetry', 'Diagnostic', 'DuplicateJob')) {
+foreach ($ref in @('main', 'refs/heads/fix/csv-frozen-source-fetch', $sha)) {
+    $qualified = $origin | ConvertTo-Json -Depth 6 | ConvertFrom-Json
+    $qualified.path += "@$ref"
+    Assert-CsvPipeAcceptanceOrigin $qualified $jobs $artifact $sha '42'
+    Write-Host 'PASS: acceptance origin allows the API ref-qualified workflow path'
+}
+foreach ($fault in @('Source', 'Repository', 'Event', 'Workflow', 'QualifiedWorkflow', 'EmptyRef', 'ExtraQualifier', 'WorkflowSuffix', 'WorkflowPrefix', 'WorkflowCase', 'Retry', 'Incomplete', 'Failed', 'Artifact', 'Expired', 'ArtifactSource', 'JobSource', 'JobRetry', 'Diagnostic', 'DuplicateJob')) {
     $r = $origin | ConvertTo-Json -Depth 6 | ConvertFrom-Json
     $j = @($jobs | ConvertTo-Json -Depth 6 | ConvertFrom-Json)
     $a = $artifact | ConvertTo-Json -Depth 6 | ConvertFrom-Json
@@ -19,6 +25,12 @@ foreach ($fault in @('Source', 'Repository', 'Event', 'Workflow', 'Retry', 'Inco
         'Repository' { $r.repository.full_name = 'other/repository' }
         'Event' { $r.event = 'pull_request' }
         'Workflow' { $r.path = '.github/workflows/csv-pipe-history.yml' }
+        'QualifiedWorkflow' { $r.path = '.github/workflows/csv-pipe-history.yml@main' }
+        'EmptyRef' { $r.path += '@' }
+        'ExtraQualifier' { $r.path += '@main@other' }
+        'WorkflowSuffix' { $r.path += '.other@main' }
+        'WorkflowPrefix' { $r.path = "other/$($r.path)@main" }
+        'WorkflowCase' { $r.path = '.github/workflows/Benchmarks.yml@main' }
         'Retry' { $r.run_attempt = 2 }
         'Incomplete' { $r.status = 'in_progress' }
         'Failed' { $r.conclusion = 'failure' }

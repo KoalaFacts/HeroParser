@@ -3,7 +3,7 @@
 function Assert-CsvPipeAcceptanceOrigin($Run, [object[]]$Jobs, $Artifact, [string]$SourceSha, [string]$RunId) {
     if ($RunId -cnotmatch '^[1-9]\d*$' -or [string]$Run.id -cne $RunId -or
         $Run.repository.full_name -cne 'KoalaFacts/HeroParser' -or $Run.head_sha -cne $SourceSha -or
-        $Run.event -ne 'workflow_dispatch' -or $Run.path -cne '.github/workflows/benchmarks.yml' -or
+        $Run.event -ne 'workflow_dispatch' -or $Run.path -cnotmatch '\A\.github/workflows/benchmarks\.yml(?:@[^\s@]+)?\z' -or
         $Run.run_attempt -ne 1 -or $Run.status -ne 'completed' -or $Run.conclusion -ne 'success') {
         throw 'Acceptance requires a completed first-attempt control run for this exact source and repository.'
     }

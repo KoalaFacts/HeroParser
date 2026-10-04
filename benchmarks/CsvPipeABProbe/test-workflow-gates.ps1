@@ -31,8 +31,38 @@ foreach ($job in @('pipe-profile', 'pipe-bias', 'pipe-history', 'pipe-native-pro
 Assert-WorkflowBoundary ((Get-WorkflowJob 'setup') -match '!inputs.pipe_acceptance_run') 'evidence-only dispatch never starts ordinary benchmarks'
 Assert-WorkflowBoundary ((Get-WorkflowJob 'benchmark') -match "if: needs.setup.outputs.run-benchmarks == 'true'") 'ordinary benchmarks require a measured-code change'
 Assert-WorkflowBoundary ((Get-WorkflowJob 'setup') -match '\$measure = \$true') 'unknown change scope does not waive benchmark collection'
-Assert-WorkflowBoundary ((Get-WorkflowJob 'setup') -match '\$oldJob.Value.Replace' -and
+Assert-WorkflowBoundary ((Get-WorkflowJob 'setup') -match 'Test-BenchmarkConfigurationChanged \$before \$after' -and
     (Get-WorkflowJob 'setup') -match '\$envPattern') 'benchmark definitions and global runtime settings are not infrastructure-only waivers'
+
+$scope = [regex]::Match((Get-WorkflowJob 'setup'),
+    '(?ms)^      - name: Identify infrastructure-only changes without sampling\r?\n.*?^        run: \|\r?\n(?<code>.*?)(?=^      - |\z)')
+$scopeCode = $scope.Groups['code'].Value -replace '(?m)^          ', ''
+$scopeTokens = $null; $scopeErrors = $null
+$scopeAst = [Management.Automation.Language.Parser]::ParseInput($scopeCode, [ref]$scopeTokens, [ref]$scopeErrors)
+Assert-WorkflowBoundary ($scope.Success -and $scopeErrors.Count -eq 0) 'benchmark scope code parses'
+$comparators = @($scopeAst.FindAll({ param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-BenchmarkConfigurationChanged'
+}, $true))
+Assert-WorkflowBoundary ($comparators.Count -eq 1) 'scope has one testable configuration comparison'
+. ([scriptblock]::Create($comparators[0].Extent.Text))
+$normalized = $workflow.Replace("`r", '')
+Assert-WorkflowBoundary (!(Test-BenchmarkConfigurationChanged $normalized $normalized)) 'identical benchmark configuration remains infrastructure-only'
+$withoutGate = $normalized.Replace("    if: needs.setup.outputs.run-benchmarks == 'true'`n", '')
+$withoutGate = $withoutGate.Replace(' && !inputs.pipe_acceptance_run', '') -replace '(?m)^      run-benchmarks: [^\n]+\n', ''
+Assert-WorkflowBoundary (!(Test-BenchmarkConfigurationChanged $withoutGate $normalized)) 'only the added gate and evidence route are exempt'
+foreach ($change in @(
+    @{ Name = 'framework output'; Before = 'frameworks: ${{ steps.extract.outputs.frameworks }}'; After = 'frameworks: ["net10.0"]' },
+    @{ Name = 'configuration action'; Before = 'uses: ./.github/actions/extract-build-config'; After = 'uses: ./.github/actions/other-config' },
+    @{ Name = 'configuration inputs'; Before = 'id: extract'; After = "id: extract`n        with:`n          frameworks: net10.0" },
+    @{ Name = 'setup environment'; Before = 'name: Extract Build Configuration'; After = "name: Extract Build Configuration`n    env:`n      CONFIGURATION: narrowed" },
+    @{ Name = 'additional setup step'; Before = '      - name: Extract configuration'; After = "      - name: Alter frameworks`n        run: exit 0`n      - name: Extract configuration" },
+    @{ Name = 'missing extraction step'; Before = '      - name: Extract configuration'; After = '      - name: Missing configuration' },
+    @{ Name = 'benchmark matrix'; Before = 'fromJSON(needs.setup.outputs.frameworks)'; After = 'fromJSON(''["net10.0"]'')' },
+    @{ Name = 'global runtime'; Before = 'DOTNET_CLI_TELEMETRY_OPTOUT: true'; After = 'DOTNET_CLI_TELEMETRY_OPTOUT: false' }
+)) {
+    $changed = $normalized.Replace($change.Before, $change.After)
+    Assert-WorkflowBoundary ($changed -cne $normalized -and (Test-BenchmarkConfigurationChanged $normalized $changed)) "$($change.Name) requires benchmark collection"
+}
 
 $retained = [regex]::Match($acceptance,
     '(?ms)^      - name: Retain failed historical timing acceptance without sampling\r?\n(?<settings>.*?)^        run: \|\r?\n(?<code>.*?)(?=^      - |\z)')

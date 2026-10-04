@@ -7,13 +7,42 @@ this changed execution boundary. See [Isolated Worker Controls](#isolated-worker
 
 Automatic CI distinguishes **CSV Pipe Infrastructure Validation** from
 **CSV Pipe Timing Acceptance**. Infrastructure regression tests can pass without
-sampling; acceptance remains failed at retained run `36732093817` (Segmented128
-median `1.052845684 > 1.05`). The separate acceptance job exposes that failure in
-its summary and `retained-acceptance.json`, with `TimingAcceptancePassed=false`
-and zero measured workers. No failed sample, percentile threshold or historical
-decision is changed. Only explicitly authorized manual dispatch can start new
-controls, after infrastructure passes; retries and unchanged-workload retrials
-remain rejected. `test-workflow-gates.ps1` tests this boundary without sampling.
+sampling. Historical run `36732093817` remains failed (Segmented128 median
+`1.052845684 > 1.05`) in `retained-acceptance.json`; it is not the hardcoded
+verdict for every future source. With no current evidence, the acceptance check
+still fails and writes `missing-current-acceptance-evidence` separately in
+`acceptance-validation.json`. No failed sample, threshold or historical decision
+is changed. Only separately authorized manual dispatch can start new controls,
+after infrastructure passes; retries and unchanged-workload retrials remain
+rejected. Pure reporting/evidence changes do not launch ordinary benchmarks.
+
+### Read-Only Acceptance Evidence
+
+The `pipe_acceptance_run` dispatch input validates an **existing** authorized
+control run; it never samples. All other experiment inputs must remain disabled.
+Use the same source ref that produced the evidence: the run, job, artifact and
+every raw control must identify that exact SHA. A later source revision needs
+its own evidence, even if an older revision passed. No latest-success fallback
+or cross-runner timing comparison is used.
+
+The origin must be this repository's completed, successful `benchmarks.yml`
+manual control run at attempt 1, with its actual control step successful and
+its original unexpired paired artifact. `acceptance-evidence.ps1` recomputes
+all three process pairs, six distinct workers, all three transports and all
+270 measured pairs using unchanged `Get-CsvPipeIsolatedControlResult` rules.
+It rejects missing cycles, changed binary/runtime/CPU identity, wrong launch
+order, diagnostic protocols, dishonest summaries and original-bound failures.
+It does not trust a summary's `Stable=true` flag.
+
+A successful read-only validation can pass **current-source A/A controls**
+while the historical failed record remains false. This is not A/B improvement,
+production optimization or root-cause proof. Missing/invalid evidence stays
+red. `test-acceptance.ps1` uses synthetic fixture records only; its positive
+fixture is not genuine performance evidence. Infrastructure success alone
+cannot authorize collection or pass acceptance.
+
+`test-workflow-gates.ps1` also verifies that evidence-only dispatch excludes all
+sampling modes and that historical failure and the current verdict are separate.
 
 The historical opt-in probe loads independently built baseline and candidate parser
 assemblies into the **same process**. Both sides use the same generated fixture,

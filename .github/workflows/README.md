@@ -161,10 +161,23 @@ This directory contains automated CI/CD workflows for HeroParser.
 
 The infrastructure check runs regression tests for the evidence gate and workflow
 boundary without starting timing workers. Its success is not performance approval.
-The timing-acceptance check remains **failed** on automatic PR/push events while
-retaining run `36732093817`: Segmented128 median `1.052845684` exceeds the unchanged
-`1.05` upper limit. It publishes the failed state in both the job summary and
-`retained-acceptance.json`; it is not skipped or converted to a warning.
+Automatic PR/push events with no current evidence still **fail** acceptance.
+Historical run `36732093817` remains failed: Segmented128 median `1.052845684`
+exceeds the unchanged `1.05` upper limit. Its record stays in
+`retained-acceptance.json`, separate from `acceptance-validation.json` for the
+current source; it is not skipped, overwritten or converted to a warning.
+The manual `pipe_acceptance_run` input is a read-only validation of an already
+authorized control artifact for the exact checkout SHA, not sampling or an
+authorization request. It requires an original first-attempt successful control
+job and recomputes all raw v4 controls with unchanged numerical gates. Only
+qualifying current-source evidence can pass this check; historical failures,
+diagnostic results, synthetic test fixtures and other revisions cannot.
+Evidence validation cannot be combined with other modes. All sampling jobs are
+excluded in that mode. Ordinary benchmark jobs are also excluded for the narrow
+allowlist of reporting/evidence-only files; production, consumer and unknown
+changes retain ordinary benchmark collection. Changes to the benchmark job or
+global runtime environment also retain collection, even in an allowlisted file.
+This does not waive acceptance.
 Manual control sampling still requires explicit dispatch, passing infrastructure
 validation, the original protocol and a separately authorized budget. Workflow
 retries are rejected. This separation changes reporting, not numerical thresholds,

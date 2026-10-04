@@ -7,6 +7,9 @@ on:
       - '.github/workflows/csv-pipe-history.yml'
       - 'benchmarks/CsvPipeABProbe/history-*.ps1'
       - 'benchmarks/CsvPipeABProbe/test-history-profile.ps1'
+      - 'benchmarks/CsvPipeABProbe/acceptance-evidence.ps1'
+      - 'benchmarks/CsvPipeABProbe/validate-acceptance.ps1'
+      - 'benchmarks/CsvPipeABProbe/test-acceptance.ps1'
       - 'benchmarks/CsvPipeABProbe/IsolatedWorker.cs'
       - 'benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj'
       - 'benchmarks/CsvPipeDiagnostics/**'
@@ -139,6 +142,7 @@ jobs:
         run: |
           ./benchmarks/CsvPipeABProbe/test-control.ps1
           ./benchmarks/CsvPipeABProbe/test-workflow-gates.ps1
+          ./benchmarks/CsvPipeABProbe/test-acceptance.ps1
           ./benchmarks/CsvPipeABProbe/test-native-profile.ps1
           ./benchmarks/CsvPipeABProbe/test-history-profile.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series"
       - name: Build and check runtime decoder

@@ -23,11 +23,21 @@ Assert-WorkflowBoundary ($infrastructure -notmatch 'run-isolated\.ps1|run-series
 Assert-WorkflowBoundary ($acceptance -match 'needs: pipe-ab') 'explicit timing depends on infrastructure validation'
 Assert-WorkflowBoundary ($acceptance -match 'if: always\(\) &&') 'retained failure remains visible even if infrastructure fails'
 Assert-WorkflowBoundary (($infrastructure + $acceptance) -notmatch 'continue-on-error') 'neither check suppresses failures'
+Assert-WorkflowBoundary ($infrastructure -match 'run: ./benchmarks/CsvPipeABProbe/test-acceptance.ps1') 'read-only acceptance is regression tested'
+Assert-WorkflowBoundary ($workflow -match 'pipe_acceptance_run:') 'evidence-only dispatch has an explicit input'
+foreach ($job in @('pipe-profile', 'pipe-bias', 'pipe-history', 'pipe-native-profile')) {
+    Assert-WorkflowBoundary ((Get-WorkflowJob $job) -match 'if:.*!inputs.pipe_acceptance_run') "$job cannot collect during evidence-only dispatch"
+}
+Assert-WorkflowBoundary ((Get-WorkflowJob 'setup') -match '!inputs.pipe_acceptance_run') 'evidence-only dispatch never starts ordinary benchmarks'
+Assert-WorkflowBoundary ((Get-WorkflowJob 'benchmark') -match "if: needs.setup.outputs.run-benchmarks == 'true'") 'ordinary benchmarks require a measured-code change'
+Assert-WorkflowBoundary ((Get-WorkflowJob 'setup') -match '\$measure = \$true') 'unknown change scope does not waive benchmark collection'
+Assert-WorkflowBoundary ((Get-WorkflowJob 'setup') -match '\$oldJob.Value.Replace' -and
+    (Get-WorkflowJob 'setup') -match '\$envPattern') 'benchmark definitions and global runtime settings are not infrastructure-only waivers'
 
 $retained = [regex]::Match($acceptance,
     '(?ms)^      - name: Retain failed historical timing acceptance without sampling\r?\n(?<settings>.*?)^        run: \|\r?\n(?<code>.*?)(?=^      - |\z)')
-Assert-WorkflowBoundary $retained.Success 'automatic acceptance has an explicit retained-failure step'
-Assert-WorkflowBoundary ($retained.Groups['settings'].Value -match "if: github.event_name != 'workflow_dispatch'") 'automatic events retain failure instead of sampling'
+Assert-WorkflowBoundary $retained.Success 'historical failure remains a separate immutable record'
+Assert-WorkflowBoundary ($retained.Groups['settings'].Value -match "inputs.pipe_acceptance_run != ''") 'evidence-only events also retain historical failure'
 $code = $retained.Groups['code'].Value -replace '(?m)^          ', ''
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseInput($code, [ref]$tokens, [ref]$errors)
@@ -36,11 +46,19 @@ $commands = @($ast.FindAll({ param($node) $node -is [Management.Automation.Langu
 $allowed = @('New-Item', 'ConvertTo-Json', 'Set-Content', 'Join-Path')
 Assert-WorkflowBoundary (@($commands | Where-Object { $_.GetCommandName() -notin $allowed }).Count -eq 0) 'retained-failure reporting invokes only data-output commands'
 Assert-WorkflowBoundary (@($ast.FindAll({ param($node) $node -is [Management.Automation.Language.InvokeMemberExpressionAst] }, $true)).Count -eq 0) 'retained-failure reporting has no hidden member invocation'
+Assert-WorkflowBoundary ($code -notmatch '\bthrow\b') 'historical reporting no longer hardcodes the current verdict'
+$validation = [regex]::Match($acceptance,
+    '(?ms)^      - name: Validate current-source evidence without sampling\r?\n(?<settings>.*?)^        run: \|\r?\n(?<code>.*?)(?=^      - |\z)')
+Assert-WorkflowBoundary ($validation.Success -and $validation.Groups['settings'].Value -match "inputs.pipe_acceptance_run != ''") 'current evidence has a non-sampling validation path'
+Assert-WorkflowBoundary ($validation.Groups['code'].Value -match 'validate-acceptance.ps1 -SourceSha \$env:SOURCE_SHA -EvidenceRun \$env:EVIDENCE_RUN') 'current verdict binds to exact source and original evidence run'
+Assert-WorkflowBoundary ($validation.Groups['code'].Value -notmatch 'run-isolated|dotnet|Start-Process') 'current validation cannot start measured workers'
+Assert-WorkflowBoundary ($validation.Groups['code'].Value -match 'CONTROL_MODE' -and $validation.Groups['code'].Value -match 'OTHER_MODES') 'evidence validation rejects mixed experiment modes'
 
 $timing = [regex]::Match($acceptance,
     '(?ms)^      - name: Run fixed isolated same-source controls\r?\n(?<settings>.*?)^        run: \|\r?\n(?<code>.*?)(?=^      - |\z)')
 Assert-WorkflowBoundary $timing.Success 'explicit timing step remains present'
 Assert-WorkflowBoundary ($timing.Groups['settings'].Value -match "if: github.event_name == 'workflow_dispatch'") 'only explicit dispatch can invoke timing controls'
+Assert-WorkflowBoundary ($timing.Groups['settings'].Value -match "inputs.pipe_acceptance_run == ''") 'evidence-only dispatch excludes control sampling'
 $timingCode = $timing.Groups['code'].Value
 Assert-WorkflowBoundary ($timingCode -match "INFRASTRUCTURE_RESULT -ne 'success'") 'failed infrastructure blocks explicit timing'
 Assert-WorkflowBoundary ($timingCode -match "RUN_ATTEMPT -ne '1'") 'timing-control retries are rejected'
@@ -56,13 +74,7 @@ $originalSummary = $env:GITHUB_STEP_SUMMARY
 Push-Location $fixture
 try {
     $env:GITHUB_STEP_SUMMARY = Join-Path $fixture 'summary.md'
-    $rejected = $false
-    try { & ([scriptblock]::Create($code)) }
-    catch {
-        if ($_.Exception.Message -notmatch '^CSV Pipe timing acceptance remains FAILED at run 36732093817\.') { throw }
-        $rejected = $true
-    }
-    Assert-WorkflowBoundary $rejected 'automatic timing acceptance still fails'
+    & ([scriptblock]::Create($code))
     $record = Get-Content -LiteralPath 'BenchmarkDotNet.Artifacts/pipe-series/retained-acceptance.json' -Raw | ConvertFrom-Json
     Assert-WorkflowBoundary ($record.State -eq 'retained-timing-acceptance-failed' -and
         $record.HistoricalRun -eq '36732093817' -and
@@ -73,8 +85,18 @@ try {
         $record.ControlsAccepted -is [bool] -and !$record.ControlsAccepted) 'machine-readable performance approval stays false'
     Assert-WorkflowBoundary ($record.MeasuredWorkersStarted -eq 0) 'automatic reporting starts zero measured workers'
     $summary = Get-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Raw
-    Assert-WorkflowBoundary ($summary -match 'Timing Acceptance: FAILED' -and
+    Assert-WorkflowBoundary ($summary -match 'Historical CSV Pipe Timing Acceptance: FAILED' -and
         $summary -match '1.052845684 > unchanged limit 1.05') 'CI summary exposes the historical failure and unchanged threshold'
+    $rejected = $false
+    try { & (Join-Path $PSScriptRoot 'validate-acceptance.ps1') -SourceSha ('1' * 40) }
+    catch {
+        if ($_.Exception.Message -notmatch '^No current-source acceptance evidence supplied\.') { throw }
+        $rejected = $true
+    }
+    Assert-WorkflowBoundary $rejected 'missing current evidence still fails instead of manufacturing approval'
+    $current = Get-Content -LiteralPath 'BenchmarkDotNet.Artifacts/pipe-acceptance/acceptance-validation.json' -Raw | ConvertFrom-Json
+    Assert-WorkflowBoundary ($current.State -eq 'missing-current-acceptance-evidence' -and !$current.TimingAcceptancePassed -and
+        !$current.HistoricalTimingAcceptancePassed -and $current.MeasuredWorkersStarted -eq 0) 'current missing evidence and historical failure remain distinguishable'
 }
 finally {
     Pop-Location
@@ -85,4 +107,4 @@ finally {
     }
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }
-Write-Host 'PASS: workflow separation preserves failed acceptance; zero measured workers'
+Write-Host 'PASS: evidence lifecycle preserves original gates; zero measured workers'

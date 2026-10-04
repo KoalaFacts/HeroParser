@@ -1,9 +1,9 @@
 # CSV PipeReader end-to-end paired A/B probe
 
 The active CI timing gate now uses **two isolated single-module workers**,
-not the historical dual-module process described below. Protocol v3 is currently
-controls-only: A/B and production optimizations remain suspended while validating
-this changed execution boundary. See [Isolated Worker Controls](#isolated-worker-controls).
+not the historical dual-module process described below. Current acceptance
+requires same-CPU protocol v4 controls; A/B and production optimizations remain
+suspended while validating this execution boundary. See [Isolated Worker Controls](#isolated-worker-controls).
 
 Automatic CI distinguishes **CSV Pipe Infrastructure Validation** from
 **CSV Pipe Timing Acceptance**. Infrastructure regression tests can pass without

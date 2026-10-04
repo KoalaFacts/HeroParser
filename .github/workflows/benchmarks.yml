@@ -310,7 +310,7 @@ jobs:
           }
 
   pipe-ab:
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls || inputs.pipe_acceptance_run != ''))
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.pipe_acceptance_run != '' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls))))
     name: CSV Pipe Infrastructure Validation
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -347,7 +347,7 @@ jobs:
 
   pipe-timing-acceptance:
     needs: pipe-ab
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls || inputs.pipe_acceptance_run != '')))
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.pipe_acceptance_run != '' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls)))))
     name: CSV Pipe Timing Acceptance
     runs-on: ubuntu-24.04
     timeout-minutes: 30

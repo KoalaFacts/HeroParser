@@ -54,6 +54,30 @@ Assert-WorkflowBoundary ($validation.Groups['code'].Value -match 'validate-accep
 Assert-WorkflowBoundary ($validation.Groups['code'].Value -notmatch 'run-isolated|dotnet|Start-Process') 'current validation cannot start measured workers'
 Assert-WorkflowBoundary ($validation.Groups['code'].Value -match 'CONTROL_MODE' -and $validation.Groups['code'].Value -match 'OTHER_MODES') 'evidence validation rejects mixed experiment modes'
 
+function Test-EvidenceDispatchRoute([string]$Job, [hashtable]$Modes) {
+    $condition = [regex]::Match((Get-WorkflowJob $Job), '(?m)^    if: (.+)$').Groups[1].Value.Trim()
+    if (!$condition) { throw 'Missing job route.' }
+    $event = 'workflow_dispatch'
+    $expression = $condition.Replace('always()', '$true').Replace('github.event_name', '$event').Replace('inputs.', '$Modes.')
+    $expression = $expression.Replace('!=', ' -ne ').Replace('==', ' -eq ').Replace('&&', ' -and ').Replace('||', ' -or ')
+    $expression = $expression -replace '!(?!=)', ' -not '
+    return [bool](& ([scriptblock]::Create($expression)))
+}
+$otherInputs = @('pipe_ab', 'pipe_controls', 'pipe_history', 'pipe_history_replay_run', 'pipe_history_jit_control',
+    'pipe_history_same_run', 'pipe_bias', 'pipe_bias_jit_only', 'pipe_profile', 'pipe_native_profile',
+    'pipe_native_replay_run', 'pipe_native_history_probe')
+foreach ($extra in @('none') + $otherInputs) {
+    $modes = @{ pipe_acceptance_run = '42' }
+    foreach ($inputName in $otherInputs) { $modes[$inputName] = $false }
+    if ($extra -ne 'none') { $modes[$extra] = if ($extra -like '*_run') { '123' } else { $true } }
+    foreach ($job in @('pipe-ab', 'pipe-timing-acceptance')) {
+        Assert-WorkflowBoundary (Test-EvidenceDispatchRoute $job $modes) "$job evaluates evidence or explicitly rejects mixed $extra input"
+    }
+    foreach ($job in @('setup', 'pipe-profile', 'pipe-bias', 'pipe-history', 'pipe-native-profile')) {
+        Assert-WorkflowBoundary (!(Test-EvidenceDispatchRoute $job $modes)) "$job stays excluded for evidence dispatch with $extra input"
+    }
+}
+
 $timing = [regex]::Match($acceptance,
     '(?ms)^      - name: Run fixed isolated same-source controls\r?\n(?<settings>.*?)^        run: \|\r?\n(?<code>.*?)(?=^      - |\z)')
 Assert-WorkflowBoundary $timing.Success 'explicit timing step remains present'

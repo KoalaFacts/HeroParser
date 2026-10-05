@@ -157,32 +157,6 @@ This directory contains automated CI/CD workflows for HeroParser.
 2. Tests on .NET 8, 9, and 10
 3. Uploads benchmark results as artifacts
 4. Posts results as PR comment (for PRs)
-5. Reports **CSV Pipe Infrastructure Validation** separately from **CSV Pipe Timing Acceptance**
-
-The infrastructure check runs regression tests for the evidence gate and workflow
-boundary without starting timing workers. Its success is not performance approval.
-Automatic PR/push events with no current evidence still **fail** acceptance.
-Historical run `36732093817` remains failed: Segmented128 median `1.052845684`
-exceeds the unchanged `1.05` upper limit. Its record stays in
-`retained-acceptance.json`, separate from `acceptance-validation.json` for the
-current source; it is not skipped, overwritten or converted to a warning.
-The manual `pipe_acceptance_run` input is a read-only validation of an already
-authorized control artifact for the exact checkout SHA, not sampling or an
-authorization request. It requires an original first-attempt successful control
-job and recomputes all raw v4 controls with unchanged numerical gates. Only
-qualifying current-source evidence can pass this check; historical failures,
-diagnostic results, synthetic test fixtures and other revisions cannot.
-Evidence validation cannot be combined with other modes. All sampling jobs are
-excluded in that mode. Ordinary benchmark jobs are also excluded for the narrow
-allowlist of reporting/evidence-only files; production, consumer and unknown
-changes retain ordinary benchmark collection. Changes to the benchmark job,
-setup outputs/configuration extraction or global runtime environment also retain
-collection, even in an allowlisted file.
-This does not waive acceptance.
-Manual control sampling still requires explicit dispatch, passing infrastructure
-validation, the original protocol and a separately authorized budget. Workflow
-retries are rejected. This separation changes reporting, not numerical thresholds,
-the failed historical decision, or authorization for further sampling.
 
 **Usage:**
 - Benchmarks run automatically on relevant PRs
@@ -190,6 +164,16 @@ the failed historical decision, or authorization for further sampling.
 
 **Artifacts:**
 - Benchmark results and reports (30 days retention)
+
+### Frozen CSV History Source
+
+[csv-pipe-history.yml](./csv-pipe-history.yml) explicitly fetches and verifies
+frozen commit `89c06810e76c4623ebad3cfc89c4bcdef41acd59`, which can fall outside
+advertised history after squash merges and branch deletion. Retrieval failures
+stop validation without substituting a revision; provenance is uploaded even on
+failure. Existing PR checks validate frozen build/copy identity and retained
+artifacts without collecting new timings. This source-retrieval repair does not
+change performance gates or establish the measurement-bias cause.
 
 ---
 

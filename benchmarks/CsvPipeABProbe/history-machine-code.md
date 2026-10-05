@@ -208,23 +208,3 @@ and three binlogs while starting zero workers. A separate pre-start guard now
 checks source and copied DLL hashes before even launching the external verifier.
 No binary-hash check, old timing threshold or reproduction prerequisite is relaxed.
 The failed regression is preserved; validation of the repair is recorded separately.
-
-## Frozen Source Retrieval After Branch Cleanup
-
-The newly authorized independent dispatch [37125865914](https://github.com/KoalaFacts/HeroParser/actions/runs/37125865914)
-at merged revision `29f84b2` stopped in the frozen-build regression, before
-collection: Git could not resolve the exact historical source `89c0681`.
-The retained build summary records zero measured workers, zero batch commands
-and no build fingerprints. This is another setup failure, not a verification
-isolation result. That dispatch is retained without a retry.
-
-The frozen commit is not an ancestor of the squash-merged default branch.
-Deleting the old feature branch therefore makes a full advertised-history
-checkout insufficient to obtain it. The history workflow now explicitly fetches
-the full pinned SHA, verifies its exact commit identity and checks that retrieval
-does not move diagnostic HEAD before any build or worker startup. Retrieval
-provenance is uploaded even on failure. Missing source fails closed; there is
-no substitute revision, source rebuild waiver or timing threshold change.
-The existing frozen build/copy regression independently validates the retrieved
-source's binaries. A green preparation check still does not authorize a new
-sampling dispatch or establish the original timing failure's cause.

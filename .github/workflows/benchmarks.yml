@@ -61,10 +61,6 @@ on:
         description: 'Run only three fixed isolated same-CPU A/A checks of timing protocol v4; never A/B'
         type: boolean
         default: false
-      pipe_acceptance_run:
-        description: 'Read-only: validate an existing authorized control run for this exact source; starts no workers'
-        type: string
-        default: ''
       pipe_bias:
         description: 'Run only fixed same-source module/self/swap bias diagnostics and separate JIT output; not acceptance'
         type: boolean
@@ -80,7 +76,7 @@ on:
 
 # Cancel in-progress runs for the same workflow and ref
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ (inputs.pipe_history || inputs.pipe_history_replay_run != '' || inputs.pipe_history_jit_control || inputs.pipe_history_same_run) && 'history' || inputs.pipe_native_profile && 'native-profile' || (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_acceptance_run != '' && 'acceptance-evidence' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ (inputs.pipe_history || inputs.pipe_history_replay_run != '' || inputs.pipe_history_jit_control || inputs.pipe_history_same_run) && 'history' || inputs.pipe_native_profile && 'native-profile' || (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
   cancel-in-progress: ${{ !inputs.pipe_history && inputs.pipe_history_replay_run == '' && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run }}
 
 permissions:
@@ -92,73 +88,14 @@ env:
 
 jobs:
   setup:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && !inputs.pipe_controls && !inputs.pipe_acceptance_run && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
       frameworks: ${{ steps.extract.outputs.frameworks }}
-      run-benchmarks: ${{ steps.scope.outputs.run-benchmarks }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-
-      - name: Identify infrastructure-only changes without sampling
-        id: scope
-        shell: pwsh
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          function Test-BenchmarkConfigurationChanged([string]$Before, [string]$After) {
-            $jobPattern = '(?ms)^  benchmark:\n.*?(?=^  [a-z][a-z0-9-]*:|\z)'
-            $gateLine = "    if: needs.setup.outputs.run-benchmarks == 'true'`n"
-            $setupPattern = '(?ms)^  setup:\n.*?(?=^  [a-z][a-z0-9-]*:|\z)'
-            $headerPattern = '(?ms)\A.*?(?=^    steps:\n)'
-            $extractPattern = '(?ms)^      - name: Extract configuration\n.*?(?=^      - |\z)'
-            $envPattern = '(?ms)^env:\n.*?(?=^[a-z]|\z)'
-            $configurations = foreach ($text in @($Before, $After)) {
-              $job = [regex]::Match($text, $jobPattern)
-              $setup = [regex]::Match($text, $setupPattern)
-              $header = [regex]::Match($setup.Value, $headerPattern)
-              $extract = [regex]::Matches($setup.Value, $extractPattern)
-              $stepNames = [regex]::Matches($setup.Value, '(?m)^      - name: (.+)$')
-              if (!$job.Success -or !$header.Success -or $extract.Count -ne 1 -or
-                  @($stepNames | Where-Object { $_.Groups[1].Value -notin @('Checkout code',
-                    'Identify infrastructure-only changes without sampling', 'Extract configuration') }).Count) {
-                return $true
-              }
-              # Only this infrastructure gate and its evidence-only route are exempt.
-              $setupHeader = $header.Value.Replace(' && !inputs.pipe_acceptance_run', '')
-              $setupHeader = $setupHeader -replace '(?m)^      run-benchmarks: [^\n]+\n', ''
-              @($job.Value.Replace($gateLine, '').TrimEnd(), $setupHeader,
-                $extract[0].Value.TrimEnd(), [regex]::Match($text, $envPattern).Value) -join "`n"
-            }
-            return $configurations[0] -cne $configurations[1]
-          }
-          $measure = $true
-          if ($env:BASE_SHA -match '^[0-9a-f]{40}$' -and $env:BASE_SHA -ne ('0' * 40)) {
-            & git fetch --no-tags --no-write-fetch-head origin $env:BASE_SHA
-            if ($LASTEXITCODE -ne 0) { throw 'Benchmark change scope is unavailable.' }
-            $files = @(& git diff --name-only $env:BASE_SHA HEAD)
-            if ($LASTEXITCODE -ne 0) { throw 'Benchmark change scope is invalid.' }
-            $infrastructure = @('.github/workflows/benchmarks.yml', '.github/workflows/csv-pipe-history.yml',
-              '.github/workflows/README.md', 'benchmarks/CsvPipeABProbe/README.md',
-              'benchmarks/CsvPipeABProbe/history-machine-code.md', 'benchmarks/CsvPipeABProbe/test-workflow-gates.ps1',
-              'benchmarks/CsvPipeABProbe/acceptance-evidence.ps1', 'benchmarks/CsvPipeABProbe/validate-acceptance.ps1',
-              'benchmarks/CsvPipeABProbe/test-acceptance.ps1')
-            $measure = @($files | Where-Object { $_ -notin $infrastructure }).Count -ne 0
-            if (!$measure) {
-              $before = (& git show "$($env:BASE_SHA):.github/workflows/benchmarks.yml") -join "`n"
-              if ($LASTEXITCODE -ne 0) { throw 'Prior benchmark definition is unavailable.' }
-              $after = [IO.File]::ReadAllText('.github/workflows/benchmarks.yml').Replace("`r", '')
-              $measure = Test-BenchmarkConfigurationChanged $before $after
-            }
-          }
-          "run-benchmarks=$($measure.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          if (!$measure) { 'Infrastructure-only change: ordinary benchmark collection is not requested; acceptance remains independently enforced.' >> $env:GITHUB_STEP_SUMMARY }
 
       - name: Extract configuration
         id: extract
@@ -166,7 +103,6 @@ jobs:
 
   benchmark:
     needs: setup
-    if: needs.setup.outputs.run-benchmarks == 'true'
     permissions:
       contents: read
       pull-requests: write
@@ -327,8 +263,8 @@ jobs:
           }
 
   pipe-ab:
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.pipe_acceptance_run != '' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls))))
-    name: CSV Pipe Infrastructure Validation
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls))
+    name: CSV Pipe Correctness and Timing Controls
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -348,83 +284,7 @@ jobs:
         shell: pwsh
         run: ./benchmarks/CsvPipeABProbe/test-control.ps1
 
-      - name: Test infrastructure and acceptance separation
-        shell: pwsh
-        run: ./benchmarks/CsvPipeABProbe/test-workflow-gates.ps1
-
-      - name: Test read-only acceptance evidence
-        shell: pwsh
-        run: ./benchmarks/CsvPipeABProbe/test-acceptance.ps1
-
-      - name: Report infrastructure scope
-        shell: pwsh
-        run: |
-          '## CSV Pipe Infrastructure Validation' >> $env:GITHUB_STEP_SUMMARY
-          'Control-gate and workflow-boundary regression tests passed. No timing worker was started; this is not performance acceptance.' >> $env:GITHUB_STEP_SUMMARY
-
-  pipe-timing-acceptance:
-    needs: pipe-ab
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.pipe_acceptance_run != '' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls)))))
-    name: CSV Pipe Timing Acceptance
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-
-      - name: Retain failed historical timing acceptance without sampling
-        if: github.event_name != 'workflow_dispatch' || inputs.pipe_acceptance_run != ''
-        shell: pwsh
-        run: |
-          $directory = 'BenchmarkDotNet.Artifacts/pipe-series'
-          $null = New-Item -ItemType Directory -Path $directory -Force
-          [pscustomobject]@{
-            State = 'retained-timing-acceptance-failed'
-            HistoricalRun = '36732093817'
-            SourceSha = '89c06810e76c4623ebad3cfc89c4bcdef41acd59'
-            Transport = 'Segmented128'
-            HistoricalMedianRatio = 1.052845684
-            MedianUpperLimit = 1.05
-            TimingAcceptancePassed = $false
-            ControlsAccepted = $false
-            MeasuredWorkersStarted = 0
-          } | ConvertTo-Json | Set-Content (Join-Path $directory 'retained-acceptance.json')
-          @(
-            '## Historical CSV Pipe Timing Acceptance: FAILED'
-            '[Retained failed run 36732093817](https://github.com/KoalaFacts/HeroParser/actions/runs/36732093817): Segmented128 median 1.052845684 > unchanged limit 1.05.'
-            'No timing worker was started. Infrastructure validation cannot waive this failure or authorize a sampling budget.'
-          ) >> $env:GITHUB_STEP_SUMMARY
-
-      - name: Validate current-source evidence without sampling
-        if: github.event_name != 'workflow_dispatch' || inputs.pipe_acceptance_run != ''
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          EVIDENCE_RUN: ${{ inputs.pipe_acceptance_run }}
-          INFRASTRUCTURE_RESULT: ${{ needs.pipe-ab.result }}
-          CONTROL_MODE: ${{ inputs.pipe_controls || inputs.pipe_ab }}
-          OTHER_MODES: ${{ inputs.pipe_history || inputs.pipe_history_replay_run != '' || inputs.pipe_history_jit_control || inputs.pipe_history_same_run || inputs.pipe_bias || inputs.pipe_bias_jit_only || inputs.pipe_profile || inputs.pipe_native_profile || inputs.pipe_native_replay_run != '' || inputs.pipe_native_history_probe }}
-        run: |
-          if ($env:INFRASTRUCTURE_RESULT -ne 'success') { throw 'Infrastructure validation failed; refusing evidence acceptance.' }
-          if ($env:CONTROL_MODE -eq 'true' -or $env:OTHER_MODES -eq 'true') { throw 'Evidence validation cannot be combined with sampling or diagnostics.' }
-          ./benchmarks/CsvPipeABProbe/validate-acceptance.ps1 -SourceSha $env:SOURCE_SHA -EvidenceRun $env:EVIDENCE_RUN
-
-      - name: Setup .NET 10 SDK for explicit timing only
-        if: github.event_name == 'workflow_dispatch' && inputs.pipe_acceptance_run == ''
-        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
-        with:
-          dotnet-version: '10.0.x'
-
       - name: Record runner context
-        if: github.event_name == 'workflow_dispatch' && inputs.pipe_acceptance_run == ''
         shell: bash
         run: |
           mkdir -p BenchmarkDotNet.Artifacts/pipe-series
@@ -432,22 +292,15 @@ jobs:
           dotnet --info >> BenchmarkDotNet.Artifacts/pipe-runner-context.txt
 
       - name: Run fixed isolated same-source controls
-        if: github.event_name == 'workflow_dispatch' && inputs.pipe_acceptance_run == ''
         shell: pwsh
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           LEGACY_AB: ${{ inputs.pipe_ab }}
-          INFRASTRUCTURE_RESULT: ${{ needs.pipe-ab.result }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          if ($env:INFRASTRUCTURE_RESULT -ne 'success') { throw 'Infrastructure validation failed; refusing timing.' }
-          if ($env:RUN_ATTEMPT -ne '1') { throw 'Timing-control sampling prohibits retries.' }
           if ($env:LEGACY_AB -eq 'true') { throw 'A/B is suspended until isolated same-source controls have been accepted; use pipe_controls.' }
-          $source = '89c06810e76c4623ebad3cfc89c4bcdef41acd59'
-          & git fetch --no-tags --no-write-fetch-head origin $source
-          if ($LASTEXITCODE -ne 0) { throw 'Frozen source unavailable; refusing timing.' }
-          $resolved = (& git rev-parse --verify "$source^{commit}").Trim()
-          if ($LASTEXITCODE -ne 0 -or $resolved -cne $source) { throw 'Frozen source identity mismatch; refusing timing.' }
+          if ('${{ github.event_name }}' -ne 'workflow_dispatch') {
+            throw 'Timing acceptance remains FAILED at run 36732093817. Automatic infrastructure validation cannot authorize a new sampling budget.'
+          }
           # Diagnostic plumbing must not retrial an unchanged, already-failed workload.
           git diff --quiet 89c06810e76c4623ebad3cfc89c4bcdef41acd59 HEAD -- src Directory.Build.props Directory.Build.targets Directory.Packages.props global.json benchmarks/CsvPipeABProbe/Program.cs benchmarks/CsvPipeABProbe/IsolatedWorker.cs benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj benchmarks/CsvPipeABProbe/Models benchmarks/CsvPipeABProbe/run-isolated.ps1 benchmarks/CsvPipeABProbe/control.ps1
           if ($LASTEXITCODE -eq 0) { throw 'Timing acceptance remains FAILED at run 36732093817 (Segmented128 1.052845684 > 1.05). Unchanged workload: no A/A retrial. Native diagnostic success cannot waive this failure.' }
@@ -461,12 +314,11 @@ jobs:
           name: csv-pipe-paired-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             BenchmarkDotNet.Artifacts/pipe-series/**
-            BenchmarkDotNet.Artifacts/pipe-acceptance/**
             BenchmarkDotNet.Artifacts/pipe-runner-context.txt
           retention-days: 30
 
   pipe-profile:
-    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_acceptance_run && inputs.pipe_profile && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe
+    if: github.event_name == 'workflow_dispatch' && inputs.pipe_profile && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe
     name: CSV Pipe Managed Stack and JIT Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -512,7 +364,7 @@ jobs:
           retention-days: 30
 
   pipe-bias:
-    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_acceptance_run && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
+    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_native_profile && !inputs.pipe_native_history_probe && (inputs.pipe_bias || inputs.pipe_bias_jit_only)
     name: CSV Pipe Same-Source Bias Diagnostics
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -565,7 +417,7 @@ jobs:
           retention-days: 30
 
   pipe-history:
-    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_acceptance_run && (inputs.pipe_history || inputs.pipe_history_replay_run != '' || inputs.pipe_history_jit_control || inputs.pipe_history_same_run)
+    if: github.event_name == 'workflow_dispatch' && (inputs.pipe_history || inputs.pipe_history_replay_run != '' || inputs.pipe_history_jit_control || inputs.pipe_history_same_run)
     permissions:
       contents: read
       actions: read
@@ -577,7 +429,7 @@ jobs:
       same_run_control: ${{ inputs.pipe_history_same_run }}
 
   pipe-native-profile:
-    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_acceptance_run && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && (inputs.pipe_native_profile || inputs.pipe_native_replay_run || inputs.pipe_native_history_probe)
+    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && (inputs.pipe_native_profile || inputs.pipe_native_replay_run || inputs.pipe_native_history_probe)
     name: CSV Pipe Native CPU and JIT Evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 20

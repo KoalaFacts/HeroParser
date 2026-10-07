@@ -32,21 +32,29 @@ def quantile(values, p):
     return s[int(round((len(s) - 1) * p))]
 
 
-def spearman(a, b):
-    def rank(v):
-        order = sorted(range(len(v)), key=lambda i: v[i])
-        r = [0] * len(v)
-        for k, i in enumerate(order):
-            r[i] = k
-        return r
+def average_ranks(values):
+    """1-based ranks with tied values sharing their average rank (order independent)."""
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(values):
+        j = i
+        while j + 1 < len(values) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        for k in range(i, j + 1):
+            ranks[order[k]] = (i + j) / 2 + 1
+        i = j + 1
+    return ranks
 
-    ra, rb = rank(a), rank(b)
+
+def spearman(a, b):
+    """Spearman rho: Pearson correlation of average ranks, so ties cannot make it order dependent."""
+    ra, rb = average_ranks(a), average_ranks(b)
     n = len(a)
     ma, mb = sum(ra) / n, sum(rb) / n
     num = sum((x - ma) * (y - mb) for x, y in zip(ra, rb))
     den = (sum((x - ma) ** 2 for x in ra) * sum((y - mb) ** 2 for y in rb)) ** 0.5
     return num / den if den else 0.0
-
 
 def invalid(reason, details):
     result = {"decision": "invalid", "reason": reason, "details": details}

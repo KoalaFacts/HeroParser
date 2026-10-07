@@ -36,14 +36,24 @@ process; `analyze.py` extracts the final fully optimized (non-OSR) version of
 `<MoveNextSlowAsync>d__31:MoveNext()` ("caller") and `Csv:TryReadRow` ("reader").
 `stats.py` produces every number below from `runs.ndjson` and `summary.json`.
 
+Two safeguards keep rows comparable. The replay drops every inherited `DOTNET_*`, `COMPlus_*`
+and `CORECLR_*` variable except host-location and CLI settings (so a caller's
+`DOTNET_TieredPGO` cannot change the `default` arm), and records the dropped names with each
+process. Every row carries a fingerprint (hashes of the three worker DLLs, CPU, arms, policy
+version); a data directory is only resumed when all existing rows match it. Spearman
+correlations use average ranks for ties, because code sizes tie heavily and ordinal ranks
+would make the result depend on row order.
+
 `src` and `Directory.*` are byte-identical to the frozen revision `89c0681`; only the probe's
 csproj and `IsolatedWorker.cs` differ, by diagnostic settings. Machine: 4 vCPU Intel Xeon
 @ 2.10 GHz VM, .NET 10.0.12, worker pinned to one CPU.
 
 ## Results
 
-**Optimized code differs between identical processes, and dynamic PGO is the source.**
-This uses code sizes only, so it does not depend on timing noise.
+**Optimized code differs between identical processes, and dynamic PGO accounts for most of it.**
+This uses code sizes only, so it does not depend on timing noise. Turning PGO off greatly
+reduces the variation but does not eliminate it: one `nopgo` process still has a different
+caller size (6203 vs 6221 bytes), so PGO is not shown to be the only source.
 
 | Arm | Distinct (caller, reader) shapes in 16 processes | Most common shape |
 | --- | ---: | ---: |
@@ -62,8 +72,9 @@ A 5% effect is three to six times smaller than the noise, so timing comparisons 
 single processes cannot resolve it.
 
 **Code shape does not visibly track speed, with almost no power to say so.** Spearman
-correlation between per-process size and time (`default`, n = 16): caller size +0.07 and
-reader size -0.09 against the per-process minimum, +0.01 and -0.13 against the median.
+correlation between per-process size and time (`default`, n = 16, tied values share their
+average rank): caller size +0.17 and reader size -0.09 against the per-process minimum, +0.25
+and -0.04 against the median. These are weak and not distinguishable from zero at n = 16.
 Median of per-process minima by caller size: 0.546 (5312, n=1), 0.540 (5332, n=5),
 0.559 (6712, n=8), 0.535 (6952, n=2) ms. This is not evidence of absence: byte size is a
 coarse proxy, and the noise above hides small effects. A slow process is only weakly slow on
@@ -77,8 +88,8 @@ diagnostic look stable: it would buy code-shape stability at a real throughput c
 ## What this does and does not establish
 
 - Established: the precondition of the CI observation (two identical processes holding
-  different optimized code) is reproducible locally, and it goes away when dynamic PGO is
-  off.
+  different optimized code) is reproducible locally, and it is greatly reduced, though not
+  eliminated, when dynamic PGO is off.
 - Not established: that the code difference causes the CI timing bias. The CI failure was
   highly consistent inside the pair (p10 1.049, p90 1.056 around 1.053), unlike the noise
   seen here, so this machine is not reproducing that same phenomenon.
@@ -113,7 +124,9 @@ python3 -I docs/perf/csv-pipe-process-variance/analyze.py
 python3 -I docs/perf/csv-pipe-process-variance/stats.py
 ```
 
-Running `stats.py` with no `STUDY_OUT` reproduces the numbers above from the retained data.
+Use a fresh `STUDY_OUT` for a new data set (an existing one is only resumed when its rows
+carry the same fingerprint; the retained `runs.ndjson` predates fingerprints). Running
+`stats.py` with no `STUDY_OUT` reproduces the numbers above from the retained data.
 
 ## Predeclared CI experiment
 
@@ -128,7 +141,9 @@ job limit). On `ubuntu-24.04`, from the frozen workload, it builds the probe, ru
 process, then applies `decide.py`. One dispatch, no retry, no extension, no `TieredPGO=0` arm.
 The job fails only when the data is invalid; every valid outcome below is a green job.
 
-**Rule** (checked in this order; `decide.py` holds the constants):
+**Rule** (checked in this order; `decide.py` holds the constants). Before the first dispatch,
+the Spearman correlation in `decide.py` was changed from ordinal to average ranks after a review
+showed that ties made it depend on row order; thresholds and check order are unchanged.
 
 | Quantity | Definition |
 | --- | --- |

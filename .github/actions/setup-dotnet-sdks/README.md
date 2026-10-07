@@ -21,7 +21,7 @@ With caching disabled:
 ## How It Works
 
 1. Extracts `<SupportedSdkVersions>` from the repository's `Directory.Build.props`
-2. Installs all SDK versions using `actions/setup-dotnet@v5`
+2. Installs all SDK versions using `actions/setup-dotnet@v6`
 3. Enables NuGet package caching by default
 
 ## Benefits

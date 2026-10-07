@@ -157,3 +157,8 @@ The [initial evidence](../benchmarks/CsvPipeABProbe/results.md) confirms allocat
 reductions but rejects throughput claims under a noisy local environment. It also
 exposes a generated-binding quoting discrepancy; invalid cases are not timed.
 The same report records the follow-up logical-value repair and its validation.
+
+An exploratory local study of [process-to-process variance](perf/csv-pipe-process-variance/README.md)
+found that identical processes compile different optimized code under dynamic PGO, and that
+dynamic PGO is worth roughly 16% on this path. It does not explain or waive the failed timing
+gate; the noise on that machine is too large to link code shape to speed.

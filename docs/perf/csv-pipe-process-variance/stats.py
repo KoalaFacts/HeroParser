@@ -46,9 +46,10 @@ def samples(row, transport=SEG):
 def main():
     rows, summ = load()
     by_arm = {arm: [(r, s) for r, s in zip(rows, summ) if r["arm"] == arm] for arm in ARMS}
+    arms = [arm for arm in ARMS if by_arm[arm]]  # the CI experiment runs the default arm only
 
     print("1. Code shape per process (final optimized tier of the two hot methods)")
-    for arm in ARMS:
+    for arm in arms:
         combos = {(s["callerFinal"], s["readerFinal"]) for _, s in by_arm[arm]}
         callers = sorted({s["callerFinal"] for _, s in by_arm[arm]})
         readers = sorted({s["readerFinal"] for _, s in by_arm[arm]})
@@ -62,18 +63,18 @@ def main():
         print(f"            reader sizes {readers}")
 
     print("\n2. Noise floor: max/min of the 30 measured Segmented128 batches inside ONE process")
-    for arm in ARMS:
+    for arm in arms:
         d = [max(samples(r)) / min(samples(r)) for r, _ in by_arm[arm]]
         print(f"   {arm:8s} median {st.median(d):.3f}  max {max(d):.3f}")
 
     print("\n3. Spread of Segmented128 across processes (max/min of a per-process statistic)")
-    for arm in ARMS:
+    for arm in arms:
         for name, fn in (("min", min), ("p10", lambda v: quantile(v, 0.1)), ("median", st.median)):
             vals = [fn(samples(r)) for r, _ in by_arm[arm]]
             print(f"   {arm:8s} per-process {name:6s}: {min(vals):.3f} .. {max(vals):.3f}  max/min {max(vals) / min(vals):.3f}")
 
     print("\n4. Is a slow process slow on every transport? (Spearman across processes)")
-    for arm in ARMS:
+    for arm in arms:
         g = lambda t: [st.median(samples(r, t)) for r, _ in by_arm[arm]]
         print(f"   {arm:8s} seg~contiguous {spearman(g(SEG), g('Contiguous')):+.2f}  "
               f"seg~stream {spearman(g(SEG), g('Stream4096')):+.2f}  "
@@ -93,6 +94,8 @@ def main():
         print(f"   caller={size}: n={len(vals)} median of per-process minima {st.median(vals):.3f} "
               f"range {min(vals):.3f}-{max(vals):.3f}")
 
+    if not (by_arm["default"] and by_arm["nopgo"]):
+        return
     print("\n6. Dynamic PGO effect (per-process minima, paired by run index)")
     dm = [min(samples(r)) for r, _ in by_arm["default"]]
     nm = [min(samples(r)) for r, _ in by_arm["nopgo"]]

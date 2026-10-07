@@ -103,6 +103,9 @@ def run_one(arm, index, out):
 
 def main():
     runs = int(sys.argv[1])
+    arms = os.environ.get("STUDY_ARMS", "default,nopgo").split(",")
+    if not arms or any(a not in ARMS for a in arms):
+        raise SystemExit("STUDY_ARMS must list arms from: " + ", ".join(ARMS))
     path = os.path.join(OUT, "runs.ndjson")
     done = set()
     if os.path.exists(path):
@@ -112,7 +115,7 @@ def main():
     with open(path, "a") as out:
         for i in range(runs):
             # interleave arms with alternating order so drift hits both equally
-            order = ("default", "nopgo") if i % 2 == 0 else ("nopgo", "default")
+            order = tuple(arms) if i % 2 == 0 else tuple(reversed(arms))
             for arm in order:
                 if (arm, i) in done:
                     continue

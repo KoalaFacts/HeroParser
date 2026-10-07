@@ -115,10 +115,50 @@ python3 -I docs/perf/csv-pipe-process-variance/stats.py
 
 Running `stats.py` with no `STUDY_OUT` reproduces the numbers above from the retained data.
 
-## Possible next step (not authorized or scheduled)
+## Predeclared CI experiment
 
-A predeclared, fixed-budget CI experiment on the same hardware class: about 20 fresh
-sequential processes in one job, with the code shape and per-process minima recorded for
-each, and the decision rule written before dispatch. Only then is a code-shape intervention
-(for example removing the dependence on the JIT's inlining decision) worth proposing. Per the
-existing protocol, this needs explicit approval of its sampling budget.
+Approved as a single fixed budget; this section and `decide.py` are committed before the first
+dispatch so the outcome cannot be reinterpreted afterwards. It is exploratory and never
+waives, relaxes or replaces the failed gate in `benchmarks.yml`.
+
+**Design.** Workflow [`csv-pipe-variance.yml`](../../../.github/workflows/csv-pipe-variance.yml)
+is manual only (`workflow_dispatch`, exact confirmation text, first attempt only, 30-minute
+job limit). On `ubuntu-24.04`, from the frozen workload, it builds the probe, runs **20 fresh
+`default`-arm processes** one after another pinned to CPU 0, records the code shape of every
+process, then applies `decide.py`. One dispatch, no retry, no extension, no `TieredPGO=0` arm.
+The job fails only when the data is invalid; every valid outcome below is a green job.
+
+**Rule** (checked in this order; `decide.py` holds the constants):
+
+| Quantity | Definition |
+| --- | --- |
+| noise | median over processes of max/min of the 30 `Segmented128` batches |
+| spread | p90 / p10 of the per-process minima, minus 1 |
+| shapes | distinct (caller, reader) final optimized code sizes |
+| rho | larger of the absolute Spearman correlations of the per-process minimum with caller size and reader size |
+
+| Order | Condition | Outcome |
+| ---: | --- | --- |
+| 0 | fewer than 20 complete processes, nonzero worker exit, missing optimized version | `invalid` (job fails) |
+| 1 | noise > 1.30 | `runner-too-noisy-inconclusive` |
+| 2 | spread <= 3% and shapes >= 4 | `shape-irrelevant-at-this-precision` |
+| 3 | spread > 5% and rho >= 0.5 | `shape-plausibly-causal-candidate` |
+| 4 | otherwise | `inconclusive` |
+
+**What each outcome allows.** `shape-plausibly-causal-candidate` only justifies proposing one
+single-variable code-shape intervention, which needs its own approval and sampling budget.
+`shape-irrelevant-at-this-precision` points the search away from code shape. The other two
+outcomes change nothing. No outcome approves a production change, a threshold change or
+dropping the gate, and no result is rerun to obtain a different outcome.
+
+The local VM here had noise of about 1.9, so a similar runner would end in
+`runner-too-noisy-inconclusive`; that is a possible and acceptable result.
+
+**Running it** (after this change is merged to `main`):
+
+```bash
+gh workflow run csv-pipe-variance.yml -f confirm=fixed-20-processes-one-dispatch
+```
+
+The artifact `csv-pipe-variance-<run>-1` keeps `runs.ndjson`, `summary.json`,
+`decision.json`, the raw JIT logs and the runner context.

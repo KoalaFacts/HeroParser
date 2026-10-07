@@ -1,0 +1,111 @@
+name: CSV Pipe Process Variance Experiment
+
+# Manual, fixed-budget diagnostic. NOT a timing acceptance run: it never waives, relaxes or
+# replaces the failed gate in benchmarks.yml. The decision rule is committed in
+# docs/perf/csv-pipe-process-variance/decide.py before this workflow is first dispatched.
+# One dispatch, one attempt, no retries, no budget extension.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type fixed-20-processes-one-dispatch to confirm the single fixed sampling budget'
+        type: string
+        required: true
+
+concurrency:
+  group: csv-pipe-variance
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  PYTHONDONTWRITEBYTECODE: '1'
+  # Frozen workload: the parser source the failed controls measured.
+  FROZEN_SHA: 89c06810e76c4623ebad3cfc89c4bcdef41acd59
+
+jobs:
+  variance:
+    name: Fresh-process variance (20 processes, default settings)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require the exact confirmation and the first attempt
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          [ "$CONFIRM" = "fixed-20-processes-one-dispatch" ] || { echo "::error::Confirmation text does not match."; exit 1; }
+          [ "$ATTEMPT" = "1" ] || { echo "::error::Re-runs are not allowed: one dispatch, no retry."; exit 1; }
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Verify the workload is the frozen one
+        run: |
+          git cat-file -e "$FROZEN_SHA^{commit}" 2>/dev/null || git fetch --no-tags origin "$FROZEN_SHA"
+          git cat-file -e "$FROZEN_SHA^{commit}"
+          if ! git diff --quiet "$FROZEN_SHA" HEAD -- src Directory.Build.props Directory.Build.targets Directory.Packages.props global.json; then
+            echo "::error::Parser source or build properties differ from the frozen revision $FROZEN_SHA; this experiment would not measure the same workload."
+            exit 1
+          fi
+
+      - name: Record runner context
+        run: |
+          mkdir -p "$RUNNER_TEMP/study"
+          { echo "sha=$GITHUB_SHA"; lscpu; dotnet --info; nproc; } > "$RUNNER_TEMP/study/runner-context.txt"
+
+      - name: Build the isolated probe
+        run: |
+          dotnet build src/HeroParser/HeroParser.csproj -c Release -f net10.0 --disable-build-servers -p:UseSharedCompilation=false
+          dotnet build benchmarks/CsvPipeABProbe/Models/CsvPipeABModels.csproj -c Release \
+            -p:AssemblyName=CsvPipeABModels -p:ParserDll="$PWD/src/HeroParser/bin/Release/net10.0/HeroParser.dll" \
+            -p:BaseIntermediateOutputPath=obj/isolated/ -p:OutputPath=bin/Release/isolated/ \
+            --disable-build-servers -p:UseSharedCompilation=false
+          dotnet build benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj -c Release -p:SingleModule=true \
+            -p:CandidateModelsDll="$PWD/benchmarks/CsvPipeABProbe/Models/bin/Release/isolated/CsvPipeABModels.dll" \
+            -p:BaseIntermediateOutputPath=obj/isolated/ -p:OutputPath=bin/Release/isolated/ \
+            --disable-build-servers -p:UseSharedCompilation=false
+
+      - name: Run 20 fresh pinned processes (default settings only)
+        env:
+          STUDY_ARMS: default
+          STUDY_CPU: '0'
+          STUDY_OUT: ${{ runner.temp }}/study
+          STUDY_WORKER_DIR: ${{ github.workspace }}/benchmarks/CsvPipeABProbe/bin/Release/isolated
+        run: python3 -I docs/perf/csv-pipe-process-variance/replay.py 20
+
+      - name: Extract code shapes and apply the predeclared rule
+        env:
+          STUDY_OUT: ${{ runner.temp }}/study
+        run: |
+          python3 -I docs/perf/csv-pipe-process-variance/analyze.py
+          python3 -I docs/perf/csv-pipe-process-variance/stats.py
+          python3 -I docs/perf/csv-pipe-process-variance/decide.py | tee "$RUNNER_TEMP/study/decision.txt"
+          {
+            echo '## CSV pipe process variance (exploratory, not timing acceptance)'
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/study/decision.json"
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload experiment evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csv-pipe-variance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/study/**
+          retention-days: 30
+          if-no-files-found: warn

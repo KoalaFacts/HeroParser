@@ -15,9 +15,11 @@ updates:
       - "dependencies"
       - "security"
 
-  # GitHub Actions
+  # GitHub Actions (workflows and local composite actions; "/" alone skips .github/actions)
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
     labels:

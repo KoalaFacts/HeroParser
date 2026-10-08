@@ -78,7 +78,8 @@ This directory contains automated CI/CD workflows for HeroParser.
 1. Determines the target release version (defaults to the latest release or manual input)
 2. Validates the version format
 3. Installs the official `wingetcreate` CLI tool on a Windows runner
-4. Submits the updated release manifest to the `microsoft/winget-pkgs` repository, automatically opening a pull request
+4. Syncs the token owner's `winget-pkgs` fork with `microsoft/winget-pkgs` (best effort), so `wingetcreate` does not fail with "The forked repository could not be synced with the upstream commits"
+5. Submits the updated release manifest to the `microsoft/winget-pkgs` repository, automatically opening a pull request
 
 **Requirements:**
 - GitHub secret: `WINGET_GITHUB_TOKEN` (Personal Access Token with `public_repo` scope)

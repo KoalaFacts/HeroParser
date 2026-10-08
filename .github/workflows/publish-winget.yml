@@ -102,6 +102,32 @@ jobs:
         run: |
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
+      # wingetcreate fails with "The forked repository could not be synced with the upstream
+      # commits" when the token owner's winget-pkgs fork is behind microsoft/winget-pkgs, which
+      # moves constantly. Sync it first. Best effort: a missing fork is created by wingetcreate,
+      # and a failed sync is reported here instead of surfacing only as the later wingetcreate error.
+      - name: Sync winget-pkgs fork
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          if (-not $Env:GH_TOKEN) {
+            Write-Warning "WINGET_GITHUB_TOKEN secret is not set; skipping fork sync."
+            exit 0
+          }
+          $owner = gh api user --jq .login
+          if ($LastExitCode -ne 0 -or -not $owner) {
+            Write-Warning "Could not resolve the token owner; skipping fork sync."
+            exit 0
+          }
+          gh repo sync "$owner/winget-pkgs" --source microsoft/winget-pkgs --branch master
+          if ($LastExitCode -ne 0) {
+            Write-Warning "Could not sync $owner/winget-pkgs with microsoft/winget-pkgs. Sync the fork manually if the next step fails."
+          } else {
+            Write-Host "Synced $owner/winget-pkgs with microsoft/winget-pkgs."
+          }
+          exit 0
+
       - name: Update manifest and submit PR
         shell: pwsh
         env:

@@ -1,0 +1,1282 @@
+[
+ {
+  "arm": "default",
+  "index": 0,
+  "seconds": 48.9,
+  "segMedian": 0.8214998046875,
+  "segMin": 0.522359375,
+  "segMax": 1.140839453125,
+  "contMedian": 0.915925,
+  "streamMedian": 0.41424238281250003,
+  "callerFinal": 6952,
+  "readerFinal": 5787,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6952
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5787
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 0,
+  "seconds": 50.1,
+  "segMedian": 0.7910242187500001,
+  "segMin": 0.633738671875,
+  "segMax": 1.010662109375,
+  "contMedian": 0.4621626953125,
+  "streamMedian": 0.475058203125,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 1,
+  "seconds": 52.5,
+  "segMedian": 1.01535078125,
+  "segMin": 0.790738671875,
+  "segMax": 1.2238859375,
+  "contMedian": 0.436521484375,
+  "streamMedian": 0.5391072265625001,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 1,
+  "seconds": 48.1,
+  "segMedian": 0.956240234375,
+  "segMin": 0.58027578125,
+  "segMax": 1.0632953125,
+  "contMedian": 0.35757939453125,
+  "streamMedian": 0.35759853515625,
+  "callerFinal": 6712,
+  "readerFinal": 6552,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6712
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    6552
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 2,
+  "seconds": 50.3,
+  "segMedian": 0.66516015625,
+  "segMin": 0.512544921875,
+  "segMax": 0.980294921875,
+  "contMedian": 0.36929794921875003,
+  "streamMedian": 0.39179833984375,
+  "callerFinal": 5332,
+  "readerFinal": 5782,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    5332
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5782
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 2,
+  "seconds": 54.7,
+  "segMedian": 0.8351384765625,
+  "segMin": 0.607377734375,
+  "segMax": 0.98257265625,
+  "contMedian": 0.46297851562500003,
+  "streamMedian": 0.5103889648437501,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 3,
+  "seconds": 50.6,
+  "segMedian": 0.7784546875,
+  "segMin": 0.61554375,
+  "segMax": 1.07569765625,
+  "contMedian": 0.5129955078124999,
+  "streamMedian": 0.48555302734375,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 3,
+  "seconds": 47.2,
+  "segMedian": 0.731175390625,
+  "segMin": 0.54696328125,
+  "segMax": 1.04033984375,
+  "contMedian": 0.75554453125,
+  "streamMedian": 0.34945908203125,
+  "callerFinal": 6952,
+  "readerFinal": 5745,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6952
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5745
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 4,
+  "seconds": 50.9,
+  "segMedian": 0.7132539062500001,
+  "segMin": 0.5539140625,
+  "segMax": 1.141452734375,
+  "contMedian": 0.34563925781250004,
+  "streamMedian": 0.40568544921875,
+  "callerFinal": 5332,
+  "readerFinal": 6552,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    5332
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    6552
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 4,
+  "seconds": 52.0,
+  "segMedian": 0.92695703125,
+  "segMin": 0.65310625,
+  "segMax": 1.30276953125,
+  "contMedian": 0.46988125000000003,
+  "streamMedian": 0.49027626953125,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 5,
+  "seconds": 43.1,
+  "segMedian": 0.78074296875,
+  "segMin": 0.66198515625,
+  "segMax": 1.2112234375,
+  "contMedian": 0.489790234375,
+  "streamMedian": 0.5175298828125,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 5,
+  "seconds": 49.6,
+  "segMedian": 0.7308923828125,
+  "segMin": 0.517050390625,
+  "segMax": 0.97338125,
+  "contMedian": 0.462431640625,
+  "streamMedian": 0.36999794921875,
+  "callerFinal": 6712,
+  "readerFinal": 6559,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6712
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    6559
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 6,
+  "seconds": 44.8,
+  "segMedian": 0.96302421875,
+  "segMin": 0.624828125,
+  "segMax": 1.1094046875,
+  "contMedian": 0.5493027343750001,
+  "streamMedian": 0.41078212890625,
+  "callerFinal": 6712,
+  "readerFinal": 5749,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6712
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5749
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 6,
+  "seconds": 51.6,
+  "segMedian": 0.9000974609375001,
+  "segMin": 0.615216015625,
+  "segMax": 1.202548046875,
+  "contMedian": 0.4686681640625,
+  "streamMedian": 0.5909857421875,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 7,
+  "seconds": 48.6,
+  "segMedian": 0.750637890625,
+  "segMin": 0.61842890625,
+  "segMax": 1.00562421875,
+  "contMedian": 0.508158984375,
+  "streamMedian": 0.67066171875,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 7,
+  "seconds": 49.5,
+  "segMedian": 0.716358984375,
+  "segMin": 0.540841796875,
+  "segMax": 1.168693359375,
+  "contMedian": 0.447312890625,
+  "streamMedian": 0.3790853515625,
+  "callerFinal": 5332,
+  "readerFinal": 5791,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    5332
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5791
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 8,
+  "seconds": 49.8,
+  "segMedian": 0.7263841796874999,
+  "segMin": 0.514858203125,
+  "segMax": 1.10749609375,
+  "contMedian": 0.5001578125,
+  "streamMedian": 0.39190947265625,
+  "callerFinal": 5332,
+  "readerFinal": 5779,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    5332
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5779
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 8,
+  "seconds": 44.7,
+  "segMedian": 0.903349609375,
+  "segMin": 0.6899625,
+  "segMax": 1.21333046875,
+  "contMedian": 0.45292578125,
+  "streamMedian": 0.6413953125,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 9,
+  "seconds": 56.5,
+  "segMedian": 0.88937734375,
+  "segMin": 0.76189140625,
+  "segMax": 1.099873046875,
+  "contMedian": 0.529419921875,
+  "streamMedian": 0.5070541992187501,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 9,
+  "seconds": 48.1,
+  "segMedian": 0.6454009765625,
+  "segMin": 0.540119921875,
+  "segMax": 1.04585390625,
+  "contMedian": 0.436920703125,
+  "streamMedian": 0.4063919921875,
+  "callerFinal": 5332,
+  "readerFinal": 5790,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    5332
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5790
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 10,
+  "seconds": 45.9,
+  "segMedian": 0.682671875,
+  "segMin": 0.6453015625,
+  "segMax": 1.034978125,
+  "contMedian": 0.463540625,
+  "streamMedian": 0.32687353515624995,
+  "callerFinal": 6712,
+  "readerFinal": 5745,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6712
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5745
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 10,
+  "seconds": 46.6,
+  "segMedian": 0.81172421875,
+  "segMin": 0.631883203125,
+  "segMax": 1.083681640625,
+  "contMedian": 0.5589410156250001,
+  "streamMedian": 0.3896048828125,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 11,
+  "seconds": 53.9,
+  "segMedian": 0.7960748046875,
+  "segMin": 0.63645703125,
+  "segMax": 0.96180390625,
+  "contMedian": 0.46991689453124996,
+  "streamMedian": 0.47292148437500003,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 11,
+  "seconds": 51.4,
+  "segMedian": 0.7685197265625,
+  "segMin": 0.545712890625,
+  "segMax": 1.171810546875,
+  "contMedian": 0.38277041015625,
+  "streamMedian": 0.38132441406249995,
+  "callerFinal": 5312,
+  "readerFinal": 6559,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    5312
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    6559
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 12,
+  "seconds": 46.6,
+  "segMedian": 0.6766855468749999,
+  "segMin": 0.498442578125,
+  "segMax": 0.96155234375,
+  "contMedian": 0.46487617187499997,
+  "streamMedian": 0.37208037109375003,
+  "callerFinal": 6712,
+  "readerFinal": 5775,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6712
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    5775
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 12,
+  "seconds": 50.8,
+  "segMedian": 0.855376953125,
+  "segMin": 0.74845390625,
+  "segMax": 1.16546171875,
+  "contMedian": 0.45903291015625003,
+  "streamMedian": 0.505478515625,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 13,
+  "seconds": 55.2,
+  "segMedian": 0.85561484375,
+  "segMin": 0.62407109375,
+  "segMax": 1.1757390625,
+  "contMedian": 0.46792705078124996,
+  "streamMedian": 0.4949580078125,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 13,
+  "seconds": 50.4,
+  "segMedian": 0.6980646484375,
+  "segMin": 0.5485609375,
+  "segMax": 1.18861328125,
+  "contMedian": 0.37154892578125,
+  "streamMedian": 0.36223935546875,
+  "callerFinal": 6712,
+  "readerFinal": 6559,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6712
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    6559
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 14,
+  "seconds": 50.1,
+  "segMedian": 0.690989453125,
+  "segMin": 0.569016796875,
+  "segMax": 1.046593359375,
+  "contMedian": 0.34882861328125003,
+  "streamMedian": 0.3464990234375,
+  "callerFinal": 6712,
+  "readerFinal": 6552,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6712
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    6552
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 14,
+  "seconds": 47.8,
+  "segMedian": 0.9433845703125,
+  "segMin": 0.60846953125,
+  "segMax": 1.275251171875,
+  "contMedian": 0.46117089843750003,
+  "streamMedian": 0.479823828125,
+  "callerFinal": 6221,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6221
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "nopgo",
+  "index": 15,
+  "seconds": 49.5,
+  "segMedian": 0.7721123046875,
+  "segMin": 0.627683203125,
+  "segMax": 1.079955078125,
+  "contMedian": 0.45151259765624996,
+  "streamMedian": 0.47493828125000004,
+  "callerFinal": 6203,
+  "readerFinal": 5190,
+  "callerVersions": [
+   [
+    "Tier0",
+    5611
+   ],
+   [
+    "Tier1",
+    6203
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Tier0",
+    2757
+   ],
+   [
+    "Tier1-OSR",
+    4251
+   ],
+   [
+    "Tier1",
+    5190
+   ]
+  ]
+ },
+ {
+  "arm": "default",
+  "index": 15,
+  "seconds": 49.8,
+  "segMedian": 0.651183984375,
+  "segMin": 0.513247265625,
+  "segMax": 0.8465546875,
+  "contMedian": 0.35251103515625,
+  "streamMedian": 0.35487148437500005,
+  "callerFinal": 6712,
+  "readerFinal": 6559,
+  "callerVersions": [
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Instrumented Tier0",
+    6621
+   ],
+   [
+    "Tier1",
+    6712
+   ]
+  ],
+  "readerVersions": [
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1-OSR",
+    5848
+   ],
+   [
+    "Instrumented Tier0",
+    3523
+   ],
+   [
+    "Tier1",
+    6559
+   ]
+  ]
+ }
+]

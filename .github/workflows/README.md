@@ -237,7 +237,7 @@ Recommended settings for `main` branch:
 ### Step-by-step Release Process
 
 1. Merge release-preparation changes to `main`. Check that the version in `Directory.Build.props`, package metadata, and changelog agree. Replace the `Unreleased` changelog date with the actual release date and wait for required CI checks.
-2. Dispatch the **Create Release** workflow from `main` with version `2.8.0`. It validates the branch and configured version, builds and tests, packs NuGet packages and CLI binaries, then creates the immutable `v2.8.0` tag at the tested commit and publishes the GitHub Release.
+2. Dispatch the **Create Release** workflow from `main` with version `2.8.1`. It validates the branch and configured version, builds and tests, packs NuGet packages and CLI binaries, then creates the immutable `v2.8.1` tag at the tested commit and publishes the GitHub Release.
 3. Inspect the release assets and generated notes. Check the downstream NuGet, WinGet, Homebrew, Scoop, and Snap workflows separately; a successful GitHub Release does not guarantee each distribution is live.
 4. Announce the release only after the intended distribution channels have succeeded. The JavaScript/npm package is a separate, unpublished preview and is not published by this workflow.
 

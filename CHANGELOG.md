@@ -4,8 +4,13 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-10-08
+
+### Improved
+- Reduce allocations when decoding quoted, escaped, and segmented columns in the buffered `PipeReader` row path. In a microbenchmark a doubled-quote column went from 312 B to 88 B (368 B to 88 B when split across segments) and a long escaped column from about 23.7 KB to 7.2 KB. Throughput differences were within measurement noise and are not claimed.
+
 ### Fixed
-- Decode CSV quoting and escapes before generated record binding, header matching, null-value checks, and validation. Respect custom quotes and disabled quote parsing without changing raw column access or Excel cell values.
+- Decode CSV quoting and escapes before generated record binding, header matching, null-value checks, and validation. Respect custom quotes and disabled quote parsing without changing raw column access or Excel cell values. Generated binders previously kept the CSV quoting of quoted fields in string values; they now bind the decoded value.
 
 ## [2.8.0] - 2026-09-29
 

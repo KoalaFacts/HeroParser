@@ -124,9 +124,26 @@ jobs:
           name: csv-pipe-source-provenance-${{ github.run_id }}-${{ github.run_attempt }}
           path: BenchmarkDotNet.Artifacts/pipe-source-provenance/**
           retention-days: 30
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.x'
+      - name: Install isolated historical toolchain without latest-runtime injection
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/csv-pipe-history-dotnet"
+          archive="$RUNNER_TEMP/dotnet-sdk-10.0.401-linux-x64.tar.gz"
+          test ! -e "$root"
+          mkdir "$root"
+          curl --fail --silent --show-error --location 'https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-linux-x64.tar.gz' --output "$archive"
+          echo "51c8b999af9e8dd9998c9edc5944e19a90788862068acd38694e098889054ce8c23d4f0c5cccfa16bf187d044562359e5ee69a9f8ad0bbe913ba90311fbce25b  $archive" | sha512sum --check --strict
+          tar -xzf "$archive" -C "$root"
+          echo "$root" >> "$GITHUB_PATH"
+          echo "DOTNET_ROOT=$root" >> "$GITHUB_ENV"
+      - name: Require exact historical SDK, compiler, reference pack and runtime
+        shell: pwsh
+        run: |
+          ./benchmarks/CsvPipeABProbe/history-test-toolchain.ps1
+          ./benchmarks/CsvPipeABProbe/history-test-repository-url.ps1
+          . ./benchmarks/CsvPipeABProbe/history-toolchain.ps1
+          Get-CsvPipeHistoryToolchain | ConvertTo-Json
       - name: Download retained failed cycle, not new timings
         shell: pwsh
         env:

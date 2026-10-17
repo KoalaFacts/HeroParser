@@ -34,7 +34,9 @@ public sealed class SystemAnsiConsole : IAnsiConsole
     public SystemAnsiConsole(TextWriter writer, TextReader? reader = null, int width = 80)
     {
         ArgumentNullException.ThrowIfNull(writer);
-        this.writer = writer;
+        // Live progress/status rendering runs alongside command output. Match
+        // System.Console.Out's synchronization for redirected writers as well.
+        this.writer = TextWriter.Synchronized(writer);
         this.reader = reader;
         FixedWidth = width;
     }

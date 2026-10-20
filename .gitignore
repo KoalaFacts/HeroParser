@@ -276,3 +276,6 @@ NUL
 
 # But ignore compiled WASM assets inside heroparser package
 npm/packages/heroparser/_framework/
+
+# Small, checked-in regression inputs for the CI report validator.
+!.github/scripts/tests/fixtures/*.trx

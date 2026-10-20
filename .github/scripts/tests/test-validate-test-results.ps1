@@ -61,6 +61,34 @@ try {
     Assert-Report 'consistent failed test remains publishable' @((Write-Report 'valid-failed' $failed)) $true
     $allSkipped = $passed.Replace('outcome="Passed"', 'outcome="NotExecuted"').Replace('executed="2"', 'executed="0"').Replace('passed="2"', 'passed="0"').Replace('notExecuted="0"', 'notExecuted="2"')
     Assert-Report 'all skipped is not execution evidence' @((Write-Report 'all-skipped' $allSkipped)) $false 'no executed tests'
+    $notRunnable = $passed.Replace('outcome="Passed"', 'outcome="NotRunnable"').Replace('passed="2"', 'passed="0"').Replace('notRunnable="0"', 'notRunnable="2"')
+    Assert-Report 'NotRunnable cannot claim execution' @((Write-Report 'not-runnable-only' $notRunnable)) $false 'executed'
+    Assert-Report 'all unrunnable is not execution evidence' @((Write-Report 'unrunnable-zero-executed' $notRunnable.Replace('executed="2"', 'executed="0"'))) $false 'no executed tests'
+    $mixedNotRunnable = $skipped.Replace('NotExecuted', 'NotRunnable').Replace('notExecuted="1"', 'notExecuted="0"').Replace('notRunnable="0"', 'notRunnable="1"')
+    Assert-Report 'unrunnable record is not counted as executed' @((Write-Report 'mixed-not-runnable' $mixedNotRunnable)) $true
+    Assert-Report 'unrunnable record cannot inflate executed count' @((Write-Report 'inflated-not-runnable' $mixedNotRunnable.Replace('executed="1"', 'executed="2"'))) $false 'executed'
+    foreach ($state in @('Pending', 'InProgress')) {
+        $counter = $state.Substring(0, 1).ToLowerInvariant() + $state.Substring(1)
+        $unfinished = $passed.Replace('outcome="Passed"', "outcome=`"$state`"").Replace('passed="2"', 'passed="0"').Replace("$counter=`"0`"", "$counter=`"2`"")
+        Assert-Report "$state is not a final report" @((Write-Report "$state-only" $unfinished)) $false 'nonterminal'
+        $mixed = $passed.Replace('testName="Example.AlsoPasses" outcome="Passed"', "testName=`"Example.AlsoPasses`" outcome=`"$state`"").Replace('passed="2"', 'passed="1"').Replace("$counter=`"0`"", "$counter=`"1`"")
+        Assert-Report "passed test cannot hide $state record" @((Write-Report "mixed-$state" $mixed)) $false 'nonterminal'
+    }
+    $warning = $passed.Replace('outcome="Passed"', 'outcome="Warning"').Replace('passed="2"', 'passed="0"').Replace('warning="0"', 'warning="2"')
+    Assert-Report 'run-level Warning is not a test outcome' @((Write-Report 'warning-only' $warning)) $false 'run-level'
+    $mixedWarning = $passed.Replace('testName="Example.AlsoPasses" outcome="Passed"', 'testName="Example.AlsoPasses" outcome="Warning"').Replace('passed="2"', 'passed="1"').Replace('warning="0"', 'warning="1"')
+    Assert-Report 'passed test cannot hide run-level Warning' @((Write-Report 'mixed-warning' $mixedWarning)) $false 'run-level'
+    $disconnected = $passed.Replace('outcome="Passed"', 'outcome="Disconnected"').Replace('passed="2"', 'passed="0"').Replace('disconnected="0"', 'disconnected="2"')
+    Assert-Report 'disconnected run is incomplete evidence' @((Write-Report 'disconnected-only' $disconnected)) $false 'incomplete'
+    $mixedDisconnected = $passed.Replace('testName="Example.AlsoPasses" outcome="Passed"', 'testName="Example.AlsoPasses" outcome="Disconnected"').Replace('passed="2"', 'passed="1"').Replace('disconnected="0"', 'disconnected="1"')
+    Assert-Report 'passed test cannot hide disconnected record' @((Write-Report 'mixed-disconnected' $mixedDisconnected)) $false 'incomplete'
+    $failedAndSkipped = $skipped.Replace('outcome="Passed"', 'outcome="Failed"').Replace('passed="1"', 'passed="0"').Replace('failed="0"', 'failed="1"')
+    Assert-Report 'failed terminal and skipped records remain publishable' @((Write-Report 'failed-and-skipped' $failedAndSkipped)) $true
+    foreach ($state in @('Failed', 'Error', 'Timeout', 'Aborted', 'Inconclusive', 'PassedButRunAborted', 'Completed')) {
+        $counter = $state.Substring(0, 1).ToLowerInvariant() + $state.Substring(1)
+        $terminal = $passed.Replace('outcome="Passed"', "outcome=`"$state`"").Replace('passed="2"', 'passed="0"').Replace("$counter=`"0`"", "$counter=`"2`"")
+        Assert-Report "$state terminal results remain publishable" @((Write-Report "terminal-$state" $terminal)) $true
+    }
     Assert-Report 'namespaced prefix is supported' @((Write-Report 'prefixed' ($passed.Replace('xmlns=', 'xmlns:t=') -replace '<(/?)(TestRun|Results|UnitTestResult|ResultSummary|Counters)', '<$1t:$2'))) $true
 } finally {
     Remove-Item -LiteralPath $temp -Recurse -Force

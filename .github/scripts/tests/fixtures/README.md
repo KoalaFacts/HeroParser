@@ -23,3 +23,24 @@ The candidate producer fix is tracked separately in PR #140 (TrxReport 2.5.0 to 
 Its historical artifact `11769201774` contains 4,209 unit and 324 integration
 records and passes this guard. This fixture check does not replace fresh build,
 test, review, or CI validation of the final integrated revision.
+
+## Outcome contract
+
+`NotExecuted` and `NotRunnable` are unrun records and do not contribute to
+`executed`. Consistent mixed reports can include these records, but an entirely
+unrun suite is not execution evidence. Terminal outcomes (`Passed`, `Failed`,
+`Error`, `Timeout`, `Aborted`, `Inconclusive`, `PassedButRunAborted`, `Completed`)
+remain publishable when their counters match; accepting a report never converts
+failed tests into successful tests.
+
+`Pending` and `InProgress` are nonterminal. `Warning` is a run-level status, not
+a per-test outcome. The guard rejects these even when mixed with passing tests.
+It also rejects `Disconnected` as incomplete evidence: this is a conservative
+completed-report policy, not a claim that TRX syntax prohibits the status.
+Raw reports remain uploaded for diagnosis.
+
+The classifications follow Microsoft's
+[TRX outcome definitions](https://github.com/microsoft/vstest/blob/main/src/Microsoft.TestPlatform.Extensions.TrxLogger/ObjectModel/TestOutcome.cs).
+The current
+[MTP TRX producer](https://github.com/microsoft/testfx/blob/main/src/Platform/Microsoft.Testing.Extensions.TrxReport/TrxReportEngine.Results.cs)
+emits `Passed`, `Failed`, and `NotExecuted` for ordinary test results.

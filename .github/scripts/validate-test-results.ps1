@@ -73,6 +73,15 @@ foreach ($file in $Path) {
         if ($outcome -cnotin $outcomeCounters.Keys) {
             throw "TRX report '$file' contains a missing or unsupported test outcome '$outcome'."
         }
+        if ($outcome -cin @('Pending', 'InProgress')) {
+            throw "TRX report '$file' contains nonterminal test outcome '$outcome'."
+        }
+        if ($outcome -ceq 'Warning') {
+            throw "TRX report '$file' uses run-level outcome 'Warning' as a test result."
+        }
+        if ($outcome -ceq 'Disconnected') {
+            throw "TRX report '$file' contains incomplete 'Disconnected' test evidence."
+        }
         $actual[$outcomeCounters[$outcome]]++
     }
     foreach ($name in $outcomeCounters.Values) {
@@ -80,7 +89,9 @@ foreach ($file in $Path) {
             throw "TRX report '$file' '$name' counter ($($counters[$name])) differs from result outcomes ($($actual[$name]))."
         }
     }
-    $executed = $results.Count - $actual.notExecuted
+    # TRX defines both NotExecuted and NotRunnable as records that did not run.
+    # Pending/InProgress are unfinished; Warning is run-level, not a test result.
+    $executed = $results.Count - $actual.notExecuted - $actual.notRunnable
     if ($counters.executed -ne $executed) {
         throw "TRX report '$file' executed counter ($($counters.executed)) differs from executed result count ($executed)."
     }

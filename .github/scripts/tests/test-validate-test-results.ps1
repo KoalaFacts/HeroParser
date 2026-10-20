@@ -35,6 +35,18 @@ try {
     $unit = Write-Report 'unit' $passed
     $integration = Write-Report 'integration' $passed
     Assert-Report 'valid unit and integration' @($unit, $integration) $true
+    Assert-Report 'missing run summary' @((Write-Report 'no-summary' ($passed -replace '(?s)<ResultSummary.*?</ResultSummary>', ''))) $false 'ResultSummary'
+    Assert-Report 'duplicate summary without counters is ambiguous' @((Write-Report 'duplicate-summary' $passed.Replace('</TestRun>', '<ResultSummary outcome="Completed" /></TestRun>'))) $false 'exactly one ResultSummary'
+    Assert-Report 'empty summary before populated summary is ambiguous' @((Write-Report 'duplicate-summary-first' $passed.Replace('<Results>', '<ResultSummary outcome="Completed" /><Results>'))) $false 'exactly one ResultSummary'
+    foreach ($state in @('', ' ', 'Unknown', 'completed', 'Pending', 'InProgress', 'Disconnected', 'NotExecuted', 'NotRunnable')) {
+        $summary = $passed.Replace('outcome="Completed"', "outcome=`"$state`"")
+        Assert-Report "invalid run-level outcome '$state'" @((Write-Report "summary-$state" $summary)) $false 'run-level outcome'
+    }
+    Assert-Report 'missing run-level outcome' @((Write-Report 'summary-missing-outcome' $passed.Replace('outcome="Completed"', ''))) $false 'run-level outcome'
+    foreach ($state in @('Completed', 'Passed', 'Failed', 'Error', 'Timeout', 'Aborted', 'Inconclusive', 'PassedButRunAborted', 'Warning')) {
+        $summary = $passed.Replace('outcome="Completed"', "outcome=`"$state`"")
+        Assert-Report "terminal run-level $state remains publishable" @((Write-Report "summary-terminal-$state" $summary)) $true
+    }
     Assert-Report 'observed zero-result TRX' @((Join-Path $fixtures 'empty.trx')) $false 'no executed tests'
     Assert-Report 'one empty suite cannot hide behind healthy suite' @($unit, (Join-Path $fixtures 'empty.trx')) $false 'no executed tests'
     Assert-Report 'missing expected integration report' @($unit, (Join-Path $temp 'missing.trx')) $false 'missing.trx'
@@ -84,6 +96,7 @@ try {
     Assert-Report 'passed test cannot hide disconnected record' @((Write-Report 'mixed-disconnected' $mixedDisconnected)) $false 'incomplete'
     $failedAndSkipped = $skipped.Replace('outcome="Passed"', 'outcome="Failed"').Replace('passed="1"', 'passed="0"').Replace('failed="0"', 'failed="1"')
     Assert-Report 'failed terminal and skipped records remain publishable' @((Write-Report 'failed-and-skipped' $failedAndSkipped)) $true
+    Assert-Report 'Failed summary preserves failed and skipped diagnostics' @((Write-Report 'failed-summary-and-skipped' $failedAndSkipped.Replace('outcome="Completed"', 'outcome="Failed"'))) $true
     foreach ($state in @('Failed', 'Error', 'Timeout', 'Aborted', 'Inconclusive', 'PassedButRunAborted', 'Completed')) {
         $counter = $state.Substring(0, 1).ToLowerInvariant() + $state.Substring(1)
         $terminal = $passed.Replace('outcome="Passed"', "outcome=`"$state`"").Replace('passed="2"', 'passed="0"').Replace("$counter=`"0`"", "$counter=`"2`"")

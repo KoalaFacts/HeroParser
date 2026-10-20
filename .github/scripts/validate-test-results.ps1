@@ -42,7 +42,18 @@ foreach ($file in $Path) {
     }
     $namespaces = [System.Xml.XmlNamespaceManager]::new($document.NameTable)
     $namespaces.AddNamespace('t', $namespace)
-    $counterNodes = $document.SelectNodes('/t:TestRun/t:ResultSummary/t:Counters', $namespaces)
+    $summaries = $document.SelectNodes('/t:TestRun/t:ResultSummary', $namespaces)
+    if ($summaries.Count -ne 1) {
+        throw "TRX report '$file' must contain exactly one ResultSummary element."
+    }
+    $runOutcome = $summaries[0].GetAttribute('outcome')
+    # Terminal failures/warnings remain publishable for diagnosis. An explicitly
+    # unfinished/disconnected run is not complete evidence, even with consistent
+    # currently written test records. Outcome names are case-sensitive in TRX.
+    if ($runOutcome -cnotin @('Passed', 'Completed', 'Failed', 'Error', 'Timeout', 'Aborted', 'Inconclusive', 'PassedButRunAborted', 'Warning')) {
+        throw "TRX report '$file' has a missing, unsupported or incomplete run-level outcome '$runOutcome'."
+    }
+    $counterNodes = $summaries[0].SelectNodes('t:Counters', $namespaces)
     if ($counterNodes.Count -ne 1) {
         throw "TRX report '$file' must contain exactly one ResultSummary/Counters element."
     }

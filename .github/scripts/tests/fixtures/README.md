@@ -39,6 +39,16 @@ It also rejects `Disconnected` as incomplete evidence: this is a conservative
 completed-report policy, not a claim that TRX syntax prohibits the status.
 Raw reports remain uploaded for diagnosis.
 
+The run-level `ResultSummary` is checked independently of per-test outcomes:
+there must be exactly one summary with a recognized, case-sensitive outcome.
+Missing/unknown outcomes, `Pending`, `InProgress`, `Disconnected`, `NotExecuted`,
+or `NotRunnable` reject the report even when all currently written test results
+and counters agree.
+Terminal run-level failures and `Warning` remain publishable for diagnosis.
+An unrun summary is not accepted as evidence that a run executed. This is the
+guard's evidence policy, not a claim that these values are invalid TRX syntax.
+It does not turn a failed or aborted run into a successful test run.
+
 The classifications follow Microsoft's
 [TRX outcome definitions](https://github.com/microsoft/vstest/blob/main/src/Microsoft.TestPlatform.Extensions.TrxLogger/ObjectModel/TestOutcome.cs).
 The current

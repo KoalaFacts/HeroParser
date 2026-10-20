@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="f3f1a416-4e8b-4db0-b4ec-479c7c3a33b4" name="Validation fixture" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult executionId="e4056d13-1220-4051-929c-c86c3df0dd35" testId="5434dddf-3eeb-4bd4-a55f-95ee54f52091" testName="Example.Passes" outcome="Passed" />
+    <UnitTestResult executionId="94ddf560-82c5-426b-9714-fe82b642b36a" testId="7a803e61-42e4-4abe-97fe-359db2b0a184" testName="Example.AlsoPasses" outcome="Passed" />
+  </Results>
+  <ResultSummary outcome="Completed">
+    <Counters total="2" executed="2" passed="2" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+  </ResultSummary>
+</TestRun>

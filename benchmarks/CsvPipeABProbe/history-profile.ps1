@@ -15,6 +15,7 @@ if (@(@($JitEventControl, $SameRunControl, $VerificationBoundaryControl) | Where
 . (Join-Path $PSScriptRoot 'control.ps1')
 . (Join-Path $PSScriptRoot 'native-evidence.ps1')
 . (Join-Path $PSScriptRoot 'history-evidence.ps1')
+. (Join-Path $PSScriptRoot 'history-toolchain.ps1')
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $Workspace = [IO.Path]::GetFullPath($Workspace)
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
@@ -43,6 +44,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Diagnostic revision unavailable.' }
 if (Test-Path -LiteralPath $Workspace) { throw 'Use a fresh history workspace.' }
 if ((Test-Path -LiteralPath $OutputDirectory) -and @(Get-ChildItem $OutputDirectory -Force).Count) { throw 'Do not overwrite historical evidence.' }
 Assert-CsvPipeParentRuntimeEnvironment @(Get-ChildItem Env:)
+$toolchain = Get-CsvPipeHistoryToolchain
 $clockTicks = (& getconf CLK_TCK | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $clockTicks -notmatch '^[1-9]\d*$') { throw 'Process accounting clock unavailable.' }
 $allowed = Get-Content '/proc/self/status' | Select-String '^Cpus_allowed_list:\s*([0-9,-]+)$'
@@ -277,7 +279,10 @@ try {
         (@((Join-Path $consumerProbe 'CsvPipeABProbe.csproj'), '-c', 'Release', '-p:SingleModule=true', "-p:CandidateModelsDll=$models", "-p:BaseIntermediateOutputPath=obj/$(if ($VerificationBoundaryControl) { 'boundary' } else { 'isolated' })/", "-p:OutputPath=$workerOutput/") + $consumerArguments)
     )
     foreach ($arguments in $builds) {
-        & dotnet build @arguments --disable-build-servers -p:UseSharedCompilation=false | Out-Host
+        $arguments = @(Get-CsvPipeHistoryBuildArguments $arguments) + @('--disable-build-servers', '-p:UseSharedCompilation=false')
+        Assert-CsvPipeHistoryProjectToolchain $toolchain $arguments |
+            ConvertTo-Json -Depth 8 | Set-Content (Join-Path $OutputDirectory "$([IO.Path]::GetFileNameWithoutExtension($arguments[0]))-toolchain.json")
+        & $toolchain.Dotnet build @arguments | Out-Host
         if ($LASTEXITCODE -ne 0) { throw 'Frozen history build failed.' }
     }
     if ($VerificationBoundaryControl) {

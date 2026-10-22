@@ -304,3 +304,53 @@ gate. Further sampling requires a new approved, predeclared design; this budget
 is exhausted. Existing same-PID artifacts can still be analyzed without launching
 workers. Original A/A acceptance stays failed; production optimization and merge
 remain unauthorized.
+
+### Historical build toolchain
+
+The September 30 capture was compiled with SDK 10.0.401 and ran on .NET
+10.0.12. Historical diagnostics use a fresh Linux x64 SDK installation from
+the official archive, checked against its pinned SHA-512. They do not change
+`global.json` or the SDK used by production builds. `setup-dotnet` alone is
+insufficient here: its pinned implementation installs the latest LTS runtime
+and host before installing the requested SDK.
+
+`history-toolchain.ps1` fails closed on an unexpected SDK, Roslyn compiler,
+reference pack or runtime, including full-directory component fingerprints. Each frozen
+project is also evaluated to confirm its selected SDK, compiler path and
+net10.0 reference pack before compilation. The original source and expected
+assembly hashes remain authoritative. A mismatch is a stopped diagnostic,
+never permission to update the expected hashes or collect replacement timings.
+
+Historical model build commands also pin `RepositoryUrl` to
+`https://github.com/KoalaFacts/HeroParser`, the original checkout's value.
+An otherwise equivalent clone URL ending in `.git` changes the models'
+generated assembly metadata and deterministic fingerprint. The historical
+build helper passes the property to models and their generator reference;
+the preflight evaluates the same build properties, records `RepositoryUrl`,
+and rejects a different model URL. Parser and driver commands, repository
+remotes, and ordinary production builds are unchanged. The synthetic
+`history-test-repository-url.ps1` regression checks argument preservation,
+preflight parity, a `.git`-suffixed origin, and fail-closed validation without
+building projects or starting parser workers.
+
+For a standalone contaminated-output regression, set `DOTNET_ROOT` and `PATH`
+to that isolated installation, then run:
+
+```powershell
+./benchmarks/CsvPipeABProbe/history-test-frozen-build.ps1 `
+  -InputDirectory <retained-pipe-series> -Workspace <fresh-frozen-checkout> `
+  -OutputDirectory <fresh-build-evidence> -BuildContamination
+```
+
+This mode builds HEAD parser/models/driver and then frozen parser/models plus
+the diagnostic driver, retaining the HEAD outputs throughout. It permits at
+most six direct project-build commands and fifteen minutes, starts no parser
+workers, and sends no batch commands or timing samples. Per-phase binlogs,
+SDK/compiler/reference selection, fingerprints, output and a summary survive
+failures. Identity/evaluation/build subprocesses share one monotonic deadline;
+GNU timeout process groups also contain descendants after their direct parent
+exits, including children that close their output pipes. Process-group cleanup,
+exit collection and output draining allow at most three additional seconds;
+this grace period starts no new build work and retains text emitted before
+a timeout. Without `-BuildContamination`, the existing workflow-provided HEAD
+outputs are required and only the three frozen/diagnostic builds are run.

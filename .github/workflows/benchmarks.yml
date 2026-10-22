@@ -196,7 +196,7 @@ jobs:
         done
 
     - name: Upload benchmark results
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
         name: benchmark-results-${{ matrix.framework }}
@@ -309,7 +309,7 @@ jobs:
 
       - name: Upload paired experiment evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: csv-pipe-paired-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -355,7 +355,7 @@ jobs:
 
       - name: Upload diagnostic evidence even on failure
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: csv-pipe-profile-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -408,7 +408,7 @@ jobs:
 
       - name: Upload diagnostic evidence even on failure
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: csv-pipe-bias-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -511,7 +511,7 @@ jobs:
           ./benchmarks/CsvPipeABProbe/native-profile.ps1 -WorkloadSha 89c06810e76c4623ebad3cfc89c4bcdef41acd59 -Workspace "$env:RUNNER_TEMP/pipe-native" -PerfTool $env:HERO_PARSER_PERF
       - name: Retain native evidence even on failure
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: csv-pipe-native-${{ github.run_id }}-${{ github.run_attempt }}
           path: BenchmarkDotNet.Artifacts/pipe-native/**

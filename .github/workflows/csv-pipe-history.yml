@@ -119,7 +119,7 @@ jobs:
           }
       - name: Retain historical source retrieval provenance
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: csv-pipe-source-provenance-${{ github.run_id }}-${{ github.run_attempt }}
           path: BenchmarkDotNet.Artifacts/pipe-source-provenance/**
@@ -165,7 +165,7 @@ jobs:
           ./benchmarks/CsvPipeABProbe/history-test-frozen-build.ps1 -InputDirectory "$env:RUNNER_TEMP/history-input/pipe-series" -Workspace "$env:RUNNER_TEMP/history-build-regression"
       - name: Retain build provenance including setup failures
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: csv-pipe-build-provenance-${{ github.run_id }}-${{ github.run_attempt }}
           path: BenchmarkDotNet.Artifacts/pipe-build-provenance/**
@@ -201,7 +201,7 @@ jobs:
           ./benchmarks/CsvPipeABProbe/history-machine-code.ps1 -InputDirectory "$env:RUNNER_TEMP/native-history/study" -OriginRun 36814110508 -OutputDirectory BenchmarkDotNet.Artifacts/pipe-machine-code
       - name: Retain offline instruction evidence
         if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: csv-pipe-machine-code-${{ github.run_id }}-${{ github.run_attempt }}
           path: BenchmarkDotNet.Artifacts/pipe-machine-code/**
@@ -227,7 +227,7 @@ jobs:
           ./benchmarks/CsvPipeABProbe/history-replay.ps1 -InputDirectory "$env:RUNNER_TEMP/history-capture/study" -SourceRun $env:REPLAY_RUN -AnalyzerDll benchmarks/CsvPipeDiagnostics/bin/Release/net10.0/CsvPipeDiagnostics.dll
       - name: Retain partial and negative evidence
         if: always() && github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: csv-pipe-history-${{ github.run_id }}-${{ github.run_attempt }}
           path: BenchmarkDotNet.Artifacts/pipe-history/**

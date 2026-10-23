@@ -1,4 +1,5 @@
 using HeroParser.AotTests.Models;
+using HeroParser.FixedWidths.Records;
 using HeroParser.FixedWidths;
 
 namespace HeroParser.AotTests.Tests;
@@ -18,6 +19,33 @@ public static class FixedWidthAotTests
         runner.Run("FixedWidth: Basic parsing", BasicParsing);
         runner.Run("FixedWidth: Alignment handling", AlignmentHandling);
         runner.Run("FixedWidth: Multiple generated types", MultipleGeneratedTypes);
+        runner.Run("FixedWidth: Generated error callback", GeneratedErrorCallback);
+        runner.Run("FixedWidth: Generated custom converter", GeneratedCustomConverter);
+    }
+
+    private static void GeneratedErrorCallback()
+    {
+        int calls = 0;
+        var rows = FixedWidth.Read<FixedWidthPerson>()
+            .OnError((_, _) => { calls++; return FixedWidthDeserializeErrorAction.SkipRecord; })
+            .FromText("Alice               0000000030\nBob                 XXXXXXXXXX").ToList();
+        if (rows.Count != 1 || rows[0].Name != "Alice" || rows[0].Age != 30 || calls != 1)
+            throw new Exception($"Generated error callback failed: records={rows.Count}, callbacks={calls}");
+    }
+
+    private static void GeneratedCustomConverter()
+    {
+        int calls = 0;
+        var rows = FixedWidth.Read<FixedWidthPerson>()
+            .RegisterConverter<int>((value, culture, format, out result) =>
+            {
+                calls++;
+                result = int.Parse(value, culture) + 100;
+                return true;
+            })
+            .FromText("Alice               0000000030").ToList();
+        if (rows.Count != 1 || rows[0].Name != "Alice" || rows[0].Age != 130 || calls != 1)
+            throw new Exception($"Generated custom converter failed: records={rows.Count}, calls={calls}");
     }
 
     private static void GeneratedBinderParsing()

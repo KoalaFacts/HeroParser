@@ -18,7 +18,8 @@
 
   <!-- Compiler and build settings -->
   <PropertyGroup>
-    <LangVersion>latest</LangVersion>
+    <!-- Keep the language contract compatible with the .NET 10 SDK when building with newer SDKs. -->
+    <LangVersion>14.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AnalysisLevel>latest</AnalysisLevel>

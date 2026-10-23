@@ -71,7 +71,11 @@ internal static class JsonlPipeLineReader
                 yield break;
             }
 
-            if (buffer.Length > options.MaxLineSizeBytes)
+            // A CR at the limit may be the first half of a split CRLF delimiter.
+            // Keep that one byte until LF arrives; completed lines still enforce the limit.
+            bool pendingCrLf = buffer.Length == (long)options.MaxLineSizeBytes + 1 &&
+                TryGetLastByte(buffer, out byte lastByte) && lastByte == CR;
+            if (buffer.Length > options.MaxLineSizeBytes && !pendingCrLf)
             {
                 reader.AdvanceTo(buffer.Start, buffer.End);
                 throw new JsonlException(

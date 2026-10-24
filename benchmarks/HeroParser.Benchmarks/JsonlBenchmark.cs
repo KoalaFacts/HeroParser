@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -5,6 +6,7 @@ using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.Conversion;
 using HeroParser.JsonLines.Reading;
+using HeroParser.SeparatedValues.Core;
 
 namespace HeroParser.Benchmarks;
 
@@ -25,6 +27,7 @@ public class JsonlBenchmark
     private string csv = null!;
     private List<FlatRow> rows = null!;
     private JsonSerializerOptions serializerOptions = null!;
+    private CsvToJsonlOptions csvConversionOptions = null!;
 
     [Params(10_000, 100_000)]
     public int Rows { get; set; }
@@ -33,6 +36,8 @@ public class JsonlBenchmark
     public void Setup()
     {
         serializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        // CsvReadOptions.MaxRowCount counts the CSV header as a row too.
+        csvConversionOptions = new CsvToJsonlOptions { MaxRowCount = checked(Rows + 1) };
 
         rows = new List<FlatRow>(Rows);
         var sb = new StringBuilder(Rows * 80);
@@ -59,6 +64,7 @@ public class JsonlBenchmark
         csv = csvSb.ToString();
 
         ValidateReadersAndWriters();
+        ValidateConversions();
 
         filePath = Path.Combine(Path.GetTempPath(), $"heroparser-jsonl-{Rows}-{Guid.NewGuid():N}.jsonl");
         File.WriteAllBytes(filePath, jsonlUtf8);
@@ -118,6 +124,72 @@ public class JsonlBenchmark
             if (index != rows.Count)
                 throw new InvalidOperationException($"JSONL {variant}: expected {rows.Count} records, read {index}.");
         }
+    }
+
+    private void ValidateConversions()
+    {
+        // Conversion benchmarks are timed separately from reader/writer benchmarks.
+        // Verify their complete logical output during setup rather than assuming
+        // that successful execution or the correct row count implies correct data.
+        using (var convertedJsonl = new StringReader(ConvertCsvToJsonlFlat()))
+        {
+            for (int index = 0; index < rows.Count; index++)
+            {
+                string line = convertedJsonl.ReadLine()
+                    ?? throw new InvalidOperationException($"CSV-to-JSONL ended before row {index}.");
+                using JsonDocument document = JsonDocument.Parse(line);
+                JsonElement actual = document.RootElement;
+                FlatRow expected = rows[index];
+                if (actual.ValueKind != JsonValueKind.Object ||
+                    actual.EnumerateObject().Count() != 4 ||
+                    actual.GetProperty("Id").GetString() != expected.Id.ToString(CultureInfo.InvariantCulture) ||
+                    actual.GetProperty("Name").GetString() != expected.Name ||
+                    actual.GetProperty("Amount").GetString() != expected.Amount.ToString(CultureInfo.InvariantCulture) ||
+                    actual.GetProperty("Active").GetString() != expected.Active.ToString())
+                {
+                    throw new InvalidOperationException($"CSV-to-JSONL differs from input at record {index}.");
+                }
+            }
+            if (convertedJsonl.ReadLine() is not null)
+                throw new InvalidOperationException("CSV-to-JSONL emitted extra records.");
+        }
+
+        // The reverse converter emits a header as well as all JSONL data rows.
+        // Give the validation reader a limit that includes that header.
+        using var convertedCsv = Csv.ReadFromText(ConvertJsonlToCsv(), new CsvReadOptions
+        {
+            MaxColumnCount = 4,
+            MaxRowCount = checked(Rows + 1)
+        });
+        if (!convertedCsv.MoveNext() ||
+            convertedCsv.Current.ColumnCount != 4 ||
+            convertedCsv.Current[0].UnquoteToString() != "id" ||
+            convertedCsv.Current[1].UnquoteToString() != "name" ||
+            convertedCsv.Current[2].UnquoteToString() != "amount" ||
+            convertedCsv.Current[3].UnquoteToString() != "active")
+        {
+            throw new InvalidOperationException("JSONL-to-CSV did not preserve the expected header.");
+        }
+
+        int csvRow = 0;
+        while (convertedCsv.MoveNext())
+        {
+            if (csvRow >= rows.Count)
+                throw new InvalidOperationException("JSONL-to-CSV emitted extra records.");
+            FlatRow expected = rows[csvRow];
+            var actual = convertedCsv.Current;
+            if (actual.ColumnCount != 4 ||
+                actual[0].UnquoteToString() != expected.Id.ToString(CultureInfo.InvariantCulture) ||
+                actual[1].UnquoteToString() != expected.Name ||
+                actual[2].UnquoteToString() != expected.Amount.ToString(CultureInfo.InvariantCulture) ||
+                actual[3].UnquoteToString() != (expected.Active ? "true" : "false"))
+            {
+                throw new InvalidOperationException($"JSONL-to-CSV differs from input at record {csvRow}.");
+            }
+            csvRow++;
+        }
+        if (csvRow != rows.Count)
+            throw new InvalidOperationException($"JSONL-to-CSV emitted {csvRow} of {rows.Count} records.");
     }
 
     [GlobalCleanup]
@@ -221,7 +293,7 @@ public class JsonlBenchmark
 
     [Benchmark]
     public string ConvertCsvToJsonlFlat()
-        => CsvToJsonlConverter.Convert(csv, CsvToJsonlShape.FlatObject());
+        => CsvToJsonlConverter.Convert(csv, CsvToJsonlShape.FlatObject(), csvConversionOptions);
 
     [Benchmark]
     public string ConvertJsonlToCsv()

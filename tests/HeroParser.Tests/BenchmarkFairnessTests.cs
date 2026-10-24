@@ -165,6 +165,28 @@ public class BenchmarkFairnessTests
         Assert.Equal(expected, mapped);
     }
 
+    [Theory]
+    [InlineData(7)]
+    [InlineData(100_000)]
+    public async Task HtbBenchmarks_CsvAndBinaryReadersPreserveExactIdChecksum(int rows)
+    {
+        // The largest fixture has IDs 0..99999: 4,999,950,000 exceeds Int32.
+        // Assert the actual timed methods return an untruncated long result.
+        var benchmark = new HtbBenchmark { Rows = rows };
+        try
+        {
+            benchmark.Setup();
+            long expected = (long)rows * (rows - 1) / 2;
+            Assert.Equal(expected, Assert.IsType<long>(benchmark.ReadCsvFromStream()));
+            Assert.Equal(expected, Assert.IsType<long>(benchmark.ReadHtbFromStream()));
+            Assert.Equal(expected, Assert.IsType<long>(await benchmark.ReadHtbFromFileAsync()));
+        }
+        finally
+        {
+            benchmark.Cleanup();
+        }
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

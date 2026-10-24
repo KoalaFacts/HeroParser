@@ -120,6 +120,31 @@ public class BenchmarkFairnessTests
         }
     }
 
+    [Theory]
+    [InlineData(10_000)]
+    [InlineData(100_000)]
+    public async Task FixedWidthTypedPipeBenchmarks_PreserveEveryIdAndFullName(int rows)
+    {
+        // The old D4 ID formatting grew to 5/6 characters above 9999, shifting
+        // the following 6-character Name field. The largest fixture also exceeds
+        // Int32 when summing every ID: 1+...+100000 = 5,000,050,000.
+        // Exercise the actual four timed methods and require a checksum derived
+        // independently from the intended fixed 6-digit ID / 7-char Name schema.
+        var benchmark = new FixedWidthTypedPipeReaderBenchmarks { Rows = rows };
+        benchmark.Setup();
+        long expected = (long)rows * (rows + 1) / 2 + 7L * rows;
+
+        long text = benchmark.BindFromText_SourceGenerated();
+        long pipe = await benchmark.BindFromPipeReader_Static();
+        long builder = await benchmark.BindFromPipeReader_Builder();
+        long mapped = await benchmark.BindFromPipeReader_BuilderWithMap();
+
+        Assert.Equal(expected, text);
+        Assert.Equal(expected, pipe);
+        Assert.Equal(expected, builder);
+        Assert.Equal(expected, mapped);
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

@@ -121,6 +121,26 @@ public class BenchmarkFairnessTests
     }
 
     [Theory]
+    [InlineData(1_000)]
+    [InlineData(10_000)]
+    [InlineData(100_000)]
+    public void FixedWidthRecordBindingBenchmarks_ReturnExactChecksum(int rows)
+    {
+        // Each typed row contains Id = i and Value = 100 * i.
+        // At 10,000 records the correct sum already exceeds Int32.MaxValue.
+        // Verify the actual timed methods, not only their generated fixture.
+        var benchmark = new FixedWidthBenchmarks { Rows = rows };
+        benchmark.Setup();
+
+        long expected = 101L * rows * (rows + 1) / 2;
+        long sourceGenerated = benchmark.BindToRecords_SourceGenerated();
+        long reused = benchmark.BindToRecords_ForEach();
+
+        Assert.Equal(expected, sourceGenerated);
+        Assert.Equal(expected, reused);
+    }
+
+    [Theory]
     [InlineData(10_000)]
     [InlineData(100_000)]
     public async Task FixedWidthTypedPipeBenchmarks_PreserveEveryIdAndFullName(int rows)

@@ -245,6 +245,32 @@ public class BenchmarkFairnessTests
         Assert.Equal(totalCells, benchmark.Read_OptimizedPerCol_PhoneData());
     }
 
+    [Theory]
+    [InlineData("Plain", "an ordinary field without CSV escapes")]
+    [InlineData("DoubledQuotes", "she said \"hello\" to the reader")]
+    [InlineData("Escaped", "she said \"hello\" to the reader")]
+    [InlineData("Unicode", "你好 \"世界\" 😀")]
+    [InlineData("InvalidUtf8", "\uFFFD\uFFFDx")]
+    public void CsvPipeColumnDecodeBenchmarks_PreserveExpectedTextAcrossSegments(string scenario, string expected)
+    {
+        // Exercise the actual benchmark entry points, not a separate decoder.
+        // InvalidUtf8 must replace the malformed lead byte before unescaping a quote.
+        var benchmark = new CsvPipeColumnDecodingBenchmarks { Scenario = scenario };
+        benchmark.Setup();
+        Assert.Equal(expected, benchmark.OwnedColumn());
+        Assert.Equal(expected, benchmark.SegmentedColumn());
+    }
+
+    [Fact]
+    public void CsvPipeColumnDecodeBenchmarks_PreserveLongEscapedField()
+    {
+        var benchmark = new CsvPipeColumnDecodingBenchmarks { Scenario = "LongEscaped" };
+        benchmark.Setup();
+        string expected = string.Concat(Enumerable.Repeat("value\" ", 512));
+        Assert.Equal(expected, benchmark.OwnedColumn());
+        Assert.Equal(expected, benchmark.SegmentedColumn());
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

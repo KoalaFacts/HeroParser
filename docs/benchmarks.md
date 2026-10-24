@@ -15,6 +15,8 @@ The [2026-10-25 fixed-width typed fixture note](perf/2026-10-25-fixed-width-type
 
 The [2026-10-25 CSV column-parse validity note](perf/2026-10-25-column-parse-validity.md) documents the UInt32.MaxValue checksum truncation and pre-timing field validation. This is a changed benchmark result contract, not evidence of parser throughput improvement.
 
+The [2026-10-25 write-side injection benchmark validity note](perf/2026-10-25-write-injection-validity.md) adds a separate dangerous-input class to measure real formula-protection paths. It checks every output row for all four policies (None, Sanitize, EscapeWithQuote, EscapeWithTab) and verifies Reject still raises InjectionDetected. Its source is identical for every policy; output intentionally differs by security contract, and its new results cannot be compared with the safe-input class to imply a speedup.
+
 The [2026-10-25 injection-check validity note](perf/2026-10-25-read-injection-validity.md) records a benchmark defect in which every danger-check predicate result was discarded. The repaired fixture exercises a positive '=cmd' case as well as negative signed-number/phone cases; its timed methods return observable detection-inclusive checksums, with full-field preflight. These benchmark measurements cannot be compared with historical ones as equivalent work, and are not a parser speedup claim.
 
 The [2026-10-25 field-parsing fixture note](perf/2026-10-25-fixed-width-fields-validity.md) records the malformed timestamp boundary, narrowed UInt32 checksum, and repaired pre-timing validation. This is a changed workload requiring a new baseline.

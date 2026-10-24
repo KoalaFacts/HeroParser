@@ -18,6 +18,7 @@ public class Program
         typeof(NewFeaturesBenchmark),
         typeof(ColumnParseBenchmarks),
         typeof(WriteInjectionProtectionBenchmarks),
+        typeof(WriteInjectionDangerousBenchmarks),
         typeof(ReadInjectionProtectionBenchmarks),
         typeof(OutputLimitsBenchmarks),
         typeof(WriterBenchmarks),
@@ -77,15 +78,17 @@ public class Program
         ["--security"] =
         [
             typeof(WriteInjectionProtectionBenchmarks),
+            typeof(WriteInjectionDangerousBenchmarks),
             typeof(ReadInjectionProtectionBenchmarks),
             typeof(OutputLimitsBenchmarks)
         ],
         ["--injection"] =
         [
             typeof(WriteInjectionProtectionBenchmarks),
+            typeof(WriteInjectionDangerousBenchmarks),
             typeof(ReadInjectionProtectionBenchmarks)
         ],
-        ["--injection-write"] = [typeof(WriteInjectionProtectionBenchmarks)],
+        ["--injection-write"] = [typeof(WriteInjectionProtectionBenchmarks), typeof(WriteInjectionDangerousBenchmarks)],
         ["--injection-read"] = [typeof(ReadInjectionProtectionBenchmarks)],
         ["--binder-overhead"] = [typeof(BinderOverheadBenchmarks)],
         ["--multi-schema"] = [typeof(MultiSchemaBenchmarks)],

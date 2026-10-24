@@ -21,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj" />
     <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
     <ProjectReference Include="../../src/HeroParser.Cli/HeroParser.Cli.csproj" />
     <!-- Reference as analyzer for runtime integration tests -->

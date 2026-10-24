@@ -74,10 +74,10 @@ on:
         type: string
         default: '5c549d193a510a06fa24e23627b23a2df0cf0188'
 
-# Cancel in-progress runs for the same workflow and ref
+# Queue revisions in the same group; do not interrupt an active benchmark capture.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ (inputs.pipe_history || inputs.pipe_history_replay_run != '' || inputs.pipe_history_jit_control || inputs.pipe_history_same_run) && 'history' || inputs.pipe_native_profile && 'native-profile' || (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
-  cancel-in-progress: ${{ !inputs.pipe_history && inputs.pipe_history_replay_run == '' && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -262,9 +262,116 @@ jobs:
             });
           }
 
+  # Ordinary CI verifies current code, not the outcome of a frozen timing experiment.
+  pipe-correctness:
+    needs: setup
+    name: CSV Pipe Correctness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: ${{ fromJSON(needs.setup.outputs.frameworks) }}
+    steps:
+      - name: Checkout exact current source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Test CI scope and status policy
+        id: policy
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0 (Node 24)
+        with:
+          script: |
+            require('node:child_process').execFileSync(process.execPath,
+              ['--test', 'benchmarks/CsvPipeABProbe/test-ci-status.ts'], { stdio: 'inherit' });
+
+      - name: Test synthetic control validators without timing workers
+        id: controls
+        shell: pwsh
+        run: ./benchmarks/CsvPipeABProbe/test-control.ps1
+
+      - name: Extract configuration
+        id: extract
+        uses: ./.github/actions/extract-build-config
+
+      - name: Setup all .NET SDKs
+        uses: ./.github/actions/setup-dotnet-sdks
+        with:
+          dotnet-version: ${{ steps.extract.outputs.versions }}
+
+      - name: Restore correctness tests
+        run: dotnet restore --force-evaluate
+
+      - name: Build correctness tests
+        id: build
+        run: dotnet build tests/HeroParser.Tests/HeroParser.Tests.csproj --configuration Release --no-restore --framework ${{ matrix.framework }}
+
+      - name: Run current CSV Pipe correctness tests without timing
+        id: tests
+        run: >
+          dotnet test tests/HeroParser.Tests
+          --configuration Release --no-build
+          --framework ${{ matrix.framework }}
+          --
+          --filter-class "*CsvPipe*" "HeroParser.Tests.PipeReaderTests"
+          --minimum-expected-tests 1
+          --fail-skips on
+          --report-trx --report-trx-filename csv-pipe.trx
+          --results-directory ./TestResults/pipe
+
+      - name: Validate non-empty current test evidence
+        id: evidence
+        if: always()
+        shell: pwsh
+        run: ./.github/scripts/validate-test-results.ps1 -Path 'TestResults/pipe/csv-pipe.trx'
+
+      - name: Report correctness and timing separately
+        if: always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0 (Node 24)
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          FRAMEWORK: ${{ matrix.framework }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          POLICY_OUTCOME: ${{ steps.policy.outcome }}
+          CONTROLS_OUTCOME: ${{ steps.controls.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const { createCiStatus } = require(`${process.env.GITHUB_WORKSPACE}/benchmarks/CsvPipeABProbe/ci-status.ts`);
+            const report = createCiStatus({
+              sourceSha: process.env.SOURCE_SHA, framework: process.env.FRAMEWORK,
+              runId: process.env.RUN_ID, runAttempt: process.env.RUN_ATTEMPT,
+              outcomes: {
+                policy: process.env.POLICY_OUTCOME, controls: process.env.CONTROLS_OUTCOME,
+                build: process.env.BUILD_OUTCOME, tests: process.env.TESTS_OUTCOME,
+                evidence: process.env.EVIDENCE_OUTCOME,
+              },
+            });
+            fs.mkdirSync('BenchmarkDotNet.Artifacts/pipe-ci', { recursive: true });
+            fs.writeFileSync('BenchmarkDotNet.Artifacts/pipe-ci/status.json', JSON.stringify(report, null, 2) + '\n');
+            await core.summary.addRaw(report.markdown).write();
+            if (!report.checkPassed) core.setFailed(`CSV Pipe correctness prerequisites did not pass: ${report.failedPrerequisites.join(', ')}`);
+
+      - name: Upload current correctness evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csv-pipe-correctness-${{ matrix.framework }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            TestResults/pipe/**
+            BenchmarkDotNet.Artifacts/pipe-ci/**
+          if-no-files-found: error
+          retention-days: 30
+
   pipe-ab:
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_bias && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls))
-    name: CSV Pipe Correctness and Timing Controls
+    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_profile && !inputs.pipe_bias && !inputs.pipe_bias_jit_only && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls)
+    name: CSV Pipe Timing Experiment (manual)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

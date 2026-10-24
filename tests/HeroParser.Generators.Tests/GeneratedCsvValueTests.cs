@@ -121,6 +121,38 @@ public class GeneratedCsvValueTests
         }
     }
 
+    [Theory]
+    [InlineData(1024, false)]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    [InlineData(1025, true)]
+    public async Task GeneratedBinding_PreservesSplitValuesAtScratchBufferBoundary(int rowByteLength, bool splitQuote)
+    {
+        const string HEADER = "Name,Age\n";
+        const string SUFFIX = "\u4F60\"tail";
+        int paddingLength = rowByteLength - Encoding.UTF8.GetByteCount("\"\u4F60\"\"tail\",42");
+        string padding = new('x', paddingLength);
+        string csvRow = "\"" + padding + "\u4F60\"\"tail\",42";
+        Assert.Equal(rowByteLength, Encoding.UTF8.GetByteCount(csvRow));
+
+        byte[] bytes = Encoding.UTF8.GetBytes(HEADER + csvRow + "\n");
+        int characterStart = HEADER.Length + 1 + paddingLength;
+        // Split either inside the UTF-8 character or between the doubled quote bytes.
+        int split = characterStart + (splitQuote ? Encoding.UTF8.GetByteCount("\u4F60") + 1 : 1);
+        var first = new Segment(bytes.AsMemory(0, split));
+        var last = first.Append(bytes.AsMemory(split));
+        var pipe = new BufferedReader(new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length));
+
+        var results = new List<GeneratedPerson>();
+        await foreach (var record in Csv.DeserializeRecordsAsync<GeneratedPerson>(pipe,
+            cancellationToken: TestContext.Current.CancellationToken))
+            results.Add(record);
+
+        var actual = Assert.Single(results);
+        Assert.Equal(padding + SUFFIX, actual.Name);
+        Assert.Equal(42, actual.Age);
+    }
+
     [Fact]
     public void ExcelCells_PreserveLiteralCsvSyntax()
     {

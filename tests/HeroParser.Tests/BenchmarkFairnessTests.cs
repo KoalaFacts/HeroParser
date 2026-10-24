@@ -202,6 +202,20 @@ public class BenchmarkFairnessTests
         Assert.Equal(3, benchmark.ParseDoubleOnly());
     }
 
+    [Fact]
+    public void ColumnParseBenchmarks_PreserveFullUnsignedValueAcrossCharAndUtf8()
+    {
+        // The input's 4,294,967,295 UInt32 used to be narrowed to -1,
+        // so the timed checksums silently claimed different work.
+        var benchmark = new ColumnParseBenchmarks();
+        benchmark.Setup();
+
+        const long EXPECTED_TOTAL = 4_294_967_424L;
+        Assert.Equal(EXPECTED_TOTAL, Assert.IsType<long>(benchmark.Char_Parse()));
+        Assert.Equal(EXPECTED_TOTAL, Assert.IsType<long>(benchmark.Utf8_Parse()));
+        Assert.Equal(35, benchmark.Utf8_Parse_Culture());
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

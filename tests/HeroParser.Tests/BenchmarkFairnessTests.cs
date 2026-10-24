@@ -187,6 +187,21 @@ public class BenchmarkFairnessTests
         }
     }
 
+    [Fact]
+    public void FixedWidthFieldParseBenchmark_PreservesUnsignedAndAlignedFields()
+    {
+        // 4294967295 is a valid UInt32 but cannot be narrowed to Int32.
+        // The timestamp must occupy its exact 20-character field so its final
+        // second does not shift into the following 5-character boolean field.
+        var benchmark = new FixedWidthFieldParseBenchmarks();
+        benchmark.Setup();
+
+        Assert.Equal(4_294_967_423L, Assert.IsType<long>(benchmark.ParseAllFields()));
+        Assert.Equal(4_294_967_418L, Assert.IsType<long>(benchmark.ParseIntsOnly()));
+        Assert.Equal(56, benchmark.ParseDateTimeOnly());
+        Assert.Equal(3, benchmark.ParseDoubleOnly());
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

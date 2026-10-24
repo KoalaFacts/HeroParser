@@ -19,6 +19,7 @@ The [2026-10-25 write-side injection benchmark validity note](perf/2026-10-25-wr
 
 The [2026-10-25 injection-check validity note](perf/2026-10-25-read-injection-validity.md) records a benchmark defect in which every danger-check predicate result was discarded. The repaired fixture exercises a positive '=cmd' case as well as negative signed-number/phone cases; its timed methods return observable detection-inclusive checksums, with full-field preflight. These benchmark measurements cannot be compared with historical ones as equivalent work, and are not a parser speedup claim.
 
+The [2026-10-25 fixed-width byte-span validity note](perf/2026-10-25-fixed-width-bytespan-validity.md) documents overflowing 100k ID and Value checksums in the char/UTF-8 primitive benchmarks, the independent 64-bit xUnit and per-record preflight, and why the Name-length variant is not typed materialization. It needs a new timing baseline.
 The [2026-10-25 field-parsing fixture note](perf/2026-10-25-fixed-width-fields-validity.md) records the malformed timestamp boundary, narrowed UInt32 checksum, and repaired pre-timing validation. This is a changed workload requiring a new baseline.
 
 ## Historical Benchmark Environment (2026-10-23)

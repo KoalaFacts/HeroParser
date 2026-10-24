@@ -1,6 +1,7 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.FixedWidths;
+using System.Globalization;
 using System.Text;
 
 namespace HeroParser.Benchmarks;
@@ -458,17 +459,35 @@ public class FixedWidthFieldParseBenchmarks
     public void Setup()
     {
         // Format: ID(10) + UInt(10) + DateTime(20) + Bool(5) + Double(10) = 55 chars
-        // Values: "0000000123" + "4294967295" + "2025-11-20T12:34:56Z" + "TRUE " + "     3.14"
-        singleRecord = "00000001234294967295  2025-11-20T12:34:56TRUE      3.14";
+        // Values: "0000000123" + "4294967295" + "2025-11-20T12:34:56 " + "TRUE " + "      3.14"
+        // Concatenate fields at exact widths: ID(10) + UInt(10) + Date(20)
+        // + Bool(5) + Double(10). The old double leading space before the
+        // date shifted its last second into the boolean column.
+        singleRecord = "0000000123" + "4294967295" +
+                       "2025-11-20T12:34:56 " + "TRUE " + "      3.14";
         options = new FixedWidthReadOptions();
+
+        // Verify the fixture and all timed methods before benchmarking. An
+        // Int32 conversion of UInt32.MaxValue silently returned -1, and a
+        // minute-only date checksum hid a damaged seconds field.
+        if (singleRecord.Length != 55 ||
+            !singleRecord.AsSpan(20, 20).SequenceEqual("2025-11-20T12:34:56 ".AsSpan()) ||
+            !singleRecord.AsSpan(40, 5).SequenceEqual("TRUE ".AsSpan()) ||
+            ParseAllFields() != 4_294_967_423L ||
+            ParseIntsOnly() != 4_294_967_418L ||
+            ParseDateTimeOnly() != 56 ||
+            ParseDoubleOnly() != 3)
+        {
+            throw new InvalidOperationException("Fixed-width field parsing benchmark fixture does not preserve all fields.");
+        }
     }
 
     [Benchmark(Baseline = true)]
-    public int ParseAllFields()
+    public long ParseAllFields()
     {
         foreach (var row in FixedWidth.ReadFromText(singleRecord, options))
         {
-            int total = 0;
+            long total = 0;
 
             // Int32 - right-aligned with zeros
             var intField = row.GetField(0, 10, '0', FieldAlignment.Right);
@@ -476,11 +495,11 @@ public class FixedWidthFieldParseBenchmarks
 
             // UInt32 - right-aligned with zeros
             var uintField = row.GetField(10, 10, '0', FieldAlignment.Right);
-            if (uint.TryParse(uintField.CharSpan, out var u32)) total += (int)u32;
+            if (uint.TryParse(uintField.CharSpan, out var u32)) total += u32;
 
             // DateTime - left-aligned with spaces
             var dateField = row.GetField(20, 20, ' ', FieldAlignment.Left);
-            if (DateTime.TryParse(dateField.CharSpan, out _)) total += 1;
+            if (DateTime.TryParse(dateField.CharSpan, CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) total += 1;
 
             // Boolean - left-aligned with spaces
             var boolField = row.GetField(40, 5, ' ', FieldAlignment.Left);
@@ -488,7 +507,7 @@ public class FixedWidthFieldParseBenchmarks
 
             // Double - right-aligned with spaces
             var doubleField = row.GetField(45, 10, ' ', FieldAlignment.Right);
-            if (double.TryParse(doubleField.CharSpan, out var d)) total += (int)d;
+            if (double.TryParse(doubleField.CharSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)) total += (int)d;
 
             return total;
         }
@@ -496,17 +515,17 @@ public class FixedWidthFieldParseBenchmarks
     }
 
     [Benchmark]
-    public int ParseIntsOnly()
+    public long ParseIntsOnly()
     {
         foreach (var row in FixedWidth.ReadFromText(singleRecord, options))
         {
-            int total = 0;
+            long total = 0;
 
             var intField = row.GetField(0, 10, '0', FieldAlignment.Right);
             if (int.TryParse(intField.CharSpan, out var i32)) total += i32;
 
             var uintField = row.GetField(10, 10, '0', FieldAlignment.Right);
-            if (uint.TryParse(uintField.CharSpan, out var u32)) total += (int)u32;
+            if (uint.TryParse(uintField.CharSpan, out var u32)) total += u32;
 
             return total;
         }
@@ -519,7 +538,7 @@ public class FixedWidthFieldParseBenchmarks
         foreach (var row in FixedWidth.ReadFromText(singleRecord, options))
         {
             var dateField = row.GetField(20, 20, ' ', FieldAlignment.Left);
-            return DateTime.TryParse(dateField.CharSpan, out var dt) ? dt.Minute : 0;
+            return DateTime.TryParse(dateField.CharSpan, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt) ? dt.Second : 0;
         }
         return 0;
     }
@@ -530,7 +549,7 @@ public class FixedWidthFieldParseBenchmarks
         foreach (var row in FixedWidth.ReadFromText(singleRecord, options))
         {
             var doubleField = row.GetField(45, 10, ' ', FieldAlignment.Right);
-            return double.TryParse(doubleField.CharSpan, out var d) ? (int)d : 0;
+            return double.TryParse(doubleField.CharSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? (int)d : 0;
         }
         return 0;
     }

@@ -13,6 +13,8 @@ The [2026-10-24 validity report](perf/2026-10-24-benchmark-validity.md) records 
 
 The [2026-10-25 fixed-width typed fixture note](perf/2026-10-25-fixed-width-typed-validity.md) documents why the former four-digit ID positions corrupted data above row 9,999, the now fixed 6+7-character schema, and its independent 64-bit checksum preconditions. These changed input bytes need a fresh baseline.
 
+The [2026-10-25 field-parsing fixture note](perf/2026-10-25-fixed-width-fields-validity.md) records the malformed timestamp boundary, narrowed UInt32 checksum, and repaired pre-timing validation. This is a changed workload requiring a new baseline.
+
 ## Historical Benchmark Environment (2026-10-23)
 
 The table below comes from the **Base `cba2bcd`** section of the [PR #156 CI benchmark report](https://github.com/KoalaFacts/HeroParser/pull/156#issuecomment-6355972696), using [this exact fixture](https://github.com/KoalaFacts/HeroParser/blob/cba2bcdbf57597d87a159316e4d06969c1278d01/benchmarks/HeroParser.Benchmarks/VsSepReadingBenchmarks.cs).

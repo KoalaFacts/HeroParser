@@ -108,11 +108,11 @@ public class BenchmarkFairnessTests
             // Int32 cannot represent the 100,000-row ID sum (4,999,950,000).
             // Test the actual timed readers, not only their setup validation.
             const long EXPECTED_ID_SUM = 4_999_950_000L;
-            Assert.Equal(EXPECTED_ID_SUM, (long)benchmark.ReadFromText());
-            Assert.Equal(EXPECTED_ID_SUM, (long)benchmark.ReadFromStream());
-            Assert.Equal(EXPECTED_ID_SUM, (long)benchmark.ReadFromText_SourceGenerated());
-            Assert.Equal(EXPECTED_ID_SUM, (long)benchmark.ReadFromStream_SourceGenerated());
-            Assert.Equal(EXPECTED_ID_SUM, (long)await benchmark.ReadFromFileAsync());
+            Assert.Equal(EXPECTED_ID_SUM, benchmark.ReadFromText());
+            Assert.Equal(EXPECTED_ID_SUM, benchmark.ReadFromStream());
+            Assert.Equal(EXPECTED_ID_SUM, benchmark.ReadFromText_SourceGenerated());
+            Assert.Equal(EXPECTED_ID_SUM, benchmark.ReadFromStream_SourceGenerated());
+            Assert.Equal(EXPECTED_ID_SUM, await benchmark.ReadFromFileAsync());
         }
         finally
         {

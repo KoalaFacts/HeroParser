@@ -271,6 +271,31 @@ public class BenchmarkFairnessTests
         Assert.Equal(expected, benchmark.SegmentedColumn());
     }
 
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(9)]
+    [InlineData(1_000)]
+    public void WriteInjectionDangerousBenchmarks_ValidateRealPositiveInputs(int rows)
+    {
+        // Same four logical fields for each policy, including a real formula
+        // prefix, safe signed numbers, and a comma requiring CSV quotes.
+        // Verify every output byte (including row endings) rather than just
+        // timing the safe fast path or comparing string lengths.
+        var benchmark = new WriteInjectionDangerousBenchmarks { Rows = rows };
+        benchmark.Setup();
+
+        const string RAW_ROW = "=cmd,-100,\"hello,world\",+42\r\n";
+        const string SANITIZED_ROW = "cmd,-100,\"hello,world\",+42\r\n";
+        const string QUOTE_PREFIX_ROW = "\"'=cmd\",-100,\"hello,world\",+42\r\n";
+        const string TAB_PREFIX_ROW = "\"\t=cmd\",-100,\"hello,world\",+42\r\n";
+
+        Assert.Equal(string.Concat(Enumerable.Repeat(RAW_ROW, rows)), benchmark.Write_NoProtection());
+        Assert.Equal(string.Concat(Enumerable.Repeat(SANITIZED_ROW, rows)), benchmark.Write_Sanitize());
+        Assert.Equal(string.Concat(Enumerable.Repeat(QUOTE_PREFIX_ROW, rows)), benchmark.Write_EscapeWithQuote());
+        Assert.Equal(string.Concat(Enumerable.Repeat(TAB_PREFIX_ROW, rows)), benchmark.Write_EscapeWithTab());
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

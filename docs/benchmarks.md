@@ -109,6 +109,8 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net
 
 This runs the fixture in your checkout. To reproduce the archived table, use a separate checkout of `cba2bcdbf57597d87a159316e4d06969c1278d01`; running the corrected fixture cannot reproduce the legacy workload. For a production-code A/B, run the **same corrected benchmark source** against both builds on the same machine, validate equivalent results before timing, and retain every sample. Report scan-only, field-decoding, typed-materialization, and I/O workloads separately.
 
+The [2026-10-25 segmented column decoding validity note](perf/2026-10-25-pipe-column-validity.md) documents the enforced token-boundary splits, malformed UTF-8 replacement case, and complete decoded-text preflight. Changed segmentation and case selection require fresh baselines; these checks do not prove a performance gain.
+
 ### PipeReader Column Decoding A/B (September 2026)
 
 `CsvPipeColumnDecodingBenchmarks` measures only column-to-string conversion, not

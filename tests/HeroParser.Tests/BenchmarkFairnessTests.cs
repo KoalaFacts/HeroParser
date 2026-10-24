@@ -91,7 +91,7 @@ public class BenchmarkFairnessTests
     }
 
     [Fact]
-    public void JsonlConversionBenchmark_HandlesLargestFixtureIncludingHeader()
+    public async Task JsonlConversionBenchmark_HandlesLargestFixtureIncludingHeader()
     {
         // CSV-to-JSONL reads the header as a parser row as well as the data.
         // The previous benchmark used the default 100,000-row limit for
@@ -105,6 +105,14 @@ public class BenchmarkFairnessTests
             while (reader.ReadLine() is not null)
                 count++;
             Assert.Equal(benchmark.Rows, count);
+            // Int32 cannot represent the 100,000-row ID sum (4,999,950,000).
+            // Test the actual timed readers, not only their setup validation.
+            const long EXPECTED_ID_SUM = 4_999_950_000L;
+            Assert.Equal(EXPECTED_ID_SUM, (long)benchmark.ReadFromText());
+            Assert.Equal(EXPECTED_ID_SUM, (long)benchmark.ReadFromStream());
+            Assert.Equal(EXPECTED_ID_SUM, (long)benchmark.ReadFromText_SourceGenerated());
+            Assert.Equal(EXPECTED_ID_SUM, (long)benchmark.ReadFromStream_SourceGenerated());
+            Assert.Equal(EXPECTED_ID_SUM, (long)await benchmark.ReadFromFileAsync());
         }
         finally
         {

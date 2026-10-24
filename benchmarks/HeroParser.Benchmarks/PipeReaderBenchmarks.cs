@@ -296,12 +296,13 @@ public class FixedWidthTypedPipeReaderBenchmarks
             MaxRecordCount = Rows + 100
         };
         map = new TypedPipeMappedRecordMap();
+        ValidateFixtureRows();
     }
 
     [Benchmark(Baseline = true)]
-    public int BindFromText_SourceGenerated()
+    public long BindFromText_SourceGenerated()
     {
-        int total = 0;
+        long total = 0;
         foreach (var record in FixedWidth.Read<TypedPipeRecord>().FromText(fixedWidthData))
         {
             total += record.Id + record.Name.Length;
@@ -310,12 +311,12 @@ public class FixedWidthTypedPipeReaderBenchmarks
     }
 
     [Benchmark]
-    public async Task<int> BindFromPipeReader_Static()
+    public async Task<long> BindFromPipeReader_Static()
     {
         using var stream = new MemoryStream(fixedWidthUtf8, writable: false);
         var reader = PipeReader.Create(stream);
 
-        int total = 0;
+        long total = 0;
         await foreach (var record in FixedWidth.DeserializeRecordsAsync<TypedPipeRecord>(reader, options))
         {
             total += record.Id + record.Name.Length;
@@ -325,12 +326,12 @@ public class FixedWidthTypedPipeReaderBenchmarks
     }
 
     [Benchmark]
-    public async Task<int> BindFromPipeReader_Builder()
+    public async Task<long> BindFromPipeReader_Builder()
     {
         using var stream = new MemoryStream(fixedWidthUtf8, writable: false);
         var reader = PipeReader.Create(stream);
 
-        int total = 0;
+        long total = 0;
         await foreach (var record in FixedWidth.Read<TypedPipeRecord>()
             .WithMaxRecords(Rows + 100)
             .FromPipeReaderAsync(reader))
@@ -342,12 +343,12 @@ public class FixedWidthTypedPipeReaderBenchmarks
     }
 
     [Benchmark]
-    public async Task<int> BindFromPipeReader_BuilderWithMap()
+    public async Task<long> BindFromPipeReader_BuilderWithMap()
     {
         using var stream = new MemoryStream(fixedWidthUtf8, writable: false);
         var reader = PipeReader.Create(stream);
 
-        int total = 0;
+        long total = 0;
         await foreach (var record in FixedWidth.Read<TypedPipeMappedRecord>()
             .WithMaxRecords(Rows + 100)
             .WithMap(map)
@@ -359,13 +360,34 @@ public class FixedWidthTypedPipeReaderBenchmarks
         return total;
     }
 
+    private void ValidateFixtureRows()
+    {
+        // Every ID must remain inside its six-character slot. D4 was only a
+        // minimum width: 10000+ pushed digits into the following Name field,
+        // corrupting a large majority of the 100,000-row benchmark fixture.
+        int count = 0;
+        foreach (var record in FixedWidth.Read<TypedPipeRecord>().FromText(fixedWidthData))
+        {
+            count++;
+            if (count > Rows || record.Id != count ||
+                !string.Equals(record.Name, $"N{count:D6}", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Fixed-width benchmark fixture mismatch at row {count}; expected complete ID and Name.");
+            }
+        }
+
+        if (count != Rows)
+            throw new InvalidOperationException($"Fixed-width benchmark fixture had {count} rows, expected {Rows}.");
+    }
+
     private static string GenerateTypedData(int rows)
     {
         var sb = new StringBuilder();
         for (int i = 1; i <= rows; i++)
         {
-            sb.Append($"{i:D4}");
-            AppendFixedWidth(sb, $"N{i}", 6);
+            sb.Append($"{i:D6}");
+            AppendFixedWidth(sb, $"N{i:D6}", 7);
             sb.AppendLine();
         }
 
@@ -387,10 +409,10 @@ public class FixedWidthTypedPipeReaderBenchmarks
     [GenerateBinder]
     public class TypedPipeRecord
     {
-        [PositionalMap(Start = 0, Length = 4, Alignment = FieldAlignment.Right, PadChar = '0')]
+        [PositionalMap(Start = 0, Length = 6, Alignment = FieldAlignment.Right, PadChar = '0')]
         public int Id { get; set; }
 
-        [PositionalMap(Start = 4, Length = 6)]
+        [PositionalMap(Start = 6, Length = 7)]
         public string Name { get; set; } = string.Empty;
     }
 
@@ -405,8 +427,8 @@ public class FixedWidthTypedPipeReaderBenchmarks
     {
         public TypedPipeMappedRecordMap()
         {
-            Map(x => x.Id, c => c.Start(0).Length(4).PadChar('0').Alignment(FieldAlignment.Right));
-            Map(x => x.Name, c => c.Start(4).Length(6));
+            Map(x => x.Id, c => c.Start(0).Length(6).PadChar('0').Alignment(FieldAlignment.Right));
+            Map(x => x.Name, c => c.Start(6).Length(7));
         }
     }
 }

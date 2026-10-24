@@ -23,11 +23,12 @@ benchmarks/
 # Build all projects
 dotnet build
 
+# MTP/xUnit v3: runner options follow `--`; `--filter` is VSTest-only.
 # Run unit tests
-dotnet test --filter Category=Unit
+dotnet test tests/HeroParser.Tests -- --filter-trait Category=Unit
 
 # Run integration tests
-dotnet test --filter Category=Integration
+dotnet test tests/HeroParser.Tests -- --filter-trait Category=Integration
 
 # Run all tests
 dotnet test

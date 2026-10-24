@@ -90,6 +90,28 @@ public class BenchmarkFairnessTests
         }
     }
 
+    [Fact]
+    public void JsonlConversionBenchmark_HandlesLargestFixtureIncludingHeader()
+    {
+        // CSV-to-JSONL reads the header as a parser row as well as the data.
+        // The previous benchmark used the default 100,000-row limit for
+        // 100,000 data records + one header, so its largest case threw.
+        var benchmark = new JsonlBenchmark { Rows = 100_000 };
+        try
+        {
+            benchmark.Setup();
+            using var reader = new StringReader(benchmark.ConvertCsvToJsonlFlat());
+            int count = 0;
+            while (reader.ReadLine() is not null)
+                count++;
+            Assert.Equal(benchmark.Rows, count);
+        }
+        finally
+        {
+            benchmark.Cleanup();
+        }
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

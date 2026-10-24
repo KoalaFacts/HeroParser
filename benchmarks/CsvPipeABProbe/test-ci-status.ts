@@ -168,3 +168,9 @@ for (const testOutcome of ['success', 'failure']) {
         assert.equal(markdown, result.markdown);
     });
 }
+
+test('a new revision queues without cancelling an active benchmark capture', () => {
+    assert.match(workflow, /^concurrency:\n/m);
+    assert.match(workflow, /^  group: .*github\.workflow.*github\.ref.*github\.event_name/m);
+    assert.match(workflow, /^  cancel-in-progress: false$/m);
+});

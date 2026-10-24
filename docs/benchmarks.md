@@ -13,6 +13,8 @@ The [2026-10-24 validity report](perf/2026-10-24-benchmark-validity.md) records 
 
 The [2026-10-25 fixed-width typed fixture note](perf/2026-10-25-fixed-width-typed-validity.md) documents why the former four-digit ID positions corrupted data above row 9,999, the now fixed 6+7-character schema, and its independent 64-bit checksum preconditions. These changed input bytes need a fresh baseline.
 
+The [2026-10-25 CSV column-parse validity note](perf/2026-10-25-column-parse-validity.md) documents the UInt32.MaxValue checksum truncation and pre-timing field validation. This is a changed benchmark result contract, not evidence of parser throughput improvement.
+
 The [2026-10-25 field-parsing fixture note](perf/2026-10-25-fixed-width-fields-validity.md) records the malformed timestamp boundary, narrowed UInt32 checksum, and repaired pre-timing validation. This is a changed workload requiring a new baseline.
 
 ## Historical Benchmark Environment (2026-10-23)

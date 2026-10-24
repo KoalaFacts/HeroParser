@@ -32,6 +32,7 @@ public class FixedWidthBenchmarks
 
         defaultOptions = new FixedWidthReadOptions();
         fixedLengthOptions = new FixedWidthReadOptions { RecordLength = 50 }; // 50 chars per record
+        ValidateTypedRecordData();
 
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
         Console.WriteLine($"Line-delimited size: {lineDelimitedData.Length:N0} chars");
@@ -93,6 +94,42 @@ public class FixedWidthBenchmarks
             sb.AppendLine();
         }
         return sb.ToString();
+    }
+
+    private void ValidateTypedRecordData()
+    {
+        // A wrapped 32-bit checksum can appear plausible even when every row
+        // was parsed, so verify all logical fields before running the benchmark.
+        int generatedRow = 0;
+        foreach (BenchmarkRecord record in FixedWidth.Read<BenchmarkRecord>().FromText(typedRecordData))
+            CheckTypedRecord(record, ++generatedRow, "source-generated");
+        if (generatedRow != Rows)
+            throw new InvalidOperationException($"Fixed-width generated binder returned {generatedRow} of {Rows} rows.");
+
+        int reusedRow = 0;
+        FixedWidth.Read<BenchmarkRecord>().ForEachFromText(typedRecordData, record =>
+            CheckTypedRecord(record, ++reusedRow, "ForEach"));
+        if (reusedRow != Rows)
+            throw new InvalidOperationException($"Fixed-width ForEach returned {reusedRow} of {Rows} rows.");
+
+        long expectedChecksum = 101L * Rows * (Rows + 1L) / 2;
+        if (BindToRecords_SourceGenerated() != expectedChecksum ||
+            BindToRecords_ForEach() != expectedChecksum)
+        {
+            throw new InvalidOperationException("Fixed-width binding benchmark methods returned an incorrect checksum.");
+        }
+    }
+
+    private void CheckTypedRecord(BenchmarkRecord record, int row, string variant)
+    {
+        if (row > Rows ||
+            record.Id != row ||
+            record.Value != checked(row * 100) ||
+            !string.Equals(record.Name?.TrimEnd(' '), $"Person{row}", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Fixed-width {variant} record {row} did not preserve its ID, Name and Value.");
+        }
     }
 
     #region Raw Parsing Benchmarks
@@ -158,9 +195,9 @@ public class FixedWidthBenchmarks
     }
 
     [Benchmark]
-    public int BindToRecords_SourceGenerated()
+    public long BindToRecords_SourceGenerated()
     {
-        int total = 0;
+        long total = 0;
         foreach (var record in FixedWidth.Read<BenchmarkRecord>().FromText(typedRecordData))
         {
             total += record.Id + record.Value;
@@ -173,9 +210,9 @@ public class FixedWidthBenchmarks
     /// Only string allocations should occur (unavoidable for string properties).
     /// </summary>
     [Benchmark]
-    public int BindToRecords_ForEach()
+    public long BindToRecords_ForEach()
     {
-        int total = 0;
+        long total = 0;
         FixedWidth.Read<BenchmarkRecord>().ForEachFromText(typedRecordData, record =>
         {
             total += record.Id + record.Value;

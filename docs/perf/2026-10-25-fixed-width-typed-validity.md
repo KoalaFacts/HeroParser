@@ -39,3 +39,26 @@ runs on the same runtime/hardware, stable A/A controls, and raw samples.
 
 The separate historical CSV Pipe timing gate remains FAILED with its
 sampling budget exhausted. This repair does not alter or waive that gate.
+
+## Independent fixed-width record binding checksum (2026-10-25)
+
+The separate `FixedWidthBenchmarks` binding fixture generates IDs 1..R and
+integer Values equal to 100 times each ID. Its two timed methods
+(`BindToRecords_SourceGenerated` and `BindToRecords_ForEach`) previously
+accumulated an `int` checksum. The expected total is
+`101 * R * (R + 1) / 2`, evaluated as a 64-bit value. At 10,000 records
+this is **5,050,505,000**; at 100,000 records it is **505,005,050,000**,
+both above `Int32.MaxValue`.
+
+The timed methods now return `long` and accumulate with 64-bit totals.
+Before any timing, setup checks every ID, complete Name (ignoring field
+padding), Value, record count, and both actual timed checksums. A new
+xUnit integration regression invokes both timed methods at 1,000, 10,000
+and 100,000 rows and compares them against the independent formula.
+
+The typed fixture bytes and parser API are unchanged, but the previous
+wrapped 32-bit benchmark results were not trustworthy as correctness
+checks. This is a **benchmark validity fix, not a parser optimization**.
+Any timing comparison after the result-type change needs new, controlled
+same-runner evidence; no throughput gain is claimed. The frozen historical
+CSV Pipe gate remains FAILED and is not modified by this work.

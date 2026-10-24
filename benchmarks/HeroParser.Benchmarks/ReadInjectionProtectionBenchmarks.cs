@@ -94,19 +94,17 @@ public class ReadInjectionProtectionBenchmarks
 
             for (int c = 0; c < Columns; c++)
             {
-                string expected;
-                if (rowIndex < 0)
-                    expected = c == 0 ? "Name" : $"{headerPrefix}{c}";
-                else if (c == 0)
-                    expected = $"{rowPrefix}{rowIndex}";
-                else
-                    expected = headerPrefix switch
-                    {
-                        "Col" => c == 1 && rowIndex % 8 == 0 ? "=cmd" : $"Value{rowIndex}_{c}",
-                        "Amount" => (rowIndex + c) % 2 == 0 ? $"-{rowIndex * 10 + c}" : $"+{rowIndex * 10 + c}",
-                        "Phone" => $"+1-555-{1000 + rowIndex + c}",
-                        _ => throw new InvalidOperationException("Unknown benchmark fixture.")
-                    };
+                string expected = rowIndex < 0
+                    ? (c == 0 ? "Name" : $"{headerPrefix}{c}")
+                    : c == 0
+                        ? $"{rowPrefix}{rowIndex}"
+                        : headerPrefix switch
+                        {
+                            "Col" => c == 1 && rowIndex % 8 == 0 ? "=cmd" : $"Value{rowIndex}_{c}",
+                            "Amount" => (rowIndex + c) % 2 == 0 ? $"-{rowIndex * 10 + c}" : $"+{rowIndex * 10 + c}",
+                            "Phone" => $"+1-555-{1000 + rowIndex + c}",
+                            _ => throw new InvalidOperationException("Unknown benchmark fixture.")
+                        };
 
                 if (!row[c].Span.SequenceEqual(expected.AsSpan()))
                     throw new InvalidOperationException($"Injection fixture {headerPrefix}: field {c} in row {rowIndex} is incorrect.");

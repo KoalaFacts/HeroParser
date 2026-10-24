@@ -1,7 +1,7 @@
 # HeroParser Development Guidelines
 
 ## Active Technologies
-- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
+- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 
 ## Project Structure
 ```
@@ -13,7 +13,7 @@ tests/
   HeroParser.Generators.Tests/ # Source generator tests
   HeroParser.AotTests/         # AOT compatibility tests
 benchmarks/
-  HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.17.0)
+  HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.17.1)
 .github/
   workflows/                   # CI, benchmarks, security scan, release, NuGet publish
 ```
@@ -106,7 +106,7 @@ Key files in `src/HeroParser/Excel/` (internal namespace uses `HeroParser.Excels
 ## Multi-Schema CSV Parsing
 Supports mapping rows to different record types via a discriminator column.
 - **Runtime**: Flexible, uses `WithMultiSchema().WithDiscriminator("Type")`.
-- **Source-Generated**: Optimal performance (`[CsvGenerateDispatcher]`). 2x faster than runtime.
+- **Source-Generated**: `[CsvGenerateDispatcher]` emits typed dispatch; its performance relative to runtime dispatch depends on the workload.
 Key files in `src/HeroParser/SeparatedValues/Records/MultiSchema/`.
 
 ## Delimiter Detection & CSV Validation
@@ -161,22 +161,18 @@ Attempted optimizations that caused regressions:
 
 **Key insight**: The .NET JIT is very good at optimizing simple, idiomatic code. "Clever" micro-optimizations often backfire by preventing JIT optimizations or adding instruction overhead.
 
-### Benchmark Baseline (vs Sep 0.17.0)
+### Historical Benchmark Reference (Sep 0.17.1)
 
-**Latest Results (.NET 10, AVX-512, AMD Ryzen AI 9 HX PRO 370):**
+The [2026-10-23 CI report, Base `cba2bcd`](https://github.com/KoalaFacts/HeroParser/pull/156#issuecomment-6355972696) measured the legacy 10,000-row × 25-column count-only fixture on AMD EPYC 7763 (AVX2), Ubuntu 24.04.5, .NET 10.0.13 / SDK 10.0.402, BenchmarkDotNet 0.15.8:
 
-HeroParser UTF-8 is **faster than Sep 0.17.0** in both unquoted and quoted scenarios, with ~35× lower memory allocations.
+| Input | Unquoted mean | Quoted mean | Allocated per operation |
+|---|---:|---:|---:|
+| HeroParser UTF-8 | 588.9 µs | 746.9 µs | 176 B |
+| HeroParser UTF-16 | 666.0 µs | 853.0 µs | 176 B |
 
-**Performance Summary**:
-- **Standard (10k rows x 25 cols)**:
-  - **Quoted**: HeroParser UTF-8 runs in **1.33 ms – 1.69 ms** (~15–27% faster than Sep's 1.36 ms – 2.33 ms) with 112 B vs 4,048 B allocated.
-  - **Unquoted**: HeroParser UTF-8 runs in **888.5 µs – 1.15 ms** (~0.92–1.11x Sep) with 112 B vs 3,952 B allocated.
-- **Wide CSVs (100k rows x 100 cols)**: ~223.6 Million cells/sec (44.72 ms total for 10M cells, 32 B allocated).
-- **Allocations**: **112 B fixed** for rows (vs Sep's ~4 KB).
-- **Recommendation**: Always use UTF-8 APIs (`byte[]`). UTF-16 is deprecated for performance.
+Input generation and encoding occurred outside timing; the methods summed column counts without decoding every field, typed materialization, or I/O. Header defaults and unquoted quote-policy settings differed between libraries. These are historical observations, not a fair ranking or a fixed allocation promise. The corrected fixture requires a new baseline; it cannot establish a parser improvement by comparison with this table. Full scope, competitor data, and run commands are in [docs/benchmarks.md](docs/benchmarks.md).
 
-**Historical Note**: UTF-16 Pack-Saturate approach was abandoned due to memory traffic overhead.
-**Unicode**: Verified correct handling for Chinese, Arabic, Emoji, and Mixed Unicode.
+UTF-8 and UTF-16 span APIs are both supported directly; UTF-16 is not deprecated. The current scanner uses pack-and-saturate for supported UTF-16 SIMD paths. Prefer the representation already available to avoid an unnecessary encoding conversion. Typed binding, string decoding, streaming, and cold pool growth have separate allocation profiles.
 
 ## Architecture Overview
 
@@ -194,7 +190,7 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
 - **Row Scanner**: Uses SIMD to find delimiters + newlines in parallel. PCLMULQDQ for branchless quote tracking.
 - **Column Extraction**: `AppendColumn` tracks column boundaries via `columnEnds[]` array.
 - **Binding**: `ICsvSourceBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
-- **UTF-16 fallback**: `CsvCharToByteBinderAdapter` converts to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
+- **UTF-16 scanning and binding**: `CsvRowBatchScanner` scans chars directly through its supported pack-and-saturate SIMD paths. `CsvCharToByteBinderAdapter` supplies char-to-byte conversion when a byte binder needs an adapter; it is not the universal UTF-16 scanning path.
 
 ### Write Path
 ```

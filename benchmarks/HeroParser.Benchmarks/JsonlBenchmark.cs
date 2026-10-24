@@ -4,9 +4,11 @@ using System.Text.Json.Serialization;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.Conversion;
+using HeroParser.JsonLines.Reading;
 
 namespace HeroParser.Benchmarks;
 
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
 [JsonSerializable(typeof(JsonlBenchmark.FlatRow))]
 [JsonSerializable(typeof(List<JsonlBenchmark.FlatRow>))]
 internal partial class FlatRowJsonContext : JsonSerializerContext
@@ -56,8 +58,47 @@ public class JsonlBenchmark
         jsonlUtf8 = Encoding.UTF8.GetBytes(jsonl);
         csv = csvSb.ToString();
 
+        ValidateReadersAndWriters();
+
         filePath = Path.Combine(Path.GetTempPath(), $"heroparser-jsonl-{Rows}-{Guid.NewGuid():N}.jsonl");
         File.WriteAllBytes(filePath, jsonlUtf8);
+    }
+
+    private void ValidateReadersAndWriters()
+    {
+        // Validate complete records outside timing; an Id checksum alone misses
+        // silently defaulted names, amounts, booleans, and JSON naming differences.
+        ValidateRows(Jsonl.Read<FlatRow>().WithJsonOptions(serializerOptions).FromText(jsonl), "reflection text");
+        ValidateRows(Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromText(jsonl), "source-generated text");
+
+        using var reflectionStream = new MemoryStream(jsonlUtf8, writable: false);
+        ValidateRows(Jsonl.Read<FlatRow>().WithJsonOptions(serializerOptions).FromStream(reflectionStream), "reflection stream");
+        using var generatedStream = new MemoryStream(jsonlUtf8, writable: false);
+        ValidateRows(Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromStream(generatedStream), "source-generated stream");
+
+        if (!string.Equals(WriteToText(), WriteToText_SourceGenerated(), StringComparison.Ordinal))
+            throw new InvalidOperationException("JSONL reflection and source-generated writers produced different output.");
+    }
+
+    private void ValidateRows(JsonlRecordReader<FlatRow> reader, string variant)
+    {
+        using (reader)
+        {
+            int index = 0;
+            foreach (FlatRow actual in reader)
+            {
+                if (index >= rows.Count)
+                    throw new InvalidOperationException($"JSONL {variant}: unexpected extra record at {index}.");
+                FlatRow expected = rows[index];
+                if (actual.Id != expected.Id ||
+                    !string.Equals(actual.Name, expected.Name, StringComparison.Ordinal) ||
+                    actual.Amount != expected.Amount || actual.Active != expected.Active)
+                    throw new InvalidOperationException($"JSONL {variant}: record {index} differs from the generated input.");
+                index++;
+            }
+            if (index != rows.Count)
+                throw new InvalidOperationException($"JSONL {variant}: expected {rows.Count} records, read {index}.");
+        }
     }
 
     [GlobalCleanup]

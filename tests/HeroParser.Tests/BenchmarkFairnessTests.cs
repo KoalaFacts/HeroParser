@@ -216,6 +216,35 @@ public class BenchmarkFairnessTests
         Assert.Equal(35, benchmark.Utf8_Parse_Culture());
     }
 
+    [Theory]
+    [InlineData(8, 4)]
+    [InlineData(9, 4)]
+    [InlineData(1_000, 10)]
+    public void ReadInjectionBenchmarks_ActuallyConsumeValidationResults(int rows, int columns)
+    {
+        // A real dangerous field must change the checksum. The old benchmark
+        // discarded every predicate result and could time optimized-away work.
+        // Signed numbers and phone numbers must remain safe under both paths.
+        var benchmark = new ReadInjectionProtectionBenchmarks { Rows = rows, Columns = columns };
+        benchmark.Setup();
+        int totalCells = (rows + 1) * columns; // header is intentionally parsed
+        int flaggedRows = (rows + 7) / 8; // data rows 0, 8, 16, ...
+
+        Assert.Equal(totalCells, benchmark.Read_NoValidation());
+
+        Assert.Equal(totalCells + flaggedRows, benchmark.Read_OldApproach_NormalData());
+        Assert.Equal(totalCells + flaggedRows, benchmark.Read_Optimized_NormalData());
+        Assert.Equal(totalCells + flaggedRows, benchmark.Read_OptimizedPerCol_NormalData());
+
+        Assert.Equal(totalCells, benchmark.Read_OldApproach_NumbersData());
+        Assert.Equal(totalCells, benchmark.Read_Optimized_NumbersData());
+        Assert.Equal(totalCells, benchmark.Read_OptimizedPerCol_NumbersData());
+
+        Assert.Equal(totalCells, benchmark.Read_OldApproach_PhoneData());
+        Assert.Equal(totalCells, benchmark.Read_Optimized_PhoneData());
+        Assert.Equal(totalCells, benchmark.Read_OptimizedPerCol_PhoneData());
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

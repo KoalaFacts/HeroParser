@@ -46,8 +46,60 @@ public class HtbBenchmark
         Htb.Write<FlatRow>().ToStream(ms, rows, leaveOpen: true);
         htbBytes = ms.ToArray();
 
+        ValidateInputRecords();
+
         filePath = Path.Combine(Path.GetTempPath(), $"heroparser-htb-{Rows}-{Guid.NewGuid():N}.htb");
         File.WriteAllBytes(filePath, htbBytes);
+    }
+
+    private void ValidateInputRecords()
+    {
+        // A checksum alone can conceal silently defaulted typed fields.
+        // Check every logical value, including the final row, outside timing.
+        int csvCount = 0;
+        using (var csvStream = new MemoryStream(csvBytes, writable: false))
+        {
+            foreach (FlatRow record in Csv.Read<FlatRow>().WithMaxRows(Rows + 10).FromStream(csvStream, out _))
+            {
+                ValidateRecord(record, csvCount, "CSV");
+                csvCount++;
+            }
+        }
+
+        if (csvCount != Rows)
+            throw new InvalidOperationException($"CSV fixture yielded {csvCount} records; expected {Rows}.");
+
+        int htbCount = 0;
+        using (var htbStream = new MemoryStream(htbBytes, writable: false))
+        {
+            foreach (FlatRow record in Htb.Read<FlatRow>().FromStream(htbStream))
+            {
+                ValidateRecord(record, htbCount, "HTB");
+                htbCount++;
+            }
+        }
+
+        if (htbCount != Rows)
+            throw new InvalidOperationException($"HTB fixture yielded {htbCount} records; expected {Rows}.");
+
+        long expectedIdSum = (long)Rows * (Rows - 1) / 2;
+        if (ReadCsvFromStream() != expectedIdSum || ReadHtbFromStream() != expectedIdSum)
+            throw new InvalidOperationException("HTB benchmark timed readers did not preserve the complete ID checksum.");
+    }
+
+    private void ValidateRecord(FlatRow actual, int index, string source)
+    {
+        if (index >= rows.Count)
+            throw new InvalidOperationException($"{source} fixture yielded an unexpected extra record {index}.");
+
+        FlatRow expected = rows[index];
+        if (actual.Id != expected.Id ||
+            !string.Equals(actual.Name, expected.Name, StringComparison.Ordinal) ||
+            actual.Amount != expected.Amount ||
+            actual.Active != expected.Active)
+        {
+            throw new InvalidOperationException($"{source} fixture record {index} differs from the generated values.");
+        }
     }
 
     [GlobalCleanup]
@@ -65,10 +117,10 @@ public class HtbBenchmark
     }
 
     [Benchmark(Baseline = true)]
-    public int ReadCsvFromStream()
+    public long ReadCsvFromStream()
     {
         using var ms = new MemoryStream(csvBytes, writable: false);
-        int total = 0;
+        long total = 0;
         foreach (FlatRow row in Csv.Read<FlatRow>().WithMaxRows(Rows + 10).FromStream(ms, out _))
         {
             total += row.Id;
@@ -77,10 +129,10 @@ public class HtbBenchmark
     }
 
     [Benchmark]
-    public int ReadHtbFromStream()
+    public long ReadHtbFromStream()
     {
         using var ms = new MemoryStream(htbBytes, writable: false);
-        int total = 0;
+        long total = 0;
         foreach (FlatRow row in Htb.Read<FlatRow>().FromStream(ms))
         {
             total += row.Id;
@@ -89,9 +141,9 @@ public class HtbBenchmark
     }
 
     [Benchmark]
-    public async Task<int> ReadHtbFromFileAsync()
+    public async Task<long> ReadHtbFromFileAsync()
     {
-        int total = 0;
+        long total = 0;
         await foreach (FlatRow row in Htb.Read<FlatRow>().FromFileAsync(filePath))
         {
             total += row.Id;

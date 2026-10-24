@@ -296,6 +296,33 @@ public class BenchmarkFairnessTests
         Assert.Equal(string.Concat(Enumerable.Repeat(TAB_PREFIX_ROW, rows)), benchmark.Write_EscapeWithTab());
     }
 
+    [Theory]
+    [InlineData(1_000)]
+    [InlineData(10_000)]
+    [InlineData(100_000)]
+    public void FixedWidthByteSpanBenchmarks_DoNotOverflowOrOmitRows(int rows)
+    {
+        // Exercise the actual timed char and UTF-8 entry points. The ID sum
+        // exceeds Int32.MaxValue at 100,000 rows; adding 100*ID overflows
+        // the all-fields variant already at 10,000 rows.
+        var benchmark = new FixedWidthByteSpanBenchmarks { Rows = rows };
+        benchmark.Setup();
+
+        long idSum = (long)rows * (rows + 1) / 2;
+        long nameLengths = 0;
+        for (int i = 1; i <= rows; i++)
+        {
+            nameLengths += 4 + i.ToString(System.Globalization.CultureInfo.InvariantCulture).Length;
+        }
+
+        Assert.Equal(idSum, Assert.IsType<long>(benchmark.ParseFromCharSpan()));
+        Assert.Equal(idSum, Assert.IsType<long>(benchmark.ParseFromUtf8ByteSpan()));
+        // "AllFields" parses ID and Value, and counts the decoded Name span's
+        // length; it is not a typed/materialized business record benchmark.
+        Assert.Equal(101 * idSum + nameLengths,
+            Assert.IsType<long>(benchmark.ParseFromUtf8ByteSpan_AllFields()));
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

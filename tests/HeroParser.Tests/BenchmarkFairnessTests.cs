@@ -45,7 +45,7 @@ public class BenchmarkFairnessTests
         try
         {
             benchmark.Setup();
-            const int EXPECTED_ID_SUM = 21;
+            const long EXPECTED_ID_SUM = 21L;
             Assert.Equal(EXPECTED_ID_SUM, benchmark.ReadFromText());
             Assert.Equal(EXPECTED_ID_SUM, benchmark.ReadFromStream());
             Assert.Equal(EXPECTED_ID_SUM, await benchmark.ReadFromFileAsync());

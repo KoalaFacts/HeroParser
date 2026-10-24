@@ -211,9 +211,9 @@ public class JsonlBenchmark
     }
 
     [Benchmark(Baseline = true)]
-    public int ReadFromText()
+    public long ReadFromText()
     {
-        int total = 0;
+        long total = 0;
         foreach (FlatRow row in Jsonl.Read<FlatRow>().WithJsonOptions(serializerOptions).FromText(jsonl))
         {
             total += row.Id;
@@ -222,10 +222,10 @@ public class JsonlBenchmark
     }
 
     [Benchmark]
-    public int ReadFromStream()
+    public long ReadFromStream()
     {
         using var ms = new MemoryStream(jsonlUtf8, writable: false);
-        int total = 0;
+        long total = 0;
         foreach (FlatRow row in Jsonl.Read<FlatRow>().WithJsonOptions(serializerOptions).FromStream(ms))
         {
             total += row.Id;
@@ -234,9 +234,9 @@ public class JsonlBenchmark
     }
 
     [Benchmark]
-    public async Task<int> ReadFromFileAsync()
+    public async Task<long> ReadFromFileAsync()
     {
-        int total = 0;
+        long total = 0;
         await foreach (FlatRow row in Jsonl.Read<FlatRow>().WithJsonOptions(serializerOptions).FromFileAsync(filePath))
         {
             total += row.Id;
@@ -257,9 +257,9 @@ public class JsonlBenchmark
     }
 
     [Benchmark]
-    public int ReadFromText_SourceGenerated()
+    public long ReadFromText_SourceGenerated()
     {
-        int total = 0;
+        long total = 0;
         foreach (FlatRow row in Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromText(jsonl))
         {
             total += row.Id;
@@ -268,10 +268,10 @@ public class JsonlBenchmark
     }
 
     [Benchmark]
-    public int ReadFromStream_SourceGenerated()
+    public long ReadFromStream_SourceGenerated()
     {
         using var ms = new MemoryStream(jsonlUtf8, writable: false);
-        int total = 0;
+        long total = 0;
         foreach (FlatRow row in Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromStream(ms))
         {
             total += row.Id;

@@ -181,3 +181,20 @@ dotnet benchmarks/HeroParser.Benchmarks/bin/Release/net10.0/HeroParser.Benchmark
 
 Repeat the test commands for `net8.0` and `net9.0`. The profiling command is a
 correctness smoke check; its rough timing is not used as a benchmark result.
+
+## JSONL reader checksum follow-up (2026-10-24)
+
+The 100,000-record JSONL benchmark produces IDs 0 through 99,999. Their
+correct sum is `4,999,950,000`, which does not fit in `int`.
+The original five timed JSONL reader methods returned `int` sums and
+silently wrapped in an unchecked build. An added 100,000-record regression
+checks the actual reflection/source-generated text and stream methods,
+plus the async file method, against this exact expected `long` sum.
+All five timed readers now return `long`, preserving the number of records
+and amount of parsing work while keeping the checksum exact.
+
+This is a benchmark correctness fix, **not** evidence of an underlying parser
+performance improvement. Reader return types changed, so publish a newly
+validated benchmark baseline rather than treating older JSONL numbers as
+fully interchangeable. The frozen CSV Pipe acceptance experiment, its failed
+controls, fixed thresholds, and sample budget remain untouched.

@@ -78,7 +78,11 @@ public class BenchmarkFairnessTests
                 Assert.Equal(i * 1.5m, row.GetProperty("amount").GetDecimal());
                 Assert.Equal((i & 1) == 0, row.GetProperty("active").GetBoolean());
             }
-            Assert.Equal(benchmark.WriteToStream(), benchmark.WriteToStream_SourceGenerated());
+            // A stream length match alone cannot catch two different payloads;
+            // Setup verifies every UTF-8 byte from both stream variants.
+            long expectedBytes = System.Text.Encoding.UTF8.GetByteCount(generated);
+            Assert.Equal(expectedBytes, benchmark.WriteToStream());
+            Assert.Equal(expectedBytes, benchmark.WriteToStream_SourceGenerated());
         }
         finally
         {

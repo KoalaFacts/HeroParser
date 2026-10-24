@@ -76,8 +76,27 @@ public class JsonlBenchmark
         using var generatedStream = new MemoryStream(jsonlUtf8, writable: false);
         ValidateRows(Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromStream(generatedStream), "source-generated stream");
 
-        if (!string.Equals(WriteToText(), WriteToText_SourceGenerated(), StringComparison.Ordinal))
+        // The timed writers do real serialization, so verify their complete
+        // output—not merely equal byte counts—before any benchmark is timed.
+        string reflectionText = WriteToText();
+        if (!string.Equals(reflectionText, WriteToText_SourceGenerated(), StringComparison.Ordinal))
             throw new InvalidOperationException("JSONL reflection and source-generated writers produced different output.");
+        ValidateRows(Jsonl.Read<FlatRow>().WithJsonOptions(serializerOptions).FromText(reflectionText), "reflection writer text");
+        byte[] expectedUtf8 = Encoding.UTF8.GetBytes(reflectionText);
+
+        using var reflectionOutput = new MemoryStream(capacity: expectedUtf8.Length);
+        Jsonl.Write<FlatRow>().WithJsonOptions(serializerOptions).ToStream(reflectionOutput, rows, leaveOpen: true);
+        ValidateStreamOutput(reflectionOutput, expectedUtf8, "reflection");
+
+        using var generatedOutput = new MemoryStream(capacity: expectedUtf8.Length);
+        Jsonl.Write<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).ToStream(generatedOutput, rows, leaveOpen: true);
+        ValidateStreamOutput(generatedOutput, expectedUtf8, "source-generated");
+    }
+
+    private static void ValidateStreamOutput(MemoryStream output, ReadOnlySpan<byte> expectedUtf8, string variant)
+    {
+        if (!output.GetBuffer().AsSpan(0, checked((int)output.Length)).SequenceEqual(expectedUtf8))
+            throw new InvalidOperationException($"JSONL {variant} stream writer output differs from the verified UTF-8 text output.");
     }
 
     private void ValidateRows(JsonlRecordReader<FlatRow> reader, string variant)

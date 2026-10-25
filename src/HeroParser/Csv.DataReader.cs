@@ -55,6 +55,16 @@ public static partial class Csv
             bufferSize: 4096,
             FileOptions.SequentialScan);
 
-        return CreateDataReader(stream, options, readerOptions, leaveOpen: false, bufferSize: bufferSize);
+        try
+        {
+            return CreateDataReader(stream, options, readerOptions, leaveOpen: false, bufferSize: bufferSize);
+        }
+        catch
+        {
+            // The reader constructor can reject an invalid schema after the file is opened.
+            // A successful reader owns the stream; failed construction must close it here.
+            stream.Dispose();
+            throw;
+        }
     }
 }

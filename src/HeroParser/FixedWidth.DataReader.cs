@@ -76,7 +76,17 @@ public static partial class FixedWidth
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        return CreateDataReader(stream, options, readerOptions, encoding, leaveOpen: false, bufferSize: bufferSize);
+        try
+        {
+            return CreateDataReader(stream, options, readerOptions, encoding, leaveOpen: false, bufferSize: bufferSize);
+        }
+        catch
+        {
+            // The reader constructor can reject a missing or invalid column schema
+            // after the file is opened. Only a successfully created reader owns it.
+            stream.Dispose();
+            throw;
+        }
     }
 }
 

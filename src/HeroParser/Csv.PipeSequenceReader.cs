@@ -842,7 +842,8 @@ public readonly ref struct CsvPipeSequenceRow
                 (start, end) = TrimBounds(start, end);
             }
 
-            return new CsvPipeSequenceColumn(data.Slice(start, end - start), quote, escape);
+            return new CsvPipeSequenceColumn(
+                data.Slice(start, end - start), quote, escape, parserOptions?.EnableQuotedFields ?? true);
         }
     }
 
@@ -915,7 +916,8 @@ public readonly ref struct CsvPipeSequenceRow
             quote,
             escape,
             headerLength,
-            headerElementSize);
+            headerElementSize,
+            parserOptions?.EnableQuotedFields ?? true);
     }
 
     private (long start, long end) TrimBounds(long start, long end)
@@ -964,12 +966,14 @@ public readonly ref struct CsvPipeSequenceColumn
     private readonly ReadOnlySequence<byte> data;
     private readonly byte quote;
     private readonly byte? escape;
+    private readonly bool enableQuotedFields;
 
-    internal CsvPipeSequenceColumn(ReadOnlySequence<byte> data, byte quote, byte? escape)
+    internal CsvPipeSequenceColumn(ReadOnlySequence<byte> data, byte quote, byte? escape, bool enableQuotedFields = true)
     {
         this.data = data;
         this.quote = quote;
         this.escape = escape;
+        this.enableQuotedFields = enableQuotedFields;
     }
 
     /// <summary>Gets the length of the column in bytes.</summary>
@@ -1008,7 +1012,7 @@ public readonly ref struct CsvPipeSequenceColumn
     /// Decodes the column as UTF-8 text and removes CSV quoting/escaping.
     /// </summary>
     public string ToUnquotedString()
-        => CsvPipeColumnText.Decode(data, quote, escape);
+        => CsvPipeColumnText.Decode(data, quote, escape, enableQuotedFields);
 
     /// <summary>Returns the decoded, unquoted column text.</summary>
     public override string ToString() => ToUnquotedString();

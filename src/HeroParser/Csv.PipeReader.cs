@@ -521,6 +521,7 @@ public readonly struct CsvPipeRow
     private readonly byte headerElementSize;
     private readonly int columnCount;
     private readonly bool trimFields;
+    private readonly bool enableQuotedFields;
     private readonly byte quote;
     private readonly byte? escape;
 
@@ -542,11 +543,13 @@ public readonly struct CsvPipeRow
         byte quote,
         byte? escape,
         int dataOffset,
-        int headerElementSize)
+        int headerElementSize,
+        bool enableQuotedFields = true)
     {
         this.storage = storage;
         this.columnCount = columnCount;
         this.trimFields = trimFields;
+        this.enableQuotedFields = enableQuotedFields;
         this.quote = quote;
         this.escape = escape;
         this.dataOffset = dataOffset;
@@ -574,7 +577,7 @@ public readonly struct CsvPipeRow
                 (start, end) = TrimBounds(start, end);
             }
 
-            return new CsvPipeColumn(storage, dataOffset + start, end - start, quote, escape);
+            return new CsvPipeColumn(storage, dataOffset + start, end - start, quote, escape, enableQuotedFields);
         }
     }
 
@@ -640,14 +643,16 @@ public readonly struct CsvPipeColumn
     private readonly byte[] data;
     private readonly int start;
     private readonly int length;
+    private readonly bool enableQuotedFields;
     private readonly byte quote;
     private readonly byte? escape;
 
-    internal CsvPipeColumn(byte[] data, int start, int length, byte quote, byte? escape)
+    internal CsvPipeColumn(byte[] data, int start, int length, byte quote, byte? escape, bool enableQuotedFields = true)
     {
         this.data = data;
         this.start = start;
         this.length = length;
+        this.enableQuotedFields = enableQuotedFields;
         this.quote = quote;
         this.escape = escape;
     }
@@ -661,7 +666,7 @@ public readonly struct CsvPipeColumn
     /// Converts the column value to a string, stripping quote characters.
     /// </summary>
     public string ToUnquotedString()
-        => CsvPipeColumnText.Decode(Span, quote, escape);
+        => CsvPipeColumnText.Decode(Span, quote, escape, enableQuotedFields);
 
     /// <summary>
     /// Converts the column value to decoded, unquoted text.

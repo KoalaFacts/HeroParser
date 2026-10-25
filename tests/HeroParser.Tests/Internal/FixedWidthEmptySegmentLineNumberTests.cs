@@ -64,7 +64,10 @@ public sealed class FixedWidthEmptySegmentLineNumberTests
 
     private sealed class Segment : ReadOnlySequenceSegment<byte>
     {
-        public Segment(ReadOnlyMemory<byte> memory) => Memory = memory;
+        public Segment(ReadOnlyMemory<byte> memory)
+        {
+            Memory = memory;
+        }
 
         public Segment Append(ReadOnlyMemory<byte> memory)
         {

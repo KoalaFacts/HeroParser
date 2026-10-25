@@ -110,6 +110,13 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             }
 
             var lineEnd = FixedWidthLineScanner.FindLineEnd(span);
+            // A split CRLF is one terminator, not a CR record followed by an empty LF record.
+            if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
+            {
+                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (lineEnd == -1)
             {
                 if (endOfStream)
@@ -233,6 +240,13 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             }
 
             var lineEnd = FixedWidthLineScanner.FindLineEnd(span);
+            // Look ahead when CR is the final buffered character, including when skipping is complete.
+            if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
+            {
+                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             ReadOnlySpan<char> line;
             int consumed;
 

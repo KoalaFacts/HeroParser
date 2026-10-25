@@ -12,16 +12,6 @@ type CiInput = {
 type Verdict = 'PASS' | 'FAIL' | 'INCONCLUSIVE';
 
 const STAGES = ['policy', 'controls', 'build', 'tests', 'evidence'] as const;
-const HISTORY = Object.freeze({
-    status: 'FAILED',
-    runId: '36732093817',
-    sourceSha: '89c06810e76c4623ebad3cfc89c4bcdef41acd59',
-    url: 'https://github.com/KoalaFacts/HeroParser/actions/runs/36732093817',
-    scenario: 'Segmented128 same-source control',
-    ratio: 1.052845684,
-    maxRatio: 1.05,
-    remainingSamplingBudget: 0,
-});
 
 function verdict(outcomes: Record<string, unknown>, stages: readonly string[]): Verdict {
     if (stages.some(stage => outcomes[stage] === 'failure')) return 'FAIL';
@@ -68,17 +58,13 @@ function createCiStatus(input: CiInput) {
         '| --- | --- |',
         `| Current parser correctness and TRX evidence | ${current.correctness} |`,
         `| CI reporting and synthetic control-policy tests | ${current.policy} |`,
-        '| Current timing / regression evidence | INCONCLUSIVE (not measured) |',
-        `| Historical timing acceptance, run [${HISTORY.runId}](${HISTORY.url}) | FAILED (unchanged) |`,
         '',
         'A green correctness job is not performance acceptance and cannot support a speedup claim.',
-        `Historical Segmented128 control ratio ${HISTORY.ratio} exceeded ${HISTORY.maxRatio}; remaining sampling budget: 0.`,
-        'No historical evidence, threshold, acceptance decision or sampling budget is rewritten.',
         ...(failedPrerequisites.length ? ['', `Unsuccessful prerequisites: ${failedPrerequisites.join(', ')}.`] : []),
         '',
     ].join('\n');
-    return { schemaVersion: 1, checkPassed: failedPrerequisites.length === 0,
-        failedPrerequisites, outcomes, current, historical: { ...HISTORY }, markdown };
+    return { schemaVersion: 2, checkPassed: failedPrerequisites.length === 0,
+        failedPrerequisites, outcomes, current, markdown };
 }
 
 module.exports = { createCiStatus };

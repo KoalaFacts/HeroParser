@@ -531,6 +531,13 @@ public readonly struct CsvPipeRow
     public int RowNumber { get; }
 
     /// <summary>
+    /// Gets the 1-based physical line where this row starts when
+    /// <see cref="CsvReadOptions.TrackSourceLineNumbers"/> is enabled;
+    /// otherwise gets the 1-based logical row number.
+    /// </summary>
+    public int SourceLineNumber { get; }
+
+    /// <summary>
     /// Gets the number of columns in this row.
     /// </summary>
     public int ColumnCount => columnCount;
@@ -544,6 +551,7 @@ public readonly struct CsvPipeRow
         byte? escape,
         int dataOffset,
         int headerElementSize,
+        int sourceLineNumber,
         bool enableQuotedFields = true)
     {
         this.storage = storage;
@@ -555,6 +563,7 @@ public readonly struct CsvPipeRow
         this.dataOffset = dataOffset;
         this.headerElementSize = checked((byte)headerElementSize);
         RowNumber = rowNumber;
+        SourceLineNumber = sourceLineNumber;
     }
 
     /// <summary>

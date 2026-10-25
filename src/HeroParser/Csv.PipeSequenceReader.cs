@@ -930,6 +930,7 @@ public readonly ref struct CsvPipeSequenceRow
             escape,
             headerLength,
             headerElementSize,
+            SourceLineNumber,
             parserOptions?.EnableQuotedFields ?? true);
     }
 

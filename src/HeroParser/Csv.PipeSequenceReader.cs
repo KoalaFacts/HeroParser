@@ -417,8 +417,9 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 if (result.IsCanceled)
                 {
                     // CancelPendingRead can cancel this read even when the caller's token is not canceled.
-                    // Acknowledge the result without consuming buffered bytes; never retry or emit them.
-                    reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+                    // Leave buffered bytes both unconsumed and unexamined. Otherwise a caller
+                    // that catches cancellation cannot resume until the writer appends more data.
+                    reader.AdvanceTo(result.Buffer.Start, result.Buffer.Start);
                     throw new OperationCanceledException("The underlying PipeReader read was canceled.", cancellationToken);
                 }
 

@@ -28,8 +28,17 @@ public static partial class Csv
 
         var dataOptions = readerOptions ?? CsvDataReaderOptions.Default;
         var asyncReader = new CsvAsyncStreamReader(stream, options, leaveOpen, bufferSize, dataOptions.SkipRows);
-
-        return new CsvDataReader(asyncReader, options, dataOptions);
+        try
+        {
+            return new CsvDataReader(asyncReader, options, dataOptions);
+        }
+        catch
+        {
+            // The schema can fail after the streaming reader has rented pooled buffers.
+            // Dispose the failed handoff, respecting the caller's leaveOpen preference.
+            asyncReader.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            throw;
+        }
     }
 
     /// <summary>

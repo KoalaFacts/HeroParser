@@ -43,8 +43,17 @@ public static partial class FixedWidth
         }
 
         var asyncReader = new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen, initialBufferSize: bufferSize);
-
-        return new FixedWidthDataReader(asyncReader, options, dataOptions, encoding);
+        try
+        {
+            return new FixedWidthDataReader(asyncReader, options, dataOptions, encoding);
+        }
+        catch
+        {
+            // Schema validation can fail after the reader has rented a pooled char buffer.
+            // Dispose the failed handoff without changing the caller's stream ownership.
+            asyncReader.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            throw;
+        }
     }
 
     /// <summary>

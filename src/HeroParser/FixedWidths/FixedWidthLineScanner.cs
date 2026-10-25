@@ -54,11 +54,17 @@ internal static class FixedWidthLineScanner
         foreach (var segment in sequence)
         {
             var span = segment.Span;
+            if (span.IsEmpty)
+            {
+                // An empty segment cannot separate the CR and LF of one physical newline.
+                continue;
+            }
+
             int start = 0;
 
             if (previousWasCr)
             {
-                if (!span.IsEmpty && span[0] == LF)
+                if (span[0] == LF)
                 {
                     start = 1;
                 }

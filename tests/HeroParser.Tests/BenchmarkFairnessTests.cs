@@ -40,6 +40,53 @@ public class BenchmarkFairnessTests
         }
     }
 
+    [Fact]
+    public void BinderOverheadBenchmark_ActuallyAllocatesObjects()
+    {
+        // The benchmark previously constructed an unused SimpleRecord. RyuJIT
+        // could remove that allocation, turning the object-allocation case
+        // into the same work as the raw column-count baseline.
+        const int ROWS = 1_000;
+        var benchmark = new BinderOverheadBenchmarks { Rows = ROWS };
+        benchmark.Setup();
+
+        int expectedColumns = (ROWS + 1) * 4; // This raw API includes the header.
+        Assert.Equal(expectedColumns, benchmark.RawParse_CountColumns());
+        Assert.Equal(expectedColumns, benchmark.RawParse_CreateObjects());
+
+        // Warm these exact benchmark methods before comparing allocation bytes.
+        // This is an allocation-presence assertion, NOT a speed benchmark.
+        for (int i = 0; i < 3; i++)
+        {
+            _ = benchmark.RawParse_CountColumns();
+            _ = benchmark.RawParse_CreateObjects();
+            _ = benchmark.RawParse_CreateStrings();
+            _ = benchmark.RawParse_CreateObjectsWithStrings();
+        }
+
+        long rawBytes = AllocatedBytes(benchmark.RawParse_CountColumns);
+        long objectBytes = AllocatedBytes(benchmark.RawParse_CreateObjects);
+        Assert.True(objectBytes - rawBytes >= ROWS * 16L,
+            $"Object creation was not observable: baseline {rawBytes} B; object path {objectBytes} B.");
+
+        long stringsBytes = AllocatedBytes(benchmark.RawParse_CreateStrings);
+        long objectAndStringsBytes = AllocatedBytes(benchmark.RawParse_CreateObjectsWithStrings);
+        Assert.True(objectAndStringsBytes - stringsBytes >= ROWS * 16L,
+            $"Bound objects may have been elided: string path {stringsBytes} B; object path {objectAndStringsBytes} B.");
+
+        int expectedValues = ROWS * (ROWS - 1) / 2;
+        Assert.Equal(expectedValues, benchmark.RawParse_WithIntParse());
+        Assert.Equal(expectedValues, benchmark.Manual_SkipHeader());
+        Assert.Equal(expectedValues, benchmark.TypedBinder_PreCreatedOptions());
+    }
+
+    private static long AllocatedBytes(Func<int> action)
+    {
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        _ = action();
+        return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

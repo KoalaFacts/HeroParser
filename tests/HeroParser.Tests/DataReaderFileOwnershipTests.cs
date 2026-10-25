@@ -50,6 +50,73 @@ public sealed class DataReaderFileOwnershipTests
         }
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Csv_FailedStreamReaderHandoff_PreservesLeaveOpen(bool leaveOpen)
+    {
+        using var stream = new MemoryStream("Name\nAlice\n"u8.ToArray());
+        var invalidSchema = new CsvDataReaderOptions { ColumnNames = [null!] };
+
+        // A streaming reader is already constructed when CsvDataReader rejects ColumnNames.
+        Assert.Throws<CsvException>(() => Csv.CreateDataReader(
+            stream, readerOptions: invalidSchema, leaveOpen: leaveOpen));
+
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FixedWidth_FailedStreamReaderHandoff_PreservesLeaveOpen(bool leaveOpen)
+    {
+        using var stream = new MemoryStream("ABCD\n"u8.ToArray());
+
+        // The streaming reader exists before FixedWidthDataReader requires column definitions.
+        Assert.Throws<FixedWidthException>(() => FixedWidth.CreateDataReader(
+            stream, leaveOpen: leaveOpen));
+
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Csv_SuccessfulStreamReaderHandoff_PreservesLeaveOpen(bool leaveOpen)
+    {
+        using var stream = new MemoryStream("Name\nAlice\n"u8.ToArray());
+
+        using (var reader = Csv.CreateDataReader(stream, leaveOpen: leaveOpen))
+        {
+            Assert.True(stream.CanRead);
+            Assert.True(reader.Read());
+            Assert.Equal("Alice", reader.GetString(0));
+        }
+
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FixedWidth_SuccessfulStreamReaderHandoff_PreservesLeaveOpen(bool leaveOpen)
+    {
+        using var stream = new MemoryStream("ABCD\n"u8.ToArray());
+        var schema = new FixedWidthDataReaderOptions
+        {
+            Columns = [new FixedWidthDataReaderColumn { Start = 0, Length = 4, Name = "Code" }]
+        };
+
+        using (var reader = FixedWidth.CreateDataReader(stream, readerOptions: schema, leaveOpen: leaveOpen))
+        {
+            Assert.True(stream.CanRead);
+            Assert.True(reader.Read());
+            Assert.Equal("ABCD", reader.GetString(0));
+        }
+
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
     private static string CreateTempFile(string extension, string contents)
     {
         string path = Path.Combine(Path.GetTempPath(), $"HeroParser-{Guid.NewGuid():N}{extension}");

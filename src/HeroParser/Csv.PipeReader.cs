@@ -386,10 +386,18 @@ public static partial class Csv
 
             // A comment line ends at its first physical newline. Its content is not CSV:
             // quotes and backslashes must never consume the following data record.
-            if (commentCandidate && current != (byte)' ' && current != (byte)'\t')
+            if (commentCandidate)
             {
-                isCommentLine = current == commentCharacter.GetValueOrDefault();
-                commentCandidate = false;
+                if (current == commentCharacter.GetValueOrDefault())
+                {
+                    isCommentLine = true;
+                    commentCandidate = false;
+                    inQuotes = false;
+                }
+                else if (current != (byte)' ' && current != (byte)'\t')
+                {
+                    commentCandidate = false;
+                }
             }
 
             if (isCommentLine)

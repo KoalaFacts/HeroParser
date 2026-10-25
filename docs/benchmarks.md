@@ -166,11 +166,14 @@ unescaping to preserve invalid UTF-8 replacement semantics. Only the resulting
 string remains allocated in these warmed-up cases; pool growth can allocate on
 cold calls, and owned-row allocations are outside this microbenchmark.
 
-### Checked End-to-End PipeReader A/B
+### Historical End-to-End PipeReader A/B
 
-The opt-in [paired probe](../benchmarks/CsvPipeABProbe/README.md) compares independent
-parser/generator builds in one process, consumes complete records, verifies an
-input-derived checksum, and retains every paired sample. It covers fixed
+This experiment was [retired on 2026-10-25](perf/2026-10-25-csv-pipe-retirement.md).
+Its evidence remains archived; it is not an active CI or merge gate.
+
+The [paired probe](../benchmarks/CsvPipeABProbe/README.md) compared independent
+parser/generator builds in one process, consumed complete records, verified an
+input-derived checksum, and retained every paired sample. It covered fixed
 segmentation and real stream-backed pipe reading, with same-source A/A controls.
 The [initial evidence](../benchmarks/CsvPipeABProbe/results.md) confirms allocation
 reductions but rejects throughput claims under a noisy local environment. It also
@@ -180,4 +183,4 @@ The same report records the follow-up logical-value repair and its validation.
 An exploratory local study of [process-to-process variance](perf/csv-pipe-process-variance/README.md)
 found that identical processes compile different optimized code under dynamic PGO, and that
 dynamic PGO is worth roughly 16% on this path. It does not explain or waive the failed timing
-gate; the noise on that machine is too large to link code shape to speed.
+result; the noise on that machine is too large to link code shape to speed.

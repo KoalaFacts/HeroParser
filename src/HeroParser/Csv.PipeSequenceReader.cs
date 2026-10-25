@@ -414,6 +414,14 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
             if (!hasBufferedRead)
             {
                 ReadResult result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (result.IsCanceled)
+                {
+                    // CancelPendingRead can cancel this read even when the caller's token is not canceled.
+                    // Acknowledge the result without consuming buffered bytes; never retry or emit them.
+                    reader.AdvanceTo(result.Buffer.Start, result.Buffer.End);
+                    throw new OperationCanceledException("The underlying PipeReader read was canceled.", cancellationToken);
+                }
+
                 ReadOnlySequence<byte> readBuffer = result.Buffer;
 
                 bool bomHandled = bomProcessed;

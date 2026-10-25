@@ -11,39 +11,36 @@ function job(id: string): string {
     assert.ok(match, `Missing workflow job: ${id}`);
     return match[0];
 }
-function timingEnabled(event: string, selected: Record<string, boolean | string> = {}): boolean {
-    const condition = job('pipe-ab').match(/^    if: (.+)$/m);
-    assert.ok(condition, 'Timing job must have an explicit condition');
+function setupEnabled(event: string, selected: Record<string, boolean | string> = {}): boolean {
+    const condition = job('setup').match(/^    if: (.+)$/m);
+    assert.ok(condition, 'Ordinary CI must have an explicit condition');
     const inputs = new Proxy(selected, { get: (target, key: string) => target[key] ?? false });
-    // Evaluate only the checked-in, single-line Actions boolean expression, with no IO globals.
+    // Execute the checked-in Actions boolean expression with no IO globals.
     return Boolean(vm.runInNewContext(condition[1], { github: { event_name: event }, inputs }, { timeout: 1000 }));
 }
 
-for (const event of ['pull_request', 'push']) {
-    test(`${event} never enters the historical timing job`, () => {
-        assert.equal(timingEnabled(event), false);
-        assert.equal(timingEnabled(event, { pipe_controls: true }), false);
-        assert.equal(timingEnabled(event, { pipe_ab: true }), false);
+test('the retired timing experiment has no workflow job or dispatch inputs', () => {
+    assert.doesNotMatch(workflow, /^  pipe-ab:/m);
+    assert.doesNotMatch(workflow, /^      pipe_(?:ab|controls):/m);
+    assert.doesNotMatch(workflow, /inputs\.pipe_(?:ab|controls)\b/);
+    assert.doesNotMatch(workflow, /run-isolated\.ps1|Timing acceptance remains FAILED/);
+});
+for (const event of ['pull_request', 'push', 'workflow_dispatch']) {
+    test(`${event} retains the ordinary current-code checks`, () => {
+        assert.equal(setupEnabled(event), true);
+        assert.match(job('benchmark'), /needs: setup/);
+        assert.match(job('pipe-correctness'), /needs: setup/);
     });
 }
-test('manual timing remains opt-in and does not mix with diagnostics', () => {
-    assert.equal(timingEnabled('workflow_dispatch'), false);
-    assert.equal(timingEnabled('workflow_dispatch', { pipe_controls: true }), true);
-    assert.equal(timingEnabled('workflow_dispatch', { pipe_ab: true }), true);
+test('independent manual diagnostics remain separate from ordinary CI', () => {
     for (const mode of ['pipe_profile', 'pipe_bias', 'pipe_bias_jit_only', 'pipe_native_profile',
         'pipe_native_replay_run', 'pipe_native_history_probe', 'pipe_history', 'pipe_history_replay_run',
         'pipe_history_jit_control', 'pipe_history_same_run']) {
-        assert.equal(timingEnabled('workflow_dispatch', { pipe_controls: true, [mode]: true }), false, mode);
+        assert.equal(setupEnabled('workflow_dispatch', { [mode]: true }), false, mode);
     }
-});
-test('manual timing retains the frozen workload and suspended A/B guards', () => {
-    const text = job('pipe-ab');
-    assert.match(text, /Timing acceptance remains FAILED at run 36732093817/);
-    assert.match(text, /Segmented128 1\.052845684 > 1\.05/);
-    assert.match(text, /git diff --quiet 89c06810e76c4623ebad3cfc89c4bcdef41acd59 HEAD/);
-    assert.match(text, /if \(\$LASTEXITCODE -eq 0\) \{ throw/);
-    assert.match(text, /if \(\$LASTEXITCODE -ne 1\) \{ throw/);
-    assert.match(text, /A\/B is suspended/);
+    for (const id of ['pipe-profile', 'pipe-bias', 'pipe-history', 'pipe-native-profile']) {
+        assert.match(job(id), /if: github\.event_name == 'workflow_dispatch'/);
+    }
 });
 test('automatic correctness uses real MTP tests, all configured frameworks and non-empty evidence', () => {
     const text = job('pipe-correctness');
@@ -64,7 +61,7 @@ test('automatic correctness uses real MTP tests, all configured frameworks and n
 });
 test('reporting and upload still run on failure, but never hide failed prerequisites', () => {
     const text = job('pipe-correctness');
-    assert.match(text, /name: Report correctness and timing separately\n\s+if: always\(\)/);
+    assert.match(text, /name: Report current correctness\n\s+if: always\(\)/);
     assert.match(text, /name: Upload current correctness evidence\n\s+if: always\(\)/);
     for (const prerequisite of ['policy', 'controls', 'build', 'tests', 'evidence']) {
         assert.ok(text.includes(`steps.${prerequisite}.outcome`), prerequisite);
@@ -80,32 +77,29 @@ function report(overrides: Record<string, unknown> = {}) {
         outcomes: { policy: 'success', controls: 'success', build: 'success', tests: 'success', evidence: 'success' }, ...overrides });
 }
 
-test('correctness success is not historical acceptance or a current speedup claim', () => {
+test('current reports do not keep an archived experiment as a live obligation', () => {
     const result = report();
+    assert.equal(result.schemaVersion, 2);
     assert.equal(result.checkPassed, true);
     assert.equal(result.current.correctness, 'PASS');
     assert.equal(result.current.policy, 'PASS');
     assert.equal(result.current.timing, 'INCONCLUSIVE');
     assert.equal(result.current.newTimingSamples, 0);
     assert.equal(result.current.speedupClaimAllowed, false);
-    assert.equal(result.historical.status, 'FAILED');
-    assert.equal(result.historical.runId, '36732093817');
-    assert.equal(result.historical.ratio, 1.052845684);
-    assert.equal(result.historical.maxRatio, 1.05);
-    assert.equal(result.historical.remainingSamplingBudget, 0);
-    assert.match(result.markdown, /INCONCLUSIVE/);
-    assert.match(result.markdown, /FAILED/);
+    assert.equal(Object.hasOwn(result, 'historical'), false);
+    assert.doesNotMatch(JSON.stringify(result), /36732093817|1\.052845684|Historical timing|remainingSamplingBudget/);
+    assert.doesNotMatch(result.markdown, /FAILED|INCONCLUSIVE/);
     assert.match(result.markdown, /not performance acceptance/i);
 });
 for (const stage of ['policy', 'controls', 'build', 'tests', 'evidence']) {
-    test(`a failed ${stage} cannot be hidden by historical INCONCLUSIVE reporting`, () => {
+    test(`a failed ${stage} cannot be hidden by current reporting`, () => {
         const outcomes = { policy: 'success', controls: 'success', build: 'success', tests: 'success', evidence: 'success' };
         outcomes[stage] = 'failure';
         const result = report({ outcomes });
         assert.equal(result.checkPassed, false);
         assert.ok(result.failedPrerequisites.includes(stage));
         assert.equal(result.current[stage === 'policy' || stage === 'controls' ? 'policy' : 'correctness'], 'FAIL');
-        assert.equal(result.historical.status, 'FAILED');
+        assert.equal(Object.hasOwn(result, 'historical'), false);
     });
 }
 for (const outcome of ['skipped', 'cancelled', '', undefined, 'unknown']) {
@@ -118,10 +112,6 @@ for (const outcome of ['skipped', 'cancelled', '', undefined, 'unknown']) {
 }
 test('an empty prerequisite set does not pass vacuously', () => {
     assert.equal(report({ outcomes: {} }).checkPassed, false);
-});
-test('mutating a report cannot rewrite frozen history for the next run', () => {
-    report().historical.status = 'PASS';
-    assert.equal(report().historical.status, 'FAILED');
 });
 test('unsupported provenance is rejected rather than recorded as verified', () => {
     for (const overrides of [{ sourceSha: 'main' }, { framework: 'net11.0' }, { runId: 'x' }, { runAttempt: '0' }]) {
@@ -138,7 +128,7 @@ test('MTP receives both class selectors under one multi-value option', () => {
 for (const testOutcome of ['success', 'failure']) {
     test(`actual workflow reporter preserves ${testOutcome} and writes independent evidence`, async () => {
         const text = job('pipe-correctness');
-        const section = text.slice(text.indexOf('      - name: Report correctness and timing separately'));
+        const section = text.slice(text.indexOf('      - name: Report current correctness'));
         const match = section.match(/          script: \|\n((?:            [^\n]*\n)+)/);
         assert.ok(match, 'Missing executable status reporter');
         const script = match[1].replace(/^            /gm, '');
@@ -162,7 +152,7 @@ for (const testOutcome of ['success', 'failure']) {
         assert.equal(result.current.sourceSha, env.SOURCE_SHA);
         assert.equal(result.current.correctness, testOutcome === 'success' ? 'PASS' : 'FAIL');
         assert.equal(result.current.timing, 'INCONCLUSIVE');
-        assert.equal(result.historical.status, 'FAILED');
+        assert.equal(Object.hasOwn(result, 'historical'), false);
         assert.equal(result.checkPassed, testOutcome === 'success');
         assert.equal(failure.length > 0, testOutcome === 'failure');
         assert.equal(markdown, result.markdown);

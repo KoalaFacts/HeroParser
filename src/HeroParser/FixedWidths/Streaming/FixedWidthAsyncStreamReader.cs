@@ -21,6 +21,8 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     private int offset;
     private int length;
     private int recordCount;
+    // Keep track of fully skipped preamble records across canceled reads.
+    private long initialRowsSkipped;
     private int sourceLineNumber;
     private bool endOfStream;
     private bool disposed;
@@ -51,6 +53,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         offset = 0;
         length = 0;
         recordCount = 0;
+        initialRowsSkipped = 0;
         sourceLineNumber = 1;
         endOfStream = false;
         disposed = false;
@@ -69,11 +72,11 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Handle initial row skipping (SkipRows + optional header row)
+        // Use a widened sum and resume any partial skip after cancellation.
         if (recordCount == 0)
         {
-            var totalSkip = options.SkipRows + (options.HasHeaderRow ? 1 : 0);
-            if (totalSkip > 0)
+            long totalSkip = (long)options.SkipRows + (options.HasHeaderRow ? 1 : 0);
+            if (initialRowsSkipped < totalSkip)
             {
                 await SkipInitialRowsAsync(totalSkip, cancellationToken).ConfigureAwait(false);
             }
@@ -87,7 +90,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         return await MoveNextLineBasedAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask SkipInitialRowsAsync(int rowsToSkip, CancellationToken cancellationToken)
+    private async ValueTask SkipInitialRowsAsync(long rowsToSkip, CancellationToken cancellationToken)
     {
         if (options.RecordLength is { } fixedLength)
         {
@@ -95,9 +98,10 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             return;
         }
 
-        int skipped = 0;
-        while (skipped < rowsToSkip)
+        while (initialRowsSkipped < rowsToSkip)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var span = buffer.AsSpan(offset, length - offset);
             if (!endOfStream && !FixedWidthLineScanner.ContainsLineBreak(span))
             {
@@ -128,14 +132,13 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             if (trackLineNumbers)
                 sourceLineNumber++;
 
-            skipped++;
+            initialRowsSkipped++;
         }
     }
 
-    private async ValueTask SkipInitialFixedLengthRowsAsync(int rowsToSkip, int recordLength, CancellationToken cancellationToken)
+    private async ValueTask SkipInitialFixedLengthRowsAsync(long rowsToSkip, int recordLength, CancellationToken cancellationToken)
     {
-        int skipped = 0;
-        while (skipped < rowsToSkip)
+        while (initialRowsSkipped < rowsToSkip)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -157,7 +160,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             }
 
             offset += recordLength;
-            skipped++;
+            initialRowsSkipped++;
         }
     }
 

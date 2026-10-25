@@ -49,6 +49,36 @@ public sealed class CsvPipeCancellationResultTests
         Assert.Equal(1, pipe.CompleteCount);
     }
 
+    [Fact]
+    public async Task BorrowedReader_CancelPendingRead_DoesNotStrandBufferedRow()
+    {
+        var pipe = new Pipe();
+        await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes("kept,2\n"), TestContext.Current.CancellationToken);
+        pipe.Reader.CancelPendingRead();
+
+        await using (var csv = Csv.CreatePipeSequenceReader(pipe.Reader))
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            {
+                _ = await csv.MoveNextAsync(TestContext.Current.CancellationToken);
+            });
+
+            // With the writer still open and no second write, the preserved row must be
+            // available immediately. Marking its bytes examined would block this read.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            Assert.True(await csv.MoveNextAsync(timeout.Token));
+
+            var row = csv.Current;
+            Assert.Equal(2, row.ColumnCount);
+            Assert.Equal(1, row.RowNumber);
+            Assert.Equal("kept", row[0].ToUnquotedString());
+            Assert.Equal("2", row[1].ToUnquotedString());
+        }
+
+        await pipe.Writer.CompleteAsync();
+    }
+
     private sealed class CanceledReadPipeReader(byte[] bytes) : PipeReader
     {
         public int ReadCount { get; private set; }

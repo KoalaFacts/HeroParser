@@ -155,7 +155,7 @@ var headerStyle = ExcelStyle.Create()
 
 Excel.Write<Product>()
     .WithHeaderStyle(headerStyle)
-    .WithMergeDuplicates(p => p.Category) // Vertically merge contiguous duplicate Categories
+    .WithMergeDuplicates(p => p.Name) // Vertically merge contiguous duplicate Names
     .ToFile("out.xlsx", products);
 ```
 
@@ -190,12 +190,21 @@ FixedWidth.Write<Employee>().ToFile("out.dat", employees);
 Perfect for AI fine-tuning datasets, streamed LLM responses, and database bulk loading.
 
 ```csharp
-// Read JSONL files (AOT-safe)
-var records = Jsonl.Read<Product>().FromFile("products.jsonl").ToList();
+using System.Text.Json.Serialization;
+
+// Read JSONL files using source-generated JSON metadata (AOT-safe)
+using var reader = Jsonl.Read<Product>()
+    .FromFile("products.jsonl", ProductJsonContext.Default.Product);
+var records = reader.ToList();
 
 // Write JSONL files
-Jsonl.Write<Product>().ToFile("out.jsonl", records);
+Jsonl.Write<Product>().ToFile("out.jsonl", records, ProductJsonContext.Default.Product);
+
+[JsonSerializable(typeof(Product))]
+internal partial class ProductJsonContext : JsonSerializerContext { }
 ```
+
+JSONL uses the System.Text.Json source-generated context above; `[GenerateBinder]` does not generate JSON serialization metadata.
 
 ### High-Throughput Tabular Binary (HTB)
 

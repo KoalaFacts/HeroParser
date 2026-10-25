@@ -181,10 +181,13 @@ public class MultiSchemaBenchmarks
         int total = 0;
         int rowNumber = 0;
 
-        // Skip header row - use byte-based reader for SIMD acceleration
+        // Bind named fields from the header before dispatching data rows.
         var reader = Csv.Read().FromText(multiTypeCsv, out byte[] _);
         if (reader.MoveNext())
+        {
             rowNumber++; // header
+            BankingDispatcher.BindHeaderBytes(reader.Current, rowNumber);
+        }
 
         while (reader.MoveNext())
         {

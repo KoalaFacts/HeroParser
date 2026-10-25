@@ -1,4 +1,5 @@
 using HeroParser.FixedWidths;
+using HeroParser.FixedWidths.Reading.Data;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Data;
 using Xunit;

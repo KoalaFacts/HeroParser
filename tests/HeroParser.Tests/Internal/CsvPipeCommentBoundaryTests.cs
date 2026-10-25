@@ -129,6 +129,46 @@ public sealed class CsvPipeCommentBoundaryTests
         }
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task EscapedCrImmediatelyBeforeTerminatingLf_IsOnePhysicalSourceLine(
+        bool enableQuotes, bool enableComments)
+    {
+        // The escaped CR belongs to the field, and the following LF closes the record.
+        // Taken together they are one physical CRLF, not two source lines.
+        byte[] bytes = Encoding.UTF8.GetBytes("first,2\\\r\nnext,3\n");
+        var options = new CsvReadOptions
+        {
+            EnableQuotedFields = enableQuotes,
+            CommentCharacter = enableComments ? '#' : null,
+            EscapeCharacter = '\\',
+            TrackSourceLineNumbers = true
+        };
+
+        List<(string First, string Second, int Columns, int Row, int Line)> expected =
+        [
+            ("first", "2\r", 2, 1, 1),
+            ("next", "3", 2, 2, 2)
+        ];
+
+        // Cover the ordinary contiguous parser and every multi-segment split,
+        // especially the split between the escaped CR and its LF terminator.
+        Assert.Equal(expected, await ReadRows(new ReadOnlySequence<byte>(bytes), options));
+        for (int split = 0; split <= bytes.Length; split++)
+        {
+            Assert.Equal(expected, await ReadRows(SplitAt(bytes, split), options));
+        }
+
+        int afterCr = Array.IndexOf(bytes, (byte)'\r') + 1;
+        var first = new Segment(bytes.AsMemory(0, afterCr));
+        var last = first.Append(ReadOnlyMemory<byte>.Empty).Append(bytes.AsMemory(afterCr));
+        Assert.Equal(expected, await ReadRows(
+            new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length), options));
+    }
+
     private static async Task<List<(string First, string Second, int Columns, int Row, int Line)>> ReadRows(
         ReadOnlySequence<byte> buffer, CsvReadOptions options)
     {

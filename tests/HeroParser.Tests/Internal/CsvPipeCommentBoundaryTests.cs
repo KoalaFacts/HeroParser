@@ -90,6 +90,45 @@ public sealed class CsvPipeCommentBoundaryTests
         }
     }
 
+    [Fact]
+    public async Task EscapedPhysicalLineEndings_KeepSourceLinesInSegmentedReads()
+    {
+        // A backslash can escape an actual LF or CR inside an unquoted/quoted field.
+        // Each such byte is still a physical line ending even though it is not a record boundary.
+        bool[] quotedModes = [false, true];
+        string[] lineEndings = ["\n", "\r"];
+        foreach (bool quoted in quotedModes)
+        {
+            foreach (string lineEnding in lineEndings)
+            {
+                string escapedField = $"first\\{lineEnding}second";
+                string field = quoted ? $"\"{escapedField}\"" : escapedField;
+                byte[] bytes = Encoding.UTF8.GetBytes(field + ",2\nnext,3\n");
+                var options = new CsvReadOptions
+                {
+                    EscapeCharacter = '\\',
+                    AllowNewlinesInsideQuotes = quoted,
+                    TrackSourceLineNumbers = true
+                };
+
+                List<(string First, string Second, int Columns, int Row, int Line)> expected =
+                [
+                    ($"first{lineEnding}second", "2", 2, 1, 1),
+                    ("next", "3", 2, 2, 3)
+                ];
+
+                // The contiguous parser already counts source newlines in raw row bytes.
+                var contiguous = await ReadRows(new ReadOnlySequence<byte>(bytes), options);
+                Assert.Equal(expected, contiguous);
+                for (int split = 1; split < bytes.Length; split++)
+                {
+                    var segmented = await ReadRows(SplitAt(bytes, split), options);
+                    Assert.Equal(expected, segmented);
+                }
+            }
+        }
+    }
+
     private static async Task<List<(string First, string Second, int Columns, int Row, int Line)>> ReadRows(
         ReadOnlySequence<byte> buffer, CsvReadOptions options)
     {

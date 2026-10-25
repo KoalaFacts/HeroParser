@@ -369,56 +369,75 @@ public static partial class Csv
         byte quote,
         byte? escape,
         bool enableQuotes,
+        byte? commentCharacter,
         bool isCompleted,
         out ReadOnlySequence<byte> rowData)
     {
         var reader = new SequenceReader<byte>(buffer);
         bool inQuotes = false;
         bool skipNext = false;
+        bool commentCandidate = commentCharacter.HasValue;
+        bool isCommentLine = false;
 
         while (reader.Remaining > 0)
         {
             if (!reader.TryRead(out byte current))
                 break;
 
-            if (skipNext)
+            // A comment line ends at its first physical newline. Its content is not CSV:
+            // quotes and backslashes must never consume the following data record.
+            if (commentCandidate && current != (byte)' ' && current != (byte)'\t')
             {
-                skipNext = false;
-                continue;
+                isCommentLine = current == commentCharacter.GetValueOrDefault();
+                commentCandidate = false;
             }
 
-            if (escape.HasValue && current == escape.Value)
+            if (isCommentLine)
             {
-                if (reader.Remaining == 0 && !isCompleted)
+                if (current != (byte)'\r' && current != (byte)'\n')
+                    continue;
+            }
+            else
+            {
+                if (skipNext)
                 {
-                    rowData = default;
-                    return false;
-                }
-                if (reader.Remaining > 0)
-                {
-                    skipNext = true;
+                    skipNext = false;
                     continue;
                 }
-            }
 
-            if (enableQuotes && current == quote)
-            {
-                if (inQuotes)
+                if (escape.HasValue && current == escape.Value)
                 {
                     if (reader.Remaining == 0 && !isCompleted)
                     {
                         rowData = default;
                         return false;
                     }
-                    if (reader.TryPeek(out byte next) && next == quote)
+                    if (reader.Remaining > 0)
                     {
-                        reader.Advance(1);
+                        skipNext = true;
                         continue;
                     }
                 }
 
-                inQuotes = !inQuotes;
-                continue;
+                if (enableQuotes && current == quote)
+                {
+                    if (inQuotes)
+                    {
+                        if (reader.Remaining == 0 && !isCompleted)
+                        {
+                            rowData = default;
+                            return false;
+                        }
+                        if (reader.TryPeek(out byte next) && next == quote)
+                        {
+                            reader.Advance(1);
+                            continue;
+                        }
+                    }
+
+                    inQuotes = !inQuotes;
+                    continue;
+                }
             }
 
             if (!inQuotes && current == (byte)'\r')

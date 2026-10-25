@@ -598,7 +598,8 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 }
                 else
                 {
-                    if (!Csv.TryReadRow(ref buffer, quote, escape, enableQuotes, bufferedIsCompleted, out rowData))
+                    if (!Csv.TryReadRow(ref buffer, quote, escape, enableQuotes,
+                        (byte)options.CommentCharacter.Value, bufferedIsCompleted, out rowData))
                     {
                         break;
                     }

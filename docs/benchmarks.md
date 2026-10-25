@@ -24,6 +24,8 @@ The [2026-10-25 injection-check validity note](perf/2026-10-25-read-injection-va
 The [2026-10-25 fixed-width byte-span validity note](perf/2026-10-25-fixed-width-bytespan-validity.md) documents overflowing 100k ID and Value checksums in the char/UTF-8 primitive benchmarks, the independent 64-bit xUnit and per-record preflight, and why the Name-length variant is not typed materialization. It needs a new timing baseline.
 The [2026-10-25 field-parsing fixture note](perf/2026-10-25-fixed-width-fields-validity.md) records the malformed timestamp boundary, narrowed UInt32 checksum, and repaired pre-timing validation. This is a changed workload requiring a new baseline.
 
+The [2026-10-25 binder object-allocation validity note](perf/2026-10-25-binder-allocation-validity.md) records the previously unused per-row object, the required anti-elision consumer for four object-creation benchmarks, and an allocation-presence regression. Those diagnostic stage results need a new baseline and do not establish a parser speedup.
+
 ## Historical Benchmark Environment (2026-10-23)
 
 The table below comes from the **Base `cba2bcd`** section of the [PR #156 CI benchmark report](https://github.com/KoalaFacts/HeroParser/pull/156#issuecomment-6355972696), using [this exact fixture](https://github.com/KoalaFacts/HeroParser/blob/cba2bcdbf57597d87a159316e4d06969c1278d01/benchmarks/HeroParser.Benchmarks/VsSepReadingBenchmarks.cs).

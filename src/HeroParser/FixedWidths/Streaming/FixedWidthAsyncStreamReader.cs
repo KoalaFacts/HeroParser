@@ -113,7 +113,9 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             // A split CRLF is one terminator, not a CR record followed by an empty LF record.
             if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
             {
-                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                // A large StreamReader.ReadAsync request can await unrelated input
+                // even after receiving the LF that completes this record.
+                await FillBufferAsync(cancellationToken, singleCharacter: true).ConfigureAwait(false);
                 continue;
             }
 
@@ -243,7 +245,9 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             // Look ahead when CR is the final buffered character, including when skipping is complete.
             if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
             {
-                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                // A large StreamReader.ReadAsync request can await unrelated input
+                // even after receiving the LF that completes this record.
+                await FillBufferAsync(cancellationToken, singleCharacter: true).ConfigureAwait(false);
                 continue;
             }
 
@@ -311,7 +315,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         }
     }
 
-    private async ValueTask FillBufferAsync(CancellationToken cancellationToken)
+    private async ValueTask FillBufferAsync(CancellationToken cancellationToken, bool singleCharacter = false)
     {
         if (offset > 0)
         {
@@ -338,7 +342,8 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             buffer = newBuffer;
         }
 
-        var read = await reader.ReadAsync(buffer.AsMemory(length, buffer.Length - length), cancellationToken).ConfigureAwait(false);
+        int requestedCharacters = singleCharacter ? 1 : buffer.Length - length;
+        var read = await reader.ReadAsync(buffer.AsMemory(length, requestedCharacters), cancellationToken).ConfigureAwait(false);
         if (read == 0)
         {
             endOfStream = true;

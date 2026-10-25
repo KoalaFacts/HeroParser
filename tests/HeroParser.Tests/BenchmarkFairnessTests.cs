@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using HeroParser.Benchmarks;
 using Xunit;
@@ -7,6 +8,38 @@ namespace HeroParser.Tests;
 [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
 public class BenchmarkFairnessTests
 {
+    [Theory]
+    [InlineData(1_000)]
+    [InlineData(10_000)]
+    public void MultiSchemaBenchmarks_UseCultureInvariantFractionalAmounts(int rows)
+    {
+        // CSV decimal fixtures must not depend on the benchmark host culture:
+        // "10,5" under fr-FR would become two CSV columns instead of one.
+        CultureInfo originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            var benchmark = new MultiSchemaBenchmarks { Rows = rows };
+            benchmark.Setup();
+
+            int expectedDetails = 0;
+            for (int i = 0; i < rows - 2; i++)
+            {
+                expectedDetails += 21 * i / 2; // (int)(i * 10.5m), independently.
+            }
+
+            Assert.Equal(rows * (rows - 1) / 2, benchmark.SingleSchema_TypedBinder());
+            Assert.Equal(expectedDetails, benchmark.MultiSchema_SingleCharDiscriminator());
+            Assert.Equal(expectedDetails, benchmark.MultiSchema_ThreeCharDiscriminator());
+            Assert.Equal(expectedDetails, benchmark.MultiSchema_IndexBasedDiscriminator());
+            Assert.Equal(expectedDetails, benchmark.MultiSchema_SourceGenerated());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

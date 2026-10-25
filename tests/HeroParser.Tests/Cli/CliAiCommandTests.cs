@@ -444,11 +444,18 @@ public class CliAiCommandTests : IDisposable
         string outputPath = TempPath();
         File.WriteAllText(outputPath, "previous result");
 
-        Assert.False(await CliCommands.TranslateAsync(
-            TempFile("Name\ninput"), ',', null, "t", outputPath,
-            batchSize: 1, null, null, null,
-            ClientFor(new ScriptedRunner("{\"Name\":\"first\",\"Name\":\"second\"}"))));
+        // Progress rendering runs on a background task while translation reports errors.
+        // Match the synchronized Console.Out behavior for this redirected StringWriter.
+        AnsiConsoleApi.Current = new SystemConsole(TextWriter.Synchronized(output));
+        var runner = new ScriptedRunner("{\"Name\":\"first\",\"Name\":\"second\"}");
 
+        bool succeeded = await CliCommands.TranslateAsync(
+            TempFile("Name\ninput"), ',', null, "t", outputPath,
+            batchSize: 1, null, null, null, ClientFor(runner));
+
+        // A negative result alone could come from an earlier input failure.
+        Assert.Single(runner.Prompts);
+        Assert.False(succeeded);
         Assert.Equal("previous result", File.ReadAllText(outputPath));
         Assert.Contains("Failed to parse output line", output.ToString(), StringComparison.Ordinal);
     }

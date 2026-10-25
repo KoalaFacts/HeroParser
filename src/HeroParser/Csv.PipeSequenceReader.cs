@@ -560,11 +560,9 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
                 if (trackLineNumbers)
                 {
-                    sourceLineNumber += Csv.CountNewlines(currentRowData);
-                    if (parseResult.CharsConsumed > parseResult.RowLength)
-                    {
-                        sourceLineNumber++;
-                    }
+                    // Count the consumed record as a whole: the last data byte can be an
+                    // escaped CR followed by its LF terminator (one physical CRLF).
+                    sourceLineNumber += Csv.CountNewlines(buffer.Slice(0, parseResult.CharsConsumed));
                 }
 
                 if (parseResult.RowLength == 0)
@@ -590,6 +588,9 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
             while (true)
             {
+                // Preserve the pre-scan view so line tracking can count the entire
+                // consumed record, including the terminator, across segment boundaries.
+                ReadOnlySequence<byte> rowStartBuffer = buffer;
                 ReadOnlySequence<byte> rowData;
                 int columnCount;
                 int newlineCount;
@@ -613,9 +614,10 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
                     if (trackLineNumbers && escape.HasValue)
                     {
-                        // Escaped physical newlines are skipped by TryReadRow's delimiter state machine.
-                        // Count the raw row's line endings instead, as in the contiguous CSV path.
-                        newlineCount = Csv.CountNewlines(rowData) + 1;
+                        // TryReadRow skips escaped CR/LF while scanning. Count all consumed
+                        // bytes together so an escaped CR plus terminating LF is counted once.
+                        newlineCount = Csv.CountNewlines(rowStartBuffer.Slice(
+                            0, rowStartBuffer.Length - buffer.Length));
                     }
                 }
                 else
@@ -627,7 +629,11 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                     }
 
                     columnCount = Csv.ParsePipeSequenceRow(rowData, options, rowNumber + 1, quote, escape, columnEndsBuffer.Span);
-                    newlineCount = trackLineNumbers ? Csv.CountNewlines(rowData) + 1 : 0;
+                    // Comments and ordinary rows both count actual physical newlines,
+                    // including any CRLF crossing from field data into the terminator.
+                    newlineCount = trackLineNumbers
+                        ? Csv.CountNewlines(rowStartBuffer.Slice(0, rowStartBuffer.Length - buffer.Length))
+                        : 0;
                 }
 
                 Csv.EnsureRowSize(rowData.Length, maxRowSize);

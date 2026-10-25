@@ -9,8 +9,10 @@
     <SupportedTargetFrameworks>net8.0;net9.0;net10.0</SupportedTargetFrameworks>
 
     <!-- Corresponding SDK versions for CI/CD workflows -->
-    <!-- Format: Major.Minor.x (e.g., 8.0.x, 9.0.x, 10.0.x) -->
-    <SupportedSdkVersions>8.0.x;9.0.x;10.0.x</SupportedSdkVersions>
+    <!-- Pin the last verified SDK patches while the 2026-10-25 servicing rollout -->
+    <!-- returns HTTP 409 from the .NET download origin for new 8.x/10.x binaries. -->
+    <!-- Review after upstream distribution recovers; never reduce TFM coverage. -->
+    <SupportedSdkVersions>8.0.426;9.0.319;10.0.402</SupportedSdkVersions>
 
     <!-- Enforce EditorConfig code style during build so style violations fail when TreatWarningsAsErrors=true -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

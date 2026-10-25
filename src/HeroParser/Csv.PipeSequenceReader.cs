@@ -610,6 +610,13 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                     {
                         break;
                     }
+
+                    if (trackLineNumbers && escape.HasValue)
+                    {
+                        // Escaped physical newlines are skipped by TryReadRow's delimiter state machine.
+                        // Count the raw row's line endings instead, as in the contiguous CSV path.
+                        newlineCount = Csv.CountNewlines(rowData) + 1;
+                    }
                 }
                 else
                 {

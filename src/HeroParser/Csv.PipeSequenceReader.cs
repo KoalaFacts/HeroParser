@@ -65,6 +65,12 @@ public static partial class Csv
         foreach (var segment in sequence)
         {
             var span = segment.Span;
+            if (span.IsEmpty)
+            {
+                // Empty sequence segments must not break a CRLF pair between non-empty segments.
+                continue;
+            }
+
             int start = 0;
 
             if (previousWasCr)

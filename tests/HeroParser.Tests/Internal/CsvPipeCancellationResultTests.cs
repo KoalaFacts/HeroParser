@@ -35,7 +35,7 @@ public sealed class CsvPipeCancellationResultTests
     {
         byte[] input = hasBufferedRow ? Encoding.UTF8.GetBytes("must-not-emit,1\n") : [];
         var pipe = new CanceledReadPipeReader(input);
-        var rows = Csv.ReadFromPipeReaderAsync(pipe);
+        var rows = Csv.ReadFromPipeReaderAsync(pipe, cancellationToken: TestContext.Current.CancellationToken);
         await using (var iterator = rows.GetAsyncEnumerator(TestContext.Current.CancellationToken))
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>

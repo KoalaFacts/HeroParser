@@ -11,6 +11,8 @@ Dependency versions are defined in [HeroParser.Benchmarks.csproj](../benchmarks/
 
 The [2026-10-24 validity report](perf/2026-10-24-benchmark-validity.md) records the CSV/JSONL benchmark repairs, characterization tests, and the withdrawn wrapper candidate's complete local diagnostic evidence. It makes no parser speedup claim.
 
+The [2026-10-25 multi-schema culture validity note](perf/2026-10-25-multi-schema-culture-validity.md) records why interpolated fractional decimals can turn into extra CSV columns under comma-decimal locales. It fixes fixture generation to invariant formatting and requires independent checksums from each actual timed dispatcher before measuring. Single-schema and header/detail/trailer datasets do different work and must not be interpreted as equal-operation A/B comparisons.
+
 The [2026-10-25 fixed-width typed fixture note](perf/2026-10-25-fixed-width-typed-validity.md) documents why the former four-digit ID positions corrupted data above row 9,999, the now fixed 6+7-character schema, and its independent 64-bit checksum preconditions. These changed input bytes need a fresh baseline.
 
 The [2026-10-25 CSV column-parse validity note](perf/2026-10-25-column-parse-validity.md) documents the UInt32.MaxValue checksum truncation and pre-timing field validation. This is a changed benchmark result contract, not evidence of parser throughput improvement.

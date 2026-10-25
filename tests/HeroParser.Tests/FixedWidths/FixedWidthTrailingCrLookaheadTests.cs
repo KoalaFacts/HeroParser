@@ -63,7 +63,41 @@ public sealed class FixedWidthTrailingCrLookaheadTests
         Assert.True(stream.DeliveredFullSecondChunk);
     }
 
-    private sealed class PausedUtf16Stream : Stream
+    [Fact]
+    public async Task MoveNextAsync_SkipSplitCrLfCanceledAfterFullUtf16Read_ResumesWithFreshToken()
+    {
+        using var canceled = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        canceled.CancelAfter(TimeSpan.FromSeconds(12));
+        await using var stream = new PausedUtf16Stream(canceled.Cancel);
+        var options = new FixedWidthReadOptions { SkipRows = 1, TrackSourceLineNumbers = true };
+        await using var reader = FixedWidth.CreateAsyncStreamReader(
+            stream, options, encoding: Encoding.Unicode, leaveOpen: true, bufferSize: 4096);
+
+        // Cancel as the full second byte read returns. Bounded lookahead retains
+        // its LF; the old wide skip read loses the copied characters on cancellation.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            _ = await reader.MoveNextAsync(canceled.Token);
+        });
+        Assert.True(stream.DeliveredFullSecondChunk);
+        Assert.Equal(4096, stream.SecondChunkReadSize);
+        Assert.Equal(0, stream.ThirdChunkReadCalls);
+
+        // Release before retry so an ordinary bulk refill cannot obscure the
+        // skip lookahead's preservation of data across cancellation.
+        stream.ReleaseThirdChunk();
+        using var fresh = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        fresh.CancelAfter(TimeSpan.FromSeconds(12));
+        var rows = new List<string>();
+        while (await reader.MoveNextAsync(fresh.Token))
+        {
+            rows.Add(reader.Current.RawRecord.ToString() + "@" + reader.Current.SourceLineNumber);
+        }
+
+        Assert.Equal(["TWO@2", new string('X', 2042) + "@3", "END@4"], rows);
+    }
+
+    private sealed class PausedUtf16Stream(Action? onSecondChunkDelivered = null) : Stream
     {
         private readonly byte[][] chunks =
         [
@@ -77,6 +111,8 @@ public sealed class FixedWidthTrailingCrLookaheadTests
         private int chunkOffset;
 
         public bool DeliveredFullSecondChunk { get; private set; }
+
+        public int SecondChunkReadSize { get; private set; }
 
         public int ThirdChunkReadCalls { get; private set; }
 
@@ -104,7 +140,11 @@ public sealed class FixedWidthTrailingCrLookaheadTests
             if (chunkOffset == chunk.Length)
             {
                 if (chunkIndex == 1)
+                {
                     DeliveredFullSecondChunk = true;
+                    SecondChunkReadSize = read;
+                    onSecondChunkDelivered?.Invoke();
+                }
 
                 chunkIndex++;
                 chunkOffset = 0;

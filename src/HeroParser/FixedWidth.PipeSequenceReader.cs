@@ -18,7 +18,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
     private SequencePosition bufferedExamined;
     private ReadOnlySequence<byte> bufferedData;
     private ReadOnlySequence<byte> currentRowData;
-    private int remainingRowsToSkip;
+    private long remainingRowsToSkip;
     private int recordCount;
     private int sourceLineNumber;
     private long totalBytesRead;
@@ -31,7 +31,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
         this.reader = reader;
         this.options = options;
         trackSourceLineNumbers = options.TrackSourceLineNumbers;
-        remainingRowsToSkip = options.SkipRows + (options.HasHeaderRow ? 1 : 0);
+        remainingRowsToSkip = (long)options.SkipRows + (options.HasHeaderRow ? 1 : 0);
         sourceLineNumber = trackSourceLineNumbers ? 1 : 0;
     }
 

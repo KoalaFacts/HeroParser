@@ -21,10 +21,6 @@ on:
       - 'global.json'
   workflow_dispatch:
     inputs:
-      pipe_ab:
-        description: 'Suspended: A/B fails explicitly until isolated A/A controls are accepted'
-        type: boolean
-        default: false
       pipe_profile:
         description: 'Run only independent warmed managed-stack and JIT diagnostics (not A/B acceptance)'
         type: boolean
@@ -57,10 +53,6 @@ on:
         description: 'Six fixed same-runner pairs with reference and positive controls; no retries or acceptance'
         type: boolean
         default: false
-      pipe_controls:
-        description: 'Run only three fixed isolated same-CPU A/A checks of timing protocol v4; never A/B'
-        type: boolean
-        default: false
       pipe_bias:
         description: 'Run only fixed same-source module/self/swap bias diagnostics and separate JIT output; not acceptance'
         type: boolean
@@ -76,7 +68,7 @@ on:
 
 # Queue revisions in the same group; do not interrupt an active benchmark capture.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ (inputs.pipe_history || inputs.pipe_history_replay_run != '' || inputs.pipe_history_jit_control || inputs.pipe_history_same_run) && 'history' || inputs.pipe_native_profile && 'native-profile' || (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || inputs.pipe_controls && 'controls' || inputs.pipe_ab && 'pipe-ab' || 'normal' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ (inputs.pipe_history || inputs.pipe_history_replay_run != '' || inputs.pipe_history_jit_control || inputs.pipe_history_same_run) && 'history' || inputs.pipe_native_profile && 'native-profile' || (inputs.pipe_bias || inputs.pipe_bias_jit_only) && 'bias' || inputs.pipe_profile && 'profile' || 'normal' }}
   cancel-in-progress: false
 
 permissions:
@@ -88,7 +80,7 @@ env:
 
 jobs:
   setup:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_ab && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && !inputs.pipe_controls && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_profile && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && !inputs.pipe_bias && !inputs.pipe_bias_jit_only)
     name: Extract Build Configuration
     runs-on: ubuntu-latest
     outputs:
@@ -262,7 +254,7 @@ jobs:
             });
           }
 
-  # Ordinary CI verifies current code, not the outcome of a frozen timing experiment.
+  # Ordinary CI verifies current code and publishes only current correctness evidence.
   pipe-correctness:
     needs: setup
     name: CSV Pipe Correctness
@@ -327,7 +319,7 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/validate-test-results.ps1 -Path 'TestResults/pipe/csv-pipe.trx'
 
-      - name: Report correctness and timing separately
+      - name: Report current correctness
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0 (Node 24)
         env:
@@ -367,61 +359,6 @@ jobs:
             TestResults/pipe/**
             BenchmarkDotNet.Artifacts/pipe-ci/**
           if-no-files-found: error
-          retention-days: 30
-
-  pipe-ab:
-    if: github.event_name == 'workflow_dispatch' && !inputs.pipe_history && !inputs.pipe_history_replay_run && !inputs.pipe_history_jit_control && !inputs.pipe_history_same_run && !inputs.pipe_profile && !inputs.pipe_bias && !inputs.pipe_bias_jit_only && !inputs.pipe_native_profile && !inputs.pipe_native_replay_run && !inputs.pipe_native_history_probe && (inputs.pipe_ab || inputs.pipe_controls)
-    name: CSV Pipe Timing Experiment (manual)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-
-      - name: Setup .NET 10 SDK
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Test control gate
-        shell: pwsh
-        run: ./benchmarks/CsvPipeABProbe/test-control.ps1
-
-      - name: Record runner context
-        shell: bash
-        run: |
-          mkdir -p BenchmarkDotNet.Artifacts/pipe-series
-          lscpu > BenchmarkDotNet.Artifacts/pipe-runner-context.txt
-          dotnet --info >> BenchmarkDotNet.Artifacts/pipe-runner-context.txt
-
-      - name: Run fixed isolated same-source controls
-        shell: pwsh
-        env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          LEGACY_AB: ${{ inputs.pipe_ab }}
-        run: |
-          if ($env:LEGACY_AB -eq 'true') { throw 'A/B is suspended until isolated same-source controls have been accepted; use pipe_controls.' }
-          if ('${{ github.event_name }}' -ne 'workflow_dispatch') {
-            throw 'Timing acceptance remains FAILED at run 36732093817. Automatic infrastructure validation cannot authorize a new sampling budget.'
-          }
-          # Diagnostic plumbing must not retrial an unchanged, already-failed workload.
-          git diff --quiet 89c06810e76c4623ebad3cfc89c4bcdef41acd59 HEAD -- src Directory.Build.props Directory.Build.targets Directory.Packages.props global.json benchmarks/CsvPipeABProbe/Program.cs benchmarks/CsvPipeABProbe/IsolatedWorker.cs benchmarks/CsvPipeABProbe/CsvPipeABProbe.csproj benchmarks/CsvPipeABProbe/Models benchmarks/CsvPipeABProbe/run-isolated.ps1 benchmarks/CsvPipeABProbe/control.ps1
-          if ($LASTEXITCODE -eq 0) { throw 'Timing acceptance remains FAILED at run 36732093817 (Segmented128 1.052845684 > 1.05). Unchanged workload: no A/A retrial. Native diagnostic success cannot waive this failure.' }
-          if ($LASTEXITCODE -ne 1) { throw 'Could not verify frozen workload; refusing timing.' }
-          ./benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha $env:SOURCE_SHA -Workspace "$env:RUNNER_TEMP/pipe-series" -PinSameCpu
-
-      - name: Upload paired experiment evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: csv-pipe-paired-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            BenchmarkDotNet.Artifacts/pipe-series/**
-            BenchmarkDotNet.Artifacts/pipe-runner-context.txt
           retention-days: 30
 
   pipe-profile:
@@ -479,7 +416,7 @@ jobs:
       - name: Require one diagnostic mode
         shell: pwsh
         env:
-          OTHER_MODES: ${{ inputs.pipe_ab || inputs.pipe_profile || inputs.pipe_controls }}
+          OTHER_MODES: ${{ inputs.pipe_profile }}
           BIAS_MODE: ${{ inputs.pipe_bias }}
         run: |
           if ($env:OTHER_MODES -eq 'true') { throw 'pipe_bias cannot be combined with other manual experiment modes.' }
@@ -530,7 +467,7 @@ jobs:
       actions: read
     uses: ./.github/workflows/csv-pipe-history.yml
     with:
-      other_modes: ${{ inputs.pipe_ab || inputs.pipe_profile || inputs.pipe_controls || inputs.pipe_bias || inputs.pipe_bias_jit_only || inputs.pipe_native_profile || inputs.pipe_native_replay_run != '' || inputs.pipe_native_history_probe }}
+      other_modes: ${{ inputs.pipe_profile || inputs.pipe_bias || inputs.pipe_bias_jit_only || inputs.pipe_native_profile || inputs.pipe_native_replay_run != '' || inputs.pipe_native_history_probe }}
       replay_run: ${{ inputs.pipe_history_replay_run }}
       jit_event_control: ${{ inputs.pipe_history_jit_control }}
       same_run_control: ${{ inputs.pipe_history_same_run }}
@@ -547,7 +484,7 @@ jobs:
       - name: Require isolated diagnostic mode
         shell: pwsh
         env:
-          OTHER_MODES: ${{ inputs.pipe_ab || inputs.pipe_profile || inputs.pipe_controls || inputs.pipe_bias || inputs.pipe_bias_jit_only }}
+          OTHER_MODES: ${{ inputs.pipe_profile || inputs.pipe_bias || inputs.pipe_bias_jit_only }}
           NATIVE_MODE: ${{ inputs.pipe_native_profile }}
         run: |
           if ($env:OTHER_MODES -eq 'true') { throw 'Native diagnostics cannot be combined with timing or legacy diagnostics.' }

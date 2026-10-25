@@ -1,5 +1,7 @@
 # CSV Pipe: current correctness is not historical timing acceptance
 
+> Historical implementation report. The experiment was subsequently [retired and archived](2026-10-25-csv-pipe-retirement.md); its live status reporting and manual timing entry below are no longer current policy. Original evidence is retained.
+
 ## Scope and authorization
 
 On 2026-10-25 the maintainer explicitly requested this CI-policy correction after reviewing the historical gate. This is not a waiver of the historical performance result, an approval to merge, or authorization for new timing samples. The production parser, xUnit v3 4.0.2/Microsoft.Testing.Platform, .NET 8/9/10 target frameworks, benchmark workloads and sampling scripts are unchanged.

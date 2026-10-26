@@ -37,6 +37,19 @@ public static partial class Csv
 
         if (buffer.Length < 3)
         {
+            // A live pipe need not wait for three bytes if the available prefix
+            // already rules out a BOM. Only EF and EF BB remain ambiguous.
+            if (!buffer.IsEmpty)
+            {
+                var probe = new SequenceReader<byte>(buffer);
+                if (probe.TryRead(out byte firstByte) &&
+                    (firstByte != 0xEF || (probe.TryPeek(out byte secondByte) && secondByte != 0xBB)))
+                {
+                    bomProcessed = true;
+                    return true;
+                }
+            }
+
             if (!isCompleted)
             {
                 return false;

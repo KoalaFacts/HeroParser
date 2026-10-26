@@ -27,17 +27,30 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     private bool previousRecordEndedWithCr;
     private bool endOfStream;
     private bool disposed;
+    private bool hasCurrent;
     private int currentRowStart;
     private int currentRowLength;
     private int currentLineNumber;
     private int currentSourceLineNumber;
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
-    public FixedWidthCharSpanRow Current => new(
-        buffer.AsSpan(currentRowStart, currentRowLength),
-        currentLineNumber,
-        currentSourceLineNumber,
-        options);
+    public FixedWidthCharSpanRow Current
+    {
+        get
+        {
+            ThrowIfDisposed();
+            if (!hasCurrent)
+            {
+                throw new InvalidOperationException("No current row is available. Call MoveNextAsync() first.");
+            }
+
+            return new FixedWidthCharSpanRow(
+                buffer.AsSpan(currentRowStart, currentRowLength),
+                currentLineNumber,
+                currentSourceLineNumber,
+                options);
+        }
+    }
 
     /// <summary>Gets the number of raw bytes consumed from the underlying stream.</summary>
     public long BytesRead => countingStream.BytesRead;
@@ -59,6 +72,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         previousRecordEndedWithCr = false;
         endOfStream = false;
         disposed = false;
+        hasCurrent = false;
         currentRowStart = 0;
         currentRowLength = 0;
         currentLineNumber = 0;
@@ -72,6 +86,8 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     /// <returns><see langword="true"/> when another record was parsed; otherwise, <see langword="false"/>.</returns>
     public async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
+        ThrowIfDisposed();
+        hasCurrent = false;
         cancellationToken.ThrowIfCancellationRequested();
 
         // Use a widened sum and resume any partial skip after cancellation.
@@ -205,6 +221,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                 }
 
                 offset += recordLength;
+                hasCurrent = true;
                 return true;
             }
 
@@ -313,6 +330,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             if (trackLineNumbers)
                 sourceLineNumber++;
 
+            hasCurrent = true;
             return true;
         }
     }
@@ -368,6 +386,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             return ValueTask.CompletedTask;
 
         disposed = true;
+        hasCurrent = false;
         ReturnBuffer(buffer);
         buffer = null!; // Prevent use-after-free
         reader.Dispose();
@@ -382,5 +401,13 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     private void ReturnBuffer(char[] toReturn)
     {
         charPool.Return(toReturn, clearArray: true);
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (disposed)
+        {
+            throw new ObjectDisposedException(nameof(FixedWidthAsyncStreamReader));
+        }
     }
 }

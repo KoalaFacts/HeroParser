@@ -196,7 +196,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                 currentRowStart = offset;
                 currentRowLength = recordLength;
                 currentLineNumber = recordCount;
-                currentSourceLineNumber = trackLineNumbers ? rowStartLine : recordCount;
+                currentSourceLineNumber = rowStartLine;
 
                 // Count newlines in the record for source line tracking
                 if (trackLineNumbers)
@@ -308,7 +308,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             currentRowStart = offset - consumed;
             currentRowLength = line.Length;
             currentLineNumber = recordCount;
-            currentSourceLineNumber = trackLineNumbers ? rowStartLine : recordCount;
+            currentSourceLineNumber = rowStartLine;
 
             if (trackLineNumbers)
                 sourceLineNumber++;

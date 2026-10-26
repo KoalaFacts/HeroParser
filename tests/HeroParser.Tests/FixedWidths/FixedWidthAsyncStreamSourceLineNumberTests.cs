@@ -1,3 +1,4 @@
+using System.IO.Pipelines;
 using System.Text;
 using HeroParser.FixedWidths;
 using Xunit;
@@ -34,6 +35,18 @@ public sealed class FixedWidthAsyncStreamSourceLineNumberTests
         // the asynchronous stream reader, even after skipped headers/comments.
         Assert.Equal(expected, ReadTextRows(input, options));
         Assert.Equal(expected, ReadUtf8Rows(input, options));
+
+        var pipe = new Pipe();
+        await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(input), TestContext.Current.CancellationToken);
+        await pipe.Writer.CompleteAsync();
+        var pipeRows = new List<(string Text, int RecordNumber, int SourceLineNumber)>();
+        await foreach (var row in FixedWidth.ReadFromPipeReaderAsync(
+            pipe.Reader, options, TestContext.Current.CancellationToken))
+        {
+            pipeRows.Add((row.ToDecodedString(), row.RecordNumber, row.SourceLineNumber));
+        }
+
+        Assert.Equal(expected, pipeRows);
 
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(input), writable: false);
         await using var reader = FixedWidth.CreateAsyncStreamReader(stream, options, leaveOpen: true);

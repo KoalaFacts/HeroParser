@@ -24,6 +24,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     // Keep track of fully skipped preamble records across canceled reads.
     private long initialRowsSkipped;
     private int sourceLineNumber;
+    private bool previousRecordEndedWithCr;
     private bool endOfStream;
     private bool disposed;
     private int currentRowStart;
@@ -55,6 +56,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         recordCount = 0;
         initialRowsSkipped = 0;
         sourceLineNumber = 1;
+        previousRecordEndedWithCr = false;
         endOfStream = false;
         disposed = false;
         currentRowStart = 0;
@@ -165,7 +167,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
 
             if (trackLineNumbers)
             {
-                sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength));
+                sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength), ref previousRecordEndedWithCr);
             }
 
             offset += recordLength;
@@ -199,7 +201,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                 // Count newlines in the record for source line tracking
                 if (trackLineNumbers)
                 {
-                    sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength));
+                    sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength), ref previousRecordEndedWithCr);
                 }
 
                 offset += recordLength;

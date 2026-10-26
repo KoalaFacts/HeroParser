@@ -16,6 +16,7 @@ public ref struct FixedWidthByteSpanReader
     private int position;
     private int recordCount;
     private int sourceLineNumber;
+    private bool previousRecordEndedWithCr;
 
     private const byte CR = (byte)'\r';
     private const byte LF = (byte)'\n';
@@ -36,6 +37,7 @@ public ref struct FixedWidthByteSpanReader
         position = 0;
         recordCount = 0;
         sourceLineNumber = options.TrackSourceLineNumbers ? 1 : 0;
+        previousRecordEndedWithCr = false;
         Current = default;
 
         // Strip UTF-8 BOM if present
@@ -109,7 +111,7 @@ public ref struct FixedWidthByteSpanReader
 
             if (options.TrackSourceLineNumbers)
             {
-                sourceLineNumber += FixedWidthLineScanner.CountNewlines(bytes.Slice(position, recordLength));
+                sourceLineNumber += FixedWidthLineScanner.CountNewlines(bytes.Slice(position, recordLength), ref previousRecordEndedWithCr);
             }
 
             position += recordLength;
@@ -193,7 +195,7 @@ public ref struct FixedWidthByteSpanReader
         // Track newlines within the record for source line tracking
         if (options.TrackSourceLineNumbers)
         {
-            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan);
+            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan, ref previousRecordEndedWithCr);
         }
 
         return true;

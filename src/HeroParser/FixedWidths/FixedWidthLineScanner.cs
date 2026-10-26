@@ -29,8 +29,21 @@ internal static class FixedWidthLineScanner
 
     public static int CountNewlines(ReadOnlySpan<byte> span)
     {
+        bool previousWasCr = false;
+        return CountNewlines(span, ref previousWasCr);
+    }
+
+    // A trailing CR counts immediately; a leading LF in the next chunk belongs to that CRLF.
+    public static int CountNewlines(ReadOnlySpan<byte> span, ref bool previousWasCr)
+    {
+        if (span.IsEmpty)
+        {
+            return 0;
+        }
+
         int count = 0;
-        for (int i = 0; i < span.Length; i++)
+        int start = previousWasCr && span[0] == LF ? 1 : 0;
+        for (int i = start; i < span.Length; i++)
         {
             if (span[i] == LF)
             {
@@ -40,57 +53,28 @@ internal static class FixedWidthLineScanner
             {
                 count++;
                 if (i + 1 < span.Length && span[i + 1] == LF)
+                {
                     i++;
+                }
             }
         }
+
+        previousWasCr = span[^1] == CR;
         return count;
     }
 
     public static int CountNewlines(ReadOnlySequence<byte> sequence)
     {
-        int count = 0;
         bool previousWasCr = false;
+        return CountNewlines(sequence, ref previousWasCr);
+    }
 
+    public static int CountNewlines(ReadOnlySequence<byte> sequence, ref bool previousWasCr)
+    {
+        int count = 0;
         foreach (var segment in sequence)
         {
-            var span = segment.Span;
-            if (span.IsEmpty)
-            {
-                // An empty segment cannot separate the CR and LF of one physical newline.
-                continue;
-            }
-
-            int start = 0;
-
-            if (previousWasCr)
-            {
-                if (span[0] == LF)
-                {
-                    start = 1;
-                }
-
-                previousWasCr = false;
-            }
-
-            for (int i = start; i < span.Length; i++)
-            {
-                if (span[i] == LF)
-                {
-                    count++;
-                }
-                else if (span[i] == CR)
-                {
-                    count++;
-                    if (i + 1 < span.Length && span[i + 1] == LF)
-                    {
-                        i++;
-                    }
-                    else if (i + 1 == span.Length)
-                    {
-                        previousWasCr = true;
-                    }
-                }
-            }
+            count += CountNewlines(segment.Span, ref previousWasCr);
         }
 
         return count;
@@ -98,8 +82,20 @@ internal static class FixedWidthLineScanner
 
     public static int CountNewlines(ReadOnlySpan<char> span)
     {
+        bool previousWasCr = false;
+        return CountNewlines(span, ref previousWasCr);
+    }
+
+    public static int CountNewlines(ReadOnlySpan<char> span, ref bool previousWasCr)
+    {
+        if (span.IsEmpty)
+        {
+            return 0;
+        }
+
         int count = 0;
-        for (int i = 0; i < span.Length; i++)
+        int start = previousWasCr && span[0] == '\n' ? 1 : 0;
+        for (int i = start; i < span.Length; i++)
         {
             if (span[i] == '\n')
             {
@@ -109,9 +105,13 @@ internal static class FixedWidthLineScanner
             {
                 count++;
                 if (i + 1 < span.Length && span[i + 1] == '\n')
+                {
                     i++;
+                }
             }
         }
+
+        previousWasCr = span[^1] == '\r';
         return count;
     }
 }

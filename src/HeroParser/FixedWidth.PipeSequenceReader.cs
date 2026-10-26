@@ -21,6 +21,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
     private long remainingRowsToSkip;
     private int recordCount;
     private int sourceLineNumber;
+    private bool previousRecordEndedWithCr;
     private long totalBytesRead;
     private long previousUnreadBytes;
     private int currentRecordNumber;
@@ -33,6 +34,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
         trackSourceLineNumbers = options.TrackSourceLineNumbers;
         remainingRowsToSkip = (long)options.SkipRows + (options.HasHeaderRow ? 1 : 0);
         sourceLineNumber = trackSourceLineNumbers ? 1 : 0;
+        previousRecordEndedWithCr = false;
     }
 
     internal FixedWidthPipeSequenceRow Current
@@ -105,7 +107,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     {
                         if (trackSourceLineNumbers)
                         {
-                            sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData);
+                            sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData, ref previousRecordEndedWithCr);
                         }
 
                         remainingRowsToSkip--;
@@ -118,7 +120,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     int rowStartLine = trackSourceLineNumbers ? sourceLineNumber : 0;
                     if (trackSourceLineNumbers)
                     {
-                        sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData);
+                        sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData, ref previousRecordEndedWithCr);
                     }
 
                     currentRowData = rowData;

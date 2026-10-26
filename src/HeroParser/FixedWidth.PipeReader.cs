@@ -194,8 +194,17 @@ public static partial class FixedWidth
             return false;
         }
 
-        value = rowData.First.Span[0];
-        return true;
+        var firstSpan = rowData.FirstSpan;
+        if (!firstSpan.IsEmpty)
+        {
+            value = firstSpan[0];
+            return true;
+        }
+
+        // A non-empty multi-segment sequence may start with an empty segment.
+        // SequenceReader skips empty segments without copying or allocating.
+        var sequenceReader = new SequenceReader<byte>(rowData);
+        return sequenceReader.TryPeek(out value);
     }
 }
 

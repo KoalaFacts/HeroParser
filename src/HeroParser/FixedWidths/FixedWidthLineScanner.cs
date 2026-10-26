@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace HeroParser.FixedWidths;
 
@@ -26,6 +27,58 @@ internal static class FixedWidthLineScanner
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int FindLineEnd(ReadOnlySpan<char> span)
         => span.IndexOfAny('\r', '\n');
+
+    // Fixed-width UTF-8 readers must compare the encoded comment character,
+    // not its truncated low byte (which can also match unrelated data such as NUL).
+    public static bool StartsWithComment(ReadOnlySpan<byte> line, char commentChar)
+    {
+        if (line.IsEmpty || char.IsSurrogate(commentChar))
+        {
+            return false;
+        }
+
+        if (commentChar <= 0x7F)
+        {
+            return line[0] == (byte)commentChar;
+        }
+
+        Span<byte> utf8 = stackalloc byte[3];
+        int byteCount = EncodeCommentCharacter(commentChar, utf8);
+        return line.StartsWith(utf8[..byteCount]);
+    }
+
+    public static bool StartsWithComment(ReadOnlySequence<byte> line, char commentChar)
+    {
+        if (line.IsEmpty || char.IsSurrogate(commentChar))
+        {
+            return false;
+        }
+
+        if (commentChar <= 0x7F)
+        {
+            var reader = new SequenceReader<byte>(line);
+            return reader.TryPeek(out byte first) && first == (byte)commentChar;
+        }
+
+        Span<byte> utf8 = stackalloc byte[3];
+        int byteCount = EncodeCommentCharacter(commentChar, utf8);
+        if (line.Length < byteCount)
+        {
+            return false;
+        }
+
+        Span<byte> prefix = stackalloc byte[3];
+        line.Slice(0, byteCount).CopyTo(prefix);
+        return prefix[..byteCount].SequenceEqual(utf8[..byteCount]);
+    }
+
+    private static int EncodeCommentCharacter(char commentChar, Span<byte> utf8)
+    {
+        // A non-surrogate BMP character requires at most three UTF-8 bytes.
+        Span<char> character = stackalloc char[1];
+        character[0] = commentChar;
+        return Encoding.UTF8.GetBytes(character, utf8);
+    }
 
     public static int CountNewlines(ReadOnlySpan<byte> span)
     {

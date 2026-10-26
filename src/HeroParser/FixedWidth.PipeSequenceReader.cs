@@ -170,8 +170,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     }
 
                     if (options.CommentCharacter is { } commentChar &&
-                        FixedWidth.TryGetFirstByte(rowData, out byte firstByte) &&
-                        firstByte == (byte)commentChar)
+                        FixedWidthLineScanner.StartsWithComment(rowData, commentChar))
                     {
                         if (trackSourceLineNumbers)
                         {

@@ -203,9 +203,6 @@ public ref struct FixedWidthByteSpanReader
 
     private bool MoveNextLineBased()
     {
-        var commentByte = options.CommentCharacter.HasValue ? (byte)options.CommentCharacter.Value : (byte)0;
-        var hasCommentChar = options.CommentCharacter.HasValue;
-
         while (position < bytes.Length)
         {
             var remaining = bytes[position..];
@@ -242,7 +239,8 @@ public ref struct FixedWidthByteSpanReader
             }
 
             // Handle comment lines
-            if (hasCommentChar && line.Length > 0 && line[0] == commentByte)
+            if (options.CommentCharacter is { } commentChar &&
+                FixedWidthLineScanner.StartsWithComment(line, commentChar))
             {
                 if (options.TrackSourceLineNumbers)
                     sourceLineNumber++;

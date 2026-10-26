@@ -155,15 +155,15 @@ public ref struct FixedWidthByteSpanReader
         if (position >= bytes.Length)
             return false;
 
-        if (recordCount >= options.MaxRecordCount)
-        {
-            throw new FixedWidthException(
-                FixedWidthErrorCode.TooManyRecords,
-                $"Maximum record count of {options.MaxRecordCount} exceeded.");
-        }
-
         if (options.RecordLength is { } fixedLength)
         {
+            if (recordCount >= options.MaxRecordCount)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.TooManyRecords,
+                    $"Maximum record count of {options.MaxRecordCount} exceeded.");
+            }
+
             return MoveNextFixedLength(fixedLength);
         }
 
@@ -245,6 +245,14 @@ public ref struct FixedWidthByteSpanReader
                 if (options.TrackSourceLineNumbers)
                     sourceLineNumber++;
                 continue;
+            }
+
+            // Ignored blank/comment lines do not count against the record limit.
+            if (recordCount >= options.MaxRecordCount)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.TooManyRecords,
+                    $"Maximum record count of {options.MaxRecordCount} exceeded.");
             }
 
             recordCount++;

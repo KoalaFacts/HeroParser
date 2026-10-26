@@ -25,7 +25,7 @@ public sealed class FixedWidthPipeCancellationResultTests
 
         var rows = FixedWidth.ReadFromPipeReaderAsync(
             pipe, options, TestContext.Current.CancellationToken);
-        await using (var iterator = rows.GetAsyncEnumerator())
+        await using (var iterator = rows.GetAsyncEnumerator(TestContext.Current.CancellationToken))
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
             {

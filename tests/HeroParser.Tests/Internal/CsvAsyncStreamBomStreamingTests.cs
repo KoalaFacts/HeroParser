@@ -30,14 +30,14 @@ public sealed class CsvAsyncStreamBomStreamingTests
         // Reading another chunk would delay an already complete physical row.
         Assert.True(await reader.MoveNextAsync(timeout.Token));
         Assert.Equal(mismatchedUtf8Prefix ? "\uFFFD" : "A", reader.Current.GetString(0));
-        Assert.Equal(1, reader.Current.RowNumber);
+        Assert.Equal(1, reader.Current.LineNumber);
         Assert.Equal(1, reader.Current.SourceLineNumber);
         Assert.Equal(0, stream.SecondReadCalls);
 
         stream.ReleaseSecondChunk();
         Assert.True(await reader.MoveNextAsync(timeout.Token));
         Assert.Equal("B", reader.Current.GetString(0));
-        Assert.Equal(2, reader.Current.RowNumber);
+        Assert.Equal(2, reader.Current.LineNumber);
         Assert.Equal(2, reader.Current.SourceLineNumber);
         Assert.False(await reader.MoveNextAsync(timeout.Token));
     }
@@ -75,7 +75,7 @@ public sealed class CsvAsyncStreamBomStreamingTests
 
         Assert.True(await pending);
         Assert.Equal("Z", reader.Current.GetString(0));
-        Assert.Equal(1, reader.Current.RowNumber);
+        Assert.Equal(1, reader.Current.LineNumber);
     }
 
     private sealed class PausedSecondChunkStream(byte[] firstChunk, byte[] secondChunk) : Stream

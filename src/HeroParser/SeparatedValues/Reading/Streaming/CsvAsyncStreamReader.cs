@@ -318,15 +318,29 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             return true;
 
         int available = length - offset;
-        if (available < 3 && !endOfStream)
-            return false;
 
+        // UTF-16 BOMs are conclusive at two bytes: report unsupported encodings
+        // without waiting for unrelated data from a still-open stream.
         if (available >= 2)
         {
             if (buffer[offset] == 0xFF && buffer[offset + 1] == 0xFE)
                 throw new CsvException(CsvErrorCode.InvalidOptions, "UTF-16 LE encoding detected. HeroParser only supports UTF-8.");
             if (buffer[offset] == 0xFE && buffer[offset + 1] == 0xFF)
                 throw new CsvException(CsvErrorCode.InvalidOptions, "UTF-16 BE encoding detected. HeroParser only supports UTF-8.");
+        }
+
+        if (available < 3 && !endOfStream)
+        {
+            if (available == 0)
+                return false;
+
+            byte first = buffer[offset];
+            // Only EF / EF BB can still be a UTF-8 BOM. A single FF or FE
+            // also needs its second byte to rule out an unsupported UTF-16 BOM.
+            if (first == 0xEF && (available == 1 || buffer[offset + 1] == 0xBB))
+                return false;
+            if (available == 1 && (first == 0xFF || first == 0xFE))
+                return false;
         }
 
         if (available >= 3 && buffer[offset] == 0xEF && buffer[offset + 1] == 0xBB && buffer[offset + 2] == 0xBF)

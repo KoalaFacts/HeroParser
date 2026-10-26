@@ -260,7 +260,17 @@ public readonly struct FixedWidthPipeRow
     /// Gets a field at the specified byte position using the default padding options.
     /// </summary>
     public FixedWidthByteSpanColumn GetField(int start, int length)
-        => GetField(start, length, (byte)options.DefaultPadChar, options.DefaultAlignment);
+    {
+        char padChar = options.DefaultPadChar;
+        if (padChar <= 0x7F)
+            return GetField(start, length, (byte)padChar, options.DefaultAlignment);
+
+        // The configured default is a Unicode character, not a padding byte.
+        // Preserve complete UTF-8 sequences and never truncate it to a low byte.
+        var raw = GetField(start, length, 0, FieldAlignment.None);
+        return new FixedWidthByteSpanColumn(
+            FixedWidthByteSpanRow.TrimUnicodePadding(raw.ByteSpan, padChar, options.DefaultAlignment));
+    }
 
     /// <summary>
     /// Gets a field at the specified byte position with custom padding options.

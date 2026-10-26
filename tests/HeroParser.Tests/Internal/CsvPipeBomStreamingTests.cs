@@ -1,4 +1,5 @@
 using System.IO.Pipelines;
+using HeroParser.SeparatedValues.Core;
 using Xunit;
 
 namespace HeroParser.Tests.Internal;
@@ -25,26 +26,22 @@ public sealed class CsvPipeBomStreamingTests
 
         if (owned)
         {
-            await using (var enumerator = Csv.ReadFromPipeReaderAsync(pipe.Reader, options, timeout.Token)
-                .GetAsyncEnumerator(timeout.Token))
-            {
-                Assert.True(await enumerator.MoveNextAsync());
-                Assert.Equal(1, enumerator.Current.ColumnCount);
-                Assert.Equal(expected, enumerator.Current[0].Span[0]);
-                Assert.Equal(1, enumerator.Current.RowNumber);
-                Assert.Equal(1, enumerator.Current.SourceLineNumber);
-            }
+            await using var enumerator = Csv.ReadFromPipeReaderAsync(pipe.Reader, options, timeout.Token)
+                .GetAsyncEnumerator(timeout.Token);
+            Assert.True(await enumerator.MoveNextAsync());
+            Assert.Equal(1, enumerator.Current.ColumnCount);
+            Assert.Equal(expected, enumerator.Current[0].Span[0]);
+            Assert.Equal(1, enumerator.Current.RowNumber);
+            Assert.Equal(1, enumerator.Current.SourceLineNumber);
         }
         else
         {
-            await using (var reader = Csv.CreatePipeSequenceReader(pipe.Reader, options))
-            {
-                Assert.True(await reader.MoveNextAsync(timeout.Token));
-                Assert.Equal(1, reader.Current.ColumnCount);
-                Assert.Equal(expected, reader.Current[0].Span[0]);
-                Assert.Equal(1, reader.Current.RowNumber);
-                Assert.Equal(1, reader.Current.SourceLineNumber);
-            }
+            await using var reader = Csv.CreatePipeSequenceReader(pipe.Reader, options);
+            Assert.True(await reader.MoveNextAsync(timeout.Token));
+            Assert.Equal(1, reader.Current.ColumnCount);
+            Assert.Equal(expected, reader.Current[0].Span[0]);
+            Assert.Equal(1, reader.Current.RowNumber);
+            Assert.Equal(1, reader.Current.SourceLineNumber);
         }
 
         await pipe.Writer.CompleteAsync();

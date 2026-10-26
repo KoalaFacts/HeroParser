@@ -101,6 +101,7 @@ public readonly ref struct FixedWidthCharSpanRow
         {
             FieldAlignment.Left => span.TrimEnd(padChar),
             FieldAlignment.Right => span.TrimStart(padChar),
+            FieldAlignment.Center => span.Trim(padChar),
             FieldAlignment.None => span,
             _ => span
         };
@@ -197,6 +198,7 @@ public sealed class ImmutableFixedWidthRow
         {
             FieldAlignment.Left => span.TrimEnd(padChar),
             FieldAlignment.Right => span.TrimStart(padChar),
+            FieldAlignment.Center => span.Trim(padChar),
             _ => span
         };
 

@@ -46,6 +46,19 @@ public static partial class FixedWidth
 
         if (buffer.Length < 3)
         {
+            // Do not block a complete short record when the available bytes
+            // already rule out a UTF-8 BOM. Only an EF or EF BB prefix is ambiguous.
+            if (!buffer.IsEmpty)
+            {
+                var probe = new SequenceReader<byte>(buffer);
+                if (probe.TryRead(out byte firstByte) &&
+                    (firstByte != 0xEF || (probe.TryPeek(out byte secondByte) && secondByte != 0xBB)))
+                {
+                    bomProcessed = true;
+                    return true;
+                }
+            }
+
             if (!isCompleted)
             {
                 return false;

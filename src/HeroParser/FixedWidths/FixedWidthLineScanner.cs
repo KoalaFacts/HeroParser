@@ -75,8 +75,7 @@ internal static class FixedWidthLineScanner
     private static int EncodeCommentCharacter(char commentChar, Span<byte> utf8)
     {
         // A non-surrogate BMP character requires at most three UTF-8 bytes.
-        Span<char> character = stackalloc char[1];
-        character[0] = commentChar;
+        Span<char> character = [commentChar];
         return Encoding.UTF8.GetBytes(character, utf8);
     }
 

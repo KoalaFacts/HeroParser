@@ -103,7 +103,7 @@ public ref struct FixedWidthByteSpanReader
         int skipped = 0;
         while (skipped < rowsToSkip && position < bytes.Length)
         {
-            if (position + recordLength > bytes.Length)
+            if (recordLength > bytes.Length - position)
             {
                 position = bytes.Length;
                 return;
@@ -173,7 +173,7 @@ public ref struct FixedWidthByteSpanReader
     private bool MoveNextFixedLength(int recordLength)
     {
         // Check if we have enough data for another record
-        if (position + recordLength > bytes.Length)
+        if (recordLength > bytes.Length - position)
         {
             // Handle partial record at end
             if (position < bytes.Length)

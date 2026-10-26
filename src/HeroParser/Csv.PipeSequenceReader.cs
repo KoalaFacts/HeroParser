@@ -401,11 +401,14 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     {
         if (disposed)
             return ValueTask.FromException<bool>(new ObjectDisposedException(nameof(CsvPipeSequenceReader)));
-        if (cancellationToken.IsCancellationRequested)
-            return ValueTask.FromCanceled<bool>(cancellationToken);
 
+        // Invalidate the borrowed row at the start of every advance attempt,
+        // including a call with an already-canceled token.
         hasCurrent = false;
         currentFromBatch = false;
+
+        if (cancellationToken.IsCancellationRequested)
+            return ValueTask.FromCanceled<bool>(cancellationToken);
 
         if (hasBufferedRead && bufferedData.IsSingleSegment && cursor is not null)
         {

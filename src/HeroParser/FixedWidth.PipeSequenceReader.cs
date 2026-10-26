@@ -58,8 +58,10 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
     internal async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
+        // Current is invalid after any MoveNextAsync attempt, even one canceled
+        // before a new PipeReader read. Buffered bytes remain available to retry.
         hasCurrent = false;
+        cancellationToken.ThrowIfCancellationRequested();
 
         while (true)
         {

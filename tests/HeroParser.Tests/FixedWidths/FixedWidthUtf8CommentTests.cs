@@ -66,7 +66,7 @@ public sealed class FixedWidthUtf8CommentTests
         var rows = new List<string>();
         var sourceLines = new List<int>();
         await foreach (var row in FixedWidth.ReadFromPipeReaderAsync(
-            new CompletedSequenceReader(FromSegments(chunks.ToArray())),
+            new CompletedSequenceReader(FromSegments(chunks)),
             options,
             TestContext.Current.CancellationToken))
         {
@@ -114,11 +114,11 @@ public sealed class FixedWidthUtf8CommentTests
         Assert.Equal(byteLines, pipeLines);
     }
 
-    private static ReadOnlySequence<byte> FromSegments(params ReadOnlyMemory<byte>[] chunks)
+    private static ReadOnlySequence<byte> FromSegments(IReadOnlyList<ReadOnlyMemory<byte>> chunks)
     {
         var first = new Segment(chunks[0]);
         var last = first;
-        for (int i = 1; i < chunks.Length; i++)
+        for (int i = 1; i < chunks.Count; i++)
         {
             last = last.Append(chunks[i]);
         }

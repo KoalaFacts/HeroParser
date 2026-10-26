@@ -64,6 +64,14 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
             if (!hasBufferedRead)
             {
                 var result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (result.IsCanceled)
+                {
+                    // CancelPendingRead can cancel a read without canceling the caller's token.
+                    // Keep any buffered data unconsumed and unexamined so a retry can resume.
+                    reader.AdvanceTo(result.Buffer.Start, result.Buffer.Start);
+                    throw new OperationCanceledException("The underlying PipeReader read was canceled.", cancellationToken);
+                }
+
                 var originalBuffer = result.Buffer;
                 var newBytes = originalBuffer.Length - previousUnreadBytes;
                 if (newBytes > 0)

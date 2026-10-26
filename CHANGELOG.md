@@ -4,6 +4,21 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-10-27
+
+Release-candidate notes. The patch contains correctness and benchmark-validity repairs; no unverified throughput improvement is claimed.
+
+### Fixed
+- **CSV streaming and PipeReader lifetime:** `Current` is valid only after a successful read and is invalidated before the first row, after EOF, after disposal, and on a canceled advance; pending buffered records remain available for retry. The borrowed-row ownership rules now agree across streaming and PipeReader paths.
+- **Segmented CSV input:** comments stop at their physical line endings even when quote/escape characters appear in a comment. Preserve configured whitespace comment markers, quoted data, UTF-8 BOM handling, and accurate physical source-line numbers across segment boundaries, empty segments, and split CRLF.
+- **Fixed-Width correctness:** align Unicode pad trimming between UTF-16, UTF-8, PipeReader, and immutable rows without truncating multibyte pad characters or accidentally removing valid NULs. Handle center alignment, UTF-8 BOM in decoded byte-span input, and incomplete UTF-8 prefixes consistently.
+- **Fixed-Width record limits and line tracking:** count actual retained records rather than trailing ignored comments/blank lines for `MaxRecordCount`; correct physical line numbers for split CRLF and for disabled line tracking. Enforce stream and PipeReader `Current` lifetimes and cancellation behavior without consuming unread data.
+
+### Benchmarks and documentation
+- Correct CSV, Fixed-Width, JSONL, typed-binder, header and writer benchmark workloads so all compared implementations perform equivalent data parsing/writing, with full-field and row-count validation and overflow-safe checksums.
+- Clarify AOT-safe JSONL and Excel documentation. Keep .NET 8/9/10 support, existing security gates, standard BenchmarkDotNet tests and NativeAOT coverage unchanged.
+- Retire only the maintainer-decommissioned historical CSV Pipe timing experiment, preserving its recorded evidence. No performance speedup is claimed by these correctness-only changes.
+
 ## [2.8.1] - 2026-10-08
 
 ### Improved

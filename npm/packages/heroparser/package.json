@@ -1,6 +1,6 @@
 {
   "name": "heroparser",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "description": "Ultra high-performance tabular CSV, Fixed-Width, and Excel (.xlsx) parser via WebAssembly",
   "keywords": [
     "csv",

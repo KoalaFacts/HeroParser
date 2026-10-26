@@ -33,6 +33,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private bool endOfStream;
     private bool disposed;
     private bool bomProcessed;
+    private bool hasCurrent;
 
     private int currentRowStart;
     private int currentRowLength;
@@ -54,6 +55,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         get
         {
             ThrowIfDisposed();
+            if (!hasCurrent)
+            {
+                throw new InvalidOperationException("No current row is available. Call MoveNextAsync() first.");
+            }
+
             if (currentFromBatch)
             {
                 return cursor!.CreateRow(buffer, currentBatchRow, currentRowNumber, currentSourceLineNumber);
@@ -115,6 +121,9 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     public async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
+        // Current borrows pooled buffers; it expires on every advance attempt,
+        // including a pre-canceled read that leaves buffered rows available to retry.
+        hasCurrent = false;
         cancellationToken.ThrowIfCancellationRequested();
 
         while (true)
@@ -248,6 +257,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             currentRowNumber = rowCount;
             currentSourceLineNumber = trackLineNumbers ? rowStartLine : rowCount;
             CurrentHadLineEnding = result.CharsConsumed > result.RowLength;
+            hasCurrent = true;
             return true;
         }
     }
@@ -309,6 +319,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         currentSourceLineNumber = trackLineNumbers ? row.SourceLine : rowCount;
         int rowEnd = cursor!.WindowBase + row.RowEnd;
         CurrentHadLineEnding = rowEnd < length && buffer[rowEnd] is ((byte)'\r' or (byte)'\n');
+        hasCurrent = true;
         return true;
     }
 
@@ -404,6 +415,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             return ValueTask.CompletedTask;
 
         disposed = true;
+        hasCurrent = false;
         columnEndsBuffer.Return();
         cursor?.Dispose();
         ReturnBuffer(buffer);

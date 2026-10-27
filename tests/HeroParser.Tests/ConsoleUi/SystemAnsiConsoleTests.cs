@@ -80,6 +80,33 @@ public class SystemAnsiConsoleTests
     }
 
     [Fact]
+    public void ConcurrentMarkupLines_PreserveEveryWarning()
+    {
+        var (console, output) = Redirected();
+        using (output)
+        {
+            const int WRITE_COUNT = 1_000;
+            var options = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = 4,
+                CancellationToken = TestContext.Current.CancellationToken
+            };
+
+            // Progress rendering and command diagnostics can write to the same
+            // redirected console concurrently, even within one serialized test.
+            Parallel.For(0, WRITE_COUNT, options, index =>
+                console.MarkupLine($"[yellow]Failed to parse output line {index:D4}[/]"));
+
+            string text = output.ToString();
+            Assert.Equal(WRITE_COUNT, text.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries).Length);
+            for (int index = 0; index < WRITE_COUNT; index++)
+            {
+                Assert.Contains($"Failed to parse output line {index:D4}", text, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
     public void Write_Widget_RendersAtConsoleWidth()
     {
         var (console, output) = Redirected(width: 20);

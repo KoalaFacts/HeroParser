@@ -13,7 +13,7 @@
     "postinstall": "node scripts/apply-patches.js"
   },
   "devDependencies": {
-    "vite-plus": "1.0.0"
+    "vite-plus": "1.3.0"
   },
   "overrides": {
     "@huggingface/transformers": {

@@ -54,7 +54,16 @@ public readonly ref struct FixedWidthByteSpanRow
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="start"/> or <paramref name="length"/> is negative.</exception>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public FixedWidthByteSpanColumn GetField(int start, int length)
-        => GetField(start, length, (byte)options.DefaultPadChar, options.DefaultAlignment);
+    {
+        char padChar = options.DefaultPadChar;
+        if (padChar <= 0x7F)
+            return GetField(start, length, (byte)padChar, options.DefaultAlignment);
+
+        // The default is a Unicode character, not a byte. Truncating to byte
+        // corrupts multibyte UTF-8 padding and can strip unrelated bytes (e.g. NUL).
+        var raw = GetField(start, length, 0, FieldAlignment.None);
+        return new FixedWidthByteSpanColumn(TrimUnicodePadding(raw.ByteSpan, padChar, options.DefaultAlignment));
+    }
 
     /// <summary>
     /// Gets a field at the specified byte position with custom padding options.
@@ -141,6 +150,31 @@ public readonly ref struct FixedWidthByteSpanRow
         return new FixedWidthByteSpanRow(newLine, recordNumber, sourceLineNumber, options);
     }
 
+    internal static ReadOnlySpan<byte> TrimUnicodePadding(ReadOnlySpan<byte> span, char padChar, FieldAlignment alignment)
+    {
+        if (alignment == FieldAlignment.None || char.IsSurrogate(padChar))
+            return span;
+
+        Span<char> character = [padChar];
+        Span<byte> utf8 = stackalloc byte[3];
+        int byteCount = Encoding.UTF8.GetBytes(character, utf8);
+        ReadOnlySpan<byte> padding = utf8[..byteCount];
+
+        if (alignment is FieldAlignment.Right or FieldAlignment.Center)
+        {
+            while (span.StartsWith(padding))
+                span = span[byteCount..];
+        }
+
+        if (alignment is FieldAlignment.Left or FieldAlignment.Center)
+        {
+            while (span.EndsWith(padding))
+                span = span[..^byteCount];
+        }
+
+        return span;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static ReadOnlySpan<byte> TrimEnd(ReadOnlySpan<byte> span, byte padByte)
     {
@@ -196,12 +230,33 @@ public sealed class ImmutableFixedWidthByteRow
     /// Gets a field at the specified byte position.
     /// </summary>
     public string GetField(int start, int length)
-        => GetField(start, length, (byte)options.DefaultPadChar, options.DefaultAlignment);
+    {
+        char padChar = options.DefaultPadChar;
+        if (padChar <= 0x7F)
+            return GetField(start, length, (byte)padChar, options.DefaultAlignment);
+
+        var raw = SliceField(start, length);
+        return Encoding.UTF8.GetString(FixedWidthByteSpanRow.TrimUnicodePadding(raw, padChar, options.DefaultAlignment));
+    }
 
     /// <summary>
     /// Gets a field at the specified byte position with custom padding options.
     /// </summary>
     public string GetField(int start, int length, byte padByte, FieldAlignment alignment)
+    {
+        ReadOnlySpan<byte> span = SliceField(start, length);
+        span = alignment switch
+        {
+            FieldAlignment.Left => TrimEnd(span, padByte),
+            FieldAlignment.Right => TrimStart(span, padByte),
+            FieldAlignment.Center => Trim(span, padByte),
+            _ => span
+        };
+
+        return Encoding.UTF8.GetString(span);
+    }
+
+    private ReadOnlySpan<byte> SliceField(int start, int length)
     {
         if (start < 0)
             throw new ArgumentOutOfRangeException(nameof(start), start, "Start position cannot be negative.");
@@ -223,21 +278,10 @@ public sealed class ImmutableFixedWidthByteRow
             }
 
             if (start >= data.Length)
-                return string.Empty;
+                return [];
         }
 
-        var actualLength = Math.Min(length, data.Length - start);
-        ReadOnlySpan<byte> span = data.AsSpan(start, actualLength);
-
-        span = alignment switch
-        {
-            FieldAlignment.Left => TrimEnd(span, padByte),
-            FieldAlignment.Right => TrimStart(span, padByte),
-            FieldAlignment.Center => Trim(span, padByte),
-            _ => span
-        };
-
-        return Encoding.UTF8.GetString(span);
+        return data.AsSpan(start, Math.Min(length, data.Length - start));
     }
 
     /// <summary>

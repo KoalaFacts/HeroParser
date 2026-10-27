@@ -15,12 +15,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="xunit.v3" Version="4.0.1" />
-    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.5.0" />
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.5.1" />
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.12.0" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj" />
     <ProjectReference Include="../../src/HeroParser/HeroParser.csproj" />
     <ProjectReference Include="../../src/HeroParser.Cli/HeroParser.Cli.csproj" />
     <!-- Reference as analyzer for runtime integration tests -->

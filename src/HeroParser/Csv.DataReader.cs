@@ -28,8 +28,17 @@ public static partial class Csv
 
         var dataOptions = readerOptions ?? CsvDataReaderOptions.Default;
         var asyncReader = new CsvAsyncStreamReader(stream, options, leaveOpen, bufferSize, dataOptions.SkipRows);
-
-        return new CsvDataReader(asyncReader, options, dataOptions);
+        try
+        {
+            return new CsvDataReader(asyncReader, options, dataOptions);
+        }
+        catch
+        {
+            // The schema can fail after the streaming reader has rented pooled buffers.
+            // Dispose the failed handoff, respecting the caller's leaveOpen preference.
+            asyncReader.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            throw;
+        }
     }
 
     /// <summary>
@@ -55,6 +64,16 @@ public static partial class Csv
             bufferSize: 4096,
             FileOptions.SequentialScan);
 
-        return CreateDataReader(stream, options, readerOptions, leaveOpen: false, bufferSize: bufferSize);
+        try
+        {
+            return CreateDataReader(stream, options, readerOptions, leaveOpen: false, bufferSize: bufferSize);
+        }
+        catch
+        {
+            // The reader constructor can reject an invalid schema after the file is opened.
+            // A successful reader owns the stream; failed construction must close it here.
+            stream.Dispose();
+            throw;
+        }
     }
 }

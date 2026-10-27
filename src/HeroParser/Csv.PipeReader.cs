@@ -369,56 +369,83 @@ public static partial class Csv
         byte quote,
         byte? escape,
         bool enableQuotes,
+        byte? commentCharacter,
         bool isCompleted,
         out ReadOnlySequence<byte> rowData)
     {
         var reader = new SequenceReader<byte>(buffer);
         bool inQuotes = false;
         bool skipNext = false;
+        bool commentCandidate = commentCharacter.HasValue;
+        bool isCommentLine = false;
 
         while (reader.Remaining > 0)
         {
             if (!reader.TryRead(out byte current))
                 break;
 
-            if (skipNext)
+            // A comment line ends at its first physical newline. Its content is not CSV:
+            // quotes and backslashes must never consume the following data record.
+            if (commentCandidate)
             {
-                skipNext = false;
-                continue;
+                if (current == commentCharacter.GetValueOrDefault())
+                {
+                    isCommentLine = true;
+                    commentCandidate = false;
+                    inQuotes = false;
+                }
+                else if (current != (byte)' ' && current != (byte)'\t')
+                {
+                    commentCandidate = false;
+                }
             }
 
-            if (escape.HasValue && current == escape.Value)
+            if (isCommentLine)
             {
-                if (reader.Remaining == 0 && !isCompleted)
+                if (current != (byte)'\r' && current != (byte)'\n')
+                    continue;
+            }
+            else
+            {
+                if (skipNext)
                 {
-                    rowData = default;
-                    return false;
-                }
-                if (reader.Remaining > 0)
-                {
-                    skipNext = true;
+                    skipNext = false;
                     continue;
                 }
-            }
 
-            if (enableQuotes && current == quote)
-            {
-                if (inQuotes)
+                if (escape.HasValue && current == escape.Value)
                 {
                     if (reader.Remaining == 0 && !isCompleted)
                     {
                         rowData = default;
                         return false;
                     }
-                    if (reader.TryPeek(out byte next) && next == quote)
+                    if (reader.Remaining > 0)
                     {
-                        reader.Advance(1);
+                        skipNext = true;
                         continue;
                     }
                 }
 
-                inQuotes = !inQuotes;
-                continue;
+                if (enableQuotes && current == quote)
+                {
+                    if (inQuotes)
+                    {
+                        if (reader.Remaining == 0 && !isCompleted)
+                        {
+                            rowData = default;
+                            return false;
+                        }
+                        if (reader.TryPeek(out byte next) && next == quote)
+                        {
+                            reader.Advance(1);
+                            continue;
+                        }
+                    }
+
+                    inQuotes = !inQuotes;
+                    continue;
+                }
             }
 
             if (!inQuotes && current == (byte)'\r')
@@ -494,6 +521,7 @@ public readonly struct CsvPipeRow
     private readonly byte headerElementSize;
     private readonly int columnCount;
     private readonly bool trimFields;
+    private readonly bool enableQuotedFields;
     private readonly byte quote;
     private readonly byte? escape;
 
@@ -501,6 +529,13 @@ public readonly struct CsvPipeRow
     /// Gets the 1-based row number.
     /// </summary>
     public int RowNumber { get; }
+
+    /// <summary>
+    /// Gets the 1-based physical line where this row starts when
+    /// <see cref="CsvReadOptions.TrackSourceLineNumbers"/> is enabled;
+    /// otherwise gets the 1-based logical row number.
+    /// </summary>
+    public int SourceLineNumber { get; }
 
     /// <summary>
     /// Gets the number of columns in this row.
@@ -515,16 +550,20 @@ public readonly struct CsvPipeRow
         byte quote,
         byte? escape,
         int dataOffset,
-        int headerElementSize)
+        int headerElementSize,
+        int sourceLineNumber,
+        bool enableQuotedFields = true)
     {
         this.storage = storage;
         this.columnCount = columnCount;
         this.trimFields = trimFields;
+        this.enableQuotedFields = enableQuotedFields;
         this.quote = quote;
         this.escape = escape;
         this.dataOffset = dataOffset;
         this.headerElementSize = checked((byte)headerElementSize);
         RowNumber = rowNumber;
+        SourceLineNumber = sourceLineNumber;
     }
 
     /// <summary>
@@ -547,7 +586,7 @@ public readonly struct CsvPipeRow
                 (start, end) = TrimBounds(start, end);
             }
 
-            return new CsvPipeColumn(storage, dataOffset + start, end - start, quote, escape);
+            return new CsvPipeColumn(storage, dataOffset + start, end - start, quote, escape, enableQuotedFields);
         }
     }
 
@@ -613,14 +652,16 @@ public readonly struct CsvPipeColumn
     private readonly byte[] data;
     private readonly int start;
     private readonly int length;
+    private readonly bool enableQuotedFields;
     private readonly byte quote;
     private readonly byte? escape;
 
-    internal CsvPipeColumn(byte[] data, int start, int length, byte quote, byte? escape)
+    internal CsvPipeColumn(byte[] data, int start, int length, byte quote, byte? escape, bool enableQuotedFields = true)
     {
         this.data = data;
         this.start = start;
         this.length = length;
+        this.enableQuotedFields = enableQuotedFields;
         this.quote = quote;
         this.escape = escape;
     }
@@ -634,7 +675,7 @@ public readonly struct CsvPipeColumn
     /// Converts the column value to a string, stripping quote characters.
     /// </summary>
     public string ToUnquotedString()
-        => CsvPipeColumnText.Decode(Span, quote, escape);
+        => CsvPipeColumnText.Decode(Span, quote, escape, enableQuotedFields);
 
     /// <summary>
     /// Converts the column value to decoded, unquoted text.

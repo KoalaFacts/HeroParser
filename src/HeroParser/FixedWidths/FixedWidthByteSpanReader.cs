@@ -16,6 +16,7 @@ public ref struct FixedWidthByteSpanReader
     private int position;
     private int recordCount;
     private int sourceLineNumber;
+    private bool previousRecordEndedWithCr;
 
     private const byte CR = (byte)'\r';
     private const byte LF = (byte)'\n';
@@ -36,6 +37,7 @@ public ref struct FixedWidthByteSpanReader
         position = 0;
         recordCount = 0;
         sourceLineNumber = options.TrackSourceLineNumbers ? 1 : 0;
+        previousRecordEndedWithCr = false;
         Current = default;
 
         // Strip UTF-8 BOM if present
@@ -101,7 +103,7 @@ public ref struct FixedWidthByteSpanReader
         int skipped = 0;
         while (skipped < rowsToSkip && position < bytes.Length)
         {
-            if (position + recordLength > bytes.Length)
+            if (recordLength > bytes.Length - position)
             {
                 position = bytes.Length;
                 return;
@@ -109,7 +111,7 @@ public ref struct FixedWidthByteSpanReader
 
             if (options.TrackSourceLineNumbers)
             {
-                sourceLineNumber += FixedWidthLineScanner.CountNewlines(bytes.Slice(position, recordLength));
+                sourceLineNumber += FixedWidthLineScanner.CountNewlines(bytes.Slice(position, recordLength), ref previousRecordEndedWithCr);
             }
 
             position += recordLength;
@@ -153,15 +155,15 @@ public ref struct FixedWidthByteSpanReader
         if (position >= bytes.Length)
             return false;
 
-        if (recordCount >= options.MaxRecordCount)
-        {
-            throw new FixedWidthException(
-                FixedWidthErrorCode.TooManyRecords,
-                $"Maximum record count of {options.MaxRecordCount} exceeded.");
-        }
-
         if (options.RecordLength is { } fixedLength)
         {
+            if (recordCount >= options.MaxRecordCount)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.TooManyRecords,
+                    $"Maximum record count of {options.MaxRecordCount} exceeded.");
+            }
+
             return MoveNextFixedLength(fixedLength);
         }
 
@@ -171,7 +173,7 @@ public ref struct FixedWidthByteSpanReader
     private bool MoveNextFixedLength(int recordLength)
     {
         // Check if we have enough data for another record
-        if (position + recordLength > bytes.Length)
+        if (recordLength > bytes.Length - position)
         {
             // Handle partial record at end
             if (position < bytes.Length)
@@ -193,7 +195,7 @@ public ref struct FixedWidthByteSpanReader
         // Track newlines within the record for source line tracking
         if (options.TrackSourceLineNumbers)
         {
-            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan);
+            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan, ref previousRecordEndedWithCr);
         }
 
         return true;
@@ -201,9 +203,6 @@ public ref struct FixedWidthByteSpanReader
 
     private bool MoveNextLineBased()
     {
-        var commentByte = options.CommentCharacter.HasValue ? (byte)options.CommentCharacter.Value : (byte)0;
-        var hasCommentChar = options.CommentCharacter.HasValue;
-
         while (position < bytes.Length)
         {
             var remaining = bytes[position..];
@@ -240,11 +239,20 @@ public ref struct FixedWidthByteSpanReader
             }
 
             // Handle comment lines
-            if (hasCommentChar && line.Length > 0 && line[0] == commentByte)
+            if (options.CommentCharacter is { } commentChar &&
+                FixedWidthLineScanner.StartsWithComment(line, commentChar))
             {
                 if (options.TrackSourceLineNumbers)
                     sourceLineNumber++;
                 continue;
+            }
+
+            // Ignored blank/comment lines do not count against the record limit.
+            if (recordCount >= options.MaxRecordCount)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.TooManyRecords,
+                    $"Maximum record count of {options.MaxRecordCount} exceeded.");
             }
 
             recordCount++;

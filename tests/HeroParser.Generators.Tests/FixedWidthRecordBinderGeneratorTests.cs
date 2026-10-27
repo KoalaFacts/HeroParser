@@ -43,6 +43,7 @@ public class FixedWidthRecordBinderGeneratorTests
         Assert.Contains("ref global::TestNamespace.PersonStruct", allGeneratedCode);
         Assert.Contains("FixedWidthRecordBinderFactory", allGeneratedCode);
         Assert.Contains("FixedWidthRecordWriterFactory", allGeneratedCode);
+        Assert.Contains("DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties, typeof(global::TestNamespace.PersonStruct))", allGeneratedCode);
     }
 
     [Fact]

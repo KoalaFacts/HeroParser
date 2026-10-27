@@ -1522,6 +1522,15 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("file static class FixedWidthRecordBinderGeneratedRegistration");
         builder.AppendLine("{");
         builder.Indent();
+        // Options such as OnError and custom converters use the reflection binder.
+        // Preserve only the generated record types' public properties and accessors.
+        foreach (var descriptor in descriptors)
+        {
+            if (GetMembersWithSetters(descriptor.Members).Count > 0)
+            {
+                builder.AppendLine($"[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties, typeof({descriptor.FullyQualifiedName}))]");
+            }
+        }
         builder.AppendLine("[ModuleInitializer]");
         builder.AppendLine("internal static void Register()");
         builder.AppendLine("{");

@@ -13,6 +13,13 @@ Release-candidate notes. The patch contains correctness and benchmark-validity r
 - **Segmented CSV input:** comments stop at their physical line endings even when quote/escape characters appear in a comment. Preserve configured whitespace comment markers, quoted data, UTF-8 BOM handling, and accurate physical source-line numbers across segment boundaries, empty segments, and split CRLF.
 - **Fixed-Width correctness:** align Unicode pad trimming between UTF-16, UTF-8, PipeReader, and immutable rows without truncating multibyte pad characters or accidentally removing valid NULs. Handle center alignment, UTF-8 BOM in decoded byte-span input, and incomplete UTF-8 prefixes consistently.
 - **Fixed-Width record limits and line tracking:** count actual retained records rather than trailing ignored comments/blank lines for `MaxRecordCount`; correct physical line numbers for split CRLF and for disabled line tracking. Enforce stream and PipeReader `Current` lifetimes and cancellation behavior without consuming unread data.
+- **Generated Fixed-Width records under NativeAOT (#156):** preserve property metadata and typed values when `OnError` callbacks or custom converters select the reflection fallback; add managed, native-AOT and packaged-consumer regressions.
+- **JSONL split-CRLF boundaries (#156):** handle CRLF split across PipeReader writes at the configured maximum line length, without phantom records or lost data.
+- **Concurrent Console warnings (#146):** synchronize redirected output so progress rendering and parse warnings do not lose or corrupt messages; retain the 1,000-warning concurrent regression.
+
+### Build and dependencies
+- Update the GitHub Actions `actions/upload-artifact` pin to 7.0.2 (#145).
+- Update `Microsoft.SourceLink.GitHub` to 10.0.403 (#158) while preserving the .NET 8/9/10 targets and pinned SDK versions.
 
 ### Benchmarks and documentation
 - Correct CSV, Fixed-Width, JSONL, typed-binder, header and writer benchmark workloads so all compared implementations perform equivalent data parsing/writing, with full-field and row-count validation and overflow-safe checksums.

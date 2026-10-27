@@ -246,7 +246,9 @@ jobs:
 
       - name: Generate SBOMs
         run: |
+          set -euo pipefail
           mkdir -p release-sboms
+          EXPECTED_COUNT=0
 
           # Generate SBOMs for each framework and SPDX version
           for framework in ${{ steps.frameworks.outputs.space_separated }}; do
@@ -267,18 +269,25 @@ jobs:
                 -V Verbose
 
               # Find and copy SBOM file
-              SBOM_FILE=$(find sbom-output-$framework-$spdx_version -type f -name "*.spdx.json" | head -n 1)
-              if [ -n "$SBOM_FILE" ]; then
-                cp "$SBOM_FILE" release-sboms/HeroParser.${{ github.event.inputs.version || inputs.version }}.$framework.spdx-$spdx_version.json
-                echo "Created: HeroParser.${{ github.event.inputs.version || inputs.version }}.$framework.spdx-$spdx_version.json"
-              else
-                echo "Warning: No SBOM file found for $framework SPDX $spdx_version (continuing anyway)"
+              SBOM_FILE=$(find sbom-output-$framework-$spdx_version -type f -name "*.spdx.json" -print -quit)
+              if [ -z "$SBOM_FILE" ] || [ ! -s "$SBOM_FILE" ]; then
+                echo "::error::Missing or empty SBOM for $framework SPDX $spdx_version"
+                exit 1
               fi
+
+              cp "$SBOM_FILE" release-sboms/HeroParser.${{ github.event.inputs.version || inputs.version }}.$framework.spdx-$spdx_version.json
+              EXPECTED_COUNT=$((EXPECTED_COUNT + 1))
+              echo "Created: HeroParser.${{ github.event.inputs.version || inputs.version }}.$framework.spdx-$spdx_version.json"
             done
           done
 
-          echo "SBOMs generated:"
-          ls -lh release-sboms/ || echo "No SBOMs created"
+          ACTUAL_COUNT=$(find release-sboms -maxdepth 1 -type f -name '*.json' | wc -l)
+          if [ "$EXPECTED_COUNT" -eq 0 ] || [ "$ACTUAL_COUNT" -ne "$EXPECTED_COUNT" ]; then
+            echo "::error::Expected $EXPECTED_COUNT SBOMs, found $ACTUAL_COUNT; refusing to create a partial release"
+            exit 1
+          fi
+          echo "Verified $ACTUAL_COUNT nonempty SBOMs:"
+          ls -lh release-sboms/
 
       - name: Download CLI artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -310,7 +319,6 @@ jobs:
           - Allocation-conscious parsing with fixed-size span-read allocations
           - Bounds checking on column access
           - Clean Native AOT compilation with no warnings
-          - No unsafe code
 
           ### SBOMs (Software Bill of Materials)
           Per-framework SBOMs included in this release:
@@ -319,7 +327,7 @@ jobs:
 
           ### Documentation
           - [README](https://github.com/KoalaFacts/HeroParser/blob/main/README.md)
-          - [Workflows Guide](.github/workflows/README.md)
+          - [Workflows Guide](https://github.com/KoalaFacts/HeroParser/blob/main/.github/workflows/README.md)
           - [License](https://github.com/KoalaFacts/HeroParser/blob/main/LICENSE)
 
           ### Performance
@@ -347,12 +355,8 @@ jobs:
           fi
 
           # Prepare assets list
-          ASSETS="packages/*.nupkg packages/*.snupkg cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.zip cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.tar.gz"
-
-          # Add SBOMs if they exist
-          if [ -d "release-sboms" ] && [ "$(ls -A release-sboms)" ]; then
-            ASSETS="$ASSETS release-sboms/*.json"
-          fi
+          # SBOMs are mandatory and verified by the preceding step.
+          ASSETS="packages/*.nupkg packages/*.snupkg cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.zip cli-binaries/heroparser-v${{ github.event.inputs.version || inputs.version }}-*.tar.gz release-sboms/*.json"
 
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \

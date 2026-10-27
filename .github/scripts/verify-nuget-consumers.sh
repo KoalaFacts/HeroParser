@@ -39,6 +39,8 @@ cat "$feed/SHA256SUMS"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+export NUGET_PACKAGES="$work/packages"
+export HEROPARSER_EXPECTED_SOURCE_SHA="$(cat "$feed/SOURCE_SHA")"
 cat > "$work/NuGet.Config" <<CFG
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -65,6 +67,12 @@ for tfm in net8.0 net9.0 net10.0; do
 using System.Text.Json.Serialization;
 using HeroParser;
 using HeroParser.FixedWidths;
+using HeroParser.SeparatedValues.Reading.Records;
+
+var info = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(Csv).Assembly)!.InformationalVersion;
+if (!info.EndsWith("+" + Environment.GetEnvironmentVariable("HEROPARSER_EXPECTED_SOURCE_SHA"), StringComparison.Ordinal))
+    throw new InvalidOperationException("Consumed package source differs: " + info);
+Console.WriteLine("Consumed core identity: " + info);
 
 string csvText = """
 Name,Age
@@ -119,7 +127,7 @@ CS
   dotnet restore "$target/NuGetConsumer.csproj" --configfile "$work/NuGet.Config"
   dotnet run --project "$target/NuGetConsumer.csproj" --configuration Release --no-restore
   if [[ "$tfm" == "net10.0" ]]; then
-    dotnet restore "$target/NuGetConsumer.csproj" --configfile "$work/NuGet.Config" -r linux-x64
+    dotnet restore "$target/NuGetConsumer.csproj" --configfile "$work/NuGet.Config" -r linux-x64 -p:PublishAot=true
     dotnet publish "$target/NuGetConsumer.csproj" --configuration Release --framework net10.0 \
       --runtime linux-x64 --no-restore -p:PublishAot=true -p:TreatWarningsAsErrors=true \
       --output "$target/native"

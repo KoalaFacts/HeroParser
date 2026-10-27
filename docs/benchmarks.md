@@ -1,72 +1,87 @@
 # HeroParser Benchmarks & Performance Guide
 
-This document details the performance benchmarks, memory profile characteristics, and head-to-head comparisons of **HeroParser** against leading .NET tabular libraries:
-- **Sep** v0.17.0
+This guide records benchmark scope, reproducible commands, and historical evidence. The current benchmark project references:
+- **Sep** v0.17.1
 - **Sylvan.Data.Csv** v1.4.4
 - **CsvHelper** v33.1.0
 
 ---
 
-## Benchmark Environment
-- **Runner**: GitHub Actions `ubuntu-latest`, AMD EPYC 9V74 (Zen 4, AVX-512), 2 physical cores
-- **Runtime**: .NET 10.0 (Release Build)
+Dependency versions are defined in [HeroParser.Benchmarks.csproj](../benchmarks/HeroParser.Benchmarks/HeroParser.Benchmarks.csproj). A benchmark result applies to its recorded source revision, fixture, runtime, and hardware; it is not a guarantee for other APIs or inputs.
+
+The [2026-10-24 validity report](perf/2026-10-24-benchmark-validity.md) records the CSV/JSONL benchmark repairs, characterization tests, and the withdrawn wrapper candidate's complete local diagnostic evidence. It makes no parser speedup claim.
+
+The [2026-10-25 multi-schema culture validity note](perf/2026-10-25-multi-schema-culture-validity.md) records why interpolated fractional decimals can turn into extra CSV columns under comma-decimal locales. It fixes fixture generation to invariant formatting and requires independent checksums from each actual timed dispatcher before measuring. Single-schema and header/detail/trailer datasets do different work and must not be interpreted as equal-operation A/B comparisons.
+
+The [2026-10-25 fixed-width typed fixture note](perf/2026-10-25-fixed-width-typed-validity.md) documents why the former four-digit ID positions corrupted data above row 9,999, the now fixed 6+7-character schema, and its independent 64-bit checksum preconditions. These changed input bytes need a fresh baseline.
+
+The [2026-10-25 CSV column-parse validity note](perf/2026-10-25-column-parse-validity.md) documents the UInt32.MaxValue checksum truncation and pre-timing field validation. This is a changed benchmark result contract, not evidence of parser throughput improvement.
+
+The [2026-10-25 write-side injection benchmark validity note](perf/2026-10-25-write-injection-validity.md) adds a separate dangerous-input class to measure real formula-protection paths. It checks every output row for all four policies (None, Sanitize, EscapeWithQuote, EscapeWithTab) and verifies Reject still raises InjectionDetected. Its source is identical for every policy; output intentionally differs by security contract, and its new results cannot be compared with the safe-input class to imply a speedup.
+
+The [2026-10-25 injection-check validity note](perf/2026-10-25-read-injection-validity.md) records a benchmark defect in which every danger-check predicate result was discarded. The repaired fixture exercises a positive '=cmd' case as well as negative signed-number/phone cases; its timed methods return observable detection-inclusive checksums, with full-field preflight. These benchmark measurements cannot be compared with historical ones as equivalent work, and are not a parser speedup claim.
+
+The [2026-10-25 fixed-width byte-span validity note](perf/2026-10-25-fixed-width-bytespan-validity.md) documents overflowing 100k ID and Value checksums in the char/UTF-8 primitive benchmarks, the independent 64-bit xUnit and per-record preflight, and why the Name-length variant is not typed materialization. It needs a new timing baseline.
+The [2026-10-25 field-parsing fixture note](perf/2026-10-25-fixed-width-fields-validity.md) records the malformed timestamp boundary, narrowed UInt32 checksum, and repaired pre-timing validation. This is a changed workload requiring a new baseline.
+
+The [2026-10-25 binder object-allocation validity note](perf/2026-10-25-binder-allocation-validity.md) records the previously unused per-row object, the required anti-elision consumer for four object-creation benchmarks, and an allocation-presence regression. Those diagnostic stage results need a new baseline and do not establish a parser speedup.
+
+## Historical Benchmark Environment (2026-10-23)
+
+The table below comes from the **Base `cba2bcd`** section of the [PR #156 CI benchmark report](https://github.com/KoalaFacts/HeroParser/pull/156#issuecomment-6355972696), using [this exact fixture](https://github.com/KoalaFacts/HeroParser/blob/cba2bcdbf57597d87a159316e4d06969c1278d01/benchmarks/HeroParser.Benchmarks/VsSepReadingBenchmarks.cs).
+
+- **Runner**: GitHub Actions, Ubuntu 24.04.5 LTS, AMD EPYC 7763, 4 logical / 2 physical cores; x86-64-v3 (AVX2)
+- **Runtime**: .NET 10.0.13, SDK 10.0.402, Release build
 - **Validation tool**: BenchmarkDotNet v0.15.8
-- **Method**: all libraries measured in the same job on the same runner. GitHub-hosted runners land on different CPU models from run to run, so numbers from different runs are not comparable with each other; every pull request that touches the parser gets a base-vs-head comparison on one runner, posted in the PR.
+- **Job**: throughput strategy, 3 warmups, 5 measured iterations
+- **Dependencies**: Sep 0.17.1, Sylvan.Data.Csv 1.4.4, CsvHelper 33.1.0
+
+All libraries in this table ran in one job on the same runner. GitHub-hosted runner CPU models vary; compare base and head on the same runner with the same fixture and inspect the full report's error and standard deviation before claiming a change.
 
 ---
 
-## 1. Head-to-Head Reading Comparison (10,000 Rows x 25 Columns)
+## 1. Historical Row/Column-Count Fixture (10,000 Rows × 25 Columns)
 
-Measures throughput and memory allocations under `.NET 10.0` compared to **Sep v0.17.0**, **Sylvan.Data.Csv v1.4.4**, and **CsvHelper v33.1.0** (v2.7.0).
+This legacy fixture generated input and UTF-8 bytes in `GlobalSetup`, outside the timed operation. Each method created a reader, iterated rows, and summed column counts. It did not consume every field's logical value, perform typed conversion, materialize application records, or include file/network I/O. `WithQuotes = true` wrapped exactly 50% of simple ASCII `value_r_c` fields in quotes; it did not exercise embedded delimiters, doubled quotes, multiline fields, or Unicode.
 
-### Case A: Unquoted Data (`WithQuotes = False`)
-* **Sep (Baseline)**: **663.5 µs** (Mean) | **3,952 B** (Allocated) | **1.00x** (Ratio)
-* **Sylvan**: **823.0 µs** (Mean) | **43,529 B** (Allocated) | **1.24x** (Ratio)
-* **CsvHelper**: **14,128.5 µs** (Mean) | **21,328 B** (Allocated) | **21.29x** (Ratio)
-* **HeroParser UTF-8 (byte[])**: **491.4 µs** (Mean) | **152 B** (Allocated) | **0.74x** (Ratio) (**26% faster than Sep**)
-* **HeroParser UTF-16 (string)**: **534.4 µs** (Mean) | **152 B** (Allocated) | **0.81x** (Ratio) (**19% faster than Sep**)
+The old options were not equivalent: Sep and Sylvan retained their default header handling, CsvHelper explicitly disabled headers, and HeroParser disabled quote parsing for the unquoted case. These measurements are retained as historical observations, **not a fair library ranking**. The corrected fixture uses different options and validation; new results cannot be compared directly with this table to claim a parser speedup.
 
-### Case B: Quoted Data (`WithQuotes = True`)
-* **Sep (Baseline)**: **1,343.2 µs** (Mean) | **4,048 B** (Allocated) | **1.00x** (Ratio)
-* **Sylvan**: **5,018.5 µs** (Mean) | **43,530 B** (Allocated) | **3.74x** (Ratio)
-* **CsvHelper**: **14,589.3 µs** (Mean) | **21,328 B** (Allocated) | **10.86x** (Ratio)
-* **HeroParser UTF-8 (byte[])**: **898.8 µs** (Mean) | **152 B** (Allocated) | **0.67x** (Ratio) (**33% faster than Sep**)
-* **HeroParser UTF-16 (string)**: **984.1 µs** (Mean) | **152 B** (Allocated) | **0.73x** (Ratio) (**27% faster than Sep**)
+| Library / input | Unquoted mean | Unquoted allocated | Quoted mean | Quoted allocated |
+|---|---:|---:|---:|---:|
+| Sep | 632.9 µs | 3,952 B | 1,544.5 µs | 4,048 B |
+| Sylvan.Data.Csv | 817.5 µs | 43,529 B | 4,652.1 µs | 43,530 B |
+| CsvHelper | 13,497.1 µs | 21,328 B | 15,072.6 µs | 21,328 B |
+| HeroParser UTF-8 (`byte[]`) | 588.9 µs | 176 B | 746.9 µs | 176 B |
+| HeroParser UTF-16 (`string`) | 666.0 µs | 176 B | 853.0 µs | 176 B |
 
-Both element types are first-class: `string` input no longer needs a UTF-8 conversion for performance. Prefer the `byte[]` APIs when the data is already bytes.
+Allocated bytes are per benchmark operation for this workload, including reader/options setup. They do not imply zero-allocation typed binding or a fixed allocation budget for every input size. Pool growth and different APIs can change the profile. Both UTF-8 and UTF-16 span input are supported directly; avoid an encoding conversion when your input is already in a supported representation.
 
 ---
 
-## 2. Head-to-Head Writing Comparison (1,000 Rows x 25 Columns)
+## 2. Writing Benchmarks
 
-Measures sync writing throughput and memory allocations under `.NET 10.0` compared to **Sep v0.14.1** and **Sylvan.Data.Csv v1.4.4**.
+Use `--vs-sep-writing` for library comparisons and `--writer`, `--fixed-width-writer`, or `--jsonl` for the corresponding API workloads. Check that all methods produce equivalent output with the same quoting policy and output destination. String-returning, stream-writing, typed, and raw-row APIs perform different work and need separate results.
 
-### Case A: Unquoted Data (`WithQuotes = False`)
-* **Sep (Baseline)**: **4.455 ms** (Mean) | **1.98 MB** (Allocated) | **1.00x** (Ratio)
-* **Sylvan**: **2.524 ms** (Mean) | **1.26 MB** (Allocated) | **0.57x** (Ratio)
-* **HeroParser (row-by-row)**: **1.479 ms** (Mean) | **1.21 MB** (Allocated) | **0.33x** (Ratio) (**3.0x FASTER than Sep**)
-
-### Case B: Quoted Data (`WithQuotes = True`)
-* **Sep (Baseline)**: **3.306 ms** (Mean) | **1.98 MB** (Allocated) | **1.00x** (Ratio)
-* **Sylvan**: **2.013 ms** (Mean) | **1.34 MB** (Allocated) | **0.61x** (Ratio)
-* **HeroParser (row-by-row)**: **1.655 ms** (Mean) | **1.29 MB** (Allocated) | **0.50x** (Ratio) (**2.0x FASTER than Sep**)
+Earlier versions of this guide listed writing multipliers without a traceable run and complete environment. Those figures are not used as current performance claims. Publish new comparisons with the exact commit, dependency versions, fixtures, runtime, CPU, output validation, and BenchmarkDotNet report.
 
 ---
 
 ## 3. Write-Path Capacity Pre-allocation Optimization (ToText Facades)
 
-To eliminate GC allocations and backing buffer copy-doubling cycles when generating strings in memory, we implement backing capacity pre-allocation when writing collections:
-- **CSV & Fixed-Width (`ToText`)**: Uses pre-allocated backing `StringBuilder` sizes based on estimated record counts. Delivers **35% to 64% throughput improvements** depending on column count and record volume.
-- **JSONL (`ToText`)**: Uses pre-allocated backing `MemoryStream` sizes (`count * 128`). Delivers up to **1.9x speedup** on 100k records (taking only **17.01 ms** vs **32.73 ms** for standard reflection-based writing) with highly stable, predictable memory footprints.
+Text writers estimate backing buffer capacity when collection counts are available. CSV and Fixed-Width use `StringBuilder` capacity estimates; JSONL uses a `MemoryStream` capacity estimate. This can reduce buffer growth and copying, but the estimate may be exceeded, and final output strings still allocate. Record contents, escaping, encoding, and selected serialization metadata affect both time and memory.
+
+The former 35–64% and 1.9× claims are not maintained as current guarantees: they lacked a linked, reproducible comparison in this guide. Measure capacity changes independently with equivalent output and the same serialization path on both sides.
 
 ---
 
 ## 4. Core Architectural Pillars & Memory Profile
 
-- **Low-Allocation Raw Scanning**: The raw row/column scanning benchmarks above allocate **152 bytes** per operation. This does not include column-to-string conversion, typed binding, or owned PipeReader rows, which have their own allocation costs.
-- **Scan-Ahead Row Batches**: one SIMD pass records the column ends of a batch of rows into a pooled buffer; advancing to the next row is index arithmetic rather than re-entering the parser. This removed the per-row fixed cost that dominated at 5-25 columns.
-- **AVX-512 & AVX2 Quote-Aware SIMD**: Uses branchless PCLMULQDQ carry-less multiplication to mask quotes at maximum hardware throughput; chunks with quotes but no line ending are resolved inline.
-- **UTF-16 Pack-and-Saturate**: each chunk of chars is packed into one byte vector with saturation and shares the UTF-8 dispatch, so `string` input runs at byte-path speed.
+- **Span field access**: raw readers can expose fields without allocating a string for each field. Decoding to strings, constructing records or arrays, typed conversion, and owned PipeReader rows have separate costs.
+- **Scan-Ahead Row Batches**: the scanner records column ends for batches of rows into pooled buffers; row iteration consumes those offsets.
+- **Quote-Aware SIMD**: supported CPUs use vector comparisons and PCLMULQDQ quote masks; runtime capability checks and options select the applicable path or scalar fallback.
+- **UTF-16 Pack-and-Saturate**: supported char scanning packs vectors with saturation and shares byte-mask analysis. This supports direct `string` scanning; it does not guarantee identical UTF-8 and UTF-16 timings.
+
+See [`CsvRowBatchScanner`](../src/HeroParser/SeparatedValues/Reading/Shared/CsvRowBatchScanner.cs) for the current scanner and its option restrictions.
 
 ---
 
@@ -98,6 +113,10 @@ To execute these benchmarks on your local hardware:
 ```bash
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net10.0 -- --vs-sep-reading
 ```
+
+This runs the fixture in your checkout. To reproduce the archived table, use a separate checkout of `cba2bcdbf57597d87a159316e4d06969c1278d01`; running the corrected fixture cannot reproduce the legacy workload. For a production-code A/B, run the **same corrected benchmark source** against both builds on the same machine, validate equivalent results before timing, and retain every sample. Report scan-only, field-decoding, typed-materialization, and I/O workloads separately.
+
+The [2026-10-25 segmented column decoding validity note](perf/2026-10-25-pipe-column-validity.md) documents the enforced token-boundary splits, malformed UTF-8 replacement case, and complete decoded-text preflight. Changed segmentation and case selection require fresh baselines; these checks do not prove a performance gain.
 
 ### PipeReader Column Decoding A/B (September 2026)
 
@@ -147,11 +166,14 @@ unescaping to preserve invalid UTF-8 replacement semantics. Only the resulting
 string remains allocated in these warmed-up cases; pool growth can allocate on
 cold calls, and owned-row allocations are outside this microbenchmark.
 
-### Checked End-to-End PipeReader A/B
+### Historical End-to-End PipeReader A/B
 
-The opt-in [paired probe](../benchmarks/CsvPipeABProbe/README.md) compares independent
-parser/generator builds in one process, consumes complete records, verifies an
-input-derived checksum, and retains every paired sample. It covers fixed
+This experiment was [retired on 2026-10-25](perf/2026-10-25-csv-pipe-retirement.md).
+Its evidence remains archived; it is not an active CI or merge gate.
+
+The [paired probe](../benchmarks/CsvPipeABProbe/README.md) compared independent
+parser/generator builds in one process, consumed complete records, verified an
+input-derived checksum, and retained every paired sample. It covered fixed
 segmentation and real stream-backed pipe reading, with same-source A/A controls.
 The [initial evidence](../benchmarks/CsvPipeABProbe/results.md) confirms allocation
 reductions but rejects throughput claims under a noisy local environment. It also
@@ -161,4 +183,4 @@ The same report records the follow-up logical-value repair and its validation.
 An exploratory local study of [process-to-process variance](perf/csv-pipe-process-variance/README.md)
 found that identical processes compile different optimized code under dynamic PGO, and that
 dynamic PGO is worth roughly 16% on this path. It does not explain or waive the failed timing
-gate; the noise on that machine is too large to link code shape to speed.
+result; the noise on that machine is too large to link code shape to speed.

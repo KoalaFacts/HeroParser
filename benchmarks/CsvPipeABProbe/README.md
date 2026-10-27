@@ -1,9 +1,21 @@
 # CSV PipeReader end-to-end paired A/B probe
 
-The active CI timing gate now uses **two isolated single-module workers**,
-not the historical dual-module process described below. Protocol v3 is currently
-controls-only: A/B and production optimizations remain suspended while validating
-this changed execution boundary. See [Isolated Worker Controls](#isolated-worker-controls).
+The historical timing experiment is **retired and archived** as of 2026-10-25.
+See the [retirement decision](../../docs/perf/2026-10-25-csv-pipe-retirement.md).
+It is not an active CI gate, release blocker, or prerequisite for future parser
+work. The `pipe-ab` job and `pipe_ab` / `pipe_controls` workflow inputs were removed.
+
+The timing protocols and commands below preserve historical provenance; they
+are not instructions to restart the exhausted experiment or a claim that an old
+capture can be replayed today. Reproduction depends on the recorded source,
+toolchain and original artifacts. Capture scripts and original failed results
+remain unchanged. Current correctness checks, ordinary benchmarks and separate
+manual diagnostic jobs remain enabled; their availability does not authorize
+new historical sampling.
+
+Before retirement, the controls-only timing gate used **two isolated single-module
+workers**, following the older dual-module process described below. See
+[Historical Isolated Worker Controls](#historical-isolated-worker-controls).
 
 The historical opt-in probe loads independently built baseline and candidate parser
 assemblies into the **same process**. Both sides use the same generated fixture,
@@ -11,7 +23,7 @@ transport, row limits, header, checksum consumer, warmup and repetition count.
 Baseline-first and candidate-first pairs alternate. Do not replace the baseline
 with a wrapper around the candidate's fallback path.
 
-## Build and Run
+## Historical Build and Run
 
 Build the baseline library from the chosen commit in a separate checkout or Git
 worktree, with a distinct assembly name:
@@ -101,7 +113,7 @@ configuration consistent, particularly on heterogeneous laptop CPUs.
 
 ## Evidence and Interpretation
 
-### Isolated Worker Controls
+### Historical Isolated Worker Controls
 
 ```powershell
 pwsh -NoProfile -File benchmarks/CsvPipeABProbe/run-isolated.ps1 -SourceSha HEAD_SHA -Workspace FRESH_WORKSPACE -PinSameCpu
@@ -155,9 +167,10 @@ retains all timing settings and ratio bounds. .NET's reported processor count
 may decrease under affinity; both workers must match. Without `-PinSameCpu`, v3
 remains reproducible; its failed result is not reclassified or discarded.
 
-Automatic PR/push jobs and manual `pipe_controls=true` now run the v4 controls-only
-gate. `pipe_ab=true` explicitly fails while A/B is suspended. Bias and profile
-jobs retain the old dual-module harness for diagnostic evidence only.
+Earlier workflow revisions ran the v4 controls-only gate through automatic
+PR/push jobs and manual `pipe_controls=true`; `pipe_ab=true` failed while A/B
+was suspended. These timing entry points have since been removed. Separate bias
+and profile jobs retain the old dual-module harness for diagnostic evidence only.
 
 ### Historical Dual-Module CI Series
 
@@ -168,14 +181,15 @@ with the head SHA (not GitHub's synthetic merge commit); pushes compare the
 previous SHA with the new commit. The job has read-only repository permissions,
 including on fork PRs, and does not publish PR comments or merge anything.
 
-An opt-in manual `pipe_ab` input remains available to run only the paired job,
-without the normal benchmark matrix. All builds and measurements are serial
+The former opt-in manual `pipe_ab` input ran only the paired job,
+without the normal benchmark matrix. All builds and measurements were serial
 within that job. A hosted VM is isolated from this project's other jobs, not
 guaranteed exclusive physical hardware; A/A controls remain mandatory. CI owns
 the expensive builds, correctness checks and measurements; a locally idle
 machine is not a prerequisite.
 
 ```sh
+# Historical command; pipe_ab no longer exists in the current workflow.
 gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_ab=true -f baseline_sha=FULL_BASELINE_SHA
 ```
 
@@ -200,9 +214,11 @@ not a retry that changes the meaning of those results. Reproduce v1 with its
 recorded source revision, not the v2 checker. Do not combine v1/v2 ratios to claim
 a parser speedup. Ten seconds of warmup does not prove JIT or runner stability.
 
-### Fixed Controls-Only Validation
+### Historical Fixed Controls-Only Validation
 
-Before another parser experiment, run the manual `pipe_controls` lane. It skips
+The former manual `pipe_controls` lane was required before another parser
+experiment under the old protocol. Retirement ends that prerequisite; the
+following describes the archived lane, not current workflow instructions. It skips
 the ordinary benchmark matrix and never enters A/B. It checks the full 36-case
 candidate/candidate correctness matrix and then runs exactly three fresh A/A
 processes on the same independently built candidate-source assemblies. It does
@@ -213,11 +229,12 @@ each process's raw output is retained. Only all three valid, stable runs produce
 gain, universal stability guarantee or permission to merge.
 
 ```sh
+# Historical command; pipe_controls no longer exists in the current workflow.
 gh workflow run benchmarks.yml --ref YOUR_BRANCH -f pipe_controls=true
 ```
 
-For direct `run-series.ps1 -ControlsOnly` use, the required baseline SHA must be
-the candidate HEAD SHA. The workflow supplies it automatically. The summary
+For historical `run-series.ps1 -ControlsOnly` use, the required baseline SHA was
+the candidate HEAD SHA. The former workflow supplied it automatically. The summary
 records the protocol ID, controls-only mode and minimum actual batch durations.
 
 ### Same-Source Bias Diagnosis
@@ -369,7 +386,8 @@ stacks, method reports, JIT output, checked consumer logs, source SHAs and modul
 IDs for 30 days, even after failure. Partial diagnostics are labelled incomplete.
 Diagnostic elapsed/CPU counters are not paired timing results, and neither
 success nor a hotspot report establishes a speedup, no regression or permission
-to merge. Keep the fixed A/A and A/B protocol unchanged for subsequent patches.
+to merge. Preserve the archived A/A and A/B protocol when interpreting its evidence;
+it is not an active requirement for subsequent patches.
 
 ### Native On-CPU Evidence (Diagnostic Only)
 
@@ -421,8 +439,9 @@ Collection rejects lost samples, fewer than 500 samples per worker, more than
 These are collection-quality checks, not performance acceptance thresholds.
 The original failed VM/PIDs cannot be recaptured: this identifies hotspots in
 the frozen source on a new runner, not the cause of the old 5.28% divergence.
-The automatic timing job remains failed without retrial when its workload is
-unchanged. No diagnostic success can waive A/A failure or authorize merging.
+The original timing result remains failed, but its automatic job is retired.
+No diagnostic success rewrites that result; the archived verdict is not a
+current merge gate.
 
 ### Initial Correctness Gate (September 2026)
 

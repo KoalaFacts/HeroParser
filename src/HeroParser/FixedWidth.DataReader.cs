@@ -43,8 +43,17 @@ public static partial class FixedWidth
         }
 
         var asyncReader = new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen, initialBufferSize: bufferSize);
-
-        return new FixedWidthDataReader(asyncReader, options, dataOptions, encoding);
+        try
+        {
+            return new FixedWidthDataReader(asyncReader, options, dataOptions, encoding);
+        }
+        catch
+        {
+            // Schema validation can fail after the reader has rented a pooled char buffer.
+            // Dispose the failed handoff without changing the caller's stream ownership.
+            asyncReader.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            throw;
+        }
     }
 
     /// <summary>
@@ -76,7 +85,17 @@ public static partial class FixedWidth
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        return CreateDataReader(stream, options, readerOptions, encoding, leaveOpen: false, bufferSize: bufferSize);
+        try
+        {
+            return CreateDataReader(stream, options, readerOptions, encoding, leaveOpen: false, bufferSize: bufferSize);
+        }
+        catch
+        {
+            // The reader constructor can reject a missing or invalid column schema
+            // after the file is opened. Only a successfully created reader owns it.
+            stream.Dispose();
+            throw;
+        }
     }
 }
 

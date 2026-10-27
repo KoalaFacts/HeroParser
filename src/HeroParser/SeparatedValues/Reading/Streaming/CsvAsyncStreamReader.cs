@@ -33,6 +33,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private bool endOfStream;
     private bool disposed;
     private bool bomProcessed;
+    private bool hasCurrent;
 
     private int currentRowStart;
     private int currentRowLength;
@@ -54,6 +55,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         get
         {
             ThrowIfDisposed();
+            if (!hasCurrent)
+            {
+                throw new InvalidOperationException("No current row is available. Call MoveNextAsync() first.");
+            }
+
             if (currentFromBatch)
             {
                 return cursor!.CreateRow(buffer, currentBatchRow, currentRowNumber, currentSourceLineNumber);
@@ -115,6 +121,9 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     public async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
+        // Current borrows pooled buffers; it expires on every advance attempt,
+        // including a pre-canceled read that leaves buffered rows available to retry.
+        hasCurrent = false;
         cancellationToken.ThrowIfCancellationRequested();
 
         while (true)
@@ -248,6 +257,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             currentRowNumber = rowCount;
             currentSourceLineNumber = trackLineNumbers ? rowStartLine : rowCount;
             CurrentHadLineEnding = result.CharsConsumed > result.RowLength;
+            hasCurrent = true;
             return true;
         }
     }
@@ -309,6 +319,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
         currentSourceLineNumber = trackLineNumbers ? row.SourceLine : rowCount;
         int rowEnd = cursor!.WindowBase + row.RowEnd;
         CurrentHadLineEnding = rowEnd < length && buffer[rowEnd] is ((byte)'\r' or (byte)'\n');
+        hasCurrent = true;
         return true;
     }
 
@@ -318,15 +329,29 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             return true;
 
         int available = length - offset;
-        if (available < 3 && !endOfStream)
-            return false;
 
+        // UTF-16 BOMs are conclusive at two bytes: report unsupported encodings
+        // without waiting for unrelated data from a still-open stream.
         if (available >= 2)
         {
             if (buffer[offset] == 0xFF && buffer[offset + 1] == 0xFE)
                 throw new CsvException(CsvErrorCode.InvalidOptions, "UTF-16 LE encoding detected. HeroParser only supports UTF-8.");
             if (buffer[offset] == 0xFE && buffer[offset + 1] == 0xFF)
                 throw new CsvException(CsvErrorCode.InvalidOptions, "UTF-16 BE encoding detected. HeroParser only supports UTF-8.");
+        }
+
+        if (available < 3 && !endOfStream)
+        {
+            if (available == 0)
+                return false;
+
+            byte first = buffer[offset];
+            // Only EF / EF BB can still be a UTF-8 BOM. A single FF or FE
+            // also needs its second byte to rule out an unsupported UTF-16 BOM.
+            if (first == 0xEF && (available == 1 || buffer[offset + 1] == 0xBB))
+                return false;
+            if (available == 1 && (first == 0xFF || first == 0xFE))
+                return false;
         }
 
         if (available >= 3 && buffer[offset] == 0xEF && buffer[offset + 1] == 0xBB && buffer[offset + 2] == 0xBF)
@@ -390,6 +415,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             return ValueTask.CompletedTask;
 
         disposed = true;
+        hasCurrent = false;
         columnEndsBuffer.Return();
         cursor?.Dispose();
         ReturnBuffer(buffer);

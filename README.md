@@ -9,18 +9,18 @@
 ### Why Choose HeroParser?
 * **Extreme Performance**: Engineered with AVX-512, AVX2, and ARM NEON SIMD optimizations to deliver ultra-high-throughput reading and writing.
 * **AI-Native integrations**: Built-in support for token-budgeted chunking, LLM output structured repair, vector embedding pipelines, and agent tool mapping.
-* **Low Footprint**: The UTF-8 span row-reading benchmark measures 152 bytes of fixed allocation for the tested workload; typed binding and streaming APIs have different allocation profiles.
+* **Low Footprint**: Span row readers expose fields without creating a string for every field. Typed records, decoded strings, and streaming APIs have their own allocation costs; see the [benchmark scope and evidence](docs/benchmarks.md).
 * **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, Fixed-Width, and HTB APIs.
 
 ---
 
 ## Performance & Memory
 
-Tested under **.NET 10.0** on an **AMD Ryzen AI 9 HX PRO 370 CPU**:
-* **Read Throughput**: SIMD-accelerated UTF-8 (`byte[]`) read paths on both quoted and unquoted data.
-* **Write Throughput**: Highly optimized CSV/JSONL serialization achieving massive throughput.
-* **GC Allocations**: The measured UTF-8 span row-reading workload allocates 152 bytes independent of the tested input size. See the performance portal for benchmark conditions and comparisons.
-* **String Generation**: **Up to 64% speedup** on synchronous text generation via pre-allocated capacities.
+Performance depends on the input, API, runtime, and CPU. Both UTF-8 (`byte[]`) and UTF-16 (`string`) span readers support SIMD scanning; use the representation you already have to avoid unnecessary encoding conversions.
+
+The [2026-10-23 CI report, Base `cba2bcd`](https://github.com/KoalaFacts/HeroParser/pull/156#issuecomment-6355972696) measured **176 B per operation** for HeroParser's legacy 10,000-row × 25-column count-only fixture on AMD EPYC 7763, Ubuntu 24.04, .NET 10.0.13. Input preparation was outside the timed operation; the test did not decode every field, bind typed records, or perform file I/O. Its library options were not equivalent, so the archived comparison does not establish a general performance ranking. The corrected fixture requires a new baseline.
+
+See the [Benchmarks Guide](docs/benchmarks.md) for the historical table, limitations, current dependencies, and commands for measuring your own workload. Capacity estimates in text writers can reduce buffer growth, but output strings and application objects still allocate.
 
 View live performance graphs and history on the [HeroParser Performance Portal](https://KoalaFacts.github.io/HeroParser/).
 
@@ -125,7 +125,7 @@ public class Product
 ### CSV
 
 ```csharp
-// Read a file in one line (zero-allocation binding)
+// Read a file into typed records
 List<Product> products = Csv.Read<Product>().FromFile("products.csv").ToList();
 
 // Async stream millions of rows without buffering
@@ -155,7 +155,7 @@ var headerStyle = ExcelStyle.Create()
 
 Excel.Write<Product>()
     .WithHeaderStyle(headerStyle)
-    .WithMergeDuplicates(p => p.Category) // Vertically merge contiguous duplicate Categories
+    .WithMergeDuplicates(p => p.Name) // Vertically merge contiguous duplicate Names
     .ToFile("out.xlsx", products);
 ```
 
@@ -190,22 +190,31 @@ FixedWidth.Write<Employee>().ToFile("out.dat", employees);
 Perfect for AI fine-tuning datasets, streamed LLM responses, and database bulk loading.
 
 ```csharp
-// Read JSONL files (AOT-safe)
-var records = Jsonl.Read<Product>().FromFile("products.jsonl").ToList();
+using System.Text.Json.Serialization;
+
+// Read JSONL files using source-generated JSON metadata (AOT-safe)
+using var reader = Jsonl.Read<Product>()
+    .FromFile("products.jsonl", ProductJsonContext.Default.Product);
+var records = reader.ToList();
 
 // Write JSONL files
-Jsonl.Write<Product>().ToFile("out.jsonl", records);
+Jsonl.Write<Product>().ToFile("out.jsonl", records, ProductJsonContext.Default.Product);
+
+[JsonSerializable(typeof(Product))]
+internal partial class ProductJsonContext : JsonSerializerContext { }
 ```
+
+JSONL uses the System.Text.Json source-generated context above; `[GenerateBinder]` does not generate JSON serialization metadata.
 
 ### High-Throughput Tabular Binary (HTB)
 
-A custom, high-speed binary serialization format optimized for zero allocations, platform independence, and vector embedding storage (supporting `float[]` arrays).
+A custom binary serialization format with source-generated mapping, platform-independent byte order, and vector embedding storage (supporting `float[]` arrays).
 
 #### Why HTB?
-* **Zero Heap Allocations**: Utilizes Roslyn source generators (`[GenerateBinder]`) to map properties directly with zero-boxing and zero-reflection overhead.
+* **Source-Generated Mapping**: Uses Roslyn source generators (`[GenerateBinder]`) to map supported properties without reflection. Records, strings, and arrays still have allocation costs.
 * **Vector Embedding Native**: Natively supports floating-point arrays (`float[]`), enabling ultra-fast vector embedding serialization without string parsing overhead.
 * **Platform-Independent Endianness**: Automatically handles big-endian byte-order reversal for floats, doubles, and ints for cross-architecture safety.
-* **Allocation-Free CSV ↔ HTB Conversion**: Stream-convert CSV directly to HTB (and vice-versa) with zero heap allocation overhead.
+* **CSV ↔ HTB Conversion**: Provides synchronous file conversion and asynchronous stream conversion between CSV and HTB.
 * **AOT & Trim Ready**: Fully compatible with Native AOT compilation out-of-the-box.
 
 ```csharp
@@ -221,7 +230,7 @@ await foreach (Product p in Htb.Read<Product>().FromFileAsync("products.htb"))
 // Write records to an HTB file
 Htb.Write<Product>().ToFile("out.htb", products);
 
-// Direct, allocation-free CSV ↔ HTB conversions
+// Direct CSV ↔ HTB conversion
 Htb.ConvertFromCsv("products.csv", "products.htb", HtbSchema.FromType<Product>());
 ```
 
@@ -235,7 +244,7 @@ using HeroParser.Console;
 // Render styled ANSI markup
 AnsiConsole.MarkupLine("[bold green]Success:[/] Row validation completed in [yellow]4.2ms[/].");
 
-// Render highly styled tables and panels with zero allocations
+// Render styled tables and panels
 var table = new Table().Border(TableBorder.Rounded);
 table.AddColumn("[blue]Filename[/]");
 table.AddColumn("[blue]Records[/]");
@@ -280,7 +289,7 @@ await foreach (var dev in LlmRepair.ReadFromTextAsync<Developer>(rawLlmResponse)
 ```
 
 ### 2. Tabular Embedding Pipeline (`ToLlmEmbeddingsAsync`)
-Batches streamed records and pairs them with vector embeddings with a zero-allocation, token-budgeted streaming wrapper.
+Batches streamed records and pairs them with vector embeddings using a token-budgeted streaming wrapper. Chunks, request text, and returned embedding arrays have allocation costs.
 ```csharp
 using HeroParser.AI;
 
@@ -318,24 +327,24 @@ await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(options)) { ... 
 ## Key Features
 
 * **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking
-* **Zero allocations** — fixed 4 KB stack footprint regardless of column count or file size; `ArrayPool` for buffers
+* **Allocation-conscious scanning** — span field access and pooled buffers; allocation profiles vary by API, options, and output representation
 * **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
 * **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, JSONL, and HTB; true non-blocking I/O with sync fast paths
 * **Excel without extra dependencies** — reads and writes `.xlsx` using only `System.IO.Compression` and `System.Xml`
 * **JSONL for AI/ML pipelines** — `Jsonl.Read<T>()` / `Jsonl.Write<T>()` mirror the CSV builder pattern; AOT-safe via `JsonTypeInfo<T>`; `CsvToJsonlConverter` projects tabular data into OpenAI/Anthropic fine-tuning shapes
-* **HTB binary format** — custom, high-speed, zero-allocation binary format featuring float-array embedding support, big-endian byte-order reversal, and direct CSV ↔ HTB conversion
+* **HTB binary format** — float-array embedding support, big-endian byte-order reversal, and direct CSV ↔ HTB conversion
 * **Embedding-API batching** — `IAsyncEnumerable<T>.BatchAsync(size)` groups streamed records into fixed-size batches for OpenAI/Voyage/Cohere/Anthropic embedding calls
 * **Inline vector parser** — `VectorParser.ParseFloats(span)` handles pre-computed embeddings (`"[0.1,0.2,…]"`, comma/semicolon/whitespace separators, culture-aware)
 * **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()` for database bulk loading via `SqlBulkCopy`
 * **PipeReader integration** — `Csv.ReadFromPipeReaderAsync(pipe)` for network streaming without buffering the entire payload
-* **Multi-schema CSV** — discriminator-based row routing to different record types; source-generated dispatch for ~2.85x faster throughput
+* **Multi-schema CSV** — discriminator-based row routing to different record types, with runtime and source-generated dispatch
 * **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score
 * **CSV validation** — pre-flight structural checks with detailed per-row error reporting
 * **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; `result.ThrowIfAnyError()` for fail-fast
 * **CSV injection protection** — configurable sanitization modes for user-data exports
 * **Progress reporting** — row/byte callbacks for large-file UX
 * **Custom type converters** — register converters for domain types on any reader or writer
-* **Write capacity pre-allocation** — backing buffer capacity is pre-allocated via estimated record counts when writing collections to strings, yielding up to 64% speedup and completely eliminating buffer resize copy overhead
+* **Write capacity pre-allocation** — estimates backing buffer capacity from collection counts when writing to strings to reduce buffer growth; actual sizes and benefits depend on the records
 * **Multi-framework** — .NET 8, 9, 10; CI validates all three on Windows, Linux, and macOS
 
 ---
@@ -360,11 +369,12 @@ For advanced features and full API guides, see the files under the `docs` folder
 # Build all projects
 dotnet build
 
+# xUnit v3 uses Microsoft.Testing.Platform; pass MTP arguments after `--`.
 # Run unit tests
-dotnet test --filter Category=Unit
+dotnet test tests/HeroParser.Tests -- --filter-trait Category=Unit
 
 # Run integration tests
-dotnet test --filter Category=Integration
+dotnet test tests/HeroParser.Tests -- --filter-trait Category=Integration
 
 # Run all tests
 dotnet test

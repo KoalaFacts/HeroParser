@@ -18,9 +18,10 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
     private SequencePosition bufferedExamined;
     private ReadOnlySequence<byte> bufferedData;
     private ReadOnlySequence<byte> currentRowData;
-    private int remainingRowsToSkip;
+    private long remainingRowsToSkip;
     private int recordCount;
     private int sourceLineNumber;
+    private bool previousRecordEndedWithCr;
     private long totalBytesRead;
     private long previousUnreadBytes;
     private int currentRecordNumber;
@@ -31,8 +32,9 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
         this.reader = reader;
         this.options = options;
         trackSourceLineNumbers = options.TrackSourceLineNumbers;
-        remainingRowsToSkip = options.SkipRows + (options.HasHeaderRow ? 1 : 0);
+        remainingRowsToSkip = (long)options.SkipRows + (options.HasHeaderRow ? 1 : 0);
         sourceLineNumber = trackSourceLineNumbers ? 1 : 0;
+        previousRecordEndedWithCr = false;
     }
 
     internal FixedWidthPipeSequenceRow Current
@@ -56,14 +58,24 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
     internal async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
+        // Current is invalid after any MoveNextAsync attempt, even one canceled
+        // before a new PipeReader read. Buffered bytes remain available to retry.
         hasCurrent = false;
+        cancellationToken.ThrowIfCancellationRequested();
 
         while (true)
         {
             if (!hasBufferedRead)
             {
                 var result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (result.IsCanceled)
+                {
+                    // CancelPendingRead can cancel a read without canceling the caller's token.
+                    // Keep any buffered data unconsumed and unexamined so a retry can resume.
+                    reader.AdvanceTo(result.Buffer.Start, result.Buffer.Start);
+                    throw new OperationCanceledException("The underlying PipeReader read was canceled.", cancellationToken);
+                }
+
                 var originalBuffer = result.Buffer;
                 var newBytes = originalBuffer.Length - previousUnreadBytes;
                 if (newBytes > 0)
@@ -97,7 +109,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     {
                         if (trackSourceLineNumbers)
                         {
-                            sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData);
+                            sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData, ref previousRecordEndedWithCr);
                         }
 
                         remainingRowsToSkip--;
@@ -110,7 +122,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     int rowStartLine = trackSourceLineNumbers ? sourceLineNumber : 0;
                     if (trackSourceLineNumbers)
                     {
-                        sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData);
+                        sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData, ref previousRecordEndedWithCr);
                     }
 
                     currentRowData = rowData;
@@ -160,8 +172,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     }
 
                     if (options.CommentCharacter is { } commentChar &&
-                        FixedWidth.TryGetFirstByte(rowData, out byte firstByte) &&
-                        firstByte == (byte)commentChar)
+                        FixedWidthLineScanner.StartsWithComment(rowData, commentChar))
                     {
                         if (trackSourceLineNumbers)
                         {

@@ -282,3 +282,44 @@ jobs:
         # For PRs, these are automatically detected
         base-ref: ${{ github.event_name == 'push' && github.event.before || '' }}
         head-ref: ${{ github.event_name == 'push' && github.sha || '' }}
+
+  nuget-package-consumer:
+    name: NuGet PackageReference and NativeAOT consumer
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout exact candidate commit
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        fetch-depth: 0
+
+    - name: Extract configuration
+      id: extract
+      uses: ./.github/actions/extract-build-config
+
+    - name: Setup .NET SDKs
+      uses: ./.github/actions/setup-dotnet-sdks
+      with:
+        dotnet-version: ${{ steps.extract.outputs.versions }}
+
+    - name: Restore dependencies
+      run: dotnet restore --force-evaluate
+
+    - name: Build candidate
+      run: dotnet build --configuration Release --no-restore /p:TreatWarningsAsErrors=true
+
+    - name: Pack and run isolated NuGet package consumers
+      run: bash .github/scripts/verify-nuget-consumers.sh
+
+    - name: Retain candidate package evidence from exact source
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: nuget-candidate-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        path: |
+          .artifacts/release-candidate/*.nupkg
+          .artifacts/release-candidate/*.snupkg
+          .artifacts/release-candidate/SOURCE_SHA
+          .artifacts/release-candidate/SHA256SUMS
+        if-no-files-found: warn
+        retention-days: 14

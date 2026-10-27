@@ -46,6 +46,19 @@ public static partial class FixedWidth
 
         if (buffer.Length < 3)
         {
+            // Do not block a complete short record when the available bytes
+            // already rule out a UTF-8 BOM. Only an EF or EF BB prefix is ambiguous.
+            if (!buffer.IsEmpty)
+            {
+                var probe = new SequenceReader<byte>(buffer);
+                if (probe.TryRead(out byte firstByte) &&
+                    (firstByte != 0xEF || (probe.TryPeek(out byte secondByte) && secondByte != 0xBB)))
+                {
+                    bomProcessed = true;
+                    return true;
+                }
+            }
+
             if (!isCompleted)
             {
                 return false;
@@ -194,8 +207,17 @@ public static partial class FixedWidth
             return false;
         }
 
-        value = rowData.First.Span[0];
-        return true;
+        var firstSpan = rowData.FirstSpan;
+        if (!firstSpan.IsEmpty)
+        {
+            value = firstSpan[0];
+            return true;
+        }
+
+        // A non-empty multi-segment sequence may start with an empty segment.
+        // SequenceReader skips empty segments without copying or allocating.
+        var sequenceReader = new SequenceReader<byte>(rowData);
+        return sequenceReader.TryPeek(out value);
     }
 }
 
@@ -238,7 +260,17 @@ public readonly struct FixedWidthPipeRow
     /// Gets a field at the specified byte position using the default padding options.
     /// </summary>
     public FixedWidthByteSpanColumn GetField(int start, int length)
-        => GetField(start, length, (byte)options.DefaultPadChar, options.DefaultAlignment);
+    {
+        char padChar = options.DefaultPadChar;
+        if (padChar <= 0x7F)
+            return GetField(start, length, (byte)padChar, options.DefaultAlignment);
+
+        // The configured default is a Unicode character, not a padding byte.
+        // Preserve complete UTF-8 sequences and never truncate it to a low byte.
+        var raw = GetField(start, length, 0, FieldAlignment.None);
+        return new FixedWidthByteSpanColumn(
+            FixedWidthByteSpanRow.TrimUnicodePadding(raw.ByteSpan, padChar, options.DefaultAlignment));
+    }
 
     /// <summary>
     /// Gets a field at the specified byte position with custom padding options.

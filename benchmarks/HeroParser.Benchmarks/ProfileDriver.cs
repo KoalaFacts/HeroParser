@@ -34,10 +34,11 @@ internal static class ProfileDriver
         byte[] utf8 = Encoding.UTF8.GetBytes(csv);
         var options = new CsvReadOptions
         {
+            Delimiter = ',',
             MaxColumnCount = 1_000,
             MaxRowCount = 1_000_000,
-            EnableQuotedFields = quoted,
-            AllowNewlinesInsideQuotes = quoted
+            EnableQuotedFields = true,
+            AllowNewlinesInsideQuotes = true
         };
 
         Func<int> work = kind switch
@@ -47,6 +48,11 @@ internal static class ProfileDriver
             "sep-utf16" => () => ReadSep(csv),
             _ => throw new ArgumentException($"unknown profile case '{name}'")
         };
+
+        const int EXPECTED_CELLS = 10_000 * 25;
+        int actualCells = work();
+        if (actualCells != EXPECTED_CELLS)
+            throw new InvalidOperationException($"{name}: expected {EXPECTED_CELLS} scanned cells, read {actualCells}.");
 
         // Warm up through tiering, then loop for the requested wall time.
         var warm = Stopwatch.StartNew();
@@ -86,7 +92,7 @@ internal static class ProfileDriver
 
     private static int ReadSep(string csv)
     {
-        using var reader = Sep.Reader().FromText(csv);
+        using var reader = Sep.New(',').Reader(options => options with { HasHeader = false }).FromText(csv);
         int total = 0;
         foreach (var row in reader)
             total += row.ColCount;

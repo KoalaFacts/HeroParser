@@ -111,7 +111,7 @@ if (withErrorHandler.Count != 1 || withErrorHandler[0].Name != "Alice" ||
 
 int converterCalls = 0;
 var withConverter = FixedWidth.Read<SmokeFixedPerson>()
-    .RegisterConverter<int>((value, culture, format, out result) =>
+    .RegisterConverter<int>((ReadOnlySpan<char> value, System.Globalization.CultureInfo culture, string? format, out int result) =>
     {
         converterCalls++;
         result = int.Parse(value, culture) + 100;

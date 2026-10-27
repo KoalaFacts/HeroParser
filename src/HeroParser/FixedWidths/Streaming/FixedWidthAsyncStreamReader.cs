@@ -21,20 +21,36 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     private int offset;
     private int length;
     private int recordCount;
+    // Keep track of fully skipped preamble records across canceled reads.
+    private long initialRowsSkipped;
     private int sourceLineNumber;
+    private bool previousRecordEndedWithCr;
     private bool endOfStream;
     private bool disposed;
+    private bool hasCurrent;
     private int currentRowStart;
     private int currentRowLength;
     private int currentLineNumber;
     private int currentSourceLineNumber;
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
-    public FixedWidthCharSpanRow Current => new(
-        buffer.AsSpan(currentRowStart, currentRowLength),
-        currentLineNumber,
-        currentSourceLineNumber,
-        options);
+    public FixedWidthCharSpanRow Current
+    {
+        get
+        {
+            ThrowIfDisposed();
+            if (!hasCurrent)
+            {
+                throw new InvalidOperationException("No current row is available. Call MoveNextAsync() first.");
+            }
+
+            return new FixedWidthCharSpanRow(
+                buffer.AsSpan(currentRowStart, currentRowLength),
+                currentLineNumber,
+                currentSourceLineNumber,
+                options);
+        }
+    }
 
     /// <summary>Gets the number of raw bytes consumed from the underlying stream.</summary>
     public long BytesRead => countingStream.BytesRead;
@@ -51,9 +67,12 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         offset = 0;
         length = 0;
         recordCount = 0;
+        initialRowsSkipped = 0;
         sourceLineNumber = 1;
+        previousRecordEndedWithCr = false;
         endOfStream = false;
         disposed = false;
+        hasCurrent = false;
         currentRowStart = 0;
         currentRowLength = 0;
         currentLineNumber = 0;
@@ -67,13 +86,15 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     /// <returns><see langword="true"/> when another record was parsed; otherwise, <see langword="false"/>.</returns>
     public async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
+        ThrowIfDisposed();
+        hasCurrent = false;
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Handle initial row skipping (SkipRows + optional header row)
+        // Use a widened sum and resume any partial skip after cancellation.
         if (recordCount == 0)
         {
-            var totalSkip = options.SkipRows + (options.HasHeaderRow ? 1 : 0);
-            if (totalSkip > 0)
+            long totalSkip = (long)options.SkipRows + (options.HasHeaderRow ? 1 : 0);
+            if (initialRowsSkipped < totalSkip)
             {
                 await SkipInitialRowsAsync(totalSkip, cancellationToken).ConfigureAwait(false);
             }
@@ -87,7 +108,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         return await MoveNextLineBasedAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask SkipInitialRowsAsync(int rowsToSkip, CancellationToken cancellationToken)
+    private async ValueTask SkipInitialRowsAsync(long rowsToSkip, CancellationToken cancellationToken)
     {
         if (options.RecordLength is { } fixedLength)
         {
@@ -95,9 +116,10 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             return;
         }
 
-        int skipped = 0;
-        while (skipped < rowsToSkip)
+        while (initialRowsSkipped < rowsToSkip)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var span = buffer.AsSpan(offset, length - offset);
             if (!endOfStream && !FixedWidthLineScanner.ContainsLineBreak(span))
             {
@@ -106,6 +128,15 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             }
 
             var lineEnd = FixedWidthLineScanner.FindLineEnd(span);
+            // A split CRLF is one terminator, not a CR record followed by an empty LF record.
+            if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
+            {
+                // A large StreamReader.ReadAsync request can await unrelated input
+                // even after receiving the LF that completes this record.
+                await FillBufferAsync(cancellationToken, singleCharacter: true).ConfigureAwait(false);
+                continue;
+            }
+
             if (lineEnd == -1)
             {
                 if (endOfStream)
@@ -128,14 +159,13 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             if (trackLineNumbers)
                 sourceLineNumber++;
 
-            skipped++;
+            initialRowsSkipped++;
         }
     }
 
-    private async ValueTask SkipInitialFixedLengthRowsAsync(int rowsToSkip, int recordLength, CancellationToken cancellationToken)
+    private async ValueTask SkipInitialFixedLengthRowsAsync(long rowsToSkip, int recordLength, CancellationToken cancellationToken)
     {
-        int skipped = 0;
-        while (skipped < rowsToSkip)
+        while (initialRowsSkipped < rowsToSkip)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -153,11 +183,11 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
 
             if (trackLineNumbers)
             {
-                sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength));
+                sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength), ref previousRecordEndedWithCr);
             }
 
             offset += recordLength;
-            skipped++;
+            initialRowsSkipped++;
         }
     }
 
@@ -182,15 +212,16 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                 currentRowStart = offset;
                 currentRowLength = recordLength;
                 currentLineNumber = recordCount;
-                currentSourceLineNumber = trackLineNumbers ? rowStartLine : recordCount;
+                currentSourceLineNumber = rowStartLine;
 
                 // Count newlines in the record for source line tracking
                 if (trackLineNumbers)
                 {
-                    sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength));
+                    sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength), ref previousRecordEndedWithCr);
                 }
 
                 offset += recordLength;
+                hasCurrent = true;
                 return true;
             }
 
@@ -230,6 +261,15 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             }
 
             var lineEnd = FixedWidthLineScanner.FindLineEnd(span);
+            // Look ahead when CR is the final buffered character, including when skipping is complete.
+            if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
+            {
+                // A large StreamReader.ReadAsync request can await unrelated input
+                // even after receiving the LF that completes this record.
+                await FillBufferAsync(cancellationToken, singleCharacter: true).ConfigureAwait(false);
+                continue;
+            }
+
             ReadOnlySpan<char> line;
             int consumed;
 
@@ -285,16 +325,17 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             currentRowStart = offset - consumed;
             currentRowLength = line.Length;
             currentLineNumber = recordCount;
-            currentSourceLineNumber = trackLineNumbers ? rowStartLine : recordCount;
+            currentSourceLineNumber = rowStartLine;
 
             if (trackLineNumbers)
                 sourceLineNumber++;
 
+            hasCurrent = true;
             return true;
         }
     }
 
-    private async ValueTask FillBufferAsync(CancellationToken cancellationToken)
+    private async ValueTask FillBufferAsync(CancellationToken cancellationToken, bool singleCharacter = false)
     {
         if (offset > 0)
         {
@@ -321,7 +362,8 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             buffer = newBuffer;
         }
 
-        var read = await reader.ReadAsync(buffer.AsMemory(length, buffer.Length - length), cancellationToken).ConfigureAwait(false);
+        int requestedCharacters = singleCharacter ? 1 : buffer.Length - length;
+        var read = await reader.ReadAsync(buffer.AsMemory(length, requestedCharacters), cancellationToken).ConfigureAwait(false);
         if (read == 0)
         {
             endOfStream = true;
@@ -344,6 +386,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             return ValueTask.CompletedTask;
 
         disposed = true;
+        hasCurrent = false;
         ReturnBuffer(buffer);
         buffer = null!; // Prevent use-after-free
         reader.Dispose();
@@ -358,5 +401,13 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
     private void ReturnBuffer(char[] toReturn)
     {
         charPool.Return(toReturn, clearArray: true);
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (disposed)
+        {
+            throw new ObjectDisposedException(nameof(FixedWidthAsyncStreamReader));
+        }
     }
 }

@@ -16,6 +16,7 @@ public ref struct FixedWidthCharSpanReader
     private int position;
     private int recordCount;
     private int sourceLineNumber;
+    private bool previousRecordEndedWithCr;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FixedWidthCharSpanReader"/> struct.
@@ -34,6 +35,7 @@ public ref struct FixedWidthCharSpanReader
         position = 0;
         recordCount = 0;
         sourceLineNumber = options.TrackSourceLineNumbers ? 1 : 0;
+        previousRecordEndedWithCr = false;
         Current = default;
 
         // Skip initial rows if configured
@@ -98,7 +100,7 @@ public ref struct FixedWidthCharSpanReader
 
             if (options.TrackSourceLineNumbers)
             {
-                sourceLineNumber += FixedWidthLineScanner.CountNewlines(chars.Slice(position, recordLength));
+                sourceLineNumber += FixedWidthLineScanner.CountNewlines(chars.Slice(position, recordLength), ref previousRecordEndedWithCr);
             }
 
             position += recordLength;
@@ -144,15 +146,15 @@ public ref struct FixedWidthCharSpanReader
         if (position >= chars.Length)
             return false;
 
-        if (recordCount >= options.MaxRecordCount)
-        {
-            throw new FixedWidthException(
-                FixedWidthErrorCode.TooManyRecords,
-                $"Maximum record count of {options.MaxRecordCount} exceeded.");
-        }
-
         if (options.RecordLength is { } fixedLength)
         {
+            if (recordCount >= options.MaxRecordCount)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.TooManyRecords,
+                    $"Maximum record count of {options.MaxRecordCount} exceeded.");
+            }
+
             return MoveNextFixedLength(fixedLength);
         }
 
@@ -184,7 +186,7 @@ public ref struct FixedWidthCharSpanReader
         // Track newlines within the record for source line tracking
         if (options.TrackSourceLineNumbers)
         {
-            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan);
+            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan, ref previousRecordEndedWithCr);
         }
 
         return true;
@@ -233,6 +235,14 @@ public ref struct FixedWidthCharSpanReader
                 if (options.TrackSourceLineNumbers)
                     sourceLineNumber++;
                 continue;
+            }
+
+            // Ignored blank/comment lines do not count against the record limit.
+            if (recordCount >= options.MaxRecordCount)
+            {
+                throw new FixedWidthException(
+                    FixedWidthErrorCode.TooManyRecords,
+                    $"Maximum record count of {options.MaxRecordCount} exceeded.");
             }
 
             recordCount++;

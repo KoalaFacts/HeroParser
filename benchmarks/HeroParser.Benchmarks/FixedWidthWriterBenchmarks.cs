@@ -211,15 +211,74 @@ public class FixedWidthByteSpanBenchmarks
         charData = sb.ToString();
         utf8Data = Encoding.UTF8.GetBytes(charData);
 
+        // The timed entry points must process every ID without Int32 wraparound.
+        // Check every field on both character and UTF-8 paths before any timing.
+        ValidateFixture();
+
         Console.WriteLine($"Hardware: {Hardware.GetHardwareInfo()}");
         Console.WriteLine($"Char data: {charData.Length:N0} chars");
         Console.WriteLine($"UTF-8 data: {utf8Data.Length:N0} bytes");
     }
 
-    [Benchmark(Baseline = true)]
-    public int ParseFromCharSpan()
+    private void ValidateFixture()
     {
-        int total = 0;
+        int charRows = 0;
+        foreach (var row in FixedWidth.ReadFromText(charData))
+        {
+            charRows++;
+            if (row.Length != 40 ||
+                !int.TryParse(row.GetField(0, 10, '0', FieldAlignment.Right).CharSpan, out int id) ||
+                id != charRows ||
+                !row.GetField(10, 20).CharSpan.SequenceEqual($"Name{charRows}".AsSpan()) ||
+                !int.TryParse(row.GetField(30, 10, ' ', FieldAlignment.Right).CharSpan, out int value) ||
+                value != charRows * 100)
+            {
+                throw new InvalidOperationException($"Fixed-width char fixture differs at record {charRows}.");
+            }
+        }
+
+        int utf8Rows = 0;
+        foreach (var row in FixedWidth.ReadFromUtf8ByteSpan(utf8Data))
+        {
+            utf8Rows++;
+            if (row.Length != 40 ||
+                !row.GetField(0, 10, (byte)'0', FieldAlignment.Right).TryParseInt32(out int id) ||
+                id != utf8Rows ||
+                row.GetField(10, 20).ToString() != $"Name{utf8Rows}" ||
+                !row.GetField(30, 10, (byte)' ', FieldAlignment.Right).TryParseInt32(out int value) ||
+                value != utf8Rows * 100)
+            {
+                throw new InvalidOperationException($"Fixed-width UTF-8 fixture differs at record {utf8Rows}.");
+            }
+        }
+
+        if (charRows != Rows || utf8Rows != Rows)
+        {
+            throw new InvalidOperationException($"Expected {Rows} complete fixed-width records, received {charRows} char / {utf8Rows} UTF-8.");
+        }
+
+        long expectedIds = (long)Rows * (Rows + 1) / 2;
+        long expectedNameLengths = 0;
+        for (int i = 1; i <= Rows; i++)
+        {
+            expectedNameLengths += 4 + i.ToString(CultureInfo.InvariantCulture).Length;
+        }
+
+        // The all-fields variant measures ID and Value parsing and Name span
+        // length only. It does not materialize complete typed records.
+        long expectedAll = 101 * expectedIds + expectedNameLengths;
+        if (ParseFromCharSpan() != expectedIds ||
+            ParseFromUtf8ByteSpan() != expectedIds ||
+            ParseFromUtf8ByteSpan_AllFields() != expectedAll)
+        {
+            throw new InvalidOperationException("Fixed-width timed methods did not produce complete 64-bit checksums.");
+        }
+    }
+
+    [Benchmark(Baseline = true)]
+    public long ParseFromCharSpan()
+    {
+        long total = 0;
         foreach (var row in FixedWidth.ReadFromText(charData))
         {
             var idField = row.GetField(0, 10, '0', FieldAlignment.Right);
@@ -232,9 +291,9 @@ public class FixedWidthByteSpanBenchmarks
     }
 
     [Benchmark]
-    public int ParseFromUtf8ByteSpan()
+    public long ParseFromUtf8ByteSpan()
     {
-        int total = 0;
+        long total = 0;
         foreach (var row in FixedWidth.ReadFromUtf8ByteSpan(utf8Data))
         {
             var idField = row.GetField(0, 10, (byte)'0', FieldAlignment.Right);
@@ -246,10 +305,12 @@ public class FixedWidthByteSpanBenchmarks
         return total;
     }
 
+    // Primitive ID/Value parsing plus Name span-length accounting, not full
+    // typed materialization; compare its results only with equivalent work.
     [Benchmark]
-    public int ParseFromUtf8ByteSpan_AllFields()
+    public long ParseFromUtf8ByteSpan_AllFields()
     {
-        int total = 0;
+        long total = 0;
         foreach (var row in FixedWidth.ReadFromUtf8ByteSpan(utf8Data))
         {
             var idField = row.GetField(0, 10, (byte)'0', FieldAlignment.Right);

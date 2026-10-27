@@ -37,6 +37,19 @@ public static partial class Csv
 
         if (buffer.Length < 3)
         {
+            // A live pipe need not wait for three bytes if the available prefix
+            // already rules out a BOM. Only EF and EF BB remain ambiguous.
+            if (!buffer.IsEmpty)
+            {
+                var probe = new SequenceReader<byte>(buffer);
+                if (probe.TryRead(out byte firstByte) &&
+                    (firstByte != 0xEF || (probe.TryPeek(out byte secondByte) && secondByte != 0xBB)))
+                {
+                    bomProcessed = true;
+                    return true;
+                }
+            }
+
             if (!isCompleted)
             {
                 return false;
@@ -65,6 +78,12 @@ public static partial class Csv
         foreach (var segment in sequence)
         {
             var span = segment.Span;
+            if (span.IsEmpty)
+            {
+                // Empty sequence segments must not break a CRLF pair between non-empty segments.
+                continue;
+            }
+
             int start = 0;
 
             if (previousWasCr)
@@ -382,11 +401,14 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     {
         if (disposed)
             return ValueTask.FromException<bool>(new ObjectDisposedException(nameof(CsvPipeSequenceReader)));
-        if (cancellationToken.IsCancellationRequested)
-            return ValueTask.FromCanceled<bool>(cancellationToken);
 
+        // Invalidate the borrowed row at the start of every advance attempt,
+        // including a call with an already-canceled token.
         hasCurrent = false;
         currentFromBatch = false;
+
+        if (cancellationToken.IsCancellationRequested)
+            return ValueTask.FromCanceled<bool>(cancellationToken);
 
         if (hasBufferedRead && bufferedData.IsSingleSegment && cursor is not null)
         {
@@ -414,6 +436,15 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
             if (!hasBufferedRead)
             {
                 ReadResult result = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (result.IsCanceled)
+                {
+                    // CancelPendingRead can cancel this read even when the caller's token is not canceled.
+                    // Leave buffered bytes both unconsumed and unexamined. Otherwise a caller
+                    // that catches cancellation cannot resume until the writer appends more data.
+                    reader.AdvanceTo(result.Buffer.Start, result.Buffer.Start);
+                    throw new OperationCanceledException("The underlying PipeReader read was canceled.", cancellationToken);
+                }
+
                 ReadOnlySequence<byte> readBuffer = result.Buffer;
 
                 bool bomHandled = bomProcessed;
@@ -545,11 +576,9 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
                 if (trackLineNumbers)
                 {
-                    sourceLineNumber += Csv.CountNewlines(currentRowData);
-                    if (parseResult.CharsConsumed > parseResult.RowLength)
-                    {
-                        sourceLineNumber++;
-                    }
+                    // Count the consumed record as a whole: the last data byte can be an
+                    // escaped CR followed by its LF terminator (one physical CRLF).
+                    sourceLineNumber += Csv.CountNewlines(buffer.Slice(0, parseResult.CharsConsumed));
                 }
 
                 if (parseResult.RowLength == 0)
@@ -575,6 +604,9 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
             while (true)
             {
+                // Preserve the pre-scan view so line tracking can count the entire
+                // consumed record, including the terminator, across segment boundaries.
+                ReadOnlySequence<byte> rowStartBuffer = buffer;
                 ReadOnlySequence<byte> rowData;
                 int columnCount;
                 int newlineCount;
@@ -595,16 +627,29 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                     {
                         break;
                     }
+
+                    if (trackLineNumbers && escape.HasValue)
+                    {
+                        // TryReadRow skips escaped CR/LF while scanning. Count all consumed
+                        // bytes together so an escaped CR plus terminating LF is counted once.
+                        newlineCount = Csv.CountNewlines(rowStartBuffer.Slice(
+                            0, rowStartBuffer.Length - buffer.Length));
+                    }
                 }
                 else
                 {
-                    if (!Csv.TryReadRow(ref buffer, quote, escape, enableQuotes, bufferedIsCompleted, out rowData))
+                    if (!Csv.TryReadRow(ref buffer, quote, escape, enableQuotes,
+                        (byte)options.CommentCharacter.Value, bufferedIsCompleted, out rowData))
                     {
                         break;
                     }
 
                     columnCount = Csv.ParsePipeSequenceRow(rowData, options, rowNumber + 1, quote, escape, columnEndsBuffer.Span);
-                    newlineCount = trackLineNumbers ? Csv.CountNewlines(rowData) + 1 : 0;
+                    // Comments and ordinary rows both count actual physical newlines,
+                    // including any CRLF crossing from field data into the terminator.
+                    newlineCount = trackLineNumbers
+                        ? Csv.CountNewlines(rowStartBuffer.Slice(0, rowStartBuffer.Length - buffer.Length))
+                        : 0;
                 }
 
                 Csv.EnsureRowSize(rowData.Length, maxRowSize);
@@ -826,7 +871,8 @@ public readonly ref struct CsvPipeSequenceRow
                 (start, end) = TrimBounds(start, end);
             }
 
-            return new CsvPipeSequenceColumn(data.Slice(start, end - start), quote, escape);
+            return new CsvPipeSequenceColumn(
+                data.Slice(start, end - start), quote, escape, parserOptions?.EnableQuotedFields ?? true);
         }
     }
 
@@ -899,7 +945,9 @@ public readonly ref struct CsvPipeSequenceRow
             quote,
             escape,
             headerLength,
-            headerElementSize);
+            headerElementSize,
+            SourceLineNumber,
+            parserOptions?.EnableQuotedFields ?? true);
     }
 
     private (long start, long end) TrimBounds(long start, long end)
@@ -948,12 +996,14 @@ public readonly ref struct CsvPipeSequenceColumn
     private readonly ReadOnlySequence<byte> data;
     private readonly byte quote;
     private readonly byte? escape;
+    private readonly bool enableQuotedFields;
 
-    internal CsvPipeSequenceColumn(ReadOnlySequence<byte> data, byte quote, byte? escape)
+    internal CsvPipeSequenceColumn(ReadOnlySequence<byte> data, byte quote, byte? escape, bool enableQuotedFields = true)
     {
         this.data = data;
         this.quote = quote;
         this.escape = escape;
+        this.enableQuotedFields = enableQuotedFields;
     }
 
     /// <summary>Gets the length of the column in bytes.</summary>
@@ -992,7 +1042,7 @@ public readonly ref struct CsvPipeSequenceColumn
     /// Decodes the column as UTF-8 text and removes CSV quoting/escaping.
     /// </summary>
     public string ToUnquotedString()
-        => CsvPipeColumnText.Decode(data, quote, escape);
+        => CsvPipeColumnText.Decode(data, quote, escape, enableQuotedFields);
 
     /// <summary>Returns the decoded, unquoted column text.</summary>
     public override string ToString() => ToUnquotedString();

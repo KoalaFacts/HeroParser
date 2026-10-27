@@ -1,7 +1,7 @@
 # HeroParser Development Guidelines
 
 ## Active Technologies
-- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (allocation-free mapping), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
+- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 
 ## Project Structure
 ```
@@ -13,7 +13,7 @@ tests/
   HeroParser.Generators.Tests/ # Source generator tests
   HeroParser.AotTests/         # AOT compatibility tests
 benchmarks/
-  HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.17.0)
+  HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.17.1)
 .github/
   workflows/                   # CI, benchmarks, security scan, release, NuGet publish
 ```
@@ -138,7 +138,7 @@ Key files in `src/HeroParser/Excels/` (internal namespace uses `HeroParser.Excel
 ## Multi-Schema CSV Parsing
 Supports mapping rows to different record types via a discriminator column.
 - **Runtime**: Flexible, uses `WithMultiSchema().WithDiscriminator("Type")`.
-- **Source-Generated**: Optimal performance (`[CsvGenerateDispatcher]`). 2x faster than runtime.
+- **Source-Generated**: `[CsvGenerateDispatcher]` emits typed dispatch; its performance relative to runtime dispatch depends on the workload.
 Key files in `src/HeroParser/SeparatedValues/Records/MultiSchema/`.
 
 ## Delimiter Detection & CSV Validation
@@ -205,6 +205,8 @@ These are the patterns CodeQL flags as `cs/useless-assignment-to-local` and
 
 ### What Works
 
+The timings and percentages in these implementation notes describe historical experiments, not current API guarantees. Some used the legacy count-only fixture described below, whose library options differed; they do not establish a fair current library ranking or a baseline for the corrected fixture.
+
 - **Scan-ahead row batches** (`CsvRowBatchScanner`): one SIMD pass fills a pooled `ends` buffer with many rows' column ends (ends-only encoding, absolute offsets, a sentinel per row) and `MoveNext` only advances an index. Per-row entry into the parser was ~58 ns against Sep's ~15 ns and was the entire gap at 5-25 columns.
 - **Inline "quotes but no line ending" chunk path**: most chunks in a quoted row have quotes and no newline. Handling them in the dispatch (CLMUL mask, filter, bare append, flip parity) instead of calling the state machine is what made the quoted cases win. A non-inlined call per chunk cancels per-row savings.
 - **UTF-16 pack-and-saturate**: pack two `short` vectors into one byte vector with `PackUnsignedSaturate` plus a lane permute, then reuse the byte dispatch. Halves compares per element; loads are identical either way. (An older note said this was abandoned for memory traffic; the same-runner A/B showed -20% unquoted, -15% quoted.) Requires ASCII specials so saturated chars (0xFF / 0x00) can never alias them.
@@ -240,20 +242,18 @@ Attempted optimizations that caused regressions, all caught by the same-runner A
 
 **Key insight**: the .NET JIT is very good at simple, idiomatic code. Structure (what runs per row vs per chunk vs per byte, what stays inline) moves the numbers; micro-tricks mostly don't.
 
-### Benchmark Baseline (vs Sep 0.17.0)
+### Historical Benchmark Reference (Sep 0.17.1)
 
-Same-runner CI, 10,000 rows x 25 columns, .NET 10, AMD EPYC 9V74 (AVX-512), v2.7.0:
+The [2026-10-23 CI report, Base `cba2bcd`](https://github.com/KoalaFacts/HeroParser/pull/156#issuecomment-6355972696) measured the legacy 10,000-row × 25-column count-only fixture on AMD EPYC 7763 (AVX2), Ubuntu 24.04.5, .NET 10.0.13 / SDK 10.0.402, BenchmarkDotNet 0.15.8:
 
-| Case | Sep | HeroParser | Ratio | Allocated |
-|---|---|---|---|---|
-| UTF-8, unquoted | 663.5 us | 491.4 us | 0.74x | 152 B vs 3,952 B |
-| UTF-8, quoted | 1,343.2 us | 898.8 us | 0.67x | 152 B vs 4,048 B |
-| UTF-16, unquoted | 663.5 us | 534.4 us | 0.81x | 152 B vs 3,952 B |
-| UTF-16, quoted | 1,343.2 us | 984.1 us | 0.73x | 152 B vs 4,048 B |
+| Input | Unquoted mean | Quoted mean | Allocated per operation |
+|---|---:|---:|---:|
+| HeroParser UTF-8 | 588.9 µs | 746.9 µs | 176 B |
+| HeroParser UTF-16 | 666.0 µs | 853.0 µs | 176 B |
 
-- **Allocations**: 152 B fixed per span read (one pooled batch holder), regardless of row or column count.
-- **UTF-8 vs UTF-16**: both are first-class now; prefer UTF-8 when the data is already bytes to skip the pack step, but `string` input no longer needs conversion for performance.
-- **Unicode**: verified for CJK, Arabic, Hangul, accented chars, emoji surrogate pairs, U+FFFF and U+FFFD on both element types.
+Input generation and encoding occurred outside timing; the methods summed column counts without decoding every field, typed materialization, or I/O. Header defaults and unquoted quote-policy settings differed between libraries. These are historical observations, not a fair ranking or a fixed allocation promise. The corrected fixture requires a new baseline; it cannot establish a parser improvement by comparison with this table. Full scope, competitor data, and run commands are in [docs/benchmarks.md](docs/benchmarks.md).
+
+UTF-8 and UTF-16 span APIs are both supported directly; UTF-16 is not deprecated. Prefer the representation already available to avoid an unnecessary encoding conversion. Typed binding, string decoding, streaming, and cold pool growth have separate allocation profiles.
 
 ## Architecture Overview
 

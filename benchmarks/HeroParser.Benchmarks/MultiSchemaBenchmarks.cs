@@ -42,10 +42,10 @@ public class MultiSchemaBenchmarks
         // N-2 details
         for (int i = 0; i < Rows - 2; i++)
         {
-            sb.AppendLine($"D,Item{i},{i * 10.5m},Desc{i}");
+            sb.AppendLine(FormattableString.Invariant($"D,Item{i},{i * 10.5m},Desc{i}"));
         }
         // 1 trailer
-        sb.AppendLine($"T,{Rows - 2},{(Rows - 2) * 10.5m},");
+        sb.AppendLine(FormattableString.Invariant($"T,{Rows - 2},{(Rows - 2) * 10.5m},"));
         multiTypeCsv = sb.ToString();
 
         // Multi-type CSV with 3-char discriminators (HDR/DTL/TRL)
@@ -54,10 +54,36 @@ public class MultiSchemaBenchmarks
         sb.AppendLine("HDR,FileId,2024-01-01,");
         for (int i = 0; i < Rows - 2; i++)
         {
-            sb.AppendLine($"DTL,Item{i},{i * 10.5m},Desc{i}");
+            sb.AppendLine(FormattableString.Invariant($"DTL,Item{i},{i * 10.5m},Desc{i}"));
         }
-        sb.AppendLine($"TRL,{Rows - 2},{(Rows - 2) * 10.5m},");
+        sb.AppendLine(FormattableString.Invariant($"TRL,{Rows - 2},{(Rows - 2) * 10.5m},"));
         multiTypeCsvThreeChar = sb.ToString();
+
+        // Never time an invalid locale-dependent CSV fixture or a binder
+        // that silently skips detail rows. Setup stays outside measurement.
+        ValidateExpectedChecksums();
+    }
+
+    private void ValidateExpectedChecksums()
+    {
+        if (Rows < 2)
+            throw new InvalidOperationException("Multi-schema fixture needs a header and trailer.");
+
+        int expectedSingle = checked(Rows * (Rows - 1) / 2);
+        int expectedDetails = 0;
+        for (int i = 0; i < Rows - 2; i++)
+        {
+            expectedDetails = checked(expectedDetails + 21 * i / 2);
+        }
+
+        if (SingleSchema_TypedBinder() != expectedSingle ||
+            MultiSchema_SingleCharDiscriminator() != expectedDetails ||
+            MultiSchema_ThreeCharDiscriminator() != expectedDetails ||
+            MultiSchema_IndexBasedDiscriminator() != expectedDetails ||
+            MultiSchema_SourceGenerated() != expectedDetails)
+        {
+            throw new InvalidOperationException("Multi-schema benchmark fixture or a timed parser failed its independent expected checksum.");
+        }
     }
 
     // ============================================================
@@ -155,10 +181,13 @@ public class MultiSchemaBenchmarks
         int total = 0;
         int rowNumber = 0;
 
-        // Skip header row - use byte-based reader for SIMD acceleration
+        // Bind named fields from the header before dispatching data rows.
         var reader = Csv.Read().FromText(multiTypeCsv, out byte[] _);
         if (reader.MoveNext())
+        {
             rowNumber++; // header
+            BankingDispatcher.BindHeaderBytes(reader.Current, rowNumber);
+        }
 
         while (reader.MoveNext())
         {

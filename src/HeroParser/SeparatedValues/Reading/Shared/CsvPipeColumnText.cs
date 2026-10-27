@@ -9,11 +9,11 @@ internal static class CsvPipeColumnText
     private const int STACK_BYTE_LIMIT = 512;
     private const int STACK_CHAR_LIMIT = 256;
 
-    public static string Decode(ReadOnlySequence<byte> value, byte quote, byte? escape)
+    public static string Decode(ReadOnlySequence<byte> value, byte quote, byte? escape, bool enableQuotedFields = true)
     {
         if (value.IsSingleSegment)
         {
-            return Decode(value.FirstSpan, quote, escape);
+            return Decode(value.FirstSpan, quote, escape, enableQuotedFields);
         }
 
         int length = checked((int)value.Length);
@@ -24,7 +24,7 @@ internal static class CsvPipeColumnText
         try
         {
             value.CopyTo(bytes);
-            return Decode(bytes[..length], quote, escape);
+            return Decode(bytes[..length], quote, escape, enableQuotedFields);
         }
         finally
         {

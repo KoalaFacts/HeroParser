@@ -17,6 +17,9 @@ public class BinderOverheadBenchmarks
 {
     private string csv = null!;
     private CsvReadOptions options = null!;
+    // A volatile consumer prevents the JIT from eliminating the object allocation
+    // or unobserved property assignments that these microbenchmarks intend to measure.
+    private readonly Consumer allocationConsumer = new();
 
     [Params(1000)]
     public int Rows { get; set; }
@@ -124,6 +127,7 @@ public class BinderOverheadBenchmarks
         foreach (var row in reader)
         {
             var obj = new SimpleRecord();
+            allocationConsumer.Consume(obj);
             total += row.ColumnCount;
         }
         return total;
@@ -150,6 +154,7 @@ public class BinderOverheadBenchmarks
                 Description = new string(row[2].Span),
                 Category = new string(row[3].Span)
             };
+            allocationConsumer.Consume(obj);
             total += obj.Name.Length;
         }
         return total;
@@ -177,6 +182,7 @@ public class BinderOverheadBenchmarks
                 Description = new string(row[2].Span),
                 Category = new string(row[3].Span)
             };
+            allocationConsumer.Consume(obj);
             total += obj.Value;
         }
         return total;
@@ -211,6 +217,7 @@ public class BinderOverheadBenchmarks
                 Description = new string(row[2].Span),
                 Category = new string(row[3].Span)
             };
+            allocationConsumer.Consume(obj);
             total += obj.Value;
         }
         return total;

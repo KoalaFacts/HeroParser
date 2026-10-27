@@ -60,6 +60,11 @@ public static partial class FixedWidth
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
+        // Encoding.UTF8.GetString preserves the BOM as U+FEFF; the direct UTF-8 and
+        // stream readers consume it before parsing header or fixed-length offsets.
+        if (data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
+            data = data[3..];
+
         // Decode UTF-8 to UTF-16
         var text = Encoding.UTF8.GetString(data);
         return new FixedWidthCharSpanReader(text.AsSpan(), options);

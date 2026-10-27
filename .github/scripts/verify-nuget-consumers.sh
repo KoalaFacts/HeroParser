@@ -68,6 +68,11 @@ using System.Text.Json.Serialization;
 using HeroParser;
 using HeroParser.FixedWidths;
 using HeroParser.SeparatedValues.Reading.Records;
+using System.IO.Pipelines;
+using System.Text;
+using HeroParser.FixedWidths.Records;
+using HeroParser.JsonLines;
+using HeroParser.JsonLines.Reading;
 
 var info = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(Csv).Assembly)!.InformationalVersion;
 if (!info.EndsWith("+" + Environment.GetEnvironmentVariable("HEROPARSER_EXPECTED_SOURCE_SHA"), StringComparison.Ordinal))
@@ -91,6 +96,51 @@ var fixedRows = FixedWidth.DeserializeRecords<SmokeFixedPerson>(
 if (fixedRows.Count != 2 || fixedRows[0].Name != "Alice" || fixedRows[0].Age != 30 ||
     fixedRows[1].Name != "Bob" || fixedRows[1].Age != 25)
     throw new InvalidOperationException("FixedWidth package-consumer fields differ.");
+
+// NativeAOT package consumer: OnError and custom converters use a reflection fallback.
+// The generated binder must preserve setters or fields silently become defaults.
+int errorCalls = 0;
+string invalidFixedText = "Alice".PadRight(20) + "30".PadLeft(10) + "\n" +
+                          "Bob".PadRight(20) + "INVALID".PadLeft(10);
+var withErrorHandler = FixedWidth.Read<SmokeFixedPerson>()
+    .OnError((_, _) => { errorCalls++; return FixedWidthDeserializeErrorAction.SkipRecord; })
+    .FromText(invalidFixedText).ToList();
+if (withErrorHandler.Count != 1 || withErrorHandler[0].Name != "Alice" ||
+    withErrorHandler[0].Age != 30 || errorCalls != 1)
+    throw new InvalidOperationException("Generated FixedWidth OnError package-consumer fields/callback differ.");
+
+int converterCalls = 0;
+var withConverter = FixedWidth.Read<SmokeFixedPerson>()
+    .RegisterConverter<int>((value, culture, format, out result) =>
+    {
+        converterCalls++;
+        result = int.Parse(value, culture) + 100;
+        return true;
+    })
+    .FromText("Alice".PadRight(20) + "30".PadLeft(10)).ToList();
+if (withConverter.Count != 1 || withConverter[0].Name != "Alice" ||
+    withConverter[0].Age != 130 || converterCalls != 1)
+    throw new InvalidOperationException("Generated FixedWidth converter package-consumer fields/callback differ.");
+
+// The CRLF split exactly across writes must not trigger the JSONL size limit.
+var pipe = new Pipe();
+try
+{
+    await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes("{}\r"));
+    await using var lineIterator = Jsonl.ReadLinesAsync(
+        pipe.Reader, new JsonlReadOptions { MaxLineSizeBytes = 2 }).GetAsyncEnumerator();
+    Task<bool> firstLine = lineIterator.MoveNextAsync().AsTask();
+    await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes("\n"));
+    await pipe.Writer.CompleteAsync();
+    if (!await firstLine || lineIterator.Current.ToString() != "{}" ||
+        lineIterator.Current.LineNumber != 1 || await lineIterator.MoveNextAsync())
+        throw new InvalidOperationException("Split JSONL CRLF package-consumer boundary differs.");
+}
+finally
+{
+    await pipe.Reader.CompleteAsync();
+    await pipe.Writer.CompleteAsync();
+}
 
 string jsonlText = """
 {"Name":"Alice","Age":30}

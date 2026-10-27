@@ -32,6 +32,23 @@ if (pkg.version !== version) {
   console.log(`Updated package.json version to ${version}`);
 }
 
+// 2a. Keep npm's workspace lock entry aligned with the package manifest.
+// npm ci reads this metadata; update both whenever the central version changes.
+const lockPath = path.join(rootDir, "npm/package-lock.json");
+const lockText = fs.readFileSync(lockPath, "utf8");
+const lockEntry = JSON.parse(lockText).packages?.["packages/heroparser"];
+const workspaceVersion = /("packages\/heroparser"\s*:\s*\{\s*"version"\s*:\s*")[^"]+(")/g;
+if (!lockEntry || [...lockText.matchAll(workspaceVersion)].length !== 1) {
+  throw new Error("Cannot uniquely locate packages/heroparser version in npm/package-lock.json");
+}
+if (lockEntry.version !== version) {
+  fs.writeFileSync(
+    lockPath,
+    lockText.replace(workspaceVersion, (_match, before, after) => before + version + after),
+  );
+  console.log("Updated npm/package-lock.json workspace version to " + version);
+}
+
 // 3. Update snap/snapcraft.yaml
 const snapPath = path.join(rootDir, "snap/snapcraft.yaml");
 let snapContent = readOptional(snapPath);

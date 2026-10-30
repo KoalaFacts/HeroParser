@@ -101,6 +101,20 @@ console.log(records);
 
 ---
 
+## Try HeroParser on a real integration
+
+Already using HeroParser, or considering it for a production CSV, Excel, fixed-width, JSONL, or HTB import/export? We welcome **specific, reproducible integration enquiries** rather than generic feature wish lists.
+
+[**Describe your import/export scenario in a GitHub issue**](https://github.com/KoalaFacts/HeroParser/issues/new) with:
+
+- The input/output formats, HeroParser version, .NET target, operating system, and whether Native AOT matters.
+- A minimal **synthetic or redacted** sample, expected result, and the exact failure, gap, or resource constraint you want to evaluate.
+- If relevant, whether your team needs a scoped **commercial integration or support discussion**. Describe the scope first; no support commitment, price, or SLA is implied.
+
+Do **not** attach real customer datasets, personal information, credentials, or confidential files to public GitHub issues. Start with the [installation steps](#install) and [benchmark methodology](docs/benchmarks.md); performance depends on the workload and API.
+
+---
+
 ## Simple Quick Starts
 
 Define your record type. Decorate it with `[GenerateBinder]` to enable source-generated, reflection-free, and Native AOT-safe binding:

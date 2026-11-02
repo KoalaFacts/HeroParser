@@ -311,11 +311,11 @@ jobs:
             case "$spec" in
               win-*)
                 unzip -tq "$FILE" >/dev/null
-                unzip -Z1 "$FILE" | grep -Fxq 'heroparser.exe'
+                unzip -Z1 "$FILE" | grep -Fx 'heroparser.exe' >/dev/null
                 PAYLOAD_BYTES=$(unzip -p "$FILE" heroparser.exe | wc -c)
                 ;;
               *)
-                tar -tzf "$FILE" | grep -Fxq 'heroparser'
+                tar -tzf "$FILE" | grep -Fx 'heroparser' >/dev/null
                 PAYLOAD_BYTES=$(tar -xOzf "$FILE" heroparser | wc -c)
                 ;;
             esac

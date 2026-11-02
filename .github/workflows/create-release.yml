@@ -103,6 +103,7 @@ jobs:
         with:
           name: cli-${{ matrix.rid }}
           path: ${{ matrix.archive_file }}
+          if-no-files-found: error
           retention-days: 1
 
   create-release:
@@ -295,6 +296,29 @@ jobs:
           pattern: cli-*
           merge-multiple: true
           path: ./cli-binaries
+
+      - name: Verify native CLI release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version || inputs.version }}"
+          for spec in win-x64.zip linux-x64.tar.gz osx-x64.tar.gz osx-arm64.tar.gz; do
+            FILE="cli-binaries/heroparser-v${VERSION}-${spec}"
+            if [ ! -s "$FILE" ]; then
+              echo "::error::Missing or empty release CLI asset $FILE"
+              exit 1
+            fi
+            case "$spec" in
+              win-*)
+                unzip -tq "$FILE" >/dev/null
+                unzip -Z1 "$FILE" | grep -Fxq 'heroparser.exe'
+                ;;
+              *)
+                tar -tzf "$FILE" | grep -Fxq 'heroparser'
+                ;;
+            esac
+          done
+          echo "All four native CLI archives verified"
 
       - name: Create release description footer
         id: release-notes

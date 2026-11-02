@@ -312,11 +312,17 @@ jobs:
               win-*)
                 unzip -tq "$FILE" >/dev/null
                 unzip -Z1 "$FILE" | grep -Fxq 'heroparser.exe'
+                PAYLOAD_BYTES=$(unzip -p "$FILE" heroparser.exe | wc -c)
                 ;;
               *)
                 tar -tzf "$FILE" | grep -Fxq 'heroparser'
+                PAYLOAD_BYTES=$(tar -xOzf "$FILE" heroparser | wc -c)
                 ;;
             esac
+            if [ "$PAYLOAD_BYTES" -eq 0 ]; then
+              echo "::error::Empty native CLI executable in $FILE"
+              exit 1
+            fi
           done
           echo "All four native CLI archives verified"
 

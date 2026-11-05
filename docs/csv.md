@@ -331,7 +331,7 @@ while (await reader.MoveNextAsync())
 }
 ```
 
-Uses pooled buffers and async I/O. Each row stays valid until the next `MoveNextAsync` call.
+Uses pooled buffers and async I/O. Each row stays valid until the next `MoveNextAsync` call. `Current` is valid only after a `MoveNextAsync` that returned `true`: it is not available before the first read, after the end of input, after disposal, or after a canceled advance. A canceled advance does not consume buffered rows, so a retry returns the next unread row. Copy any field you need to keep (for example with `ToString()` or `Parse<T>()`) before advancing.
 
 **Async streaming with fluent builder:**
 

@@ -4,9 +4,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-## [2.8.2] - 2026-10-27
+## [2.8.2] - 2026-11-05
 
-Release-candidate notes. The patch contains correctness and benchmark-validity repairs; no unverified throughput improvement is claimed.
+The patch contains correctness and benchmark-validity repairs; no unverified throughput improvement is claimed.
 
 ### Fixed
 - **CSV streaming and PipeReader lifetime:** `Current` is valid only after a successful read and is invalidated before the first row, after EOF, after disposal, and on a canceled advance; pending buffered records remain available for retry. The borrowed-row ownership rules now agree across streaming and PipeReader paths.
@@ -19,11 +19,19 @@ Release-candidate notes. The patch contains correctness and benchmark-validity r
 
 ### Build and dependencies
 - Update the GitHub Actions `actions/upload-artifact` pin to 7.0.2 (#145).
-- Update `Microsoft.SourceLink.GitHub` to 10.0.403 (#158) while preserving the .NET 8/9/10 targets and pinned SDK versions.
+- Update `Microsoft.SourceLink.GitHub` to 10.0.403 (#158) while preserving the .NET 8/9/10 targets.
+- Move the pinned CI/release SDKs to the 8.0.427, 9.0.320 and 10.0.403 servicing releases, which include the patched NativeAOT toolchains (#161).
+- Update `actions/setup-dotnet` to 6.1.0 (#164, #165) and `Microsoft.Testing.Extensions.TrxReport` to 2.5.2 (#163).
+
+### Release
+- The release workflow rejects incomplete native CLI assets, including missing or zero-byte executables inside an archive, before creating the GitHub Release (#161).
+- Fail closed on incomplete SBOMs (#160).
 
 ### Benchmarks and documentation
 - Correct CSV, Fixed-Width, JSONL, typed-binder, header and writer benchmark workloads so all compared implementations perform equivalent data parsing/writing, with full-field and row-count validation and overflow-safe checksums.
-- Clarify AOT-safe JSONL and Excel documentation. Keep .NET 8/9/10 support, existing security gates, standard BenchmarkDotNet tests and NativeAOT coverage unchanged.
+- Clarify AOT-safe JSONL and Excel documentation, and the streaming `Current` lifetime in the CSV guide. Keep .NET 8/9/10 support, existing security gates, standard BenchmarkDotNet tests and NativeAOT coverage unchanged.
+- Fix README quick starts that did not compile as written: the CSV `ToList()` and HTB `HtbSchema` namespaces, and the `JsonTypeInfo<T>` argument of `ToJsonLlmChunksAsync`.
+- Browser demo: load ONNX Runtime assets relative to the page so the AI tab works under the GitHub Pages sub-path, make "click to browse" open the Excel file picker, show the package version, and drop the unqualified "zero-allocation, native speed" tagline.
 - Retire only the maintainer-decommissioned historical CSV Pipe timing experiment, preserving its recorded evidence. No performance speedup is claimed by these correctness-only changes.
 
 ## [2.8.1] - 2026-10-08

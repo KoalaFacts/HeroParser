@@ -141,6 +141,8 @@ public class Product
 ### CSV
 
 ```csharp
+using HeroParser.SeparatedValues.Reading.Records; // ToList() and other reader extensions
+
 // Read a file into typed records
 List<Product> products = Csv.Read<Product>().FromFile("products.csv").ToList();
 
@@ -234,6 +236,8 @@ A custom binary serialization format with source-generated mapping, platform-ind
 * **AOT & Trim Ready**: Fully compatible with Native AOT compilation out-of-the-box.
 
 ```csharp
+using HeroParser.Htbs.Records; // HtbSchema
+
 // Read HTB binary files (AOT-safe)
 List<Product> products = Htb.Read<Product>().FromFile("products.htb").ToList();
 
@@ -333,9 +337,12 @@ string contextCard = developers.GenerateContextCard(datasetName: "Engineering Te
 ```
 
 ### 5. Token-Bounded JSON Chunker (`JsonLlmChunker`)
-Chunks datasets into valid, token-bounded JSON array blocks, optimized for ingestion into RAG context windows.
+Chunks an `IAsyncEnumerable<T>` into valid, token-bounded JSON array blocks for RAG context windows. Serialization uses a source-generated `JsonTypeInfo<T>`, so it stays AOT-safe.
 ```csharp
-await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(options)) { ... }
+await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(DeveloperJsonContext.Default.Developer, options)) { ... }
+
+[JsonSerializable(typeof(Developer))]
+internal partial class DeveloperJsonContext : JsonSerializerContext { }
 ```
 
 ---

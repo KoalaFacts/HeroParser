@@ -114,7 +114,7 @@ test('an empty prerequisite set does not pass vacuously', () => {
     assert.equal(report({ outcomes: {} }).checkPassed, false);
 });
 test('unsupported provenance is rejected rather than recorded as verified', () => {
-    for (const overrides of [{ sourceSha: 'main' }, { framework: 'net11.0' }, { runId: 'x' }, { runAttempt: '0' }]) {
+    for (const overrides of [{ sourceSha: 'main' }, { framework: 'net7.0' }, { runId: 'x' }, { runAttempt: '0' }]) {
         assert.throws(() => report(overrides), /Invalid/);
     }
 });

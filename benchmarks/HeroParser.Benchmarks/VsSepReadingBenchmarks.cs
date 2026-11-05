@@ -1,7 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using CsvHelper;
-using CsvHelper.Configuration;
 using HeroParser.SeparatedValues.Core;
 using nietras.SeparatedValues;
 using Sylvan.Data.Csv;
@@ -84,8 +83,8 @@ public class VsSepReadingBenchmarks
     private static CsvDataReaderOptions CreateSylvanOptions()
         => new() { HasHeaders = false, Delimiter = ',' };
 
-    private static CsvConfiguration CreateCsvHelperOptions()
-        => new(CultureInfo.InvariantCulture) { HasHeaderRecord = false, Delimiter = "," };
+    private static CsvReaderOptions CreateCsvHelperOptions()
+        => new() { HasHeader = false, Separator = ',', FormatProvider = CultureInfo.InvariantCulture };
 
     private static CsvReadOptions CreateHeroOptions()
         => new()
@@ -122,11 +121,10 @@ public class VsSepReadingBenchmarks
     [Benchmark(Description = "CsvHelper")]
     public int CsvHelper_Parse()
     {
-        using var reader = new StringReader(csv);
-        using var csvHelper = new CsvReader(reader, CreateCsvHelperOptions());
+        using var csvHelper = CsvReader.Create(new StringReader(csv), CreateCsvHelperOptions(), leaveOpen: false);
         int total = 0;
         while (csvHelper.Read())
-            total += csvHelper.Parser.Count;
+            total += csvHelper.FieldCount;
         return total;
     }
 
@@ -180,14 +178,13 @@ public class VsSepReadingBenchmarks
         ValidateRowCount("Sylvan", index);
 
         index = 0;
-        using (var textReader = new StringReader(csv))
-        using (var reader = new CsvReader(textReader, CreateCsvHelperOptions()))
+        using (var reader = CsvReader.Create(new StringReader(csv), CreateCsvHelperOptions(), leaveOpen: false))
         {
             while (reader.Read())
             {
-                ValidateColumnCount("CsvHelper", index, reader.Parser.Count);
+                ValidateColumnCount("CsvHelper", index, reader.FieldCount);
                 for (int c = 0; c < Columns; c++)
-                    ValidateValue("CsvHelper", index, c, reader.GetField(c));
+                    ValidateValue("CsvHelper", index, c, reader.GetString(c));
                 index++;
             }
         }

@@ -50,7 +50,7 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 
 ## Code Style
 - **Nullable reference types**: Enabled (`<Nullable>enable</Nullable>`)
-- **Language version**: C# 14 (`<LangVersion>14.0</LangVersion>`), fixed across SDK versions. Building from source requires the .NET 10 SDK or a newer SDK supporting C# 14; the net8.0/net9.0/net10.0/net11.0 runtime targets are supported.
+- **Language version**: C# 14 (`<LangVersion>14.0</LangVersion>`), fixed across SDK versions. Building from source requires the .NET 11 SDK pinned in `global.json` (`sdk.version`, rolling forward to later 11.0 feature bands), because the net11.0 target needs it; running the net8.0/net9.0/net10.0 tests also needs those runtimes.
 - **Implicit usings**: Enabled
 - **File-scoped namespaces**: Preferred (suggestion severity — won't fail build, but used consistently throughout)
 - **Private fields**: `camelCase` (no `s_` prefix for static fields, no `_` prefix)

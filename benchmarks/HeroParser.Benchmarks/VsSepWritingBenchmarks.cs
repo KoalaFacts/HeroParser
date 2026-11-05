@@ -98,7 +98,11 @@ public class VsSepWritingBenchmarks
     public string CsvHelper_Write()
     {
         using var stringWriter = new StringWriter();
-        using var csvHelper = CsvWriter.Create(stringWriter, new CsvWriterOptions { FormatProvider = CultureInfo.InvariantCulture }, leaveOpen: true);
+        using var csvHelper = CsvWriter.Create(
+            stringWriter,
+            // v33 also quoted fields that start or end with whitespace; v34 needs this to keep that rule.
+            new CsvWriterOptions { FormatProvider = CultureInfo.InvariantCulture, Quoting = CsvQuoting.WhenNeededOrWhitespace },
+            leaveOpen: true);
 
         for (int c = 0; c < Columns; c++)
         {

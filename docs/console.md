@@ -192,13 +192,14 @@ Displays a loading spinner next to a status text message:
 ```csharp
 using HeroParser.Console;
 
-await AnsiConsole.Status()
+int rowCount = await AnsiConsole.Status()
     .Spinner(Spinner.Known.Dots)
     .StartAsync("Loading datasets...", async ctx =>
     {
         await Task.Delay(2000); // Do work
-        ctx.Status("Translating rows...");
+        ctx.Message = "Translating rows...";
         await Task.Delay(2000); // Do more work
+        return 10_240; // StartAsync returns the action's result
     });
 ```
 
@@ -214,7 +215,7 @@ await AnsiConsole.Progress()
     {
         var task = ctx.AddTask("[green]Converting records[/]", maxValue: 100);
         
-        while (!task.IsFinished)
+        while (task.Value < task.MaxValue)
         {
             await Task.Delay(100);
             task.Increment(5);

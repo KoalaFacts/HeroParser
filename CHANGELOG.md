@@ -9,11 +9,17 @@ Planned as 2.9.0: .NET 11 compatibility.
 ### Added
 - **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.
 
+### Fixed
+- Documentation examples that did not compile: the README's JSON chunker example; the Console guide's status (`ctx.Message`, `StartAsync` returns a value) and progress (`Value`/`MaxValue`) examples; HTB write `OnError` handlers (two parameters, `HtbSerializeErrorAction.SkipRow`) and the schema example; JSONL write `OnError` handlers (`RecordIndex`), the vector example (`row[3].Span`) and its usings; Excel's custom converter, multi-sheet and merge examples; Fixed-Width progress (`RecordsProcessed`), DataReader (`readerOptions:`) and streaming examples.
+- CSV guide examples that documented APIs that do not exist or behave differently: `Csv.ParseRecords` (now `Csv.DeserializeRecords`), `RequireHeaders`/`DetectDuplicateHeaders`/`ValidateHeaders` (header checks are `Csv.Validate` with `RequiredHeaders`), `Csv.ReadFromFileAsync`, `ThrowIfAnyError` (strict mode throws from `ToList()`), `CsvReadOptions.Validate()`, `Csv.Read().WithOptions(...)`, `OnError` with one parameter and `DeserializeErrorAction.UseDefault`, the two-parameter converter, `WithProgress(..., intervalRows:)` on the writer, storing cloned rows in a `List`, and the generated dispatcher's `DispatchBytes`. `Csv.ReadFromFile`/`ReadFromStream` are now described as buffering the whole input (they did not stream), and an unmeasured "16-43% faster" claim was removed. The README's field-validation line no longer names `ThrowIfAnyError`.
+- Each guide now lists the `using` directives its examples assume.
+
 ### Build and CI
 - Build, test and AOT-check every target with the .NET 11 SDK. `global.json` sets the floor (`11.0.100-rc.3`, go-live) with `allowPrerelease` and `rollForward: latestFeature`; CI installs the newest 11.0 SDK through setup-dotnet's `11.0.x` channel resolution (prereleases included); the GA transition must be verified once GA ships. GitHub's automatic NuGet dependency submission installs the `global.json` version. The CI matrix gains net11.0 on Ubuntu, Windows and macOS, and native AOT publish now also runs for net11.0. The C# language version stays pinned at 14.0.
 - Building from source now requires the .NET 11 SDK.
 - The CSV Pipe correctness report accepts net11.0.
 - New **Docs Check** CI job (`.github/scripts/check-docs.ts`, Node 24, no dependencies): fails on broken relative links and anchors, `docs/` pages the README does not reach, repository paths in inline code that do not exist, and agent instructions that drift (`AGENTS.md` is now a pointer to `CLAUDE.md`; `.agents/skills` must match `.claude/skills`).
+- New **Docs Snippets Compile** CI job (`.github/scripts/check-doc-snippets.ts`): compiles the C# examples of README.md and every guide in `docs/` against the library, reporting errors at the Markdown line.
 - Before releasing 2.9.0, raise the `global.json` floor to the .NET 11 GA SDK so local builds cannot fall back to a release candidate.
 
 ### Dependencies

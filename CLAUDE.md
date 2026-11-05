@@ -51,7 +51,15 @@ dotnet format --verify-no-changes
 
 # Run benchmarks
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
+
+# Check docs (Node 24+): links, anchors, index, named paths, agent instructions
+node .github/scripts/check-docs.ts
+
+# Compile the C# examples in README.md and docs/*.md against the repo's projects
+node .github/scripts/check-doc-snippets.ts README.md docs/excel.md   # or no arguments for all pages
 ```
+
+**Docs examples compile**: every ```` ```csharp ```` block in README.md and docs/*.md is compiled by `check-doc-snippets.ts` (CI job "Docs Snippets Compile"). Blocks on a page share `using` directives top to bottom and see the page's types. Fix a failing example rather than removing it. Hidden context goes in HTML-comment markers directly above a block — `<!-- snippet: setup ... -->` (inputs the reader supplies), `<!-- snippet: alternatives -->` (paragraphs that are alternatives, each may redeclare a variable), `<!-- snippet: skip <reason> -->` (a deliberate fragment) — or once per page in `<!-- snippet: page-setup ... -->`. The script header documents them.
 
 **CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 4 frameworks (net8.0, net9.0, net10.0, net11.0). Code coverage and benchmarks stay on ubuntu/net10.0 (the LTS target); native AOT publish runs on ubuntu for net10.0 and net11.0 (STS).
 
@@ -378,8 +386,8 @@ Goal: .NET 11 readiness before .NET 11 GA, current dependencies, and docs that s
 | L3 | Historical-evidence job (`csv-pipe-history.yml`) fails because artifact of run 36732093817 expired | PRs touching its paths fail for a reason unrelated to the change | blocked (owner decision: retire the job, or report "evidence expired" as pass-with-notice; options on [#167](https://github.com/KoalaFacts/HeroParser/pull/167#issuecomment-6663725028)) | Never "fixed" by re-running |
 | L1 | net11.0 target, `global.json` floor, CI on newest 11.0 SDK, NuGet consumer check, dependency upgrades | Users can build and run on .NET 11 | done (#167, `2309336`); #162 closed as superseded | 4739 tests on net10.0/net11.0 |
 | H1 | Docs checker (`check-docs.ts`), AGENTS.md as pointer, skill copies in sync, broken links fixed | Docs cannot silently rot | in progress (docs/housekeeping-2026-11-06) | 15 checker tests |
-| L2 | C# snippets in README.md and docs/*.md compile in CI | Copy-pasted examples work | todo | |
+| L2 | C# snippets in README.md and docs/*.md compile in CI | Copy-pasted examples work | in progress (net11/doc-snippets) | 11 checker tests; 193 snippets compile (README.md + 6 guides), 5 marked partial; ~300 errors on the first run |
 | L4 | After .NET 11 GA: GA SDK in CI, `global.json` floor to GA, stable BenchmarkDotNet 0.16.x, drop "RC" wording | 2.9.0 release gate | waiting (.NET 11 GA) | |
-| L5 | `AnalysisLevel=latest-all` sweep on .NET 11 | Catch obsoletions before GA | todo | |
+| L5 | `AnalysisLevel=latest-all` sweep on .NET 11 | Catch obsoletions before GA | todo | Baseline 2026-11-06 on `2309336`, SDK 11.0.100-rc.3, all TFMs: 0 SYSLIB/CS obsoletion warnings; 12,098 CA warnings solution-wide, 487 distinct in `src/` (top: CA1805, CA2007, CA1305, CA1062, CA1815). Triage first: CA1305/CA1307/CA1310 (culture), CA2000/CA2213 (disposal), CA1849, CA1065 |
 | L6 | Dependency upkeep (NuGet, npm) | Security and currency | ongoing | Held back: `onnxruntime-web` 1.20.1 (override + postinstall patches), TypeScript 6.x until vue-tsc supports 7 |
 | L7 | Docs accuracy audit, one area per PR (README, docs/*.md, npm README, demo text, workflows README) | Docs match the code | todo | |

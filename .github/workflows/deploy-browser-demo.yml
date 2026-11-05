@@ -6,6 +6,9 @@ on:
     paths:
       - 'npm/**'
       - 'src/HeroParser.Wasm/**'
+      # Demo publishes the core library and its analyzer, not only the WASM wrapper.
+      - 'src/HeroParser/**'
+      - 'src/HeroParser.Generators/**'
       - '.github/workflows/deploy-browser-demo.yml'
       # SDK/global build changes can break the net10 WASM build even without changes in npm/.
       - 'global.json'
@@ -17,6 +20,9 @@ on:
     paths:
       - 'npm/**'
       - 'src/HeroParser.Wasm/**'
+      # Demo publishes the core library and its analyzer, not only the WASM wrapper.
+      - 'src/HeroParser/**'
+      - 'src/HeroParser.Generators/**'
       - '.github/workflows/deploy-browser-demo.yml'
       # SDK/global build changes can break the net10 WASM build even without changes in npm/.
       - 'global.json'

@@ -7,6 +7,10 @@ on:
       - 'npm/**'
       - 'src/HeroParser.Wasm/**'
       - '.github/workflows/deploy-browser-demo.yml'
+      # SDK/global build changes can break the net10 WASM build even without changes in npm/.
+      - 'global.json'
+      - 'Directory.Build.props'
+      - '.github/actions/setup-dotnet-build-sdk/**'
   push:
     branches:
       - main
@@ -14,6 +18,10 @@ on:
       - 'npm/**'
       - 'src/HeroParser.Wasm/**'
       - '.github/workflows/deploy-browser-demo.yml'
+      # SDK/global build changes can break the net10 WASM build even without changes in npm/.
+      - 'global.json'
+      - 'Directory.Build.props'
+      - '.github/actions/setup-dotnet-build-sdk/**'
   workflow_dispatch:
 
 permissions:

@@ -43,7 +43,7 @@ HeroParser provides comprehensive support for fixed-width (fixed-length) file pa
 
 ### Typed Record Reading
 
-Annotate record properties with `[PositionalMap]` to declare field positions, then call `FixedWidth.Read<T>()`. (Migrating from 1.x? See [migration-v1-to-v2.md](migration-v1-to-v2.md).)
+Annotate record properties with `[PositionalMap]` to declare field positions, then call `FixedWidth.Read<T>()`. (Migrating from 1.x? See the [v1-to-v2 migration guide](https://github.com/KoalaFacts/HeroParser/blob/87b0091b31bbba95cea9a8fb3202b664fc0fc799/docs/migration-v1-to-v2.md) in the repository history.)
 
 ```csharp
 [GenerateBinder]

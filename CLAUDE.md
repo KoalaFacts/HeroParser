@@ -6,16 +6,22 @@
 ## Project Structure
 ```
 src/
-  HeroParser/                  # Core library (CSV + Fixed-Width + Excel parsing/writing)
+  HeroParser/                  # Core library (CSV, Fixed-Width, Excel, JSONL, HTB reading/writing)
   HeroParser.Generators/       # Source generators (netstandard2.0)
+  HeroParser.Console/          # Console rendering engine
+  HeroParser.Cli/              # `heroparser` command-line tool
+  HeroParser.Wasm/             # WebAssembly build for the npm package and browser demo
 tests/
   HeroParser.Tests/            # Unit and integration tests
   HeroParser.Generators.Tests/ # Source generator tests
+  HeroParser.Console.Tests/    # Console engine tests
   HeroParser.AotTests/         # AOT compatibility tests
 benchmarks/
   HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.17.1)
+npm/                           # npm workspace: WebAssembly package, browser demo, WASM tests
 .github/
   workflows/                   # CI, benchmarks, security scan, release, NuGet publish
+  scripts/                     # CI scripts, including check-docs.ts (Node 24)
 ```
 
 ## Commands
@@ -59,7 +65,7 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 
 ## Code Style
 - **Nullable reference types**: Enabled (`<Nullable>enable</Nullable>`)
-- **Language version**: Latest (`<LangVersion>latest</LangVersion>`)
+- **Language version**: C# 14 (`<LangVersion>14.0</LangVersion>`), fixed across SDK versions. Building from source requires a .NET 11 SDK at or above `global.json`'s `sdk.version`, because the net11.0 target needs it; running the net8.0/net9.0/net10.0 tests also needs those runtimes.
 - **Implicit usings**: Enabled
 - **File-scoped namespaces**: Preferred (suggestion severity — won't fail build, but used consistently throughout)
 - **Private fields**: `camelCase` (no `s_` prefix for static fields, no `_` prefix)
@@ -139,7 +145,7 @@ Key files in `src/HeroParser/Excels/` (internal namespace uses `HeroParser.Excel
 Supports mapping rows to different record types via a discriminator column.
 - **Runtime**: Flexible, uses `WithMultiSchema().WithDiscriminator("Type")`.
 - **Source-Generated**: `[CsvGenerateDispatcher]` emits typed dispatch; its performance relative to runtime dispatch depends on the workload.
-Key files in `src/HeroParser/SeparatedValues/Records/MultiSchema/`.
+Key files in `src/HeroParser/SeparatedValues/Reading/Records/MultiSchema/`.
 
 ## Delimiter Detection & CSV Validation
 - **Delimiter Detection**: `CsvDelimiterDetector.DetectDelimiter()` analyzes sample rows to identify delimiter (`,`, `;`, `|`, `\t`). Returns confidence score 0-100. Supports UTF-8 and UTF-16 input.
@@ -272,7 +278,7 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
 - **Per-row parser** (`CsvRowParser.ParseRow`): the one-row contract used by every reader for configurations the batch scanner declines, by the pipe reader for rows that straddle segments, and by the batched readers to re-parse a flagged row so its exception is the same. Its SIMD work is one `CsvRowBatchScanner.Scan` call in single-row mode (`IsSupportedForRow`: ASCII specials, no escape character; a comment character is fine because the parser handles comment lines first). The scalar loop is the oracle for diagnostics and the path for escape characters, non-ASCII specials and SIMD off. Callers size `columnEnds` with `CsvRowBatchScanner.MinEndsCapacity` or the SIMD path is skipped.
 - **Column Extraction**: ends-only `columnEnds[]` (sentinel, delimiter positions, row end); `CsvRow<T>` carries a base offset so it can point into a shared batch buffer.
 - **Binding**: `ICsvSourceBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
-- **UTF-16 binding fallback**: `CsvCharToByteBinderAdapter` converts to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
+- **UTF-16 binding**: `CsvRowBatchScanner` scans chars directly (pack-and-saturate). `CsvCharToByteBinderAdapter` converts a row to UTF-8 via `ArrayPool` + `stackalloc` only when a byte binder serves char input; it is not the UTF-16 scanning path.
 
 ### Write Path
 ```
@@ -362,3 +368,18 @@ The version number is centrally defined in `Directory.Build.props`. To propagate
 npm run sync-version --prefix npm
 ```
 
+
+## Maintenance ledger
+
+Goal: .NET 11 readiness before .NET 11 GA, current dependencies, and docs that stay true. Preparation only: no release, no `<Version>` change. The dated run log lives in the bodies of the maintenance PRs; user-visible changes go in CHANGELOG `[Unreleased]`.
+
+| Id | Item | Why it matters | Status | Evidence |
+|---|---|---|---|---|
+| L3 | Historical-evidence job (`csv-pipe-history.yml`) fails because artifact of run 36732093817 expired | PRs touching its paths fail for a reason unrelated to the change | blocked (owner decision: retire the job, or report "evidence expired" as pass-with-notice; options on [#167](https://github.com/KoalaFacts/HeroParser/pull/167#issuecomment-6663725028)) | Never "fixed" by re-running |
+| L1 | net11.0 target, `global.json` floor, CI on newest 11.0 SDK, NuGet consumer check, dependency upgrades | Users can build and run on .NET 11 | done (#167, `2309336`); #162 closed as superseded | 4739 tests on net10.0/net11.0 |
+| H1 | Docs checker (`check-docs.ts`), AGENTS.md as pointer, skill copies in sync, broken links fixed | Docs cannot silently rot | in progress (docs/housekeeping-2026-11-06) | 15 checker tests |
+| L2 | C# snippets in README.md and docs/*.md compile in CI | Copy-pasted examples work | todo | |
+| L4 | After .NET 11 GA: GA SDK in CI, `global.json` floor to GA, stable BenchmarkDotNet 0.16.x, drop "RC" wording | 2.9.0 release gate | waiting (.NET 11 GA) | |
+| L5 | `AnalysisLevel=latest-all` sweep on .NET 11 | Catch obsoletions before GA | todo | |
+| L6 | Dependency upkeep (NuGet, npm) | Security and currency | ongoing | Held back: `onnxruntime-web` 1.20.1 (override + postinstall patches), TypeScript 6.x until vue-tsc supports 7 |
+| L7 | Docs accuracy audit, one area per PR (README, docs/*.md, npm README, demo text, workflows README) | Docs match the code | todo | |

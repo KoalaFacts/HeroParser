@@ -25,7 +25,7 @@ for id in HeroParser HeroParser.Console HeroParser.Cli; do
     test -s "$feed/$id.$version.$ext" || { echo "Missing $id.$version.$ext" >&2; exit 1; }
   done
 done
-for tfm in net8.0 net9.0 net10.0; do
+for tfm in net8.0 net9.0 net10.0 net11.0; do
   unzip -Z1 "$feed/HeroParser.$version.nupkg" | grep -Fx "lib/$tfm/HeroParser.dll" >/dev/null
   unzip -Z1 "$feed/HeroParser.Console.$version.nupkg" | grep -Fx "lib/$tfm/HeroParser.Console.dll" >/dev/null
 done
@@ -59,7 +59,7 @@ cat > "$work/NuGet.Config" <<CFG
 </configuration>
 CFG
 
-for tfm in net8.0 net9.0 net10.0; do
+for tfm in net8.0 net9.0 net10.0 net11.0; do
   target="$work/$tfm"
   dotnet new console --name NuGetConsumer --framework "$tfm" --no-restore --output "$target"
   dotnet add "$target/NuGetConsumer.csproj" package HeroParser --version "$version" --no-restore

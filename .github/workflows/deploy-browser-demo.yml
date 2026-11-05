@@ -1,6 +1,12 @@
 name: Deploy Browser Demo
 
 on:
+  # Validate the exact PR head without granting Pages deployment privileges.
+  pull_request:
+    paths:
+      - 'npm/**'
+      - 'src/HeroParser.Wasm/**'
+      - '.github/workflows/deploy-browser-demo.yml'
   push:
     branches:
       - main
@@ -16,7 +22,60 @@ permissions:
   id-token: write
 
 jobs:
+  validate-demo:
+    name: Validate browser demo (no deployment)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup build .NET SDK
+        uses: ./.github/actions/setup-dotnet-build-sdk
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install WebAssembly tools for net10.0 under the .NET 11 SDK
+        run: dotnet workload install wasm-tools-net10
+
+      - name: Publish WASM project
+        run: dotnet publish src/HeroParser.Wasm/HeroParser.Wasm.csproj -c Release -p:IsWasmBuildJob=true
+
+      - name: Copy WASM assets to npm package
+        run: |
+          mkdir -p npm/packages/heroparser/_framework
+          cp -r src/HeroParser.Wasm/bin/Release/net10.0/publish/wwwroot/_framework/* npm/packages/heroparser/_framework/
+          rm -f npm/packages/heroparser/_framework/*.dat
+          rm -f npm/packages/heroparser/_framework/*.br
+          rm -f npm/packages/heroparser/_framework/*.gz
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'npm/package-lock.json'
+
+      - name: Upgrade npm
+        run: |
+          npm install --global npm@12
+          npm --version
+
+      - name: Install workspace dependencies
+        run: npm ci --prefix npm --legacy-peer-deps
+
+      - name: Build browser demo
+        run: npm run build --prefix npm --workspace=browser-demo --legacy-peer-deps
+
   build-and-deploy:
+    # PRs build without GitHub Pages writes; only trusted main pushes/manual runs deploy.
+    if: github.event_name != 'pull_request'
     name: Build and Deploy Demo
     runs-on: ubuntu-latest
 
@@ -31,8 +90,8 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Install WebAssembly workload
-        run: dotnet workload install wasm-tools
+      - name: Install WebAssembly tools for net10.0 under the .NET 11 SDK
+        run: dotnet workload install wasm-tools-net10
 
       - name: Publish WASM project
         run: dotnet publish src/HeroParser.Wasm/HeroParser.Wasm.csproj -c Release -p:IsWasmBuildJob=true

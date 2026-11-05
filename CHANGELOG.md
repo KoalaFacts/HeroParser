@@ -9,6 +9,9 @@ Planned as 2.9.0: .NET 11 compatibility.
 ### Added
 - **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.
 
+### Fixed
+- **AI context cards and LLM repair are culture-independent:** `GenerateContextCard`/`GenerateContextCardAsync` format row counts, ranges, averages and percentages with the invariant culture (under de-DE a range read `[1.500,25 to 2.500,75]`, and fr-FR inserted narrow no-break spaces); `LlmRepair.RepairText` finds the ```` ``` ```` fence ordinally, so an ignorable character such as a soft hyphen between backticks is no longer taken for a fence that drops the first line.
+
 ### Build and CI
 - Build, test and AOT-check every target with the .NET 11 SDK. `global.json` sets the floor (`11.0.100-rc.3`, go-live) with `allowPrerelease` and `rollForward: latestFeature`; CI installs the newest 11.0 SDK through setup-dotnet's `11.0.x` channel resolution (prereleases included); the GA transition must be verified once GA ships. GitHub's automatic NuGet dependency submission installs the `global.json` version. The CI matrix gains net11.0 on Ubuntu, Windows and macOS, and native AOT publish now also runs for net11.0. The C# language version stays pinned at 14.0.
 - Building from source now requires the .NET 11 SDK.

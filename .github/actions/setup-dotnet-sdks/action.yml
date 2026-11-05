@@ -15,9 +15,11 @@ runs:
       uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       with:
         dotnet-version: ${{ inputs.dotnet-version }}
-        global-json-file: global.json
         cache: ${{ inputs.cache }}
         cache-dependency-path: '**/*.csproj'
+
+    - name: Setup build .NET SDK
+      uses: ./.github/actions/setup-dotnet-build-sdk
 
     - name: Install WebAssembly workload
       run: dotnet workload install wasm-tools

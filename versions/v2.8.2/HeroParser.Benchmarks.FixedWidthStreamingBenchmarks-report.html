@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>HeroParser.Benchmarks.FixedWidthStreamingBenchmarks-20261105-093909</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.5 LTS (Noble Numbat)
+AMD EPYC 7763 2.61GHz, 1 CPU, 4 logical and 2 physical cores
+.NET SDK 10.0.403
+  [Host]     : .NET 10.0.14 (10.0.14, 10.0.1426.52326), X64 RyuJIT x86-64-v3
+  Job-INMAZI : .NET 10.0.14 (10.0.14, 10.0.1426.52326), X64 RyuJIT x86-64-v3
+</code></pre>
+<pre><code>IterationCount=5  RunStrategy=Throughput  WarmupCount=3  
+</code></pre>
+
+<table>
+<thead><tr><th>Method                             </th><th>Rows</th><th>Fields</th><th>Mean </th><th>Error</th><th>StdDev</th><th>Ratio</th><th>RatioSD</th><th>Gen0</th><th>Gen1</th><th>Gen2</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>ParseFromText</td><td>10000</td><td>4</td><td>188.5 &mu;s</td><td>1.60 &mu;s</td><td>0.25 &mu;s</td><td>1.00</td><td>0.00</td><td>-</td><td>-</td><td>-</td><td>-</td><td>NA</td>
+</tr><tr><td>ParseFromAsyncStreamReader_MemoryStream</td><td>10000</td><td>4</td><td>428.1 &mu;s</td><td>4.66 &mu;s</td><td>1.21 &mu;s</td><td>2.27</td><td>0.01</td><td>6.8359</td><td>0.9766</td><td>-</td><td>49656 B</td><td>NA</td>
+</tr><tr><td>ParseFromAsyncStreamReader_File</td><td>10000</td><td>4</td><td>742.5 &mu;s</td><td>30.60 &mu;s</td><td>7.95 &mu;s</td><td>3.94</td><td>0.04</td><td>6.8359</td><td>-</td><td>-</td><td>70201 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedStreamMemory</td><td>10000</td><td>4</td><td>1,150.0 &mu;s</td><td>68.95 &mu;s</td><td>10.67 &mu;s</td><td>6.10</td><td>0.05</td><td>203.1250</td><td>125.0000</td><td>72.2656</td><td>2381522 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedFileStream</td><td>10000</td><td>4</td><td>1,340.6 &mu;s</td><td>138.25 &mu;s</td><td>35.90 &mu;s</td><td>7.11</td><td>0.17</td><td>205.0781</td><td>132.8125</td><td>72.2656</td><td>2385842 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedFileAsyncEnumerable</td><td>10000</td><td>4</td><td>1,825.2 &mu;s</td><td>401.83 &mu;s</td><td>104.35 &mu;s</td><td>9.68</td><td>0.51</td><td>179.6875</td><td>132.8125</td><td>62.5000</td><td>2406384 B</td><td>NA</td>
+</tr><tr><td>ParseFromText</td><td>10000</td><td>8</td><td>198.0 &mu;s</td><td>0.69 &mu;s</td><td>0.18 &mu;s</td><td>1.00</td><td>0.00</td><td>-</td><td>-</td><td>-</td><td>-</td><td>NA</td>
+</tr><tr><td>ParseFromAsyncStreamReader_MemoryStream</td><td>10000</td><td>8</td><td>503.0 &mu;s</td><td>4.17 &mu;s</td><td>1.08 &mu;s</td><td>2.54</td><td>0.01</td><td>5.8594</td><td>-</td><td>-</td><td>49656 B</td><td>NA</td>
+</tr><tr><td>ParseFromAsyncStreamReader_File</td><td>10000</td><td>8</td><td>896.0 &mu;s</td><td>60.64 &mu;s</td><td>9.38 &mu;s</td><td>4.53</td><td>0.04</td><td>7.8125</td><td>-</td><td>-</td><td>87287 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedStreamMemory</td><td>10000</td><td>8</td><td>2,596.6 &mu;s</td><td>379.53 &mu;s</td><td>98.56 &mu;s</td><td>13.11</td><td>0.45</td><td>375.0000</td><td>328.1250</td><td>179.6875</td><td>4066038 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedFileStream</td><td>10000</td><td>8</td><td>2,835.0 &mu;s</td><td>356.60 &mu;s</td><td>55.18 &mu;s</td><td>14.32</td><td>0.25</td><td>382.8125</td><td>339.8438</td><td>187.5000</td><td>4070736 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedFileAsyncEnumerable</td><td>10000</td><td>8</td><td>3,489.9 &mu;s</td><td>639.56 &mu;s</td><td>166.09 &mu;s</td><td>17.63</td><td>0.77</td><td>359.3750</td><td>335.9375</td><td>179.6875</td><td>4094416 B</td><td>NA</td>
+</tr><tr><td>ParseFromText</td><td>100000</td><td>4</td><td>1,935.6 &mu;s</td><td>16.37 &mu;s</td><td>4.25 &mu;s</td><td>1.00</td><td>0.00</td><td>-</td><td>-</td><td>-</td><td>-</td><td>NA</td>
+</tr><tr><td>ParseFromAsyncStreamReader_MemoryStream</td><td>100000</td><td>4</td><td>4,145.1 &mu;s</td><td>43.26 &mu;s</td><td>6.69 &mu;s</td><td>2.14</td><td>0.01</td><td>-</td><td>-</td><td>-</td><td>49656 B</td><td>NA</td>
+</tr><tr><td>ParseFromAsyncStreamReader_File</td><td>100000</td><td>4</td><td>7,254.5 &mu;s</td><td>355.10 &mu;s</td><td>92.22 &mu;s</td><td>3.75</td><td>0.04</td><td>31.2500</td><td>-</td><td>-</td><td>230417 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedStreamMemory</td><td>100000</td><td>4</td><td>20,303.3 &mu;s</td><td>3,032.64 &mu;s</td><td>787.57 &mu;s</td><td>10.49</td><td>0.37</td><td>2093.7500</td><td>1375.0000</td><td>875.0000</td><td>23671636 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedFileStream</td><td>100000</td><td>4</td><td>21,680.4 &mu;s</td><td>2,421.61 &mu;s</td><td>628.88 &mu;s</td><td>11.20</td><td>0.30</td><td>2187.5000</td><td>1406.2500</td><td>937.5000</td><td>23677175 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedFileAsyncEnumerable</td><td>100000</td><td>4</td><td>25,299.4 &mu;s</td><td>2,402.78 &mu;s</td><td>371.83 &mu;s</td><td>13.07</td><td>0.17</td><td>2000.0000</td><td>1312.5000</td><td>875.0000</td><td>23841516 B</td><td>NA</td>
+</tr><tr><td>ParseFromText</td><td>100000</td><td>8</td><td>1,930.9 &mu;s</td><td>35.04 &mu;s</td><td>5.42 &mu;s</td><td>1.00</td><td>0.00</td><td>-</td><td>-</td><td>-</td><td>-</td><td>NA</td>
+</tr><tr><td>ParseFromAsyncStreamReader_MemoryStream</td><td>100000</td><td>8</td><td>4,765.8 &mu;s</td><td>158.71 &mu;s</td><td>41.22 &mu;s</td><td>2.47</td><td>0.02</td><td>-</td><td>-</td><td>-</td><td>49656 B</td><td>NA</td>
+</tr><tr><td>ParseFromAsyncStreamReader_File</td><td>100000</td><td>8</td><td>9,405.0 &mu;s</td><td>1,282.03 &mu;s</td><td>198.40 &mu;s</td><td>4.87</td><td>0.09</td><td>31.2500</td><td>-</td><td>-</td><td>404142 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedStreamMemory</td><td>100000</td><td>8</td><td>27,101.8 &mu;s</td><td>3,164.52 &mu;s</td><td>489.71 &mu;s</td><td>14.04</td><td>0.23</td><td>2937.5000</td><td>1875.0000</td><td>1000.0000</td><td>40506706 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedFileStream</td><td>100000</td><td>8</td><td>29,144.5 &mu;s</td><td>3,005.02 &mu;s</td><td>780.39 &mu;s</td><td>15.09</td><td>0.37</td><td>2906.2500</td><td>1718.7500</td><td>968.7500</td><td>40513695 B</td><td>NA</td>
+</tr><tr><td>ParseTypedFromBufferedFileAsyncEnumerable</td><td>100000</td><td>8</td><td>36,881.2 &mu;s</td><td>4,738.11 &mu;s</td><td>1,230.47 &mu;s</td><td>19.10</td><td>0.59</td><td>1714.2857</td><td>1142.8571</td><td>642.8571</td><td>40825795 B</td><td>NA</td>
+</tr></tbody></table>
+</body>
+</html>

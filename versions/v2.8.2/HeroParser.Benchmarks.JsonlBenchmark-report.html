@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>HeroParser.Benchmarks.JsonlBenchmark-20261105-094405</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.5 LTS (Noble Numbat)
+AMD EPYC 7763 2.63GHz, 1 CPU, 4 logical and 2 physical cores
+.NET SDK 10.0.403
+  [Host]     : .NET 10.0.14 (10.0.14, 10.0.1426.52326), X64 RyuJIT x86-64-v3
+  Job-INMAZI : .NET 10.0.14 (10.0.14, 10.0.1426.52326), X64 RyuJIT x86-64-v3
+</code></pre>
+<pre><code>IterationCount=5  RunStrategy=Throughput  WarmupCount=3  
+</code></pre>
+
+<table>
+<thead><tr><th>Method                  </th><th>Rows</th><th>Mean</th><th>Error</th><th>StdDev</th><th>Ratio</th><th>RatioSD</th><th>Gen0</th><th>Gen1</th><th>Gen2</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>ReadFromText</td><td>10000</td><td>4.300 ms</td><td>0.1936 ms</td><td>0.0503 ms</td><td>1.00</td><td>0.02</td><td>156.2500</td><td>70.3125</td><td>70.3125</td><td>1614035 B</td><td>1.00</td>
+</tr><tr><td>ReadFromStream</td><td>10000</td><td>3.764 ms</td><td>0.0311 ms</td><td>0.0081 ms</td><td>0.88</td><td>0.01</td><td>113.2813</td><td>3.9063</td><td>3.9063</td><td>-</td><td>0.00</td>
+</tr><tr><td>ReadFromFileAsync</td><td>10000</td><td>7.487 ms</td><td>0.1943 ms</td><td>0.0301 ms</td><td>1.74</td><td>0.02</td><td>242.1875</td><td>-</td><td>-</td><td>1878175 B</td><td>1.16</td>
+</tr><tr><td>WriteToText</td><td>10000</td><td>3.372 ms</td><td>0.0560 ms</td><td>0.0146 ms</td><td>0.78</td><td>0.01</td><td>195.3125</td><td>195.3125</td><td>195.3125</td><td>2572902 B</td><td>1.59</td>
+</tr><tr><td>WriteToStream</td><td>10000</td><td>2.942 ms</td><td>0.0963 ms</td><td>0.0250 ms</td><td>0.68</td><td>0.01</td><td>66.4063</td><td>66.4063</td><td>66.4063</td><td>646794 B</td><td>0.40</td>
+</tr><tr><td>ReadFromText_SourceGenerated</td><td>10000</td><td>3.962 ms</td><td>0.0751 ms</td><td>0.0116 ms</td><td>0.92</td><td>0.01</td><td>164.0625</td><td>70.3125</td><td>70.3125</td><td>-</td><td>0.00</td>
+</tr><tr><td>ReadFromStream_SourceGenerated</td><td>10000</td><td>3.603 ms</td><td>0.0430 ms</td><td>0.0067 ms</td><td>0.84</td><td>0.01</td><td>89.8438</td><td>-</td><td>-</td><td>968520 B</td><td>0.60</td>
+</tr><tr><td>WriteToText_SourceGenerated</td><td>10000</td><td>2.972 ms</td><td>0.1446 ms</td><td>0.0224 ms</td><td>0.69</td><td>0.01</td><td>199.2188</td><td>199.2188</td><td>199.2188</td><td>2573137 B</td><td>1.59</td>
+</tr><tr><td>WriteToStream_SourceGenerated</td><td>10000</td><td>2.230 ms</td><td>0.0805 ms</td><td>0.0125 ms</td><td>0.52</td><td>0.01</td><td>66.4063</td><td>66.4063</td><td>66.4063</td><td>646811 B</td><td>0.40</td>
+</tr><tr><td>ConvertCsvToJsonlFlat</td><td>10000</td><td>4.607 ms</td><td>0.3181 ms</td><td>0.0492 ms</td><td>1.07</td><td>0.02</td><td>312.5000</td><td>289.0625</td><td>289.0625</td><td>3509336 B</td><td>2.17</td>
+</tr><tr><td>ConvertJsonlToCsv</td><td>10000</td><td>8.583 ms</td><td>0.7481 ms</td><td>0.1158 ms</td><td>2.00</td><td>0.03</td><td>375.0000</td><td>218.7500</td><td>140.6250</td><td>-</td><td>0.00</td>
+</tr><tr><td>ReadFromText</td><td>100000</td><td>45.098 ms</td><td>1.5578 ms</td><td>0.2411 ms</td><td>1.00</td><td>0.01</td><td>1909.0909</td><td>909.0909</td><td>909.0909</td><td>17084700 B</td><td>1.00</td>
+</tr><tr><td>ReadFromStream</td><td>100000</td><td>38.845 ms</td><td>0.4430 ms</td><td>0.1150 ms</td><td>0.86</td><td>0.00</td><td>1000.0000</td><td>-</td><td>-</td><td>10328520 B</td><td>0.60</td>
+</tr><tr><td>ReadFromFileAsync</td><td>100000</td><td>79.430 ms</td><td>3.2172 ms</td><td>0.8355 ms</td><td>1.76</td><td>0.02</td><td>1666.6667</td><td>-</td><td>-</td><td>19878296 B</td><td>1.16</td>
+</tr><tr><td>WriteToText</td><td>100000</td><td>32.815 ms</td><td>2.4271 ms</td><td>0.6303 ms</td><td>0.73</td><td>0.01</td><td>375.0000</td><td>375.0000</td><td>375.0000</td><td>26310190 B</td><td>1.54</td>
+</tr><tr><td>WriteToStream</td><td>100000</td><td>28.522 ms</td><td>1.0031 ms</td><td>0.2605 ms</td><td>0.63</td><td>0.01</td><td>156.2500</td><td>156.2500</td><td>156.2500</td><td>-</td><td>0.00</td>
+</tr><tr><td>ReadFromText_SourceGenerated</td><td>100000</td><td>43.700 ms</td><td>2.1698 ms</td><td>0.5635 ms</td><td>0.97</td><td>0.01</td><td>1916.6667</td><td>916.6667</td><td>916.6667</td><td>17083932 B</td><td>1.00</td>
+</tr><tr><td>ReadFromStream_SourceGenerated</td><td>100000</td><td>36.196 ms</td><td>0.2907 ms</td><td>0.0755 ms</td><td>0.80</td><td>0.00</td><td>1000.0000</td><td>-</td><td>-</td><td>10328520 B</td><td>0.60</td>
+</tr><tr><td>WriteToText_SourceGenerated</td><td>100000</td><td>27.858 ms</td><td>2.4092 ms</td><td>0.3728 ms</td><td>0.62</td><td>0.01</td><td>375.0000</td><td>375.0000</td><td>375.0000</td><td>26310015 B</td><td>1.54</td>
+</tr><tr><td>WriteToStream_SourceGenerated</td><td>100000</td><td>21.963 ms</td><td>0.5773 ms</td><td>0.1499 ms</td><td>0.49</td><td>0.00</td><td>187.5000</td><td>187.5000</td><td>187.5000</td><td>6756082 B</td><td>0.40</td>
+</tr><tr><td>ConvertCsvToJsonlFlat</td><td>100000</td><td>42.770 ms</td><td>2.9647 ms</td><td>0.4588 ms</td><td>0.95</td><td>0.01</td><td>583.3333</td><td>583.3333</td><td>583.3333</td><td>31486464 B</td><td>1.84</td>
+</tr><tr><td>ConvertJsonlToCsv</td><td>100000</td><td>89.339 ms</td><td>2.8354 ms</td><td>0.7363 ms</td><td>1.98</td><td>0.02</td><td>1166.6667</td><td>833.3333</td><td>500.0000</td><td>-</td><td>0.00</td>
+</tr></tbody></table>
+</body>
+</html>

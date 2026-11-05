@@ -1,7 +1,7 @@
 # HeroParser Development Guidelines
 
 ## Active Technologies
-- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
+- C# with multi-framework targeting (net8.0, net9.0, net10.0, net11.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 
 ## Project Structure
 ```
@@ -47,7 +47,7 @@ dotnet format --verify-no-changes
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 ```
 
-**CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 3 frameworks (net8.0, net9.0, net10.0). Code coverage is collected on ubuntu/net10.0 only.
+**CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 4 frameworks (net8.0, net9.0, net10.0, net11.0). Code coverage and benchmarks stay on ubuntu/net10.0 (the LTS target); native AOT publish runs on ubuntu for net10.0 and net11.0 (STS).
 
 **Test platform**: The test projects run on Microsoft.Testing.Platform rather than VSTest. Practical consequences:
 - `global.json` selects the runner (`"test": { "runner": "Microsoft.Testing.Platform" }`); without it `dotnet test` falls back to VSTest and fails on the .NET 10 SDK.

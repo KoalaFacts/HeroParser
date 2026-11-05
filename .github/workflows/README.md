@@ -13,7 +13,7 @@ This directory contains automated CI/CD workflows for HeroParser.
 - Merge queue
 
 **What it does:**
-1. **Build and Test** (Matrix: Ubuntu/Windows/macOS × .NET 8/9/10)
+1. **Build and Test** (Matrix: Ubuntu/Windows/macOS × .NET 8/9/10/11)
    - Restores dependencies
    - Builds in Release configuration
    - Runs all tests
@@ -155,7 +155,7 @@ This directory contains automated CI/CD workflows for HeroParser.
 
 **What it does:**
 1. Runs BenchmarkDotNet throughput tests
-2. Tests on .NET 8, 9, and 10
+2. Tests on .NET 8, 9, 10, and 11
 3. Uploads benchmark results as artifacts
 4. Posts results as PR comment (for PRs)
 

@@ -2,7 +2,7 @@
 
 [Back to README](../README.md)
 
-HeroParser provides a high-performance, low-allocation CSV parser and writer for .NET 8, 9, and 10. The primary entry point is the `Csv` static class.
+HeroParser provides a high-performance, low-allocation CSV parser and writer for .NET 8, 9, and 10 (.NET 11 from 2.9.0). The primary entry point is the `Csv` static class.
 
 ---
 

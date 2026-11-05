@@ -4,6 +4,20 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+Planned as 2.9.0: .NET 11 compatibility.
+
+### Added
+- **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.
+
+### Build and CI
+- Build, test and AOT-check every target with the .NET 11 SDK (`11.0.100-rc.3`, go-live); the CI matrix gains net11.0 on Ubuntu, Windows and macOS, and native AOT publish now also runs for net11.0. The C# language version stays pinned at 14.0, so building with the .NET 10 SDK keeps working for the existing targets.
+- Before releasing 2.9.0, move the SDK pin to the .NET 11 GA SDK.
+
+### Notes
+- .NET 8 and .NET 9 reach end of support on 2026-11-10. HeroParser keeps their targets in 2.9.0; dropping any target would be a separate, major-version decision.
+
+## [2.9.0] - 2026-11-05
+
 ## [2.8.2] - 2026-11-05
 
 The patch contains correctness and benchmark-validity repairs; no unverified throughput improvement is claimed.

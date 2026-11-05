@@ -173,7 +173,7 @@ jobs:
       - name: Convert frameworks to shell format
         id: frameworks
         run: |
-          # Convert JSON array to semicolon-separated: ["net8.0","net9.0","net10.0"] -> "net8.0;net9.0;net10.0"
+          # Convert JSON array to semicolon-separated: ["net8.0","net9.0","net10.0","net11.0"] -> "net8.0;net9.0;net10.0;net11.0"
           FRAMEWORKS_LIST=$(echo '${{ steps.extract.outputs.frameworks }}' | sed 's/\["//' | sed 's/"\]//' | sed 's/","/ /g' | tr ' ' ';')
           echo "list=$FRAMEWORKS_LIST" >> $GITHUB_OUTPUT
 
@@ -427,7 +427,7 @@ jobs:
           if [ -d "release-sboms" ] && [ "$(ls -A release-sboms)" ]; then
             SBOM_COUNT=$(ls -1 release-sboms/*.json 2>/dev/null | wc -l)
             echo "**SBOMs (Software Bill of Materials):**" >> $GITHUB_STEP_SUMMARY
-            echo "- $SBOM_COUNT SBOMs total (3 frameworks and 2 SPDX formats)" >> $GITHUB_STEP_SUMMARY
+            echo "- $SBOM_COUNT SBOMs total (one per target framework and SPDX format)" >> $GITHUB_STEP_SUMMARY
             echo "- Per-framework dependency tracking" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
           fi

@@ -6,11 +6,11 @@
 
     <!-- Default multi-targeting for all projects -->
     <!-- Individual projects can override if they need specific frameworks (e.g., source generators using netstandard2.0) -->
-    <SupportedTargetFrameworks>net8.0;net9.0;net10.0</SupportedTargetFrameworks>
+    <SupportedTargetFrameworks>net8.0;net9.0;net10.0;net11.0</SupportedTargetFrameworks>
 
     <!-- Corresponding SDK versions for CI/CD workflows -->
     <!-- Servicing updates include the patched NativeAOT toolchains. -->
-    <SupportedSdkVersions>8.0.427;9.0.320;10.0.403</SupportedSdkVersions>
+    <SupportedSdkVersions>8.0.427;9.0.320;10.0.403;11.0.100-rc.3.26522.148</SupportedSdkVersions>
 
     <!-- Enforce EditorConfig code style during build so style violations fail when TreatWarningsAsErrors=true -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

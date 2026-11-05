@@ -22,7 +22,7 @@ function createCiStatus(input: CiInput) {
     if (!input || typeof input.sourceSha !== 'string' || !/^[0-9a-f]{40}$/.test(input.sourceSha)) {
         throw new Error('Invalid source SHA: require the exact checked-out commit.');
     }
-    if (!['net8.0', 'net9.0', 'net10.0'].includes(input.framework)) {
+    if (!['net8.0', 'net9.0', 'net10.0', 'net11.0'].includes(input.framework)) {
         throw new Error('Invalid correctness framework.');
     }
     for (const field of ['runId', 'runAttempt'] as const) {

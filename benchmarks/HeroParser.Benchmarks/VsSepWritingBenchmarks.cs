@@ -1,7 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using CsvHelper;
-using CsvHelper.Configuration;
 using HeroParser.SeparatedValues;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Writing;
@@ -99,13 +98,17 @@ public class VsSepWritingBenchmarks
     public string CsvHelper_Write()
     {
         using var stringWriter = new StringWriter();
-        using var csvHelper = new CsvWriter(stringWriter, new CsvConfiguration(CultureInfo.InvariantCulture));
+        using var csvHelper = CsvWriter.Create(
+            stringWriter,
+            // v33 also quoted fields that start or end with whitespace; v34 needs this to keep that rule.
+            new CsvWriterOptions { FormatProvider = CultureInfo.InvariantCulture, Quoting = CsvQuoting.WhenNeededOrWhitespace },
+            leaveOpen: true);
 
         for (int c = 0; c < Columns; c++)
         {
             csvHelper.WriteField($"Col{c}");
         }
-        csvHelper.NextRecord();
+        csvHelper.EndRecord();
 
         for (int r = 0; r < data.Length; r++)
         {
@@ -114,7 +117,7 @@ public class VsSepWritingBenchmarks
             {
                 csvHelper.WriteField(rowData[c]);
             }
-            csvHelper.NextRecord();
+            csvHelper.EndRecord();
         }
 
         csvHelper.Flush();

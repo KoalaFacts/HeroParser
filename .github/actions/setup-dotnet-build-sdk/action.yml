@@ -1,0 +1,28 @@
+name: 'Setup build .NET SDK'
+description: >-
+  Installs the newest SDK on the channel of global.json's sdk.version. setup-dotnet resolves an
+  A.B.x version to the latest SDK on that channel, prereleases included while no GA exists;
+  global.json (rollForward latestFeature, allowPrerelease) then selects it.
+runs:
+  using: 'composite'
+  steps:
+    - name: Read SDK channel from global.json
+      id: channel
+      shell: bash
+      run: |
+        version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9]*\.[0-9]*\)\..*/\1/p' global.json | head -1)
+        if [ -z "$version" ]; then
+          echo "::error::global.json has no sdk.version"
+          exit 1
+        fi
+        echo "channel=$version.x" >> "$GITHUB_OUTPUT"
+        echo "Build SDK channel: $version.x"
+
+    - name: Setup build .NET SDK
+      uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+      with:
+        dotnet-version: ${{ steps.channel.outputs.channel }}
+
+    - name: Show selected SDK
+      shell: bash
+      run: dotnet --version

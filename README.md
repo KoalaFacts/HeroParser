@@ -4,7 +4,7 @@
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**HeroParser** is a low-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, and 10. Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
+**HeroParser** is a low-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, and 10, with .NET 11 support coming in 2.9.0. Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
 
 ### Why Choose HeroParser?
 * **Extreme Performance**: Engineered with AVX-512, AVX2, and ARM NEON SIMD optimizations to deliver ultra-high-throughput reading and writing.
@@ -368,7 +368,7 @@ internal partial class DeveloperJsonContext : JsonSerializerContext { }
 * **Progress reporting** — row/byte callbacks for large-file UX
 * **Custom type converters** — register converters for domain types on any reader or writer
 * **Write capacity pre-allocation** — estimates backing buffer capacity from collection counts when writing to strings to reduce buffer growth; actual sizes and benefits depend on the records
-* **Multi-framework** — .NET 8, 9, 10; CI validates all three on Windows, Linux, and macOS
+* **Multi-framework** — .NET 8, 9, and 10 (.NET 11 from 2.9.0); CI validates every target on Windows, Linux, and macOS
 
 ---
 

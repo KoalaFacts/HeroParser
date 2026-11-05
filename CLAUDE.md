@@ -1,7 +1,7 @@
 # HeroParser Development Guidelines
 
 ## Active Technologies
-- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
+- C# with multi-framework targeting (net8.0, net9.0, net10.0, net11.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 
 ## Project Structure
 ```
@@ -47,10 +47,10 @@ dotnet format --verify-no-changes
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 ```
 
-**CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 3 frameworks (net8.0, net9.0, net10.0). Code coverage is collected on ubuntu/net10.0 only.
+**CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 4 frameworks (net8.0, net9.0, net10.0, net11.0). Code coverage and benchmarks stay on ubuntu/net10.0 (the LTS target); native AOT publish runs on ubuntu for net10.0 and net11.0 (STS).
 
 **Test platform**: The test projects run on Microsoft.Testing.Platform rather than VSTest. Practical consequences:
-- `global.json` selects the runner (`"test": { "runner": "Microsoft.Testing.Platform" }`); without it `dotnet test` falls back to VSTest and fails on the .NET 10 SDK.
+- `global.json` selects the runner (`"test": { "runner": "Microsoft.Testing.Platform" }`); without it `dotnet test` falls back to VSTest and fails on the .NET 10 SDK. It also sets the build SDK (`sdk.version`, `rollForward: latestFeature`, `allowPrerelease: true`): CI installs the newest SDK on that channel through `.github/actions/setup-dotnet-build-sdk` (setup-dotnet's `A.B.x` resolution, which includes prereleases). Change the channel there, not in workflows.
 - Test projects must set `<OutputType>Exe</OutputType>` — MTP test assemblies are executables. `Microsoft.NET.Test.Sdk`, `xunit.runner.visualstudio` and `coverlet.collector` are VSTest-only and are no longer referenced.
 - Runner arguments follow `--`: `--filter-trait` (not `--filter`), `--report-trx --report-trx-filename` (not `--logger trx`), `--coverage --coverage-output-format cobertura` (not `--collect "XPlat Code Coverage"`).
 - Each test binary is also directly runnable and accepts xunit's native single-dash options, which is handy for debugging: `./HeroParser.Tests -trait Category=Unit -list traits`.

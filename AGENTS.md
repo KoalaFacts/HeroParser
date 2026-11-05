@@ -1,7 +1,7 @@
 # HeroParser Development Guidelines
 
 ## Active Technologies
-- C# with multi-framework targeting (net8.0, net9.0, net10.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
+- C# with multi-framework targeting (net8.0, net9.0, net10.0, net11.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 
 ## Project Structure
 ```
@@ -46,11 +46,11 @@ dotnet format --verify-no-changes
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 ```
 
-**CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 3 frameworks (net8.0, net9.0, net10.0). Code coverage is collected on ubuntu/net10.0 only.
+**CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 4 frameworks (net8.0, net9.0, net10.0, net11.0). Code coverage and benchmarks stay on ubuntu/net10.0 (the LTS target); native AOT publish runs on ubuntu for net10.0 and net11.0 (STS).
 
 ## Code Style
 - **Nullable reference types**: Enabled (`<Nullable>enable</Nullable>`)
-- **Language version**: C# 14 (`<LangVersion>14.0</LangVersion>`), fixed across SDK versions. Building from source requires the .NET 10 SDK or a newer SDK supporting C# 14; the existing net8.0/net9.0/net10.0 runtime targets remain supported.
+- **Language version**: C# 14 (`<LangVersion>14.0</LangVersion>`), fixed across SDK versions. Building from source requires a .NET 11 SDK at or above `global.json`'s `sdk.version` (previews allowed, rolling forward to later 11.0 feature bands), because the net11.0 target needs it; running the net8.0/net9.0/net10.0 tests also needs those runtimes.
 - **Implicit usings**: Enabled
 - **File-scoped namespaces**: Preferred (suggestion severity — won't fail build, but used consistently throughout)
 - **Private fields**: `camelCase` (no `s_` prefix for static fields, no `_` prefix)

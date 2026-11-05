@@ -9,10 +9,8 @@
     <SupportedTargetFrameworks>net8.0;net9.0;net10.0</SupportedTargetFrameworks>
 
     <!-- Corresponding SDK versions for CI/CD workflows -->
-    <!-- Pin the last verified SDK patches while the 2026-10-25 servicing rollout -->
-    <!-- returns HTTP 409 from the .NET download origin for new 8.x/10.x binaries. -->
-    <!-- Review after upstream distribution recovers; never reduce TFM coverage. -->
-    <SupportedSdkVersions>8.0.426;9.0.319;10.0.402</SupportedSdkVersions>
+    <!-- Servicing updates include the patched NativeAOT toolchains. -->
+    <SupportedSdkVersions>8.0.427;9.0.320;10.0.403</SupportedSdkVersions>
 
     <!-- Enforce EditorConfig code style during build so style violations fail when TreatWarningsAsErrors=true -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>

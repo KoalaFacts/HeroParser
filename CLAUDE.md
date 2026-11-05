@@ -278,8 +278,7 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
                                     ┌────┴─────┐
                                     │ AVX-512  │  (64-byte chunks)
                                     │ AVX2     │  (32-byte chunks)
-                                    │ NEON     │  (16-byte chunks, ARM)
-                                    │ Scalar   │  (fallback)
+                                    │ Scalar   │  (everything else, incl. ARM64)
                                     └──────────┘
 ```
 - **Scan-ahead scanner** (`CsvRowBatchScanner` + `CsvRowBatchCursor`): one SIMD pass records a batch of rows' column ends into a pooled buffer; the cursor drives the batch / refill / fallback protocol for the span readers, the streaming readers (`CsvAsyncStreamReader`, `CsvMultiSchemaStreamingRecordReader`) and the pipe reader (`CsvPipeSequenceReader`, which `ReadFromPipeReaderAsync` wraps), which scan their buffered window and never emit a partial row mid-stream. The pipe reader batches over a single-segment buffer and falls back to its per-row `ReadOnlySequence` path only for rows that straddle segments. UTF-16 chunks are packed to bytes with saturation and share the byte dispatch. Errors are delegated to `ParseRow` for identical diagnostics. Used when the delimiter and quote are ASCII and no comment/escape character is set.
@@ -319,8 +318,9 @@ If `dotnet publish -r linux-x64 --self-contained` produces trim warnings:
 HeroParser auto-detects CPU capabilities at runtime:
 - AVX-512 → 64-byte chunk processing (best throughput)
 - AVX2 → 32-byte chunks (common on modern x64)
-- NEON → 16-byte chunks (ARM64, e.g., Apple Silicon, AWS Graviton)
-- Scalar → byte-by-byte (always works)
+- Scalar → byte-by-byte (always works; the path on ARM64, e.g. Apple Silicon and AWS Graviton, and in WebAssembly)
+
+No parser path uses ARM `AdvSimd` (NEON) today; `Hardware.GetHardwareInfo()` only reports it.
 
 Set `CsvReadOptions.UseSimdIfAvailable = false` to force scalar mode for debugging.
 
@@ -392,4 +392,4 @@ Goal: .NET 11 readiness before .NET 11 GA, current dependencies, and docs that s
 | L5 | `AnalysisLevel=latest-all` sweep on .NET 11 | Catch obsoletions before GA | todo | Baseline 2026-11-06 on `2309336`, SDK 11.0.100-rc.3, all TFMs: 0 SYSLIB/CS obsoletion warnings; 12,098 CA warnings solution-wide, 487 distinct in `src/` (top: CA1805, CA2007, CA1305, CA1062, CA1815). Triage first: CA1305/CA1307/CA1310 (culture), CA2000/CA2213 (disposal), CA1849, CA1065 |
 | L5a | `MapFromToolCall` bound string arguments with the current culture (de-DE `"1.5"` → 15) | Correct values from LLM tool calls on non-English servers | waiting (owner approval, [#171](https://github.com/KoalaFacts/HeroParser/pull/171)) | 5 new tests, 4744/4744 on net10.0/net11.0 |
 | L6 | Dependency upkeep (NuGet, npm) | Security and currency | ongoing | Held back: `onnxruntime-web` 1.20.1 (override + postinstall patches), TypeScript 6.x until vue-tsc supports 7 |
-| L7 | Docs accuracy audit, one area per PR (README, docs/*.md, npm README, demo text, workflows README) | Docs match the code | in progress | npm package README: waiting (owner approval, [#172](https://github.com/KoalaFacts/HeroParser/pull/172)). Found 2026-11-06, not yet fixed: README.md, CLAUDE.md (pipeline diagram, "SIMD fallback behavior") and docs claim ARM NEON SIMD, but the parser's SIMD paths use only x86 AVX2/AVX-512 (`CsvRowBatchScanner`) and SSE2+ (`CsvWriterQuoting`); `Hardware.cs` only reports NEON. ARM64 and WebAssembly run the scalar paths |
+| L7 | Docs accuracy audit, one area per PR (README, docs/*.md, npm README, demo text, workflows README) | Docs match the code | in progress | npm package README: waiting (owner approval, [#172](https://github.com/KoalaFacts/HeroParser/pull/172)). SIMD claims: PR (docs/simd-claims) — README, CLAUDE.md and the CSV guide said the parser uses ARM NEON; only x86 AVX2/AVX-512 (`CsvRowBatchScanner`) and SSE2+ (`CsvWriterQuoting`) paths exist, `Hardware.cs` only reports NEON |

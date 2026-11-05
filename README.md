@@ -7,7 +7,7 @@
 **HeroParser** is a low-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, and 10, with .NET 11 support coming in 2.9.0. Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
 
 ### Why Choose HeroParser?
-* **Extreme Performance**: Engineered with AVX-512, AVX2, and ARM NEON SIMD optimizations to deliver ultra-high-throughput reading and writing.
+* **SIMD on x86-64**: the CSV row scanner uses AVX-512 or AVX2 (with PCLMULQDQ for quote tracking), and the CSV writer's quote analysis uses AVX-512, AVX2 or SSE2. Other CPUs, including ARM64, and WebAssembly use the scalar paths.
 * **AI-Native integrations**: Built-in support for token-budgeted chunking, LLM output structured repair, vector embedding pipelines, and agent tool mapping.
 * **Low Footprint**: Span row readers expose fields without creating a string for every field. Typed records, decoded strings, and streaming APIs have their own allocation costs; see the [benchmark scope and evidence](docs/benchmarks.md).
 * **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, Fixed-Width, and HTB APIs.
@@ -372,7 +372,7 @@ internal partial class DeveloperJsonContext : JsonSerializerContext { }
 
 ## Key Features
 
-* **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking
+* **SIMD-accelerated CSV parsing on x86-64** — AVX-512 and AVX2, with PCLMULQDQ-based branchless quote tracking; scalar elsewhere
 * **Allocation-conscious scanning** — span field access and pooled buffers; allocation profiles vary by API, options, and output representation
 * **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
 * **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, JSONL, and HTB; true non-blocking I/O with sync fast paths

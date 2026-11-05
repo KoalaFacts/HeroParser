@@ -38,12 +38,28 @@ export function slugify(heading: string): string {
   // Code spans keep their text; raw HTML tags outside them render as nothing.
   const parts = heading.trim().split(/(`+[^`]*`+)/);
   return parts
-    .map((part, index) => (index % 2 === 1 ? part.replace(/`/g, "") : part.replace(/<[^>]*>/g, "")))
+    .map((part, index) => (index % 2 === 1 ? part.replace(/`/g, "") : withoutHtmlTags(part)))
     .join("")
     .toLowerCase()
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/[^\p{L}\p{N}\s_-]/gu, "")
     .replace(/\s/g, "-");
+}
+
+/** Heading text as GitHub renders it: a `<tag ...>` contributes nothing, other text is kept. */
+function withoutHtmlTags(text: string): string {
+  let result = "";
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "<" && /[A-Za-z/!]/.test(text[i + 1] ?? "")) {
+      const end = text.indexOf(">", i);
+      if (end >= 0) {
+        i = end;
+        continue;
+      }
+    }
+    result += text[i];
+  }
+  return result;
 }
 
 /** Lines outside fenced code blocks, with their 1-based numbers. */
@@ -211,12 +227,15 @@ export function checkDocs(input: DocsCheckInput): DocIssue[] {
   }
 
   // Codex reads skills from .agents/skills, Claude from .claude/skills: the copies must match.
+  const skillFolders = [".agents/skills/", ".claude/skills/"];
   for (const file of input.files) {
-    if (!file.startsWith(".agents/skills/")) continue;
-    const twin = `.claude/skills/${file.slice(".agents/skills/".length)}`;
+    const folder = skillFolders.find((prefix) => file.startsWith(prefix));
+    if (folder === undefined) continue;
+    const other = skillFolders.find((prefix) => prefix !== folder)!;
+    const twin = other + file.slice(folder.length);
     if (!input.files.includes(twin)) {
       issues.push({ file, line: 1, message: `has no ${twin} counterpart; keep the two skill folders identical` });
-    } else if (input.read(file) !== input.read(twin)) {
+    } else if (folder === skillFolders[0] && input.read(file) !== input.read(twin)) {
       issues.push({ file, line: 1, message: `differs from ${twin}; keep the two skill folders identical` });
     }
   }

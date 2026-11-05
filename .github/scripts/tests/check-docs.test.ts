@@ -27,6 +27,9 @@ test("slugify follows GitHub heading anchors", () => {
   assert.equal(slugify("Excel (.xlsx) Reading"), "excel-xlsx-reading");
   // A raw generic outside code renders as an HTML tag, so it contributes nothing.
   assert.equal(slugify("8.3 Map<TProperty>() inline mapping"), "83-map-inline-mapping");
+  // A '<' that does not start a tag is text (then dropped as punctuation).
+  assert.equal(slugify("a < b <script"), "a--b-script");
+  assert.equal(slugify("Value <br/> next"), "value--next");
 });
 
 test("collectAnchors numbers repeated headings and ignores fenced code", () => {
@@ -115,4 +118,7 @@ test("skill copies under .agents and .claude must match", () => {
   assert.match(differ[0].message, /differs from \.claude\/skills\/x\/SKILL\.md/);
   const missing = run({ ...base, ".agents/skills/y/SKILL.md": "a\n" });
   assert.match(missing[0].message, /has no \.claude\/skills\/y\/SKILL\.md counterpart/);
+  const claudeOnly = run({ ...base, ".claude/skills/z/SKILL.md": "a\n" });
+  assert.deepEqual(claudeOnly.map((i) => i.file), [".claude/skills/z/SKILL.md"]);
+  assert.match(claudeOnly[0].message, /has no \.agents\/skills\/z\/SKILL\.md counterpart/);
 });

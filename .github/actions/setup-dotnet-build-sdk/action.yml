@@ -1,8 +1,8 @@
 name: 'Setup build .NET SDK'
 description: >-
-  Installs the newest SDK, previews included, on the channel of global.json's sdk.version.
-  global.json (rollForward latestFeature, allowPrerelease) then selects it, so CI moves from
-  a preview to the GA SDK without editing the pin.
+  Installs the newest SDK on the channel of global.json's sdk.version. setup-dotnet resolves an
+  A.B.x version to the latest SDK on that channel, prereleases included while no GA exists;
+  global.json (rollForward latestFeature, allowPrerelease) then selects it.
 runs:
   using: 'composite'
   steps:
@@ -16,13 +16,12 @@ runs:
           exit 1
         fi
         echo "channel=$version.x" >> "$GITHUB_OUTPUT"
-        echo "Build SDK channel: $version.x (previews allowed)"
+        echo "Build SDK channel: $version.x"
 
     - name: Setup build .NET SDK
       uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       with:
         dotnet-version: ${{ steps.channel.outputs.channel }}
-        dotnet-quality: preview
 
     - name: Show selected SDK
       shell: bash

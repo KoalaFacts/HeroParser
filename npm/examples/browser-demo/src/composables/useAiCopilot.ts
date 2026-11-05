@@ -2,6 +2,10 @@ import { ref } from "vue";
 
 let generator: any = null;
 
+// Resolve the ONNX Runtime assets against the page so the demo works under a
+// sub-path such as GitHub Pages (/HeroParser/demo/), not only at the site root.
+const ORT_WASM_PATHS = new URL("./assets/", document.baseURI).href;
+
 export function useAiCopilot() {
   const aiModelLoaded = ref(false);
   const aiLoading = ref(false);
@@ -33,7 +37,7 @@ export function useAiCopilot() {
 
     try {
       const { pipeline, env } = await import("@huggingface/transformers");
-      (env as any).backends.onnx.wasm.wasmPaths = "/assets/";
+      (env as any).backends.onnx.wasm.wasmPaths = ORT_WASM_PATHS;
       env.useBrowserCache = true;
       (env as any).backends.onnx.wasm.numThreads = 1;
 
@@ -110,7 +114,7 @@ export function useAiCopilot() {
       const modelId = "onnx-community/gemma-4-E2B-it-ONNX";
       try {
         const { pipeline, env } = await import("@huggingface/transformers");
-        (env as any).backends.onnx.wasm.wasmPaths = "/assets/";
+        (env as any).backends.onnx.wasm.wasmPaths = ORT_WASM_PATHS;
         env.useBrowserCache = true;
         (env as any).backends.onnx.wasm.numThreads = 1;
         try {

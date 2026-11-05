@@ -357,6 +357,7 @@ jobs:
 
           ### Documentation
           - [README](https://github.com/KoalaFacts/HeroParser/blob/main/README.md)
+          - [Changelog](https://github.com/KoalaFacts/HeroParser/blob/main/CHANGELOG.md)
           - [Workflows Guide](https://github.com/KoalaFacts/HeroParser/blob/main/.github/workflows/README.md)
           - [License](https://github.com/KoalaFacts/HeroParser/blob/main/LICENSE)
 

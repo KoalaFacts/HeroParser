@@ -1,10 +1,11 @@
-<script setup vapor>
+<script setup vapor lang="ts">
 import { ref, onMounted } from "vue";
 import { init } from "heroparser";
 import { useCsv } from "./composables/useCsv";
 import { useFixedWidth } from "./composables/useFixedWidth";
 import { useExcel } from "./composables/useExcel";
 import { useAiCopilot } from "./composables/useAiCopilot";
+import heroParserPackage from "heroparser/package.json";
 
 // Bootstrap state
 const initialized = ref(false);
@@ -12,7 +13,7 @@ const initStatus = ref("Initializing HeroParser WASM Engine...");
 
 // Tab selection
 const activeTab = ref("csv");
-const switchTab = (tab) => {
+const switchTab = (tab: string) => {
   activeTab.value = tab;
 };
 
@@ -61,6 +62,10 @@ const {
   clearAiCache,
   checkCacheOnMount,
 } = useAiCopilot();
+
+const heroParserVersion = heroParserPackage.version;
+const excelFileInput = ref<HTMLInputElement | null>(null);
+const openExcelPicker = () => excelFileInput.value?.click();
 
 const faviconUrl = "./favicon.svg";
 const iconsUrl = "./icons.svg";
@@ -152,10 +157,13 @@ onMounted(async () => {
       >
         <img :src="faviconUrl" alt="HeroParser Logo" style="width: 48px; height: 48px" />
         <h1 style="margin: 0">HeroParser WASM</h1>
+        <span class="ai-meta-size" title="HeroParser package version"
+          >v{{ heroParserVersion }}</span
+        >
       </div>
       <p class="tagline">
-        High-performance, zero-allocation C# tabular parser running at native speed directly inside
-        a browser.
+        HeroParser's low-allocation C# tabular parser, compiled to WebAssembly and running directly
+        in your browser. Parse times shown here are single in-browser runs, not benchmarks.
       </p>
     </header>
 
@@ -258,7 +266,7 @@ onMounted(async () => {
         <div
           id="excel-dropzone"
           class="dropzone"
-          @click="document.getElementById('excel-file').click()"
+          @click="openExcelPicker"
           @dragover.prevent
           @drop.prevent="handleExcelDrop"
         >
@@ -274,6 +282,7 @@ onMounted(async () => {
             >{{ excelFileInfo }}</span
           >
           <input
+            ref="excelFileInput"
             type="file"
             id="excel-file"
             accept=".xlsx"

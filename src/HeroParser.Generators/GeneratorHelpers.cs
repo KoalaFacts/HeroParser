@@ -151,6 +151,19 @@ internal static class GeneratorHelpers
     }
 
     /// <summary>
+    /// Returns the enum type to use as a generic argument for <c>Enum.TryParse&lt;TEnum&gt;</c>-style
+    /// calls. A nullable enum property's fully qualified name ends in <c>?</c>
+    /// (<c>Nullable&lt;TEnum&gt;</c>), which does not satisfy the <c>struct, Enum</c> constraint
+    /// (CS0453), so the suffix is removed to name the underlying enum.
+    /// </summary>
+    public static string GetEnumTypeArgument(string fullyQualifiedTypeName)
+    {
+        return fullyQualifiedTypeName.EndsWith("?", StringComparison.Ordinal)
+            ? fullyQualifiedTypeName.Substring(0, fullyQualifiedTypeName.Length - 1)
+            : fullyQualifiedTypeName;
+    }
+
+    /// <summary>
     /// Escapes a string for use in C# string literals.
     /// </summary>
     public static string EscapeString(string value)

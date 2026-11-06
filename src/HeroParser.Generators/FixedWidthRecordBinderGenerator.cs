@@ -709,7 +709,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private static void EmitByteEnumParsing(SourceBuilder builder, MemberDescriptor member)
     {
         var propertyName = member.MemberName;
-        var enumType = member.TypeofTypeName;
+        var enumType = GetEnumTypeArgument(member.TypeofTypeName);
 
         if (member.IsNullable)
         {
@@ -1073,7 +1073,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private static void EmitInlineEnumParsing(SourceBuilder builder, MemberDescriptor member)
     {
         var propertyName = member.MemberName;
-        var enumType = member.TypeofTypeName;
+        var enumType = GetEnumTypeArgument(member.TypeofTypeName);
         var isNullable = member.IsNullable;
 
         if (isNullable)
@@ -1455,7 +1455,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
     private static void EmitEnumParsing(SourceBuilder builder, MemberDescriptor member, bool isNullable)
     {
         var propertyName = member.MemberName;
-        var enumType = member.TypeofTypeName;
+        var enumType = GetEnumTypeArgument(member.TypeofTypeName);
 
         if (isNullable)
         {

@@ -15,7 +15,7 @@ public static partial class FixedWidth
     /// <param name="readerOptions">DataReader configuration; defaults to <see cref="FixedWidthDataReaderOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the stream remains open after the reader is disposed.</param>
-    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters; zero or a negative value selects the default.</param>
     public static FixedWidthDataReader CreateDataReader(
         Stream stream,
         FixedWidthReadOptions? options = null,
@@ -63,7 +63,7 @@ public static partial class FixedWidth
     /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthReadOptions.Default"/>.</param>
     /// <param name="readerOptions">DataReader configuration; defaults to <see cref="FixedWidthDataReaderOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
-    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters; zero or a negative value selects the default.</param>
     public static FixedWidthDataReader CreateDataReader(
         string path,
         FixedWidthReadOptions? options = null,

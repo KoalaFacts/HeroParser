@@ -690,6 +690,8 @@ var readerOptions = new CsvDataReaderOptions
 using var reader = Csv.CreateDataReader(stream, readerOptions: readerOptions);
 ```
 
+Header names are unquoted the same way as field values, following the `CsvReadOptions` quote and escape characters: a header row `"Name","Unit ""cm"""` gives the column names `Name` and `Unit "cm"`. With `EnableQuotedFields = false` the header text is kept as written.
+
 ---
 
 ### 1.8 OnError callback

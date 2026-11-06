@@ -484,7 +484,7 @@ public sealed class CsvDataReader : DbDataReader
                 columnNames = new string[fieldCount];
                 for (int i = 0; i < fieldCount; i++)
                 {
-                    columnNames[i] = headerRow.GetString(i);
+                    columnNames[i] = GetColumnString(headerRow, i);
                 }
             }
             else if (columnNames.Length != fieldCount)
@@ -554,7 +554,7 @@ public sealed class CsvDataReader : DbDataReader
                 columnNames = new string[fieldCount];
                 for (int i = 0; i < fieldCount; i++)
                 {
-                    columnNames[i] = headerRow.GetString(i);
+                    columnNames[i] = GetColumnString(headerRow, i);
                 }
             }
             else if (columnNames.Length != fieldCount)

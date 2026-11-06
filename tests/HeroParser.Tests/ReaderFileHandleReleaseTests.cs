@@ -1,4 +1,5 @@
 using HeroParser.Htbs;
+using HeroParser.JsonLines;
 using HeroParser.SeparatedValues;
 using Xunit;
 using HtbApi = HeroParser.Htb;
@@ -116,6 +117,44 @@ public sealed class ReaderFileHandleReleaseTests : IDisposable
         Assert.True(stream.CanRead);
     }
 
+    [Fact]
+    public async Task HtbFromStreamAsync_WithInvalidOptionsAndOwnedStream_DisposesTheStream()
+    {
+        using var stream = new MemoryStream(SerializeHtb());
+
+        await Assert.ThrowsAsync<HtbException>(async () =>
+        {
+            await foreach (var _ in HtbApi.Read<Row>().WithMaxRowCount(0).FromStreamAsync(stream, leaveOpen: false))
+            {
+            }
+        });
+
+        Assert.False(stream.CanRead);
+    }
+
+    [Fact]
+    public void JsonlFromFile_WithInvalidOptions_ThrowsAndClosesTheFile()
+    {
+        string path = CreateTempFile("{\"Id\":1,\"Name\":\"a\"}\n"u8.ToArray());
+
+        Assert.Throws<JsonlException>(() => Jsonl.Read<Row>().WithMaxRowCount(0).FromFile(path));
+
+        AssertNoOpenHandle(path);
+    }
+
+    [Fact]
+    public void JsonlFromFile_WithValidOptions_ReadsAndReleasesTheFileOnDispose()
+    {
+        string path = CreateTempFile("{\"Id\":1,\"Name\":\"a\"}\n"u8.ToArray());
+
+        using (var reader = Jsonl.Read<Row>().FromFile(path))
+        {
+            Assert.Equal("a", Assert.Single(reader.ToList()).Name);
+        }
+
+        AssertNoOpenHandle(path);
+    }
+
     private string CreateHtbFile() => CreateTempFile(SerializeHtb());
 
     private static byte[] SerializeHtb()
@@ -136,7 +175,7 @@ public sealed class ReaderFileHandleReleaseTests : IDisposable
     private static void AssertNoOpenHandle(string path)
     {
         // FileShare.None succeeds only when no other handle to the file is open.
+        // FileStream's constructor throws IOException while another handle is open.
         using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        Assert.True(exclusive.CanWrite);
     }
 }

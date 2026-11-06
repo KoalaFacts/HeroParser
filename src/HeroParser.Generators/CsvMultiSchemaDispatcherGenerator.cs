@@ -182,7 +182,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
         builder.Indent();
 
         // Emit discriminator index field (starts at configured index, or -1 if mapped by column name)
-        builder.AppendLine($"private static int _discriminatorIndex = {descriptor.DiscriminatorIndex};");
+        builder.AppendLine($"private static int _discriminatorIndex = {descriptor.DiscriminatorIndex.ToString(CultureInfo.InvariantCulture)};");
         builder.AppendLine();
 
         // Emit byte binder fields (cached for performance) - UTF-8 is the primary path

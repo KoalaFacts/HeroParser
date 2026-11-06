@@ -7,7 +7,7 @@ using Xunit;
 namespace HeroParser.Tests.FixedWidths;
 
 /// <summary>
-/// A non-positive <c>bufferSize</c> means "use the default", as it already does for the CSV
+/// A non-positive <c>bufferSize</c> selects the minimum buffer, as it already does for the CSV
 /// streaming reader. The fixed-width reader used to hand it to <see cref="StreamReader"/>, which
 /// threw <see cref="ArgumentOutOfRangeException"/>; the path overload then leaked the open file.
 /// </summary>
@@ -45,6 +45,26 @@ public sealed class FixedWidthBufferSizeTests
             }
 
             // The reader owned the file stream; nothing may keep it open after disposal.
+            using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            Assert.Equal(INPUT.Length, exclusive.Length);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void CreateAsyncStreamReader_Path_ClosesTheFileWhenConstructionFails()
+    {
+        string path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, INPUT);
+
+            // An initial buffer of int.MaxValue cannot be allocated, so construction fails after the file is opened.
+            Assert.ThrowsAny<Exception>(() => FixedWidth.CreateAsyncStreamReader(path, bufferSize: int.MaxValue));
+
             using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             Assert.Equal(INPUT.Length, exclusive.Length);
         }

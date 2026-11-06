@@ -135,8 +135,6 @@ internal static class GeneratorHelpers
             "System.DateOnly" => true,
             "System.TimeOnly" => true,
             "System.Guid" => true,
-            "System.TimeZoneInfo" => true,
-            "System.ReadOnlyMemory<char>" => true,
             _ when type.TypeKind == TypeKind.Enum => true,
             _ => false
         };

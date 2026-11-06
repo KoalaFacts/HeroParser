@@ -495,7 +495,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                 }
             }
 
-            if (!IsSupportedType(property.Type))
+            if (!IsJsonlSupportedType(property.Type))
             {
                 diagnostics.Add(Diagnostic.Create(
                     unsupportedPropertyTypeDiagnostic,
@@ -527,6 +527,25 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         var fqName = type.ToDisplayString(FullyQualifiedFormatWithNullable);
         var safeClassName = CreateSafeClassName(type);
         return new TypeDescriptor(fqName, safeClassName, members, diagnostics);
+    }
+
+    /// <summary>
+    /// The shared tabular support list minus the types that only the CSV/Fixed-Width readers can
+    /// convert (<see cref="System.TimeZoneInfo"/> and <c>ReadOnlyMemory&lt;char&gt;</c>), which have
+    /// no JSON reading in <see cref="EmitPropertyParsing"/>; emitting one would not compile.
+    /// </summary>
+    private static bool IsJsonlSupportedType(ITypeSymbol type)
+    {
+        var underlying = type is INamedTypeSymbol named && named.IsGenericType && named.Name == "Nullable"
+            ? named.TypeArguments[0]
+            : type;
+
+        return underlying.WithNullableAnnotation(NullableAnnotation.NotAnnotated).ToDisplayString() switch
+        {
+            "System.TimeZoneInfo" => false,
+            "System.ReadOnlyMemory<char>" => false,
+            _ => IsSupportedType(type)
+        };
     }
 
     private static (string baseTypeName, bool isNullable, bool isEnum) GetBaseTypeInfo(ITypeSymbol type)

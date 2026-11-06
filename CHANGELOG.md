@@ -10,6 +10,7 @@ Planned as 2.9.0: .NET 11 compatibility.
 - **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.
 
 ### Fixed
+- `SchemaMetadata.MapFromToolCall<T>` converted string arguments with the current culture, so under de-DE `"1.5"` bound as `15` (and `[Validate]` range checks saw `175` for `"1.75"`), and under fr-FR it threw. Tool-call arguments are machine-formatted, so string-to-number, enum and date conversions and the range checks now use the invariant culture.
 - **`[Validate]` range checks on write and HTB read ignore the current culture:** the CSV, Fixed-Width and Excel writers' Strict validation converted values with the current culture (under de-DE a string `"2.75"` read as 275 and failed `RangeMax = 100`; under fr-FR it was not checked at all) and rendered numbers for length and pattern rules the same way; they now use the writer's `Culture` (invariant by default), as the read side already did. HTB read validation uses the invariant culture.
 
 ### Build and CI

@@ -9,6 +9,9 @@ Planned as 2.9.0: .NET 11 compatibility.
 ### Added
 - **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.
 
+### Fixed
+- **Source-generated JSONL binders read `DateOnly`/`TimeOnly` with the invariant culture.** The generated code parsed these JSON strings with the current culture, so under a non-Gregorian culture such as th-TH (Thai Buddhist calendar) `"2024-01-15"` became 15 January 1481. They now read the same in every culture, matching System.Text.Json and the non-generated path.
+
 ### Build and CI
 - Build, test and AOT-check every target with the .NET 11 SDK. `global.json` sets the floor (`11.0.100-rc.3`, go-live) with `allowPrerelease` and `rollForward: latestFeature`; CI installs the newest 11.0 SDK through setup-dotnet's `11.0.x` channel resolution (prereleases included); the GA transition must be verified once GA ships. GitHub's automatic NuGet dependency submission installs the `global.json` version. The CI matrix gains net11.0 on Ubuntu, Windows and macOS, and native AOT publish now also runs for net11.0. The C# language version stays pinned at 14.0.
 - Building from source now requires the .NET 11 SDK.

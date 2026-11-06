@@ -31,7 +31,7 @@ internal sealed class CsvRowBatchSource : IRowBatchSource
             var header = reader.Current;
             var headers = new string[header.ColumnCount];
             for (int i = 0; i < headers.Length; i++)
-                headers[i] = header.GetString(i);
+                headers[i] = header[i].UnquoteToString();
             return new CsvRowBatchSource(reader, headers);
         }
         catch
@@ -58,7 +58,7 @@ internal sealed class CsvRowBatchSource : IRowBatchSource
             var row = reader.Current;
             var values = new string[Headers.Length];
             for (int i = 0; i < values.Length; i++)
-                values[i] = i < row.ColumnCount ? row.GetString(i) : "";
+                values[i] = i < row.ColumnCount ? row[i].UnquoteToString() : "";
             batch.Add(values);
         }
         return batch;

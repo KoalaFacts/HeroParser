@@ -40,6 +40,28 @@ public sealed class CsvStreamingValidationTests : IDisposable
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task QuotedHeaders_SatisfyRequiredHeadersOnEveryInputPath()
+    {
+        // Quoting is CSV encoding: "Name" is the header Name, and Headers reports the value.
+        const string csv = "\"Name\",\"Unit \"\"cm\"\"\"\nAlice,30\nBob,25\n";
+        var options = new CsvValidationOptions { Delimiter = ',', RequiredHeaders = ["Name", "Unit \"cm\""] };
+
+        var results = new[]
+        {
+            Csv.Validate(csv, options),
+            Csv.Validate(System.Text.Encoding.UTF8.GetBytes(csv), options),
+            await Csv.ValidateFileAsync(TempFile(csv), options, TestContext.Current.CancellationToken),
+        };
+
+        foreach (var result in results)
+        {
+            Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(error => error.Message)));
+            Assert.Equal(["Name", "Unit \"cm\""], result.Headers);
+        }
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ValidateFileAsync_TreatsLargeWhitespaceFileAsEmpty()
     {
         string path = TempFile(new string(' ', 70_000));

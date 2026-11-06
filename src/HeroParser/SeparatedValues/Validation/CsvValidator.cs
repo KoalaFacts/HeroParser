@@ -226,7 +226,7 @@ public static partial class CsvValidator
                 // Extract header names
                 for (int i = 0; i < headerRow.ColumnCount; i++)
                 {
-                    headers.Add(headerRow.GetString(i));
+                    headers.Add(headerRow[i].UnquoteToString());
                 }
 
                 // Check required headers

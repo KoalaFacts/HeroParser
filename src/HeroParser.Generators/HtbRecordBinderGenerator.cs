@@ -689,22 +689,22 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         if (!double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax))
         {
             var valueExpr = $"instance.{member.MemberName}";
-            builder.AppendLine($"double numericVal = Convert.ToDouble({valueExpr});");
+            builder.AppendLine($"double numericVal = global::System.Convert.ToDouble({valueExpr}, global::System.Globalization.CultureInfo.InvariantCulture);");
             if (!double.IsNaN(member.ValidationRangeMin))
             {
-                builder.AppendLine($"if (numericVal < {FormatRangeLiteral(member.ValidationRangeMin, "double")})");
+                builder.AppendLine($"if (numericVal < {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMin, "double")})");
                 builder.AppendLine("{");
                 builder.Indent();
-                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} must be at least {member.ValidationRangeMin}.\");");
+                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} must be at least {GeneratorHelpers.FormatInvariant(member.ValidationRangeMin)}.\");");
                 builder.Unindent();
                 builder.AppendLine("}");
             }
             if (!double.IsNaN(member.ValidationRangeMax))
             {
-                builder.AppendLine($"if (numericVal > {FormatRangeLiteral(member.ValidationRangeMax, "double")})");
+                builder.AppendLine($"if (numericVal > {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMax, "double")})");
                 builder.AppendLine("{");
                 builder.Indent();
-                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} cannot exceed {member.ValidationRangeMax}.\");");
+                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} cannot exceed {GeneratorHelpers.FormatInvariant(member.ValidationRangeMax)}.\");");
                 builder.Unindent();
                 builder.AppendLine("}");
             }
@@ -720,25 +720,6 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             builder.Unindent();
             builder.AppendLine("}");
         }
-    }
-
-    private static string FormatRangeLiteral(double value, string baseType)
-    {
-        return baseType switch
-        {
-            "decimal" or "System.Decimal" => $"{value}m",
-            "float" or "System.Single" => $"{value}f",
-            "double" or "System.Double" => $"{value}d",
-            "long" or "System.Int64" => $"{(long)value}L",
-            "ulong" or "System.UInt64" => $"{(ulong)value}UL",
-            "int" or "System.Int32" => $"{(int)value}",
-            "uint" or "System.UInt32" => $"{(uint)value}U",
-            "short" or "System.Int16" => $"(short){(short)value}",
-            "ushort" or "System.UInt16" => $"(ushort){(ushort)value}",
-            "byte" or "System.Byte" => $"(byte){(byte)value}",
-            "sbyte" or "System.SByte" => $"(sbyte){(sbyte)value}",
-            _ => $"{value}"
-        };
     }
 
     private sealed record TypeDescriptor(

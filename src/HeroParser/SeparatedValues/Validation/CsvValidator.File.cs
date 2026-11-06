@@ -121,7 +121,7 @@ public static partial class CsvValidator
                 var header = reader.Current;
                 detectedColumnCount = header.ColumnCount;
                 for (int i = 0; i < header.ColumnCount; i++)
-                    headers.Add(header[i].UnquoteToString());
+                    headers.Add(HeaderName(header, i, parseOptions));
 
                 if (options.RequiredHeaders is not null)
                 {

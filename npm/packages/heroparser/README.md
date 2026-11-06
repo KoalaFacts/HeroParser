@@ -116,7 +116,7 @@ Initializes the underlying WebAssembly runtime. This must be awaited once before
 
 ### `readCsv(csvText: string, options?: WasmCsvOptions): any[]`
 
-Reads CSV text content into a JSON array of objects or values.
+Reads CSV text content into a JSON array of objects or values. Quoted fields are unquoted, in header names and values alike (`"Smith, ""J"""` becomes `Smith, "J"`); the quote character is `"`.
 
 - `options.delimiter`: Column delimiter character (e.g. `","`, `";"`). Defaults to auto-detect.
 - `options.hasHeader`: Set `true` to map rows to object keys based on the header row, or `false` to return raw string arrays.

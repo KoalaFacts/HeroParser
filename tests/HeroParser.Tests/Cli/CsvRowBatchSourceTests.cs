@@ -39,6 +39,19 @@ public sealed class CsvRowBatchSourceTests : IDisposable
     }
 
     [Fact]
+    public async Task QuotedHeadersAndValues_AreUnquoted()
+    {
+        string path = FileWith("\"Product Name\",Qty\n\"Gadget, large\",\"30\"\n\"Say \"\"hi\"\"\",4\n");
+        await using var source = await CsvRowBatchSource.OpenAsync(path, ',');
+
+        var batch = await source.ReadBatchAsync(2);
+
+        Assert.Equal(["Product Name", "Qty"], source.Headers);
+        Assert.Equal(["Gadget, large", "30"], batch[0]);
+        Assert.Equal(["Say \"hi\"", "4"], batch[1]);
+    }
+
+    [Fact]
     public async Task CountAndBatches_AgreeOnLogicalQuotedRows()
     {
         string path = FileWith("Name,Note\nAlice,\"first\nsecond\"\nBob,last\n");
@@ -77,7 +90,7 @@ public sealed class CsvRowBatchSourceTests : IDisposable
 
         await using var reading = await CsvRowBatchSource.OpenAsync(path, ',');
         Assert.Equal(["Name", "Note"], reading.Headers);
-        Assert.Equal(["猫", "\"line\n😀\""], Assert.Single(await reading.ReadBatchAsync(1)));
+        Assert.Equal(["猫", "line\n😀"], Assert.Single(await reading.ReadBatchAsync(1)));
         Assert.Equal(["犬", "last"], Assert.Single(await reading.ReadBatchAsync(1)));
         Assert.Empty(await reading.ReadBatchAsync(1));
     }

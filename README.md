@@ -113,7 +113,7 @@ Already using HeroParser, or considering it for a production CSV, Excel, fixed-w
 
 Do **not** attach real customer datasets, personal information, credentials, or confidential files to public GitHub issues. Start with the [installation steps](#install) and [benchmark methodology](docs/benchmarks.md); performance depends on the workload and API.
 
-**Also need a PDF report template?** [FactsPDF](https://github.com/KoalaFacts/FactsPDF) is a **separate, experimental, source-available .NET renderer** for controlled HTML/CSS business-report layouts—not an integration shipped with HeroParser. It has no public NuGet/CLI package, stable SDK or general evaluation permission. Check [template fit and licensing](https://github.com/KoalaFacts/FactsPDF/blob/main/docs/evaluation.md#check-template-fit-before-integration), then [describe a non-confidential report requirement](https://github.com/KoalaFacts/FactsPDF/issues/new?template=report-template-fit.md) using synthetic examples only.
+**Also need a PDF report template?** [FactsPDF](https://github.com/KoalaFacts/FactsPDF) is a **separate, experimental, source-available .NET renderer** for controlled HTML/CSS business-report layouts—not an integration shipped with HeroParser. It has no public NuGet/CLI package or stable SDK yet; any company may evaluate it free for up to 90 days under the [PolyForm Free Trial licence](https://github.com/KoalaFacts/FactsPDF/blob/main/README.md#licensing). Check [template fit and licensing](https://github.com/KoalaFacts/FactsPDF/blob/main/docs/evaluation.md#check-template-fit-before-integration), then [describe a non-confidential report requirement](https://github.com/KoalaFacts/FactsPDF/issues/new?template=report-template-fit.md) using synthetic examples only.
 
 ---
 

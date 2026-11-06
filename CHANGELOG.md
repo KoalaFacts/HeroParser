@@ -9,6 +9,9 @@ Planned as 2.9.0: .NET 11 compatibility.
 ### Added
 - **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.
 
+### Fixed
+- **A `[GenerateBinder]` record with a `TimeZoneInfo` or `ReadOnlyMemory<char>` property no longer breaks the build.** The generators' shared support list accepted both types, but none of the CSV, Fixed-Width or JSONL generators emits a conversion for them: they fell through to string assignment (`new string(span)`, `reader.GetString()!`), so the generated files failed with CS0029/CS0023. Each generator now reports its existing unsupported-type warning (`HERO001` CSV, `HERO002` Fixed-Width, `HERO101` JSONL) and leaves the property out of the generated binder, like any other type it cannot convert. The CSV warning no longer lists `TimeZoneInfo` as supported.
+
 ### Build and CI
 - Build, test and AOT-check every target with the .NET 11 SDK. `global.json` sets the floor (`11.0.100-rc.3`, go-live) with `allowPrerelease` and `rollForward: latestFeature`; CI installs the newest 11.0 SDK through setup-dotnet's `11.0.x` channel resolution (prereleases included); the GA transition must be verified once GA ships. GitHub's automatic NuGet dependency submission installs the `global.json` version. The CI matrix gains net11.0 on Ubuntu, Windows and macOS, and native AOT publish now also runs for net11.0. The C# language version stays pinned at 14.0.
 - Building from source now requires the .NET 11 SDK.

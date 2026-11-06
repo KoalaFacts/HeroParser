@@ -360,6 +360,73 @@ public class HtbConversionTests
         Assert.Equal(4, progressReadCount);
     }
 
+    public class QuotedRecord
+    {
+        public int? Id { get; set; }
+        public string? Name { get; set; }
+    }
+
+    private static readonly HtbSchema quotedSchema = new([
+        new HtbColumn("Id", HtbDataType.Int32, isNullable: true),
+        new HtbColumn("Name", HtbDataType.String, isNullable: true)
+    ]);
+
+    public static TheoryData<string, char, char?, string> QuotedCsvCases => new()
+    {
+        // csv, quote, escape, expected Name of the single record (Id is always 7)
+        { "\"Id\",\"Name\"\r\n7,\"Smith, \"\"J\"\"\"", '"', null, "Smith, \"J\"" },
+        { "'Id','Name'\r\n7,'O''Brien'", '\'', null, "O'Brien" },
+        { "\"Id\",\"Name\"\r\n7,\"A\\\"B\"", '"', '\\', "A\"B" },
+    };
+
+    [Theory]
+    [MemberData(nameof(QuotedCsvCases))]
+    public void Convert_QuotedHeadersAndValues_FollowTheConfiguredQuoting(string csv, char quote, char? escape, string expectedName)
+    {
+        var options = new CsvToHtbOptions { Quote = quote, EscapeCharacter = escape };
+
+        using var htbStream = new MemoryStream();
+        CsvToHtbConverter.Convert(csv, htbStream, quotedSchema, options);
+        var (id, name) = ReadSingleRow(htbStream);
+
+        Assert.Equal(7, id);
+        Assert.Equal(expectedName, name);
+    }
+
+    [Theory]
+    [MemberData(nameof(QuotedCsvCases))]
+    public async Task ConvertAsync_QuotedHeadersAndValues_FollowTheConfiguredQuoting(string csv, char quote, char? escape, string expectedName)
+    {
+        var options = new CsvToHtbOptions { Quote = quote, EscapeCharacter = escape };
+
+        using var csvStream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var htbStream = new MemoryStream();
+        await CsvToHtbConverter.ConvertAsync(csvStream, htbStream, quotedSchema, options, TestContext.Current.CancellationToken);
+        var (id, name) = ReadSingleRow(htbStream);
+
+        Assert.Equal(7, id);
+        Assert.Equal(expectedName, name);
+    }
+
+    [Fact]
+    public void Convert_QuotedNumericValue_IsParsedWithoutItsQuotes()
+    {
+        using var htbStream = new MemoryStream();
+        CsvToHtbConverter.Convert("Id,Name\r\n\"42\",x", htbStream, quotedSchema);
+        var (id, name) = ReadSingleRow(htbStream);
+
+        Assert.Equal(42, id);
+        Assert.Equal("x", name);
+    }
+
+    private static (int? Id, string? Name) ReadSingleRow(MemoryStream htbStream)
+    {
+        htbStream.Position = 0;
+        var records = HeroParser.Htb.Read<QuotedRecord>().FromStream(htbStream).ToList();
+        var record = Assert.Single(records);
+        return (record.Id, record.Name);
+    }
+
     private sealed class SyncProgress<T>(Action<T> handler) : IProgress<T>
     {
         public void Report(T value) => handler(value);

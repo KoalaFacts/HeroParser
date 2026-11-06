@@ -62,8 +62,10 @@ public sealed class FixedWidthBufferSizeTests
         {
             File.WriteAllText(path, INPUT);
 
-            // An initial buffer of int.MaxValue cannot be allocated, so construction fails after the file is opened.
-            Assert.ThrowsAny<Exception>(() => FixedWidth.CreateAsyncStreamReader(path, bufferSize: int.MaxValue));
+            // The encoding's decoder is requested by the reader constructor, i.e. after the file is opened.
+            var error = Assert.Throws<InvalidOperationException>(
+                () => FixedWidth.CreateAsyncStreamReader(path, encoding: new DecoderFailingEncoding()));
+            Assert.Equal(DecoderFailingEncoding.MESSAGE, error.Message);
 
             using var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             Assert.Equal(INPUT.Length, exclusive.Length);
@@ -92,6 +94,13 @@ public sealed class FixedWidthBufferSizeTests
             values.Add(reader.GetString(0));
 
         Assert.Equal(["ONE", "TWO"], values);
+    }
+
+    private sealed class DecoderFailingEncoding : UTF8Encoding
+    {
+        public const string MESSAGE = "Decoder creation failed for the test.";
+
+        public override Decoder GetDecoder() => throw new InvalidOperationException(MESSAGE);
     }
 
     private static async Task<List<string>> ReadAllAsync(FixedWidthAsyncStreamReader reader)

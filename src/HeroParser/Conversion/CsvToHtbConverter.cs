@@ -53,7 +53,7 @@ public static class CsvToHtbConverter
             if (isFirst && options.HasHeaderRow)
             {
                 isFirst = false;
-                csvIndices = MapHeaders(row, schema);
+                csvIndices = MapHeaders(row, schema, options);
                 continue;
             }
             isFirst = false;
@@ -61,7 +61,7 @@ public static class CsvToHtbConverter
             csvIndices ??= MapSequential(row.ColumnCount, schema);
 
             writer.IncrementRecordCount();
-            ConvertRow(row, csvIndices, schema, writer);
+            ConvertRow(row, csvIndices, schema, writer, options);
         }
 
         writer.Flush();
@@ -123,7 +123,7 @@ public static class CsvToHtbConverter
             if (isFirst && options.HasHeaderRow)
             {
                 isFirst = false;
-                csvIndices = MapHeaders(row, schema);
+                csvIndices = MapHeaders(row, schema, options);
                 continue;
             }
             isFirst = false;
@@ -131,13 +131,13 @@ public static class CsvToHtbConverter
             csvIndices ??= MapSequential(row.ColumnCount, schema);
 
             writer.IncrementRecordCount();
-            ConvertRow(row, csvIndices, schema, writer);
+            ConvertRow(row, csvIndices, schema, writer, options);
         }
 
         await writer.FlushAsync().ConfigureAwait(false);
     }
 
-    private static int[] MapHeaders<T>(CsvRow<T> headerRow, HtbSchema schema)
+    private static int[] MapHeaders<T>(CsvRow<T> headerRow, HtbSchema schema, CsvToHtbOptions options)
         where T : unmanaged, IEquatable<T>
     {
         if (headerRow.ColumnCount == 0)
@@ -152,7 +152,7 @@ public static class CsvToHtbConverter
         var headers = new string[headerRow.ColumnCount];
         for (int i = 0; i < headerRow.ColumnCount; i++)
         {
-            headers[i] = headerRow.GetString(i);
+            headers[i] = UnquoteToString(headerRow[i], options);
         }
 
         var csvIndices = new int[schema.Columns.Count];
@@ -173,7 +173,7 @@ public static class CsvToHtbConverter
         return csvIndices;
     }
 
-    private static void ConvertRow<T>(CsvRow<T> row, int[] csvIndices, HtbSchema schema, HtbStreamWriter writer)
+    private static void ConvertRow<T>(CsvRow<T> row, int[] csvIndices, HtbSchema schema, HtbStreamWriter writer, CsvToHtbOptions options)
         where T : unmanaged, IEquatable<T>
     {
         int colCount = schema.Columns.Count;
@@ -222,9 +222,13 @@ public static class CsvToHtbConverter
                 if (csvIdx < 0 || csvIdx >= row.ColumnCount)
                     continue;
 
-                var csvCol = row[csvIdx];
-                if (csvCol.IsEmpty)
+                var rawCol = row[csvIdx];
+                if (rawCol.IsEmpty)
                     continue;
+
+                // Typed values are parsed without their surrounding quotes ("42" is 42); strings and
+                // vectors are fully unquoted with the configured quote and escape characters.
+                var csvCol = new CsvColumn<T>(rawCol.Unquote(ToElement<T>(options.Quote)));
 
                 var col = schema.Columns[i];
                 switch (col.DataType)
@@ -270,10 +274,10 @@ public static class CsvToHtbConverter
                         writer.WriteGuid(g);
                         break;
                     case HtbDataType.String:
-                        writer.WriteString(csvCol.UnquoteToString());
+                        writer.WriteString(UnquoteToString(rawCol, options));
                         break;
                     case HtbDataType.FloatArray:
-                        writer.WriteFloatArray(Vectors.VectorParser.ParseFloats(csvCol.UnquoteToString()));
+                        writer.WriteFloatArray(Vectors.VectorParser.ParseFloats(UnquoteToString(rawCol, options)));
                         break;
                     case HtbDataType.Unknown:
                     default:
@@ -288,5 +292,24 @@ public static class CsvToHtbConverter
                 System.Buffers.ArrayPool<byte>.Shared.Return(rented);
             }
         }
+    }
+
+    private static string UnquoteToString<T>(CsvColumn<T> column, CsvToHtbOptions options)
+        where T : unmanaged, IEquatable<T>
+    {
+        var quote = ToElement<T>(options.Quote);
+        return options.EscapeCharacter is char escape
+            ? column.UnquoteToString(quote, ToElement<T>(escape))
+            : column.UnquoteToString(quote);
+    }
+
+    private static T ToElement<T>(char value)
+        where T : unmanaged, IEquatable<T>
+    {
+        if (typeof(T) == typeof(char))
+            return (T)(object)value;
+        if (typeof(T) == typeof(byte))
+            return (T)(object)(byte)value;
+        throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
     }
 }

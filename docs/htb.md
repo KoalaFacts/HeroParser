@@ -250,6 +250,8 @@ Htb.ConvertFromCsv("data.csv", "data.htb", schema);
 await Htb.ConvertFromCsvAsync(csvStream, htbStream, schema);
 ```
 
+CSV header names are matched to schema columns case-insensitively after unquoting, and values are unquoted the same way, both with `CsvToHtbOptions.Quote` and `EscapeCharacter` (`"Id","Name"` maps to the `Id` and `Name` columns; `"42"` in an `Int32` column is `42`). Schema columns with no matching header are written as null, so a non-nullable column that is missing fails the conversion.
+
 ### 4.2 HTB → CSV Conversion
 
 Converting back to CSV does not require a manual schema, as the HTB file itself embeds its own schema headers:

@@ -1,6 +1,8 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using static HeroParser.Generators.GeneratorHelpers;
@@ -106,7 +108,11 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
             if (attr.ConstructorArguments.Length < 2)
                 continue;
 
-            var discriminatorValue = attr.ConstructorArguments[0].Value?.ToString();
+            // Integer discriminators are matched against raw ASCII data, so format them with the
+            // invariant culture: the compiler runs under the developer's culture (sv-SE uses U+2212).
+            var discriminatorValue = attr.ConstructorArguments[0].Value is IFormattable formattable
+                ? formattable.ToString(null, CultureInfo.InvariantCulture)
+                : attr.ConstructorArguments[0].Value?.ToString();
             if (string.IsNullOrEmpty(discriminatorValue) ||
                 attr.ConstructorArguments[1].Value is not INamedTypeSymbol recordTypeSymbol)
                 continue;

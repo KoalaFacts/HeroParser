@@ -248,6 +248,30 @@ public class WriteValidationRunnerTests
 
             string text = FixedWidth.WriteToText(Rows("2.75"));
             Assert.Contains("2.75", text);
+            var ex = Assert.Throws<ValidationException>(() => FixedWidth.WriteToText(Rows("250.5")));
+            Assert.Equal("Range", Assert.Single(ex.Errors).Rule);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    [RequiresUnreferencedCode("reflection")]
+    [RequiresDynamicCode("reflection")]
+    public void ExcelWriter_StrictRange_UsesWriterCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+            // Invariant writer culture: "2.75" is in range even though de-DE would read 275.
+            Assert.NotEmpty(HeroParser.Excel.SerializeRecords(Rows("2.75")));
+            var ex = Assert.Throws<ValidationException>(() => HeroParser.Excel.SerializeRecords(Rows("250.5")));
+            Assert.Equal("Range", Assert.Single(ex.Errors).Rule);
         }
         finally
         {

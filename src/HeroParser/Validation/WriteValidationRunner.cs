@@ -12,9 +12,9 @@ internal static class WriteValidationRunner
     /// Returns <see langword="true"/> if any validation errors were added.
     /// </summary>
     /// <remarks>
-    /// Length, pattern and range rules see the value as the writer formats it: formattable values
-    /// are rendered, and strings are converted to numbers, with the writer's <paramref name="culture"/>,
-    /// never the current culture.
+    /// Length, pattern and range rules render formattable values (without any <c>[Format]</c> write
+    /// format) and convert strings to numbers with the writer's <paramref name="culture"/>, never the
+    /// current culture.
     /// </remarks>
     public static bool Validate(
         object? value,

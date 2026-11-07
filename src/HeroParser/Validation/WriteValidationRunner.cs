@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace HeroParser.Validation;
 
 /// <summary>
@@ -9,17 +11,25 @@ internal static class WriteValidationRunner
     /// Validates a materialized property value against the given rules and appends any errors.
     /// Returns <see langword="true"/> if any validation errors were added.
     /// </summary>
+    /// <remarks>
+    /// Length, pattern and range rules render formattable values (without any <c>[Format]</c> write
+    /// format) and convert strings to numbers with the writer's <paramref name="culture"/>, never the
+    /// current culture.
+    /// </remarks>
     public static bool Validate(
         object? value,
         string propertyName,
         int rowNumber,
         int columnIndex,
         WritePropertyValidation rules,
-        List<ValidationError> errors)
+        List<ValidationError> errors,
+        CultureInfo culture)
     {
         bool hasErrors = false;
 
-        string? rawValue = value?.ToString();
+        string? rawValue = value is IFormattable formattable
+            ? formattable.ToString(null, culture)
+            : value?.ToString();
 
         if (rules.NotNull && (value is null || string.IsNullOrWhiteSpace(rawValue)))
         {
@@ -91,7 +101,7 @@ internal static class WriteValidationRunner
                 bool converted;
                 try
                 {
-                    numericValue = Convert.ToDouble(value);
+                    numericValue = Convert.ToDouble(value, culture);
                     converted = true;
                 }
                 catch (Exception)

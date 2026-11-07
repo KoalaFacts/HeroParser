@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -49,6 +50,40 @@ Alice,30
         var expected = "Name,Age\nAlice,30";
         var output = LlmRepair.RepairText(input);
         Assert.Equal(expected.Replace("\r\n", "\n"), output.Replace("\r\n", "\n"));
+    }
+
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("de-DE")]
+    [InlineData("")]
+    public void RepairText_MatchesFenceOrdinally(string cultureName)
+    {
+        // A soft hyphen (U+00AD) is ignorable under linguistic comparison, so a
+        // culture-sensitive search would treat "``\u00AD`" as a code fence and drop the first line.
+        var input = "a``\u00AD`b,c\n1,2";
+
+        var original = CultureInfo.CurrentCulture;
+        string output;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+            output = LlmRepair.RepairText(input, escape: null);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+
+        Assert.Equal(input, output.Replace("\r\n", "\n").TrimEnd('\n'));
+    }
+
+    [Fact]
+    public void RepairText_StripsFenceAfterIgnorableCharacters()
+    {
+        // The real fence is found even when an ignorable character precedes it.
+        var input = "Result\u00AD:\n```csv\nName,Age\nAlice,30\n```";
+        var output = LlmRepair.RepairText(input);
+        Assert.Equal("Name,Age\nAlice,30", output.Replace("\r\n", "\n"));
     }
 
     [Fact]

@@ -29,8 +29,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(typeInfo);
         this.typeInfo = typeInfo;
-        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return CreateReader(stream, leaveOpen: false);
+        return CreateFileReader(path);
     }
 
     /// <summary>
@@ -133,8 +132,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
     public JsonlRecordReader<T> FromFile(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
-        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return CreateReader(stream, leaveOpen: false);
+        return CreateFileReader(path);
     }
 
     /// <summary>

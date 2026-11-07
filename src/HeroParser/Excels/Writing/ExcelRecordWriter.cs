@@ -289,7 +289,7 @@ public sealed class ExcelRecordWriter<T>
                 if (accessor.Validation is { HasAnyRule: true } rules)
                 {
                     validationErrors ??= [];
-                    WriteValidationRunner.Validate(accessor.GetValue(record), accessor.MemberName, rowNumber, i, rules, validationErrors);
+                    WriteValidationRunner.Validate(accessor.GetValue(record), accessor.MemberName, rowNumber, i, rules, validationErrors, options.Culture ?? CultureInfo.InvariantCulture);
                 }
             }
 

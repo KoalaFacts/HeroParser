@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using HeroParser.AI;
 using Xunit;
 
@@ -17,6 +18,18 @@ public class SchemaMetadataTests
     private sealed class DummyRecord
     {
         public string Value { get; set; } = string.Empty;
+    }
+
+    private sealed class PricedRecord
+    {
+        public decimal Amount { get; set; }
+
+        public double Ratio { get; set; }
+
+        public int Count { get; set; }
+
+        [Validate(RangeMin = 0.5, RangeMax = 2.5)]
+        public double Score { get; set; }
     }
 
     private sealed class UnregisteredRecord
@@ -227,5 +240,74 @@ public class SchemaMetadataTests
 
         var ex = Assert.Throws<LlmToolCallValidationException>(() => SchemaMetadata.MapFromToolCall<ValidatedAgentRecord>(args));
         Assert.Equal("ZipCode", ex.PropertyName);
+    }
+
+    [Theory]
+    [InlineData("de-DE")]
+    [InlineData("fr-FR")]
+    [InlineData("en-US")]
+    public void MapFromToolCall_ParsesNumericStringsWithInvariantCulture(string cultureName)
+    {
+        // Tool-call arguments are machine-formatted (JSON number syntax), so "1.5" must not
+        // become 15 when the current culture uses '.' as a group separator.
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+            var args = new Dictionary<string, object?>
+            {
+                { "Amount", "1.5" },
+                { "Ratio", "2.25" },
+                { "Count", "42" },
+                { "Score", "1.75" }
+            };
+
+            var record = SchemaMetadata.MapFromToolCall<PricedRecord>(args);
+
+            Assert.Equal(1.5m, record.Amount);
+            Assert.Equal(2.25, record.Ratio);
+            Assert.Equal(42, record.Count);
+            Assert.Equal(1.75, record.Score);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [Fact]
+    public void MapFromToolCall_RangeValidationUsesInvariantCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            var args = new Dictionary<string, object?> { { "Score", "2.75" } };
+
+            var ex = Assert.Throws<LlmToolCallValidationException>(() => SchemaMetadata.MapFromToolCall<PricedRecord>(args));
+            Assert.Equal("Score", ex.PropertyName);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [Fact]
+    public void MapFromToolCall_RejectsNonNumericStringUnderAnyCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            var args = new Dictionary<string, object?> { { "Amount", "abc" } };
+
+            var ex = Assert.Throws<InvalidOperationException>(() => SchemaMetadata.MapFromToolCall<PricedRecord>(args));
+            Assert.Contains("Amount", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 }

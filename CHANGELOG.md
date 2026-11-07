@@ -11,6 +11,7 @@ Planned as 2.9.0: .NET 11 compatibility.
 
 ### Fixed
 - `SchemaMetadata.MapFromToolCall<T>` converted string arguments with the current culture, so under de-DE `"1.5"` bound as `15` (and `[Validate]` range checks saw `175` for `"1.75"`), and under fr-FR it threw. Tool-call arguments are machine-formatted, so string-to-number, enum and date conversions and the range checks now use the invariant culture.
+- **AI context cards and LLM repair are culture-independent:** `GenerateContextCard`/`GenerateContextCardAsync` format row counts, ranges, averages and percentages with the invariant culture (under de-DE a range read `[1.500,25 to 2.500,75]`, and fr-FR inserted narrow no-break spaces); `LlmRepair.RepairText` finds the ```` ``` ```` fence ordinally, so an ignorable character such as a soft hyphen between backticks is no longer taken for a fence that drops the first line.
 - **`[Validate]` range checks on write and HTB read ignore the current culture:** the CSV, Fixed-Width and Excel writers' Strict validation converted values with the current culture (under de-DE a string `"2.75"` read as 275 and failed `RangeMax = 100`; under fr-FR it was not checked at all) and rendered numbers for length and pattern rules the same way; they now use the writer's `Culture` (invariant by default), as the read side already did. HTB read validation uses the invariant culture.
 
 ### Build and CI

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -38,6 +39,7 @@ public static class TabularContextProfiler
     /// <summary>
     /// Asynchronously profiles a stream of records and generates a Markdown Context Card describing type distributions, ranges, and densities.
     /// </summary>
+    /// <remarks>Numbers and percentages in the card use the invariant culture, so the text does not change with the current culture.</remarks>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="source">The asynchronous stream of records.</param>
     /// <param name="datasetName">Optional display name of the dataset. Defaults to the class name of <typeparamref name="T"/>.</param>
@@ -67,6 +69,7 @@ public static class TabularContextProfiler
     /// <summary>
     /// Synchronously profiles a collection of records and generates a Markdown Context Card describing type distributions, ranges, and densities.
     /// </summary>
+    /// <remarks>Numbers and percentages in the card use the invariant culture, so the text does not change with the current culture.</remarks>
     /// <typeparam name="T">The record type.</typeparam>
     /// <param name="source">The collection of records.</param>
     /// <param name="datasetName">Optional display name of the dataset. Defaults to the class name of <typeparamref name="T"/>.</param>
@@ -135,7 +138,7 @@ public static class TabularContextProfiler
 
             if (stats.IsNumeric)
             {
-                double numVal = Convert.ToDouble(val);
+                double numVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
                 if (numVal < stats.Min) stats.Min = numVal;
                 if (numVal > stats.Max) stats.Max = numVal;
                 stats.Sum += numVal;
@@ -158,14 +161,16 @@ public static class TabularContextProfiler
         // Render Markdown Context Card
         var sb = new StringBuilder();
         datasetName ??= typeof(T).Name;
-        sb.AppendLine($"### Dataset Profile: {datasetName} ({totalRows:N0} rows)");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"### Dataset Profile: {datasetName} ({totalRows:N0} rows)");
 
         foreach (var stats in statsList)
         {
             double nullPct = totalRows > 0 ? (double)stats.NullCount / totalRows * 100 : 0;
-            string nullStr = stats.NullCount > 0 ? $", {nullPct:F1}% Null" : ", 0% Null";
+            string nullStr = stats.NullCount > 0
+                ? string.Create(CultureInfo.InvariantCulture, $", {nullPct:F1}% Null")
+                : ", 0% Null";
 
-            sb.Append($"- **{stats.Name}** ({GetFriendlyTypeName(stats.Type)}{nullStr}): ");
+            sb.Append(CultureInfo.InvariantCulture, $"- **{stats.Name}** ({GetFriendlyTypeName(stats.Type)}{nullStr}): ");
 
             if (totalRows == 0)
             {
@@ -178,17 +183,17 @@ public static class TabularContextProfiler
                 double minVal = stats.Min == double.MaxValue ? 0 : stats.Min;
                 double maxVal = stats.Max == double.MinValue ? 0 : stats.Max;
                 double avg = totalRows - stats.NullCount > 0 ? stats.Sum / (totalRows - stats.NullCount) : 0;
-                sb.AppendLine($"Numeric range [{minVal:N2} to {maxVal:N2}], Avg: {avg:N2}.");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"Numeric range [{minVal:N2} to {maxVal:N2}], Avg: {avg:N2}.");
             }
             else if (stats.IsBoolean)
             {
                 double truePct = totalRows > 0 ? (double)stats.TrueCount / totalRows * 100 : 0;
-                sb.AppendLine($"Boolean. True: {stats.TrueCount:N0} ({truePct:F1}%), False: {stats.FalseCount:N0} ({100 - truePct:F1}%).");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"Boolean. True: {stats.TrueCount:N0} ({truePct:F1}%), False: {stats.FalseCount:N0} ({100 - truePct:F1}%).");
             }
             else if (stats.IsCategorical)
             {
                 int distinctCount = stats.ValueCounts.Count;
-                sb.Append($"{distinctCount:N0} distinct categories.");
+                sb.Append(CultureInfo.InvariantCulture, $"{distinctCount:N0} distinct categories.");
                 if (distinctCount > 0)
                 {
                     var topValues = new List<KeyValuePair<string, int>>(stats.ValueCounts);
@@ -199,7 +204,7 @@ public static class TabularContextProfiler
                     for (int j = 0; j < limit; j++)
                     {
                         double pct = (double)topValues[j].Value / totalRows * 100;
-                        sb.Append($"\"{topValues[j].Key}\" ({pct:F1}%)");
+                        sb.Append(CultureInfo.InvariantCulture, $"\"{topValues[j].Key}\" ({pct:F1}%)");
                         if (j < limit - 1) sb.Append(", ");
                     }
                 }

@@ -10,6 +10,8 @@ Planned as 2.9.0: .NET 11 compatibility.
 - **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.
 
 ### Fixed
+- `SchemaMetadata.MapFromToolCall<T>` converted string arguments with the current culture, so under de-DE `"1.5"` bound as `15` (and `[Validate]` range checks saw `175` for `"1.75"`), and under fr-FR it threw. Tool-call arguments are machine-formatted, so string-to-number, enum and date conversions and the range checks now use the invariant culture.
+- **AI context cards and LLM repair are culture-independent:** `GenerateContextCard`/`GenerateContextCardAsync` format row counts, ranges, averages and percentages with the invariant culture (under de-DE a range read `[1.500,25 to 2.500,75]`, and fr-FR inserted narrow no-break spaces); `LlmRepair.RepairText` finds the ```` ``` ```` fence ordinally, so an ignorable character such as a soft hyphen between backticks is no longer taken for a fence that drops the first line.
 - Fixed-width streaming: `FixedWidth.CreateAsyncStreamReader`, `FixedWidth.CreateDataReader` and the builder's `FromFileAsync`/`FromStreamAsync` threw `ArgumentOutOfRangeException` for `bufferSize: 0` or a value below -1, while the CSV streaming reader treats a non-positive size as its minimum buffer (4096); they now do the same. `FixedWidth.CreateAsyncStreamReader(path)` also closes the file it opened when reader construction fails, instead of leaving it open until finalization.
 
 ### Build and CI

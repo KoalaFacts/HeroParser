@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading.Tasks;
 using HeroParser.AI;
 using Xunit;
@@ -86,6 +87,71 @@ public class TabularContextProfilerTests
 
         Assert.Throws<ArgumentNullException>(() => nullEnum.GenerateContextCard());
         await Assert.ThrowsAsync<ArgumentNullException>(async () => await nullAsync.GenerateContextCardAsync(cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    private sealed class AmountRecord
+    {
+        public double Amount { get; set; }
+        public double? Rate { get; set; }
+        public bool Flag { get; set; }
+    }
+
+    [Theory]
+    [InlineData("de-DE")]
+    [InlineData("fr-FR")]
+    [InlineData("en-US")]
+    public void GenerateContextCard_FormatsNumbersWithInvariantCulture(string cultureName)
+    {
+        // The card is machine-facing text for an LLM prompt: it must not change with the
+        // server's culture ("1.500,00" under de-DE, narrow no-break spaces under fr-FR).
+        var records = new List<AmountRecord>
+        {
+            new() { Amount = 1500.25, Rate = 0.5, Flag = true },
+            new() { Amount = 2500.75, Rate = null, Flag = false },
+            new() { Amount = 2000.5, Rate = 1.25, Flag = true }
+        };
+
+        var original = CultureInfo.CurrentCulture;
+        string card;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+            card = records.GenerateContextCard("Amounts");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+
+        Assert.Contains("Numeric range [1,500.25 to 2,500.75], Avg: 2,000.50.", card);
+        Assert.Contains("**Rate** (Decimal?, 33.3% Null)", card);
+        Assert.Contains("Numeric range [0.50 to 1.25], Avg: 0.88.", card);
+        Assert.Contains("Boolean. True: 2 (66.7%), False: 1 (33.3%).", card);
+    }
+
+    [Fact]
+    public void GenerateContextCard_FormatsRowCountWithInvariantCulture()
+    {
+        var records = new List<AmountRecord>();
+        for (int i = 0; i < 1234; i++)
+        {
+            records.Add(new AmountRecord { Amount = i, Rate = i, Flag = i % 2 == 0 });
+        }
+
+        var original = CultureInfo.CurrentCulture;
+        string card;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            card = records.GenerateContextCard("Many");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+
+        Assert.Contains("Dataset Profile: Many (1,234 rows)", card);
+        Assert.Contains("Boolean. True: 617 (50.0%), False: 617 (50.0%).", card);
     }
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> items)

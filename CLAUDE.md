@@ -226,7 +226,8 @@ The timings and percentages in these implementation notes describe historical ex
 - **Pooled buffers behind a class** (`PooledColumnEnds`, `CsvRowBatchCursor`): the reader struct is copied by `foreach` and disposed per copy; a class with an idempotent return prevents double-returning arrays to `ArrayPool`, which otherwise hands the same array to two owners.
 - **CLMUL-based quote handling**: PCLMULQDQ prefix XOR for branchless in-quotes masks.
 - **Compile-time specialization**: `TQuotePolicy`, `TTrack` and the element type let the JIT eliminate dead paths.
-- **ArrayPool for buffer reuse** and **stackalloc for small arrays** in the binders.
+- **`AppendColumn` method** (`CsvRowParser`): the JIT already optimizes it well; don't try to "improve" it.
+- **ArrayPool for buffer reuse** (`CsvCharToByteBinderAdapter` uses `ArrayPool<byte>.Shared` for char-to-byte conversion buffers) and **stackalloc for small arrays**: column byte lengths use stackalloc up to 128 columns (`MAX_STACK_ALLOC_COLUMNS`).
 
 ### What Doesn't Work
 
@@ -236,7 +237,7 @@ Attempted optimizations that caused regressions, all caught by the same-runner A
 
 2. **Per-delimiter stores through a `ref` parameter in the block path**: routing the no-newline block through a helper that stored `currentStart` per delimiter and did a popcount per vector regressed unquoted 10k x 25 by 14% (540 us to 617 us). Keep validation on a cold path behind one `HasValue` branch per block.
 
-3. **Batch validation with PopCount** per vector adds overhead over one check per block.
+3. **Batch validation with PopCount** per vector adds overhead over one check per block; the per-delimiter check in `AppendColumn` is already well optimized by the JIT.
 
 4. **Unsafe.Add for columnEnds writes**: the JIT already eliminates bounds checks it can prove.
 
@@ -379,7 +380,7 @@ Goal: .NET 11 readiness before .NET 11 GA, current dependencies, and docs that s
 |---|---|---|---|---|
 | L3 | Historical-evidence job (`csv-pipe-history.yml`) fails because artifact of run 36732093817 expired | PRs touching its paths fail for a reason unrelated to the change | blocked (owner decision: retire the job, or report "evidence expired" as pass-with-notice; options on [#167](https://github.com/KoalaFacts/HeroParser/pull/167#issuecomment-6663725028)) | Never "fixed" by re-running |
 | L1 | net11.0 target, `global.json` floor, CI on newest 11.0 SDK, NuGet consumer check, dependency upgrades | Users can build and run on .NET 11 | done (#167, `2309336`); #162 closed as superseded | 4739 tests on net10.0/net11.0 |
-| H1 | Docs checker (`check-docs.ts`), AGENTS.md as pointer, skill copies in sync, broken links fixed | Docs cannot silently rot | in progress ([#169](https://github.com/KoalaFacts/HeroParser/pull/169)) | 15 checker tests; 49 Markdown files pass; docs 564,459 → 554,126 bytes (49 files) |
+| H1 | Docs checker (`check-docs.ts`), AGENTS.md as pointer, skill copies in sync, broken links fixed | Docs cannot silently rot | in progress ([#169](https://github.com/KoalaFacts/HeroParser/pull/169)) | 15 checker tests; 49 Markdown files pass; docs 564,459 → 554,987 bytes (49 files) |
 | D1 | Browser demo deploy under the .NET 11 SDK: install `wasm-tools-net10` (the Wasm project targets net10.0) and validate the demo on PRs without deploying | The live demo stopped updating after #167 (NETSDK1147) | in progress ([#168](https://github.com/KoalaFacts/HeroParser/pull/168)) | Verifier PASS on `cc03b46`: NETSDK1147 reproduced with `wasm-tools`, publish + demo build pass with `wasm-tools-net10` |
 | L2 | C# snippets in README.md and docs/*.md compile in CI | Copy-pasted examples work | todo | |
 | L4 | After .NET 11 GA: GA SDK in CI, `global.json` floor to GA, stable BenchmarkDotNet 0.16.x, drop "RC" wording | 2.9.0 release gate | waiting (.NET 11 GA) | |

@@ -1,5 +1,7 @@
 # HeroParser Development Guidelines
 
+Before claiming a change works, follow `.claude/skills/verification-first/SKILL.md` and exercise the product as `.claude/skills/verify-heroparser/SKILL.md` describes (CLI and AOT binary on real files, Wasm package and browser demo when they change).
+
 ## Active Technologies
 - C# with multi-framework targeting (net8.0, net9.0, net10.0, net11.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 

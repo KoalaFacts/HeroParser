@@ -467,6 +467,8 @@ reader.ThrowIfAnyError();
 | `Pattern` | `string?` | `null` | Regex pattern the value must match |
 | `PatternTimeoutMs` | `int` | `1000` | Regex evaluation timeout in milliseconds (ReDoS protection) |
 
+Range, length and pattern rules interpret values with the reader's or writer's configured `Culture` (invariant by default), never the current thread culture; HTB, which has no culture setting, uses the invariant culture.
+
 **Header validation:**
 
 ```csharp

@@ -10,6 +10,7 @@ Planned as 2.9.0: .NET 11 compatibility.
 - **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.
 
 ### Fixed
+- CLI: .NET error messages printed as resource keys (`Inspection failed: IO_FileExists_Name, <path>` when `--save-plan` named an existing file) in both the `dotnet tool` and the native binary, because the Release build set `UseSystemResourceKeys`. The switch is removed, so the CLI prints `The file '<path>' already exists.`; the native linux-x64 binary grows by about 37 KB (0.5%).
 - `SchemaMetadata.MapFromToolCall<T>` converted string arguments with the current culture, so under de-DE `"1.5"` bound as `15` (and `[Validate]` range checks saw `175` for `"1.75"`), and under fr-FR it threw. Tool-call arguments are machine-formatted, so string-to-number, enum and date conversions and the range checks now use the invariant culture.
 - **AI context cards and LLM repair are culture-independent:** `GenerateContextCard`/`GenerateContextCardAsync` format row counts, ranges, averages and percentages with the invariant culture (under de-DE a range read `[1.500,25 to 2.500,75]`, and fr-FR inserted narrow no-break spaces); `LlmRepair.RepairText` finds the ```` ``` ```` fence ordinally, so an ignorable character such as a soft hyphen between backticks is no longer taken for a fence that drops the first line.
 

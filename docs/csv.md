@@ -1419,8 +1419,7 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
                                       ┌────┴─────┐
                                       │ AVX-512  │  (64-byte chunks)
                                       │ AVX2     │  (32-byte chunks)
-                                      │ NEON     │  (16-byte chunks, ARM)
-                                      │ Scalar   │  (fallback)
+                                      │ Scalar   │  (everything else, incl. ARM64)
                                       └──────────┘
 ```
 
@@ -1557,8 +1556,7 @@ HeroParser selects the best available path automatically:
 |---|---|
 | AVX-512 | 64 bytes |
 | AVX2 | 32 bytes (common on modern x64) |
-| NEON | 16 bytes (ARM64: Apple Silicon, AWS Graviton) |
-| Scalar | byte-by-byte fallback (always works) |
+| Scalar | byte-by-byte; every other CPU, including ARM64 (Apple Silicon, AWS Graviton), and WebAssembly |
 
 ---
 

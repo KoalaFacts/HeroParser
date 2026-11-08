@@ -39,12 +39,47 @@ HeroParser provides comprehensive support for fixed-width (fixed-length) file pa
 
 ---
 
+<!-- snippet: page-setup
+using HeroParser;
+public readonly record struct Money(decimal Amount);
+public class Order
+{
+    [PositionalMap(Start = 0, Length = 12)]
+    public Money Total { get; set; }
+}
+static List<Employee> employees = [];
+static IAsyncEnumerable<Employee> asyncRecords = AsyncEnumerable.Empty<Employee>();
+static Stream stream = Stream.Null;
+static TextWriter textWriter = TextWriter.Null;
+static System.IO.Pipelines.PipeReader pipeReader = System.IO.Pipelines.PipeReader.Create(Stream.Null);
+static CancellationToken cancellationToken = CancellationToken.None;
+static string data = "", fixedWidthData = "", csvData = "";
+static void Process(Employee employee) { }
+static Task ProcessAsync(Employee employee) => Task.CompletedTask;
+-->
+The examples on this page assume these `using` directives:
+
+```csharp
+using System.Globalization;
+using System.IO.Pipelines;
+using System.Text;
+using HeroParser;
+using HeroParser.FixedWidths;
+using HeroParser.FixedWidths.Mapping;
+using HeroParser.FixedWidths.Records;
+using HeroParser.FixedWidths.Writing;
+using HeroParser.Conversion;
+using HeroParser.FixedWidths.Reading.Data;
+using HeroParser.Validation;
+```
+
 ## Reading
 
 ### Typed Record Reading
 
 Annotate record properties with `[PositionalMap]` to declare field positions, then call `FixedWidth.Read<T>()`. (Migrating from 1.x? See the [v1-to-v2 migration guide](https://github.com/KoalaFacts/HeroParser/blob/87b0091b31bbba95cea9a8fb3202b664fc0fc799/docs/migration-v1-to-v2.md) in the repository history.)
 
+<!-- snippet: alternatives -->
 ```csharp
 [GenerateBinder]
 public class Employee
@@ -133,6 +168,14 @@ await foreach (var emp in FixedWidth.Read<Employee>()
 
 Use `FixedWidth.CreateDataReader` to produce an `IDataReader` / `DbDataReader` suitable for `SqlBulkCopy` or similar database bulk-load APIs:
 
+<!-- snippet: setup
+sealed class SqlBulkCopy(object connection) : IDisposable
+{
+    public Task WriteToServerAsync(System.Data.Common.DbDataReader reader) => Task.CompletedTask;
+    public void Dispose() { }
+}
+object connection = new();
+-->
 ```csharp
 var columns = new[]
 {
@@ -142,7 +185,7 @@ var columns = new[]
         Alignment = FieldAlignment.Right, PadChar = '0' },
 };
 
-using var reader = FixedWidth.CreateDataReader("employees.dat", new FixedWidthDataReaderOptions
+using var reader = FixedWidth.CreateDataReader("employees.dat", readerOptions: new FixedWidthDataReaderOptions
 {
     Columns         = columns,
     HasHeaderRow    = false,
@@ -161,13 +204,13 @@ await bulkCopy.WriteToServerAsync(reader);
 For maximum throughput with large files, `ForEach` methods reuse a single record instance per iteration, eliminating per-row allocations. **Do not store the instance** — copy needed values inside the callback.
 
 ```csharp
-var totals = new Dictionary<string, decimal>();
+decimal total = 0;
 
 FixedWidth.Read<Employee>()
     .ForEachFromFile("employees.dat", emp =>
     {
         // Copy values immediately; emp is reused on the next iteration
-        totals[emp.Department] = totals.GetValueOrDefault(emp.Department) + emp.Salary;
+        total += emp.Salary;
     });
 ```
 
@@ -315,7 +358,7 @@ foreach (var emp in result) { /* ... */ }
 // throws ValidationException here if any row failed validation
 
 // Lenient: invalid rows are silently excluded; no exception is thrown
-var result = FixedWidth.Read<Employee>()
+result = FixedWidth.Read<Employee>()
     .WithValidationMode(ValidationMode.Lenient)
     .FromFile("data.dat");
 
@@ -327,7 +370,7 @@ var errors    = result.Errors;  // Inspect what was skipped
 
 ```csharp
 var progress = new Progress<FixedWidthProgress>(p =>
-    Console.WriteLine($"Processed {p.RecordsRead} records ({p.BytesRead:N0} bytes)"));
+    Console.WriteLine($"Processed {p.RecordsProcessed} records"));
 
 var records = FixedWidth.Read<Employee>()
     .WithProgress(progress, intervalRows: 5_000)   // Report every 5 000 rows
@@ -408,6 +451,7 @@ writer.Flush();
 
 Alternatively, create the writer from a `TextWriter` or `Stream` directly:
 
+<!-- snippet: alternatives -->
 ```csharp
 // From TextWriter
 using var writer = FixedWidth.Write().CreateWriter(Console.Out);
@@ -531,6 +575,7 @@ public class Transaction
 
 `[PositionalMap]` declares a property's position in the fixed-width record.
 
+<!-- snippet: skip property declarations shown without their record class -->
 ```csharp
 [PositionalMap(Start = 0, Length = 10)]
 public string Id { get; set; } = "";
@@ -666,6 +711,9 @@ string csv = FixedWidthToCsvConverter.Convert(fixedWidthData, columns, new Fixed
 
 ### CSV to Fixed-Width
 
+<!-- snippet: setup
+var columns = new[] { new FixedWidthFieldDefinition("Id", 10), new FixedWidthFieldDefinition("Name", 30) };
+-->
 ```csharp
 string fixedWidth = CsvToFixedWidthConverter.Convert(csvData, columns, new CsvToFixedWidthOptions
 {

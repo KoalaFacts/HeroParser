@@ -53,7 +53,15 @@ dotnet format --verify-no-changes
 
 # Run benchmarks
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
+
+# Check docs (Node 24+): links, anchors, index, named paths, agent instructions
+node .github/scripts/check-docs.ts
+
+# Compile the C# examples in README.md and docs/*.md against the repo's projects
+node .github/scripts/check-doc-snippets.ts README.md docs/excel.md   # or no arguments for all pages
 ```
+
+**Docs examples compile**: every ```` ```csharp ```` block in README.md and docs/*.md is compiled by `check-doc-snippets.ts` (CI job "Docs Snippets Compile"). Blocks on a page share `using` directives top to bottom and see the page's types. Fix a failing example rather than removing it. Hidden context goes in HTML-comment markers directly above a block — `<!-- snippet: setup ... -->` (inputs the reader supplies), `<!-- snippet: alternatives -->` (paragraphs that are alternatives, each may redeclare a variable), `<!-- snippet: skip <reason> -->` (a deliberate fragment) — or once per page in `<!-- snippet: page-setup ... -->`. The script header documents them.
 
 **CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 4 frameworks (net8.0, net9.0, net10.0, net11.0). Code coverage and benchmarks stay on ubuntu/net10.0 (the LTS target); native AOT publish runs on ubuntu for net10.0 and net11.0 (STS).
 
@@ -378,12 +386,16 @@ Goal: .NET 11 readiness before .NET 11 GA, current dependencies, and docs that s
 
 | Id | Item | Why it matters | Status | Evidence |
 |---|---|---|---|---|
+| M1 | Merging the task's PRs | Nothing lands until a PR is merged | done (2026-11-07: the ruleset reports `current_user_can_bypass: always` for the task's token and #171/#174/#175 merged that way; maintenance PRs merge when the merge conditions hold) | [#169 comment](https://github.com/KoalaFacts/HeroParser/pull/169#issuecomment-6665774085) |
 | L3 | Historical-evidence job (`csv-pipe-history.yml`) fails because artifact of run 36732093817 expired | PRs touching its paths fail for a reason unrelated to the change | blocked (owner decision: retire the job, or report "evidence expired" as pass-with-notice; options on [#167](https://github.com/KoalaFacts/HeroParser/pull/167#issuecomment-6663725028)) | Never "fixed" by re-running |
 | L1 | net11.0 target, `global.json` floor, CI on newest 11.0 SDK, NuGet consumer check, dependency upgrades | Users can build and run on .NET 11 | done (#167, `2309336`); #162 closed as superseded | 4739 tests on net10.0/net11.0 |
-| H1 | Docs checker (`check-docs.ts`), AGENTS.md as pointer, skill copies in sync, broken links fixed | Docs cannot silently rot | in progress ([#169](https://github.com/KoalaFacts/HeroParser/pull/169)) | 15 checker tests; 49 Markdown files pass; docs 564,459 → 554,987 bytes (49 files) |
-| D1 | Browser demo deploy under the .NET 11 SDK: install `wasm-tools-net10` (the Wasm project targets net10.0) and validate the demo on PRs without deploying | The live demo stopped updating after #167 (NETSDK1147) | in progress ([#168](https://github.com/KoalaFacts/HeroParser/pull/168)) | Verifier PASS on `cc03b46`: NETSDK1147 reproduced with `wasm-tools`, publish + demo build pass with `wasm-tools-net10` |
-| L2 | C# snippets in README.md and docs/*.md compile in CI | Copy-pasted examples work | todo | |
+| H1 | Docs checker (`check-docs.ts`), AGENTS.md as pointer, skill copies in sync, broken links fixed | Docs cannot silently rot | done ([#169](https://github.com/KoalaFacts/HeroParser/pull/169), `ae0b8f1`) | 15 checker tests; 49 Markdown files pass; docs 564,459 → 554,987 bytes (49 files) |
+| D1 | Browser demo deploy under the .NET 11 SDK: install `wasm-tools-net10` (the Wasm project targets net10.0) and validate the demo on PRs without deploying | The live demo stopped updating after #167 (NETSDK1147) | done ([#168](https://github.com/KoalaFacts/HeroParser/pull/168), `7def5de`) | Verifier PASS on `cc03b46`: NETSDK1147 reproduced with `wasm-tools`, publish + demo build pass with `wasm-tools-net10` |
+| L2 | C# snippets in README.md and docs/*.md compile in CI | Copy-pasted examples work | in progress ([#170](https://github.com/KoalaFacts/HeroParser/pull/170)) | 12 checker tests; 193 snippets compile (README.md + 6 guides), 5 marked partial; ~300 errors on the first run |
 | L4 | After .NET 11 GA: GA SDK in CI, `global.json` floor to GA, stable BenchmarkDotNet 0.16.x, drop "RC" wording | 2.9.0 release gate | waiting (.NET 11 GA) | |
-| L5 | `AnalysisLevel=latest-all` sweep on .NET 11 | Catch obsoletions before GA | todo | |
+| L5 | `AnalysisLevel=latest-all` sweep on .NET 11 | Catch obsoletions before GA | todo | Baseline 2026-11-06 on `2309336`, SDK 11.0.100-rc.3, all TFMs: 0 SYSLIB/CS obsoletion warnings; 12,098 CA warnings solution-wide, 487 distinct in `src/` (top: CA1805, CA2007, CA1305, CA1062, CA1815). Triage first: CA1305/CA1307/CA1310 (culture), CA2000/CA2213 (disposal), CA1849, CA1065 |
+| L5a | `MapFromToolCall` bound string arguments with the current culture (de-DE `"1.5"` → 15) | Correct values from LLM tool calls on non-English servers | done ([#171](https://github.com/KoalaFacts/HeroParser/pull/171), `21facc6`) | 5 new tests, 4744/4744 on net10.0/net11.0 |
+| L5e | Path readers left the file open when configuration validation failed (multi-schema `FromFile`, HTB, JSONL) | No leaked handles on invalid options | done ([#177](https://github.com/KoalaFacts/HeroParser/pull/177), `f5b0fc8`) | 9 tests; 7/9 fail on old `src` |
 | L6 | Dependency upkeep (NuGet, npm) | Security and currency | ongoing | Held back: `onnxruntime-web` 1.20.1 (override + postinstall patches), TypeScript 6.x until vue-tsc supports 7 |
-| L7 | Docs accuracy audit, one area per PR (README, docs/*.md, npm README, demo text, workflows README) | Docs match the code | todo | |
+| L7 | Docs accuracy audit, one area per PR (README, docs/*.md, npm README, demo text, workflows README) | Docs match the code | in progress | npm package README: waiting (owner approval, [#172](https://github.com/KoalaFacts/HeroParser/pull/172)). Found 2026-11-06, not yet fixed: README.md, CLAUDE.md (pipeline diagram, "SIMD fallback behavior") and docs claim ARM NEON SIMD, but the parser's SIMD paths use only x86 AVX2/AVX-512 (`CsvRowBatchScanner`) and SSE2+ (`CsvWriterQuoting`); `Hardware.cs` only reports NEON. ARM64 and WebAssembly run the scalar paths |
+| W1 | npm package: `writeCsv`/`writeFixedWidth` return `stringWriter.ToString()` before the writer is disposed (`HeroParserWasm.cs`), so buffered output is lost (README Quick Start 4 returns `""`; 5000 rows gave 4720 of 5001 lines); `readExcel` with `hasHeader` drops the header and the first data row | The npm package writes empty or truncated output and misreads Excel headers | in progress (branch `fix/wasm-writer-flush`, `49267a9`: flush before `ToString`, `readExcel` reads the first row as the header; PR opens after the current queue) | Found by the #172 verifier on main `12f9abf`; `test-wasm.js` covers only the read functions |

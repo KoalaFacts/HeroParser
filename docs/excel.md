@@ -42,12 +42,48 @@ HeroParser reads and writes `.xlsx` files with zero extra dependencies — only 
 
 ---
 
+<!-- snippet: page-setup
+using System.Globalization;
+public class SalesRecord { public string Region { get; set; } = ""; public decimal Total { get; set; } }
+public class CustomerRecord { public int Id { get; set; } public string Name { get; set; } = ""; }
+public class Product { public int Id { get; set; } public string Name { get; set; } = ""; }
+public class Employee { public string Name { get; set; } = ""; public decimal Salary { get; set; } }
+public readonly record struct Money(decimal Amount)
+{
+    public static bool TryParse(ReadOnlySpan<char> text, IFormatProvider? provider, out Money money)
+    {
+        bool parsed = decimal.TryParse(text, NumberStyles.Currency, provider, out var amount);
+        money = new Money(amount);
+        return parsed;
+    }
+}
+static List<OrderRecord> orders = [];
+static IAsyncEnumerable<OrderRecord> asyncOrders = AsyncEnumerable.Empty<OrderRecord>();
+static List<CustomerRecord> customers = [];
+static List<Product> products = [];
+static List<Employee> employees = [];
+static Stream stream = Stream.Null, outputStream = Stream.Null;
+static CancellationToken ct = CancellationToken.None;
+-->
+The examples on this page assume these `using` directives:
+
+```csharp
+using HeroParser;
+using HeroParser.Excels.Core;
+using HeroParser.Excels.Reading;
+using HeroParser.Excels.Reading.Data;
+using HeroParser.Excels.Writing;
+using HeroParser.SeparatedValues.Mapping; // CsvMap<T>, shared with CSV
+using HeroParser.Validation;
+```
+
 ## Reading
 
 ### Typed Record Reading
 
 Read an Excel file and deserialize each row into a strongly-typed record using `Excel.Read<T>()`.
 
+<!-- snippet: alternatives -->
 ```csharp
 // Read all records from the first sheet
 List<OrderRecord> orders = Excel.Read<OrderRecord>().FromFile("orders.xlsx");
@@ -88,6 +124,7 @@ public class OrderRecord
 
 By default the first sheet is read. Use `FromSheet()` to target a specific sheet.
 
+<!-- snippet: alternatives -->
 ```csharp
 // By name
 List<SalesRecord> sales = Excel.Read<SalesRecord>()
@@ -104,6 +141,7 @@ List<SalesRecord> sales = Excel.Read<SalesRecord>()
 
 Read rows as `string[]` without any type binding when you need raw cell values.
 
+<!-- snippet: alternatives -->
 ```csharp
 // Returns List<string[]> — one array per data row (header row is consumed but not returned)
 List<string[]> rows = Excel.Read().FromFile("data.xlsx");
@@ -254,8 +292,8 @@ Register a converter for types not handled natively:
 
 ```csharp
 List<OrderRecord> orders = Excel.Read<OrderRecord>()
-    .RegisterConverter<Money>(span =>
-        Money.Parse(span, CultureInfo.InvariantCulture))
+    .RegisterConverter<Money>((value, culture, format, out result) =>
+        Money.TryParse(value, culture, out result))
     .FromFile("orders.xlsx");
 ```
 
@@ -287,10 +325,11 @@ List<OrderRecord> orders = Excel.Read<OrderRecord>()
 
 `Excel.CreateDataReader` wraps an Excel sheet in a `DbDataReader` for streaming bulk loads into a database. All cell values are exposed as strings.
 
+<!-- snippet: alternatives -->
 ```csharp
 // Simple overload
 using var reader = Excel.CreateDataReader("data.xlsx");
-await SqlBulkCopy.WriteToServerAsync(reader);
+// e.g. await bulkCopy.WriteToServerAsync(reader); with a SqlBulkCopy from Microsoft.Data.SqlClient
 
 // With sheet selection
 using var reader = Excel.CreateDataReader("data.xlsx", sheetName: "Orders");
@@ -309,7 +348,6 @@ var options = new ExcelDataReaderOptions
     NullValues = ["N/A", "NULL", ""],
     ColumnNames = ["Id", "Name", "Amount"]  // override header row names
 };
-
 using var reader = Excel.CreateDataReader("data.xlsx", options, sheetName: "Sheet2");
 ```
 
@@ -389,13 +427,14 @@ Excel.WriteMultiSheet()
 
 Produce the `.xlsx` file as a `byte[]` for direct HTTP responses or downstream processing:
 
+<!-- snippet: alternatives -->
 ```csharp
 byte[] bytes = Excel.Write<OrderRecord>()
     .WithSheetName("Orders")
     .ToBytes(orders);
 
-// Return from an ASP.NET Core endpoint
-return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "orders.xlsx");
+// Return from an ASP.NET Core endpoint:
+// return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "orders.xlsx");
 
 // Convenience method
 byte[] bytes = Excel.SerializeRecords(orders, sheetName: "Orders");
@@ -405,6 +444,7 @@ byte[] bytes = Excel.SerializeRecords(orders, sheetName: "Orders");
 
 All terminal write methods have async counterparts. The async variants run on a thread pool thread because the underlying ZIP format requires synchronous sequential writes.
 
+<!-- snippet: alternatives -->
 ```csharp
 // Write IEnumerable async (file, stream, bytes)
 await Excel.Write<OrderRecord>().ToFileAsync("orders.xlsx", orders, ct);
@@ -570,7 +610,7 @@ Group contiguous rows together by vertically merging adjacent cells in a column 
 
 ```csharp
 Excel.Write<OrderRecord>()
-    .WithMergeDuplicates(x => x.Category) // Merges A2:A3 if both have "Electronics"
+    .WithMergeDuplicates(x => x.CustomerName) // Merges A2:A3 if both rows have the same customer
     .ToFile("orders.xlsx", orders);
 ```
 

@@ -369,7 +369,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("{");
                 builder.Indent();
                 builder.AppendLine("string? s = reader.GetString();");
-                builder.AppendLine($"record.{propertyName} = s is not null ? DateOnly.Parse(s) : default;");
+                builder.AppendLine($"record.{propertyName} = s is not null ? DateOnly.Parse(s, global::System.Globalization.CultureInfo.InvariantCulture) : default;");
                 builder.Unindent();
                 builder.AppendLine("}");
                 break;
@@ -378,7 +378,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("{");
                 builder.Indent();
                 builder.AppendLine("string? s = reader.GetString();");
-                builder.AppendLine($"record.{propertyName} = s is not null ? TimeOnly.Parse(s) : default;");
+                builder.AppendLine($"record.{propertyName} = s is not null ? TimeOnly.Parse(s, global::System.Globalization.CultureInfo.InvariantCulture) : default;");
                 builder.Unindent();
                 builder.AppendLine("}");
                 break;
@@ -386,16 +386,17 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
             default:
                 if (member.IsEnum)
                 {
+                    var enumType = GetEnumTypeArgument(member.TypeOfTypeName);
                     builder.AppendLine("if (reader.TokenType == JsonTokenType.Number)");
-                    builder.AppendLine($"    record.{propertyName} = ({member.TypeOfTypeName})reader.GetInt32();");
+                    builder.AppendLine($"    record.{propertyName} = ({enumType})reader.GetInt32();");
                     builder.AppendLine("else if (reader.TokenType == JsonTokenType.String)");
                     builder.AppendLine("{");
                     builder.Indent();
                     builder.AppendLine("string s = reader.GetString()!;");
-                    builder.AppendLine($"if (Enum.TryParse<{member.TypeOfTypeName}>(s, ignoreCase: true, out var enumVal))");
+                    builder.AppendLine($"if (Enum.TryParse<{enumType}>(s, ignoreCase: true, out var enumVal))");
                     builder.AppendLine($"    record.{propertyName} = enumVal;");
                     builder.AppendLine("else");
-                    builder.AppendLine($"    throw new JsonException($\"Failed to parse value '{{s}}' as enum {member.TypeOfTypeName}.\");");
+                    builder.AppendLine($"    throw new JsonException($\"Failed to parse value '{{s}}' as enum {enumType}.\");");
                     builder.Unindent();
                     builder.AppendLine("}");
                 }

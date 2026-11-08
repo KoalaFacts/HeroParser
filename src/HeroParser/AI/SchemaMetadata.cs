@@ -68,6 +68,10 @@ public static class SchemaMetadata
     /// <exception cref="ArgumentNullException">Thrown if arguments dictionary is null.</exception>
     /// <exception cref="LlmToolCallValidationException">Thrown if a property violates a validation rule.</exception>
     /// <exception cref="InvalidOperationException">Thrown if property type conversion fails.</exception>
+    /// <remarks>
+    /// String values are converted with <see cref="System.Globalization.CultureInfo.InvariantCulture"/>, because tool-call
+    /// arguments use JSON's machine format (<c>"1.5"</c>), not the current user's locale.
+    /// </remarks>
     public static T MapFromToolCall<T>(IReadOnlyDictionary<string, object?> arguments) where T : new()
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -91,7 +95,7 @@ public static class SchemaMetadata
                         val = propType == typeof(Guid)
                             ? (val is string sGuid ? Guid.Parse(sGuid) : val)
                             : propType == typeof(DateTime)
-                            ? (val is string sDt ? DateTime.Parse(sDt, System.Globalization.CultureInfo.InvariantCulture) : Convert.ToDateTime(val))
+                            ? (val is string sDt ? DateTime.Parse(sDt, System.Globalization.CultureInfo.InvariantCulture) : Convert.ToDateTime(val, System.Globalization.CultureInfo.InvariantCulture))
                             : propType == typeof(DateTimeOffset)
                             ? (val is string sDto ? DateTimeOffset.Parse(sDto, System.Globalization.CultureInfo.InvariantCulture) : val)
                             : propType == typeof(TimeSpan)
@@ -99,8 +103,8 @@ public static class SchemaMetadata
                             : propType.IsEnum
                             ? (val is string strVal
                                 ? Enum.Parse(propType, strVal, ignoreCase: true)
-                                : Enum.ToObject(propType, Convert.ChangeType(val, Enum.GetUnderlyingType(propType))))
-                            : Convert.ChangeType(val, propType);
+                                : Enum.ToObject(propType, Convert.ChangeType(val, Enum.GetUnderlyingType(propType), System.Globalization.CultureInfo.InvariantCulture)))
+                            : Convert.ChangeType(val, propType, System.Globalization.CultureInfo.InvariantCulture);
                     }
                     catch (Exception ex)
                     {
@@ -145,7 +149,7 @@ public static class SchemaMetadata
                     // 5. RangeMin validation
                     if (!double.IsNaN(validate.RangeMin))
                     {
-                        double numericVal = Convert.ToDouble(finalVal);
+                        double numericVal = Convert.ToDouble(finalVal, System.Globalization.CultureInfo.InvariantCulture);
                         if (numericVal < validate.RangeMin)
                         {
                             throw new LlmToolCallValidationException(prop.Name, $"Property '{prop.Name}' value {numericVal} must be at least {validate.RangeMin}.");
@@ -155,7 +159,7 @@ public static class SchemaMetadata
                     // 6. RangeMax validation
                     if (!double.IsNaN(validate.RangeMax))
                     {
-                        double numericVal = Convert.ToDouble(finalVal);
+                        double numericVal = Convert.ToDouble(finalVal, System.Globalization.CultureInfo.InvariantCulture);
                         if (numericVal > validate.RangeMax)
                         {
                             throw new LlmToolCallValidationException(prop.Name, $"Property '{prop.Name}' value {numericVal} cannot exceed {validate.RangeMax}.");

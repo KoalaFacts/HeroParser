@@ -24,7 +24,14 @@ This directory contains automated CI/CD workflows for HeroParser.
    - Verifies no build warnings (TreatWarningsAsErrors=true)
    - Checks code formatting with `dotnet format`
 
-3. **Dependency Review**
+3. **Docs Check** (Node 24, no dependencies)
+   - Runs the tests of `.github/scripts/check-docs.ts`, then the checker itself
+   - Fails on broken relative links or anchors, `docs/` pages not reachable from the README, repository paths in inline code that do not exist, an `AGENTS.md` that is more than a pointer to `CLAUDE.md`, and `.agents/skills` copies that differ from `.claude/skills`
+
+4. **Docs Snippets Compile** (Node 24 + the `global.json` .NET SDK)
+   - Runs the tests of `.github/scripts/check-doc-snippets.ts`, then compiles every ```` ```csharp ```` block of README.md and docs/*.md against `src/HeroParser`, `src/HeroParser.Console` and the source generator; errors point at the Markdown line
+
+5. **Dependency Review**
    - Scans for vulnerable or incompatible dependencies
    - Blocks GPL-licensed dependencies
    - Comments on PRs with findings
@@ -222,10 +229,12 @@ Recommended settings for `main` branch:
 
 - ✅ Require status checks before merging
   - Required checks:
-    - `Build and Test (ubuntu-latest, 10.0.x)`
-    - `Build and Test (windows-latest, 10.0.x)`
-    - `Build and Test (macos-latest, 10.0.x)`
+    - `Build and Test (ubuntu-latest, net10.0)`
+    - `Build and Test (windows-latest, net10.0)`
+    - `Build and Test (macos-latest, net10.0)`
     - `Code Quality`
+    - `Docs Check`
+    - `Docs Snippets Compile`
 - ✅ Require pull request reviews (1 approval)
 - ✅ Dismiss stale reviews on new commits
 - ✅ Require linear history

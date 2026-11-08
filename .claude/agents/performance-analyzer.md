@@ -16,10 +16,7 @@ You review C# code changes in HeroParser for performance issues. Focus on files 
 - Missing `ArrayPool` for larger buffers
 
 ### Known anti-patterns (from project history)
-These attempted optimizations caused regressions — flag if reintroduced:
-1. Batch validation with `BitOperations.PopCount()` instead of per-delimiter checks
-2. `Unsafe.Add` for `columnEnds` writes instead of normal array indexing
-3. Hoisting `maxFieldLength` nullable checks into pre-computed booleans
+Flag any reintroduction of an attempt listed in CLAUDE.md, "Performance Optimization Lessons" → "What Doesn't Work", and check changes against "What Works" there (for example, the scanner's bare delimiter loop writes `columnEnds` with `Unsafe.Add` and a count passed by value on purpose). Never treat a local timing as evidence; CLAUDE.md "How to measure" says which measurements count.
 
 ### SIMD code
 - Verify SIMD paths have scalar fallbacks

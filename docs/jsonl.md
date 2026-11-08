@@ -40,6 +40,32 @@ The primary entry point is the `Jsonl` static class.
 
 ---
 
+<!-- snippet: page-setup
+public interface IEmbeddingClient { Task<float[][]> EmbedAsync(IEnumerable<string> inputs); }
+public interface IVectorStore { Task UpsertAsync<T>(IEnumerable<(T Record, float[] Vector)> items); }
+static IEmbeddingClient embeddingClient = null!;
+static IVectorStore vectorDb = null!;
+static HttpClient httpClient = new();
+static string url = "https://example.com/training.jsonl";
+static Stream stream = Stream.Null, socketStream = Stream.Null, target = Stream.Null, csvStream = Stream.Null, jsonlStream = Stream.Null;
+static string csv = "", jsonl = "";
+-->
+The examples on this page assume these `using` directives:
+
+```csharp
+using System.Globalization;
+using System.IO.Pipelines;
+using System.Text;
+using System.Text.Json;
+using HeroParser;
+using HeroParser.JsonLines;
+using HeroParser.JsonLines.Reading;
+using HeroParser.JsonLines.Reading.Data;
+using HeroParser.JsonLines.Writing;
+using HeroParser.Conversion;
+using HeroParser.Validation;
+```
+
 ## 1. JSONL Reading
 
 ### 1.1 Quick start
@@ -138,6 +164,7 @@ await foreach (ChatExample r in Jsonl.DeserializeRecordsAsync<ChatExample>(pipe)
 
 `Jsonl.CreateDataReader` returns a `DbDataReader` adapter — drop-in for `SqlBulkCopy.WriteToServer` or any tool that consumes `IDataReader`.
 
+<!-- snippet: skip needs the Microsoft.Data.SqlClient package for SqlBulkCopy -->
 ```csharp
 // Schema inferred from the first line
 using var reader = Jsonl.CreateDataReader("inputs.jsonl");
@@ -196,6 +223,8 @@ Jsonl.Read<ChatExample>()
 Pass a `JsonTypeInfo<T>` produced by a source-generated `JsonSerializerContext` to bypass reflection entirely:
 
 ```csharp
+using System.Text.Json.Serialization;
+
 [JsonSerializable(typeof(ChatExample))]
 [JsonSerializable(typeof(ChatMessage))]
 public partial class TrainingContext : JsonSerializerContext;
@@ -214,6 +243,10 @@ Reflection-based overloads carry `[RequiresUnreferencedCode]` and `[RequiresDyna
 
 ### 2.1 Quick start
 
+<!-- snippet: setup
+static IEnumerable<ChatExample> BuildTrainingData() => [];
+IAsyncEnumerable<ChatExample> asyncRecords = AsyncEnumerable.Empty<ChatExample>();
+-->
 ```csharp
 IEnumerable<ChatExample> records = BuildTrainingData();
 
@@ -229,6 +262,9 @@ await Jsonl.Write<ChatExample>().ToFileAsync("out.jsonl", asyncRecords);
 
 ### 2.2 Fluent builder options
 
+<!-- snippet: setup
+List<ChatExample> records = [];
+-->
 ```csharp
 Jsonl.Write<ChatExample>()
     .WithJsonOptions(new JsonSerializerOptions(JsonSerializerDefaults.Web))
@@ -237,9 +273,9 @@ Jsonl.Write<ChatExample>()
     .WithFinalNewline()              // emit trailing "\n" (default false)
     .WithMaxRowCount(100_000)
     .WithMaxOutputSize(50L * 1024 * 1024) // 50 MiB cap
-    .OnError(ctx =>
+    .OnError((ctx, ex) =>
     {
-        Console.WriteLine($"row {ctx.RowIndex}: {ctx.Exception.Message}");
+        Console.WriteLine($"record {ctx.RecordIndex}: {ex.Message}");
         return JsonlSerializeErrorAction.SkipRecord;
     })
     .ToFile("out.jsonl", records);
@@ -249,6 +285,9 @@ Output is UTF-8 without BOM by default. Each record is serialized with a fresh `
 
 ### 2.3 Async writing
 
+<!-- snippet: setup
+IAsyncEnumerable<ChatExample> asyncRecords = AsyncEnumerable.Empty<ChatExample>();
+-->
 ```csharp
 await using FileStream output = File.Create("out.jsonl");
 
@@ -261,9 +300,12 @@ For AOT, pass `JsonTypeInfo<T>` via `.WithTypeInfo(...)` exactly as on the read 
 
 ### 2.4 OnError callback
 
+<!-- snippet: setup
+List<ChatExample> records = [];
+-->
 ```csharp
 Jsonl.Write<ChatExample>()
-    .OnError(ctx => JsonlSerializeErrorAction.SkipRecord)
+    .OnError((ctx, ex) => JsonlSerializeErrorAction.SkipRecord)
     .ToFile("out.jsonl", records);
 ```
 
@@ -422,13 +464,18 @@ Accepted shapes (square brackets optional, separators may be comma, semicolon, o
 []                  (empty vector)
 ```
 
+<!-- snippet: setup
+var rows = Csv.ReadFromText("1,a,b,[0.1 0.2]");
+rows.MoveNext();
+var row = rows.Current;
+-->
 ```csharp
 using HeroParser.Vectors;
 
-float[]  fv = VectorParser.ParseFloats(row[3].CharSpan);
-double[] dv = VectorParser.ParseDoubles(row[3].CharSpan);
+float[]  fv = VectorParser.ParseFloats(row[3].Span);
+double[] dv = VectorParser.ParseDoubles(row[3].Span);
 
-if (VectorParser.TryParseFloats(row[3].CharSpan, out float[]? result))
+if (VectorParser.TryParseFloats(row[3].Span, out float[]? result))
 {
     // ...
 }

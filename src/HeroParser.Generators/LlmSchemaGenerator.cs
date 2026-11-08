@@ -124,11 +124,11 @@ public sealed class LlmSchemaGenerator : IIncrementalGenerator
 
             if (prop.RangeMin.HasValue)
             {
-                jsonSb.Append($",\\\"minimum\\\": {prop.RangeMin.Value}");
+                jsonSb.Append($",\\\"minimum\\\": {GeneratorHelpers.FormatInvariant(prop.RangeMin.Value)}");
             }
             if (prop.RangeMax.HasValue)
             {
-                jsonSb.Append($",\\\"maximum\\\": {prop.RangeMax.Value}");
+                jsonSb.Append($",\\\"maximum\\\": {GeneratorHelpers.FormatInvariant(prop.RangeMax.Value)}");
             }
             if (prop.Pattern != null)
             {

@@ -52,9 +52,49 @@ HeroParser provides a high-performance, low-allocation CSV parser and writer for
 8. [Fluent Mapping](#8-fluent-mapping)
    - [WithMap() for read](#81-withmap-for-read)
    - [WithMap() for write](#82-withmap-for-write)
-   - [Map<TProperty>() inline mapping](#83-maptproperty-inline-mapping)
+   - [`Map<TProperty>()` inline mapping](#83-maptproperty-inline-mapping)
 
 ---
+
+<!-- snippet: page-setup
+using System.Globalization;
+public class MyRecord { public string Name { get; set; } = ""; public int? Value { get; set; } }
+public readonly record struct Money(decimal Amount)
+{
+    public static bool TryParse(ReadOnlySpan<char> text, IFormatProvider? provider, out Money money)
+    {
+        bool parsed = decimal.TryParse(text, NumberStyles.Currency, provider, out var amount);
+        money = new Money(amount);
+        return parsed;
+    }
+}
+public class Order { public int Id { get; set; } public Money Total { get; set; } }
+static string csv = "Name,Age\nAlice,30", csvData = csv, csvText = csv;
+static Stream stream = Stream.Null, networkStream = Stream.Null;
+static string[] files = [];
+static CancellationToken cancellationToken = CancellationToken.None;
+static List<Person> records = [];
+static IAsyncEnumerable<Person> recordsAsync = AsyncEnumerable.Empty<Person>();
+static async IAsyncEnumerable<Person> GetRecordsAsync() { await Task.CompletedTask; yield break; }
+static List<Trade> trades = [];
+static bool ShouldSkip(HeroParser.SeparatedValues.Reading.Rows.CsvRow<char> row) => false;
+-->
+The examples on this page assume these `using` directives:
+
+```csharp
+using System.IO.Pipelines;
+using HeroParser;
+using HeroParser.SeparatedValues.Core;
+using HeroParser.SeparatedValues.Reading.Records;
+using HeroParser.SeparatedValues.Reading.Rows;
+using HeroParser.SeparatedValues.Reading.Records.MultiSchema;
+using HeroParser.SeparatedValues.Writing;
+using HeroParser.SeparatedValues.Validation;
+using HeroParser.SeparatedValues.Detection;
+using HeroParser.SeparatedValues.Mapping;
+using HeroParser.SeparatedValues.Reading.Data;
+using HeroParser.Validation;
+```
 
 ## 1. CSV Reading
 
@@ -67,7 +107,7 @@ foreach (var row in Csv.ReadFromText(csv))
 {
     // Access columns by index — no allocations for primitive types
     var id    = row[0].Parse<int>();
-    var name  = row[1].CharSpan;       // ReadOnlySpan<char>
+    var name  = row[1].Span;       // ReadOnlySpan<char>
     var price = row[2].Parse<decimal>();
 }
 ```
@@ -138,30 +178,33 @@ foreach (var row in Csv.ReadFromText(csv))
 
 **Storing rows safely:**
 
-Rows are ref structs and cannot outlive their iteration scope. Use `Clone()` to capture an owned copy:
+Rows are ref structs: they cannot be stored in a collection, captured in a lambda, or kept past their iteration. Copy the values you need while the row is current:
 
 ```csharp
-var storedRows = new List<CsvCharSpanRow>();
+var storedRows = new List<string[]>();
 
 foreach (var row in Csv.ReadFromText(csv))
 {
-    // ❌ WRONG: Cannot store ref struct directly
+    // ❌ WRONG: a ref struct cannot be stored
     // storedRows.Add(row);
 
-    // ✅ CORRECT: Clone creates an owned copy
-    storedRows.Add(row.Clone());
+    // ✅ CORRECT: copy the fields into owned strings
+    storedRows.Add(row.ToStringArray());
 }
 
-foreach (var row in storedRows)
+foreach (var fields in storedRows)
 {
-    var value = row[0].ToString();
+    var value = fields[0];
 }
 ```
+
+`row.Clone()` copies a row's data into new buffers, so the copy survives the reader moving on, but it is still a ref struct with the same storage limits.
 
 **Resource management:**
 
 HeroParser readers use `ArrayPool` buffers. Always dispose to prevent leaks:
 
+<!-- snippet: alternatives -->
 ```csharp
 // ✅ Preferred: using statement
 using (var reader = Csv.ReadFromText(csv))
@@ -251,7 +294,7 @@ Name,Age
 Alice,30
 Bob,25";
 
-foreach (var record in Csv.ParseRecords<MyRecord>(csv, recordOptions))
+foreach (var record in Csv.DeserializeRecords<MyRecord>(csv, recordOptions))
 {
     // First 2 rows skipped; 3rd row used as header
 }
@@ -266,7 +309,7 @@ var recordOptions = new CsvRecordOptions
 };
 
 var csv = "Name,Value\nAlice,100\nBob,NULL\nCharlie,N/A";
-foreach (var record in Csv.ParseRecords<MyRecord>(csv, recordOptions))
+foreach (var record in Csv.DeserializeRecords<MyRecord>(csv, recordOptions))
 {
     // record.Value will be null when the field contains "NULL" or "N/A"
 }
@@ -277,20 +320,20 @@ foreach (var record in Csv.ParseRecords<MyRecord>(csv, recordOptions))
 ### 1.2 Files and streams
 
 ```csharp
-// Stream a file without loading it fully
-using var fileReader = Csv.ReadFromFile("data.csv");
+// Read a whole file into memory, then parse it
+using var fileReader = Csv.ReadFromFile("data.csv", out byte[] fileBytes);
 
 // From an already-open stream (leaveOpen defaults to true)
 using var stream = File.OpenRead("data.csv");
-using var streamReader = Csv.ReadFromStream(stream);
+using var streamReader = Csv.ReadFromStream(stream, out byte[] streamBytes);
 ```
 
-Both overloads stream with pooled buffers. Rows remain valid until the next `MoveNext` call.
+Both overloads buffer the whole input into the returned byte array, which must stay alive while you read, and reject inputs above the buffered-size limit. For large files use the async streaming reader in [1.3](#13-async-io). Rows remain valid until the next `MoveNext` call.
 
-**Streaming large files (low memory):**
+**Row by row:**
 
 ```csharp
-using var reader = Csv.ReadFromStream(File.OpenRead("data.csv"));
+using var reader = Csv.ReadFromStream(File.OpenRead("data.csv"), out byte[] bytes, leaveOpen: false);
 while (reader.MoveNext())
 {
     var row = reader.Current;
@@ -304,23 +347,26 @@ while (reader.MoveNext())
 using var fileReader = Csv.Read()
     .WithMaxFieldSize(10_000)
     .AllowNewlinesInQuotes()
-    .FromFile("data.csv");
+    .FromFile("data.csv", out byte[] fileBytes);
 ```
 
 ---
 
 ### 1.3 Async I/O
 
-**Buffer-then-read (simple):**
+**Async streaming with the row builder:**
 
 ```csharp
-var source = await Csv.ReadFromFileAsync("data.csv");
-using var reader = source.CreateReader();
+await using var fileReader = Csv.Read()
+    .WithMaxFieldSize(10_000)
+    .FromFileAsync("data.csv");
+while (await fileReader.MoveNextAsync())
+{
+    var id = fileReader.Current[0].Parse<int>();
+}
 ```
 
-Async overloads buffer the full payload (required because readers are ref structs). Use when you need non-blocking file or stream reads.
-
-**True async streaming (low memory):**
+**Async streaming from a stream:**
 
 ```csharp
 await using var reader = Csv.CreateAsyncStreamReader(File.OpenRead("data.csv"));
@@ -348,7 +394,7 @@ await foreach (var person in Csv.Read<Person>()
 
 ```csharp
 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-await foreach (var record in Csv.Read<T>()
+await foreach (var record in Csv.Read<Person>()
     .FromFileAsync("untrusted.csv")
     .WithCancellation(cts.Token))
 {
@@ -374,7 +420,7 @@ await foreach (var record in Csv.Read()
 
 ### 1.4 Typed record reading with fluent builder
 
-Use `Csv.Read<T>()` for a clean, chainable API that binds CSV columns to record properties automatically via convention or attributes.
+Use `Csv.Read<Person>()` for a clean, chainable API that binds CSV columns to record properties automatically via convention or attributes.
 
 ```csharp
 // Read all records at once
@@ -450,8 +496,9 @@ if (reader.Errors.Count > 0)
         // [Range] Value must be between 0 and 100000 (raw: '-50.00')
 }
 
-// Or throw immediately if there are any errors
-reader.ThrowIfAnyError();
+// Or fail fast: in ValidationMode.Strict (the default), ToList() and the other terminal
+// methods throw a ValidationException after reading if any row failed validation
+List<Transaction> valid = Csv.DeserializeRecords<Transaction>(csvData).ToList();
 ```
 
 **Validation properties on `[Validate]`:**
@@ -467,30 +514,21 @@ reader.ThrowIfAnyError();
 | `Pattern` | `string?` | `null` | Regex pattern the value must match |
 | `PatternTimeoutMs` | `int` | `1000` | Regex evaluation timeout in milliseconds (ReDoS protection) |
 
+Range, length and pattern rules interpret values with the reader's or writer's configured `Culture` (invariant by default), never the current thread culture; HTB, which has no culture setting, uses the invariant culture.
+
 **Header validation:**
 
 ```csharp
-// Require specific headers
-var records = Csv.Read<Person>()
-    .RequireHeaders("Name", "Email", "Age")
-    .FromText(csv)
-    .ToList();
+// Require specific headers before binding (see 4.2 CSV validation)
+var check = Csv.Validate(csv, new CsvValidationOptions { RequiredHeaders = ["Name", "Email", "Age"] });
 
-// Detect duplicate headers
-var records = Csv.Read<Person>()
-    .DetectDuplicateHeaders()
-    .FromText(csv)
-    .ToList();
+// Custom header checks run on the parsed header row, e.g. duplicates
+bool hasDuplicates = check.Headers.Count != check.Headers.Distinct(StringComparer.OrdinalIgnoreCase).Count();
 
-// Custom header validation
-var records = Csv.Read<Person>()
-    .ValidateHeaders(headers =>
-    {
-        if (!headers.Contains("Id"))
-            throw new CsvException(CsvErrorCode.InvalidHeader, "Missing required 'Id' column");
-    })
-    .FromText(csv)
-    .ToList();
+if (check.IsValid && !hasDuplicates)
+{
+    var records = Csv.Read<Person>().FromText(csv).ToList();
+}
 ```
 
 ---
@@ -529,14 +567,14 @@ var allAdults  = Csv.Read<Person>().FromText(csv).All(p => p.Age >= 18);
 var page = Csv.Read<Person>().FromText(csv).Skip(10).Take(5);
 
 // Grouping
-var byCity = Csv.Read<Person>()
+var byAge = Csv.Read<Person>()
     .FromText(csv)
-    .GroupBy(p => p.City);
+    .GroupBy(p => p.Age);
 
 // Dictionary
-var byId = Csv.Read<Person>()
+var byName = Csv.Read<Person>()
     .FromText(csv)
-    .ToDictionary(p => p.Id);
+    .ToDictionary(p => p.Name);
 
 // Iteration
 Csv.Read<Person>()
@@ -601,6 +639,7 @@ foreach (var record in Csv.Read()
 
 **Discriminator options:**
 
+<!-- snippet: skip builder-method fragments, each continues a Csv.Read() chain -->
 ```csharp
 // By column index (0-based)
 .WithDiscriminator(columnIndex: 0)
@@ -614,6 +653,7 @@ foreach (var record in Csv.Read()
 
 **Handling unmatched rows:**
 
+<!-- snippet: skip builder-method fragments, each continues a Csv.Read() chain -->
 ```csharp
 // Skip rows that don't match any registered type
 .OnUnmatchedRow(UnmatchedRowBehavior.Skip)
@@ -632,15 +672,16 @@ foreach (var record in Csv.Read()
 **Streaming and async:**
 
 ```csharp
-// From file
-foreach (var record in Csv.Read()
+// From file: a streaming reader
+await using var reader = Csv.Read()
     .WithMultiSchema()
     .WithDiscriminator("Type")
     .MapRecord<HeaderRecord>("H")
     .MapRecord<DetailRecord>("D")
-    .FromFile("transactions.csv"))
+    .FromFile("transactions.csv");
+while (await reader.MoveNextAsync())
 {
-    // ...
+    object? record = reader.Current;
 }
 
 // Async
@@ -661,13 +702,22 @@ await foreach (var record in Csv.Read()
 
 Stream CSV data directly through `System.Data.IDataReader` into `SqlBulkCopy`, Dapper, or any ADO.NET consumer:
 
+<!-- snippet: setup
+sealed class SqlBulkCopy(object connection) : IDisposable
+{
+    public string DestinationTableName { get; set; } = "";
+    public Task WriteToServerAsync(System.Data.Common.DbDataReader reader) => Task.CompletedTask;
+    public void Dispose() { }
+}
+object connection = new();
+-->
+<!-- snippet: alternatives -->
 ```csharp
 // From a stream
 using var reader = Csv.CreateDataReader(File.OpenRead("data.csv"));
 
 // From a file path
 using var reader = Csv.CreateDataReader("data.csv");
-
 // Bulk load into SQL Server
 using var bulkCopy = new SqlBulkCopy(connection);
 bulkCopy.DestinationTableName = "MyTable";
@@ -698,21 +748,20 @@ Handle deserialization errors at the field level without stopping the whole pars
 
 ```csharp
 var records = Csv.Read<Person>()
-    .OnError(ctx =>
+    .OnError((ctx, ex) =>
     {
-        Console.WriteLine($"Error at row {ctx.Row}, column '{ctx.MemberName}': {ctx.Exception?.Message}");
-        return DeserializeErrorAction.Skip;   // Or UseDefault, Throw
+        Console.WriteLine($"Error at row {ctx.Row}, column '{ctx.FieldName}': {ex.Message}");
+        return CsvDeserializeErrorAction.SkipRecord;   // Or Throw
     })
     .FromText(csv)
     .ToList();
 ```
 
-**`DeserializeErrorAction` values:**
+**`CsvDeserializeErrorAction` values:**
 
 | Value | Behaviour |
 |---|---|
-| `Skip` | Skip the entire record |
-| `UseDefault` | Use the default value for the field and continue |
+| `SkipRecord` | Skip the entire record and continue |
 | `Throw` | Re-throw the exception (same as no callback) |
 
 ---
@@ -742,13 +791,8 @@ Register converters for domain-specific types not handled by the built-in parser
 
 ```csharp
 var records = Csv.Read<Order>()
-    .RegisterConverter<Money>((column, culture) =>
-    {
-        var text = column.ToString();
-        if (Money.TryParse(text, out var money))
-            return money;
-        throw new FormatException($"Invalid money format: {text}");
-    })
+    .RegisterConverter<Money>((value, culture, format, out result) =>
+        Money.TryParse(value, culture, out result))
     .FromText(csv)
     .ToList();
 ```
@@ -865,7 +909,7 @@ await writer.WriteRowAsync(new[] { "Alice", "30", "NYC" });
 await writer.WriteRowAsync(new[] { "Bob",   "25", "LA" });
 await writer.FlushAsync();
 
-// Builder API with async streaming (16-43% faster than sync at scale)
+// Builder API with async streaming
 await Csv.Write<Person>()
     .WithDelimiter(',')
     .WithHeader()
@@ -906,9 +950,9 @@ Csv.Write<Person>().AlwaysQuote().ToText(records);
 Protect against formula injection when the CSV output may be opened in a spreadsheet:
 
 ```csharp
-Csv.Write<T>()
+Csv.Write<Person>()
     .WithInjectionProtection(CsvInjectionProtection.Sanitize)
-    .ToFile("export.csv");
+    .ToFile("export.csv", records);
 ```
 
 See [Section 5.1](#51-csv-injection-protection-modes) for full mode descriptions.
@@ -945,12 +989,13 @@ Csv.WriteToText(records, options);
 Track write progress in the same way as reads:
 
 ```csharp
-var progress = new Progress<CsvProgress>(p =>
-    Console.WriteLine($"Written {p.RowsProcessed} rows"));
+var progress = new Progress<CsvWriteProgress>(p =>
+    Console.WriteLine($"Written {p.RowsWritten} rows"));
 
-await Csv.Write<Person>()
-    .WithProgress(progress, intervalRows: 5000)
-    .ToFileAsync("output.csv", records);
+Csv.Write<Person>()
+    .WithProgress(progress)
+    .WithProgressInterval(5000)
+    .ToFile("output.csv", records);
 ```
 
 ---
@@ -1133,6 +1178,9 @@ var options = new CsvValidationOptions
 
 **Inspecting the result:**
 
+<!-- snippet: setup
+var options = new CsvValidationOptions();
+-->
 ```csharp
 var result = Csv.Validate(csvData, options);
 
@@ -1244,9 +1292,9 @@ When exporting user data to CSV that may be opened in a spreadsheet application,
 
 ```csharp
 // Via fluent builder
-Csv.Write<T>()
+Csv.Write<Person>()
     .WithInjectionProtection(CsvInjectionProtection.Sanitize)
-    .ToFile("export.csv");
+    .ToFile("export.csv", records);
 
 // Via options
 var writeOptions = new CsvWriteOptions
@@ -1280,7 +1328,7 @@ var options = new CsvReadOptions
     MaxRowSize     = 512 * 1024   // 512 KB row limit for streaming readers
 };
 
-var reader = Csv.Read().WithOptions(options).FromFile("untrusted.csv");
+using var reader = Csv.ReadFromFile("untrusted.csv", out byte[] fileBytes, options);
 ```
 
 **Recommended limits for untrusted input:**
@@ -1304,9 +1352,11 @@ var reader = Csv.ReadFromText(csv, options);
 
 **Validation before processing:**
 
+Options are validated when a reader is created: an invalid combination (for example a non-positive limit, or the same character as delimiter and quote) throws `CsvException` before any data is read.
+
 ```csharp
 var options = new CsvReadOptions { MaxColumnCount = 50, MaxRowCount = 100_000 };
-options.Validate();   // Throws if configuration is invalid
+using var reader = Csv.ReadFromText(csv, options);   // Throws here if the options are invalid
 ```
 
 **Streaming for large files (avoid loading entire file):**
@@ -1325,7 +1375,7 @@ while (await reader.MoveNextAsync())
 ```csharp
 try
 {
-    var records = Csv.Read<T>().FromFile("untrusted.csv").ToList();
+    var records = Csv.Read<Person>().FromFile("untrusted.csv").ToList();
 }
 catch (CsvException ex)
 {
@@ -1337,16 +1387,17 @@ catch (CsvException ex)
 
 HeroParser readers and writers are not thread-safe by design:
 
+<!-- snippet: skip the second half is deliberately unsafe code -->
 ```csharp
 // ✅ Good: Each thread has its own reader
 Parallel.ForEach(files, file =>
 {
-    var reader = Csv.Read<T>().FromFile(file);
+    var reader = Csv.Read<Person>().FromFile(file);
     // Process...
 });
 
 // ❌ Bad: Shared reader across threads
-var reader = Csv.Read<T>().FromFile("data.csv");
+var reader = Csv.Read<Person>().FromFile("data.csv");
 Parallel.ForEach(reader, record => { /* NOT SAFE */ });
 ```
 
@@ -1366,8 +1417,7 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
                                       ┌────┴─────┐
                                       │ AVX-512  │  (64-byte chunks)
                                       │ AVX2     │  (32-byte chunks)
-                                      │ NEON     │  (16-byte chunks, ARM)
-                                      │ Scalar   │  (fallback)
+                                      │ Scalar   │  (everything else, incl. ARM64)
                                       └──────────┘
 ```
 
@@ -1459,6 +1509,9 @@ Each row is yielded as a `CsvPipeRow` with column access via UTF-8 byte spans.
 
 **With options:**
 
+<!-- snippet: setup
+var pipe = PipeReader.Create(networkStream);
+-->
 ```csharp
 var options = new CsvReadOptions
 {
@@ -1501,8 +1554,7 @@ HeroParser selects the best available path automatically:
 |---|---|
 | AVX-512 | 64 bytes |
 | AVX2 | 32 bytes (common on modern x64) |
-| NEON | 16 bytes (ARM64: Apple Silicon, AWS Graviton) |
-| Scalar | byte-by-byte fallback (always works) |
+| Scalar | byte-by-byte; every other CPU, including ARM64 (Apple Silicon, AWS Graviton), and WebAssembly |
 
 ---
 
@@ -1610,13 +1662,13 @@ public partial class BankingDispatcher { }
 **Usage:**
 
 ```csharp
-var reader = Csv.Read().FromText(csv);
+using var reader = Csv.ReadFromText(csv, out byte[] textBytes);   // UTF-8 rows
 if (reader.MoveNext()) { }   // Skip header row
 int rowNumber = 1;
 while (reader.MoveNext())
 {
     rowNumber++;
-    var record = BankingDispatcher.Dispatch(reader.Current, rowNumber);
+    var record = BankingDispatcher.DispatchBytes(reader.Current, rowNumber);
     switch (record)
     {
         case HeaderRecord h:  /* ... */ break;
@@ -1689,7 +1741,7 @@ var csv = Csv.Write<Trade>().WithMap(map).ToText(trades);
 
 ---
 
-### 8.3 Map<TProperty>() inline mapping
+### 8.3 `Map<TProperty>()` inline mapping
 
 Add field-level validation rules inline on the map:
 

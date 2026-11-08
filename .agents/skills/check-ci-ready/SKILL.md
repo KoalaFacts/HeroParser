@@ -23,17 +23,17 @@ dotnet build -c Release
 
 3. **Unit tests**:
 ```bash
-dotnet test -c Release --no-build --filter Category=Unit
+dotnet test --project tests/HeroParser.Tests -c Release --no-build -- --filter-trait Category=Unit
 ```
 
 4. **Integration tests**:
 ```bash
-dotnet test -c Release --no-build --filter Category=Integration
+dotnet test --project tests/HeroParser.Tests -c Release --no-build -- --filter-trait Category=Integration
 ```
 
 5. **Source generator tests**:
 ```bash
-dotnet test tests/HeroParser.Generators.Tests -c Release --no-build
+dotnet test --project tests/HeroParser.Generators.Tests -c Release --no-build
 ```
 
 6. **AOT compatibility tests**:
@@ -41,4 +41,10 @@ dotnet test tests/HeroParser.Generators.Tests -c Release --no-build
 dotnet run --project tests/HeroParser.AotTests -c Release
 ```
 
-7. Report a summary: which steps passed, which failed, and any warnings.
+7. **Docs check** (Node 24+):
+```bash
+node --test .github/scripts/tests/check-docs.test.ts
+node .github/scripts/check-docs.ts
+```
+
+8. Report a summary: which steps passed, which failed, and any warnings.

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 
 namespace HeroParser.SeparatedValues.Reading.Records.MultiSchema;
@@ -237,7 +238,7 @@ internal readonly struct DiscriminatorKey : IEquatable<DiscriminatorKey>
 
     /// <summary>
     /// Creates a packed key from an integer discriminator value.
-    /// The integer is converted to its string representation and packed.
+    /// The integer is converted to its invariant-culture string representation and packed.
     /// </summary>
     /// <param name="value">The integer discriminator value.</param>
     /// <returns>The packed key.</returns>
@@ -245,7 +246,7 @@ internal readonly struct DiscriminatorKey : IEquatable<DiscriminatorKey>
     {
         // Use stack allocation for small integers (common case)
         Span<char> buffer = stackalloc char[16];
-        if (!value.TryFormat(buffer, out int charsWritten))
+        if (!value.TryFormat(buffer, out int charsWritten, provider: CultureInfo.InvariantCulture))
         {
             // Should never happen for int
             throw new InvalidOperationException("Failed to format integer.");

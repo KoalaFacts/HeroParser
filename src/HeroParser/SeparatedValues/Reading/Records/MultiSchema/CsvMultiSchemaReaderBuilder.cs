@@ -480,7 +480,17 @@ public sealed class CsvMultiSchemaReaderBuilder
     {
         ArgumentNullException.ThrowIfNull(filePath);
         var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
-        return FromStream(stream, encoding, leaveOpen: false);
+        try
+        {
+            return FromStream(stream, encoding, leaveOpen: false);
+        }
+        catch
+        {
+            // The reader owns the stream only once it exists; close the file if configuration
+            // validation or reader construction fails.
+            stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

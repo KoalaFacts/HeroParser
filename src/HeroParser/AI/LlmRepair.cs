@@ -21,6 +21,7 @@ public static class LlmRepair
     /// <param name="quote">The quote character used in the CSV schema.</param>
     /// <param name="escape">The escape character, if any, used in the CSV schema.</param>
     /// <returns>A cleaned and repaired CSV string.</returns>
+    /// <remarks>The <c>```</c> fence is matched ordinally, independent of the current culture.</remarks>
     public static string RepairText(string text, char quote = '"', char? escape = '\\')
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -33,13 +34,13 @@ public static class LlmRepair
 
         // 1. Strip Markdown Block Wrappers (e.g., ```csv ... ```) and conversational text
         var trimmed = text.Trim();
-        int blockStart = trimmed.IndexOf("```");
+        int blockStart = trimmed.IndexOf("```", StringComparison.Ordinal);
         if (blockStart != -1)
         {
             int index = trimmed.IndexOf('\n', blockStart);
             if (index != -1)
             {
-                int blockEnd = trimmed.IndexOf("```", index);
+                int blockEnd = trimmed.IndexOf("```", index, StringComparison.Ordinal);
                 trimmed = blockEnd != -1
                     ? trimmed[index..blockEnd].Trim()
                     : trimmed[index..].Trim();

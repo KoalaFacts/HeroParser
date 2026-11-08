@@ -69,7 +69,7 @@ internal static class PropertyValidationRunner
                 columnIndex,
                 columnName,
                 "MinLength",
-                $"Field '{propertyName}' length {value.Length} is less than minimum {minLength.Value}.",
+                string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {value.Length} is less than minimum {minLength.Value}."),
                 value,
                 ref rawValue);
             hasErrors = true;
@@ -84,7 +84,7 @@ internal static class PropertyValidationRunner
                 columnIndex,
                 columnName,
                 "MaxLength",
-                $"Field '{propertyName}' length {value.Length} exceeds maximum {maxLength.Value}.",
+                string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {value.Length} exceeds maximum {maxLength.Value}."),
                 value,
                 ref rawValue);
             hasErrors = true;
@@ -102,7 +102,7 @@ internal static class PropertyValidationRunner
                     columnIndex,
                     columnName,
                     "Range",
-                    $"Field '{propertyName}' value {numericValue} is less than minimum {rangeMin.Value}.",
+                    string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} is less than minimum {rangeMin.Value}."),
                     value,
                     ref rawValue);
                 hasErrors = true;
@@ -117,7 +117,7 @@ internal static class PropertyValidationRunner
                     columnIndex,
                     columnName,
                     "Range",
-                    $"Field '{propertyName}' value {numericValue} exceeds maximum {rangeMax.Value}.",
+                    string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} exceeds maximum {rangeMax.Value}."),
                     value,
                     ref rawValue);
                 hasErrors = true;
@@ -213,12 +213,12 @@ internal static class PropertyValidationRunner
 
         if (minLength.HasValue && value.Length < minLength.Value)
         {
-            AddError("MinLength", $"Field '{propertyName}' length {value.Length} is less than minimum {minLength.Value}.");
+            AddError("MinLength", string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {value.Length} is less than minimum {minLength.Value}."));
         }
 
         if (maxLength.HasValue && value.Length > maxLength.Value)
         {
-            AddError("MaxLength", $"Field '{propertyName}' length {value.Length} exceeds maximum {maxLength.Value}.");
+            AddError("MaxLength", string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {value.Length} exceeds maximum {maxLength.Value}."));
         }
 
         if (rangeMin.HasValue || rangeMax.HasValue)
@@ -227,11 +227,11 @@ internal static class PropertyValidationRunner
             {
                 if (rangeMin.HasValue && numericValue < rangeMin.Value)
                 {
-                    AddError("Range", $"Field '{propertyName}' value {numericValue} is less than minimum {rangeMin.Value}.");
+                    AddError("Range", string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} is less than minimum {rangeMin.Value}."));
                 }
                 if (rangeMax.HasValue && numericValue > rangeMax.Value)
                 {
-                    AddError("Range", $"Field '{propertyName}' value {numericValue} exceeds maximum {rangeMax.Value}.");
+                    AddError("Range", string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} exceeds maximum {rangeMax.Value}."));
                 }
             }
         }

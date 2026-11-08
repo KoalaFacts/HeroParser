@@ -298,6 +298,15 @@ HeroParser includes first-class support for LLM, vector search, and RAG pipeline
 
 ### 1. LLM Structured Output Repair (`LlmRepair`)
 Repairs truncated final rows (unclosed quotes/escapes) and strips markdown code blocks from raw LLM text streams.
+<!-- snippet: setup
+[GenerateBinder]
+public class Developer
+{
+    public string Name { get; set; } = "";
+    public string Role { get; set; } = "";
+}
+string rawLlmResponse = "";
+-->
 ```csharp
 using HeroParser.AI;
 
@@ -310,6 +319,10 @@ await foreach (var dev in LlmRepair.ReadFromTextAsync<Developer>(rawLlmResponse)
 
 ### 2. Tabular Embedding Pipeline (`ToLlmEmbeddingsAsync`)
 Batches streamed records and pairs them with vector embeddings using a token-budgeted streaming wrapper. Chunks, request text, and returned embedding arrays have allocation costs.
+<!-- snippet: setup
+IAsyncEnumerable<Developer> developers = AsyncEnumerable.Empty<Developer>();
+static ValueTask<IReadOnlyList<float[]>> GetEmbeddingsFromApiAsync(IReadOnlyList<string> texts, CancellationToken ct) => default;
+-->
 ```csharp
 using HeroParser.AI;
 
@@ -324,6 +337,9 @@ await foreach (var chunk in developers.ToLlmEmbeddingsAsync(
 
 ### 3. Agent Tool Argument Mapper (`SchemaMetadata.MapFromToolCall`)
 Maps flat dictionaries of case-insensitive arguments returned by tool calling models into typed record models, executing validation constraints and raising rich validation feedback.
+<!-- snippet: setup
+IReadOnlyDictionary<string, object?> arguments = new Dictionary<string, object?>();
+-->
 ```csharp
 using HeroParser.AI;
 
@@ -332,14 +348,21 @@ Developer dev = SchemaMetadata.MapFromToolCall<Developer>(arguments);
 
 ### 4. Tabular Context Profiler (`TabularContextProfiler`)
 Generates structured statistical profile cards in markdown directly from datasets to inject into LLM system prompts.
+<!-- snippet: setup
+List<Developer> developers = [];
+-->
 ```csharp
 string contextCard = developers.GenerateContextCard(datasetName: "Engineering Team");
 ```
 
 ### 5. Token-Bounded JSON Chunker (`JsonLlmChunker`)
 Chunks an `IAsyncEnumerable<T>` into valid, token-bounded JSON array blocks for RAG context windows. Serialization uses a source-generated `JsonTypeInfo<T>`, so it stays AOT-safe.
+<!-- snippet: setup
+IAsyncEnumerable<Developer> developers = AsyncEnumerable.Empty<Developer>();
+var options = new LlmChunkOptions { MaxTokensPerChunk = 500 };
+-->
 ```csharp
-await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(DeveloperJsonContext.Default.Developer, options)) { ... }
+await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(DeveloperJsonContext.Default.Developer, options)) { /* send jsonChunk to the model */ }
 
 [JsonSerializable(typeof(Developer))]
 internal partial class DeveloperJsonContext : JsonSerializerContext { }
@@ -363,7 +386,7 @@ internal partial class DeveloperJsonContext : JsonSerializerContext { }
 * **Multi-schema CSV** — discriminator-based row routing to different record types, with runtime and source-generated dispatch
 * **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score
 * **CSV validation** — pre-flight structural checks with detailed per-row error reporting
-* **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; `result.ThrowIfAnyError()` for fail-fast
+* **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; in strict mode (the default) `ToList()` and other terminal methods throw a `ValidationException` when any row failed
 * **CSV injection protection** — configurable sanitization modes for user-data exports
 * **Progress reporting** — row/byte callbacks for large-file UX
 * **Custom type converters** — register converters for domain types on any reader or writer

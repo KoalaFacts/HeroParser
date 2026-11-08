@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace HeroParser.SeparatedValues.Reading.Shared;
 
 /// <summary>
@@ -81,7 +83,7 @@ public sealed class CsvSchemaMappingAttribute : Attribute
     /// <param name="recordType">The record type to bind when this discriminator is matched.</param>
     public CsvSchemaMappingAttribute(int discriminator, Type recordType)
     {
-        Discriminator = discriminator.ToString();
+        Discriminator = discriminator.ToString(CultureInfo.InvariantCulture);
         RecordType = recordType;
     }
 

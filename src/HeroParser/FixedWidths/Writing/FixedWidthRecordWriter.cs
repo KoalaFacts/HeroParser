@@ -254,7 +254,7 @@ public sealed class FixedWidthRecordWriter<T>
                 if (options.ValidationMode == ValidationMode.Strict && field.Validation is { HasAnyRule: true } rules)
                 {
                     List<ValidationError> validationErrors = [];
-                    WriteValidationRunner.Validate(value, field.Name, rowNumber, i, rules, validationErrors);
+                    WriteValidationRunner.Validate(value, field.Name, rowNumber, i, rules, validationErrors, options.Culture);
                     if (validationErrors.Count > 0)
                         throw new ValidationException(validationErrors);
                 }

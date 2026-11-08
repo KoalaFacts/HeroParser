@@ -126,3 +126,9 @@ test("parses and de-duplicates compiler errors", () => {
   ].join("\n");
   assert.deepEqual(parseBuildErrors(output), ["/repo/docs/csv.md(12,5): error CS0103: The name 'csv' does not exist in the current context"]);
 });
+
+test("markers also close with --!>, which HTML treats as a comment end", () => {
+  const page = extractSnippets("<!-- snippet: setup\nvar a = 1;\n--!>\n<!-- snippet: skip why --!>\n```csharp\nx\n```\n");
+  assert.deepEqual(page.snippets[0].setup?.code, ["var a = 1;"]);
+  assert.equal(page.snippets[0].skip, "why");
+});

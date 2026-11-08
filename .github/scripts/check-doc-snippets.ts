@@ -69,8 +69,10 @@ export interface SplitSnippet {
 const FENCE = /^(\s*)(`{3,}|~{3,})\s*([\w#+-]*)/;
 const SETUP_OPEN = /^\s*<!--\s*snippet:\s*setup\s*$/;
 const PAGE_SETUP_OPEN = /^\s*<!--\s*snippet:\s*page-setup\s*$/;
-const SKIP = /^\s*<!--\s*snippet:\s*skip\b\s*(.*?)\s*-->\s*$/;
-const ALTERNATIVES = /^\s*<!--\s*snippet:\s*alternatives\s*-->\s*$/;
+// HTML ends a comment at "-->" and also at "--!>" (a parse error browsers accept), so both close a marker.
+const COMMENT_END = /^\s*--!?>\s*$/;
+const SKIP = /^\s*<!--\s*snippet:\s*skip\b\s*(.*?)\s*--!?>\s*$/;
+const ALTERNATIVES = /^\s*<!--\s*snippet:\s*alternatives\s*--!?>\s*$/;
 const MARKER = /^\s*<!--\s*snippet:/;
 
 /** The ```csharp / ```cs blocks of a Markdown page with their markers. */
@@ -97,7 +99,7 @@ export function extractSnippets(markdown: string, file = "page.md"): Page {
       if (pageSetup) throw new Error(`${file}:${i + 1}: only one snippet page-setup marker per page`);
       const start = i + 1;
       const code: string[] = [];
-      for (i++; i < lines.length && !/^\s*-->\s*$/.test(lines[i]); i++) code.push(lines[i]);
+      for (i++; i < lines.length && !COMMENT_END.test(lines[i]); i++) code.push(lines[i]);
       if (i >= lines.length) throw new Error(`${file}:${start}: unterminated snippet page-setup marker`);
       pageSetup = { line: start + 1, code };
       continue;
@@ -105,7 +107,7 @@ export function extractSnippets(markdown: string, file = "page.md"): Page {
     if (SETUP_OPEN.test(text)) {
       const start = i + 1;
       const code: string[] = [];
-      for (i++; i < lines.length && !/^\s*-->\s*$/.test(lines[i]); i++) code.push(lines[i]);
+      for (i++; i < lines.length && !COMMENT_END.test(lines[i]); i++) code.push(lines[i]);
       if (i >= lines.length) throw new Error(`${file}:${start}: unterminated snippet setup marker`);
       pendingSetup = { line: start + 1, code };
       continue;

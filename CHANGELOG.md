@@ -20,6 +20,7 @@ Planned as 2.9.0: .NET 11 compatibility.
 - Build, test and AOT-check every target with the .NET 11 SDK. `global.json` sets the floor (`11.0.100-rc.3`, go-live) with `allowPrerelease` and `rollForward: latestFeature`; CI installs the newest 11.0 SDK through setup-dotnet's `11.0.x` channel resolution (prereleases included); the GA transition must be verified once GA ships. GitHub's automatic NuGet dependency submission installs the `global.json` version. The CI matrix gains net11.0 on Ubuntu, Windows and macOS, and native AOT publish now also runs for net11.0. The C# language version stays pinned at 14.0.
 - Building from source now requires the .NET 11 SDK.
 - The CSV Pipe correctness report accepts net11.0.
+- New **Docs Check** CI job (`.github/scripts/check-docs.ts`, Node 24, no dependencies): fails on broken relative links and anchors, `docs/` pages the README does not reach, repository paths in inline code that do not exist, and agent instructions that drift (`AGENTS.md` is now a pointer to `CLAUDE.md`; `.agents/skills` must match `.claude/skills`).
 - Before releasing 2.9.0, raise the `global.json` floor to the .NET 11 GA SDK so local builds cannot fall back to a release candidate.
 
 ### Dependencies
@@ -335,7 +336,7 @@ Documentation and CI hardening release. No runtime code changes — functionally
 
 ### Breaking Changes
 
-- **Unified attribute model.** The format-specific attributes from 1.x are removed and replaced by six concern-separated attributes that work across CSV, Excel, and Fixed-Width. See [docs/migration-v1-to-v2.md](docs/migration-v1-to-v2.md) for the rename map and mechanical migration recipe.
+- **Unified attribute model.** The format-specific attributes from 1.x are removed and replaced by six concern-separated attributes that work across CSV, Excel, and Fixed-Width. See [docs/migration-v1-to-v2.md](https://github.com/KoalaFacts/HeroParser/blob/87b0091b31bbba95cea9a8fb3202b664fc0fc799/docs/migration-v1-to-v2.md) for the rename map and mechanical migration recipe.
   - Removed: `[CsvColumn]`, `[FixedWidthColumn]`, `[CsvGenerateBinder]`, `[FixedWidthGenerateBinder]`, `[FixedWidthRequired]`, `[FixedWidthStringLength]`, `[FixedWidthRange]`, `[FixedWidthRegex]`.
   - Added: `[GenerateBinder]`, `[TabularMap]`, `[PositionalMap]`, `[Parse]`, `[Format]`, `[Validate]`.
 - **HERO008 build diagnostic.** When `[GenerateBinder]` is applied, every `[TabularMap]` must specify either `Name` or `Index`. Omitting both is a hard build error (was a silent fallback in 1.x).

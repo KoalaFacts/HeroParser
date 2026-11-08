@@ -83,9 +83,11 @@ public sealed class HtbRecordReaderBuilder<T> where T : new()
     {
         ArgumentNullException.ThrowIfNull(stream);
         var options = BuildOptions();
-        options.Validate();
 
+        // Construct the reader before validating so an owned stream (leaveOpen: false) is
+        // disposed when validation fails.
         using var reader = new HtbRecordReader<T>(stream, options, leaveOpen);
+        options.Validate();
         while (reader.ReadNext(out T? record))
         {
             if (record != null)
@@ -112,9 +114,11 @@ public sealed class HtbRecordReaderBuilder<T> where T : new()
     {
         ArgumentNullException.ThrowIfNull(stream);
         var options = BuildOptions();
-        options.Validate();
 
+        // Construct the reader before validating so an owned stream (leaveOpen: false) is
+        // disposed when validation fails.
         using var reader = new HtbRecordReader<T>(stream, options, leaveOpen);
+        options.Validate();
         while (await reader.ReadNextAsync())
         {
             if (reader.CurrentRecord != null)
@@ -129,12 +133,11 @@ public sealed class HtbRecordReaderBuilder<T> where T : new()
     public async IAsyncEnumerable<T> FromFileAsync(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        var stream = File.OpenRead(path);
-
         var options = BuildOptions();
-        options.Validate();
 
-        using var reader = new HtbRecordReader<T>(stream, options, leaveOpen: false);
+        // The reader owns the file stream from here on, so it is closed when validation fails.
+        using var reader = new HtbRecordReader<T>(File.OpenRead(path), options, leaveOpen: false);
+        options.Validate();
         while (await reader.ReadNextAsync())
         {
             if (reader.CurrentRecord != null)

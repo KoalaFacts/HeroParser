@@ -37,6 +37,21 @@ public sealed partial class JsonlRecordReaderBuilder<T>
         ProgressIntervalRows = progressIntervalRows
     };
 
+    private JsonlRecordReader<T> CreateFileReader(string path)
+    {
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            return CreateReader(stream, leaveOpen: false);
+        }
+        catch
+        {
+            // The reader owns the file only once it exists; close it if options validation fails.
+            stream.Dispose();
+            throw;
+        }
+    }
+
     private JsonlRecordReader<T> CreateReader(Stream stream, bool leaveOpen)
     {
         JsonlReadOptions options = BuildOptions();

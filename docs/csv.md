@@ -52,7 +52,7 @@ HeroParser provides a high-performance, low-allocation CSV parser and writer for
 8. [Fluent Mapping](#8-fluent-mapping)
    - [WithMap() for read](#81-withmap-for-read)
    - [WithMap() for write](#82-withmap-for-write)
-   - [Map<TProperty>() inline mapping](#83-maptproperty-inline-mapping)
+   - [`Map<TProperty>()` inline mapping](#83-maptproperty-inline-mapping)
 
 ---
 
@@ -1691,7 +1691,7 @@ var csv = Csv.Write<Trade>().WithMap(map).ToText(trades);
 
 ---
 
-### 8.3 Map<TProperty>() inline mapping
+### 8.3 `Map<TProperty>()` inline mapping
 
 Add field-level validation rules inline on the map:
 

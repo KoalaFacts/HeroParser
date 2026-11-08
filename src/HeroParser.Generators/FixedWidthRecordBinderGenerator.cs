@@ -782,14 +782,14 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             var valueExpr = $"instance.{member.MemberName}";
             var conditions = new List<string>();
             if (!double.IsNaN(member.ValidationRangeMin))
-                conditions.Add($"{valueExpr} < {FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
+                conditions.Add($"{valueExpr} < {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
             if (!double.IsNaN(member.ValidationRangeMax))
-                conditions.Add($"{valueExpr} > {FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
+                conditions.Add($"{valueExpr} > {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
 
             builder.AppendLine($"if (!utf8.IsEmpty && ({string.Join(" || ", conditions)}))");
             builder.AppendLine("{");
             builder.Indent();
-            var rangeMsg = FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
+            var rangeMsg = GeneratorHelpers.FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
             EmitByteAddValidationError(builder, member, "Range", rangeMsg);
             builder.AppendLine("valid = false;");
             builder.Unindent();
@@ -1168,14 +1168,14 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             var valueExpr = $"instance.{member.MemberName}";
             var conditions = new List<string>();
             if (!double.IsNaN(member.ValidationRangeMin))
-                conditions.Add($"{valueExpr} < {FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
+                conditions.Add($"{valueExpr} < {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
             if (!double.IsNaN(member.ValidationRangeMax))
-                conditions.Add($"{valueExpr} > {FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
+                conditions.Add($"{valueExpr} > {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
 
             builder.AppendLine($"if (!span.IsEmpty && ({string.Join(" || ", conditions)}))");
             builder.AppendLine("{");
             builder.Indent();
-            var rangeMsg = FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
+            var rangeMsg = GeneratorHelpers.FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
             EmitAddValidationError(builder, member, "Range", rangeMsg);
             builder.AppendLine("valid = false;");
             builder.Unindent();
@@ -1209,34 +1209,6 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"RawValue = new string(span)");
         builder.Unindent();
         builder.AppendLine("});");
-    }
-
-    private static string FormatRangeLiteral(double value, string baseType)
-    {
-        return baseType switch
-        {
-            "decimal" or "System.Decimal" => $"{value}m",
-            "float" or "System.Single" => $"{value}f",
-            "double" or "System.Double" => $"{value}d",
-            "long" or "System.Int64" => $"{(long)value}L",
-            "ulong" or "System.UInt64" => $"{(ulong)value}UL",
-            "int" or "System.Int32" => $"{(int)value}",
-            "uint" or "System.UInt32" => $"{(uint)value}U",
-            "short" or "System.Int16" => $"(short){(short)value}",
-            "ushort" or "System.UInt16" => $"(ushort){(ushort)value}",
-            "byte" or "System.Byte" => $"(byte){(byte)value}",
-            "sbyte" or "System.SByte" => $"(sbyte){(sbyte)value}",
-            _ => $"{value}"
-        };
-    }
-
-    private static string FormatRangeMessage(double min, double max)
-    {
-        if (!double.IsNaN(min) && !double.IsNaN(max))
-            return $"Value must be between {min} and {max}";
-        if (!double.IsNaN(min))
-            return $"Value must be >= {min}";
-        return $"Value must be <= {max}";
     }
 
     #endregion

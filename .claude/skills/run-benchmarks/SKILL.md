@@ -1,28 +1,24 @@
 ---
 name: run-benchmarks
-description: Run BenchmarkDotNet suite and compare results against Sep baseline documented in CLAUDE.md
+description: Run the BenchmarkDotNet suite and judge the results with the measurement rules in CLAUDE.md
 disable-model-invocation: true
 ---
 
 # Run Benchmarks
 
-Run the HeroParser benchmark suite and compare against the documented baseline.
+Run the HeroParser benchmark suite locally to look for large effects or to profile.
 
 ## Steps
 
-1. Run the benchmark suite:
+1. Run the benchmark suite (or one class with `--filter`):
 ```bash
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 ```
 
 2. Parse the results table from stdout.
 
-3. Compare against the baseline in CLAUDE.md under "Benchmark Baseline (vs Sep 0.17.0)":
-   - Standard (10k rows x 25 cols): HeroParser is faster than Sep (quoted) and matches/exceeds Sep (unquoted)
-   - Wide CSVs: 25-45% faster than Sep
-   - Allocations: 112 B fixed (vs Sep's ~4 KB)
+3. Judge the results with CLAUDE.md, "Performance Optimization Lessons" → "How to measure":
+   - Only the same-runner A/B in the PR benchmark job establishes a speedup or regression; local runs are too noisy for effects under ~20%.
+   - The "Historical Benchmark Reference" table in CLAUDE.md is a historical observation on one CPU, not a baseline to compare a local run against.
 
-4. Report:
-   - Whether performance improved, regressed, or held steady vs the documented baseline
-   - Any allocation changes
-   - If results changed significantly, propose an update to the CLAUDE.md baseline numbers
+4. Report what was run (CPU, runtime, benchmark filter), the raw table, and whether an effect is large enough to be worth a same-runner A/B. Never report a local run as a performance claim.

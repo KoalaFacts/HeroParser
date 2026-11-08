@@ -358,14 +358,14 @@ public sealed class CsvMultiSchemaReaderBuilder
     /// <returns>This builder for method chaining.</returns>
     /// <remarks>
     /// This is a convenience overload for numeric discriminators common in formats like NACHA.
-    /// The integer is converted to its string representation for matching.
+    /// The integer is converted to its invariant-culture string representation for matching.
     /// </remarks>
     public CsvMultiSchemaReaderBuilder MapRecord<T>(int discriminatorValue) where T : new()
     {
         // Format int to string without allocating via ToString()
         // Use stack buffer for common case (integers fit in 16 chars)
         Span<char> buffer = stackalloc char[16];
-        if (!discriminatorValue.TryFormat(buffer, out int charsWritten))
+        if (!discriminatorValue.TryFormat(buffer, out int charsWritten, provider: CultureInfo.InvariantCulture))
         {
             // Should never happen for int32
             throw new InvalidOperationException("Failed to format integer discriminator.");
@@ -480,7 +480,17 @@ public sealed class CsvMultiSchemaReaderBuilder
     {
         ArgumentNullException.ThrowIfNull(filePath);
         var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
-        return FromStream(stream, encoding, leaveOpen: false);
+        try
+        {
+            return FromStream(stream, encoding, leaveOpen: false);
+        }
+        catch
+        {
+            // The reader owns the stream only once it exists; close the file if configuration
+            // validation or reader construction fails.
+            stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

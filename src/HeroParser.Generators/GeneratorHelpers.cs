@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace HeroParser.Generators;
@@ -207,6 +208,48 @@ internal static class GeneratorHelpers
             .Replace(",", "_")
             .Replace(" ", "");
         return name;
+    }
+
+    /// <summary>
+    /// Formats a number for generated source or JSON with the invariant culture. Generators run in the
+    /// compiler under the build machine's culture, which may use a decimal comma or a U+2212 minus sign.
+    /// </summary>
+    public static string FormatInvariant(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Formats a <c>[Validate(RangeMin/RangeMax)]</c> bound as a C# literal of the member's type,
+    /// independent of the build machine's culture.
+    /// </summary>
+    public static string FormatRangeLiteral(double value, string baseType)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        return baseType switch
+        {
+            "decimal" or "System.Decimal" => FormatInvariant(value) + "m",
+            "float" or "System.Single" => FormatInvariant(value) + "f",
+            "double" or "System.Double" => FormatInvariant(value) + "d",
+            "long" or "System.Int64" => ((long)value).ToString(inv) + "L",
+            "ulong" or "System.UInt64" => ((ulong)value).ToString(inv) + "UL",
+            "int" or "System.Int32" => ((int)value).ToString(inv),
+            "uint" or "System.UInt32" => ((uint)value).ToString(inv) + "U",
+            "short" or "System.Int16" => "(short)" + ((short)value).ToString(inv),
+            "ushort" or "System.UInt16" => "(ushort)" + ((ushort)value).ToString(inv),
+            "byte" or "System.Byte" => "(byte)" + ((byte)value).ToString(inv),
+            "sbyte" or "System.SByte" => "(sbyte)" + ((sbyte)value).ToString(inv),
+            _ => FormatInvariant(value)
+        };
+    }
+
+    /// <summary>
+    /// Builds the range validation message emitted into generated binders, with invariant numbers.
+    /// </summary>
+    public static string FormatRangeMessage(double min, double max)
+    {
+        if (!double.IsNaN(min) && !double.IsNaN(max))
+            return $"Value must be between {FormatInvariant(min)} and {FormatInvariant(max)}";
+        if (!double.IsNaN(min))
+            return $"Value must be >= {FormatInvariant(min)}";
+        return $"Value must be <= {FormatInvariant(max)}";
     }
 }
 

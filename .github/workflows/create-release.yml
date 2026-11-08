@@ -362,7 +362,7 @@ jobs:
           - [License](https://github.com/KoalaFacts/HeroParser/blob/main/LICENSE)
 
           ### Performance
-          - High-performance SIMD optimizations (AVX-512, AVX2, NEON)
+          - SIMD row scanning and quote analysis on x86-64 (AVX-512, AVX2; SSE2 for writer quoting); ARM64 and WebAssembly use the scalar paths
           - RFC 4180 quote handling with minimal overhead
           - Lazy column evaluation for efficient filtering
           EOF

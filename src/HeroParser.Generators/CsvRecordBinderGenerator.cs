@@ -41,7 +41,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor unsupportedPropertyTypeDiagnostic = new(
         "HERO001",
         "Unsupported property type",
-        "Property '{0}' of type '{1}' is not supported by the CSV record binder generator. Supported types include primitives, DateTime, DateTimeOffset, DateOnly, TimeOnly, Guid, TimeZoneInfo, and enums.",
+        "Property '{0}' of type '{1}' is not supported by the CSV record binder generator. Supported types include primitives, DateTime, DateTimeOffset, DateOnly, TimeOnly, Guid, and enums.",
         "HeroParser.Generators",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);

@@ -369,7 +369,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("{");
                 builder.Indent();
                 builder.AppendLine("string? s = reader.GetString();");
-                builder.AppendLine($"record.{propertyName} = s is not null ? DateOnly.Parse(s) : default;");
+                builder.AppendLine($"record.{propertyName} = s is not null ? DateOnly.Parse(s, global::System.Globalization.CultureInfo.InvariantCulture) : default;");
                 builder.Unindent();
                 builder.AppendLine("}");
                 break;
@@ -378,7 +378,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine("{");
                 builder.Indent();
                 builder.AppendLine("string? s = reader.GetString();");
-                builder.AppendLine($"record.{propertyName} = s is not null ? TimeOnly.Parse(s) : default;");
+                builder.AppendLine($"record.{propertyName} = s is not null ? TimeOnly.Parse(s, global::System.Globalization.CultureInfo.InvariantCulture) : default;");
                 builder.Unindent();
                 builder.AppendLine("}");
                 break;

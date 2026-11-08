@@ -323,7 +323,7 @@ HeroParser auto-detects CPU capabilities at runtime:
 - AVX2 → 32-byte chunks (common on modern x64)
 - Scalar → byte-by-byte (always works; the path on ARM64, e.g. Apple Silicon and AWS Graviton, and in WebAssembly)
 
-No parser path uses ARM `AdvSimd` (NEON) today; `Hardware.GetHardwareInfo()` only reports it.
+No HeroParser intrinsics path uses ARM `AdvSimd` (NEON) today; `Hardware.GetHardwareInfo()` only reports it. .NET's own `IndexOfAny`/`SearchValues` calls (Fixed-Width line scanning, the CSV injection check) are vectorized by the runtime on every platform.
 
 Set `CsvReadOptions.UseSimdIfAvailable = false` to force scalar mode for debugging.
 

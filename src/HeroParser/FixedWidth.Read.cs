@@ -215,7 +215,7 @@ public static partial class FixedWidth
     /// <param name="path">Filesystem path to the fixed-width file.</param>
     /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthReadOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
-    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters; zero or a negative value selects the minimum (4096 characters).</param>
     /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
     public static FixedWidthAsyncStreamReader CreateAsyncStreamReader(
         string path,
@@ -237,7 +237,16 @@ public static partial class FixedWidth
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        return new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen: false, initialBufferSize: bufferSize);
+        try
+        {
+            return new FixedWidthAsyncStreamReader(stream, options, encoding, leaveOpen: false, initialBufferSize: bufferSize);
+        }
+        catch
+        {
+            // Only a successfully created reader owns the file; a failed construction must close it here.
+            stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -247,7 +256,7 @@ public static partial class FixedWidth
     /// <param name="options">Parser configuration; defaults to <see cref="FixedWidthReadOptions.Default"/>.</param>
     /// <param name="encoding">Text encoding; defaults to UTF-8 with BOM detection.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the provided <paramref name="stream"/> remains open after parsing.</param>
-    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters; zero or a negative value selects the minimum (4096 characters).</param>
     /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
     public static FixedWidthAsyncStreamReader CreateAsyncStreamReader(
         Stream stream,

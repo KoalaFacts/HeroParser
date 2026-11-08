@@ -1,21 +1,29 @@
 # HeroParser Development Guidelines
 
+Before claiming a change works, follow `.claude/skills/verification-first/SKILL.md` and exercise the product as `.claude/skills/verify-heroparser/SKILL.md` describes (CLI and AOT binary on real files, Wasm package and browser demo when they change). The scheduled maintenance task also follows `.claude/skills/advance-heroparser/SKILL.md` (goal, gate, work order, authority).
+
 ## Active Technologies
 - C# with multi-framework targeting (net8.0, net9.0, net10.0, net11.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
 
 ## Project Structure
 ```
 src/
-  HeroParser/                  # Core library (CSV + Fixed-Width + Excel parsing/writing)
+  HeroParser/                  # Core library (CSV, Fixed-Width, Excel, JSONL, HTB reading/writing)
   HeroParser.Generators/       # Source generators (netstandard2.0)
+  HeroParser.Console/          # Console rendering engine
+  HeroParser.Cli/              # `heroparser` command-line tool
+  HeroParser.Wasm/             # WebAssembly build for the npm package and browser demo
 tests/
   HeroParser.Tests/            # Unit and integration tests
   HeroParser.Generators.Tests/ # Source generator tests
+  HeroParser.Console.Tests/    # Console engine tests
   HeroParser.AotTests/         # AOT compatibility tests
 benchmarks/
   HeroParser.Benchmarks/       # BenchmarkDotNet perf tests (vs Sep 0.17.1)
+npm/                           # npm workspace: WebAssembly package, browser demo, WASM tests
 .github/
   workflows/                   # CI, benchmarks, security scan, release, NuGet publish
+  scripts/                     # CI scripts, including check-docs.ts (Node 24)
 ```
 
 ## Commands
@@ -45,7 +53,15 @@ dotnet format --verify-no-changes
 
 # Run benchmarks
 dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
+
+# Check docs (Node 24+): links, anchors, index, named paths, agent instructions
+node .github/scripts/check-docs.ts
+
+# Compile the C# examples in README.md and docs/*.md against the repo's projects
+node .github/scripts/check-doc-snippets.ts README.md docs/excel.md   # or no arguments for all pages
 ```
+
+**Docs examples compile**: every ```` ```csharp ```` block in README.md and docs/*.md is compiled by `check-doc-snippets.ts` (CI job "Docs Snippets Compile"). Blocks on a page share `using` directives top to bottom and see the page's types. Fix a failing example rather than removing it. Hidden context goes in HTML-comment markers directly above a block — `<!-- snippet: setup ... -->` (inputs the reader supplies), `<!-- snippet: alternatives -->` (paragraphs that are alternatives, each may redeclare a variable), `<!-- snippet: skip <reason> -->` (a deliberate fragment) — or once per page in `<!-- snippet: page-setup ... -->`. The script header documents them.
 
 **CI notes**: CI builds in `Release` configuration across a matrix of 3 OSes (ubuntu, windows, macos) and 4 frameworks (net8.0, net9.0, net10.0, net11.0). Code coverage and benchmarks stay on ubuntu/net10.0 (the LTS target); native AOT publish runs on ubuntu for net10.0 and net11.0 (STS).
 
@@ -59,7 +75,7 @@ dotnet run -c Release --project benchmarks/HeroParser.Benchmarks
 
 ## Code Style
 - **Nullable reference types**: Enabled (`<Nullable>enable</Nullable>`)
-- **Language version**: Latest (`<LangVersion>latest</LangVersion>`)
+- **Language version**: C# 14 (`<LangVersion>14.0</LangVersion>`), fixed across SDK versions. Building from source requires a .NET 11 SDK at or above `global.json`'s `sdk.version`, because the net11.0 target needs it; running the net8.0/net9.0/net10.0 tests also needs those runtimes.
 - **Implicit usings**: Enabled
 - **File-scoped namespaces**: Preferred (suggestion severity — won't fail build, but used consistently throughout)
 - **Private fields**: `camelCase` (no `s_` prefix for static fields, no `_` prefix)
@@ -139,7 +155,7 @@ Key files in `src/HeroParser/Excels/` (internal namespace uses `HeroParser.Excel
 Supports mapping rows to different record types via a discriminator column.
 - **Runtime**: Flexible, uses `WithMultiSchema().WithDiscriminator("Type")`.
 - **Source-Generated**: `[CsvGenerateDispatcher]` emits typed dispatch; its performance relative to runtime dispatch depends on the workload.
-Key files in `src/HeroParser/SeparatedValues/Records/MultiSchema/`.
+Key files in `src/HeroParser/SeparatedValues/Reading/Records/MultiSchema/`.
 
 ## Delimiter Detection & CSV Validation
 - **Delimiter Detection**: `CsvDelimiterDetector.DetectDelimiter()` analyzes sample rows to identify delimiter (`,`, `;`, `|`, `\t`). Returns confidence score 0-100. Supports UTF-8 and UTF-16 input.
@@ -218,7 +234,8 @@ The timings and percentages in these implementation notes describe historical ex
 - **Pooled buffers behind a class** (`PooledColumnEnds`, `CsvRowBatchCursor`): the reader struct is copied by `foreach` and disposed per copy; a class with an idempotent return prevents double-returning arrays to `ArrayPool`, which otherwise hands the same array to two owners.
 - **CLMUL-based quote handling**: PCLMULQDQ prefix XOR for branchless in-quotes masks.
 - **Compile-time specialization**: `TQuotePolicy`, `TTrack` and the element type let the JIT eliminate dead paths.
-- **ArrayPool for buffer reuse** and **stackalloc for small arrays** in the binders.
+- **`AppendColumn` method** (`CsvRowParser`): the JIT already optimizes it well; don't try to "improve" it.
+- **ArrayPool for buffer reuse** (`CsvCharToByteBinderAdapter` uses `ArrayPool<byte>.Shared` for char-to-byte conversion buffers) and **stackalloc for small arrays**: column byte lengths use stackalloc up to 128 columns (`MAX_STACK_ALLOC_COLUMNS`).
 
 ### What Doesn't Work
 
@@ -228,7 +245,7 @@ Attempted optimizations that caused regressions, all caught by the same-runner A
 
 2. **Per-delimiter stores through a `ref` parameter in the block path**: routing the no-newline block through a helper that stored `currentStart` per delimiter and did a popcount per vector regressed unquoted 10k x 25 by 14% (540 us to 617 us). Keep validation on a cold path behind one `HasValue` branch per block.
 
-3. **Batch validation with PopCount** per vector adds overhead over one check per block.
+3. **Batch validation with PopCount** per vector adds overhead over one check per block; the per-delimiter check in `AppendColumn` is already well optimized by the JIT.
 
 4. **Unsafe.Add for columnEnds writes**: the JIT already eliminates bounds checks it can prove.
 
@@ -272,7 +289,7 @@ Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extracti
 - **Per-row parser** (`CsvRowParser.ParseRow`): the one-row contract used by every reader for configurations the batch scanner declines, by the pipe reader for rows that straddle segments, and by the batched readers to re-parse a flagged row so its exception is the same. Its SIMD work is one `CsvRowBatchScanner.Scan` call in single-row mode (`IsSupportedForRow`: ASCII specials, no escape character; a comment character is fine because the parser handles comment lines first). The scalar loop is the oracle for diagnostics and the path for escape characters, non-ASCII specials and SIMD off. Callers size `columnEnds` with `CsvRowBatchScanner.MinEndsCapacity` or the SIMD path is skipped.
 - **Column Extraction**: ends-only `columnEnds[]` (sentinel, delimiter positions, row end); `CsvRow<T>` carries a base offset so it can point into a shared batch buffer.
 - **Binding**: `ICsvSourceBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
-- **UTF-16 binding fallback**: `CsvCharToByteBinderAdapter` converts to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
+- **UTF-16 binding**: `CsvRowBatchScanner` scans chars directly (pack-and-saturate). `CsvCharToByteBinderAdapter` converts a row to UTF-8 via `ArrayPool` + `stackalloc` only when a byte binder serves char input; it is not the UTF-16 scanning path.
 
 ### Write Path
 ```
@@ -362,3 +379,30 @@ The version number is centrally defined in `Directory.Build.props`. To propagate
 npm run sync-version --prefix npm
 ```
 
+
+## Maintenance ledger
+
+Goal: .NET 11 readiness before .NET 11 GA, current dependencies, and docs that stay true. Preparation only: no release, no `<Version>` change. The dated run log lives in the bodies of the maintenance PRs; user-visible changes go in CHANGELOG `[Unreleased]`.
+
+| Id | Item | Why it matters | Status | Evidence |
+|---|---|---|---|---|
+| M1 | Merging the task's PRs | Nothing lands until a PR is merged | done (2026-11-07: the ruleset reports `current_user_can_bypass: always` for the task's token and #171/#174/#175 merged that way; maintenance PRs merge when the merge conditions hold) | [#169 comment](https://github.com/KoalaFacts/HeroParser/pull/169#issuecomment-6665774085) |
+| L3 | Historical-evidence job (`csv-pipe-history.yml`) fails because artifact of run 36732093817 expired | PRs touching its paths fail for a reason unrelated to the change | blocked (owner decision: retire the job, or report "evidence expired" as pass-with-notice; options on [#167](https://github.com/KoalaFacts/HeroParser/pull/167#issuecomment-6663725028)) | Never "fixed" by re-running |
+| L1 | net11.0 target, `global.json` floor, CI on newest 11.0 SDK, NuGet consumer check, dependency upgrades | Users can build and run on .NET 11 | done (#167, `2309336`); #162 closed as superseded | 4739 tests on net10.0/net11.0 |
+| H1 | Docs checker (`check-docs.ts`), AGENTS.md as pointer, skill copies in sync, broken links fixed | Docs cannot silently rot | done ([#169](https://github.com/KoalaFacts/HeroParser/pull/169), `ae0b8f1`) | 15 checker tests; 49 Markdown files pass; docs 564,459 → 554,987 bytes (49 files) |
+| H2 | `advance-heroparser` skill: the task's goal, gate, work order and authority from the owner's project rules | Every run follows the same written rules | done (this PR) | `check-docs` 51 files OK |
+| D1 | Browser demo deploy under the .NET 11 SDK: install `wasm-tools-net10` (the Wasm project targets net10.0) and validate the demo on PRs without deploying | The live demo stopped updating after #167 (NETSDK1147) | done ([#168](https://github.com/KoalaFacts/HeroParser/pull/168), `7def5de`) | Verifier PASS on `cc03b46`: NETSDK1147 reproduced with `wasm-tools`, publish + demo build pass with `wasm-tools-net10` |
+| L2 | C# snippets in README.md and docs/*.md compile in CI | Copy-pasted examples work | in progress ([#170](https://github.com/KoalaFacts/HeroParser/pull/170)) | 12 checker tests; 193 snippets compile (README.md + 6 guides), 5 marked partial; ~300 errors on the first run |
+| L4 | After .NET 11 GA: GA SDK in CI, `global.json` floor to GA, stable BenchmarkDotNet 0.16.x, drop "RC" wording | 2.9.0 release gate | waiting (.NET 11 GA) | |
+| L5 | `AnalysisLevel=latest-all` sweep on .NET 11 | Catch obsoletions before GA | todo | Baseline 2026-11-06 on `2309336`, SDK 11.0.100-rc.3, all TFMs: 0 SYSLIB/CS obsoletion warnings; 12,098 CA warnings solution-wide, 487 distinct in `src/` (top: CA1805, CA2007, CA1305, CA1062, CA1815). Triage first: CA1305/CA1307/CA1310 (culture), CA2000/CA2213 (disposal), CA1849, CA1065 |
+| L5a | `MapFromToolCall` bound string arguments with the current culture (de-DE `"1.5"` → 15) | Correct values from LLM tool calls on non-English servers | done ([#171](https://github.com/KoalaFacts/HeroParser/pull/171), `21facc6`) | 5 new tests, 4744/4744 on net10.0/net11.0 |
+| L5e | Path readers left the file open when configuration validation failed (multi-schema `FromFile`, HTB, JSONL) | No leaked handles on invalid options | done ([#177](https://github.com/KoalaFacts/HeroParser/pull/177), `f5b0fc8`) | 9 tests; 7/9 fail on old `src` |
+| L5f | Integer discriminators (`MapRecord<T>(int)`, `DiscriminatorKey.FromInt`, `[CsvSchemaMapping(int, …)]`, the dispatcher generator) were formatted with the current culture: `-1` became `−1` (U+2212) and never matched | Negative integer discriminators match on every culture and generated dispatchers compile | done ([#178](https://github.com/KoalaFacts/HeroParser/pull/178), `1d84940`) | 5 tests (3 HeroParser.Tests, 2 Generators.Tests), each failing on old `src` |
+| L5g | Source generators wrote `[Validate(RangeMin/RangeMax)]` bounds with the build culture: under de-DE `RangeMax = 999.99` became `999,99m` and the user's project failed to compile; the generated LLM schema had `"minimum": 0,5` | Records with fractional or negative range bounds compile on every build machine and the schema is valid JSON | in progress ([#179](https://github.com/KoalaFacts/HeroParser/pull/179)) | 4 `GeneratorCultureTests` (2 failed on old `src`); scratch project fails under de-DE on `main`, compiles and reads here |
+| L5h | Generated JSONL binders parsed `DateOnly`/`TimeOnly` with the runtime culture: under th-TH `"2024-01-15"` read as 15 January 1481 | Generated JSONL reads ISO dates and times as System.Text.Json does, on every culture (non-ISO input stays accepted, as before) | done ([#180](https://github.com/KoalaFacts/HeroParser/pull/180), `70742b3`) | `JsonlGeneratedBinderCultureTests` fail on old `src` |
+| L5i | `[GenerateBinder]` records with a `TimeZoneInfo` or `ReadOnlyMemory<char>` property failed to compile (CS0029/CS0023): the shared support list accepted both but no generator converts them | A record with an unconvertible property builds; the generators report their unsupported-type warning (HERO001/HERO002/HERO101) instead | in progress ([#181](https://github.com/KoalaFacts/HeroParser/pull/181)) | `TabularOnlyTypeGeneratorTests` cases fail on old `src` |
+| L5l-a | `Csv.Validate` / `ValidateFileAsync` took header names from the raw CSV text: a quoted header `"Name"` failed `RequiredHeaders = ["Name"]` and `Headers` kept the quotes | Files with quoted headers (common in exports) validate; quoting follows `ParseOptions` | in progress ([#185](https://github.com/KoalaFacts/HeroParser/pull/185)) | `CsvStreamingValidationTests` quoted-header cases fail on old `src`; follow-ups L5l-b..d: #187 (HTB converter), #186 (DataReader), #188 (Wasm) |
+| L6 | Dependency upkeep (NuGet, npm) | Security and currency | ongoing | Held back: `onnxruntime-web` 1.20.1 (override + postinstall patches), TypeScript 6.x until vue-tsc supports 7 |
+| L7 | Docs accuracy audit, one area per PR (README, docs/*.md, npm README, demo text, workflows README) | Docs match the code | in progress | npm package README: waiting (owner approval, [#172](https://github.com/KoalaFacts/HeroParser/pull/172)). Found 2026-11-06, not yet fixed: README.md, CLAUDE.md (pipeline diagram, "SIMD fallback behavior") and docs claim ARM NEON SIMD, but the parser's SIMD paths use only x86 AVX2/AVX-512 (`CsvRowBatchScanner`) and SSE2+ (`CsvWriterQuoting`); `Hardware.cs` only reports NEON. ARM64 and WebAssembly run the scalar paths |
+| W1 | npm package: `writeCsv`/`writeFixedWidth` return `stringWriter.ToString()` before the writer is disposed (`HeroParserWasm.cs`), so buffered output is lost (README Quick Start 4 returns `""`; 5000 rows gave 4720 of 5001 lines); `readExcel` with `hasHeader` drops the header and the first data row | The npm package writes empty or truncated output and misreads Excel headers | done ([#191](https://github.com/KoalaFacts/HeroParser/pull/191), `235c773`) | Found by the #172 verifier on main `12f9abf`; `test-wasm.js` covers only the read functions |
+| M2 | `submit-nuget` (GitHub's Automatic Dependency Submission, a repository setting) fails on every branch and on `main` since 2026-11-08 08:40 UTC: the downloaded `component-detection` binary is not executable | Every PR head carries a failed hosted check, so no PR meets the merge conditions | done (transient: passed again on #191 at 13:43 UTC with no settings change; if it recurs, the owner decision is: turn the setting off, or rule that a `submit-nuget` failure also failing on `main` does not block merges) | [#181 comment](https://github.com/KoalaFacts/HeroParser/pull/181#issuecomment-6720021379); 2026-11-08 13:50 UTC: the latest `component-detection-linux-x64` release asset downloads as a valid x86-64 ELF (86 MB), so the failure may have been transient; the next push records whether `submit-nuget` passes again |

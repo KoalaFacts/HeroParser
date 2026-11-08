@@ -1056,7 +1056,7 @@ public sealed class FixedWidthReaderBuilder
     /// Creates an async streaming reader from a file without loading the entire payload into memory.
     /// </summary>
     /// <param name="path">The file path to read from.</param>
-    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters; zero or a negative value selects the minimum (4096 characters).</param>
     /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
     /// <remarks>
     /// Unlike <see cref="FromFile"/>, this method does not load the entire file into memory.
@@ -1073,7 +1073,7 @@ public sealed class FixedWidthReaderBuilder
     /// </summary>
     /// <param name="stream">The stream to read from.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, the stream remains open after the reader is disposed.</param>
-    /// <param name="bufferSize">Initial pooled buffer size in characters.</param>
+    /// <param name="bufferSize">Initial pooled buffer size in characters; zero or a negative value selects the minimum (4096 characters).</param>
     /// <returns>A <see cref="FixedWidthAsyncStreamReader"/> for asynchronous streaming.</returns>
     /// <remarks>
     /// Unlike <see cref="FromStream"/>, this method does not load the entire stream into memory.

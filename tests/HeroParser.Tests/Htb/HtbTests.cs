@@ -1,3 +1,4 @@
+using System.Globalization;
 using Xunit;
 using HeroParser.Htbs;
 using HeroParser.Validation;
@@ -191,6 +192,51 @@ public class HtbTests
                 .WithValidationMode(ValidationMode.Strict)
                 .FromStream(ms, leaveOpen: true)
                 .ToList());
+    }
+
+    public class TextRangeRecord
+    {
+        public int Id { get; set; }
+
+        [Validate(RangeMin = 0, RangeMax = 100)]
+        public string Amount { get; set; } = "";
+    }
+
+    [Theory]
+    [InlineData("de-DE")]
+    [InlineData("fr-FR")]
+    [InlineData("en-US")]
+    public void TestRangeValidationOnTextUsesInvariantCulture(string cultureName)
+    {
+        // HTB has no culture setting: "2.75" must be 2.75 (in range), not 275 (de-DE) or a format error (fr-FR).
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+
+            using var ms = new MemoryStream();
+            HeroParser.Htb.Write<TextRangeRecord>().ToStream(ms, [new TextRangeRecord { Id = 1, Amount = "2.75" }], leaveOpen: true);
+            ms.Position = 0;
+
+            var parsed = HeroParser.Htb.Read<TextRangeRecord>()
+                .WithValidationMode(ValidationMode.Strict)
+                .FromStream(ms, leaveOpen: true)
+                .ToList();
+            Assert.Equal("2.75", Assert.Single(parsed).Amount);
+
+            using var outOfRange = new MemoryStream();
+            HeroParser.Htb.Write<TextRangeRecord>().ToStream(outOfRange, [new TextRangeRecord { Id = 2, Amount = "275.5" }], leaveOpen: true);
+            outOfRange.Position = 0;
+            Assert.Throws<HtbException>(() =>
+                HeroParser.Htb.Read<TextRangeRecord>()
+                    .WithValidationMode(ValidationMode.Strict)
+                    .FromStream(outOfRange, leaveOpen: true)
+                    .ToList());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]

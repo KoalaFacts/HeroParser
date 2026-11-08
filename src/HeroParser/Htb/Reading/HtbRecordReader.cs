@@ -6,6 +6,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -430,7 +431,7 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     // 5. RangeMin validation
                     if (!double.IsNaN(validate.RangeMin))
                     {
-                        double numericVal = Convert.ToDouble(val);
+                        double numericVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
                         if (numericVal < validate.RangeMin)
                         {
                             throw new HtbException(HtbErrorCode.DeserializationError, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} must be at least {validate.RangeMin}.");
@@ -440,7 +441,7 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     // 6. RangeMax validation
                     if (!double.IsNaN(validate.RangeMax))
                     {
-                        double numericVal = Convert.ToDouble(val);
+                        double numericVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
                         if (numericVal > validate.RangeMax)
                         {
                             throw new HtbException(HtbErrorCode.DeserializationError, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} cannot exceed {validate.RangeMax}.");

@@ -1,4 +1,13 @@
-import { init, readCsv, detectCsvDelimiter, readFixedWidth } from "heroparser";
+import {
+  init,
+  readCsv,
+  detectCsvDelimiter,
+  readFixedWidth,
+  readExcel,
+  writeCsv,
+  writeFixedWidth,
+  writeExcel,
+} from "heroparser";
 
 async function run() {
   console.log("--------------------------------------------------");
@@ -82,6 +91,65 @@ async function run() {
     throw new Error(`Expected delimiter ";" but got "${delim}"`);
   }
   console.log("✓ Delimiter detection passed!");
+
+  // 5. CSV Write Test: all buffered output is returned
+  console.log("\n[Test 5] Writing CSV...");
+  const people = [
+    { Name: "Alice", Age: "30" },
+    { Name: "Bob, Jr.", Age: "25" },
+  ];
+  const written = writeCsv(people);
+  console.log(JSON.stringify(written));
+  const writtenLines = written.split(/\r?\n/).filter((line) => line.length > 0);
+  if (
+    writtenLines.length !== 3 ||
+    writtenLines[0] !== "Name,Age" ||
+    writtenLines[2] !== '"Bob, Jr.",25'
+  ) {
+    throw new Error(`CSV writing failed! Got ${JSON.stringify(written)}`);
+  }
+  const many = Array.from({ length: 5000 }, (_, i) => ({ Id: String(i), Text: `row ${i}` }));
+  const manyLines = writeCsv(many)
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0);
+  if (manyLines.length !== 5001 || manyLines[5000] !== "4999,row 4999") {
+    throw new Error(`CSV writing truncated output: ${manyLines.length} of 5001 lines`);
+  }
+  // Values without quotes keep this check independent of readCsv quote handling.
+  const roundTrip = readCsv(writeCsv(many.slice(0, 3)));
+  if (roundTrip.length !== 3 || roundTrip[2].Text !== "row 2") {
+    throw new Error("CSV write/read round trip failed!");
+  }
+  console.log("✓ CSV writing passed!");
+
+  // 6. Fixed-Width Write Test
+  console.log("\n[Test 6] Writing Fixed-Width text...");
+  const fwWritten = writeFixedWidth(fwResult, specs);
+  console.log(JSON.stringify(fwWritten));
+  const fwLines = fwWritten.split(/\r?\n/).filter((line) => line.length > 0);
+  if (fwLines.length !== 2 || !fwLines[0].startsWith("Alice     30        Developer")) {
+    throw new Error(`Fixed-Width writing failed! Got ${JSON.stringify(fwWritten)}`);
+  }
+  console.log("✓ Fixed-Width writing passed!");
+
+  // 7. Excel round trip: header row and every data row survive
+  console.log("\n[Test 7] Excel write/read round trip...");
+  const xlsx = writeExcel(people);
+  const sheetRows = readExcel(xlsx);
+  console.log(sheetRows);
+  if (
+    sheetRows.length !== 2 ||
+    sheetRows[0].Name !== "Alice" ||
+    sheetRows[1].Name !== "Bob, Jr." ||
+    sheetRows[1].Age !== "25"
+  ) {
+    throw new Error(`Excel round trip with header failed! Got ${JSON.stringify(sheetRows)}`);
+  }
+  const rawRows = readExcel(xlsx, "", false);
+  if (rawRows.length !== 3 || rawRows[0][0] !== "Name" || rawRows[2][0] !== "Bob, Jr.") {
+    throw new Error(`Excel read without header failed! Got ${JSON.stringify(rawRows)}`);
+  }
+  console.log("✓ Excel round trip passed!");
 
   console.log("\n--------------------------------------------------");
   console.log("✓ ALL WASM INTEGRATION TESTS PASSED!");

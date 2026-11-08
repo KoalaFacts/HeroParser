@@ -176,12 +176,9 @@ public partial class HeroParserWasm
         {
             builder = builder.FromSheet(sheetName);
         }
-        if (!hasHeader)
-        {
-            builder = builder.WithoutHeader();
-        }
-
-        var rows = builder.FromStream(stream);
+        // The row-level reader skips the header row unless told otherwise; this method needs it
+        // returned as the first row so it can key the records (hasHeader) or keep it as data.
+        var rows = builder.WithoutHeader().FromStream(stream);
 
         if (hasHeader)
         {
@@ -268,6 +265,8 @@ public partial class HeroParserWasm
             writer.EndRow();
         }
 
+        // The writer buffers; flush it into the StringWriter before reading the text.
+        writer.Flush();
         return stringWriter.ToString();
     }
 
@@ -300,6 +299,8 @@ public partial class HeroParserWasm
             writer.EndRow();
         }
 
+        // The writer buffers; flush it into the StringWriter before reading the text.
+        writer.Flush();
         return stringWriter.ToString();
     }
 

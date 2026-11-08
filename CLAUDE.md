@@ -1,6 +1,6 @@
 # HeroParser Development Guidelines
 
-Before claiming a change works, follow `.claude/skills/verification-first/SKILL.md` and exercise the product as `.claude/skills/verify-heroparser/SKILL.md` describes (CLI and AOT binary on real files, Wasm package and browser demo when they change).
+Before claiming a change works, follow `.claude/skills/verification-first/SKILL.md` and exercise the product as `.claude/skills/verify-heroparser/SKILL.md` describes (CLI and AOT binary on real files, Wasm package and browser demo when they change). The scheduled maintenance task also follows `.claude/skills/advance-heroparser/SKILL.md` (goal, gate, work order, authority).
 
 ## Active Technologies
 - C# with multi-framework targeting (net8.0, net9.0, net10.0, net11.0) + BenchmarkDotNet (performance validation), Source Generators (reflection-free mapping; application objects still allocate), Minimal dependencies (only System.IO.Pipelines, System.IO.Compression for Excel)
@@ -390,6 +390,7 @@ Goal: .NET 11 readiness before .NET 11 GA, current dependencies, and docs that s
 | L3 | Historical-evidence job (`csv-pipe-history.yml`) fails because artifact of run 36732093817 expired | PRs touching its paths fail for a reason unrelated to the change | blocked (owner decision: retire the job, or report "evidence expired" as pass-with-notice; options on [#167](https://github.com/KoalaFacts/HeroParser/pull/167#issuecomment-6663725028)) | Never "fixed" by re-running |
 | L1 | net11.0 target, `global.json` floor, CI on newest 11.0 SDK, NuGet consumer check, dependency upgrades | Users can build and run on .NET 11 | done (#167, `2309336`); #162 closed as superseded | 4739 tests on net10.0/net11.0 |
 | H1 | Docs checker (`check-docs.ts`), AGENTS.md as pointer, skill copies in sync, broken links fixed | Docs cannot silently rot | done ([#169](https://github.com/KoalaFacts/HeroParser/pull/169), `ae0b8f1`) | 15 checker tests; 49 Markdown files pass; docs 564,459 → 554,987 bytes (49 files) |
+| H2 | `advance-heroparser` skill: the task's goal, gate, work order and authority from the owner's project rules | Every run follows the same written rules | done (this PR) | `check-docs` 51 files OK |
 | D1 | Browser demo deploy under the .NET 11 SDK: install `wasm-tools-net10` (the Wasm project targets net10.0) and validate the demo on PRs without deploying | The live demo stopped updating after #167 (NETSDK1147) | done ([#168](https://github.com/KoalaFacts/HeroParser/pull/168), `7def5de`) | Verifier PASS on `cc03b46`: NETSDK1147 reproduced with `wasm-tools`, publish + demo build pass with `wasm-tools-net10` |
 | L2 | C# snippets in README.md and docs/*.md compile in CI | Copy-pasted examples work | in progress ([#170](https://github.com/KoalaFacts/HeroParser/pull/170)) | 12 checker tests; 193 snippets compile (README.md + 6 guides), 5 marked partial; ~300 errors on the first run |
 | L4 | After .NET 11 GA: GA SDK in CI, `global.json` floor to GA, stable BenchmarkDotNet 0.16.x, drop "RC" wording | 2.9.0 release gate | waiting (.NET 11 GA) | |

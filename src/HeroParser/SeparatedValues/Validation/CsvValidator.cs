@@ -226,7 +226,7 @@ public static partial class CsvValidator
                 // Extract header names
                 for (int i = 0; i < headerRow.ColumnCount; i++)
                 {
-                    headers.Add(headerRow.GetString(i));
+                    headers.Add(HeaderName(headerRow, i, parseOptions));
                 }
 
                 // Check required headers
@@ -338,6 +338,25 @@ public static partial class CsvValidator
             StoppedEarly = errors.Count >= validationOptions.MaxErrors
         };
     }
+
+    /// <summary>
+    /// Returns a header cell's value as the readers see it: unquoted with the configured quote
+    /// (and escape character), or the raw text when quoted fields are disabled.
+    /// </summary>
+    private static string HeaderName<T>(CsvRow<T> row, int index, CsvReadOptions parseOptions)
+        where T : unmanaged, IEquatable<T>
+    {
+        if (!parseOptions.EnableQuotedFields)
+            return row.GetString(index);
+
+        T quote = ToElement<T>(parseOptions.Quote);
+        return parseOptions.EscapeCharacter is char escape
+            ? row[index].UnquoteToString(quote, ToElement<T>(escape))
+            : row[index].UnquoteToString(quote);
+    }
+
+    private static T ToElement<T>(char value) where T : unmanaged, IEquatable<T>
+        => typeof(T) == typeof(byte) ? (T)(object)(byte)value : (T)(object)value;
 
     private static bool IsWhiteSpaceOnly<T>(ReadOnlySpan<T> data) where T : unmanaged, IEquatable<T>
     {

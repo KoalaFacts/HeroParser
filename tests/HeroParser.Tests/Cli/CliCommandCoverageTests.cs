@@ -298,6 +298,24 @@ public sealed class CliCommandCoverageTests : IDisposable
         Assert.Contains("North", Output, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Profile_QuotedValues_AreReportedUnquoted()
+    {
+        string csv = "\"Item\",Qty\n\"Gadget, large\",1\n\"Gadget, large\",2\n\"Say \"\"hi\"\"\",3\n";
+
+        Assert.True(await CliCommands.ProfileAsync(TempFile(csv), ',', null));
+
+        // The profile wraps each category in one pair of quotes for display; the CSV
+        // encoding (outer quotes, doubled inner quotes) must not leak into the value.
+        // The table may wrap after a category, so only assert within one category.
+        Assert.Contains("\"Gadget, large\"", Output, StringComparison.Ordinal);
+        Assert.Contains("\"Say \"hi\"\"", Output, StringComparison.Ordinal);
+        Assert.Contains("Item", Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Item\"", Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"\"Gadget", Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"\"hi", Output, StringComparison.Ordinal);
+    }
+
     // ---- convert ---------------------------------------------------------------
 
     [Fact]
@@ -329,6 +347,20 @@ public sealed class CliCommandCoverageTests : IDisposable
         string written = File.ReadAllText(outputPath);
         Assert.Contains("Alice", written, StringComparison.Ordinal);
         Assert.Contains("Converted", Output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Convert_CsvToFixedWidth_UnquotesQuotedFields()
+    {
+        string input = TempFile("Name,Note\n\"Gadget, large\",\"Say \"\"hi\"\"\"\n");
+        string outputPath = TempPath(".txt");
+
+        CliCommands.Convert(input, outputPath, null, null, null);
+
+        string written = File.ReadAllText(outputPath);
+        Assert.Contains("Gadget, large", written, StringComparison.Ordinal);
+        Assert.Contains("Say \"hi\"", written, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Gadget", written, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1069,7 +1069,7 @@ Instructions:
         var header = reader.Current;
         var columnNames = new string[header.ColumnCount];
         for (int i = 0; i < columnNames.Length; i++)
-            columnNames[i] = header.GetString(i);
+            columnNames[i] = header[i].UnquoteToString();
 
         var stats = DynamicProfiler.CreateStats(columnNames);
         int rowCount = 0;
@@ -1080,7 +1080,15 @@ Instructions:
             for (int i = 0; i < stats.Count; i++)
             {
                 if (i < row.ColumnCount)
-                    DynamicProfiler.ObserveCellUtf8(stats[i], row[i].Span);
+                {
+                    var cell = row[i];
+                    // A quoted field carries its quotes and doubled quotes in the raw span;
+                    // profile the field's value, not its CSV encoding.
+                    if (cell.Span is [(byte)'"', ..])
+                        DynamicProfiler.ObserveCell(stats[i], cell.UnquoteToString());
+                    else
+                        DynamicProfiler.ObserveCellUtf8(stats[i], cell.Span);
+                }
                 else
                     DynamicProfiler.ObserveCell(stats[i], null);
             }

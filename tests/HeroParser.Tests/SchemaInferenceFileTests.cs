@@ -37,6 +37,30 @@ public sealed class SchemaInferenceFileTests : IDisposable
     }
 
     [Fact]
+    public async Task QuotedHeadersAndValues_AreInferredFromTheUnquotedText()
+    {
+        // Quoting is CSV encoding, not part of the value: header names must match what the
+        // readers bind to, and "30" is an integer exactly like 30.
+        const string csv = "\"Product Name\",\"Qty\",Note\n\"Gadget, large\",\"30\",\"Say \"\"hi\"\"\"\nWidget,4,\"\"\n";
+        CsvInferredColumn[] expected =
+        [
+            new("Product Name", CsvInferredType.String, false, 13),
+            new("Qty", CsvInferredType.Integer, false, 2),
+            new("Note", CsvInferredType.String, true, 8),
+        ];
+
+        var fromString = Csv.InferSchema(csv);
+        var fromFile = await Csv.InferSchemaFileAsync(FileWith(csv), cancellationToken: TestContext.Current.CancellationToken);
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var fromStream = await Csv.InferSchemaAsync(stream, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, fromString.Columns);
+        Assert.Equal(expected, fromFile.Columns);
+        Assert.Equal(expected, fromStream.Columns);
+    }
+
+    [Fact]
     public async Task FileInference_StopsBeforeOversizedTail()
     {
         string csv = "Id,Value\n" + string.Concat(Enumerable.Range(0, 100).Select(i => $"{i},true\n")) +

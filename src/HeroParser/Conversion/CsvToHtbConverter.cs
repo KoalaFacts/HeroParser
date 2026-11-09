@@ -201,8 +201,7 @@ public static class CsvToHtbConverter
                     continue;
                 }
 
-                var csvCol = row[csvIdx];
-                if (csvCol.IsEmpty)
+                if (IsEmptyValue(row[csvIdx], col.DataType, options))
                 {
                     if (!col.IsNullable)
                     {
@@ -223,14 +222,14 @@ public static class CsvToHtbConverter
                     continue;
 
                 var rawCol = row[csvIdx];
-                if (rawCol.IsEmpty)
+                var col = schema.Columns[i];
+                if (IsEmptyValue(rawCol, col.DataType, options))
                     continue;
 
                 // Typed values are parsed without their surrounding quotes ("42" is 42); strings and
                 // vectors are fully unquoted with the configured quote and escape characters.
                 var csvCol = new CsvColumn<T>(rawCol.Unquote(ToElement<T>(options.Quote)));
 
-                var col = schema.Columns[i];
                 switch (col.DataType)
                 {
                     case HtbDataType.Int32:
@@ -292,6 +291,20 @@ public static class CsvToHtbConverter
                 System.Buffers.ArrayPool<byte>.Shared.Return(rented);
             }
         }
+    }
+
+    /// <summary>
+    /// A field is empty (written as null) when it has no text, or when it is a typed value whose only
+    /// text is a pair of quotes (<c>""</c>). A quoted empty <c>String</c> or <c>FloatArray</c> stays an empty value.
+    /// </summary>
+    private static bool IsEmptyValue<T>(CsvColumn<T> column, HtbDataType dataType, CsvToHtbOptions options)
+        where T : unmanaged, IEquatable<T>
+    {
+        if (column.IsEmpty)
+            return true;
+        if (dataType is HtbDataType.String or HtbDataType.FloatArray)
+            return false;
+        return column.Unquote(ToElement<T>(options.Quote)).IsEmpty;
     }
 
     private static string UnquoteToString<T>(CsvColumn<T> column, CsvToHtbOptions options)

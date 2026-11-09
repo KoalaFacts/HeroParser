@@ -419,6 +419,40 @@ public class HtbConversionTests
         Assert.Equal("x", name);
     }
 
+    [Fact]
+    public void Convert_QuotedEmptyValueInNullableTypedColumn_IsNull()
+    {
+        using var htbStream = new MemoryStream();
+        CsvToHtbConverter.Convert("Id,Name\r\n\"\",\"\"", htbStream, quotedSchema);
+        var (id, name) = ReadSingleRow(htbStream);
+
+        Assert.Null(id);
+        Assert.Equal("", name);
+    }
+
+    [Fact]
+    public async Task ConvertAsync_QuotedEmptyValueInNullableTypedColumn_IsNull()
+    {
+        using var csvStream = new MemoryStream(Encoding.UTF8.GetBytes("Id,Name\r\n\"\",\"\""));
+        using var htbStream = new MemoryStream();
+        await CsvToHtbConverter.ConvertAsync(csvStream, htbStream, quotedSchema, cancellationToken: TestContext.Current.CancellationToken);
+        var (id, name) = ReadSingleRow(htbStream);
+
+        Assert.Null(id);
+        Assert.Equal("", name);
+    }
+
+    [Fact]
+    public void Convert_QuotedEmptyValueInNonNullableTypedColumn_ReportsAnEmptyValue()
+    {
+        var schema = new HtbSchema([new HtbColumn("Id", HtbDataType.Int32, isNullable: false)]);
+        using var htbStream = new MemoryStream();
+
+        var ex = Assert.Throws<HtbException>(() => CsvToHtbConverter.Convert("Id\r\n\"\"", htbStream, schema));
+
+        Assert.Contains("is not nullable but has an empty value", ex.Message, StringComparison.Ordinal);
+    }
+
     private static (int? Id, string? Name) ReadSingleRow(MemoryStream htbStream)
     {
         htbStream.Position = 0;

@@ -49,6 +49,57 @@ public class CsvDataReaderTests
         Assert.Equal("Hello, world", reader.GetString(1));
     }
 
+    public static TheoryData<string, CsvReadOptions, string, string> QuotedHeaderCases => new()
+    {
+        { "\"Name\",\"Unit \"\"cm\"\"\"\r\nAlice,5\r\n", CsvReadOptions.Default, "Name", "Unit \"cm\"" },
+        { "'Name','It''s'\r\nAlice,5\r\n", new CsvReadOptions { Quote = '\'' }, "Name", "It's" },
+        { "\"A\\\"B\",C\r\nAlice,5\r\n", new CsvReadOptions { EscapeCharacter = '\\' }, "A\"B", "C" },
+        { "\"Name\",Age\r\nAlice,5\r\n", new CsvReadOptions { EnableQuotedFields = false }, "\"Name\"", "Age" },
+    };
+
+    [Theory]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [MemberData(nameof(QuotedHeaderCases))]
+    public void DataReader_HeaderNames_FollowTheConfiguredQuoting(string csv, CsvReadOptions options, string first, string second)
+    {
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+
+        using var reader = Csv.CreateDataReader(stream, options);
+
+        Assert.Equal(first, reader.GetName(0));
+        Assert.Equal(second, reader.GetName(1));
+        Assert.Equal(0, reader.GetOrdinal(first));
+        Assert.Equal(1, reader.GetOrdinal(second));
+        Assert.True(reader.Read());
+        Assert.Equal("Alice", reader.GetString(reader.GetOrdinal(first)));
+    }
+
+    [Theory]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [MemberData(nameof(QuotedHeaderCases))]
+    public async Task DataReader_HeaderNames_FollowTheConfiguredQuoting_Async(string csv, CsvReadOptions options, string first, string second)
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllTextAsync(path, csv, TestContext.Current.CancellationToken);
+            await using var reader = Csv.CreateDataReader(path, options);
+
+            Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(first, reader.GetName(0));
+            Assert.Equal(second, reader.GetName(1));
+            Assert.Equal("Alice", reader.GetString(reader.GetOrdinal(first)));
+
+            using var schema = reader.GetSchemaTable();
+            Assert.Equal(first, schema.Rows[0]["ColumnName"]);
+            Assert.Equal(second, schema.Rows[1]["ColumnName"]);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void DataReader_DoubledQuotes_AreCollapsed()

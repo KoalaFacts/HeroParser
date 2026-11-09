@@ -413,8 +413,9 @@ public class CliAiCommandTests : IDisposable
         int end = prompt.IndexOf("Instructions:", start, StringComparison.Ordinal);
         using var batch = JsonDocument.Parse(prompt[start..end].Trim());
         JsonElement row = batch.RootElement[0];
-        Assert.Equal("\"A\"\"B\"", row.GetProperty("Name").GetString());
-        Assert.Equal("\"line 1\nline 2\"", row.GetProperty("Note").GetString());
+        // The model receives each field's value, not its CSV encoding.
+        Assert.Equal("A\"B", row.GetProperty("Name").GetString());
+        Assert.Equal("line 1\nline 2", row.GetProperty("Note").GetString());
         Assert.Equal("Renamed,Count,Enabled,Optional", File.ReadLines(outputPath).First());
         Assert.Contains("caf\u00e9,12,true,", File.ReadAllText(outputPath), StringComparison.Ordinal);
     }

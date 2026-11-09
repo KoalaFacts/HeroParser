@@ -130,7 +130,7 @@ public static class CsvToFixedWidthConverter
         var headerRow = reader.Current;
         var headerNames = new string[headerRow.ColumnCount];
         for (int i = 0; i < headerRow.ColumnCount; i++)
-            headerNames[i] = headerRow[i].ToString().Trim();
+            headerNames[i] = headerRow[i].UnquoteToString().Trim();
 
         // Map field definitions to CSV column indices
         var comparison = options.CaseSensitiveHeaders ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
@@ -165,7 +165,7 @@ public static class CsvToFixedWidthConverter
             {
                 var csvIndex = columnMap[i];
                 values[i] = (csvIndex >= 0 && csvIndex < row.ColumnCount)
-                    ? row[csvIndex].ToString()
+                    ? row[csvIndex].UnquoteToString()
                     : "";
             }
 

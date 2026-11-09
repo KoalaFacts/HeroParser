@@ -104,6 +104,25 @@ public class ConversionTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void CsvToFixedWidth_QuotedFields_AreUnquotedAndUnescaped()
+    {
+        var csv = "\"Name\",Note\r\n\"Gadget, large\",\"He said \"\"hi\"\"\"\r\nPlain,\"\"\r\n";
+        FixedWidthFieldDefinition[] columns =
+        [
+            new FixedWidthFieldDefinition("Name", 15),
+            new FixedWidthFieldDefinition("Note", 15),
+        ];
+
+        var result = CsvToFixedWidthConverter.Convert(csv, columns);
+
+        var lines = result.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        Assert.Equal("Gadget, large  He said \"hi\"   ", lines[0]);
+        Assert.Equal("Plain                         ", lines[1]);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvToFixedWidth_IncludeHeader_WritesHeader()
     {
         var csv = "Name,Age\r\nAlice,30\r\n";

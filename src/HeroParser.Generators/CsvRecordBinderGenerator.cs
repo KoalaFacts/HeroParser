@@ -612,7 +612,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     {
         var propertyName = member.MemberName;
         var indexField = $"_{propertyName}Index";
-        var enumType = member.TypeofTypeName;
+        var enumType = GetEnumTypeArgument(member.TypeofTypeName);
         var isNullable = member.IsNullable;
 
         builder.AppendLine($"if (column.TryParseEnum<{enumType}>(out var parsed_{propertyName}))");
@@ -1823,7 +1823,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     {
         var propertyName = member.MemberName;
         var indexField = $"_{propertyName}Index";
-        var enumType = member.TypeofTypeName;
+        var enumType = GetEnumTypeArgument(member.TypeofTypeName);
         var isNullable = member.IsNullable;
 
         builder.AppendLine($"if (column.TryParseEnum<{enumType}>(out var parsed_{propertyName}))");

@@ -1,3 +1,4 @@
+using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Validation;
 using Xunit;
 
@@ -36,6 +37,58 @@ public sealed class CsvStreamingValidationTests : IDisposable
         Assert.Equal(2, result.ColumnCount);
         Assert.Equal(["Name", "Age"], result.Headers);
         Assert.Contains(result.Errors, error => error.ErrorType == CsvValidationErrorType.MissingHeader);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task QuotedHeaders_SatisfyRequiredHeadersOnEveryInputPath()
+    {
+        // Quoting is CSV encoding: "Name" is the header Name, and Headers reports the value.
+        const string csv = "\"Name\",\"Unit \"\"cm\"\"\"\nAlice,30\nBob,25\n";
+        var options = new CsvValidationOptions { Delimiter = ',', RequiredHeaders = ["Name", "Unit \"cm\""] };
+
+        var results = new[]
+        {
+            Csv.Validate(csv, options),
+            Csv.Validate(System.Text.Encoding.UTF8.GetBytes(csv), options),
+            await Csv.ValidateFileAsync(TempFile(csv), options, TestContext.Current.CancellationToken),
+        };
+
+        foreach (var result in results)
+        {
+            Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(error => error.Message)));
+            Assert.Equal(["Name", "Unit \"cm\""], result.Headers);
+        }
+    }
+
+    [Theory]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    [InlineData("'Name','It''s'\nAlice,30\n", '\'', null, true, "Name", "It's")]
+    [InlineData("\"Na\\\"me\",Age\nAlice,30\n", '"', '\\', true, "Na\"me", "Age")]
+    [InlineData("\"Name\",Age\nAlice,30\n", '\'', null, true, "\"Name\"", "Age")]
+    [InlineData("\"Name\",Age\nAlice,30\n", '"', null, false, "\"Name\"", "Age")]
+    public async Task Headers_FollowTheConfiguredQuoting(
+        string csv, char quote, char? escape, bool quotedFields, string first, string second)
+    {
+        var options = new CsvValidationOptions
+        {
+            Delimiter = ',',
+            RequiredHeaders = [first, second],
+            ParseOptions = new CsvReadOptions { Quote = quote, EscapeCharacter = escape, EnableQuotedFields = quotedFields },
+        };
+
+        var results = new[]
+        {
+            Csv.Validate(csv, options),
+            Csv.Validate(System.Text.Encoding.UTF8.GetBytes(csv), options),
+            await Csv.ValidateFileAsync(TempFile(csv), options, TestContext.Current.CancellationToken),
+        };
+
+        foreach (var result in results)
+        {
+            Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(error => error.Message)));
+            Assert.Equal([first, second], result.Headers);
+        }
     }
 
     [Fact]

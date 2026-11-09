@@ -42,6 +42,31 @@ async function run() {
   }
   console.log("✓ CSV parsing without headers passed!");
 
+  // 2b. Quoted CSV (header names and values are unquoted)
+  console.log("\n[Test 2b] Parsing quoted CSV...");
+  const quotedCsv = '"Id","Name","Note"\n1,"Smith, ""J""","x"\n2,Bob,';
+  const quotedResult = readCsv(quotedCsv);
+  console.log(quotedResult);
+  if (
+    quotedResult.length !== 2 ||
+    quotedResult[0].Id !== "1" ||
+    quotedResult[0].Name !== 'Smith, "J"' ||
+    quotedResult[1].Name !== "Bob" ||
+    quotedResult[1].Note !== ""
+  ) {
+    throw new Error("Quoted CSV parsing with headers failed!");
+  }
+  const quotedNoHeader = readCsv('"Smith, ""J""",2', { hasHeader: false });
+  console.log(quotedNoHeader);
+  if (
+    quotedNoHeader.length !== 1 ||
+    quotedNoHeader[0][0] !== 'Smith, "J"' ||
+    quotedNoHeader[0][1] !== "2"
+  ) {
+    throw new Error("Quoted CSV parsing without headers failed!");
+  }
+  console.log("✓ Quoted CSV parsing passed!");
+
   // 3. Fixed-Width Parse Test
   console.log("\n[Test 3] Parsing Fixed-Width text...");
   const fwText = "Alice     30        Developer \nBob       25        Designer  ";

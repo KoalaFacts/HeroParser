@@ -93,7 +93,7 @@ public partial class HeroParserWasm
                     headers = new string[row.ColumnCount];
                     for (int i = 0; i < row.ColumnCount; i++)
                     {
-                        headers[i] = row[i].ToString();
+                        headers[i] = row[i].UnquoteToString();
                     }
                     continue;
                 }
@@ -101,7 +101,7 @@ public partial class HeroParserWasm
                 var dict = new Dictionary<string, string>();
                 for (int i = 0; i < Math.Min(row.ColumnCount, headers.Length); i++)
                 {
-                    dict[headers[i]] = row[i].ToString();
+                    dict[headers[i]] = row[i].UnquoteToString();
                 }
                 list.Add(dict);
             }
@@ -115,7 +115,7 @@ public partial class HeroParserWasm
                 var arr = new string[row.ColumnCount];
                 for (int i = 0; i < row.ColumnCount; i++)
                 {
-                    arr[i] = row[i].ToString();
+                    arr[i] = row[i].UnquoteToString();
                 }
                 list.Add(arr);
             }

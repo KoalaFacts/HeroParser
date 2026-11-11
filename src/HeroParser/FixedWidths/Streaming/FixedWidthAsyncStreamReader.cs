@@ -62,7 +62,9 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         // Use shared pool for better memory efficiency - arrays are always cleared on return
         charPool = ArrayPool<char>.Shared;
         countingStream = new CountingReadStream(stream, options, leaveOpen);
-        reader = new StreamReader(countingStream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize, leaveOpen: false);
+        // A non-positive size selects the default, as it does for the CSV streaming reader;
+        // StreamReader itself rejects zero and values below -1.
+        reader = new StreamReader(countingStream, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: initialBufferSize > 0 ? initialBufferSize : -1, leaveOpen: false);
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
         offset = 0;
         length = 0;

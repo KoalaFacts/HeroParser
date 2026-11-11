@@ -1,14 +1,15 @@
 # heroparser
 
-High-performance tabular data parser (CSV, Fixed-Width, Excel) for JavaScript/TypeScript environments (Node.js and Browser) powered by .NET WebAssembly. This package is an unpublished preview in the repository.
+Tabular data parser (CSV, Fixed-Width, Excel) for JavaScript/TypeScript environments (Node.js and Browser) powered by .NET WebAssembly. This package is an unpublished preview in the repository.
 
 ## Features
 
-- **High Performance**: Leverages the SIMD-accelerated C# HeroParser engine via compiled WebAssembly.
+- **The .NET engine in WebAssembly**: runs the C# HeroParser parsers compiled to WebAssembly. HeroParser's SIMD row scanner needs x86 AVX2 or AVX-512, so inside WebAssembly parsing takes the scalar path.
 - **Unified Formats**: Support for CSV, Fixed-Width, and Excel (.xlsx) files under a single lightweight package.
-- **Smart Delimiter Detection**: Instantly analyzes CSV samples to detect the correct column delimiter.
-- **AI-Native Repair**: Built-in support to clean and repair incomplete, truncated, or markdown-wrapped tabular LLM outputs.
+- **Delimiter Detection**: `detectCsvDelimiter` analyzes a CSV sample and returns the most likely column delimiter.
 - **Fully Portable**: Runs inside any modern web browser or Node.js environment.
+
+Repairing truncated or markdown-wrapped LLM output (`LlmRepair`) is available in the .NET library only, not in this package.
 
 ---
 
@@ -114,14 +115,14 @@ const excelBytes = writeExcel(records, "Sheet1", true);
 
 Initializes the underlying WebAssembly runtime. This must be awaited once before invoking other read/write methods.
 
-### `readCsv(csvText: string, options?: WasmCsvOptions): any[]`
+### `readCsv(csvText: string, options?: CsvOptions): any[]`
 
-Reads CSV text content into a JSON array of objects or values.
+Reads CSV text content into a JSON array of objects or values. Quoted fields are unquoted, in header names and values alike (`"Smith, ""J"""` becomes `Smith, "J"`); the quote character is `"`. A line break inside a quoted field is rejected with an error.
 
-- `options.delimiter`: Column delimiter character (e.g. `","`, `";"`). Defaults to auto-detect.
-- `options.hasHeader`: Set `true` to map rows to object keys based on the header row, or `false` to return raw string arrays.
+- `options.delimiter`: Column delimiter character (e.g. `","`, `";"`); only its first character is used. Defaults to `","` — it is not detected automatically; call `detectCsvDelimiter` first if the delimiter is unknown.
+- `options.hasHeader`: Defaults to `true`, which maps rows to objects keyed by the header row; `false` returns raw string arrays.
 
-### `readFixedWidth(text: string, specs: WasmColumnSpec[]): any[]`
+### `readFixedWidth(text: string, specs: ColumnSpec[]): any[]`
 
 Reads fixed-width column blocks into a JSON array based on the given boundaries.
 
@@ -129,23 +130,24 @@ Reads fixed-width column blocks into a JSON array based on the given boundaries.
 
 ### `readExcel(excelBytes: Uint8Array, sheetName?: string, hasHeader?: boolean): any[]`
 
-Reads Excel spreadsheet workbook byte arrays and returns parsed rows.
+Reads Excel spreadsheet workbook byte arrays and returns parsed rows. An empty or omitted `sheetName` reads the first sheet; `hasHeader` defaults to `true`.
 
 ### `detectCsvDelimiter(sampleRows: string): string`
 
 Analyzes a sample text chunk to identify the most confident CSV separator character.
 
-### `writeCsv(records: any[], options?: WasmCsvOptions): string`
+### `writeCsv(records: any[], options?: CsvOptions): string`
 
 Serializes a list of object records back to CSV format.
 
-### `writeFixedWidth(records: any[], specs: WasmColumnSpec[]): string`
+### `writeFixedWidth(records: any[], specs: ColumnSpec[]): string`
 
 Serializes a list of object records back to fixed-width format.
 
 ### `writeExcel(records: any[], sheetName?: string, hasHeader?: boolean): Uint8Array`
 
-Serializes a list of object records back to Excel (.xlsx) binary bytes.
+Serializes a list of object records back to Excel (.xlsx) binary bytes. `sheetName` defaults to `"Sheet1"` and `hasHeader` to `true`.
+
 ---
 
 ## License

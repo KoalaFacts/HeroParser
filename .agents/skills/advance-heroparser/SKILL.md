@@ -32,7 +32,7 @@ In order; warnings are errors.
 The "Maintenance ledger" section of CLAUDE.md (no separate ledger file exists; do not create one). Statuses: `todo`, `in progress (PR #n)`, `done (PR #n)`, `waiting (on what)`, `blocked (reason; owner decision)`. Update it in every PR. The dated run log lives in PR bodies; user-visible changes go in CHANGELOG `[Unreleased]` (Added / Changed / Fixed / Build and CI / Dependencies / Notes).
 
 ## Work order
-- **L1** net11.0 target, `global.json` floor (rollForward latestFeature, allowPrerelease), CI on the newest 11.0 SDK via setup-dotnet `11.0.x` with no forced dotnet-quality, NuGet consumer check on net11.0, dependency upgrades (#167). Then close #162 as superseded.
+- **L1** net11.0 target, `global.json` floor (rollForward latestFeature; allowPrerelease false since GA, see L4), CI on the newest 11.0 SDK via setup-dotnet `11.0.x` with no forced dotnet-quality, NuGet consumer check on net11.0, dependency upgrades (#167). Then close #162 as superseded.
 - **L2** C# snippets in README.md and docs/*.md compile in CI (TypeScript tool, explicit marker for deliberate fragments). Never delete examples to pass.
 - **L3** Historical-evidence job: owner decision (retire it, or report "evidence expired" as pass-with-notice). Options on #167 and in the ledger; do not change the job until the owner answers.
 - **L4** After .NET 11 GA (`latest-release` without a prerelease suffix in https://builds.dotnet.microsoft.com/dotnet/release-metadata/11.0/releases.json): confirm CI installs the GA SDK, raise the `global.json` floor to GA (the 2.9.0 release gate), BenchmarkDotNet to the newest stable 0.16.x if any, drop "RC" wording. Until GA it is `waiting`, not blocked.

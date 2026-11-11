@@ -33,16 +33,15 @@ Planned as 2.9.0: .NET 11 compatibility.
 - **npm package `readCsv` with quoted CSV:** header names and values kept their quotes, so a header row `"Id","Name"` produced object keys that included the quote characters and a value `"Smith, ""J"""` came back verbatim. Header names and values (with or without `hasHeader`) are now unquoted, with doubled quotes collapsed to one.
 
 ### Build and CI
-- Build, test and AOT-check every target with the .NET 11 SDK. `global.json` sets the floor (`11.0.100-rc.3`, go-live) with `allowPrerelease` and `rollForward: latestFeature`; CI installs the newest 11.0 SDK through setup-dotnet's `11.0.x` channel resolution (prereleases included); the GA transition must be verified once GA ships. GitHub's automatic NuGet dependency submission installs the `global.json` version. The CI matrix gains net11.0 on Ubuntu, Windows and macOS, and native AOT publish now also runs for net11.0. The C# language version stays pinned at 14.0.
+- Build, test and AOT-check every target with the .NET 11 SDK. `global.json` sets the floor to the .NET 11 GA SDK (`11.0.100`, released 2026-11-10) with `rollForward: latestFeature` and `allowPrerelease: false`, so builds can no longer fall back to a release candidate; CI installs the newest 11.0 SDK through setup-dotnet's `11.0.x` channel resolution. GitHub's automatic NuGet dependency submission installs the `global.json` version. The CI matrix gains net11.0 on Ubuntu, Windows and macOS, and native AOT publish now also runs for net11.0. The C# language version stays pinned at 14.0.
 - Building from source now requires the .NET 11 SDK.
 - The CSV Pipe correctness report accepts net11.0.
 - New **Docs Check** CI job (`.github/scripts/check-docs.ts`, Node 24, no dependencies): fails on broken relative links and anchors, `docs/` pages the README does not reach, repository paths in inline code that do not exist, and agent instructions that drift (`AGENTS.md` is now a pointer to `CLAUDE.md`; `.agents/skills` must match `.claude/skills`).
 - New **Docs Snippets Compile** CI job (`.github/scripts/check-doc-snippets.ts`): compiles the C# examples of README.md and every guide in `docs/` against the library, reporting errors at the Markdown line.
-- Before releasing 2.9.0, raise the `global.json` floor to the .NET 11 GA SDK so local builds cannot fall back to a release candidate.
 
 ### Dependencies
 - `System.IO.Pipelines` 10.0.12 → 10.0.14 (the only runtime dependency of the core package).
-- Benchmarks: `BenchmarkDotNet` 0.15.8 → 0.16.0-preview.2, the first release that recognizes the .NET 11 runtime (0.15.8 aborts with `GetRuntimeVersion not implemented for NotRecognized`); `CsvHelper` 33.1.0 → 34.0.0, with the comparison benchmarks ported to its new `CsvReaderOptions`/`CsvWriterOptions` API (output and field values validated as before).
+- Benchmarks: `BenchmarkDotNet` 0.15.8 → 0.16.0-preview.2, the first release that recognizes the .NET 11 runtime (0.15.8 aborts with `GetRuntimeVersion not implemented for NotRecognized`); no stable 0.16.x exists yet at .NET 11 GA, so the benchmarks stay on the preview (benchmark projects are not packaged); `CsvHelper` 33.1.0 → 34.0.0, with the comparison benchmarks ported to its new `CsvReaderOptions`/`CsvWriterOptions` API (output and field values validated as before).
 - Browser demo: `@huggingface/transformers` 4.3.2, `vue` 3.6.0-rc.14, `vite-plus` 1.5.0, `@vitejs/plugin-vue` 6.0.10, `vue-tsc` 3.3.14, `playwright` 1.64.1, `@types/node` 26.6.6. `onnxruntime-web` stays at 1.20.1 (the version `@huggingface/transformers` is overridden to, and the one the postinstall patches target) and TypeScript stays on 6.0 (7.0 is a new major).
 
 ### Notes

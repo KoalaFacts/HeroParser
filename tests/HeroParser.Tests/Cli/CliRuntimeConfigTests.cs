@@ -7,6 +7,7 @@ namespace HeroParser.Tests.Cli;
 /// Guards the runtime switches the CLI ships with. The CLI prints exception messages to the
 /// user, so a switch that strips the BCL's resource strings turns
 /// "The file '…' already exists." into "IO_FileExists_Name, …".
+/// The switch was set only for Release builds, so this guard is meaningful in Release (as CI builds).
 /// </summary>
 [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public sealed class CliRuntimeConfigTests

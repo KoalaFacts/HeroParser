@@ -58,9 +58,15 @@ public class TabularOnlyTypeGeneratorTests
             """;
         var cancellationToken = TestContext.Current.CancellationToken;
         var syntaxTree = CSharpSyntaxTree.ParseText(source, cancellationToken: cancellationToken);
-        var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-        var references = Directory.GetFiles(runtimeDir, "*.dll")
-            .Where(path => Path.GetFileName(path) is var name && (name.StartsWith("System.", StringComparison.Ordinal) || name == "netstandard.dll"))
+        // TRUSTED_PLATFORM_ASSEMBLIES contains managed runtime references. Scanning
+        // the runtime directory instead also picks up native System.*.dll files on
+        // Windows, which Roslyn rejects with CS0009 (invalid metadata).
+        var platformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Trusted platform assemblies are unavailable.");
+        var references = platformAssemblies.Split(Path.PathSeparator)
+            .Where(path => Path.GetFileName(path) is var name &&
+                (name.StartsWith("System.", StringComparison.Ordinal) ||
+                 name is "netstandard.dll" or "System.Private.CoreLib.dll"))
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .Append(MetadataReference.CreateFromFile(typeof(Csv).Assembly.Location))
             .ToList();

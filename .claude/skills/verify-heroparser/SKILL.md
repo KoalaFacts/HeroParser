@@ -92,7 +92,7 @@ When `npm/` or `src/HeroParser.Wasm/` change, add the Wasm npm package and brows
 - A green build without `wasm-tools-net10` is impossible; if the solution builds but `HeroParser.Wasm` was skipped (building single projects), the npm rows were not verified.
 - CSV → JSONL output keeps every value as a JSON string (`"Id":"1"`); that is current behaviour, not a typing bug introduced by a change.
 - Not every documented conversion direction exists: fixed-width → CSV and CSV → `.xlsx` return "requires column widths" / "Unsupported conversion direction" with exit 1 (see "Known gaps").
-- The CLI sets `UseSystemResourceKeys=true` (also in the framework-dependent `runtimeconfig.json`), so .NET exception messages print as resource keys, e.g. `Inspection failed: IO_FileExists_Name, <path>`. Assert on the exit code and HeroParser's own messages, not on BCL message text; the tests run without that switch and show the full text.
+- The CLI must not set `UseSystemResourceKeys` (it would print .NET errors as resource keys such as `IO_FileExists_Name`); `CliRuntimeConfigTests` checks the built `HeroParser.Cli.runtimeconfig.json`, but the AOT binary is only checked by running it: `inspect data.csv --save-plan <existing file>` must print `The file '<path>' already exists.`
 - Performance claims need CLAUDE.md's same-runner A/B; a local benchmark run proves nothing under ~20%.
 
 ## Known gaps found while writing this skill
@@ -100,7 +100,6 @@ When `npm/` or `src/HeroParser.Wasm/` change, add the Wasm npm package and brows
 Observed on `main` at the "Last verified" commit; each is a separate ledger item, not fixed here.
 
 - `profile` and CSV → fixed-width use the raw quoted field text: `"Gadget, large"` shows as `""Gadget, large""` in the profile categories and as `"Gadget, large"` (with quotes) in the fixed-width output, while CSV → JSONL unquotes it correctly.
-- BCL error messages in the CLI are resource keys (`IO_FileExists_Name`) because of `UseSystemResourceKeys=true`; users see keys instead of sentences when, for example, `--save-plan` targets an existing file.
 - `docs/cli.md` says `convert` works "between CSV, JSONL, Fixed-Width, and Excel"; fixed-width → CSV and CSV → Excel are rejected by the CLI.
 
 ## Last verified

@@ -1,8 +1,8 @@
 name: 'Setup build .NET SDK'
 description: >-
   Installs the newest SDK on the channel of global.json's sdk.version. setup-dotnet resolves an
-  A.B.x version to the latest SDK on that channel, prereleases included while no GA exists;
-  global.json (rollForward latestFeature, allowPrerelease) then selects it.
+  A.B.x version to the latest SDK on that channel; global.json (rollForward latestFeature,
+  allowPrerelease false, GA floor) then selects it.
 runs:
   using: 'composite'
   steps:

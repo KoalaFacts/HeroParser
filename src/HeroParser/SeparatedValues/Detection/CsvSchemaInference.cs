@@ -213,7 +213,7 @@ public static class CsvSchemaInference
         int embeddedLines = 0;
         for (int i = 0; i < headers.Length; i++)
         {
-            headers[i] = header.GetString(i);
+            headers[i] = header[i].UnquoteToString();
             embeddedLines += CountNewlines(headers[i].AsSpan());
             candidates[i] = new ColumnTypeTracker();
         }
@@ -256,7 +256,7 @@ public static class CsvSchemaInference
             embeddedLines = 0;
             for (int i = 0; i < Math.Min(headers.Length, row.ColumnCount); i++)
             {
-                string value = row.GetString(i);
+                string value = row[i].UnquoteToString();
                 candidates[i].Observe(value);
                 embeddedLines += CountNewlines(value.AsSpan());
             }
@@ -411,7 +411,7 @@ public static class CsvSchemaInference
         int columnCount = headerRow.ColumnCount;
         var headers = new string[columnCount];
         for (int i = 0; i < columnCount; i++)
-            headers[i] = headerRow[i].ToString();
+            headers[i] = headerRow[i].UnquoteToString();
 
         // Track type candidates per column
         var candidates = new ColumnTypeTracker[columnCount];
@@ -445,7 +445,7 @@ public static class CsvSchemaInference
 
                 for (int i = 0; i < Math.Min(columnCount, row.ColumnCount); i++)
                 {
-                    var value = row[i].ToString();
+                    var value = row[i].UnquoteToString();
                     candidates[i].Observe(value);
                 }
 

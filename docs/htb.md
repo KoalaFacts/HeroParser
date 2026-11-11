@@ -34,6 +34,32 @@ The primary entry point is the `Htb` static class.
 
 ---
 
+<!-- snippet: page-setup
+using HeroParser;
+[GenerateBinder]
+public class Product
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public decimal Price { get; set; }
+    public float[]? Embedding { get; set; }
+}
+static List<Product> products = [];
+static List<Product> GetProducts() => [];
+static async IAsyncEnumerable<Product> FetchProductsAsync() { await Task.CompletedTask; yield break; }
+static Stream networkStream = Stream.Null, outputStream = Stream.Null, csvStream = Stream.Null, htbStream = Stream.Null;
+-->
+The examples on this page assume these `using` directives:
+
+```csharp
+using HeroParser;
+using HeroParser.Htbs;
+using HeroParser.Htbs.Records;
+using HeroParser.Htbs.Reading;
+using HeroParser.Htbs.Writing;
+using HeroParser.Validation;
+```
+
 ## 1. HTB Reading
 
 ### 1.1 Quick Start
@@ -144,10 +170,10 @@ Htb.Write<Product>()
     .WithMaxOutputSize(500 * 1024 * 1024) // 500 MB output cap (DoS guard)
     .WithProgress(new Progress<HtbWriteProgress>(p =>
         Console.WriteLine($"Written {p.RecordsWritten} records / {p.BytesWritten} bytes")))
-    .OnError(ctx =>
+    .OnError((ctx, ex) =>
     {
-        Console.WriteLine($"Failed to write record {ctx.RecordIndex}: {ctx.Exception.Message}");
-        return HtbSerializeErrorAction.SkipRecord;
+        Console.WriteLine($"Failed to write record {ctx.RecordIndex}: {ex.Message}");
+        return HtbSerializeErrorAction.SkipRow;
     })
     .ToFile("out.htb", products);
 ```
@@ -172,10 +198,10 @@ The writer's `OnError` delegate receives an `HtbSerializeErrorContext` allowing 
 
 ```csharp
 Htb.Write<Product>()
-    .OnError(ctx =>
+    .OnError((ctx, ex) =>
     {
-        Console.WriteLine($"Skipping write-side error at index {ctx.RecordIndex}");
-        return HtbSerializeErrorAction.SkipRecord;
+        Console.WriteLine($"Skipping write-side error at index {ctx.RecordIndex}: {ex.Message}");
+        return HtbSerializeErrorAction.SkipRow;
     })
     .ToFile("out.htb", products);
 ```
@@ -241,7 +267,7 @@ var schema = new HtbSchema([
 ]);
 
 // Or dynamically derive the schema from a model type
-var schema = HtbSchema.FromType<Product>();
+schema = HtbSchema.FromType<Product>();
 
 // 2. Perform file conversion
 Htb.ConvertFromCsv("data.csv", "data.htb", schema);
@@ -249,6 +275,8 @@ Htb.ConvertFromCsv("data.csv", "data.htb", schema);
 // Or convert streams asynchronously
 await Htb.ConvertFromCsvAsync(csvStream, htbStream, schema);
 ```
+
+CSV header names are matched to schema columns case-insensitively after unquoting with `CsvToHtbOptions.Quote` and `EscapeCharacter`, and `String` and `FloatArray` values are unquoted the same way (`"Id","Name"` maps to the `Id` and `Name` columns). Typed values (numbers, booleans, dates, GUIDs) are parsed with only their surrounding quotes removed (`"42"` in an `Int32` column is `42`); a quoted empty value (`""`) in a typed column counts as empty, like an unquoted empty field: null in a nullable column, an "empty value" error in a non-nullable one. A quoted empty `String` or `FloatArray` value stays an empty value. Schema columns with no matching header are written as null, so a non-nullable column that is missing fails the conversion.
 
 ### 4.2 HTB → CSV Conversion
 

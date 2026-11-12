@@ -15,7 +15,8 @@ curl -sSL https://dot.net/v1/dotnet-install.sh -o di.sh
 bash di.sh --channel 11.0 --quality preview --install-dir "$SCRATCH/dotnet"
 bash di.sh --channel 10.0 --install-dir "$SCRATCH/dotnet"
 export PATH="$SCRATCH/dotnet:$PATH" DOTNET_ROOT="$SCRATCH/dotnet"
-# HeroParser.Wasm targets net10.0 in the browser: the solution does not build without this workload
+# HeroParser.Wasm targets net10.0 in the browser: locally the solution does not build without this workload.
+# With the 11.0 SDK a net10.0 Wasm project needs wasm-tools-net10; CI installs wasm-tools and sets SkipWasmBuild under GITHUB_ACTIONS except in the Wasm build job (IsWasmBuildJob).
 dotnet workload install wasm-tools-net10
 dotnet restore HeroParser.slnx --force-evaluate
 dotnet build HeroParser.slnx -c Release
@@ -71,8 +72,8 @@ Every row was run once against `main` at the commit in "Last verified" (net10.0 
 ```bash
 dotnet restore HeroParser.slnx --force-evaluate
 dotnet build HeroParser.slnx -c Release                       # warnings are errors
-dotnet format whitespace --verify-no-changes HeroParser.slnx
-for f in net10.0 net11.0; do
+dotnet format --verify-no-changes HeroParser.slnx          # what CI runs (style + analyzers too, ~4 min); `format whitespace` alone misses analyzer fixes
+for f in net10.0 net11.0; do   # local shortcut: CI also runs net8.0 and net9.0
   for p in HeroParser.Tests HeroParser.Generators.Tests HeroParser.Console.Tests; do
     dotnet test --project tests/$p -c Release -f $f --no-build
   done

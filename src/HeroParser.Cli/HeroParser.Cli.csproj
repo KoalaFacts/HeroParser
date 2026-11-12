@@ -22,7 +22,8 @@
     <OptimizationPreference>Size</OptimizationPreference>
     <StackTraceSupport>false</StackTraceSupport>
     <EventSourceSupport>false</EventSourceSupport>
-    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <!-- Keep UseSystemResourceKeys off: the CLI prints exception messages, and resource keys
+         such as "IO_FileExists_Name" are not readable errors. -->
     <DebuggerSupport>false</DebuggerSupport>
     <MetadataValidatorSupport>false</MetadataValidatorSupport>
     <InvariantGlobalization>true</InvariantGlobalization>

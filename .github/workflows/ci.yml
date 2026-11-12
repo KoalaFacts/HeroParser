@@ -108,7 +108,7 @@ jobs:
               'TestResults/integration/test-results-integration.trx'
 
     - name: Publish test results
-      uses: EnricoMi/publish-unit-test-result-action@7622c5bf3d112a72ab4fa3951c2aa5723d8ab92d # v2.25.0
+      uses: EnricoMi/publish-unit-test-result-action@da5b7be67623cd59bbbd1a0ce4f022050a55605f # v2.26.0
       if: always() && steps.validate-test-results.outcome == 'success' && matrix.os == 'ubuntu-latest' && matrix.framework == 'net10.0'
       with:
         files: 'TestResults/**/*.trx'
@@ -255,6 +255,51 @@ jobs:
 
     - name: Check formatting
       run: dotnet format --verify-no-changes --verbosity diagnostic
+
+  docs-check:
+    name: Docs Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Setup Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24'
+
+    - name: Test the docs checker
+      run: node --test .github/scripts/tests/check-docs.test.ts
+
+    - name: Check links, anchors, docs index, named paths and agent instructions
+      run: node .github/scripts/check-docs.ts
+
+  doc-snippets:
+    name: Docs Snippets Compile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Setup Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24'
+
+    - name: Setup build .NET SDK
+      uses: ./.github/actions/setup-dotnet-build-sdk
+
+    - name: Test the snippet checker
+      run: node --test .github/scripts/tests/check-doc-snippets.test.ts
+
+    - name: Compile the C# examples in README.md and docs/*.md
+      run: node .github/scripts/check-doc-snippets.ts
 
   dependency-review:
     name: Dependency Review

@@ -93,7 +93,7 @@ public partial class HeroParserWasm
                     headers = new string[row.ColumnCount];
                     for (int i = 0; i < row.ColumnCount; i++)
                     {
-                        headers[i] = row[i].ToString();
+                        headers[i] = row[i].UnquoteToString();
                     }
                     continue;
                 }
@@ -101,7 +101,7 @@ public partial class HeroParserWasm
                 var dict = new Dictionary<string, string>();
                 for (int i = 0; i < Math.Min(row.ColumnCount, headers.Length); i++)
                 {
-                    dict[headers[i]] = row[i].ToString();
+                    dict[headers[i]] = row[i].UnquoteToString();
                 }
                 list.Add(dict);
             }
@@ -115,7 +115,7 @@ public partial class HeroParserWasm
                 var arr = new string[row.ColumnCount];
                 for (int i = 0; i < row.ColumnCount; i++)
                 {
-                    arr[i] = row[i].ToString();
+                    arr[i] = row[i].UnquoteToString();
                 }
                 list.Add(arr);
             }
@@ -176,12 +176,9 @@ public partial class HeroParserWasm
         {
             builder = builder.FromSheet(sheetName);
         }
-        if (!hasHeader)
-        {
-            builder = builder.WithoutHeader();
-        }
-
-        var rows = builder.FromStream(stream);
+        // The row-level reader skips the header row unless told otherwise; this method needs it
+        // returned as the first row so it can key the records (hasHeader) or keep it as data.
+        var rows = builder.WithoutHeader().FromStream(stream);
 
         if (hasHeader)
         {
@@ -268,6 +265,8 @@ public partial class HeroParserWasm
             writer.EndRow();
         }
 
+        // The writer buffers; flush it into the StringWriter before reading the text.
+        writer.Flush();
         return stringWriter.ToString();
     }
 
@@ -300,6 +299,8 @@ public partial class HeroParserWasm
             writer.EndRow();
         }
 
+        // The writer buffers; flush it into the StringWriter before reading the text.
+        writer.Flush();
         return stringWriter.ToString();
     }
 

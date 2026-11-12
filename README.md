@@ -4,10 +4,10 @@
 [![NuGet](https://img.shields.io/nuget/v/HeroParser.svg)](https://www.nuget.org/packages/HeroParser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**HeroParser** is a low-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, and 10, with .NET 11 support coming in 2.9.0. Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
+**HeroParser** is a low-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, 10, and 11 (the net11.0 build ships from 2.9.0). Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
 
 ### Why Choose HeroParser?
-* **Extreme Performance**: Engineered with AVX-512, AVX2, and ARM NEON SIMD optimizations to deliver ultra-high-throughput reading and writing.
+* **SIMD on x86-64**: the CSV row scanner uses AVX-512 or AVX2 (with PCLMULQDQ for quote tracking), and the CSV writer's quote analysis uses AVX-512, AVX2 or SSE2. Other CPUs, including ARM64, and WebAssembly use the scalar paths.
 * **AI-Native integrations**: Built-in support for token-budgeted chunking, LLM output structured repair, vector embedding pipelines, and agent tool mapping.
 * **Low Footprint**: Span row readers expose fields without creating a string for every field. Typed records, decoded strings, and streaming APIs have their own allocation costs; see the [benchmark scope and evidence](docs/benchmarks.md).
 * **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, Fixed-Width, and HTB APIs.
@@ -113,7 +113,7 @@ Already using HeroParser, or considering it for a production CSV, Excel, fixed-w
 
 Do **not** attach real customer datasets, personal information, credentials, or confidential files to public GitHub issues. Start with the [installation steps](#install) and [benchmark methodology](docs/benchmarks.md); performance depends on the workload and API.
 
-**Also need a PDF report template?** [FactsPDF](https://github.com/KoalaFacts/FactsPDF) is a **separate, experimental, source-available .NET renderer** for controlled HTML/CSS business-report layouts—not an integration shipped with HeroParser. It has no public NuGet/CLI package, stable SDK or general evaluation permission. Check [template fit and licensing](https://github.com/KoalaFacts/FactsPDF/blob/main/docs/evaluation.md#check-template-fit-before-integration), then [describe a non-confidential report requirement](https://github.com/KoalaFacts/FactsPDF/issues/new?template=report-template-fit.md) using synthetic examples only.
+**Also need a PDF report template?** [FactsPDF](https://github.com/KoalaFacts/FactsPDF) is a **separate, experimental, source-available .NET renderer** for controlled HTML/CSS business-report layouts—not an integration shipped with HeroParser. It has no public NuGet/CLI package or stable SDK yet; any company may evaluate it free for up to 90 days under the [PolyForm Free Trial licence](https://github.com/KoalaFacts/FactsPDF/blob/main/README.md#licensing). Check [template fit and licensing](https://github.com/KoalaFacts/FactsPDF/blob/main/docs/evaluation.md#check-template-fit-before-integration), then [describe a non-confidential report requirement](https://github.com/KoalaFacts/FactsPDF/issues/new?template=report-template-fit.md) using synthetic examples only.
 
 ---
 
@@ -298,6 +298,15 @@ HeroParser includes first-class support for LLM, vector search, and RAG pipeline
 
 ### 1. LLM Structured Output Repair (`LlmRepair`)
 Repairs truncated final rows (unclosed quotes/escapes) and strips markdown code blocks from raw LLM text streams.
+<!-- snippet: setup
+[GenerateBinder]
+public class Developer
+{
+    public string Name { get; set; } = "";
+    public string Role { get; set; } = "";
+}
+string rawLlmResponse = "";
+-->
 ```csharp
 using HeroParser.AI;
 
@@ -310,6 +319,10 @@ await foreach (var dev in LlmRepair.ReadFromTextAsync<Developer>(rawLlmResponse)
 
 ### 2. Tabular Embedding Pipeline (`ToLlmEmbeddingsAsync`)
 Batches streamed records and pairs them with vector embeddings using a token-budgeted streaming wrapper. Chunks, request text, and returned embedding arrays have allocation costs.
+<!-- snippet: setup
+IAsyncEnumerable<Developer> developers = AsyncEnumerable.Empty<Developer>();
+static ValueTask<IReadOnlyList<float[]>> GetEmbeddingsFromApiAsync(IReadOnlyList<string> texts, CancellationToken ct) => default;
+-->
 ```csharp
 using HeroParser.AI;
 
@@ -324,6 +337,9 @@ await foreach (var chunk in developers.ToLlmEmbeddingsAsync(
 
 ### 3. Agent Tool Argument Mapper (`SchemaMetadata.MapFromToolCall`)
 Maps flat dictionaries of case-insensitive arguments returned by tool calling models into typed record models, executing validation constraints and raising rich validation feedback.
+<!-- snippet: setup
+IReadOnlyDictionary<string, object?> arguments = new Dictionary<string, object?>();
+-->
 ```csharp
 using HeroParser.AI;
 
@@ -332,14 +348,21 @@ Developer dev = SchemaMetadata.MapFromToolCall<Developer>(arguments);
 
 ### 4. Tabular Context Profiler (`TabularContextProfiler`)
 Generates structured statistical profile cards in markdown directly from datasets to inject into LLM system prompts.
+<!-- snippet: setup
+List<Developer> developers = [];
+-->
 ```csharp
 string contextCard = developers.GenerateContextCard(datasetName: "Engineering Team");
 ```
 
 ### 5. Token-Bounded JSON Chunker (`JsonLlmChunker`)
 Chunks an `IAsyncEnumerable<T>` into valid, token-bounded JSON array blocks for RAG context windows. Serialization uses a source-generated `JsonTypeInfo<T>`, so it stays AOT-safe.
+<!-- snippet: setup
+IAsyncEnumerable<Developer> developers = AsyncEnumerable.Empty<Developer>();
+var options = new LlmChunkOptions { MaxTokensPerChunk = 500 };
+-->
 ```csharp
-await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(DeveloperJsonContext.Default.Developer, options)) { ... }
+await foreach (var jsonChunk in developers.ToJsonLlmChunksAsync(DeveloperJsonContext.Default.Developer, options)) { /* send jsonChunk to the model */ }
 
 [JsonSerializable(typeof(Developer))]
 internal partial class DeveloperJsonContext : JsonSerializerContext { }
@@ -349,7 +372,7 @@ internal partial class DeveloperJsonContext : JsonSerializerContext { }
 
 ## Key Features
 
-* **SIMD-accelerated CSV parsing** — AVX-512, AVX2, and ARM NEON instruction sets; PCLMULQDQ-based branchless quote tracking
+* **SIMD-accelerated CSV parsing on x86-64** — AVX-512 and AVX2, with PCLMULQDQ-based branchless quote tracking; scalar elsewhere
 * **Allocation-conscious scanning** — span field access and pooled buffers; allocation profiles vary by API, options, and output representation
 * **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
 * **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, JSONL, and HTB; true non-blocking I/O with sync fast paths
@@ -363,12 +386,12 @@ internal partial class DeveloperJsonContext : JsonSerializerContext { }
 * **Multi-schema CSV** — discriminator-based row routing to different record types, with runtime and source-generated dispatch
 * **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score
 * **CSV validation** — pre-flight structural checks with detailed per-row error reporting
-* **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; `result.ThrowIfAnyError()` for fail-fast
+* **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; in strict mode (the default) `ToList()` and other terminal methods throw a `ValidationException` when any row failed
 * **CSV injection protection** — configurable sanitization modes for user-data exports
 * **Progress reporting** — row/byte callbacks for large-file UX
 * **Custom type converters** — register converters for domain types on any reader or writer
 * **Write capacity pre-allocation** — estimates backing buffer capacity from collection counts when writing to strings to reduce buffer growth; actual sizes and benefits depend on the records
-* **Multi-framework** — .NET 8, 9, and 10 (.NET 11 from 2.9.0); CI validates every target on Windows, Linux, and macOS
+* **Multi-framework** — .NET 8, 9, 10, and 11 (net11.0 from 2.9.0, built and tested against the .NET 11 GA SDK); CI validates every target on Windows, Linux, and macOS
 
 ---
 

@@ -73,7 +73,7 @@ internal static class WriteValidationRunner
                     ColumnName = null,
                     RawValue = rawValue,
                     Rule = "MinLength",
-                    Message = $"Field '{propertyName}' length {str.Length} is less than minimum {rules.MinLength.Value}.",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {str.Length} is less than minimum {rules.MinLength.Value}."),
                     RowNumber = rowNumber,
                     ColumnIndex = columnIndex
                 });
@@ -88,7 +88,7 @@ internal static class WriteValidationRunner
                     ColumnName = null,
                     RawValue = rawValue,
                     Rule = "MaxLength",
-                    Message = $"Field '{propertyName}' length {str.Length} exceeds maximum {rules.MaxLength.Value}.",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {str.Length} exceeds maximum {rules.MaxLength.Value}."),
                     RowNumber = rowNumber,
                     ColumnIndex = columnIndex
                 });
@@ -120,7 +120,7 @@ internal static class WriteValidationRunner
                             ColumnName = null,
                             RawValue = rawValue,
                             Rule = "Range",
-                            Message = $"Field '{propertyName}' value {numericValue} is less than minimum {rules.RangeMin.Value}.",
+                            Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} is less than minimum {rules.RangeMin.Value}."),
                             RowNumber = rowNumber,
                             ColumnIndex = columnIndex
                         });
@@ -135,7 +135,7 @@ internal static class WriteValidationRunner
                             ColumnName = null,
                             RawValue = rawValue,
                             Rule = "Range",
-                            Message = $"Field '{propertyName}' value {numericValue} exceeds maximum {rules.RangeMax.Value}.",
+                            Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} exceeds maximum {rules.RangeMax.Value}."),
                             RowNumber = rowNumber,
                             ColumnIndex = columnIndex
                         });

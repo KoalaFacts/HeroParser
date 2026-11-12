@@ -137,13 +137,13 @@ public static class SchemaMetadata
                     // 3. MinLength validation
                     if (validate.MinLength > 0 && finalVal is string sMin && sMin.Length < validate.MinLength)
                     {
-                        throw new LlmToolCallValidationException(prop.Name, $"Property '{prop.Name}' length must be at least {validate.MinLength}.");
+                        throw new LlmToolCallValidationException(prop.Name, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Property '{prop.Name}' length must be at least {validate.MinLength}."));
                     }
 
                     // 4. MaxLength validation
                     if (validate.MaxLength > 0 && finalVal is string sMax && sMax.Length > validate.MaxLength)
                     {
-                        throw new LlmToolCallValidationException(prop.Name, $"Property '{prop.Name}' length cannot exceed {validate.MaxLength}.");
+                        throw new LlmToolCallValidationException(prop.Name, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Property '{prop.Name}' length cannot exceed {validate.MaxLength}."));
                     }
 
                     // 5. RangeMin validation
@@ -152,7 +152,7 @@ public static class SchemaMetadata
                         double numericVal = Convert.ToDouble(finalVal, System.Globalization.CultureInfo.InvariantCulture);
                         if (numericVal < validate.RangeMin)
                         {
-                            throw new LlmToolCallValidationException(prop.Name, $"Property '{prop.Name}' value {numericVal} must be at least {validate.RangeMin}.");
+                            throw new LlmToolCallValidationException(prop.Name, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Property '{prop.Name}' value {numericVal} must be at least {validate.RangeMin}."));
                         }
                     }
 
@@ -162,7 +162,7 @@ public static class SchemaMetadata
                         double numericVal = Convert.ToDouble(finalVal, System.Globalization.CultureInfo.InvariantCulture);
                         if (numericVal > validate.RangeMax)
                         {
-                            throw new LlmToolCallValidationException(prop.Name, $"Property '{prop.Name}' value {numericVal} cannot exceed {validate.RangeMax}.");
+                            throw new LlmToolCallValidationException(prop.Name, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Property '{prop.Name}' value {numericVal} cannot exceed {validate.RangeMax}."));
                         }
                     }
 

@@ -419,13 +419,13 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     // 3. MinLength validation
                     if (validate.MinLength > 0 && val is string sMin && sMin.Length < validate.MinLength)
                     {
-                        throw new HtbException(HtbErrorCode.DeserializationError, $"Property '{col.Property.Name}' violated validation constraint: length must be at least {validate.MinLength}.");
+                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: length must be at least {validate.MinLength}."));
                     }
 
                     // 4. MaxLength validation
                     if (validate.MaxLength > 0 && val is string sMax && sMax.Length > validate.MaxLength)
                     {
-                        throw new HtbException(HtbErrorCode.DeserializationError, $"Property '{col.Property.Name}' violated validation constraint: length cannot exceed {validate.MaxLength}.");
+                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: length cannot exceed {validate.MaxLength}."));
                     }
 
                     // 5. RangeMin validation
@@ -434,7 +434,7 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                         double numericVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
                         if (numericVal < validate.RangeMin)
                         {
-                            throw new HtbException(HtbErrorCode.DeserializationError, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} must be at least {validate.RangeMin}.");
+                            throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} must be at least {validate.RangeMin}."));
                         }
                     }
 
@@ -444,7 +444,7 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                         double numericVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
                         if (numericVal > validate.RangeMax)
                         {
-                            throw new HtbException(HtbErrorCode.DeserializationError, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} cannot exceed {validate.RangeMax}.");
+                            throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} cannot exceed {validate.RangeMax}."));
                         }
                     }
 

@@ -3,6 +3,7 @@ using System.Text;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
 using HeroParser.SeparatedValues.Reading.Shared;
+using System.Globalization;
 
 namespace HeroParser.SeparatedValues.Reading.Records.MultiSchema;
 
@@ -172,7 +173,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
-                    $"Row exceeds maximum size of {maxRowSize:N0} characters. Ensure rows have proper line endings.");
+                    string.Create(CultureInfo.InvariantCulture, $"Row exceeds maximum size of {maxRowSize:N0} characters. Ensure rows have proper line endings."));
             }
 
             if (result.RowLength == span.Length && !endOfStream)
@@ -248,7 +249,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
         {
             throw new CsvException(
                 CsvErrorCode.ParseError,
-                $"Row exceeds maximum size of {maxRowSize:N0} characters. Ensure rows have proper line endings.");
+                string.Create(CultureInfo.InvariantCulture, $"Row exceeds maximum size of {maxRowSize:N0} characters. Ensure rows have proper line endings."));
         }
 
         rowNumber++;
@@ -301,7 +302,7 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
-                    $"Row exceeds maximum size of {maxRowSize:N0} characters. " +
+                    string.Create(CultureInfo.InvariantCulture, $"Row exceeds maximum size of {maxRowSize:N0} characters. ") +
                     "Ensure rows have proper line endings.");
             }
 

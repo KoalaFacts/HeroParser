@@ -1,4 +1,5 @@
 using HeroParser.Validation;
+using System.Globalization;
 
 namespace HeroParser.FixedWidths;
 
@@ -164,7 +165,7 @@ public sealed record FixedWidthReadOptions
         {
             throw new FixedWidthException(
                 FixedWidthErrorCode.InvalidOptions,
-                $"Input size ({size:N0} bytes) exceeds maximum allowed ({MaxInputSize.Value:N0} bytes). " +
+                string.Create(CultureInfo.InvariantCulture, $"Input size ({size:N0} bytes) exceeds maximum allowed ({MaxInputSize.Value:N0} bytes). ") +
                 $"Set MaxInputSize to a larger value or null to disable this check.");
         }
     }

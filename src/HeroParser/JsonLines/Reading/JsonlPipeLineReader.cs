@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
+using System.Globalization;
 
 namespace HeroParser.JsonLines.Reading;
 
@@ -38,7 +39,7 @@ internal static class JsonlPipeLineReader
                     reader.AdvanceTo(buffer.Start, buffer.End);
                     throw new JsonlException(
                         JsonlErrorCode.LineTooLong,
-                        $"A single line exceeds the configured MaxLineSizeBytes of {options.MaxLineSizeBytes:N0} bytes.",
+                        string.Create(CultureInfo.InvariantCulture, $"A single line exceeds the configured MaxLineSizeBytes of {options.MaxLineSizeBytes:N0} bytes."),
                         lineNumber + 1);
                 }
 
@@ -56,7 +57,7 @@ internal static class JsonlPipeLineReader
                         reader.AdvanceTo(buffer.End);
                         throw new JsonlException(
                             JsonlErrorCode.LineTooLong,
-                            $"A single line exceeds the configured MaxLineSizeBytes of {options.MaxLineSizeBytes:N0} bytes.",
+                            string.Create(CultureInfo.InvariantCulture, $"A single line exceeds the configured MaxLineSizeBytes of {options.MaxLineSizeBytes:N0} bytes."),
                             lineNumber + 1);
                     }
 
@@ -80,7 +81,7 @@ internal static class JsonlPipeLineReader
                 reader.AdvanceTo(buffer.Start, buffer.End);
                 throw new JsonlException(
                     JsonlErrorCode.LineTooLong,
-                    $"A single line exceeds the configured MaxLineSizeBytes of {options.MaxLineSizeBytes:N0} bytes.",
+                    string.Create(CultureInfo.InvariantCulture, $"A single line exceeds the configured MaxLineSizeBytes of {options.MaxLineSizeBytes:N0} bytes."),
                     lineNumber + 1);
             }
 

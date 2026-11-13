@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace HeroParser.SeparatedValues.Core;
 
 /// <summary>
@@ -177,7 +179,7 @@ public sealed record CsvReadOptions
         {
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
-                $"MaxColumnCount cannot exceed {MaxColumnCountLimit:N0}, got {MaxColumnCount:N0}");
+                string.Create(CultureInfo.InvariantCulture, $"MaxColumnCount cannot exceed {MaxColumnCountLimit:N0}, got {MaxColumnCount:N0}"));
         }
 
         if (MaxRowCount <= 0)
@@ -281,7 +283,7 @@ public sealed record CsvReadOptions
         {
             throw new CsvException(
                 CsvErrorCode.InvalidOptions,
-                $"Input size ({size:N0} bytes) exceeds maximum allowed ({MaxInputSize.Value:N0} bytes). " +
+                string.Create(CultureInfo.InvariantCulture, $"Input size ({size:N0} bytes) exceeds maximum allowed ({MaxInputSize.Value:N0} bytes). ") +
                 "Set MaxInputSize to a larger value or null to disable this check.");
         }
     }

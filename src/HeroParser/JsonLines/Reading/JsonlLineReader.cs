@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 
 namespace HeroParser.JsonLines.Reading;
 
@@ -58,7 +59,7 @@ internal sealed class JsonlLineReader : IDisposable
                 {
                     throw new JsonlException(
                         JsonlErrorCode.LineTooLong,
-                        $"A single line exceeds the configured MaxLineSizeBytes of {maxLineSizeBytes:N0} bytes.",
+                        string.Create(CultureInfo.InvariantCulture, $"A single line exceeds the configured MaxLineSizeBytes of {maxLineSizeBytes:N0} bytes."),
                         lineNumber + 1);
                 }
 
@@ -82,7 +83,7 @@ internal sealed class JsonlLineReader : IDisposable
                     {
                         throw new JsonlException(
                             JsonlErrorCode.LineTooLong,
-                            $"A single line exceeds the configured MaxLineSizeBytes of {maxLineSizeBytes:N0} bytes.",
+                            string.Create(CultureInfo.InvariantCulture, $"A single line exceeds the configured MaxLineSizeBytes of {maxLineSizeBytes:N0} bytes."),
                             lineNumber + 1);
                     }
 
@@ -121,7 +122,7 @@ internal sealed class JsonlLineReader : IDisposable
             {
                 throw new JsonlException(
                     JsonlErrorCode.LineTooLong,
-                    $"A single line exceeds the configured MaxLineSizeBytes of {maxLineSizeBytes:N0} bytes.",
+                    string.Create(CultureInfo.InvariantCulture, $"A single line exceeds the configured MaxLineSizeBytes of {maxLineSizeBytes:N0} bytes."),
                     lineNumber + 1);
             }
             if (newSize > maxLineSizeBytes)

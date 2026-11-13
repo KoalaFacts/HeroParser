@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Text;
 using HeroParser.FixedWidths;
+using System.Globalization;
 
 namespace HeroParser.FixedWidths.Streaming;
 
@@ -354,7 +355,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             {
                 throw new FixedWidthException(
                     FixedWidthErrorCode.ParseError,
-                    $"Record exceeds maximum size of {ABSOLUTE_MAX_BUFFER_SIZE:N0} characters. " +
+                    string.Create(CultureInfo.InvariantCulture, $"Record exceeds maximum size of {ABSOLUTE_MAX_BUFFER_SIZE:N0} characters. ") +
                     "Ensure records have proper line endings.");
             }
 

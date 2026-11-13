@@ -1,6 +1,7 @@
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Reading.Streaming;
+using System.Globalization;
 
 namespace HeroParser.SeparatedValues.Validation;
 
@@ -265,7 +266,7 @@ public static partial class CsvValidator
                 }
                 if (++rowBytes > rowLimit)
                     throw new CsvException(CsvErrorCode.ParseError,
-                        $"Row exceeds maximum size of {rowLimit:N0} bytes while skipping preamble.", skipped + 1);
+                        string.Create(CultureInfo.InvariantCulture, $"Row exceeds maximum size of {rowLimit:N0} bytes while skipping preamble."), skipped + 1);
                 if (value == (byte)'"')
                     quoted = !quoted;
                 if (!quoted && (value == (byte)'\r' || value == (byte)'\n'))

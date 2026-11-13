@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace HeroParser.SeparatedValues.Core;
 
 /// <summary>
@@ -176,12 +178,12 @@ public class CsvException : Exception
 
     internal static CsvException RowSizeLimitExceeded(int maxRowSize, bool isUtf8)
         => new(CsvErrorCode.ParseError,
-            $"Row exceeds maximum size of {maxRowSize:N0} {(isUtf8 ? "bytes" : "characters")}. Ensure rows have proper line endings.")
+            string.Create(CultureInfo.InvariantCulture, $"Row exceeds maximum size of {maxRowSize:N0} {(isUtf8 ? "bytes" : "characters")}. Ensure rows have proper line endings."))
         { IsRowSizeLimitExceeded = true };
 
     internal static CsvException InputSizeLimitExceeded(long maxInputSize, bool isUtf8)
         => new(CsvErrorCode.InputSizeExceeded,
-            $"Schema inference exceeds maximum scanned input size of {maxInputSize:N0} {(isUtf8 ? "bytes" : "characters")}.");
+            string.Create(CultureInfo.InvariantCulture, $"Schema inference exceeds maximum scanned input size of {maxInputSize:N0} {(isUtf8 ? "bytes" : "characters")}."));
 
     private static string BuildUnterminatedQuoteMessage(int row, int? sourceLineNumber, string message, int? quoteStartPosition)
     {

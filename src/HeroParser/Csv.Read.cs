@@ -4,6 +4,7 @@ using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Records;
 using HeroParser.SeparatedValues.Reading.Rows;
 using HeroParser.SeparatedValues.Reading.Streaming;
+using System.Globalization;
 
 namespace HeroParser;
 
@@ -200,7 +201,7 @@ public static partial class Csv
         {
             throw new CsvException(
                 CsvErrorCode.ParseError,
-                $"File length exceeds maximum buffered size of {DEFAULT_MAX_BUFFERED_STREAM_BYTES:N0} bytes. " +
+                string.Create(CultureInfo.InvariantCulture, $"File length exceeds maximum buffered size of {DEFAULT_MAX_BUFFERED_STREAM_BYTES:N0} bytes. ") +
                 "Use Csv.CreateAsyncStreamReader for large inputs.");
         }
 
@@ -265,7 +266,7 @@ public static partial class Csv
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
-                    $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. " +
+                    string.Create(CultureInfo.InvariantCulture, $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. ") +
                     "Use Csv.CreateAsyncStreamReader for large inputs.");
             }
 
@@ -296,7 +297,7 @@ public static partial class Csv
             {
                 throw new CsvException(
                     CsvErrorCode.ParseError,
-                    $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. " +
+                    string.Create(CultureInfo.InvariantCulture, $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. ") +
                     "Use Csv.CreateAsyncStreamReader for large inputs.");
             }
         }
@@ -334,7 +335,7 @@ public static partial class Csv
                 {
                     throw new CsvException(
                         CsvErrorCode.ParseError,
-                        $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. " +
+                        string.Create(CultureInfo.InvariantCulture, $"Stream length exceeds maximum buffered size of {maxBytesToBuffer:N0} bytes. ") +
                         "Use Csv.CreateAsyncStreamReader for large inputs.");
                 }
                 memoryStream.Write(buffer, 0, read);

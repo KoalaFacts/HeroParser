@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Globalization;
 
 namespace HeroParser.JsonLines.Reading;
 
@@ -241,7 +242,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
             {
                 throw new JsonlException(
                     JsonlErrorCode.TooManyRows,
-                    $"Number of records exceeds the configured MaxRowCount of {options.MaxRowCount:N0}.",
+                    string.Create(CultureInfo.InvariantCulture, $"Number of records exceeds the configured MaxRowCount of {options.MaxRowCount:N0}."),
                     line.LineNumber);
             }
 

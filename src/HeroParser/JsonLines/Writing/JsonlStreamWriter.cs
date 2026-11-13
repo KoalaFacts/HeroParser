@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Globalization;
 
 namespace HeroParser.JsonLines.Writing;
 
@@ -205,7 +206,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         {
             throw new JsonlException(
                 JsonlErrorCode.OutputSizeExceeded,
-                $"MaxRowCount of {cap:N0} exceeded.");
+                string.Create(CultureInfo.InvariantCulture, $"MaxRowCount of {cap:N0} exceeded."));
         }
     }
 
@@ -274,7 +275,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         {
             throw new JsonlException(
                 JsonlErrorCode.OutputSizeExceeded,
-                $"Output size of {BytesWritten:N0} bytes exceeds MaxOutputSize of {cap:N0} bytes.");
+                string.Create(CultureInfo.InvariantCulture, $"Output size of {BytesWritten:N0} bytes exceeds MaxOutputSize of {cap:N0} bytes."));
         }
     }
 

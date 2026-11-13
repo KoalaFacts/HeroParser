@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Reading.Rows;
+using System.Globalization;
 
 namespace HeroParser;
 
@@ -499,7 +500,7 @@ public static partial class Csv
         {
             throw new CsvException(
                 CsvErrorCode.ParseError,
-                $"Row exceeds maximum size of {maxRowSize.Value:N0} bytes. Ensure rows have proper line endings.");
+                string.Create(CultureInfo.InvariantCulture, $"Row exceeds maximum size of {maxRowSize.Value:N0} bytes. Ensure rows have proper line endings."));
         }
     }
 }

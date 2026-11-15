@@ -97,3 +97,33 @@ public class ExcelReadCultureTests
         Assert.Equal(1234.5m, records[0].Price);
     }
 }
+
+/// <summary>
+/// Date-formatted cells are passed to the binder as ISO 8601 text; it must read them on every culture, non-Gregorian ones included.
+/// </summary>
+[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+public class ExcelReadDateCultureTests
+{
+    [Theory]
+    [InlineData("th-TH")]
+    [InlineData("de-DE")]
+    [InlineData("ar-SA")]
+    [InlineData("fa-IR")]
+    public void Read_DateCells_WithCulture_BindsStoredDate(string cultureName)
+    {
+        using var xlsx = ExcelTestHelper.CreateXlsxWithDates("Sheet1", ["Date", "Day"], [[(44927.5, 1), (44927.0, 1)]]);
+
+        var records = HeroParser.Excel.Read<ExcelCultureDateRecord>().WithCulture(cultureName).FromStream(xlsx);
+
+        Assert.Single(records);
+        Assert.Equal(new DateTime(2023, 1, 1, 12, 0, 0), records[0].Date);
+        Assert.Equal(new DateOnly(2023, 1, 1), records[0].Day);
+    }
+}
+
+[GenerateBinder]
+public class ExcelCultureDateRecord
+{
+    public DateTime Date { get; set; }
+    public DateOnly Day { get; set; }
+}

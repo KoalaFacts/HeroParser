@@ -34,7 +34,7 @@ The "Maintenance ledger" section of CLAUDE.md (no separate ledger file exists; d
 ## Work order
 - **L1** net11.0 target, `global.json` floor (rollForward latestFeature; allowPrerelease false since GA, see L4), CI on the newest 11.0 SDK via setup-dotnet `11.0.x` with no forced dotnet-quality, NuGet consumer check on net11.0, dependency upgrades (#167). Then close #162 as superseded.
 - **L2** C# snippets in README.md and docs/*.md compile in CI (TypeScript tool, explicit marker for deliberate fragments). Never delete examples to pass.
-- **L3** Historical-evidence job: owner decision (retire it, or report "evidence expired" as pass-with-notice). Options on #167 and in the ledger; do not change the job until the owner answers.
+- **L3** Historical-evidence job: done — `pull_request` trigger retired on `csv-pipe-history.yml` after the 30-day artifacts expired (manual `workflow_dispatch` / `workflow_call` retained).
 - **L4** After .NET 11 GA (`latest-release` without a prerelease suffix in https://builds.dotnet.microsoft.com/dotnet/release-metadata/11.0/releases.json): confirm CI installs the GA SDK, raise the `global.json` floor to GA (the 2.9.0 release gate), BenchmarkDotNet to the newest stable 0.16.x if any, drop "RC" wording. Until GA it is `waiting`, not blocked.
 - **L5** .NET 11 analyzer and obsoletion sweep with `-p:AnalysisLevel=latest-all`: fix real issues with tests first, one fix per PR (L5a, L5b, ...); record intentionally ignored diagnostics with reasons in the ledger; suppress in code only as CLAUDE.md allows.
 - **L6** Dependency upkeep between PRs: `dotnet list HeroParser.slnx package --outdated` (also `--include-prerelease`) and `npm outdated --workspaces --include-workspace-root` in `npm/`. Port breaking majors in `deps/` PRs preserving behaviour; shipped packages' runtime dependencies stay stable. Held back: `onnxruntime-web` 1.20.1 (override + postinstall patches), TypeScript 6.x until vue-tsc supports 7.
@@ -50,10 +50,8 @@ The "Maintenance ledger" section of CLAUDE.md (no separate ledger file exists; d
 
 ## Project rules
 - **No release:** never dispatch or re-run Create Release or any Publish workflow (NuGet, WinGet, Homebrew, Scoop, Snap); never change `<Version>` in Directory.Build.props; never run `npm run sync-version`; never publish the npm package.
-- The "Validate Historical Evidence And Optional Fixed Collection" job fails on any PR touching `csv-pipe-history.yml` because the artifact of run 36732093817 expired; it is not counted against a merge and is never "fixed" by a re-run.
 - Codex reviews only when a PR is opened and the account is at its usage limit; do not wait for a new Codex review after a push. When Codex has not reviewed or reports it cannot, an independent review agent reviews the diff. No open blocking/high/security finding; every thread (including the owner's account) fixed or answered.
 - Never claim performance without CLAUDE.md's same-runner A/B.
-- Owner decisions the task must not take: L3; the npm package README (#172) waits for owner approval.
 
 ## Docs scope
 - CLAUDE.md is the source of agent guidance; AGENTS.md is a pointer, enforced by `check-docs.ts`. `.agents/skills/` and `.claude/skills/` are identical copies, also enforced.

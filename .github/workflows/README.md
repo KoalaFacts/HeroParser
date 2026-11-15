@@ -161,8 +161,8 @@ This directory contains automated CI/CD workflows for HeroParser.
 - Manual workflow dispatch
 
 **What it does:**
-1. Runs BenchmarkDotNet throughput tests
-2. Tests on .NET 8, 9, 10, and 11
+1. Runs BenchmarkDotNet throughput and same-runner A/B comparisons on .NET 10
+2. Runs CSV Pipe correctness checks across .NET 8, 9, 10, and 11
 3. Uploads benchmark results as artifacts
 4. Posts results as PR comment (for PRs)
 
@@ -175,13 +175,14 @@ This directory contains automated CI/CD workflows for HeroParser.
 
 ### Frozen CSV History Source
 
-[csv-pipe-history.yml](./csv-pipe-history.yml) explicitly fetches and verifies
-frozen commit `89c06810e76c4623ebad3cfc89c4bcdef41acd59`, which can fall outside
-advertised history after squash merges and branch deletion. Retrieval failures
-stop validation without substituting a revision; provenance is uploaded even on
-failure. Existing PR checks validate frozen build/copy identity and retained
-artifacts without collecting new timings. This source-retrieval repair does not
-change performance gates or establish the measurement-bias cause.
+[csv-pipe-history.yml](./csv-pipe-history.yml) is a manual (`workflow_dispatch` /
+`workflow_call`) diagnostic workflow that fetches and verifies frozen commit
+`89c06810e76c4623ebad3cfc89c4bcdef41acd59`, which can fall outside advertised
+history after squash merges and branch deletion. Retrieval failures stop
+validation without substituting a revision; provenance is uploaded even on
+failure. Its `pull_request` trigger was retired after the 30-day artifacts of
+runs `36732093817` and `36814110508` expired (the CSV Pipe timing experiment was
+retired on 2026-10-25).
 
 ---
 

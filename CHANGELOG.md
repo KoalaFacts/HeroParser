@@ -5,7 +5,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 ## [Unreleased]
 
 ### Fixed
-- **Excel typed reading with a non-invariant culture read numeric cells wrongly.** `.xlsx` stores numeric cells in invariant notation, but `Excel.Read<T>().WithCulture(...)` (including `AllSheets()` and `FromStreamAsync`) parsed them with that culture: under de-DE `1234.5` bound as `12345`, under fr-FR and sv-SE the cell failed to parse. Numeric cells are now presented in the reader's culture before binding; text cells still parse in that culture as before.
+- **Excel typed reading with a non-invariant culture read numeric cells wrongly.** `.xlsx` stores numeric cells in invariant notation, but `Excel.Read<T>().WithCulture(...)` (including `AllSheets()` and `FromStreamAsync`) parsed them with that culture: under de-DE `1234.5` bound as `12345`, under fr-FR and sv-SE the cell failed to parse. Numeric data cells now have their decimal point replaced by the culture's separator before binding (textual, so stored digits are kept); header names and text cells are unchanged.
 
 ## [2.9.0] - 2026-11-15
 

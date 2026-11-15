@@ -13,8 +13,6 @@ internal sealed class XlsxSheetReader : IDisposable
     private readonly XlsxSharedStrings sharedStrings;
     private readonly XlsxStylesheet stylesheet;
     private readonly List<(int ColumnIndex, string Value)> cellBuffer = [];
-    private NumberFormatInfo? numericCellFormat;
-    private CultureInfo? numericCellFormatCulture;
     private bool inSheetData;
     private bool finished;
 
@@ -270,28 +268,15 @@ internal sealed class XlsxSheetReader : IDisposable
         return FormatForCulture(rawValue, NumericCellCulture);
     }
 
-    private string FormatForCulture(string rawValue, CultureInfo? culture)
+    private static string FormatForCulture(string rawValue, CultureInfo? culture)
     {
-        if (culture is null || culture.Name.Length == 0 || culture.NumberFormat.NumberDecimalSeparator == ".")
+        if (culture is null || culture.Name.Length == 0)
             return rawValue;
 
-        // Only the decimal separator follows the culture: no group separators are written, and the ASCII minus sign
-        // is kept because every binder accepts it (cultures such as sv-SE use U+2212, which the integer fast path does not).
-        if (numericCellFormat is null || numericCellFormatCulture != culture)
-        {
-            var format = (NumberFormatInfo)culture.NumberFormat.Clone();
-            format.NegativeSign = "-";
-            numericCellFormat = format;
-            numericCellFormatCulture = culture;
-        }
-
-        if (decimal.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal decimalValue))
-            return decimalValue.ToString(numericCellFormat);
-
-        if (double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleValue))
-            return doubleValue.ToString("R", numericCellFormat);
-
-        return rawValue;
+        // Stored numbers use only digits, '.', '-', '+' and 'E'. Replacing the decimal point keeps every stored digit
+        // (no round trip through decimal or double); the ASCII minus stays because every binder accepts it.
+        var separator = culture.NumberFormat.NumberDecimalSeparator;
+        return separator == "." ? rawValue : rawValue.Replace(".", separator, StringComparison.Ordinal);
     }
 
     private static string ConvertOleDate(double oleDate)

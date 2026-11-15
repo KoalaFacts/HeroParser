@@ -32,6 +32,37 @@ public class ExcelReadCultureTests
     }
 
     [Fact]
+    public void Read_NumericHeaderCell_WithCulture_StillMatchesMappedName()
+    {
+        using var xlsx = ExcelTestHelper.CreateXlsx("Sheet1", [
+            ["Name", "1.5"],
+            ["Widget", "2.25"]
+        ]);
+
+        var records = HeroParser.Excel.Read<ExcelCultureNumericHeaderRecord>().WithCulture("de-DE").FromStream(xlsx);
+
+        Assert.Single(records);
+        Assert.Equal(2.25m, records[0].Rate);
+    }
+
+    [Theory]
+    [InlineData("1E-30", 1E-30)]
+    [InlineData("1.2345678901234567E-20", 1.2345678901234567E-20)]
+    [InlineData("1.7976931348623157E+308", double.MaxValue)]
+    public void Read_FloatingPointCells_WithCulture_KeepStoredPrecision(string stored, double expected)
+    {
+        using var xlsx = ExcelTestHelper.CreateXlsx("Sheet1", [
+            ["Value"],
+            [stored]
+        ]);
+
+        var records = HeroParser.Excel.Read<ExcelCultureDoubleRecord>().WithCulture("de-DE").FromStream(xlsx);
+
+        Assert.Single(records);
+        Assert.Equal(expected, records[0].Value);
+    }
+
+    [Fact]
     public void Read_TextCells_WithCulture_StillParseInThatCulture()
     {
         // "9,99" is not numeric in invariant notation, so the helper stores it as a text cell.
@@ -126,4 +157,19 @@ public class ExcelCultureDateRecord
 {
     public DateTime Date { get; set; }
     public DateOnly Day { get; set; }
+}
+
+[GenerateBinder]
+public class ExcelCultureNumericHeaderRecord
+{
+    public string Name { get; set; } = "";
+
+    [TabularMap(Name = "1.5")]
+    public decimal Rate { get; set; }
+}
+
+[GenerateBinder]
+public class ExcelCultureDoubleRecord
+{
+    public double Value { get; set; }
 }

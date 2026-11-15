@@ -3,7 +3,7 @@
 This guide records benchmark scope, reproducible commands, and historical evidence. The current benchmark project references:
 - **Sep** v0.17.1
 - **Sylvan.Data.Csv** v1.4.4
-- **CsvHelper** v33.1.0
+- **CsvHelper** v34.0.0
 
 ---
 

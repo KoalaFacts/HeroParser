@@ -4,7 +4,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
-Planned as 2.9.0: .NET 11 compatibility.
+## [2.9.0] - 2026-11-15
+
+.NET 11 (`net11.0`) support on the .NET 11.0.100 GA SDK, culture-invariant formatting and validation across readers, writers, AI helpers, and source generators, and unquoted CSV header/value handling across schema inference, converters, DataReader, CLI, and WebAssembly.
 
 ### Added
 - **`net11.0` target** for HeroParser, HeroParser.Console and HeroParser.Cli, alongside the existing `net8.0`, `net9.0` and `net10.0` targets. No target is removed.

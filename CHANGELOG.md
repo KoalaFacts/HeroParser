@@ -4,6 +4,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+### Fixed
+- **Excel typed reading with a non-invariant culture read numeric cells wrongly.** `.xlsx` stores numeric cells in invariant notation, but `Excel.Read<T>().WithCulture(...)` (including `AllSheets()` and `FromStreamAsync`) parsed them with that culture: under de-DE `1234.5` bound as `12345`, under fr-FR and sv-SE the cell failed to parse. Numeric cells are now presented in the reader's culture before binding; text cells still parse in that culture as before.
+
 ## [2.9.0] - 2026-11-15
 
 .NET 11 (`net11.0`) support on the .NET 11.0.100 GA SDK, culture-invariant formatting and validation across readers, writers, AI helpers, and source generators, and unquoted CSV header/value handling across schema inference, converters, DataReader, CLI, and WebAssembly.

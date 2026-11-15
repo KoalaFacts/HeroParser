@@ -363,6 +363,9 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
 
     private IEnumerable<T> EnumerateRecords(XlsxSheetReader sheetReader, string currentSheetName)
     {
+        // Numeric cells are stored in invariant notation; present them in the culture the binder parses with.
+        sheetReader.NumericCellCulture = culture;
+
         // Skip configured rows
         for (int i = 0; i < skipRows; i++)
         {

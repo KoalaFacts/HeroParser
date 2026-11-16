@@ -29,6 +29,14 @@ internal sealed class XlsxSheetReader : IDisposable
     /// <summary>The 1-based Excel row number of the current row.</summary>
     public int CurrentRowNumber { get; private set; }
 
+    /// <summary>
+    /// Culture that typed record binding will parse cell text with, or <see langword="null"/> to return numeric
+    /// cells as stored. The .xlsx format stores numeric cells in invariant notation ("1234.5"); when a binder parses
+    /// with a culture whose separators differ (de-DE reads "1234.5" as 12345), numeric cells are re-formatted in that
+    /// culture so the binder reads the stored value. Text cells are never changed.
+    /// </summary>
+    public CultureInfo? NumericCellCulture { get; set; }
+
     /// <summary>Reads the next row. Returns null when no more rows.</summary>
     public string[]? ReadNextRow()
     {
@@ -257,7 +265,18 @@ internal sealed class XlsxSheetReader : IDisposable
             }
         }
 
-        return rawValue;
+        return FormatForCulture(rawValue, NumericCellCulture);
+    }
+
+    private static string FormatForCulture(string rawValue, CultureInfo? culture)
+    {
+        if (culture is null || culture.Name.Length == 0)
+            return rawValue;
+
+        // Stored numbers use only digits, '.', '-', '+' and 'E'. Replacing the decimal point keeps every stored digit
+        // (no round trip through decimal or double); the ASCII minus stays because every binder accepts it.
+        var separator = culture.NumberFormat.NumberDecimalSeparator;
+        return separator == "." ? rawValue : rawValue.Replace(".", separator, StringComparison.Ordinal);
     }
 
     private static string ConvertOleDate(double oleDate)

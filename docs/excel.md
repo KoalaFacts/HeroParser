@@ -217,7 +217,7 @@ The fluent builder exposes all read-time configuration options:
 ```csharp
 List<OrderRecord> orders = Excel.Read<OrderRecord>()
     .FromSheet("Orders")
-    .WithCulture("en-US")           // parse numbers/dates using this culture
+    .WithCulture("en-US")           // parse numbers/dates in text cells (numeric cells read as stored)
     .WithNullValues("N/A", "-", "") // treat these cell values as null
     .SkipRows(2)                    // skip 2 rows before header
     .WithMaxRows(10_000)            // stop after 10 000 data rows

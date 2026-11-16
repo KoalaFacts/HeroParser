@@ -414,6 +414,10 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             }
         }
 
+        // Numeric cells are stored in invariant notation; present data cells (not header names) in the culture the
+        // binder parses with.
+        sheetReader.NumericCellCulture = culture;
+
         var errors = new List<ValidationError>();
         int rowsRead = 0;
         char[] buffer = [];

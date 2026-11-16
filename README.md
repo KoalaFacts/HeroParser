@@ -381,7 +381,7 @@ internal partial class DeveloperJsonContext : JsonSerializerContext { }
 * **HTB binary format** — float-array embedding support, big-endian byte-order reversal, and direct CSV ↔ HTB conversion
 * **Embedding-API batching** — `IAsyncEnumerable<T>.BatchAsync(size)` groups streamed records into fixed-size batches for OpenAI/Voyage/Cohere/Anthropic embedding calls
 * **Inline vector parser** — `VectorParser.ParseFloats(span)` handles pre-computed embeddings (`"[0.1,0.2,…]"`, comma/semicolon/whitespace separators, culture-aware)
-* **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()` for database bulk loading via `SqlBulkCopy`
+* **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()` for database bulk loading via `SqlBulkCopy` (`CsvDataReader`, `FixedWidthDataReader`, and `ExcelDataReader` share the `TabularDataReader` `DbDataReader` base class)
 * **PipeReader integration** — `Csv.ReadFromPipeReaderAsync(pipe)` for network streaming without buffering the entire payload
 * **Multi-schema CSV** — discriminator-based row routing to different record types, with runtime and source-generated dispatch
 * **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score

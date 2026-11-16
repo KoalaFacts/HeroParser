@@ -25,7 +25,7 @@ Patch release introducing `TabularDataReader`, zero-allocation UTF-8 column/gene
 - Declared the `github-pages` environment on the benchmark deployment workflow (#203).
 
 ### Dependencies
-- `System.IO.Pipelines`: `11.0.0` on `net11.0` (`10.0.15` remains on `net8.0`–`net10.0`); `Sep` `0.17.1` → `0.18.0` in benchmarks.
+- `System.IO.Pipelines`: `11.0.0` on `net11.0` (`10.0.15` remains on `net8.0`–`net10.0`); `Sep` `0.17.1` → `0.18.0` in benchmarks; `Microsoft.Diagnostics.Tracing.TraceEvent` `3.2.8` → `4.0.0` in `CsvPipeDiagnostics`.
 
 ## [2.9.0] - 2026-11-15
 

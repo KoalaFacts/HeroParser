@@ -28,6 +28,9 @@ jobs:
   build-and-deploy:
     name: Run and Deploy Benchmarks
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:

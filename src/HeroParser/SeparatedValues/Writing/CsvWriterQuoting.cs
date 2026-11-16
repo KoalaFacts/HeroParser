@@ -368,15 +368,11 @@ internal static class CsvWriterQuoting
             bool isDangerous = AlwaysDangerousChars.Contains(c) ||
                                (additionalDangerousChars is not null && additionalDangerousChars.Contains(c));
 
-            // Smart handling for '-' and '+'
-            if (!isDangerous && (c == '-' || c == '+'))
+            // Smart handling for '-' and '+': check if followed by digit or decimal (safe pattern)
+            if (!isDangerous && (c == '-' || c == '+') && start + 1 < value.Length)
             {
-                // Check if followed by digit or decimal (safe pattern)
-                if (start + 1 < value.Length)
-                {
-                    char next = value[start + 1];
-                    isDangerous = !char.IsDigit(next) && next != '.';
-                }
+                char next = value[start + 1];
+                isDangerous = !char.IsDigit(next) && next != '.';
             }
 
             if (!isDangerous)

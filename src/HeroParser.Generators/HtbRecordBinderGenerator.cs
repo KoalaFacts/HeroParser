@@ -559,44 +559,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
 
             var typeName = property.Type.ToDisplayString(FullyQualifiedFormatWithNullable);
             var typeofTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-
-            // [Validate] — NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern, PatternTimeoutMs
-            bool validationNotNull = false;
-            bool validationNotEmpty = false;
-            int validationMaxLength = -1;
-            int validationMinLength = -1;
-            double validationRangeMin = double.NaN;
-            double validationRangeMax = double.NaN;
-            string? validationPattern = null;
-            int validationPatternTimeoutMs = 1000;
-            var validateAttribute = GetFirstMatchingAttribute(property, GeneratorHelpers.ValidateAttributeNames);
-            if (validateAttribute is not null)
-            {
-                foreach (var arg in validateAttribute.NamedArguments)
-                {
-#pragma warning disable IDE0010
-                    switch (arg.Key)
-                    {
-                        case "NotNull" when arg.Value.Value is bool r:
-                            validationNotNull = r; break;
-                        case "NotEmpty" when arg.Value.Value is bool ne:
-                            validationNotEmpty = ne; break;
-                        case "MaxLength" when arg.Value.Value is int ml && ml >= 0:
-                            validationMaxLength = ml; break;
-                        case "MinLength" when arg.Value.Value is int mnl && mnl >= 0:
-                            validationMinLength = mnl; break;
-                        case "RangeMin" when arg.Value.Value is double rmin && !double.IsNaN(rmin):
-                            validationRangeMin = rmin; break;
-                        case "RangeMax" when arg.Value.Value is double rmax && !double.IsNaN(rmax):
-                            validationRangeMax = rmax; break;
-                        case "Pattern" when arg.Value.Value is string p && !string.IsNullOrWhiteSpace(p):
-                            validationPattern = p; break;
-                        case "PatternTimeoutMs" when arg.Value.Value is int pt && pt > 0:
-                            validationPatternTimeoutMs = pt; break;
-                    }
-#pragma warning restore IDE0010
-                }
-            }
+            var validation = ParsedValidationRules.ExtractWithoutDiagnostics(property);
 
             members.Add(new MemberDescriptor(
                 property.Name,
@@ -606,14 +569,14 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
                 typeofTypeName,
                 baseTypeName,
                 isNullable,
-                validationNotNull,
-                validationNotEmpty,
-                validationMaxLength,
-                validationMinLength,
-                validationRangeMin,
-                validationRangeMax,
-                validationPattern,
-                validationPatternTimeoutMs));
+                validation.NotNull,
+                validation.NotEmpty,
+                validation.MaxLength,
+                validation.MinLength,
+                validation.RangeMin,
+                validation.RangeMax,
+                validation.Pattern,
+                validation.PatternTimeoutMs));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)

@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
-using HeroParser.FixedWidths.Records.Binding;
+using HeroParser.Internal;
 
 namespace HeroParser.FixedWidths.Mapping;
 
@@ -22,7 +22,7 @@ internal delegate TProperty Utf8SpanParser<out TProperty>(ReadOnlySpan<byte> spa
 [RequiresDynamicCode("Utf8SpanParserFactory uses MakeGenericMethod for enum parsing.")]
 internal static class Utf8SpanParserFactory
 {
-    public static Utf8SpanParser<TProperty> GetParser<TProperty>()
+    internal static Utf8SpanParser<TProperty> GetParser<TProperty>()
     {
         var type = typeof(TProperty);
         var underlyingType = Nullable.GetUnderlyingType(type);
@@ -31,7 +31,7 @@ internal static class Utf8SpanParserFactory
 
         object parser = targetType switch
         {
-            _ when targetType == typeof(string) => (Utf8SpanParser<string>)((span, _) => FixedWidthUtf8BindingHelper.Decode(span)),
+            _ when targetType == typeof(string) => (Utf8SpanParser<string>)((span, _) => Utf8SpanParser.Decode(span)),
             _ when targetType == typeof(int) => CreateValueParser(isNullable, static (span, culture) => ParseInt32(span, culture)),
             _ when targetType == typeof(long) => CreateValueParser(isNullable, static (span, culture) => ParseInt64(span, culture)),
             _ when targetType == typeof(short) => CreateValueParser(isNullable, static (span, culture) => ParseInt16(span, culture)),
@@ -39,7 +39,7 @@ internal static class Utf8SpanParserFactory
             _ when targetType == typeof(decimal) => CreateValueParser(isNullable, static (span, culture) => ParseDecimal(span, culture)),
             _ when targetType == typeof(double) => CreateValueParser(isNullable, static (span, culture) => ParseDouble(span, culture)),
             _ when targetType == typeof(float) => CreateValueParser(isNullable, static (span, culture) => ParseSingle(span, culture)),
-            _ when targetType == typeof(bool) => CreateValueParser(isNullable, static (span, _) => bool.Parse(FixedWidthUtf8BindingHelper.Decode(span))),
+            _ when targetType == typeof(bool) => CreateValueParser(isNullable, static (span, _) => bool.Parse(Utf8SpanParser.Decode(span))),
             _ when targetType == typeof(DateTime) => CreateValueParser(isNullable, static (span, culture) => ParseDateTime(span, culture)),
             _ when targetType == typeof(DateOnly) => CreateValueParser(isNullable, static (span, culture) => ParseDateOnly(span, culture)),
             _ when targetType == typeof(TimeOnly) => CreateValueParser(isNullable, static (span, culture) => ParseTimeOnly(span, culture)),
@@ -58,7 +58,7 @@ internal static class Utf8SpanParserFactory
 
         Utf8SpanParser<TValue?> nullableParser = (span, culture) =>
         {
-            if (span.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(span))
+            if (span.IsEmpty || Utf8SpanParser.IsNullOrWhiteSpace(span))
                 return null;
 
             return parser(span, culture);
@@ -83,16 +83,16 @@ internal static class Utf8SpanParserFactory
         var underlyingType = Nullable.GetUnderlyingType(typeof(TEnum)) ?? typeof(TEnum);
         return (span, _) =>
         {
-            if (isNullable && (span.IsEmpty || FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(span)))
+            if (isNullable && (span.IsEmpty || Utf8SpanParser.IsNullOrWhiteSpace(span)))
                 return default!;
 
-            return (TEnum)Enum.Parse(underlyingType, FixedWidthUtf8BindingHelper.Decode(span));
+            return (TEnum)Enum.Parse(underlyingType, Utf8SpanParser.Decode(span));
         };
     }
 
     private static int ParseInt32(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseInt32(span, culture, out var value))
+        if (Utf8SpanParser.TryParseInt32(span, culture, out var value))
             return value;
 
         ThrowFormatException();
@@ -101,7 +101,7 @@ internal static class Utf8SpanParserFactory
 
     private static long ParseInt64(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseInt64(span, culture, out var value))
+        if (Utf8SpanParser.TryParseInt64(span, culture, out var value))
             return value;
 
         ThrowFormatException();
@@ -110,7 +110,7 @@ internal static class Utf8SpanParserFactory
 
     private static short ParseInt16(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseInt16(span, culture, out var value))
+        if (Utf8SpanParser.TryParseInt16(span, culture, out var value))
             return value;
 
         ThrowFormatException();
@@ -119,7 +119,7 @@ internal static class Utf8SpanParserFactory
 
     private static byte ParseByte(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseByte(span, culture, out var value))
+        if (Utf8SpanParser.TryParseByte(span, culture, out var value))
             return value;
 
         ThrowFormatException();
@@ -128,7 +128,7 @@ internal static class Utf8SpanParserFactory
 
     private static decimal ParseDecimal(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseDecimal(span, culture, out var value))
+        if (Utf8SpanParser.TryParseDecimal(span, culture, NumberStyles.Number, out var value))
             return value;
 
         ThrowFormatException();
@@ -137,7 +137,7 @@ internal static class Utf8SpanParserFactory
 
     private static double ParseDouble(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseDouble(span, culture, out var value))
+        if (Utf8SpanParser.TryParseDouble(span, culture, NumberStyles.Float | NumberStyles.AllowThousands, out var value))
             return value;
 
         ThrowFormatException();
@@ -146,7 +146,7 @@ internal static class Utf8SpanParserFactory
 
     private static float ParseSingle(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseSingle(span, culture, out var value))
+        if (Utf8SpanParser.TryParseSingle(span, culture, NumberStyles.Float | NumberStyles.AllowThousands, out var value))
             return value;
 
         ThrowFormatException();
@@ -155,7 +155,7 @@ internal static class Utf8SpanParserFactory
 
     private static DateTime ParseDateTime(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseDateTime(span, culture, format: null, out var value))
+        if (Utf8SpanParser.TryParseDateTime(span, culture, DateTimeStyles.None, out var value))
             return value;
 
         ThrowFormatException();
@@ -164,7 +164,7 @@ internal static class Utf8SpanParserFactory
 
     private static DateOnly ParseDateOnly(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseDateOnly(span, culture, format: null, out var value))
+        if (Utf8SpanParser.TryParseDateOnly(span, culture, DateTimeStyles.None, out var value))
             return value;
 
         ThrowFormatException();
@@ -173,7 +173,7 @@ internal static class Utf8SpanParserFactory
 
     private static TimeOnly ParseTimeOnly(ReadOnlySpan<byte> span, CultureInfo culture)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseTimeOnly(span, culture, format: null, out var value))
+        if (Utf8SpanParser.TryParseTimeOnly(span, culture, DateTimeStyles.None, out var value))
             return value;
 
         ThrowFormatException();
@@ -182,7 +182,7 @@ internal static class Utf8SpanParserFactory
 
     private static Guid ParseGuid(ReadOnlySpan<byte> span)
     {
-        if (FixedWidthUtf8BindingHelper.TryParseGuid(span, out var value))
+        if (Utf8SpanParser.TryParseGuid(span, out var value))
             return value;
 
         ThrowFormatException();

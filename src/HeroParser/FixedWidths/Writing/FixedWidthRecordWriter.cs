@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using HeroParser.FixedWidths.Records.Binding;
+using HeroParser.Internal;
 using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Writing;
@@ -496,21 +497,7 @@ public sealed class FixedWidthRecordWriter<T>
             var parseAttr = prop.GetCustomAttribute<ParseAttribute>();
             var formatAttr = prop.GetCustomAttribute<FormatAttribute>();
             var validateAttr = prop.GetCustomAttribute<ValidateAttribute>();
-            WritePropertyValidation? validation = null;
-            if (validateAttr is not null)
-            {
-                var v = new WritePropertyValidation(
-                    validateAttr.NotNull,
-                    validateAttr.NotEmpty,
-                    validateAttr.MaxLength >= 0 ? validateAttr.MaxLength : null,
-                    validateAttr.MinLength >= 0 ? validateAttr.MinLength : null,
-                    !double.IsNaN(validateAttr.RangeMin) ? validateAttr.RangeMin : null,
-                    !double.IsNaN(validateAttr.RangeMax) ? validateAttr.RangeMax : null,
-                    validateAttr.Pattern,
-                    validateAttr.PatternTimeoutMs);
-                if (v.HasAnyRule)
-                    validation = v;
-            }
+            var validation = WritePropertyValidation.FromAttribute(validateAttr, requireAnyRule: true);
             fields[i] = new FieldDefinition
             {
                 Name = prop.Name,
@@ -520,23 +507,12 @@ public sealed class FixedWidthRecordWriter<T>
                 Alignment = attr.Alignment,
                 PadChar = attr.PadChar == '\0' ? ' ' : attr.PadChar,
                 Format = formatAttr?.WriteFormat ?? parseAttr?.Format,
-                Getter = BuildGetter(prop),
+                Getter = PropertyAccessorCompiler.CompileTypedGetter<T>(prop),
                 Validation = validation
             };
         }
 
         return fields;
-    }
-
-    [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
-    private static Func<T, object?> BuildGetter(PropertyInfo prop)
-    {
-        // Use compiled expression for better performance
-        var param = System.Linq.Expressions.Expression.Parameter(typeof(T), "x");
-        var access = System.Linq.Expressions.Expression.Property(param, prop);
-        var convert = System.Linq.Expressions.Expression.Convert(access, typeof(object));
-        var lambda = System.Linq.Expressions.Expression.Lambda<Func<T, object?>>(convert, param);
-        return lambda.Compile();
     }
 
     private readonly struct FieldDefinition

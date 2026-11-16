@@ -26,7 +26,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
 {
     private readonly ReadOnlySpan<T> data;
     private readonly CsvReadOptions options;
-    private readonly PooledColumnEnds columnEndsBuffer;
+    private readonly PooledColumnEnds? columnEndsBuffer;
     private readonly int[] columnEnds;
     private readonly bool trackLineNumbers;
     private readonly bool enableQuotedFields;
@@ -66,10 +66,19 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
         rowCount = 0;
         sourceLineNumber = 1; // Start at line 1
         Current = default;
-        // Ends-only storage sized for the scanner's single-row mode (max columns plus its chunk reserve).
-        columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
-        columnEnds = columnEndsBuffer.Buffer;
         cursor = allowBatchScan ? CsvRowBatchCursor.TryCreate(options, batchEndsCapacity) : null;
+        if (cursor is null)
+        {
+            // Ends-only storage sized for the scanner's single-row mode (max columns plus its chunk reserve).
+            columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
+            columnEnds = columnEndsBuffer.Buffer;
+        }
+        else
+        {
+            // Reuse the cursor's drained ends buffer on single-row fallback instead of renting a second array.
+            columnEndsBuffer = null;
+            columnEnds = cursor.ScratchEnds;
+        }
     }
 
     /// <summary>Gets the current row.</summary>
@@ -87,6 +96,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     /// </summary>
     /// <returns><see langword="true"/> when another row was parsed; otherwise, <see langword="false"/>.</returns>
     /// <exception cref="CsvException">Thrown when the input violates <see cref="CsvReadOptions"/>.</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool MoveNext()
     {
         return cursor is not null ? MoveNextBatched(cursor) : MoveNextPerRow();
@@ -137,7 +147,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
 
             var remaining = data[position..];
             int rowStartLine = trackLineNumbers ? sourceLineNumber : 0; // Only capture when tracking enabled
-            var columnEndsSpan = columnEndsBuffer.Span;
+            var columnEndsSpan = columnEndsBuffer is not null ? columnEndsBuffer.Span : cursor!.ScratchEnds.AsSpan();
 
             CsvRowParseResult result = !trackLineNumbers
                 ? (enableQuotedFields
@@ -187,7 +197,7 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
     /// </summary>
     public readonly void Dispose()
     {
-        columnEndsBuffer.Dispose();
+        columnEndsBuffer?.Dispose();
         cursor?.Dispose();
     }
 }

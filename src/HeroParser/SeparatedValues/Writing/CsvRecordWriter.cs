@@ -1,9 +1,9 @@
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.Validation;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Linq.Expressions;
 using System.Reflection;
 
 namespace HeroParser.SeparatedValues.Writing;
@@ -1054,53 +1054,18 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
             var format = formatAttr?.WriteFormat ?? parseAttr?.Format;
 
             var validateAttr = property.GetCustomAttribute<ValidateAttribute>();
-            WritePropertyValidation? validation = null;
-            if (validateAttr is not null)
-            {
-                validation = new WritePropertyValidation(
-                    validateAttr.NotNull,
-                    validateAttr.NotEmpty,
-                    validateAttr.MaxLength >= 0 ? validateAttr.MaxLength : null,
-                    validateAttr.MinLength >= 0 ? validateAttr.MinLength : null,
-                    !double.IsNaN(validateAttr.RangeMin) ? validateAttr.RangeMin : null,
-                    !double.IsNaN(validateAttr.RangeMax) ? validateAttr.RangeMax : null,
-                    validateAttr.Pattern,
-                    validateAttr.PatternTimeoutMs);
-            }
+            var validation = WritePropertyValidation.FromAttribute(validateAttr);
 
             accessors[i] = new PropertyAccessor(
                 property.Name,
                 headerName,
                 format,
                 formatAttr?.ExcludeIfAllEmpty ?? false,
-                CreateGetter(property),
+                PropertyAccessorCompiler.CompileBoxedGetter(property),
                 validation);
         }
 
         return accessors;
-    }
-
-    [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
-    private static Func<object, object?> CreateGetter(PropertyInfo property)
-    {
-        // Create a compiled expression tree for ~10x faster access than MethodInfo.Invoke
-        // Expression: (object instance) => (object?)((T)instance).Property
-        var instanceParam = Expression.Parameter(typeof(object), "instance");
-
-        // Cast instance from object to the declaring type
-        var castInstance = Expression.Convert(instanceParam, property.DeclaringType!);
-
-        // Access the property
-        var propertyAccess = Expression.Property(castInstance, property);
-
-        // Box the result if it's a value type, otherwise just cast to object
-        Expression body = property.PropertyType.IsValueType
-            ? Expression.Convert(propertyAccess, typeof(object))
-            : Expression.TypeAs(propertyAccess, typeof(object));
-
-        // Compile and return the delegate
-        var lambda = Expression.Lambda<Func<object, object?>>(body, instanceParam);
-        return lambda.Compile();
     }
 
     private sealed class PropertyAccessor(string memberName, string headerName, string? format, bool excludeFromWriteIfAllEmpty, Func<object, object?> getter, WritePropertyValidation? validation = null)

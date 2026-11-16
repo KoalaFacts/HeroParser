@@ -1594,27 +1594,16 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             var writerFormat = member.WriteFormat ?? member.Format;
             builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
             builder.AppendLine($"{member.GetterFactory},");
-            if (member.ValidationNotNull || member.ValidationNotEmpty
-                || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
-                || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
-                || member.ValidationPattern != null)
-            {
-                builder.AppendLine($"new global::HeroParser.Validation.WritePropertyValidation(");
-                builder.Indent();
-                builder.AppendLine($"{(member.ValidationNotNull ? "true" : "false")},");
-                builder.AppendLine($"{(member.ValidationNotEmpty ? "true" : "false")},");
-                builder.AppendLine(member.ValidationMaxLength >= 0 ? $"{member.ValidationMaxLength}," : "null,");
-                builder.AppendLine(member.ValidationMinLength >= 0 ? $"{member.ValidationMinLength}," : "null,");
-                builder.AppendLine(!double.IsNaN(member.ValidationRangeMin) ? FormattableString.Invariant($"{member.ValidationRangeMin},") : "null,");
-                builder.AppendLine(!double.IsNaN(member.ValidationRangeMax) ? FormattableString.Invariant($"{member.ValidationRangeMax},") : "null,");
-                builder.AppendLine(member.ValidationPattern != null ? $"\"{EscapeString(member.ValidationPattern)}\"," : "null,");
-                builder.AppendLine($"{member.ValidationPatternTimeoutMs})),");
-                builder.Unindent();
-            }
-            else
-            {
-                builder.AppendLine("null),");
-            }
+            EmitWriteValidationArgument(
+                builder,
+                member.ValidationNotNull,
+                member.ValidationNotEmpty,
+                member.ValidationMaxLength,
+                member.ValidationMinLength,
+                member.ValidationRangeMin,
+                member.ValidationRangeMax,
+                member.ValidationPattern,
+                member.ValidationPatternTimeoutMs);
             builder.Unindent();
         }
 
@@ -1680,73 +1669,9 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             if (length == 0 && end > start)
                 length = end - start;
 
-            // [Parse] — Format
-            string? format = null;
-            var parseAttribute = GetFirstMatchingAttribute(property, ParseAttributeNames);
-            if (parseAttribute is not null)
-            {
-#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
-                foreach (var arg in parseAttribute.NamedArguments)
-                {
-                    switch (arg.Key)
-                    {
-                        case "Format" when arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f):
-                            format = f;
-                            break;
-                    }
-                }
-#pragma warning restore IDE0010
-            }
-
-            // [Format] — WriteFormat (writer-side)
-            string? writeFormat = null;
-            var formatAttribute = GetFirstMatchingAttribute(property, FormatAttributeNames);
-            if (formatAttribute is not null)
-            {
-                foreach (var arg in formatAttribute.NamedArguments)
-                {
-                    if (arg.Key == "WriteFormat" && arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf))
-                        writeFormat = wf;
-                }
-            }
-
-            // [Validate] — NotNull, NotEmpty, MaxLength, MinLength, RangeMin, RangeMax, Pattern, PatternTimeoutMs
-            bool validationRequired = false;
-            bool validationNotEmpty = false;
-            int validationMaxLength = -1;
-            int validationMinLength = -1;
-            double validationRangeMin = double.NaN;
-            double validationRangeMax = double.NaN;
-            string? validationPattern = null;
-            int validationPatternTimeoutMs = 1000;
-            var validateAttribute = GetFirstMatchingAttribute(property, ValidateAttributeNames);
-            if (validateAttribute is not null)
-            {
-#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
-                foreach (var arg in validateAttribute.NamedArguments)
-                {
-                    switch (arg.Key)
-                    {
-                        case "NotNull" when arg.Value.Value is bool r:
-                            validationRequired = r; break;
-                        case "NotEmpty" when arg.Value.Value is bool ne:
-                            validationNotEmpty = ne; break;
-                        case "MaxLength" when arg.Value.Value is int ml && ml >= 0:
-                            validationMaxLength = ml; break;
-                        case "MinLength" when arg.Value.Value is int mnl && mnl >= 0:
-                            validationMinLength = mnl; break;
-                        case "RangeMin" when arg.Value.Value is double rmin && !double.IsNaN(rmin):
-                            validationRangeMin = rmin; break;
-                        case "RangeMax" when arg.Value.Value is double rmax && !double.IsNaN(rmax):
-                            validationRangeMax = rmax; break;
-                        case "Pattern" when arg.Value.Value is string pat && !string.IsNullOrWhiteSpace(pat):
-                            validationPattern = pat; break;
-                        case "PatternTimeoutMs" when arg.Value.Value is int pt && pt > 0:
-                            validationPatternTimeoutMs = pt; break;
-                    }
-                }
-#pragma warning restore IDE0010
-            }
+            var parsedAttrs = ParsedPropertyAttributes.Extract(property);
+            var format = parsedAttrs.ParseFormat;
+            var writeFormat = parsedAttrs.WriteFormat;
 
             if (!IsSupportedType(property.Type))
             {
@@ -1764,38 +1689,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             var writeFormatLiteral = writeFormat != null ? EscapeString(writeFormat) : null;
 
             var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
+            var validation = ParsedValidationRules.ExtractAndValidate(property, baseTypeName, diagnostics);
 
             if (padChar == '\0')
                 padChar = ' ';
-
-            bool isStringType = baseTypeName is "string" or "string?";
-            bool isNumericType = baseTypeName is "int" or "System.Int32" or "long" or "System.Int64"
-                or "short" or "System.Int16" or "byte" or "System.Byte" or "uint" or "System.UInt32"
-                or "ulong" or "System.UInt64" or "ushort" or "System.UInt16" or "sbyte" or "System.SByte"
-                or "decimal" or "System.Decimal" or "double" or "System.Double" or "float" or "System.Single";
-
-            if (validationNotEmpty && !isStringType)
-            {
-                diagnostics.Add(Diagnostic.Create(NotEmptyOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
-                validationNotEmpty = false;
-            }
-            if ((validationMaxLength >= 0 || validationMinLength >= 0) && !isStringType)
-            {
-                diagnostics.Add(Diagnostic.Create(LengthOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
-                validationMaxLength = -1;
-                validationMinLength = -1;
-            }
-            if ((!double.IsNaN(validationRangeMin) || !double.IsNaN(validationRangeMax)) && !isNumericType)
-            {
-                diagnostics.Add(Diagnostic.Create(RangeOnNonNumericDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
-                validationRangeMin = double.NaN;
-                validationRangeMax = double.NaN;
-            }
-            if (validationPattern != null && !isStringType)
-            {
-                diagnostics.Add(Diagnostic.Create(PatternOnNonStringDiagnostic, property.Locations.FirstOrDefault() ?? Location.None, property.Name, baseTypeName));
-                validationPattern = null;
-            }
 
             var setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
             var getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
@@ -1815,14 +1712,14 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
                 baseTypeName,
                 isNullable,
                 isEnum,
-                validationRequired,
-                validationNotEmpty,
-                validationMaxLength,
-                validationMinLength,
-                validationRangeMin,
-                validationRangeMax,
-                validationPattern,
-                validationPatternTimeoutMs));
+                validation.NotNull,
+                validation.NotEmpty,
+                validation.MaxLength,
+                validation.MinLength,
+                validation.RangeMin,
+                validation.RangeMax,
+                validation.Pattern,
+                validation.PatternTimeoutMs));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)
@@ -1836,32 +1733,6 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         return new TypeDescriptor(fqName, safeClassName, members, diagnostics, type.IsValueType);
     }
 
-    private static (string baseTypeName, bool isNullable, bool isEnum) GetBaseTypeInfo(ITypeSymbol type)
-    {
-        var isNullable = false;
-        var actualType = type;
-
-        if (type is INamedTypeSymbol { IsGenericType: true, Name: "Nullable" } nullable)
-        {
-            isNullable = true;
-            actualType = nullable.TypeArguments[0];
-        }
-
-        if (type.NullableAnnotation == NullableAnnotation.Annotated && type.OriginalDefinition.SpecialType == SpecialType.None)
-        {
-            isNullable = true;
-        }
-
-        var isEnum = actualType.TypeKind == TypeKind.Enum;
-        var baseTypeName = actualType.ToDisplayString();
-        if (baseTypeName.EndsWith("?"))
-        {
-            baseTypeName = baseTypeName.Substring(0, baseTypeName.Length - 1);
-        }
-
-        return (baseTypeName, isNullable, isEnum);
-    }
-
     private static string GetAlignmentName(int value)
     {
         return value switch
@@ -1873,12 +1744,6 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             _ => "Left"
         };
     }
-
-    private static string CreateSetter(string typeName, INamedTypeSymbol type, string propertyName)
-        => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target, object? val) => target.{propertyName} = ({typeName})val!";
-
-    private static string CreateGetter(INamedTypeSymbol type, string propertyName)
-        => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target) => target.{propertyName}";
 
     private sealed record TypeDescriptor(
         string FullyQualifiedName,

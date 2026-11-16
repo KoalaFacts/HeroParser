@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <!-- Central version of the project (single source of truth) -->
-    <Version>2.9.0</Version>
+    <Version>2.9.1</Version>
 
     <!-- Default multi-targeting for all projects -->
     <!-- Individual projects can override if they need specific frameworks (e.g., source generators using netstandard2.0) -->
@@ -21,6 +21,7 @@
   <PropertyGroup>
     <!-- Keep the language contract compatible with the .NET 10 SDK when building with newer SDKs. -->
     <LangVersion>14.0</LangVersion>
+    <Features Condition="'$(TargetFramework)' == 'net11.0'">runtime-async=on</Features>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AnalysisLevel>latest</AnalysisLevel>

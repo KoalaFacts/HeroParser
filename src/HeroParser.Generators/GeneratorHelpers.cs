@@ -2,9 +2,181 @@ using Microsoft.CodeAnalysis;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace HeroParser.Generators;
+
+/// <summary>
+/// Extracted read/write format metadata from <c>[Parse]</c> and <c>[Format]</c> attributes.
+/// </summary>
+internal readonly record struct ParsedPropertyAttributes(
+    string? ParseFormat,
+    string? WriteFormat,
+    bool ExcludeIfAllEmpty)
+{
+    /// <summary>Extracts <c>[Parse]</c> and <c>[Format]</c> metadata from a symbol.</summary>
+    internal static ParsedPropertyAttributes Extract(ISymbol symbol)
+    {
+        string? parseFormat = null;
+        var parseAttribute = GeneratorHelpers.GetFirstMatchingAttribute(symbol, GeneratorHelpers.ParseAttributeNames);
+        if (parseAttribute is not null)
+        {
+            foreach (var arg in parseAttribute.NamedArguments)
+            {
+                if (arg.Key == "Format" && arg.Value.Value is string f && !string.IsNullOrWhiteSpace(f))
+                {
+                    parseFormat = f;
+                    break;
+                }
+            }
+        }
+
+        string? writeFormat = null;
+        bool excludeIfAllEmpty = false;
+        var formatAttribute = GeneratorHelpers.GetFirstMatchingAttribute(symbol, GeneratorHelpers.FormatAttributeNames);
+        if (formatAttribute is not null)
+        {
+            foreach (var arg in formatAttribute.NamedArguments)
+            {
+                if (arg.Key == "WriteFormat" && arg.Value.Value is string wf && !string.IsNullOrWhiteSpace(wf))
+                    writeFormat = wf;
+                else if (arg.Key == "ExcludeIfAllEmpty" && arg.Value.Value is bool e)
+                    excludeIfAllEmpty = e;
+            }
+        }
+
+        return new ParsedPropertyAttributes(parseFormat, writeFormat, excludeIfAllEmpty);
+    }
+}
+
+/// <summary>
+/// Extracted validation constraints from <c>[Validate]</c> with optional diagnostic checks.
+/// </summary>
+internal readonly record struct ParsedValidationRules(
+    bool NotNull,
+    bool NotEmpty,
+    int MaxLength,
+    int MinLength,
+    double RangeMin,
+    double RangeMax,
+    string? Pattern,
+    int PatternTimeoutMs)
+{
+    /// <summary>Gets whether any validation constraint is active.</summary>
+    internal bool HasAnyRule => NotNull || NotEmpty
+        || MaxLength >= 0 || MinLength >= 0
+        || !double.IsNaN(RangeMin) || !double.IsNaN(RangeMax)
+        || Pattern != null;
+
+    /// <summary>Extracts <c>[Validate]</c> arguments without running type compatibility diagnostics.</summary>
+    internal static ParsedValidationRules ExtractWithoutDiagnostics(ISymbol property)
+    {
+        bool notNull = false;
+        bool notEmpty = false;
+        int maxLength = -1;
+        int minLength = -1;
+        double rangeMin = double.NaN;
+        double rangeMax = double.NaN;
+        string? pattern = null;
+        int patternTimeoutMs = 1000;
+
+        var validateAttribute = GeneratorHelpers.GetFirstMatchingAttribute(property, GeneratorHelpers.ValidateAttributeNames);
+        if (validateAttribute is not null)
+        {
+#pragma warning disable IDE0010 // Populate switch - intentionally not exhaustive
+            foreach (var arg in validateAttribute.NamedArguments)
+            {
+                switch (arg.Key)
+                {
+                    case "NotNull" when arg.Value.Value is bool r:
+                        notNull = r; break;
+                    case "NotEmpty" when arg.Value.Value is bool ne:
+                        notEmpty = ne; break;
+                    case "MaxLength" when arg.Value.Value is int ml && ml >= 0:
+                        maxLength = ml; break;
+                    case "MinLength" when arg.Value.Value is int mnl && mnl >= 0:
+                        minLength = mnl; break;
+                    case "RangeMin" when arg.Value.Value is double rmin && !double.IsNaN(rmin):
+                        rangeMin = rmin; break;
+                    case "RangeMax" when arg.Value.Value is double rmax && !double.IsNaN(rmax):
+                        rangeMax = rmax; break;
+                    case "Pattern" when arg.Value.Value is string pat && !string.IsNullOrWhiteSpace(pat):
+                        pattern = pat; break;
+                    case "PatternTimeoutMs" when arg.Value.Value is int pt && pt > 0:
+                        patternTimeoutMs = pt; break;
+                }
+            }
+#pragma warning restore IDE0010
+        }
+
+        return new ParsedValidationRules(
+            notNull,
+            notEmpty,
+            maxLength,
+            minLength,
+            rangeMin,
+            rangeMax,
+            pattern,
+            patternTimeoutMs);
+    }
+
+    /// <summary>Extracts <c>[Validate]</c> arguments and emits HERO004–HERO007 diagnostics for mismatched property types.</summary>
+    internal static ParsedValidationRules ExtractAndValidate(
+        IPropertySymbol property,
+        string baseTypeName,
+        List<Diagnostic> diagnostics)
+    {
+        var rules = ExtractWithoutDiagnostics(property);
+        var location = property.Locations.FirstOrDefault() ?? Location.None;
+
+        bool isStringType = baseTypeName is "string" or "string?";
+        bool isNumericType = baseTypeName is "int" or "System.Int32" or "long" or "System.Int64"
+            or "short" or "System.Int16" or "byte" or "System.Byte" or "uint" or "System.UInt32"
+            or "ulong" or "System.UInt64" or "ushort" or "System.UInt16" or "sbyte" or "System.SByte"
+            or "decimal" or "System.Decimal" or "double" or "System.Double" or "float" or "System.Single";
+
+        bool notEmpty = rules.NotEmpty;
+        int maxLength = rules.MaxLength;
+        int minLength = rules.MinLength;
+        double rangeMin = rules.RangeMin;
+        double rangeMax = rules.RangeMax;
+        string? pattern = rules.Pattern;
+
+        if (notEmpty && !isStringType)
+        {
+            diagnostics.Add(Diagnostic.Create(GeneratorHelpers.NotEmptyOnNonStringDiagnostic, location, property.Name, baseTypeName));
+            notEmpty = false;
+        }
+        if ((maxLength >= 0 || minLength >= 0) && !isStringType)
+        {
+            diagnostics.Add(Diagnostic.Create(GeneratorHelpers.LengthOnNonStringDiagnostic, location, property.Name, baseTypeName));
+            maxLength = -1;
+            minLength = -1;
+        }
+        if ((!double.IsNaN(rangeMin) || !double.IsNaN(rangeMax)) && !isNumericType)
+        {
+            diagnostics.Add(Diagnostic.Create(GeneratorHelpers.RangeOnNonNumericDiagnostic, location, property.Name, baseTypeName));
+            rangeMin = double.NaN;
+            rangeMax = double.NaN;
+        }
+        if (pattern != null && !isStringType)
+        {
+            diagnostics.Add(Diagnostic.Create(GeneratorHelpers.PatternOnNonStringDiagnostic, location, property.Name, baseTypeName));
+            pattern = null;
+        }
+
+        return rules with
+        {
+            NotEmpty = notEmpty,
+            MaxLength = maxLength,
+            MinLength = minLength,
+            RangeMin = rangeMin,
+            RangeMax = rangeMax,
+            Pattern = pattern
+        };
+    }
+}
 
 /// <summary>
 /// Shared utilities for source generators.
@@ -13,43 +185,43 @@ internal static class GeneratorHelpers
 {
 #pragma warning disable RS2008 // Enable analyzer release tracking - not needed for internal generator
     // Shared validation diagnostics used by both CSV and FixedWidth generators
-    public static readonly DiagnosticDescriptor NotEmptyOnNonStringDiagnostic = new(
+    internal static readonly DiagnosticDescriptor NotEmptyOnNonStringDiagnostic = new(
         "HERO004", "NotEmpty only applies to string properties",
         "Property '{0}' has NotEmpty = true but is type '{1}'. NotEmpty only applies to string properties.",
         "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor LengthOnNonStringDiagnostic = new(
+    internal static readonly DiagnosticDescriptor LengthOnNonStringDiagnostic = new(
         "HERO005", "MaxLength/MinLength only apply to string properties",
         "Property '{0}' has MaxLength or MinLength but is type '{1}'. These only apply to string properties.",
         "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor RangeOnNonNumericDiagnostic = new(
+    internal static readonly DiagnosticDescriptor RangeOnNonNumericDiagnostic = new(
         "HERO006", "RangeMin/RangeMax only apply to numeric properties",
         "Property '{0}' has RangeMin or RangeMax but is type '{1}'. These only apply to numeric properties.",
         "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor PatternOnNonStringDiagnostic = new(
+    internal static readonly DiagnosticDescriptor PatternOnNonStringDiagnostic = new(
         "HERO007", "Pattern only applies to string properties",
         "Property '{0}' has Pattern but is type '{1}'. Pattern only applies to string properties.",
         "HeroParser.Generators", DiagnosticSeverity.Error, isEnabledByDefault: true);
 #pragma warning restore RS2008
 
     // Shared attribute name lists used by both CSV and FixedWidth generators
-    public static readonly IReadOnlyList<string> ParseAttributeNames = ["HeroParser.ParseAttribute"];
-    public static readonly IReadOnlyList<string> ValidateAttributeNames = ["HeroParser.ValidateAttribute"];
-    public static readonly IReadOnlyList<string> FormatAttributeNames = ["HeroParser.FormatAttribute"];
+    internal static readonly IReadOnlyList<string> ParseAttributeNames = ["HeroParser.ParseAttribute"];
+    internal static readonly IReadOnlyList<string> ValidateAttributeNames = ["HeroParser.ValidateAttribute"];
+    internal static readonly IReadOnlyList<string> FormatAttributeNames = ["HeroParser.FormatAttribute"];
 
     /// <summary>
     /// Fully qualified format with nullable reference type modifiers.
     /// </summary>
-    public static readonly SymbolDisplayFormat FullyQualifiedFormatWithNullable =
+    internal static readonly SymbolDisplayFormat FullyQualifiedFormatWithNullable =
         SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
 
     /// <summary>
     /// Checks if an attribute matches any of the given names.
     /// </summary>
-    public static bool IsNamed(AttributeData attribute, IReadOnlyList<string> names)
+    internal static bool IsNamed(AttributeData attribute, IReadOnlyList<string> names)
     {
         var name = attribute.AttributeClass?.ToDisplayString();
         if (name is null)
@@ -67,7 +239,7 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Gets the first attribute matching any of the given names.
     /// </summary>
-    public static AttributeData? GetFirstMatchingAttribute(ISymbol symbol, IReadOnlyList<string> names)
+    internal static AttributeData? GetFirstMatchingAttribute(ISymbol symbol, IReadOnlyList<string> names)
     {
         foreach (var attr in symbol.GetAttributes())
         {
@@ -80,7 +252,7 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Checks if the type is accessible (at least internal).
     /// </summary>
-    public static bool IsTypeAccessible(INamedTypeSymbol type)
+    internal static bool IsTypeAccessible(INamedTypeSymbol type)
     {
         var current = type;
         while (current is not null)
@@ -99,7 +271,7 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Checks if a type is supported for binding.
     /// </summary>
-    public static bool IsSupportedType(ITypeSymbol type)
+    internal static bool IsSupportedType(ITypeSymbol type)
     {
         var underlying = type is INamedTypeSymbol named && named.IsGenericType && named.Name == "Nullable"
             ? named.TypeArguments[0]
@@ -127,7 +299,7 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Checks if a complex type is supported.
     /// </summary>
-    public static bool IsSupportedComplexType(ITypeSymbol type)
+    internal static bool IsSupportedComplexType(ITypeSymbol type)
     {
         return type.ToDisplayString() switch
         {
@@ -144,9 +316,83 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Checks if a type is ReadOnlyMemory&lt;char&gt;.
     /// </summary>
-    public static bool IsReadOnlyMemoryChar(ITypeSymbol type)
+    internal static bool IsReadOnlyMemoryChar(ITypeSymbol type)
     {
         return type.ToDisplayString() == "System.ReadOnlyMemory<char>";
+    }
+
+    /// <summary>
+    /// Extracts the underlying non-nullable type display name, nullability flag, and enum flag.
+    /// </summary>
+    internal static (string BaseTypeName, bool IsNullable, bool IsEnum) GetBaseTypeInfo(ITypeSymbol type)
+    {
+        var isNullable = false;
+        var actualType = type;
+
+        if (type is INamedTypeSymbol { IsGenericType: true, Name: "Nullable" } nullable)
+        {
+            isNullable = true;
+            actualType = nullable.TypeArguments[0];
+        }
+
+        if (type.NullableAnnotation == NullableAnnotation.Annotated && type.OriginalDefinition.SpecialType == SpecialType.None)
+        {
+            isNullable = true;
+        }
+
+        var isEnum = actualType.TypeKind == TypeKind.Enum;
+        var baseTypeName = actualType.ToDisplayString();
+        if (baseTypeName.EndsWith("?", StringComparison.Ordinal))
+        {
+            baseTypeName = baseTypeName.Substring(0, baseTypeName.Length - 1);
+        }
+
+        return (baseTypeName, isNullable, isEnum);
+    }
+
+    /// <summary>Creates a lambda expression string setting <paramref name="propertyName"/> on <paramref name="type"/>.</summary>
+    internal static string CreateSetter(string typeName, INamedTypeSymbol type, string propertyName)
+        => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target, object? val) => target.{propertyName} = ({typeName})val!";
+
+    /// <summary>Creates a lambda expression string reading <paramref name="propertyName"/> from <paramref name="type"/>.</summary>
+    internal static string CreateGetter(INamedTypeSymbol type, string propertyName)
+        => $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} target) => target.{propertyName}";
+
+    /// <summary>
+    /// Emits a <c>WritePropertyValidation</c> argument (or <c>null</c>) closing a <c>WriterTemplate(...)</c> constructor call.
+    /// </summary>
+    internal static void EmitWriteValidationArgument(
+        SourceBuilder builder,
+        bool notNull,
+        bool notEmpty,
+        int maxLength,
+        int minLength,
+        double rangeMin,
+        double rangeMax,
+        string? pattern,
+        int patternTimeoutMs)
+    {
+        if (notNull || notEmpty
+            || maxLength >= 0 || minLength >= 0
+            || !double.IsNaN(rangeMin) || !double.IsNaN(rangeMax)
+            || pattern != null)
+        {
+            builder.AppendLine("new global::HeroParser.Validation.WritePropertyValidation(");
+            builder.Indent();
+            builder.AppendLine($"{(notNull ? "true" : "false")},");
+            builder.AppendLine($"{(notEmpty ? "true" : "false")},");
+            builder.AppendLine(maxLength >= 0 ? $"{maxLength}," : "null,");
+            builder.AppendLine(minLength >= 0 ? $"{minLength}," : "null,");
+            builder.AppendLine(!double.IsNaN(rangeMin) ? FormattableString.Invariant($"{rangeMin},") : "null,");
+            builder.AppendLine(!double.IsNaN(rangeMax) ? FormattableString.Invariant($"{rangeMax},") : "null,");
+            builder.AppendLine(pattern != null ? $"\"{EscapeString(pattern)}\"," : "null,");
+            builder.AppendLine($"{patternTimeoutMs})),");
+            builder.Unindent();
+        }
+        else
+        {
+            builder.AppendLine("null),");
+        }
     }
 
     /// <summary>
@@ -155,7 +401,7 @@ internal static class GeneratorHelpers
     /// (<c>Nullable&lt;TEnum&gt;</c>), which does not satisfy the <c>struct, Enum</c> constraint
     /// (CS0453), so the suffix is removed to name the underlying enum.
     /// </summary>
-    public static string GetEnumTypeArgument(string fullyQualifiedTypeName)
+    internal static string GetEnumTypeArgument(string fullyQualifiedTypeName)
     {
         return fullyQualifiedTypeName.EndsWith("?", StringComparison.Ordinal)
             ? fullyQualifiedTypeName.Substring(0, fullyQualifiedTypeName.Length - 1)
@@ -165,7 +411,7 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Escapes a string for use in C# string literals.
     /// </summary>
-    public static string EscapeString(string value)
+    internal static string EscapeString(string value)
     {
         return value
             .Replace("\\", "\\\\")
@@ -179,7 +425,7 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Escapes a character for use in C# char literals.
     /// </summary>
-    public static string EscapeChar(char c)
+    internal static string EscapeChar(char c)
     {
         return c switch
         {
@@ -196,7 +442,7 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Creates a safe class name from a type symbol.
     /// </summary>
-    public static string CreateSafeClassName(INamedTypeSymbol type)
+    internal static string CreateSafeClassName(INamedTypeSymbol type)
     {
         var name = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
             .Replace("global::", "")
@@ -212,13 +458,13 @@ internal static class GeneratorHelpers
     /// Formats a number for generated source or JSON with the invariant culture. Generators run in the
     /// compiler under the build machine's culture, which may use a decimal comma or a U+2212 minus sign.
     /// </summary>
-    public static string FormatInvariant(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+    internal static string FormatInvariant(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Formats a <c>[Validate(RangeMin/RangeMax)]</c> bound as a C# literal of the member's type,
     /// independent of the build machine's culture.
     /// </summary>
-    public static string FormatRangeLiteral(double value, string baseType)
+    internal static string FormatRangeLiteral(double value, string baseType)
     {
         var inv = CultureInfo.InvariantCulture;
         return baseType switch
@@ -241,7 +487,7 @@ internal static class GeneratorHelpers
     /// <summary>
     /// Builds the range validation message emitted into generated binders, with invariant numbers.
     /// </summary>
-    public static string FormatRangeMessage(double min, double max)
+    internal static string FormatRangeMessage(double min, double max)
     {
         if (!double.IsNaN(min) && !double.IsNaN(max))
             return $"Value must be between {FormatInvariant(min)} and {FormatInvariant(max)}";
@@ -269,7 +515,7 @@ internal sealed class SourceBuilder
     /// <summary>
     /// Initializes a new instance with default capacity.
     /// </summary>
-    public SourceBuilder()
+    internal SourceBuilder()
     {
         builder = new StringBuilder(4096);
     }
@@ -277,7 +523,7 @@ internal sealed class SourceBuilder
     /// <summary>
     /// Initializes a new instance with specified capacity.
     /// </summary>
-    public SourceBuilder(int capacity)
+    internal SourceBuilder(int capacity)
     {
         builder = new StringBuilder(capacity);
     }
@@ -285,17 +531,17 @@ internal sealed class SourceBuilder
     /// <summary>
     /// Increases indentation level.
     /// </summary>
-    public void Indent() => indent++;
+    internal void Indent() => indent++;
 
     /// <summary>
     /// Decreases indentation level.
     /// </summary>
-    public void Unindent() => indent = Math.Max(0, indent - 1);
+    internal void Unindent() => indent = Math.Max(0, indent - 1);
 
     /// <summary>
     /// Appends a line with current indentation.
     /// </summary>
-    public void AppendLine(string line = "")
+    internal void AppendLine(string line = "")
     {
         for (int i = 0; i < indent; i++)
             builder.Append(INDENT_STRING);
@@ -305,7 +551,7 @@ internal sealed class SourceBuilder
     /// <summary>
     /// Appends text without indentation or newline.
     /// </summary>
-    public void Append(string text)
+    internal void Append(string text)
     {
         builder.Append(text);
     }
@@ -319,7 +565,7 @@ internal sealed class SourceBuilder
     /// <remarks>
     /// Call this method to reset the builder for generating a new file in the same source generator run.
     /// </remarks>
-    public void Clear()
+    internal void Clear()
     {
         builder.Clear();
         indent = 0;

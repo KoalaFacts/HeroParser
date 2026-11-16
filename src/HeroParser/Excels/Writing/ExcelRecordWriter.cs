@@ -4,7 +4,7 @@ using HeroParser.Validation;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Linq.Expressions;
+using HeroParser.Internal;
 using System.Numerics;
 using System.Reflection;
 
@@ -561,45 +561,18 @@ public sealed class ExcelRecordWriter<T>
             var headerName = !string.IsNullOrWhiteSpace(tabularMap?.Name) ? tabularMap.Name : property.Name;
             var format = formatAttr?.WriteFormat ?? parseAttr?.Format;
 
-            WritePropertyValidation? validation = null;
-            if (validateAttr is not null)
-            {
-                validation = new WritePropertyValidation(
-                    validateAttr.NotNull,
-                    validateAttr.NotEmpty,
-                    validateAttr.MaxLength >= 0 ? validateAttr.MaxLength : null,
-                    validateAttr.MinLength >= 0 ? validateAttr.MinLength : null,
-                    !double.IsNaN(validateAttr.RangeMin) ? validateAttr.RangeMin : null,
-                    !double.IsNaN(validateAttr.RangeMax) ? validateAttr.RangeMax : null,
-                    validateAttr.Pattern,
-                    validateAttr.PatternTimeoutMs);
-            }
+            var validation = WritePropertyValidation.FromAttribute(validateAttr);
 
             accessors[i] = new PropertyAccessor(
                 property.Name,
                 headerName,
                 format,
-                CreateGetter(property),
+                PropertyAccessorCompiler.CompileBoxedGetter(property),
                 property.PropertyType,
                 validation);
         }
 
         return accessors;
-    }
-
-    [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
-    private static Func<object, object?> CreateGetter(PropertyInfo property)
-    {
-        // Compiled expression tree for ~10x faster access than MethodInfo.Invoke
-        var instanceParam = Expression.Parameter(typeof(object), "instance");
-        var castInstance = Expression.Convert(instanceParam, property.DeclaringType!);
-        var propertyAccess = Expression.Property(castInstance, property);
-
-        Expression body = property.PropertyType.IsValueType
-            ? Expression.Convert(propertyAccess, typeof(object))
-            : Expression.TypeAs(propertyAccess, typeof(object));
-
-        return Expression.Lambda<Func<object, object?>>(body, instanceParam).Compile();
     }
 
     private sealed class PropertyAccessor(

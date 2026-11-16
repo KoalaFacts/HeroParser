@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Pipelines;
+using System.Runtime.CompilerServices;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Shared;
 using HeroParser.SeparatedValues.Reading.Rows;
@@ -310,7 +311,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 {
     private readonly PipeReader reader;
     private readonly CsvReadOptions options;
-    private readonly PooledColumnEnds columnEndsBuffer;
+    private int[] columnEndsBuffer;
     private readonly byte quote;
     private readonly byte? escape;
     private readonly bool enableQuotes;
@@ -341,7 +342,6 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     {
         this.reader = reader;
         this.options = options;
-        columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
         quote = (byte)options.Quote;
         escape = options.EscapeCharacter is { } escapeChar ? (byte)escapeChar : null;
         enableQuotes = options.EnableQuotedFields;
@@ -350,6 +350,9 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
         maxRowSize = options.MaxRowSize;
         sourceLineNumber = 1;
         cursor = CsvRowBatchCursor.TryCreate(options);
+        columnEndsBuffer = cursor is not null
+            ? cursor.ScratchEnds
+            : ArrayPool<int>.Shared.Rent(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
     }
 
     /// <summary>The current row; valid until the next <see cref="MoveNextAsync"/> call.</summary>
@@ -382,7 +385,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
 
             return new CsvPipeSequenceRow(
                 currentRowData,
-                columnEndsBuffer.Buffer.AsSpan(0, currentColumnCount + 1),
+                columnEndsBuffer.AsSpan(0, currentColumnCount + 1),
                 currentColumnCount,
                 currentRowNumber,
                 currentSourceLineNumber,
@@ -397,6 +400,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     /// <summary>
     /// Advances to the next row, reading from the underlying <see cref="PipeReader"/> as needed.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
         if (disposed)
@@ -523,8 +527,8 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 try
                 {
                     parseResult = trackLineNumbers
-                        ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer.Span)
-                        : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer.Span);
+                        ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer)
+                        : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer);
                 }
                 catch (CsvException ex) when (!bufferedIsCompleted && ex.QuoteStartPosition.HasValue)
                 {
@@ -619,7 +623,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                         quote,
                         escape,
                         enableQuotes,
-                        columnEndsBuffer.Span,
+                        columnEndsBuffer,
                         bufferedIsCompleted,
                         out rowData,
                         out columnCount,
@@ -644,7 +648,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                         break;
                     }
 
-                    columnCount = Csv.ParsePipeSequenceRow(rowData, options, rowNumber + 1, quote, escape, columnEndsBuffer.Span);
+                    columnCount = Csv.ParsePipeSequenceRow(rowData, options, rowNumber + 1, quote, escape, columnEndsBuffer);
                     // Comments and ordinary rows both count actual physical newlines,
                     // including any CRLF crossing from field data into the terminator.
                     newlineCount = trackLineNumbers
@@ -700,7 +704,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                     sourceLineNumber += Csv.CountNewlines(buffer);
                 }
 
-                int columnCount = Csv.ParsePipeSequenceRow(buffer, options, rowNumber + 1, quote, escape, columnEndsBuffer.Span);
+                int columnCount = Csv.ParsePipeSequenceRow(buffer, options, rowNumber + 1, quote, escape, columnEndsBuffer);
                 if (columnCount == 0)
                 {
                     ReleaseBufferedRead(buffer.End);
@@ -776,7 +780,11 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
         }
 
         cursor?.Dispose();
-        columnEndsBuffer.Return();
+        if (cursor is null && columnEndsBuffer is { } rentedEnds)
+        {
+            columnEndsBuffer = null!;
+            ArrayPool<int>.Shared.Return(rentedEnds, clearArray: false);
+        }
         await reader.CompleteAsync().ConfigureAwait(false);
     }
 
@@ -817,6 +825,7 @@ public readonly ref struct CsvPipeSequenceRow
     private readonly byte? escape;
     private readonly int baseOffset;   // subtracted from columnEnds to make them row-relative (batch rows share a window buffer)
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal CsvPipeSequenceRow(
         ReadOnlySequence<byte> data,
         ReadOnlySpan<int> columnEnds,
@@ -856,6 +865,7 @@ public readonly ref struct CsvPipeSequenceRow
     /// <summary>Gets the column at the specified zero-based index.</summary>
     public CsvPipeSequenceColumn this[int index]
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
             if ((uint)index >= (uint)columnCount)

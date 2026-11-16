@@ -35,6 +35,7 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
     private readonly int baseOffset;
     private readonly CsvReadOptions? parserOptions;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal CsvRow(
         ReadOnlySpan<T> line,
         ReadOnlySpan<int> columnEndsBuffer,
@@ -53,7 +54,9 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         this.baseOffset = baseOffset;
         this.parserOptions = parserOptions;
         // columnEnds has columnCount + 1 entries (including the leading sentinel)
-        columnEnds = columnEndsBuffer[..(columnCount + 1)];
+        columnEnds = columnEndsBuffer.Length == columnCount + 1
+            ? columnEndsBuffer
+            : columnEndsBuffer[..(columnCount + 1)];
     }
 
     /// <summary>Gets the number of parsed columns in the row.</summary>

@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Records;
+using HeroParser.Internal;
 using HeroParser.Validation;
 using CustomConverterDictionary = System.Collections.Generic.IReadOnlyDictionary<System.Type, HeroParser.FixedWidths.Records.InternalFixedWidthConverter>;
 
@@ -299,7 +300,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthSourceBinder<T> whe
     {
         if (errorHandler is null &&
             customConverters is null &&
-            FixedWidthUtf8BindingHelper.IsUtf8Encoding(encoding) &&
+            Utf8SpanParser.IsUtf8Encoding(encoding) &&
             FixedWidthRecordBinderFactory.TryCreateGeneratedByteBinder<T>(culture, nullValues, out var generatedByteBinder))
         {
             await foreach (var record in BindAsync(
@@ -428,7 +429,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthSourceBinder<T> whe
         ArgumentNullException.ThrowIfNull(binder);
         ArgumentNullException.ThrowIfNull(encoding);
 
-        if (FixedWidthUtf8BindingHelper.IsUtf8Encoding(encoding) && binder is IFixedWidthByteSourceBinder<T> byteBinder)
+        if (Utf8SpanParser.IsUtf8Encoding(encoding) && binder is IFixedWidthByteSourceBinder<T> byteBinder)
         {
             await foreach (var record in BindAsync(
                 reader,

@@ -188,6 +188,11 @@ internal sealed class CsvRowBatchCursor : IDisposable
     public int WindowBase { get; private set; }
 
     /// <summary>
+    /// Exposes the pooled <c>ends</c> array as scratch space for single-row fallback when the batch is drained.
+    /// </summary>
+    internal int[] ScratchEnds => ends ?? throw new ObjectDisposedException(nameof(CsvRowBatchCursor));
+
+    /// <summary>
     /// The ends-only column ends of a row taken from the current batch, in window-relative offsets:
     /// the sentinel <c>RowStart - 1</c>, one entry per delimiter, then the row end. Readers that build
     /// their own row type subtract <see cref="CsvBatchRow.RowStart"/> to make them row-relative.
@@ -198,6 +203,7 @@ internal sealed class CsvRowBatchCursor : IDisposable
     /// Builds the <see cref="CsvRow{T}"/> for a row taken from the current batch. <paramref name="buffer"/>
     /// must be the buffer that was passed to <see cref="Advance{T}"/>.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public CsvRow<T> CreateRow<T>(ReadOnlySpan<T> buffer, CsvBatchRow row, int rowNumber, int sourceLineFallback)
         where T : unmanaged, IEquatable<T>
     {

@@ -3,6 +3,8 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using HeroParser.Internal;
+using HeroParser.SeparatedValues.Reading.Shared;
 
 namespace HeroParser.SeparatedValues.Reading.Rows;
 
@@ -54,33 +56,45 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     }
 
     /// <summary>Parses the column using <see cref="ISpanParsable{TResult}"/> and invariant culture.</summary>
-    /// <remarks>For byte spans, allocates to decode UTF-8 to UTF-16.</remarks>
+    /// <remarks>For byte spans, uses stack allocation for fields up to 256 UTF-16 characters.</remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TResult Parse<TResult>() where TResult : ISpanParsable<TResult>
+        => Parse<TResult>(CultureInfo.InvariantCulture);
+
+    /// <summary>Parses the column using <see cref="ISpanParsable{TResult}"/> and the specified format provider.</summary>
+    /// <remarks>For byte spans, uses stack allocation for fields up to 256 UTF-16 characters.</remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public TResult Parse<TResult>(IFormatProvider? provider) where TResult : ISpanParsable<TResult>
     {
         if (typeof(T) == typeof(char))
         {
-            return TResult.Parse(GetCharSpan(), CultureInfo.InvariantCulture);
+            return TResult.Parse(GetCharSpan(), provider);
         }
         if (typeof(T) == typeof(byte))
         {
-            return TResult.Parse(Decode(), CultureInfo.InvariantCulture);
+            return Utf8SpanParser.ParseIsomorphic<TResult>(GetByteSpan(), provider);
         }
         throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
     }
 
     /// <summary>Attempts to parse the column using <see cref="ISpanParsable{TResult}"/> and invariant culture.</summary>
-    /// <remarks>For byte spans, allocates to decode UTF-8 to UTF-16.</remarks>
+    /// <remarks>For byte spans, uses stack allocation for fields up to 256 UTF-16 characters.</remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParse<TResult>(out TResult? result) where TResult : ISpanParsable<TResult>
+        => TryParse(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the column using <see cref="ISpanParsable{TResult}"/> and the specified format provider.</summary>
+    /// <remarks>For byte spans, uses stack allocation for fields up to 256 UTF-16 characters.</remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParse<TResult>(out TResult? result, IFormatProvider? provider) where TResult : ISpanParsable<TResult>
     {
         if (typeof(T) == typeof(char))
         {
-            return TResult.TryParse(GetCharSpan(), CultureInfo.InvariantCulture, out result);
+            return TResult.TryParse(GetCharSpan(), provider, out result);
         }
         if (typeof(T) == typeof(byte))
         {
-            return TResult.TryParse(Decode(), CultureInfo.InvariantCulture, out result);
+            return Utf8SpanParser.TryParseIsomorphic<TResult>(GetByteSpan(), provider, out result);
         }
         result = default;
         return false;
@@ -198,6 +212,22 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         return false;
     }
 
+    /// <summary>Attempts to parse the column as a <see cref="double"/> using the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseDouble(out double result, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(byte))
+        {
+            return Utf8SpanParser.TryParseDouble(GetByteSpan(), provider, NumberStyles.Float | NumberStyles.AllowThousands, out result);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            return double.TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
     /// <summary>Attempts to parse the column as a <see cref="float"/> using invariant culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseSingle(out float result)
@@ -214,6 +244,22 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         return false;
     }
 
+    /// <summary>Attempts to parse the column as a <see cref="float"/> using the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseSingle(out float result, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(byte))
+        {
+            return Utf8SpanParser.TryParseSingle(GetByteSpan(), provider, NumberStyles.Float | NumberStyles.AllowThousands, out result);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            return float.TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
     /// <summary>Attempts to parse the column as a <see cref="decimal"/> using invariant culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParseDecimal(out decimal result)
@@ -225,6 +271,22 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         if (typeof(T) == typeof(char))
         {
             return decimal.TryParse(GetCharSpan(), NumberStyles.Number, CultureInfo.InvariantCulture, out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column as a <see cref="decimal"/> using the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseDecimal(out decimal result, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(byte))
+        {
+            return Utf8SpanParser.TryParseDecimal(GetByteSpan(), provider, NumberStyles.Number, out result);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            return decimal.TryParse(GetCharSpan(), NumberStyles.Number, provider, out result);
         }
         result = default;
         return false;
@@ -252,9 +314,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            if (Utf8Parser.TryParse(GetByteSpan(), out result, out int consumed) && consumed == data.Length)
-                return true;
-            return DateTime.TryParse(Decode(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+            return Utf8SpanParser.TryParseDateTime(GetByteSpan(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -271,12 +331,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            if (IsInvariant(provider) && styles == DateTimeStyles.None)
-            {
-                if (Utf8Parser.TryParse(GetByteSpan(), out result, out int consumed) && consumed == data.Length)
-                    return true;
-            }
-            return DateTime.TryParse(Decode(), provider, styles, out result);
+            return Utf8SpanParser.TryParseDateTime(GetByteSpan(), provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -293,7 +348,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return DateTime.TryParseExact(Decode(), format, provider, styles, out result);
+            return Utf8SpanParser.TryParseDateTimeExact(GetByteSpan(), format, provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -320,7 +375,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return DateTimeOffset.TryParse(Decode(), provider, styles, out result);
+            return Utf8SpanParser.TryParseDateTimeOffset(GetByteSpan(), provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -337,7 +392,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return DateTimeOffset.TryParseExact(Decode(), format, provider, styles, out result);
+            return Utf8SpanParser.TryParseDateTimeOffsetExact(GetByteSpan(), format, provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -362,7 +417,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return DateOnly.TryParse(Decode(), provider, styles, out result);
+            return Utf8SpanParser.TryParseDateOnly(GetByteSpan(), provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -379,7 +434,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return DateOnly.TryParseExact(Decode(), format, provider, styles, out result);
+            return Utf8SpanParser.TryParseDateOnlyExact(GetByteSpan(), format, provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -404,7 +459,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return TimeOnly.TryParse(Decode(), provider, styles, out result);
+            return Utf8SpanParser.TryParseTimeOnly(GetByteSpan(), provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -421,7 +476,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return TimeOnly.TryParseExact(Decode(), format, provider, styles, out result);
+            return Utf8SpanParser.TryParseTimeOnlyExact(GetByteSpan(), format, provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -537,7 +592,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(byte))
         {
-            return Enum.TryParse(Decode(), ignoreCase: true, out result);
+            return Utf8SpanParser.TryParseEnum(GetByteSpan(), ignoreCase: true, out result);
         }
         result = default;
         return false;
@@ -554,7 +609,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(byte))
         {
-            return other.AsSpan().SequenceEqual(ToString());
+            return Utf8SpanParser.EqualsString(GetByteSpan(), other, StringComparison.Ordinal);
         }
         return false;
     }
@@ -650,152 +705,18 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     private string Decode() => Encoding.UTF8.GetString(GetByteSpan());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsInvariant(IFormatProvider? provider)
-        => provider is null || Equals(provider, CultureInfo.InvariantCulture);
-
     private string UnquoteToStringChar(char quote)
-    {
-        var span = GetCharSpan();
-        if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
-        {
-            var inner = span[1..^1];
-            if (inner.Contains(quote))
-            {
-                // Unescape doubled quotes efficiently without intermediate allocations
-                var result = new StringBuilder(inner.Length);
-                for (int i = 0; i < inner.Length; i++)
-                {
-                    char c = inner[i];
-                    if (c == quote && i + 1 < inner.Length && inner[i + 1] == quote)
-                    {
-                        result.Append(quote);
-                        i++; // Skip the second quote
-                    }
-                    else
-                    {
-                        result.Append(c);
-                    }
-                }
-                return result.ToString();
-            }
-            return inner.ToString();
-        }
-        return span.ToString();
-    }
+        => CsvPipeColumnText.Decode(GetCharSpan(), quote, escape: null, enableQuotedFields: true);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string UnquoteToStringByte(byte quote)
-    {
-        var span = GetByteSpan();
-        if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
-        {
-            var inner = span[1..^1];
-            if (inner.Contains(quote))
-            {
-                // Decode UTF-8 then unescape doubled quotes efficiently
-                var decoded = Encoding.UTF8.GetString(inner);
-                var quoteChar = (char)quote;
-                var result = new StringBuilder(decoded.Length);
-                for (int i = 0; i < decoded.Length; i++)
-                {
-                    char c = decoded[i];
-                    if (c == quoteChar && i + 1 < decoded.Length && decoded[i + 1] == quoteChar)
-                    {
-                        result.Append(quoteChar);
-                        i++; // Skip the second quote
-                    }
-                    else
-                    {
-                        result.Append(c);
-                    }
-                }
-                return result.ToString();
-            }
-            return Encoding.UTF8.GetString(inner);
-        }
-        return Encoding.UTF8.GetString(span);
-    }
+        => CsvPipeColumnText.Decode(GetByteSpan(), quote, escape: null, enableQuotedFields: true);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string UnquoteToStringByteWithEscape(byte quote, byte? escape)
-    {
-        if (escape is null)
-            return UnquoteToStringByte(quote);
+        => CsvPipeColumnText.Decode(GetByteSpan(), quote, escape, enableQuotedFields: true);
 
-        var text = Encoding.UTF8.GetString(GetByteSpan());
-        var span = text.AsSpan();
-        var quoteChar = (char)quote;
-        var escapeChar = (char)escape.Value;
-
-        if (span.Length >= 2 && span[0] == quoteChar && span[^1] == quoteChar)
-        {
-            span = span[1..^1];
-        }
-
-        bool needsUnescape = span.Contains(escapeChar);
-        if (!needsUnescape && !span.Contains(quoteChar))
-            return span.ToString();
-
-        var result = new StringBuilder(span.Length);
-        for (int i = 0; i < span.Length; i++)
-        {
-            char c = span[i];
-            if (c == escapeChar && i + 1 < span.Length)
-            {
-                i++;
-                result.Append(span[i]);
-            }
-            else if (c == quoteChar && i + 1 < span.Length && span[i + 1] == quoteChar)
-            {
-                result.Append(quoteChar);
-                i++;
-            }
-            else
-            {
-                result.Append(c);
-            }
-        }
-        return result.ToString();
-    }
-
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string UnquoteToStringCharWithEscape(char quote, char? escape)
-    {
-        if (escape is null)
-            return UnquoteToStringChar(quote);
-
-        var span = GetCharSpan();
-
-        // Handle quoted fields
-        if (span.Length >= 2 && span[0] == quote && span[^1] == quote)
-        {
-            span = span[1..^1];
-        }
-
-        // Check if we need to unescape
-        bool needsUnescape = span.Contains(escape.Value);
-        if (!needsUnescape && !span.Contains(quote))
-            return span.ToString();
-
-        // Process escape sequences
-        var result = new StringBuilder(span.Length);
-        for (int i = 0; i < span.Length; i++)
-        {
-            char c = span[i];
-            if (c == escape.Value && i + 1 < span.Length)
-            {
-                // Skip escape character, take the next character as-is
-                i++;
-                result.Append(span[i]);
-            }
-            else if (c == quote && i + 1 < span.Length && span[i + 1] == quote)
-            {
-                // RFC 4180 doubled quote
-                result.Append(quote);
-                i++;
-            }
-            else
-            {
-                result.Append(c);
-            }
-        }
-        return result.ToString();
-    }
+        => CsvPipeColumnText.Decode(GetCharSpan(), quote, escape, enableQuotedFields: true);
 }

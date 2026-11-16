@@ -23,7 +23,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     // Cached options for hot path access
     private readonly char delimiter;
     private readonly char quote;
-    private readonly ReadOnlyMemory<char> newLineMemory;
+    private readonly string newLine;
     private readonly QuoteStyle quoteStyle;
     private readonly CultureInfo culture;
     private readonly string nullValue;
@@ -59,10 +59,6 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// </summary>
     public CultureInfo Culture => options.Culture;
 
-    // Default dangerous characters for CSV injection (always dangerous)
-    // Note: '-' and '+' are handled separately with smart detection
-    private static ReadOnlySpan<char> AlwaysDangerousChars => ['=', '@', '\t', '\r'];
-
     private const int DEFAULT_BUFFER_SIZE = 16 * 1024; // 16KB
     private const int MAX_STACK_ALLOC_SIZE = 256;
 
@@ -84,7 +80,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         // Cache frequently accessed options to avoid property access overhead in hot paths
         delimiter = this.options.Delimiter;
         quote = this.options.Quote;
-        newLineMemory = this.options.NewLine.AsMemory();
+        newLine = this.options.NewLine;
         quoteStyle = this.options.QuoteStyle;
         culture = this.options.Culture;
         nullValue = this.options.NullValue;
@@ -154,124 +150,19 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Writes an Int32 field directly to the CSV output without boxing.</summary>
-    public void WriteField(int value)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow) WriteDelimiter();
-        isFirstFieldInRow = false;
-
-        Span<char> stackBuffer = stackalloc char[32];
-        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
-        {
-            WriteFieldValue(stackBuffer[..charsWritten]);
-        }
-        else
-        {
-            WriteFieldValue(value.ToString(null, culture).AsSpan());
-        }
-    }
+    public void WriteField(int value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 32);
 
     /// <summary>Writes an Int64 field directly to the CSV output without boxing.</summary>
-    public void WriteField(long value)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow) WriteDelimiter();
-        isFirstFieldInRow = false;
-
-        Span<char> stackBuffer = stackalloc char[32];
-        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
-        {
-            WriteFieldValue(stackBuffer[..charsWritten]);
-        }
-        else
-        {
-            WriteFieldValue(value.ToString(null, culture).AsSpan());
-        }
-    }
+    public void WriteField(long value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 32);
 
     /// <summary>Writes a Double field directly to the CSV output without boxing.</summary>
-    public void WriteField(double value)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow) WriteDelimiter();
-        isFirstFieldInRow = false;
-
-        Span<char> stackBuffer = stackalloc char[64];
-        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
-        {
-            WriteFieldValue(stackBuffer[..charsWritten]);
-        }
-        else
-        {
-            WriteFieldValue(value.ToString(null, culture).AsSpan());
-        }
-    }
+    public void WriteField(double value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 64);
 
     /// <summary>Writes a Float field directly to the CSV output without boxing.</summary>
-    public void WriteField(float value)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow) WriteDelimiter();
-        isFirstFieldInRow = false;
-
-        Span<char> stackBuffer = stackalloc char[32];
-        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
-        {
-            WriteFieldValue(stackBuffer[..charsWritten]);
-        }
-        else
-        {
-            WriteFieldValue(value.ToString(null, culture).AsSpan());
-        }
-    }
+    public void WriteField(float value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 32);
 
     /// <summary>Writes a Decimal field directly to the CSV output without boxing.</summary>
-    public void WriteField(decimal value)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow) WriteDelimiter();
-        isFirstFieldInRow = false;
-
-        Span<char> stackBuffer = stackalloc char[64];
-        if (value.TryFormat(stackBuffer, out int charsWritten, null, culture))
-        {
-            WriteFieldValue(stackBuffer[..charsWritten]);
-        }
-        else
-        {
-            WriteFieldValue(value.ToString(null, culture).AsSpan());
-        }
-    }
+    public void WriteField(decimal value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 64);
 
     /// <summary>Writes a Boolean field directly to the CSV output without boxing.</summary>
     public void WriteField(bool value)
@@ -290,52 +181,10 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Writes a DateTime field directly to the CSV output without boxing.</summary>
-    public void WriteField(DateTime value)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow) WriteDelimiter();
-        isFirstFieldInRow = false;
-
-        Span<char> stackBuffer = stackalloc char[64];
-        if (value.TryFormat(stackBuffer, out int charsWritten, dateTimeFormat, culture))
-        {
-            WriteFieldValue(stackBuffer[..charsWritten]);
-        }
-        else
-        {
-            WriteFieldValue(value.ToString(dateTimeFormat, culture).AsSpan());
-        }
-    }
+    public void WriteField(DateTime value) => WriteSpanFormattableField(value, format: dateTimeFormat, stackAllocSize: 64);
 
     /// <summary>Writes a Guid field directly to the CSV output without boxing.</summary>
-    public void WriteField(Guid value)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow) WriteDelimiter();
-        isFirstFieldInRow = false;
-
-        Span<char> stackBuffer = stackalloc char[64];
-        if (value.TryFormat(stackBuffer, out int charsWritten, null))
-        {
-            WriteFieldValue(stackBuffer[..charsWritten]);
-        }
-        else
-        {
-            WriteFieldValue(value.ToString(null, culture).AsSpan());
-        }
-    }
+    public void WriteField(Guid value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 40);
 
     /// <summary>
     /// Writes a row with multiple string values.
@@ -353,10 +202,35 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
                 $"Row has {values.Length} columns, exceeds maximum of {maxColumnCount.Value}");
         }
 
-        for (int i = 0; i < values.Length; i++)
+        if (!maxFieldSize.HasValue &&
+            injectionProtection == CsvInjectionProtection.None &&
+            quoteStyle == QuoteStyle.WhenNeeded)
         {
-            if (i > 0) WriteDelimiter();
-            WriteFieldValue(values[i].AsSpan());
+            for (int i = 0; i < values.Length; i++)
+            {
+                if (i > 0) WriteDelimiter();
+                var value = values[i].AsSpan();
+                if (!value.IsEmpty)
+                {
+                    var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(value, delimiter, quote);
+                    if (needsQuoting)
+                    {
+                        WriteQuotedFieldWithKnownQuoteCount(value, quoteCount);
+                    }
+                    else
+                    {
+                        WriteUnquotedField(value);
+                    }
+                }
+            }
+        }
+        else
+        {
+            for (int i = 0; i < values.Length; i++)
+            {
+                if (i > 0) WriteDelimiter();
+                WriteFieldValue(values[i].AsSpan());
+            }
         }
         isFirstFieldInRow = true;
         currentRowColumnCount = 0;
@@ -486,10 +360,24 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteNewLine()
     {
-        var newLineSpan = newLineMemory.Span;
-        EnsureCapacity(newLineSpan.Length);
-        newLineSpan.CopyTo(buffer.AsSpan(bufferPosition));
-        bufferPosition += newLineSpan.Length;
+        int len = newLine.Length;
+        EnsureCapacity(len);
+        if (len == 1)
+        {
+            buffer[bufferPosition++] = newLine[0];
+        }
+        else if (len == 2)
+        {
+            int pos = bufferPosition;
+            buffer[pos] = newLine[0];
+            buffer[pos + 1] = newLine[1];
+            bufferPosition = pos + 2;
+        }
+        else
+        {
+            newLine.AsSpan().CopyTo(buffer.AsSpan(bufferPosition));
+            bufferPosition += len;
+        }
     }
 
     private void WriteFieldValue(ReadOnlySpan<char> value)
@@ -515,7 +403,8 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         }
 
         // Check for injection and apply protection if needed
-        if (injectionProtection != CsvInjectionProtection.None && IsDangerousField(value))
+        if (injectionProtection != CsvInjectionProtection.None &&
+            CsvWriterQuoting.IsDangerousField(value, additionalDangerousChars))
         {
             WriteFieldWithInjectionProtection(value);
             return;
@@ -547,44 +436,6 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Checks if a field starts with a dangerous character that could trigger formula execution.
-    /// Uses switch statement for O(1) lookup of common dangerous characters.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool IsDangerousField(ReadOnlySpan<char> value)
-    {
-        if (value.IsEmpty) return false;
-
-        char first = value[0];
-
-        switch (first)
-        {
-            // Always-dangerous characters
-            case '=':
-            case '@':
-            case '\t':
-            case '\r':
-                return true;
-
-            // Smart detection for '-' and '+':
-            // - If followed by digit or '.', it's likely a number/phone number (safe)
-            // - If followed by letter or '(', it's likely a formula (dangerous)
-            case '-':
-            case '+':
-                // Single character is safe
-                if (value.Length == 1) return false;
-                char second = value[1];
-                // Safe patterns: -123, +1-555, -.5, +.5
-                // Use uint comparison to check digit range in one instruction
-                return !((uint)(second - '0') <= 9 || second == '.');
-
-            default:
-                // Check additional custom dangerous characters
-                return additionalDangerousChars is not null && additionalDangerousChars.Contains(first);
-        }
-    }
-
-    /// <summary>
     /// Writes a field with injection protection applied.
     /// </summary>
     private void WriteFieldWithInjectionProtection(ReadOnlySpan<char> value)
@@ -608,7 +459,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
             case CsvInjectionProtection.Sanitize:
                 // Strip dangerous leading characters
-                var sanitized = StripDangerousPrefix(value);
+                var sanitized = CsvWriterQuoting.StripDangerousPrefix(value, additionalDangerousChars);
                 WriteFieldValueWithoutInjectionCheck(sanitized);
                 break;
 
@@ -689,37 +540,31 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         buffer[bufferPosition++] = quote;
     }
 
-    /// <summary>
-    /// Strips dangerous leading characters from a value.
-    /// </summary>
-    private ReadOnlySpan<char> StripDangerousPrefix(ReadOnlySpan<char> value)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteSpanFormattableField<T>(T value, string? format, int stackAllocSize = 32)
+        where T : ISpanFormattable
     {
-        int start = 0;
-        while (start < value.Length)
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
         {
-            char c = value[start];
-            // Strip always-dangerous chars, plus '-' and '+' that aren't followed by digit/decimal
-            bool isDangerous = AlwaysDangerousChars.Contains(c) ||
-                               (additionalDangerousChars is not null && additionalDangerousChars.Contains(c));
-
-            // Smart handling for '-' and '+'
-            if (!isDangerous && (c == '-' || c == '+'))
-            {
-                // Check if followed by digit or decimal (safe pattern)
-                if (start + 1 < value.Length)
-                {
-                    char next = value[start + 1];
-                    isDangerous = !char.IsDigit(next) && next != '.';
-                }
-            }
-
-            if (!isDangerous)
-            {
-                break;
-            }
-            start++;
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row exceeds maximum column count of {maxColumnCount.Value}");
         }
-        return value[start..];
+
+        if (!isFirstFieldInRow) WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        Span<char> stackBuffer = stackalloc char[stackAllocSize];
+        if (value.TryFormat(stackBuffer, out int charsWritten, format, culture))
+        {
+            WriteFieldValue(stackBuffer[..charsWritten]);
+        }
+        else
+        {
+            WriteFieldValue(value.ToString(format, culture).AsSpan());
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1056,14 +901,12 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
     private char[] RentBuffer(int minimumLength)
     {
-        var rented = charPool.Rent(minimumLength);
-        Array.Clear(rented);
-        return rented;
+        return charPool.Rent(minimumLength);
     }
 
     private void ReturnBuffer(char[] toReturn)
     {
-        charPool.Return(toReturn, clearArray: true);
+        charPool.Return(toReturn, clearArray: false);
     }
 
     #endregion

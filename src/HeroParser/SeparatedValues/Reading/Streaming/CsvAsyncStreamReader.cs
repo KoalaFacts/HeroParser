@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Runtime.CompilerServices;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
 using HeroParser.SeparatedValues.Reading.Shared;
@@ -21,7 +22,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     private readonly bool trackLineNumbers;
     private readonly int maxRowSize;
     private readonly int maxBufferSize;
-    private readonly PooledColumnEnds columnEndsBuffer;
+    private int[] columnEndsBuffer;
     private readonly int skipRows;
 
     private byte[] buffer;
@@ -67,7 +68,7 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
             return new CsvRow<byte>(
                 buffer.AsSpan(currentRowStart, currentRowLength),
-                columnEndsBuffer.Buffer,
+                columnEndsBuffer,
                 currentColumnCount,
                 currentRowNumber,
                 currentSourceLineNumber,
@@ -93,8 +94,10 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         bytePool = ArrayPool<byte>.Shared;
         buffer = RentBuffer(Math.Max(initialBufferSize, 4096));
-        columnEndsBuffer = new PooledColumnEnds(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
         cursor = CsvRowBatchCursor.TryCreate(options);
+        columnEndsBuffer = cursor is not null
+            ? cursor.ScratchEnds
+            : ArrayPool<int>.Shared.Rent(CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
 
         offset = 0;
         length = 0;
@@ -118,14 +121,40 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns><see langword="true"/> when another row was parsed; otherwise, <see langword="false"/>.</returns>
-    public async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
-        ThrowIfDisposed();
+        if (disposed)
+            return ValueTask.FromException<bool>(new ObjectDisposedException(nameof(CsvAsyncStreamReader)));
+
         // Current borrows pooled buffers; it expires on every advance attempt,
         // including a pre-canceled read that leaves buffered rows available to retry.
         hasCurrent = false;
-        cancellationToken.ThrowIfCancellationRequested();
 
+        if (cancellationToken.IsCancellationRequested)
+            return ValueTask.FromCanceled<bool>(cancellationToken);
+
+        if (cursor is not null)
+        {
+            try
+            {
+                while (cursor.TryTake(out var pendingRow))
+                {
+                    if (EmitBatchRow(pendingRow))
+                        return ValueTask.FromResult(true);
+                }
+            }
+            catch (CsvException ex)
+            {
+                return ValueTask.FromException<bool>(ex);
+            }
+        }
+
+        return MoveNextSlowAsync(cancellationToken);
+    }
+
+    private async ValueTask<bool> MoveNextSlowAsync(CancellationToken cancellationToken)
+    {
         while (true)
         {
             // Per-row hot path: rows already scanned are handed out before the buffer is touched again
@@ -189,8 +218,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             try
             {
                 result = trackLineNumbers
-                    ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer.Span)
-                    : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer.Span);
+                    ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer)
+                    : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer);
             }
             catch (CsvException ex) when (!endOfStream &&
                 (ex.QuoteStartPosition.HasValue || (options.AllowNewlinesInsideQuotes
@@ -416,7 +445,11 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         disposed = true;
         hasCurrent = false;
-        columnEndsBuffer.Return();
+        if (cursor is null && columnEndsBuffer is { } rentedEnds)
+        {
+            columnEndsBuffer = null!;
+            ArrayPool<int>.Shared.Return(rentedEnds, clearArray: false);
+        }
         cursor?.Dispose();
         ReturnBuffer(buffer);
         buffer = null!;

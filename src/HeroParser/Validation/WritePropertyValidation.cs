@@ -25,4 +25,22 @@ public sealed record WritePropertyValidation(
     internal Regex? CompiledPattern { get; } = Pattern is null
         ? null
         : new Regex(Pattern, RegexOptions.Compiled, TimeSpan.FromMilliseconds(PatternTimeoutMs));
+
+    internal static WritePropertyValidation? FromAttribute(ValidateAttribute? validateAttr, bool requireAnyRule = false)
+    {
+        if (validateAttr is null)
+            return null;
+
+        var validation = new WritePropertyValidation(
+            validateAttr.NotNull,
+            validateAttr.NotEmpty,
+            validateAttr.MaxLength >= 0 ? validateAttr.MaxLength : null,
+            validateAttr.MinLength >= 0 ? validateAttr.MinLength : null,
+            !double.IsNaN(validateAttr.RangeMin) ? validateAttr.RangeMin : null,
+            !double.IsNaN(validateAttr.RangeMax) ? validateAttr.RangeMax : null,
+            validateAttr.Pattern,
+            validateAttr.PatternTimeoutMs);
+
+        return requireAnyRule && !validation.HasAnyRule ? null : validation;
+    }
 }

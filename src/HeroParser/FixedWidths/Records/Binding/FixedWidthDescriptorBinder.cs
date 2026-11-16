@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths.Mapping;
+using HeroParser.Internal;
 using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Records.Binding;
@@ -146,7 +147,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
             var span = field.ByteSpan;
 
             bool isNull = nullValsUtf8 is not null && IsNullValue(span, nullValsUtf8);
-            bool isEmptyOrWhitespace = FixedWidthUtf8BindingHelper.IsNullOrWhiteSpace(span);
+            bool isEmptyOrWhitespace = Utf8SpanParser.IsNullOrWhiteSpace(span);
 
             if ((prop.IsNotNull || prop.Validation is { NotEmpty: true }) && (isNull || isEmptyOrWhitespace))
             {
@@ -160,7 +161,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
                     columnName: null,
                     rule,
                     message,
-                    errors is null ? null : FixedWidthUtf8BindingHelper.Decode(span));
+                    errors is null ? null : Utf8SpanParser.Decode(span));
                 continue;
             }
 
@@ -174,13 +175,13 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
                     }
                     else
                     {
-                        var decoded = FixedWidthUtf8BindingHelper.Decode(span);
+                        var decoded = Utf8SpanParser.Decode(span);
                         prop.Setter(ref instance, decoded.AsSpan(), cultureLocal);
                     }
                 }
                 catch (Exception ex) when (ex is not FixedWidthException)
                 {
-                    var fieldValue = FixedWidthUtf8BindingHelper.Decode(span);
+                    var fieldValue = Utf8SpanParser.Decode(span);
                     throw new FixedWidthException(
                         FixedWidthErrorCode.ParseError,
                         $"Failed to parse '{fieldValue}' for property '{prop.Name}': {ex.Message}",
@@ -191,7 +192,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
                 if (prop.Validation is { HasAnyRule: true } validation)
                 {
                     hasErrors |= PropertyValidationRunner.Validate(
-                        FixedWidthUtf8BindingHelper.Decode(span),
+                        Utf8SpanParser.Decode(span),
                         prop.Name, row.RecordNumber, prop.Start,
                         columnName: null,
                         validation.NotEmpty, validation.MinLength, validation.MaxLength,

@@ -306,7 +306,9 @@ public class Utf8SpanParserFactoryTests
     [InlineData(typeof(Guid))]
     public void GetParser_ValueTypes_AndNullableVariants(Type t)
     {
-        var method = typeof(Utf8SpanParserFactory).GetMethod(nameof(Utf8SpanParserFactory.GetParser))!;
+        var method = typeof(Utf8SpanParserFactory).GetMethod(
+            nameof(Utf8SpanParserFactory.GetParser),
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
         var valueParser = method.MakeGenericMethod(t).Invoke(null, null);
         Assert.NotNull(valueParser);
         var nullableT = typeof(Nullable<>).MakeGenericType(t);

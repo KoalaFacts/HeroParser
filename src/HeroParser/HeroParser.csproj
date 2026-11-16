@@ -6,7 +6,7 @@
     <PackageId>HeroParser</PackageId>
     <Authors>HeroParser Contributors</Authors>
     <Description>High-performance CSV, Fixed-Width, Excel (.xlsx), JSONL, and HTB (High-Throughput Tabular Binary) parser and writer for .NET 8+. SIMD-accelerated, low-allocation parsing with fluent read/write APIs. Fixed-Width support includes field alignment, padding, overflow handling, and async streaming. Excel reading and writing use no extra dependencies. JSONL supports AI/ML pipelines, CSV-to-JSONL conversion, embedding-API batching, and AOT-safe JsonTypeInfo. HTB supports float[] arrays for vector embedding serialization with endianness safety. Includes async I/O, source generators for native AOT, IDataReader/DbDataReader bridges, PipeReader streaming, LINQ-style extensions, progress reporting, and custom type converters.</Description>
-    <PackageReleaseNotes>v2.9.0 adds the net11.0 target (built and tested with the .NET 11.0.100 GA SDK alongside net8.0, net9.0, and net10.0), fixes culture-dependent number/date formatting and validation across readers, writers, AI helpers, and source generators, unquotes CSV headers and values in schema inference, converters, DataReader, CLI, and WebAssembly, and fixes WASM writer flushing and CLI error messages. Changelog: https://github.com/KoalaFacts/HeroParser/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>v2.9.1 adds the TabularDataReader abstract base class, unifies zero-allocation UTF-8 parsing across columns and source-generated binders, delivers CSV SIMD and streaming throughput improvements (with runtime-async enabled on net11.0), consolidates internal generator and writer infrastructure, and fixes Excel numeric cell binding under non-invariant cultures. Changelog: https://github.com/KoalaFacts/HeroParser/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <PackageTags>csv;csvhelper;csv parser;csv reader;csv writer;fixed-width;fixedwidth;fixed-length;mainframe;excel;xlsx;excel reader;excel writer;delimited;tsv;parser;writer;rfc4180;jsonl;json;ndjson;simd;aot;high-performance;llm;embeddings;dataset;fine-tuning;openai;anthropic;vector;ai</PackageTags>
     <RepositoryUrl>https://github.com/KoalaFacts/HeroParser</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -28,7 +28,10 @@
     <InternalsVisibleTo Include="HeroParser.Benchmarks" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
+    <PackageReference Include="System.IO.Pipelines" Version="11.0.0" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' != 'net11.0'">
     <PackageReference Include="System.IO.Pipelines" Version="10.0.15" />
   </ItemGroup>
 

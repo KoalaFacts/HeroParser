@@ -2,6 +2,7 @@ using System.Buffers.Text;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using HeroParser.Internal;
 
 namespace HeroParser.FixedWidths;
 
@@ -32,16 +33,14 @@ public readonly ref struct FixedWidthByteSpanColumn
     public override string ToString() => Encoding.UTF8.GetString(bytes);
 
     /// <summary>Parses the field using <see cref="ISpanParsable{T}"/> and invariant culture.</summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Parse<T>() where T : ISpanParsable<T>
-        => T.Parse(Decode(), CultureInfo.InvariantCulture);
+        => Utf8SpanParser.ParseIsomorphic<T>(bytes, CultureInfo.InvariantCulture);
 
     /// <summary>Attempts to parse the field using <see cref="ISpanParsable{T}"/> and invariant culture.</summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryParse<T>(out T? result) where T : ISpanParsable<T>
-        => T.TryParse(Decode(), CultureInfo.InvariantCulture, out result);
+        => Utf8SpanParser.TryParseIsomorphic<T>(bytes, CultureInfo.InvariantCulture, out result);
 
     /// <summary>Attempts to parse the field as an <see cref="int"/> using invariant culture.</summary>
     public bool TryParseInt32(out int result)
@@ -97,51 +96,41 @@ public readonly ref struct FixedWidthByteSpanColumn
 
     /// <summary>Attempts to parse the field as a <see cref="DateTime"/> using invariant culture.</summary>
     public bool TryParseDateTime(out DateTime result)
-        => Utf8Parser.TryParse(bytes, out result, out int consumed) && consumed == bytes.Length;
+        => Utf8SpanParser.TryParseDateTime(bytes, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateTime"/> using the provided culture and styles.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16 for non-invariant cultures.</remarks>
     public bool TryParseDateTime(out DateTime result, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
-    {
-        if (IsInvariant(provider) && styles == DateTimeStyles.None)
-            return Utf8Parser.TryParse(bytes, out result, out int consumed) && consumed == bytes.Length;
-
-        return DateTime.TryParse(Decode(), provider, styles, out result);
-    }
+        => Utf8SpanParser.TryParseDateTime(bytes, provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateTime"/> using an exact format string.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateTime(out DateTime result, string format, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
-        => DateTime.TryParseExact(Decode(), format, provider, styles, out result);
+        => Utf8SpanParser.TryParseDateTimeExact(bytes, format, provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateTime"/> using an exact format with invariant culture.
     /// </summary>
     public bool TryParseDateTime(out DateTime result, string format)
-        => DateTime.TryParseExact(Decode(), format, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+        => Utf8SpanParser.TryParseDateTimeExact(bytes, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>Attempts to parse the field as a <see cref="DateTimeOffset"/> using invariant culture.</summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateTimeOffset(out DateTimeOffset result)
-        => DateTimeOffset.TryParse(Decode(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+        => Utf8SpanParser.TryParseDateTimeOffset(bytes, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateTimeOffset"/> using the provided culture and styles.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateTimeOffset(out DateTimeOffset result, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
-        => DateTimeOffset.TryParse(Decode(), provider, styles, out result);
+        => Utf8SpanParser.TryParseDateTimeOffset(bytes, provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateTimeOffset"/> using an exact format.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateTimeOffset(out DateTimeOffset result, string format, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
-        => DateTimeOffset.TryParseExact(Decode(), format, provider, styles, out result);
+        => Utf8SpanParser.TryParseDateTimeOffsetExact(bytes, format, provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateTimeOffset"/> using exact format with invariant culture.
@@ -150,23 +139,20 @@ public readonly ref struct FixedWidthByteSpanColumn
         => TryParseDateTimeOffset(out result, format, CultureInfo.InvariantCulture, DateTimeStyles.None);
 
     /// <summary>Attempts to parse the field as a <see cref="DateOnly"/> using invariant culture.</summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateOnly(out DateOnly result)
-        => DateOnly.TryParse(Decode(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+        => Utf8SpanParser.TryParseDateOnly(bytes, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateOnly"/> using the provided culture and styles.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateOnly(out DateOnly result, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
-        => DateOnly.TryParse(Decode(), provider, styles, out result);
+        => Utf8SpanParser.TryParseDateOnly(bytes, provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateOnly"/> using an exact format.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseDateOnly(out DateOnly result, string format, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
-        => DateOnly.TryParseExact(Decode(), format, provider, styles, out result);
+        => Utf8SpanParser.TryParseDateOnlyExact(bytes, format, provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="DateOnly"/> using exact format with invariant culture.
@@ -175,23 +161,20 @@ public readonly ref struct FixedWidthByteSpanColumn
         => TryParseDateOnly(out result, format, CultureInfo.InvariantCulture, DateTimeStyles.None);
 
     /// <summary>Attempts to parse the field as a <see cref="TimeOnly"/> using invariant culture.</summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseTimeOnly(out TimeOnly result)
-        => TimeOnly.TryParse(Decode(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+        => Utf8SpanParser.TryParseTimeOnly(bytes, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="TimeOnly"/> using the provided culture and styles.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseTimeOnly(out TimeOnly result, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
-        => TimeOnly.TryParse(Decode(), provider, styles, out result);
+        => Utf8SpanParser.TryParseTimeOnly(bytes, provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="TimeOnly"/> using an exact format.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16.</remarks>
     public bool TryParseTimeOnly(out TimeOnly result, string format, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
-        => TimeOnly.TryParseExact(Decode(), format, provider, styles, out result);
+        => Utf8SpanParser.TryParseTimeOnlyExact(bytes, format, provider, styles, out result);
 
     /// <summary>
     /// Attempts to parse the field as a <see cref="TimeOnly"/> using exact format with invariant culture.
@@ -202,9 +185,8 @@ public readonly ref struct FixedWidthByteSpanColumn
     /// <summary>
     /// Attempts to parse the field as an enum of type <typeparamref name="TEnum"/> using case-insensitive matching.
     /// </summary>
-    /// <remarks>Allocates to decode the UTF-8 span to UTF-16 before parsing.</remarks>
     public bool TryParseEnum<TEnum>(out TEnum result) where TEnum : struct, Enum
-        => Enum.TryParse(Decode(), ignoreCase: true, out result);
+        => Utf8SpanParser.TryParseEnum(bytes, ignoreCase: true, out result);
 
     /// <summary>Attempts to parse the field as a <see cref="TimeZoneInfo"/> from its identifier.</summary>
     /// <remarks>Allocates to decode the UTF-8 span to UTF-16 before lookup.</remarks>
@@ -236,12 +218,8 @@ public readonly ref struct FixedWidthByteSpanColumn
 
     /// <summary>Compares the field with a string using ordinal semantics.</summary>
     public bool Equals(string? other)
-        => other is not null && other.AsSpan().SequenceEqual(Decode());
+        => Utf8SpanParser.EqualsString(bytes, other, StringComparison.Ordinal);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string Decode() => Encoding.UTF8.GetString(bytes);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsInvariant(IFormatProvider? provider)
-        => provider is null || Equals(provider, CultureInfo.InvariantCulture);
 }

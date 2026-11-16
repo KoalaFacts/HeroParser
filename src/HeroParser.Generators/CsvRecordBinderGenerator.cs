@@ -688,7 +688,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.Indent();
         builder.AppendLine("var str = Encoding.UTF8.GetString(value);");
         builder.AppendLine("var fieldValue = str.Length > 100 ? str[..100] + \"...\" : str;");
-        builder.AppendLine($"return new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Failed to parse '{{columnName}}' at row {{rowNumber}}, column {{columnIndex + 1}}. Value: '{{fieldValue}}'\", rowNumber, columnIndex + 1, fieldValue);");
+        builder.AppendLine($"return new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Failed to parse column '{{columnName}}'.\", rowNumber, columnIndex + 1, fieldValue);");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1760,7 +1760,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.Indent();
         builder.AppendLine("var str = new string(value);");
         builder.AppendLine("var fieldValue = str.Length > 100 ? str[..100] + \"...\" : str;");
-        builder.AppendLine($"return new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Failed to parse '{{columnName}}' at row {{rowNumber}}, column {{columnIndex + 1}}. Value: '{{fieldValue}}'\", rowNumber, columnIndex + 1, fieldValue);");
+        builder.AppendLine($"return new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Failed to parse column '{{columnName}}'.\", rowNumber, columnIndex + 1, fieldValue);");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();

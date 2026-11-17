@@ -203,7 +203,7 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => decimal.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => CultureNumberParser.TryParse(chars, state.Styles, state.Provider, out parsed),
             out result);
     }
 
@@ -222,7 +222,7 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => double.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => CultureNumberParser.TryParse(chars, state.Styles, state.Provider, out parsed),
             out result);
     }
 
@@ -241,7 +241,7 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => float.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => CultureNumberParser.TryParse(chars, state.Styles, state.Provider, out parsed),
             out result);
     }
 

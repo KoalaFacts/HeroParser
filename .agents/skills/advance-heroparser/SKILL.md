@@ -29,7 +29,7 @@ In order; warnings are errors.
 7. Docs: `node .github/scripts/check-docs.ts` and `node .github/scripts/check-doc-snippets.ts`.
 
 ## Ledger
-The "Maintenance ledger" section of CLAUDE.md (no separate ledger file exists; do not create one). Statuses: `todo`, `in progress (PR #n)`, `done (PR #n)`, `waiting (on what)`, `blocked (reason; owner decision)`. Update it in every PR. The dated run log lives in PR bodies; user-visible changes go in CHANGELOG `[Unreleased]` (Added / Changed / Fixed / Build and CI / Dependencies / Notes).
+The "Maintenance ledger" section of CLAUDE.md (no separate ledger file exists; do not create one). Statuses: `todo`, `in progress (PR #n)`, `done (PR #n)`, `waiting (on what)`, `blocked (owner decision: #<issue>)` — the last only for the reserved decisions of autonomous-dev §0.1 (money, release/publish/deploy, security defaults, data deletion, breaking a published API, unclear licences, product scope); every other choice is decided in the PR with a "Decision" section. Update it in every PR. The dated run log lives in PR bodies; user-visible changes go in CHANGELOG `[Unreleased]` (Added / Changed / Fixed / Build and CI / Dependencies / Notes).
 
 ## Work order
 - **L1** net11.0 target, `global.json` floor (rollForward latestFeature; allowPrerelease false since GA, see L4), CI on the newest 11.0 SDK via setup-dotnet `11.0.x` with no forced dotnet-quality, NuGet consumer check on net11.0, dependency upgrades (#167). Then close #162 as superseded.

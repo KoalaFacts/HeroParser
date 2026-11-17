@@ -1590,17 +1590,17 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         // For floating-point types (decimal, double, float), use culture-aware parsing
         if (baseType is "decimal" or "System.Decimal")
         {
-            builder.AppendLine($"if (decimal.TryParse(span, NumberStyles.Number, _culture, out var parsed_{propertyName}))");
+            builder.AppendLine($"if (column.TryParseDecimal(out var parsed_{propertyName}, _culture))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
         else if (baseType is "double" or "System.Double")
         {
-            builder.AppendLine($"if (double.TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, _culture, out var parsed_{propertyName}))");
+            builder.AppendLine($"if (column.TryParseDouble(out var parsed_{propertyName}, _culture))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
         else if (baseType is "float" or "System.Single")
         {
-            builder.AppendLine($"if (float.TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, _culture, out var parsed_{propertyName}))");
+            builder.AppendLine($"if (column.TryParseSingle(out var parsed_{propertyName}, _culture))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
         else

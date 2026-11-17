@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
+using HeroParser.Internal;
 
 namespace HeroParser.SeparatedValues.Mapping;
 
@@ -34,13 +35,13 @@ internal static class SpanParserFactory
         object parser = targetType switch
         {
             _ when targetType == typeof(string) => (SpanParser<string>)((span, _) => span.ToString()),
-            _ when targetType == typeof(int) => CreateValueParser(isNullable, static (span, culture) => int.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(long) => CreateValueParser(isNullable, static (span, culture) => long.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(short) => CreateValueParser(isNullable, static (span, culture) => short.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(byte) => CreateValueParser(isNullable, static (span, culture) => byte.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(decimal) => CreateValueParser(isNullable, static (span, culture) => decimal.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(double) => CreateValueParser(isNullable, static (span, culture) => double.Parse(span, NumberStyles.Any, culture)),
-            _ when targetType == typeof(float) => CreateValueParser(isNullable, static (span, culture) => float.Parse(span, NumberStyles.Any, culture)),
+            _ when targetType == typeof(int) => CreateValueParser(isNullable, static (span, culture) => CultureNumberParser.Parse<int>(span, NumberStyles.Any, culture)),
+            _ when targetType == typeof(long) => CreateValueParser(isNullable, static (span, culture) => CultureNumberParser.Parse<long>(span, NumberStyles.Any, culture)),
+            _ when targetType == typeof(short) => CreateValueParser(isNullable, static (span, culture) => CultureNumberParser.Parse<short>(span, NumberStyles.Any, culture)),
+            _ when targetType == typeof(byte) => CreateValueParser(isNullable, static (span, culture) => CultureNumberParser.Parse<byte>(span, NumberStyles.Any, culture)),
+            _ when targetType == typeof(decimal) => CreateValueParser(isNullable, static (span, culture) => CultureNumberParser.Parse<decimal>(span, NumberStyles.Any, culture)),
+            _ when targetType == typeof(double) => CreateValueParser(isNullable, static (span, culture) => CultureNumberParser.Parse<double>(span, NumberStyles.Any, culture)),
+            _ when targetType == typeof(float) => CreateValueParser(isNullable, static (span, culture) => CultureNumberParser.Parse<float>(span, NumberStyles.Any, culture)),
             _ when targetType == typeof(bool) => CreateValueParser(isNullable, static (span, _) => bool.Parse(span)),
             _ when targetType == typeof(DateTime) => CreateValueParser(isNullable, static (span, culture) => DateTime.Parse(span, culture, DateTimeStyles.None)),
             _ when targetType == typeof(DateOnly) => CreateValueParser(isNullable, static (span, culture) => DateOnly.Parse(span, culture)),

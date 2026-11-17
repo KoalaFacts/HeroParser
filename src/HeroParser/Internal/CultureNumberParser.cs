@@ -94,10 +94,10 @@ internal static class CultureNumberParser
         {
             switch (c)
             {
-                case '-' or '−':
+                case '-' or '\u2212':
                     minus++;
                     break;
-                case '‎' or '‏' or '؜':
+                case '\u200E' or '\u200F' or '\u061C':
                     break;
                 default:
                     return false;

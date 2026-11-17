@@ -4,6 +4,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+### Fixed
+- **Parse-error messages repeated the field value.** A value that failed to convert in a `[GenerateBinder]` CSV or Excel record read produced `Row 3, Column 2: Failed to parse 'Amount' at row 3, column 2. Value: 'twelve' Value: 'twelve'`; with a fluent `CsvMap` the value was also put into the message untruncated (a 5,000-character field gave a 5,170-character message). The message is now `Row 3, Column 2: Failed to parse column 'Amount'. Value: 'twelve'` (fluent maps: `Failed to parse property 'Amount'.`), with the value stated once and truncated to 100 characters as `CsvException.FieldValue` already was. `Row`, `Column` and `FieldValue` are unchanged.
+
 ## [2.9.1] - 2026-11-16
 
 Patch release introducing `TabularDataReader`, zero-allocation UTF-8 column/generator parsing, CSV SIMD and streaming throughput improvements, internal structural consolidation, and culture-aware numeric Excel cell binding.

@@ -53,6 +53,14 @@ public static class FixedWidthUtf8BindingHelper
     public static bool TryParseSingle(ReadOnlySpan<byte> utf8, CultureInfo culture, out float value)
         => Utf8SpanParser.TryParseSingle(utf8, culture, NumberStyles.Float | NumberStyles.AllowThousands, out value);
 
+    /// <summary>
+    /// Parses a numeric column from chars with the culture, also accepting the ASCII <c>-</c> when the culture's
+    /// negative sign is a minus with bidirectional marks (fa-IR, ar-SA, he-IL).
+    /// </summary>
+    public static bool TryParseNumber<TNumber>(ReadOnlySpan<char> chars, NumberStyles styles, IFormatProvider? provider, out TNumber value)
+        where TNumber : System.Numerics.INumberBase<TNumber>
+        => CultureNumberParser.TryParse(chars, styles, provider, out value);
+
     public static bool TryParseBoolean(ReadOnlySpan<byte> utf8, out bool value)
         => Utf8SpanParser.TryParseBoolean(utf8, out value);
 

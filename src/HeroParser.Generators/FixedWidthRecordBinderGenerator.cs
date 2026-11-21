@@ -925,14 +925,14 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         if (isNullable)
         {
             builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace()) {{ /* null */ }}");
-            builder.AppendLine($"else if ({typeName}.TryParse(span, {styles}, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"else if (FixedWidthUtf8BindingHelper.TryParseNumber(span, {styles}, cultureLocal, out {typeName} parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
             builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, typeName);
         }
         else
         {
-            builder.AppendLine($"if ({typeName}.TryParse(span, {styles}, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParseNumber(span, {styles}, cultureLocal, out {typeName} parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
             if (member.ValidationNotNull)
                 builder.AppendLine("else if (!(span.IsEmpty || span.IsWhiteSpace()))");
@@ -951,14 +951,14 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         if (isNullable)
         {
             builder.AppendLine($"if (span.IsEmpty || span.IsWhiteSpace()) {{ /* null */ }}");
-            builder.AppendLine($"else if ({typeName}.TryParse(span, {STYLES}, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"else if (FixedWidthUtf8BindingHelper.TryParseNumber(span, {STYLES}, cultureLocal, out {typeName} parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
             builder.AppendLine("else");
             EmitThrowParseError(builder, propertyName, typeName);
         }
         else
         {
-            builder.AppendLine($"if ({typeName}.TryParse(span, {STYLES}, cultureLocal, out var parsed_{propertyName}))");
+            builder.AppendLine($"if (FixedWidthUtf8BindingHelper.TryParseNumber(span, {STYLES}, cultureLocal, out {typeName} parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
             if (member.ValidationNotNull)
                 builder.AppendLine("else if (!(span.IsEmpty || span.IsWhiteSpace()))");

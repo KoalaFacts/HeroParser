@@ -6,6 +6,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ### Fixed
 - **Parse-error messages repeated the field value.** A value that failed to convert in a `[GenerateBinder]` CSV or Excel record read produced `Row 3, Column 2: Failed to parse 'Amount' at row 3, column 2. Value: 'twelve' Value: 'twelve'`; with a fluent `CsvMap` the value was also put into the message untruncated (a 5,000-character field gave a 5,170-character message). The message is now `Row 3, Column 2: Failed to parse column 'Amount'. Value: 'twelve'` (fluent maps: `Failed to parse property 'Amount'.`), with the value stated once and truncated to 100 characters as `CsvException.FieldValue` already was. `Row`, `Column` and `FieldValue` are unchanged.
+- **Negative decimals failed under fa-IR, ar-SA and he-IL.** These cultures write the negative sign as a minus with bidirectional marks, so `decimal`, `double` and `float` columns read with `WithCulture("he-IL")` rejected `-1.5` while `int` columns accepted `-1`, and `Excel.Read<T>().WithCulture(...)` could not read negative non-integer numeric cells. CSV (generated binders, fluent `CsvMap`) and Excel reads now also accept the ASCII `-` for these cultures; the culture's own sign still parses, and the fallback runs only after a parse fails.
 
 ## [2.9.1] - 2026-11-16
 

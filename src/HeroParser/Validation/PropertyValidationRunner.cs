@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using HeroParser.Internal;
 
 namespace HeroParser.Validation;
 
@@ -91,7 +92,7 @@ internal static class PropertyValidationRunner
         }
 
         if ((rangeMin.HasValue || rangeMax.HasValue) &&
-            double.TryParse(value, NumberStyles.Any, culture, out var numericValue))
+            CultureNumberParser.TryParse(value, NumberStyles.Any, culture, out double numericValue))
         {
             if (rangeMin.HasValue && numericValue < rangeMin.Value)
             {
@@ -223,7 +224,7 @@ internal static class PropertyValidationRunner
 
         if (rangeMin.HasValue || rangeMax.HasValue)
         {
-            if (double.TryParse(value, NumberStyles.Any, culture, out var numericValue))
+            if (CultureNumberParser.TryParse(value, NumberStyles.Any, culture, out double numericValue))
             {
                 if (rangeMin.HasValue && numericValue < rangeMin.Value)
                 {

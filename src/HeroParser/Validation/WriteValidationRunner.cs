@@ -1,4 +1,5 @@
 using System.Globalization;
+using HeroParser.Internal;
 
 namespace HeroParser.Validation;
 
@@ -99,15 +100,23 @@ internal static class WriteValidationRunner
             {
                 double numericValue;
                 bool converted;
-                try
+                if (value is string text)
                 {
-                    numericValue = Convert.ToDouble(value, culture);
-                    converted = true;
+                    // Same styles as Convert.ToDouble(string); also accepts the ASCII '-' where the culture's sign carries bidi marks.
+                    converted = CultureNumberParser.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, culture, out numericValue);
                 }
-                catch (Exception)
+                else
                 {
-                    converted = false;
-                    numericValue = 0;
+                    try
+                    {
+                        numericValue = Convert.ToDouble(value, culture);
+                        converted = true;
+                    }
+                    catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+                    {
+                        converted = false;
+                        numericValue = 0;
+                    }
                 }
 
                 if (converted)

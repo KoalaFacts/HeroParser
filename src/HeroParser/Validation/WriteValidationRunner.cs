@@ -112,7 +112,7 @@ internal static class WriteValidationRunner
                         numericValue = Convert.ToDouble(value, culture);
                         converted = true;
                     }
-                    catch (Exception)
+                    catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
                     {
                         converted = false;
                         numericValue = 0;

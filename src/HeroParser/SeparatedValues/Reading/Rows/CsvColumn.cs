@@ -240,7 +240,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(char))
         {
-            return double.TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, provider, out result);
+            return new CultureNumberParser(provider).TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, out result);
         }
         result = default;
         return false;
@@ -272,7 +272,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(char))
         {
-            return float.TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, provider, out result);
+            return new CultureNumberParser(provider).TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, out result);
         }
         result = default;
         return false;
@@ -304,7 +304,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(char))
         {
-            return decimal.TryParse(GetCharSpan(), NumberStyles.Number, provider, out result);
+            return new CultureNumberParser(provider).TryParse(GetCharSpan(), NumberStyles.Number, out result);
         }
         result = default;
         return false;

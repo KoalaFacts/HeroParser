@@ -132,7 +132,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => int.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
@@ -150,7 +150,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => long.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
@@ -168,7 +168,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => short.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
@@ -186,7 +186,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => byte.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
@@ -277,7 +277,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => decimal.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => new CultureNumberParser(state.Provider).TryParse(chars, state.Styles, out parsed),
             out result);
     }
 
@@ -296,7 +296,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => double.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => new CultureNumberParser(state.Provider).TryParse(chars, state.Styles, out parsed),
             out result);
     }
 
@@ -315,7 +315,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => float.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => new CultureNumberParser(state.Provider).TryParse(chars, state.Styles, out parsed),
             out result);
     }
 

@@ -729,7 +729,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.Indent();
         builder.AppendLine("var str = Encoding.UTF8.GetString(value);");
         builder.AppendLine("var fieldValue = str.Length > 100 ? str[..100] + \"...\" : str;");
-        builder.AppendLine($"return new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Failed to parse '{{columnName}}' at row {{rowNumber}}, column {{columnIndex + 1}}. Value: '{{fieldValue}}'\", rowNumber, columnIndex + 1, fieldValue);");
+        builder.AppendLine($"return new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Failed to parse column '{{columnName}}'.\", rowNumber, columnIndex + 1, fieldValue);");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();
@@ -1781,17 +1781,17 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         // For floating-point types (decimal, double, float), use culture-aware parsing
         if (baseType is "decimal" or "System.Decimal")
         {
-            builder.AppendLine($"if (decimal.TryParse(span, NumberStyles.Number, _culture, out var parsed_{propertyName}))");
+            builder.AppendLine($"if (column.TryParseDecimal(out var parsed_{propertyName}, _culture))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
         else if (baseType is "double" or "System.Double")
         {
-            builder.AppendLine($"if (double.TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, _culture, out var parsed_{propertyName}))");
+            builder.AppendLine($"if (column.TryParseDouble(out var parsed_{propertyName}, _culture))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
         else if (baseType is "float" or "System.Single")
         {
-            builder.AppendLine($"if (float.TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, _culture, out var parsed_{propertyName}))");
+            builder.AppendLine($"if (column.TryParseSingle(out var parsed_{propertyName}, _culture))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
         else if (baseType is "System.Half" or "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger")
@@ -2096,7 +2096,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.Indent();
         builder.AppendLine("var str = new string(value);");
         builder.AppendLine("var fieldValue = str.Length > 100 ? str[..100] + \"...\" : str;");
-        builder.AppendLine($"return new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Failed to parse '{{columnName}}' at row {{rowNumber}}, column {{columnIndex + 1}}. Value: '{{fieldValue}}'\", rowNumber, columnIndex + 1, fieldValue);");
+        builder.AppendLine($"return new {EXCEPTION_TYPE}({ERROR_CODE_TYPE}.ParseError, $\"Failed to parse column '{{columnName}}'.\", rowNumber, columnIndex + 1, fieldValue);");
         builder.Unindent();
         builder.AppendLine("}");
         builder.AppendLine();

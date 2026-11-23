@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using HeroParser.Internal;
 
 namespace HeroParser.Validation;
 
@@ -90,7 +91,7 @@ internal readonly struct PropertyValidationRunner(CultureInfo culture)
         }
 
         if ((rangeMin.HasValue || rangeMax.HasValue) &&
-            double.TryParse(value, NumberStyles.Any, culture, out var numericValue))
+            new CultureNumberParser(culture).TryParse(value, NumberStyles.Any, out double numericValue))
         {
             if (rangeMin.HasValue && numericValue < rangeMin.Value)
             {
@@ -221,7 +222,7 @@ internal readonly struct PropertyValidationRunner(CultureInfo culture)
 
         if (rangeMin.HasValue || rangeMax.HasValue)
         {
-            if (double.TryParse(value, NumberStyles.Any, culture, out var numericValue))
+            if (new CultureNumberParser(culture).TryParse(value, NumberStyles.Any, out double numericValue))
             {
                 if (rangeMin.HasValue && numericValue < rangeMin.Value)
                 {

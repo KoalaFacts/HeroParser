@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Text.RegularExpressions;
+using HeroParser.Internal;
 
 namespace HeroParser.Validation;
 
@@ -190,6 +191,9 @@ public sealed record WritePropertyValidation(
     {
         switch (value)
         {
+            case string text:
+                // Same styles as Convert.ToDouble(string); also accepts ASCII '-' where the culture's sign carries bidi marks.
+                return new CultureNumberParser(culture).TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, out numericValue);
             case Half h:
                 numericValue = (double)h;
                 return true;

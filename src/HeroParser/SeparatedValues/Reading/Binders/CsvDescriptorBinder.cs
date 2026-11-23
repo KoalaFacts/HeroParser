@@ -152,7 +152,7 @@ public sealed class CsvDescriptorBinder<T> : ICsvSourceBinder<char, T> where T :
                         var fieldValue = new string(span);
                         throw new CsvException(
                             CsvErrorCode.ParseError,
-                            $"Failed to parse '{fieldValue}' for property '{prop.Name}'.",
+                            $"Failed to parse property '{prop.Name}'.",
                             rowNumber,
                             idx + 1,
                             fieldValue,

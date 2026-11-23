@@ -889,7 +889,7 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
     {
         public bool Convert(ReadOnlySpan<char> span, out object? value)
         {
-            if (int.TryParse(span, NumberStyles.Integer, culture, out var result))
+            if (new CultureNumberParser(culture).TryParse(span, NumberStyles.Integer, out int result))
             {
                 value = result;
                 return true;
@@ -903,7 +903,7 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
     {
         public bool Convert(ReadOnlySpan<char> span, out object? value)
         {
-            if (long.TryParse(span, NumberStyles.Integer, culture, out var result))
+            if (new CultureNumberParser(culture).TryParse(span, NumberStyles.Integer, out long result))
             {
                 value = result;
                 return true;
@@ -917,7 +917,7 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
     {
         public bool Convert(ReadOnlySpan<char> span, out object? value)
         {
-            if (short.TryParse(span, NumberStyles.Integer, culture, out var result))
+            if (new CultureNumberParser(culture).TryParse(span, NumberStyles.Integer, out short result))
             {
                 value = result;
                 return true;
@@ -931,7 +931,7 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
     {
         public bool Convert(ReadOnlySpan<char> span, out object? value)
         {
-            if (byte.TryParse(span, NumberStyles.Integer, culture, out var result))
+            if (new CultureNumberParser(culture).TryParse(span, NumberStyles.Integer, out byte result))
             {
                 value = result;
                 return true;
@@ -945,7 +945,7 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
     {
         public bool Convert(ReadOnlySpan<char> span, out object? value)
         {
-            if (decimal.TryParse(span, NumberStyles.Number, culture, out var result))
+            if (new CultureNumberParser(culture).TryParse(span, NumberStyles.Number, out decimal result))
             {
                 value = result;
                 return true;
@@ -959,7 +959,7 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
     {
         public bool Convert(ReadOnlySpan<char> span, out object? value)
         {
-            if (double.TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, culture, out var result))
+            if (new CultureNumberParser(culture).TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, out double result))
             {
                 value = result;
                 return true;
@@ -973,7 +973,7 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
     {
         public bool Convert(ReadOnlySpan<char> span, out object? value)
         {
-            if (float.TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, culture, out var result))
+            if (new CultureNumberParser(culture).TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, out float result))
             {
                 value = result;
                 return true;

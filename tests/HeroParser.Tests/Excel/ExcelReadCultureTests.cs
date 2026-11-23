@@ -14,6 +14,9 @@ public class ExcelReadCultureTests
     [InlineData("fr-FR")]
     [InlineData("sv-SE")]
     [InlineData("en-US")]
+    [InlineData("fa-IR")]
+    [InlineData("ar-SA")]
+    [InlineData("he-IL")]
     public void Read_NumericCells_WithCulture_BindsStoredValue(string cultureName)
     {
         using var xlsx = ExcelTestHelper.CreateXlsx("Sheet1", [
@@ -60,6 +63,23 @@ public class ExcelReadCultureTests
 
         Assert.Single(records);
         Assert.Equal(expected, records[0].Value);
+    }
+
+    [Theory]
+    [InlineData("fa-IR")]
+    [InlineData("ar-SA")]
+    [InlineData("he-IL")]
+    public void Read_NegativeFloatingPointCells_WithBidiMarkedMinusCulture_BindsStoredValue(string cultureName)
+    {
+        using var xlsx = ExcelTestHelper.CreateXlsx("Sheet1", [
+            ["Value"],
+            ["-1.2345678901234567E-20"]
+        ]);
+
+        var records = HeroParser.Excel.Read<ExcelCultureDoubleRecord>().WithCulture(cultureName).FromStream(xlsx);
+
+        Assert.Single(records);
+        Assert.Equal(-1.2345678901234567E-20, records[0].Value);
     }
 
     [Fact]

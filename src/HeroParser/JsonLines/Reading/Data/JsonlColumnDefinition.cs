@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace HeroParser.JsonLines.Reading.Data;
 
 /// <summary>
@@ -6,4 +8,9 @@ namespace HeroParser.JsonLines.Reading.Data;
 /// <param name="Name">The column name.</param>
 /// <param name="JsonPath">A dot/bracket path into the JSON object — e.g. <c>messages[0].content</c>.</param>
 /// <param name="DataType">The CLR type of the value (e.g. <c>typeof(string)</c>, <c>typeof(long)</c>).</param>
-public sealed record JsonlColumnDefinition(string Name, string JsonPath, Type DataType);
+public sealed record JsonlColumnDefinition(
+    string Name,
+    string JsonPath,
+    [property: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)]
+    [param: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)]
+    Type DataType);

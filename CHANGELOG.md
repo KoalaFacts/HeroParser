@@ -4,6 +4,8 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-11-23
+
 ### Added
 - **ARM64 & Portable `Vector128` SIMD Scanner**: Added ARM64 `AdvSimd` (NEON) and portable 128-bit `Vector128` support to `CsvRowBatchScanner`, paired with a branchless 6-step software prefix-XOR quote mask fallback when `PCLMULQDQ` is unavailable.
 - **NativeAOT-Safe `IDataReader` / `DbDataReader` Support Across Formats**: Added reflection-free `Csv.WriteFromDataReader*`, `Excel.WriteFromDataReader*`, `FixedWidth.WriteFromDataReader*`, `Jsonl.WriteFromDataReader*`, `Htb.CreateDataReader`, and `Htb.WriteFromDataReader*` sync and async streaming APIs.

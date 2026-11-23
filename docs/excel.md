@@ -137,6 +137,12 @@ List<SalesRecord> sales = Excel.Read<SalesRecord>()
     .FromFile("report.xlsx");
 ```
 
+You can also inspect worksheet names in workbook order before selecting a sheet:
+
+```csharp
+IReadOnlyList<string> sheetNames = Excel.GetSheetNames("report.xlsx");
+```
+
 ### Row-Level Reading
 
 Read rows as `string[]` without any type binding when you need raw cell values.

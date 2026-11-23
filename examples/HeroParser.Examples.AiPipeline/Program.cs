@@ -39,11 +39,13 @@ try
         """;
 
     byte[] qaUtf8 = Encoding.UTF8.GetBytes(qaCsv);
-    using var rawReader = Csv.ReadFromByteSpan(qaUtf8);
     int rawRowCount = 0;
-    while (rawReader.MoveNext())
+    using (var rawReader = Csv.ReadFromByteSpan(qaUtf8))
     {
-        rawRowCount++;
+        while (rawReader.MoveNext())
+        {
+            rawRowCount++;
+        }
     }
 
     var inferred = Csv.InferSchema(

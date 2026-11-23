@@ -1,5 +1,7 @@
 using System.Buffers.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -72,7 +74,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.ParseIsomorphic<TResult>(GetByteSpan(), provider);
+            return new Utf8SpanParser(GetByteSpan()).ParseIsomorphic<TResult>(provider);
         }
         throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
     }
@@ -80,13 +82,13 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     /// <summary>Attempts to parse the column using <see cref="ISpanParsable{TResult}"/> and invariant culture.</summary>
     /// <remarks>For byte spans, uses stack allocation for fields up to 256 UTF-16 characters.</remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryParse<TResult>(out TResult? result) where TResult : ISpanParsable<TResult>
+    public bool TryParse<TResult>([MaybeNullWhen(false)] out TResult result) where TResult : ISpanParsable<TResult>
         => TryParse(out result, CultureInfo.InvariantCulture);
 
     /// <summary>Attempts to parse the column using <see cref="ISpanParsable{TResult}"/> and the specified format provider.</summary>
     /// <remarks>For byte spans, uses stack allocation for fields up to 256 UTF-16 characters.</remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryParse<TResult>(out TResult? result, IFormatProvider? provider) where TResult : ISpanParsable<TResult>
+    public bool TryParse<TResult>([MaybeNullWhen(false)] out TResult result, IFormatProvider? provider) where TResult : ISpanParsable<TResult>
     {
         if (typeof(T) == typeof(char))
         {
@@ -94,7 +96,23 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseIsomorphic<TResult>(GetByteSpan(), provider, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseIsomorphic<TResult>(provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column using <see cref="IUtf8SpanParsable{TResult}"/> and the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseUtf8<TResult>([MaybeNullWhen(false)] out TResult result, IFormatProvider? provider = null) where TResult : IUtf8SpanParsable<TResult>
+    {
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseUtf8Isomorphic(provider ?? CultureInfo.InvariantCulture, out result);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            return Utf8SpanParser.TryParseUtf8FromChars(GetCharSpan(), provider ?? CultureInfo.InvariantCulture, out result);
         }
         result = default;
         return false;
@@ -218,7 +236,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDouble(GetByteSpan(), provider, NumberStyles.Float | NumberStyles.AllowThousands, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDouble(provider, NumberStyles.Float | NumberStyles.AllowThousands, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -250,7 +268,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseSingle(GetByteSpan(), provider, NumberStyles.Float | NumberStyles.AllowThousands, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseSingle(provider, NumberStyles.Float | NumberStyles.AllowThousands, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -282,7 +300,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDecimal(GetByteSpan(), provider, NumberStyles.Number, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDecimal(provider, NumberStyles.Number, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -314,7 +332,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDateTime(GetByteSpan(), CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDateTime(CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -331,7 +349,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDateTime(GetByteSpan(), provider, styles, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDateTime(provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -348,7 +366,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDateTimeExact(GetByteSpan(), format, provider, styles, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDateTimeExact(format, provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -375,7 +393,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDateTimeOffset(GetByteSpan(), provider, styles, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDateTimeOffset(provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -392,7 +410,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDateTimeOffsetExact(GetByteSpan(), format, provider, styles, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDateTimeOffsetExact(format, provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -417,7 +435,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDateOnly(GetByteSpan(), provider, styles, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDateOnly(provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -434,7 +452,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseDateOnlyExact(GetByteSpan(), format, provider, styles, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseDateOnlyExact(format, provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -459,7 +477,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseTimeOnly(GetByteSpan(), provider, styles, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseTimeOnly(provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -476,7 +494,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseTimeOnlyExact(GetByteSpan(), format, provider, styles, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseTimeOnlyExact(format, provider, styles, out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -592,9 +610,188 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.TryParseEnum(GetByteSpan(), ignoreCase: true, out result);
+            return new Utf8SpanParser(GetByteSpan()).TryParseEnum(ignoreCase: true, out result);
         }
         result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column as a <see cref="TimeSpan"/> using invariant culture.</summary>
+    public bool TryParseTimeSpan(out TimeSpan result)
+        => TryParseTimeSpan(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the column as a <see cref="TimeSpan"/> using the specified format provider.</summary>
+    public bool TryParseTimeSpan(out TimeSpan result, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(char))
+        {
+            return TimeSpan.TryParse(GetCharSpan(), provider, out result);
+        }
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseTimeSpan(provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column as a <see cref="TimeSpan"/> using an exact format and culture.</summary>
+    public bool TryParseTimeSpan(out TimeSpan result, string format, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(char))
+        {
+            return TimeSpan.TryParseExact(GetCharSpan(), format, provider, out result);
+        }
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseTimeSpanExact(format, provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column as a <see cref="TimeSpan"/> using an exact format and invariant culture.</summary>
+    public bool TryParseTimeSpan(out TimeSpan result, string format)
+        => TryParseTimeSpan(out result, format, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the column as a single <see cref="char"/>.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseChar(out char result)
+    {
+        if (typeof(T) == typeof(char))
+        {
+            ReadOnlySpan<char> chars = GetCharSpan();
+            if (chars.Length == 1)
+            {
+                result = chars[0];
+                return true;
+            }
+            result = default;
+            return false;
+        }
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseChar(out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column as a <see cref="Half"/> using invariant culture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseHalf(out Half result)
+        => TryParseHalf(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the column as a <see cref="Half"/> using the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseHalf(out Half result, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseHalf(provider, NumberStyles.Float | NumberStyles.AllowThousands, out result);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            return Half.TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column as an <see cref="Int128"/> using invariant culture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseInt128(out Int128 result)
+        => TryParseInt128(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the column as an <see cref="Int128"/> using the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseInt128(out Int128 result, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseInt128(provider, out result);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            return Int128.TryParse(GetCharSpan(), NumberStyles.Integer, provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column as a <see cref="UInt128"/> using invariant culture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseUInt128(out UInt128 result)
+        => TryParseUInt128(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the column as a <see cref="UInt128"/> using the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseUInt128(out UInt128 result, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseUInt128(provider, out result);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            return UInt128.TryParse(GetCharSpan(), NumberStyles.Integer, provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the column as a <see cref="BigInteger"/> using invariant culture.</summary>
+    public bool TryParseBigInteger(out BigInteger result)
+        => TryParseBigInteger(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the column as a <see cref="BigInteger"/> using the specified format provider.</summary>
+    public bool TryParseBigInteger(out BigInteger result, IFormatProvider? provider)
+    {
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseBigInteger(provider, out result);
+        }
+        if (typeof(T) == typeof(char))
+        {
+            return BigInteger.TryParse(GetCharSpan(), NumberStyles.Integer, provider, out result);
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse a non-empty column as a <see cref="Uri"/>.</summary>
+    public bool TryParseUri([NotNullWhen(true)] out Uri? result)
+    {
+        if (typeof(T) == typeof(char))
+        {
+            ReadOnlySpan<char> chars = GetCharSpan();
+            if (chars.IsEmpty || chars.IsWhiteSpace())
+            {
+                result = null;
+                return false;
+            }
+            return Uri.TryCreate(new string(chars.Trim()), UriKind.RelativeOrAbsolute, out result);
+        }
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseUri(out result);
+        }
+        result = null;
+        return false;
+    }
+
+    /// <summary>Attempts to parse a Base64-encoded column into a byte array.</summary>
+    public bool TryParseBase64Bytes([NotNullWhen(true)] out byte[]? result)
+    {
+        if (typeof(T) == typeof(char))
+        {
+            return Utf8SpanParser.TryParseBase64Chars(GetCharSpan(), out result);
+        }
+        if (typeof(T) == typeof(byte))
+        {
+            return new Utf8SpanParser(GetByteSpan()).TryParseBase64Bytes(out result);
+        }
+        result = null;
         return false;
     }
 
@@ -609,7 +806,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(byte))
         {
-            return Utf8SpanParser.EqualsString(GetByteSpan(), other, StringComparison.Ordinal);
+            return new Utf8SpanParser(GetByteSpan()).EqualsString(other, StringComparison.Ordinal);
         }
         return false;
     }
@@ -706,17 +903,17 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string UnquoteToStringChar(char quote)
-        => CsvPipeColumnText.Decode(GetCharSpan(), quote, escape: null, enableQuotedFields: true);
+        => new CsvPipeColumnText(quote, escape: null, enableQuotedFields: true).Decode(GetCharSpan());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string UnquoteToStringByte(byte quote)
-        => CsvPipeColumnText.Decode(GetByteSpan(), quote, escape: null, enableQuotedFields: true);
+        => new CsvPipeColumnText(quote, escape: null, enableQuotedFields: true).Decode(GetByteSpan());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string UnquoteToStringByteWithEscape(byte quote, byte? escape)
-        => CsvPipeColumnText.Decode(GetByteSpan(), quote, escape, enableQuotedFields: true);
+        => new CsvPipeColumnText(quote, escape, enableQuotedFields: true).Decode(GetByteSpan());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private string UnquoteToStringCharWithEscape(char quote, char? escape)
-        => CsvPipeColumnText.Decode(GetCharSpan(), quote, escape, enableQuotedFields: true);
+        => new CsvPipeColumnText(quote, escape, enableQuotedFields: true).Decode(GetCharSpan());
 }

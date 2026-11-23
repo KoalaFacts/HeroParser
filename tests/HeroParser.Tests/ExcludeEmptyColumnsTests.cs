@@ -7,8 +7,6 @@ namespace HeroParser.Tests;
 [Collection("AsyncWriterTests")]
 public class ExcludeEmptyColumnsTests
 {
-    #region Test Record Types
-
     public class PersonRecord
     {
         public string? Name { get; set; }
@@ -50,10 +48,6 @@ public class ExcludeEmptyColumnsTests
         [Format(ExcludeIfAllEmpty = true)]
         public string? Fax { get; set; }
     }
-
-    #endregion
-
-    #region Core Behavior
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -162,10 +156,6 @@ public class ExcludeEmptyColumnsTests
         Assert.Equal("Name,Email,Phone\r\nAlice,,\r\n", result);
     }
 
-    #endregion
-
-    #region Empty Value Semantics
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ExcludeEmptyColumns_WhitespaceValue_TreatedAsNonEmpty()
@@ -231,10 +221,6 @@ public class ExcludeEmptyColumnsTests
         Assert.Equal("Name\r\nAlice\r\nBob\r\n", result);
     }
 
-    #endregion
-
-    #region Option Integration
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ExcludeEmptyColumns_WithWriteHeaderFalse_DataRowsFiltered()
@@ -296,10 +282,6 @@ public class ExcludeEmptyColumnsTests
         Assert.Contains("10", ex.Message);
     }
 
-    #endregion
-
-    #region Builder API
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Builder_WithoutEmptyColumns_ExcludesEmptyColumns()
@@ -339,10 +321,6 @@ public class ExcludeEmptyColumnsTests
             File.Delete(path);
         }
     }
-
-    #endregion
-
-    #region Async Paths
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -385,10 +363,6 @@ public class ExcludeEmptyColumnsTests
         Assert.Equal("Name,Phone\r\nAlice,123\r\nBob,456\r\n", result);
     }
 
-    #endregion
-
-    #region Edge Cases
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ExcludeEmptyColumns_NullRecordInCollection_TreatedAsAllEmpty()
@@ -422,10 +396,6 @@ public class ExcludeEmptyColumnsTests
         // All columns non-empty in first record → short-circuit, output includes all
         Assert.Equal("Name,Email,Phone\r\nAlice,a@b.com,123\r\nBob,,\r\n", result);
     }
-
-    #endregion
-
-    #region Per-Column ExcludeIfAllEmpty
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -504,10 +474,6 @@ public class ExcludeEmptyColumnsTests
         Assert.Equal("Name,Phone,Fax\r\n", result);
     }
 
-    #endregion
-
-    #region Helpers
-
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
         foreach (var item in source)
@@ -516,6 +482,4 @@ public class ExcludeEmptyColumnsTests
             yield return item;
         }
     }
-
-    #endregion
 }

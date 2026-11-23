@@ -22,7 +22,7 @@ public class WriteValidationRunnerTests
         CultureInfo? culture = null)
     {
         var errors = new List<ValidationError>();
-        WriteValidationRunner.Validate(value, propertyName, rowNumber, columnIndex, rules, errors, culture ?? CultureInfo.InvariantCulture);
+        rules.Validate(value, propertyName, rowNumber, columnIndex, errors, culture ?? CultureInfo.InvariantCulture);
         return errors;
     }
 

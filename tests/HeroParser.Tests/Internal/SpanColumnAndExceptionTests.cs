@@ -255,7 +255,7 @@ public class SpanParserFactoryTests
     [Fact]
     public void GetParser_String()
     {
-        var parser = SpanParserFactory.GetParser<string>();
+        var parser = new SpanParserFactory().GetParser<string>();
         Assert.Equal("hi", parser("hi".AsSpan(), CultureInfo.InvariantCulture));
     }
 
@@ -274,22 +274,23 @@ public class SpanParserFactoryTests
     [InlineData(typeof(Guid))]
     public void GetParser_Value_AndNullable(Type t)
     {
+        var factory = new SpanParserFactory();
         var method = typeof(SpanParserFactory).GetMethod(nameof(SpanParserFactory.GetParser))!;
-        Assert.NotNull(method.MakeGenericMethod(t).Invoke(null, null));
-        Assert.NotNull(method.MakeGenericMethod(typeof(Nullable<>).MakeGenericType(t)).Invoke(null, null));
+        Assert.NotNull(method.MakeGenericMethod(t).Invoke(factory, null));
+        Assert.NotNull(method.MakeGenericMethod(typeof(Nullable<>).MakeGenericType(t)).Invoke(factory, null));
     }
 
     [Fact]
     public void GetParser_Int_Parses()
     {
-        var parser = SpanParserFactory.GetParser<int>();
+        var parser = new SpanParserFactory().GetParser<int>();
         Assert.Equal(42, parser("42".AsSpan(), CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void GetParser_NullableInt_EmptyReturnsNull()
     {
-        var parser = SpanParserFactory.GetParser<int?>();
+        var parser = new SpanParserFactory().GetParser<int?>();
         Assert.Null(parser("".AsSpan(), CultureInfo.InvariantCulture));
         Assert.Null(parser("   ".AsSpan(), CultureInfo.InvariantCulture));
         Assert.Equal(5, parser("5".AsSpan(), CultureInfo.InvariantCulture));
@@ -298,30 +299,32 @@ public class SpanParserFactoryTests
     [Fact]
     public void GetParser_Enum_And_Nullable()
     {
-        var parser = SpanParserFactory.GetParser<Size>();
+        var factory = new SpanParserFactory();
+        var parser = factory.GetParser<Size>();
         Assert.Equal(Size.Large, parser("Large".AsSpan(), CultureInfo.InvariantCulture));
-        var nparser = SpanParserFactory.GetParser<Size?>();
+        var nparser = factory.GetParser<Size?>();
         Assert.Null(nparser("".AsSpan(), CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void GetParser_Bool_DateTime_DateOnly_TimeOnly_Guid()
     {
-        Assert.True(SpanParserFactory.GetParser<bool>()("true".AsSpan(), CultureInfo.InvariantCulture));
+        var factory = new SpanParserFactory();
+        Assert.True(factory.GetParser<bool>()("true".AsSpan(), CultureInfo.InvariantCulture));
         Assert.Equal(new DateTime(2024, 1, 15),
-            SpanParserFactory.GetParser<DateTime>()("2024-01-15".AsSpan(), CultureInfo.InvariantCulture));
+            factory.GetParser<DateTime>()("2024-01-15".AsSpan(), CultureInfo.InvariantCulture));
         Assert.Equal(new DateOnly(2024, 1, 15),
-            SpanParserFactory.GetParser<DateOnly>()("2024-01-15".AsSpan(), CultureInfo.InvariantCulture));
+            factory.GetParser<DateOnly>()("2024-01-15".AsSpan(), CultureInfo.InvariantCulture));
         Assert.Equal(new TimeOnly(10, 30),
-            SpanParserFactory.GetParser<TimeOnly>()("10:30".AsSpan(), CultureInfo.InvariantCulture));
+            factory.GetParser<TimeOnly>()("10:30".AsSpan(), CultureInfo.InvariantCulture));
         Assert.NotEqual(System.Guid.Empty,
-            SpanParserFactory.GetParser<Guid>()("12345678-1234-1234-1234-123456789012".AsSpan(), CultureInfo.InvariantCulture));
+            factory.GetParser<Guid>()("12345678-1234-1234-1234-123456789012".AsSpan(), CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void GetParser_UnsupportedType_Throws()
     {
-        Assert.Throws<NotSupportedException>(SpanParserFactory.GetParser<Uri>);
+        Assert.Throws<NotSupportedException>(() => new SpanParserFactory().GetParser<TimeZoneInfo>());
     }
 }
 #pragma warning restore IL2026, IL3050

@@ -76,11 +76,14 @@ public class JsonlBenchmark
         // silently defaulted names, amounts, booleans, and JSON naming differences.
         ValidateRows(Jsonl.Read<FlatRow>().WithJsonOptions(serializerOptions).FromText(jsonl), "reflection text");
         ValidateRows(Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromText(jsonl), "source-generated text");
+        ValidateGeneratedRows(Jsonl.Read<GeneratedFlatRow>().FromText(jsonl), "GenerateBinder text");
 
         using var reflectionStream = new MemoryStream(jsonlUtf8, writable: false);
         ValidateRows(Jsonl.Read<FlatRow>().WithJsonOptions(serializerOptions).FromStream(reflectionStream), "reflection stream");
         using var generatedStream = new MemoryStream(jsonlUtf8, writable: false);
         ValidateRows(Jsonl.Read<FlatRow>().WithTypeInfo(FlatRowJsonContext.Default.FlatRow).FromStream(generatedStream), "source-generated stream");
+        using var binderStream = new MemoryStream(jsonlUtf8, writable: false);
+        ValidateGeneratedRows(Jsonl.Read<GeneratedFlatRow>().FromStream(binderStream), "GenerateBinder stream");
 
         // The timed writers do real serialization, so verify their complete
         // output—not merely equal byte counts—before any benchmark is timed.
@@ -111,6 +114,27 @@ public class JsonlBenchmark
         {
             int index = 0;
             foreach (FlatRow actual in reader)
+            {
+                if (index >= rows.Count)
+                    throw new InvalidOperationException($"JSONL {variant}: unexpected extra record at {index}.");
+                FlatRow expected = rows[index];
+                if (actual.Id != expected.Id ||
+                    !string.Equals(actual.Name, expected.Name, StringComparison.Ordinal) ||
+                    actual.Amount != expected.Amount || actual.Active != expected.Active)
+                    throw new InvalidOperationException($"JSONL {variant}: record {index} differs from the generated input.");
+                index++;
+            }
+            if (index != rows.Count)
+                throw new InvalidOperationException($"JSONL {variant}: expected {rows.Count} records, read {index}.");
+        }
+    }
+
+    private void ValidateGeneratedRows(JsonlRecordReader<GeneratedFlatRow> reader, string variant)
+    {
+        using (reader)
+        {
+            int index = 0;
+            foreach (GeneratedFlatRow actual in reader)
             {
                 if (index >= rows.Count)
                     throw new InvalidOperationException($"JSONL {variant}: unexpected extra record at {index}.");
@@ -292,6 +316,29 @@ public class JsonlBenchmark
     }
 
     [Benchmark]
+    public long ReadFromText_GenerateBinder()
+    {
+        long total = 0;
+        foreach (GeneratedFlatRow row in Jsonl.Read<GeneratedFlatRow>().FromText(jsonl))
+        {
+            total += row.Id;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public long ReadFromStream_GenerateBinder()
+    {
+        using var ms = new MemoryStream(jsonlUtf8, writable: false);
+        long total = 0;
+        foreach (GeneratedFlatRow row in Jsonl.Read<GeneratedFlatRow>().FromStream(ms))
+        {
+            total += row.Id;
+        }
+        return total;
+    }
+
+    [Benchmark]
     public string ConvertCsvToJsonlFlat()
         => CsvToJsonlConverter.Convert(csv, CsvToJsonlShape.FlatObject(), csvConversionOptions);
 
@@ -300,6 +347,15 @@ public class JsonlBenchmark
         => JsonlToCsvConverter.Convert(jsonl);
 
     public sealed class FlatRow
+    {
+        public int Id { get; set; }
+        public string? Name { get; set; }
+        public decimal Amount { get; set; }
+        public bool Active { get; set; }
+    }
+
+    [GenerateBinder]
+    public sealed class GeneratedFlatRow
     {
         public int Id { get; set; }
         public string? Name { get; set; }

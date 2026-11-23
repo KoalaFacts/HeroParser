@@ -5,6 +5,7 @@ using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Records;
 using HeroParser.FixedWidths.Records.Binding;
 using HeroParser.FixedWidths.Streaming;
+using HeroParser.Internal;
 
 namespace HeroParser;
 
@@ -107,12 +108,9 @@ public static partial class FixedWidth
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
+        options.Validate();
 
-        // Check file size before reading
-        var fileInfo = new FileInfo(path);
-        options.ValidateInputSize(fileInfo.Length);
-
-        var text = File.ReadAllText(path, encoding);
+        var text = ReadFileText(path, options, encoding);
         return ReadFromText(text, options);
     }
 
@@ -166,11 +164,7 @@ public static partial class FixedWidth
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
-        // Check file size before reading
-        var fileInfo = new FileInfo(path);
-        options.ValidateInputSize(fileInfo.Length);
-
-        var text = await File.ReadAllTextAsync(path, encoding, cancellationToken).ConfigureAwait(false);
+        var text = await ReadFileTextAsync(path, options, encoding, cancellationToken).ConfigureAwait(false);
         return new FixedWidthTextSource(text, options);
     }
 
@@ -227,13 +221,11 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
-        options.ValidateInputSize(new FileInfo(path).Length);
+        var file = new CompressedFile(path);
+        if (!file.IsCompressed)
+            options.ValidateInputSize(new FileInfo(path).Length);
 
-        var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
+        var stream = file.OpenRead(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
@@ -326,10 +318,9 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
-        options.ValidateInputSize(new FileInfo(path).Length);
         culture ??= CultureInfo.InvariantCulture;
 
-        var text = File.ReadAllText(path, encoding);
+        var text = ReadFileText(path, options, encoding);
         return DeserializeRecords<T>(text, options, culture, onError);
     }
 
@@ -357,10 +348,9 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
-        options.ValidateInputSize(new FileInfo(path).Length);
         culture ??= CultureInfo.InvariantCulture;
 
-        var text = await File.ReadAllTextAsync(path, encoding, cancellationToken).ConfigureAwait(false);
+        var text = await ReadFileTextAsync(path, options, encoding, cancellationToken).ConfigureAwait(false);
         var records = DeserializeRecords<T>(text, options, culture, onError);
 
         foreach (var record in records)
@@ -453,6 +443,41 @@ public static partial class FixedWidth
             cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             yield return record;
+        }
+    }
+
+    internal static string ReadFileText(string path, FixedWidthReadOptions options, Encoding encoding)
+    {
+        var file = new CompressedFile(path);
+        if (!file.IsCompressed)
+        {
+            options.ValidateInputSize(new FileInfo(path).Length);
+            return File.ReadAllText(path, encoding);
+        }
+
+        using var stream = file.OpenRead(bufferSize: 4096, FileOptions.SequentialScan);
+        using var reader = CreateBufferedTextReader(stream, options, encoding, leaveOpen: true);
+        return reader.ReadToEnd();
+    }
+
+    internal static async Task<string> ReadFileTextAsync(
+        string path,
+        FixedWidthReadOptions options,
+        Encoding encoding,
+        CancellationToken cancellationToken)
+    {
+        var file = new CompressedFile(path);
+        if (!file.IsCompressed)
+        {
+            options.ValidateInputSize(new FileInfo(path).Length);
+            return await File.ReadAllTextAsync(path, encoding, cancellationToken).ConfigureAwait(false);
+        }
+
+        var stream = file.OpenRead(bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using (stream.ConfigureAwait(false))
+        {
+            using var reader = CreateBufferedTextReader(stream, options, encoding, leaveOpen: true);
+            return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 

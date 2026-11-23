@@ -103,13 +103,12 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
 
                 if (prop.Validation is { HasAnyRule: true } validation)
                 {
-                    hasErrors |= PropertyValidationRunner.Validate(
+                    hasErrors |= new PropertyValidationRunner(cultureLocal).Validate(
                         span, prop.Name, row.RecordNumber, prop.Start,
                         columnName: null,
                         validation.NotEmpty, validation.MinLength, validation.MaxLength,
                         validation.RangeMin, validation.RangeMax, validation.Pattern,
-                        errors,
-                        cultureLocal);
+                        errors);
                 }
             }
         }
@@ -147,7 +146,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
             var span = field.ByteSpan;
 
             bool isNull = nullValsUtf8 is not null && IsNullValue(span, nullValsUtf8);
-            bool isEmptyOrWhitespace = Utf8SpanParser.IsNullOrWhiteSpace(span);
+            bool isEmptyOrWhitespace = new Utf8SpanParser(span).IsNullOrWhiteSpace();
 
             if ((prop.IsNotNull || prop.Validation is { NotEmpty: true }) && (isNull || isEmptyOrWhitespace))
             {
@@ -161,7 +160,7 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
                     columnName: null,
                     rule,
                     message,
-                    errors is null ? null : Utf8SpanParser.Decode(span));
+                    errors is null ? null : new Utf8SpanParser(span).Decode());
                 continue;
             }
 
@@ -175,13 +174,13 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
                     }
                     else
                     {
-                        var decoded = Utf8SpanParser.Decode(span);
+                        var decoded = new Utf8SpanParser(span).Decode();
                         prop.Setter(ref instance, decoded.AsSpan(), cultureLocal);
                     }
                 }
                 catch (Exception ex) when (ex is not FixedWidthException)
                 {
-                    var fieldValue = Utf8SpanParser.Decode(span);
+                    var fieldValue = new Utf8SpanParser(span).Decode();
                     throw new FixedWidthException(
                         FixedWidthErrorCode.ParseError,
                         $"Failed to parse '{fieldValue}' for property '{prop.Name}': {ex.Message}",
@@ -191,14 +190,13 @@ public sealed class FixedWidthDescriptorBinder<T> : IFixedWidthSourceBinder<T>, 
 
                 if (prop.Validation is { HasAnyRule: true } validation)
                 {
-                    hasErrors |= PropertyValidationRunner.Validate(
-                        Utf8SpanParser.Decode(span),
+                    hasErrors |= new PropertyValidationRunner(cultureLocal).Validate(
+                        new Utf8SpanParser(span).Decode(),
                         prop.Name, row.RecordNumber, prop.Start,
                         columnName: null,
                         validation.NotEmpty, validation.MinLength, validation.MaxLength,
                         validation.RangeMin, validation.RangeMax, validation.Pattern,
-                        errors,
-                        cultureLocal);
+                        errors);
                 }
             }
         }

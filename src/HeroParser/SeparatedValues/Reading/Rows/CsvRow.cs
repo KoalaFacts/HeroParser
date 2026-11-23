@@ -136,14 +136,14 @@ public readonly ref struct CsvRow<T> where T : unmanaged, IEquatable<T>
         {
             var bytes = MemoryMarshal.CreateReadOnlySpan(
                 ref Unsafe.As<T, byte>(ref MemoryMarshal.GetReference(span)), span.Length);
-            return CsvPipeColumnText.Decode(bytes, (byte)parserOptions.Quote,
-                parserOptions.EscapeCharacter is char escape ? (byte)escape : null, parserOptions.EnableQuotedFields);
+            return new CsvPipeColumnText((byte)parserOptions.Quote,
+                parserOptions.EscapeCharacter is char escape ? (byte)escape : null, parserOptions.EnableQuotedFields).Decode(bytes);
         }
         if (typeof(T) == typeof(char))
         {
             var chars = MemoryMarshal.CreateReadOnlySpan(
                 ref Unsafe.As<T, char>(ref MemoryMarshal.GetReference(span)), span.Length);
-            return CsvPipeColumnText.Decode(chars, parserOptions.Quote, parserOptions.EscapeCharacter, parserOptions.EnableQuotedFields);
+            return new CsvPipeColumnText(parserOptions.Quote, parserOptions.EscapeCharacter, parserOptions.EnableQuotedFields).Decode(chars);
         }
         throw new NotSupportedException($"Element type {typeof(T)} is not supported.");
     }

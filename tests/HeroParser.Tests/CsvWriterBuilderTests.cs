@@ -10,8 +10,6 @@ namespace HeroParser.Tests;
 [Collection("AsyncWriterTests")]
 public class CsvWriterBuilderTests
 {
-    #region Test Record Types
-
     public class TestPerson
     {
         public string? Name { get; set; }
@@ -28,10 +26,6 @@ public class CsvWriterBuilderTests
     {
         public DateTime Date { get; set; }
     }
-
-    #endregion
-
-    #region CsvWriterBuilder<T> Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -264,10 +258,6 @@ public class CsvWriterBuilderTests
         Assert.DoesNotContain("Name", csv);
     }
 
-    #endregion
-
-    #region CsvWriterBuilder (non-generic) Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void NonGenericBuilder_CreateWriter_Works()
@@ -412,10 +402,6 @@ public class CsvWriterBuilderTests
         Assert.EndsWith("\n", result);
     }
 
-    #endregion
-
-    #region Csv.Write() Entry Point Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvWrite_GenericEntryPoint_Works()
@@ -481,10 +467,6 @@ public class CsvWriterBuilderTests
         Assert.Contains("\"X\"\t\"Y\"", result);
         Assert.EndsWith("\n", result);
     }
-
-    #endregion
-
-    #region Async Terminal Method Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -566,6 +548,4 @@ public class CsvWriterBuilderTests
             yield return item;
         }
     }
-
-    #endregion
 }

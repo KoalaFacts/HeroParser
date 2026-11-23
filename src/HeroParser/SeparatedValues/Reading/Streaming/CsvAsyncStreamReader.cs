@@ -217,9 +217,10 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
             CsvRowParseResult result;
             try
             {
+                var rowParser = new CsvRowParser(options);
                 result = trackLineNumbers
-                    ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer)
-                    : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer);
+                    ? rowParser.ParseRow<byte, TrackLineNumbers>(span, columnEndsBuffer)
+                    : rowParser.ParseRow<byte, NoTrackLineNumbers>(span, columnEndsBuffer);
             }
             catch (CsvException ex) when (!endOfStream &&
                 (ex.QuoteStartPosition.HasValue || (options.AllowNewlinesInsideQuotes

@@ -633,8 +633,6 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(123, records[0].ZeroPadded);
     }
 
-    #region WithNullValues Tests
-
     [GenerateBinder]
     public class NullValueTestRecord
     {
@@ -723,10 +721,6 @@ public class FixedWidthRecordBindingTests
         Assert.Equal("null", records[0].StringField); // Not treated as null
     }
 
-    #endregion
-
-    #region WithProgress Tests
-
     [GenerateBinder]
     public class SimpleRecord
     {
@@ -810,10 +804,6 @@ public class FixedWidthRecordBindingTests
         Assert.Single(progressReports); // Final progress only
     }
 
-    #endregion
-
-    #region ForEachFromText Tests (Zero-Allocation API)
-
     [Fact]
     public void GenericBuilder_ForEachFromText_ReadsRecords()
     {
@@ -881,10 +871,6 @@ public class FixedWidthRecordBindingTests
         // Assert
         Assert.Equal(600m, totalSalary);
     }
-
-    #endregion
-
-    #region AllowShortRows Tests
 
     [GenerateBinder]
     public class ShortRowRecord
@@ -1001,10 +987,6 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(FixedWidthErrorCode.FieldOutOfBounds, ex.ErrorCode);
     }
 
-    #endregion
-
-    #region End Property Tests
-
     [GenerateBinder]
     public class EndPropertyRecord
     {
@@ -1087,10 +1069,6 @@ public class FixedWidthRecordBindingTests
         Assert.Equal(10, attr.Length); // Length value is used for field extraction
         Assert.Equal(20, attr.End);    // End retains its set value (source generator ignores it when Length is set)
     }
-
-    #endregion
-
-    #region HasHeaderRow Tests
 
     [Fact]
     public void GenericBuilder_WithHeader_SkipsHeaderRow_SourceGeneratedBinder()
@@ -1181,6 +1159,4 @@ public class FixedWidthRecordBindingTests
         Assert.Equal("0000000001", employees[0].Id);
         Assert.Equal("0000000002", employees[1].Id);
     }
-
-    #endregion
 }

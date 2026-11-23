@@ -13,8 +13,6 @@ namespace HeroParser.Tests;
 [Collection("AsyncWriterTests")]
 public class MultiSchemaTests
 {
-    #region Basic Functionality
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void StringDiscriminator_ParsesDifferentRecordTypes()
@@ -150,10 +148,6 @@ public class MultiSchemaTests
         Assert.IsType<NoHeaderTrailer>(results[2]);
     }
 
-    #endregion
-
-    #region Case Sensitivity
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CaseInsensitiveDiscriminator_MatchesIgnoringCase()
@@ -210,10 +204,6 @@ public class MultiSchemaTests
         Assert.IsType<SimpleDetail>(results[1]);
     }
 
-    #endregion
-
-    #region Unmatched Row Behavior
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void UnmatchedRow_Skip_IgnoresUnknownTypes()
@@ -266,10 +256,6 @@ public class MultiSchemaTests
 
         Assert.Contains("X", ex.Message);
     }
-
-    #endregion
-
-    #region Edge Cases
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -349,10 +335,6 @@ public class MultiSchemaTests
         Assert.Equal(2, results.Count);
     }
 
-    #endregion
-
-    #region Configuration Validation
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void MissingDiscriminator_ThrowsOnBuild()
@@ -393,10 +375,6 @@ public class MultiSchemaTests
                 .FromText("H,Data");
         });
     }
-
-    #endregion
-
-    #region Streaming
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -498,10 +476,6 @@ public class MultiSchemaTests
             await reader.MoveNextAsync(TestContext.Current.CancellationToken));
         Assert.Equal(CsvErrorCode.TooManyRows, ex.ErrorCode);
     }
-
-    #endregion
-
-    #region Test Record Classes
 
     [GenerateBinder]
     public class HeaderRecord
@@ -616,6 +590,4 @@ public class MultiSchemaTests
     {
         public string? Value { get; set; }
     }
-
-    #endregion
 }

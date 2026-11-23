@@ -50,6 +50,15 @@ public sealed record ExcelWriteOptions
     public string? TimeOnlyFormat { get; init; }
 
     /// <summary>
+    /// Gets or sets the format string for <see cref="TimeSpan"/> values.
+    /// </summary>
+    /// <remarks>
+    /// When <see langword="null"/>, uses the default constant (<c>"c"</c>) format.
+    /// Example: <c>"c"</c> or <c>"g"</c>.
+    /// </remarks>
+    public string? TimeSpanFormat { get; init; }
+
+    /// <summary>
     /// Gets or sets the format string for numeric values.
     /// </summary>
     /// <remarks>

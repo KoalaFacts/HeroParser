@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using HeroParser.FixedWidths.Records.Binding;
@@ -103,7 +104,7 @@ public sealed class FixedWidthRecordWriter<T>
             var template = templates[i];
             layouts[i] = new FixedWidthFieldLayout(template.MemberName, template.Start, template.Length);
         }
-        FixedWidthFieldLayoutValidator.Validate(layouts);
+        new FixedWidthFieldLayoutValidator(layouts).Validate();
 
         var result = new FieldDefinition[templates.Count];
         for (int i = 0; i < templates.Count; i++)
@@ -255,7 +256,7 @@ public sealed class FixedWidthRecordWriter<T>
                 if (options.ValidationMode == ValidationMode.Strict && field.Validation is { HasAnyRule: true } rules)
                 {
                     List<ValidationError> validationErrors = [];
-                    WriteValidationRunner.Validate(value, field.Name, rowNumber, i, rules, validationErrors, options.Culture);
+                    rules.Validate(value, field.Name, rowNumber, i, validationErrors, options.Culture);
                     if (validationErrors.Count > 0)
                         throw new ValidationException(validationErrors);
                 }
@@ -447,6 +448,52 @@ public sealed class FixedWidthRecordWriter<T>
             case ulong ul:
                 return ul.TryFormat(destination, out charsWritten, format ?? options.NumberFormat, culture);
 
+            case ushort ush:
+                return ush.TryFormat(destination, out charsWritten, format ?? options.NumberFormat, culture);
+
+            case sbyte sb:
+                return sb.TryFormat(destination, out charsWritten, format ?? options.NumberFormat, culture);
+
+            case TimeSpan ts:
+                return ts.TryFormat(destination, out charsWritten, format ?? options.TimeSpanFormat, culture);
+
+            case char ch:
+                if (destination.Length >= 1)
+                {
+                    destination[0] = ch;
+                    charsWritten = 1;
+                    return true;
+                }
+                charsWritten = 0;
+                return false;
+
+            case Half half:
+                return half.TryFormat(destination, out charsWritten, format ?? options.NumberFormat, culture);
+
+            case Int128 i128:
+                return i128.TryFormat(destination, out charsWritten, format ?? options.NumberFormat, culture);
+
+            case UInt128 u128:
+                return u128.TryFormat(destination, out charsWritten, format ?? options.NumberFormat, culture);
+
+            case BigInteger bi:
+                return bi.TryFormat(destination, out charsWritten, format ?? options.NumberFormat, culture);
+
+            case Uri uri:
+                {
+                    ReadOnlySpan<char> uriSpan = uri.OriginalString.AsSpan();
+                    if (uriSpan.TryCopyTo(destination))
+                    {
+                        charsWritten = uriSpan.Length;
+                        return true;
+                    }
+                    charsWritten = 0;
+                    return false;
+                }
+
+            case byte[] bytes:
+                return Convert.TryToBase64Chars(bytes, destination, out charsWritten);
+
             case Guid g:
                 return g.TryFormat(destination, out charsWritten, format);
 
@@ -462,6 +509,16 @@ public sealed class FixedWidthRecordWriter<T>
     private string FormatValueToString(object value, string? format)
     {
         var culture = options.Culture;
+
+        if (value is Uri uri)
+        {
+            return uri.OriginalString;
+        }
+
+        if (value is byte[] bytes)
+        {
+            return Convert.ToBase64String(bytes);
+        }
 
         if (value is IFormattable formattable)
         {
@@ -488,7 +545,7 @@ public sealed class FixedWidthRecordWriter<T>
             var (prop, attr) = props[i];
             layouts[i] = new FixedWidthFieldLayout(prop.Name, attr!.Start, attr.Length);
         }
-        FixedWidthFieldLayoutValidator.Validate(layouts);
+        new FixedWidthFieldLayoutValidator(layouts).Validate();
 
         var fields = new FieldDefinition[props.Length];
         for (int i = 0; i < props.Length; i++)
@@ -507,7 +564,7 @@ public sealed class FixedWidthRecordWriter<T>
                 Alignment = attr.Alignment,
                 PadChar = attr.PadChar == '\0' ? ' ' : attr.PadChar,
                 Format = formatAttr?.WriteFormat ?? parseAttr?.Format,
-                Getter = PropertyAccessorCompiler.CompileTypedGetter<T>(prop),
+                Getter = new PropertyAccessorCompiler(prop).CompileTypedGetter<T>(),
                 Validation = validation
             };
         }

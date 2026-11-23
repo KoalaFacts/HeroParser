@@ -1,9 +1,39 @@
 using HeroParser.Excels.Reading;
+using HeroParser.Excels.Xlsx;
 
 namespace HeroParser;
 
 public static partial class Excel
 {
+    /// <summary>
+    /// Gets the worksheet names from an Excel (.xlsx) file in workbook order.
+    /// </summary>
+    /// <param name="path">The path to the .xlsx file.</param>
+    /// <returns>The worksheet names in workbook order.</returns>
+    public static IReadOnlyList<string> GetSheetNames(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        return GetSheetNames(stream);
+    }
+
+    /// <summary>
+    /// Gets the worksheet names from a stream containing Excel (.xlsx) data in workbook order.
+    /// </summary>
+    /// <param name="stream">A seekable stream containing .xlsx data.</param>
+    /// <returns>The worksheet names in workbook order.</returns>
+    public static IReadOnlyList<string> GetSheetNames(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        using var xlsxReader = new XlsxReader(stream);
+        var sheets = xlsxReader.Workbook.Sheets;
+        var names = new string[sheets.Count];
+        for (int i = 0; i < sheets.Count; i++)
+        {
+            names[i] = sheets[i].Name;
+        }
+        return names;
+    }
     /// <summary>
     /// Creates a typed record reader builder for reading Excel rows as <typeparamref name="T"/> records.
     /// </summary>

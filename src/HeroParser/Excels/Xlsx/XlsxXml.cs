@@ -5,7 +5,7 @@ namespace HeroParser.Excels.Xlsx;
 /// <summary>
 /// Shared XML configuration for .xlsx parsing.
 /// </summary>
-internal static class XlsxXml
+internal readonly struct XlsxXml
 {
     // Metadata and shared strings may be materialized, so retain their tighter document cap.
     private const long MAX_CHARACTERS_IN_DOCUMENT = 100_000_000;
@@ -18,10 +18,10 @@ internal static class XlsxXml
     /// Prohibits DTD processing and disables the XML resolver to prevent XXE attacks,
     /// and caps document/entity character counts to mitigate decompression-bomb DoS.
     /// </summary>
-    internal static XmlReaderSettings CreateReaderSettings()
+    internal XmlReaderSettings CreateReaderSettings()
         => CreateReaderSettings(MAX_CHARACTERS_IN_DOCUMENT);
 
-    internal static XmlReaderSettings CreateWorksheetReaderSettings()
+    internal XmlReaderSettings CreateWorksheetReaderSettings()
         => CreateReaderSettings(MAX_WORKSHEET_CHARACTERS_IN_DOCUMENT);
 
     private static XmlReaderSettings CreateReaderSettings(long maxCharactersInDocument) => new()
@@ -36,7 +36,7 @@ internal static class XlsxXml
     /// <summary>
     /// Zip-bomb mitigation: rejects entries whose decompressed size or compression ratio exceeds safe limits.
     /// </summary>
-    internal static void ValidateEntrySize(System.IO.Compression.ZipArchiveEntry entry)
+    internal void ValidateEntrySize(System.IO.Compression.ZipArchiveEntry entry)
     {
         const long MAX_ENTRY_DECOMPRESSED_BYTES = 512L * 1024 * 1024; // 512 MB
         const int MAX_COMPRESSION_RATIO = 200;

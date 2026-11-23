@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using HeroParser.Htbs;
 using HeroParser.Htbs.Reading;
 using HeroParser.Htbs.Records;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Writing;
 
@@ -111,6 +112,57 @@ public static class HtbToCsvConverter
                             float[] arr = reader.ReadFloatArray();
                             writer.WriteField(FormatFloatArray(arr));
                             break;
+                        case HtbDataType.DateTimeOffset:
+                            writer.WriteField(reader.ReadDateTimeOffset());
+                            break;
+                        case HtbDataType.DateOnly:
+                            writer.WriteField(reader.ReadDateOnly());
+                            break;
+                        case HtbDataType.TimeOnly:
+                            writer.WriteField(reader.ReadTimeOnly());
+                            break;
+                        case HtbDataType.TimeSpan:
+                            writer.WriteField(reader.ReadTimeSpan());
+                            break;
+                        case HtbDataType.Int16:
+                            writer.WriteField(reader.ReadInt16());
+                            break;
+                        case HtbDataType.UInt16:
+                            writer.WriteField(reader.ReadUInt16());
+                            break;
+                        case HtbDataType.Byte:
+                            writer.WriteField(reader.ReadByte());
+                            break;
+                        case HtbDataType.SByte:
+                            writer.WriteField(reader.ReadSByte());
+                            break;
+                        case HtbDataType.UInt32:
+                            writer.WriteField(reader.ReadUInt32());
+                            break;
+                        case HtbDataType.UInt64:
+                            writer.WriteField(reader.ReadUInt64());
+                            break;
+                        case HtbDataType.Char:
+                            writer.WriteField(reader.ReadChar());
+                            break;
+                        case HtbDataType.Half:
+                            writer.WriteField(reader.ReadHalf());
+                            break;
+                        case HtbDataType.Int128:
+                            writer.WriteField(reader.ReadInt128());
+                            break;
+                        case HtbDataType.UInt128:
+                            writer.WriteField(reader.ReadUInt128());
+                            break;
+                        case HtbDataType.ByteArray:
+                            writer.WriteField(System.Convert.ToBase64String(reader.ReadByteArray()));
+                            break;
+                        case HtbDataType.BigInteger:
+                            writer.WriteField(reader.ReadBigInteger().ToString(writer.Culture));
+                            break;
+                        case HtbDataType.Uri:
+                            writer.WriteField(reader.ReadUri().OriginalString);
+                            break;
                         case HtbDataType.Unknown:
                         default:
                             reader.SkipColumnValue(col.DataType);
@@ -161,8 +213,9 @@ public static class HtbToCsvConverter
         ArgumentException.ThrowIfNullOrWhiteSpace(htbPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(csvPath);
 
-        using var inputStream = File.OpenRead(htbPath);
-        using var outputWriter = new StreamWriter(csvPath, append: false, Encoding.UTF8);
+        using var inputStream = new CompressedFile(htbPath).OpenRead();
+        using var outputStream = new CompressedFile(csvPath).OpenWrite();
+        using var outputWriter = new StreamWriter(outputStream, Encoding.UTF8);
         Convert(inputStream, outputWriter, options);
     }
 
@@ -264,6 +317,57 @@ public static class HtbToCsvConverter
                         case HtbDataType.FloatArray:
                             float[] arr = await reader.ReadFloatArrayAsync().ConfigureAwait(false);
                             writer.WriteField(FormatFloatArray(arr));
+                            break;
+                        case HtbDataType.DateTimeOffset:
+                            writer.WriteField(await reader.ReadDateTimeOffsetAsync().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.DateOnly:
+                            writer.WriteField(await reader.ReadDateOnlyAsync().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.TimeOnly:
+                            writer.WriteField(await reader.ReadTimeOnlyAsync().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.TimeSpan:
+                            writer.WriteField(await reader.ReadTimeSpanAsync().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.Int16:
+                            writer.WriteField(await reader.ReadInt16Async().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.UInt16:
+                            writer.WriteField(await reader.ReadUInt16Async().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.Byte:
+                            writer.WriteField(await reader.ReadByteAsync().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.SByte:
+                            writer.WriteField(await reader.ReadSByteAsync().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.UInt32:
+                            writer.WriteField(await reader.ReadUInt32Async().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.UInt64:
+                            writer.WriteField(await reader.ReadUInt64Async().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.Char:
+                            writer.WriteField(await reader.ReadCharAsync().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.Half:
+                            writer.WriteField(await reader.ReadHalfAsync().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.Int128:
+                            writer.WriteField(await reader.ReadInt128Async().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.UInt128:
+                            writer.WriteField(await reader.ReadUInt128Async().ConfigureAwait(false));
+                            break;
+                        case HtbDataType.ByteArray:
+                            writer.WriteField(System.Convert.ToBase64String(await reader.ReadByteArrayAsync().ConfigureAwait(false)));
+                            break;
+                        case HtbDataType.BigInteger:
+                            writer.WriteField((await reader.ReadBigIntegerAsync().ConfigureAwait(false)).ToString(writer.Culture));
+                            break;
+                        case HtbDataType.Uri:
+                            writer.WriteField((await reader.ReadUriAsync().ConfigureAwait(false)).OriginalString);
                             break;
                         case HtbDataType.Unknown:
                         default:

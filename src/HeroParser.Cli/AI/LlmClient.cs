@@ -88,11 +88,11 @@ internal sealed class LlmClient
         }
 
         // Auto detect by checking command availability in order: agy -> claude -> copilot -> codex -> openai -> ollama
-        if (LocalCliLocator.IsCommandAvailable("agy")) return LlmProvider.Google;
-        if (LocalCliLocator.IsCommandAvailable("claude")) return LlmProvider.Anthropic;
-        if (LocalCliLocator.IsCommandAvailable("copilot")) return LlmProvider.Microsoft;
-        if (LocalCliLocator.IsCommandAvailable("codex") || LocalCliLocator.IsCommandAvailable("openai")) return LlmProvider.OpenAi;
-        if (LocalCliLocator.IsCommandAvailable("ollama")) return LlmProvider.Ollama;
+        if (new LocalCliLocator("agy").IsAvailable()) return LlmProvider.Google;
+        if (new LocalCliLocator("claude").IsAvailable()) return LlmProvider.Anthropic;
+        if (new LocalCliLocator("copilot").IsAvailable()) return LlmProvider.Microsoft;
+        if (new LocalCliLocator("codex").IsAvailable() || new LocalCliLocator("openai").IsAvailable()) return LlmProvider.OpenAi;
+        if (new LocalCliLocator("ollama").IsAvailable()) return LlmProvider.Ollama;
 
         return LlmProvider.Google;
     }
@@ -128,7 +128,8 @@ internal sealed class LlmClient
                 break;
 
             case LlmProvider.OpenAi:
-                if (LocalCliLocator.IsCommandAvailable("openai") || LocalCliLocator.ResolveCommandPath("openai") != "openai")
+                var openAiLocator = new LocalCliLocator("openai");
+                if (openAiLocator.IsAvailable() || openAiLocator.ResolvePath() != "openai")
                 {
                     cmd = "openai";
                     args = "responses create --input -";

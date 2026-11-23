@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.Htbs.Records;
@@ -220,8 +221,6 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
         bufferPos += mask.Length;
     }
 
-    #region Strongly-Typed Non-Boxing Write Methods
-
     /// <summary>Writes an Int32 directly into the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteInt32(int val)
@@ -394,7 +393,190 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
         }
     }
 
-    #endregion
+    /// <summary>Writes a DateTimeOffset directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteDateTimeOffset(DateTimeOffset val)
+    {
+        EnsureBuffer(10);
+        BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(bufferPos), val.Ticks);
+        BinaryPrimitives.WriteInt16LittleEndian(buffer.AsSpan(bufferPos + 8), (short)val.Offset.TotalMinutes);
+        bufferPos += 10;
+    }
+
+    /// <summary>Writes a DateOnly directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteDateOnly(DateOnly val)
+    {
+        EnsureBuffer(4);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(bufferPos), val.DayNumber);
+        bufferPos += 4;
+    }
+
+    /// <summary>Writes a TimeOnly directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteTimeOnly(TimeOnly val)
+    {
+        EnsureBuffer(8);
+        BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(bufferPos), val.Ticks);
+        bufferPos += 8;
+    }
+
+    /// <summary>Writes a TimeSpan directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteTimeSpan(TimeSpan val)
+    {
+        EnsureBuffer(8);
+        BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(bufferPos), val.Ticks);
+        bufferPos += 8;
+    }
+
+    /// <summary>Writes an Int16 directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteInt16(short val)
+    {
+        EnsureBuffer(2);
+        BinaryPrimitives.WriteInt16LittleEndian(buffer.AsSpan(bufferPos), val);
+        bufferPos += 2;
+    }
+
+    /// <summary>Writes a UInt16 directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteUInt16(ushort val)
+    {
+        EnsureBuffer(2);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(bufferPos), val);
+        bufferPos += 2;
+    }
+
+    /// <summary>Writes a Byte directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteByte(byte val)
+    {
+        EnsureBuffer(1);
+        buffer[bufferPos++] = val;
+    }
+
+    /// <summary>Writes an SByte directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteSByte(sbyte val)
+    {
+        EnsureBuffer(1);
+        buffer[bufferPos++] = unchecked((byte)val);
+    }
+
+    /// <summary>Writes a UInt32 directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteUInt32(uint val)
+    {
+        EnsureBuffer(4);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(bufferPos), val);
+        bufferPos += 4;
+    }
+
+    /// <summary>Writes a UInt64 directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteUInt64(ulong val)
+    {
+        EnsureBuffer(8);
+        BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(bufferPos), val);
+        bufferPos += 8;
+    }
+
+    /// <summary>Writes a Char directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteChar(char val)
+    {
+        EnsureBuffer(2);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(bufferPos), val);
+        bufferPos += 2;
+    }
+
+    /// <summary>Writes a Half directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteHalf(Half val)
+    {
+        EnsureBuffer(2);
+        BinaryPrimitives.WriteHalfLittleEndian(buffer.AsSpan(bufferPos), val);
+        bufferPos += 2;
+    }
+
+    /// <summary>Writes an Int128 directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteInt128(Int128 val)
+    {
+        EnsureBuffer(16);
+        BinaryPrimitives.WriteInt128LittleEndian(buffer.AsSpan(bufferPos), val);
+        bufferPos += 16;
+    }
+
+    /// <summary>Writes a UInt128 directly into the stream buffer.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteUInt128(UInt128 val)
+    {
+        EnsureBuffer(16);
+        BinaryPrimitives.WriteUInt128LittleEndian(buffer.AsSpan(bufferPos), val);
+        bufferPos += 16;
+    }
+
+    /// <summary>Writes a byte array directly into the stream buffer.</summary>
+    public void WriteByteArray(byte[] val)
+    {
+        ArgumentNullException.ThrowIfNull(val);
+        WriteLengthPrefixedBytes(val.AsSpan());
+    }
+
+    /// <summary>Writes a BigInteger directly into the stream buffer.</summary>
+    public void WriteBigInteger(BigInteger val)
+    {
+        int byteCount = val.GetByteCount(isUnsigned: false);
+        byte[]? rented = byteCount > 256 ? ArrayPool<byte>.Shared.Rent(byteCount) : null;
+        Span<byte> scratch = rented is null ? stackalloc byte[256] : (Span<byte>)rented;
+        try
+        {
+            if (!val.TryWriteBytes(scratch[..byteCount], out int bytesWritten, isUnsigned: false, isBigEndian: false))
+            {
+                throw new HtbException(HtbErrorCode.SerializationError, "Failed to write BigInteger bytes.");
+            }
+            WriteLengthPrefixedBytes(scratch[..bytesWritten]);
+        }
+        finally
+        {
+            if (rented is not null)
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
+    }
+
+    /// <summary>Writes a Uri directly into the stream buffer.</summary>
+    public void WriteUri(Uri val)
+    {
+        ArgumentNullException.ThrowIfNull(val);
+        WriteString(val.OriginalString);
+    }
+
+    private void WriteLengthPrefixedBytes(ReadOnlySpan<byte> bytes)
+    {
+        EnsureBuffer(4);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(bufferPos), bytes.Length);
+        bufferPos += 4;
+
+        if (bytes.Length == 0)
+            return;
+
+        if (bytes.Length <= buffer.Length)
+        {
+            EnsureBuffer(bytes.Length);
+            bytes.CopyTo(buffer.AsSpan(bufferPos));
+            bufferPos += bytes.Length;
+        }
+        else
+        {
+            Flush();
+            stream.Write(bytes);
+            bytesWrittenTotal += bytes.Length;
+        }
+    }
 
     /// <summary>
     /// Flushes all buffered writes out to the underlying stream.

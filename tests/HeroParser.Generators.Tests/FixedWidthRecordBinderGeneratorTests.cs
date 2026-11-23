@@ -468,8 +468,6 @@ public class FixedWidthRecordBinderGeneratorTests
         Assert.Contains("RawValue = new string(span)", generatedCode);
     }
 
-    #region Test Infrastructure
-
     private static string GetDescriptorSourceCode(GeneratorRunResult result)
     {
         return result.GeneratedSources
@@ -514,6 +512,4 @@ public class FixedWidthRecordBinderGeneratorTests
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
-
-    #endregion
 }

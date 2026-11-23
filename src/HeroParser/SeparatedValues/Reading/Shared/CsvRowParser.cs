@@ -20,7 +20,7 @@ namespace HeroParser.SeparatedValues.Reading.Shared;
 /// bitmask-based quote-aware SIMD parsing for CSV.
 /// </para>
 /// </remarks>
-internal static class CsvRowParser
+internal readonly struct CsvRowParser(CsvReadOptions options)
 {
     /// <summary>
     /// Parses a single row from CSV data (convenience overload with runtime boolean).
@@ -30,16 +30,15 @@ internal static class CsvRowParser
     /// Uses Ends-only storage: columnEnds[0] = -1, columnEnds[1..N] = delimiter positions.
     /// Column start = columnEnds[index] + 1, length = columnEnds[index+1] - columnEnds[index] - 1.
     /// </remarks>
-    public static CsvRowParseResult ParseRow<T>(
+    public CsvRowParseResult ParseRow<T>(
         ReadOnlySpan<T> data,
-        CsvReadOptions options,
         Span<int> columnEnds,
         bool trackLineNumbers)
         where T : unmanaged, IEquatable<T>
     {
         return trackLineNumbers
-            ? ParseRow<T, TrackLineNumbers>(data, options, columnEnds)
-            : ParseRow<T, NoTrackLineNumbers>(data, options, columnEnds);
+            ? ParseRow<T, TrackLineNumbers>(data, columnEnds)
+            : ParseRow<T, NoTrackLineNumbers>(data, columnEnds);
     }
 
     /// <summary>
@@ -50,17 +49,16 @@ internal static class CsvRowParser
     /// Uses Ends-only storage: columnEnds[0] = -1, columnEnds[1..N] = delimiter positions.
     /// Column start = columnEnds[index] + 1, length = columnEnds[index+1] - columnEnds[index] - 1.
     /// </remarks>
-    public static CsvRowParseResult ParseRow<T, TTrack>(
+    public CsvRowParseResult ParseRow<T, TTrack>(
         ReadOnlySpan<T> data,
-        CsvReadOptions options,
         Span<int> columnEnds)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
     {
         // Dispatch to compile-time specialized version based on EnableQuotedFields
         return options.EnableQuotedFields
-            ? ParseRow<T, TTrack, QuotesEnabled>(data, options, columnEnds)
-            : ParseRow<T, TTrack, QuotesDisabled>(data, options, columnEnds);
+            ? ParseRow<T, TTrack, QuotesEnabled>(data, columnEnds)
+            : ParseRow<T, TTrack, QuotesDisabled>(data, columnEnds);
     }
 
     /// <summary>
@@ -83,9 +81,8 @@ internal static class CsvRowParser
     /// a smaller buffer takes the scalar loop.
     /// </para>
     /// </remarks>
-    public static CsvRowParseResult ParseRow<T, TTrack, TQuotePolicy>(
+    public CsvRowParseResult ParseRow<T, TTrack, TQuotePolicy>(
         ReadOnlySpan<T> data,
-        CsvReadOptions options,
         Span<int> columnEnds)
         where T : unmanaged, IEquatable<T>
         where TTrack : struct
@@ -164,9 +161,10 @@ internal static class CsvRowParser
 
         // SIMD path: one single-row scan. A flagged row (limit violation, unterminated quote) falls through
         // to the scalar loop, which throws the exception with its message and position.
-        if (CsvRowBatchScanner.IsSupportedForRow(options)
+        var scanner = new CsvRowBatchScanner(options);
+        if (scanner.IsSupportedForRow()
             && columnEnds.Length >= CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount)
-            && TryScanRow<T, TTrack, TQuotePolicy>(data, options, columnEnds, out var scanned))
+            && TryScanRow<T, TTrack, TQuotePolicy>(data, scanner, columnEnds, out var scanned))
         {
             return scanned;
         }
@@ -306,7 +304,7 @@ internal static class CsvRowParser
     /// </remarks>
     private static bool TryScanRow<T, TTrack, TQuotePolicy>(
         ReadOnlySpan<T> data,
-        CsvReadOptions options,
+        CsvRowBatchScanner scanner,
         Span<int> columnEnds,
         out CsvRowParseResult result)
         where T : unmanaged, IEquatable<T>
@@ -316,13 +314,12 @@ internal static class CsvRowParser
         Span<int> rowStarts = stackalloc int[2];
         Span<int> sourceLines = stackalloc int[1];
 
-        int rows = CsvRowBatchScanner.Scan<T, TTrack, TQuotePolicy>(
+        int rows = scanner.Scan<T, TTrack, TQuotePolicy>(
             data,
             start: 0,
             startSourceLine: 0,
             isFinalBlock: true,
             singleRow: true,
-            options,
             columnEnds,
             rowStarts,
             sourceLines,

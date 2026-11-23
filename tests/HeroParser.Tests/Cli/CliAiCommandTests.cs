@@ -23,6 +23,7 @@ namespace HeroParser.Tests.Cli;
 public class CliAiCommandTests : IDisposable
 {
     private readonly HeroParser.Console.IAnsiConsole previousConsole = AnsiConsoleApi.Current;
+    private readonly CliCommands cliCommands = new();
     private readonly StringWriter output = new(CultureInfo.InvariantCulture);
     private readonly List<string> tempFiles = [];
 
@@ -96,7 +97,7 @@ public class CliAiCommandTests : IDisposable
     public async Task Schema_WithoutAi_GeneratesALocalRecordClass()
     {
         var runner = new ScriptedRunner();
-        await CliCommands.SchemaAsync(TempFile(SAMPLE_CSV), null, useAi: false, null, null, null, ClientFor(runner));
+        await cliCommands.SchemaAsync(TempFile(SAMPLE_CSV), null, useAi: false, null, null, null, ClientFor(runner));
 
         // The model must not be consulted when the caller did not ask for it.
         Assert.Empty(runner.Prompts);
@@ -106,7 +107,7 @@ public class CliAiCommandTests : IDisposable
     public async Task Schema_WithAi_SendsTheLocalSchemaAndProfileToTheModel()
     {
         var runner = new ScriptedRunner("```csharp\npublic sealed class Refined { }\n```");
-        await CliCommands.SchemaAsync(TempFile(SAMPLE_CSV), null, useAi: true, null, null, null, ClientFor(runner));
+        await cliCommands.SchemaAsync(TempFile(SAMPLE_CSV), null, useAi: true, null, null, null, ClientFor(runner));
 
         string prompt = Assert.Single(runner.Prompts);
         Assert.Contains("Dataset Profile", prompt, StringComparison.Ordinal);   // the context card
@@ -121,7 +122,7 @@ public class CliAiCommandTests : IDisposable
         string csv = "Id,Active\n" + string.Concat(Enumerable.Range(0, 100).Select(i => $"{i},true\n")) +
             new string('x', 600_000);
 
-        Assert.True(await CliCommands.SchemaAsync(TempFile(csv), null, useAi: true, null, null, null, ClientFor(runner)));
+        Assert.True(await cliCommands.SchemaAsync(TempFile(csv), null, useAi: true, null, null, null, ClientFor(runner)));
 
         string prompt = Assert.Single(runner.Prompts);
         Assert.Contains("at most the first 10 data rows", prompt, StringComparison.Ordinal);
@@ -138,7 +139,7 @@ public class CliAiCommandTests : IDisposable
         string csv = "Name;Count\n" + string.Concat(Enumerable.Range(0, 100).Select(i => $"猫{i};{i}\n")) +
             new string('x', 600_000);
 
-        Assert.True(await CliCommands.SchemaAsync(TempFile(csv, encoding: bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode),
+        Assert.True(await cliCommands.SchemaAsync(TempFile(csv, encoding: bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode),
             ';', useAi: true, null, null, null, ClientFor(runner)), output.ToString());
 
         string prompt = Assert.Single(runner.Prompts);
@@ -151,7 +152,7 @@ public class CliAiCommandTests : IDisposable
     public async Task Schema_ColumnTypes_ComeFromInference()
     {
         var runner = new ScriptedRunner("x");
-        await CliCommands.SchemaAsync(
+        await cliCommands.SchemaAsync(
             TempFile("Id,Price,When,Ok\n1,2.5,2024-01-31,true"), null, useAi: true, null, null, null, ClientFor(runner));
 
         string prompt = Assert.Single(runner.Prompts);
@@ -165,7 +166,7 @@ public class CliAiCommandTests : IDisposable
     public async Task Schema_ColumnNamesThatAreNotIdentifiers_BecomeValidProperties()
     {
         var runner = new ScriptedRunner("x");
-        await CliCommands.SchemaAsync(
+        await cliCommands.SchemaAsync(
             TempFile("first name,%,2nd\na,b,c"), null, useAi: true, null, null, null, ClientFor(runner));
 
         string prompt = Assert.Single(runner.Prompts);
@@ -178,7 +179,7 @@ public class CliAiCommandTests : IDisposable
     public async Task Schema_MissingFile_ReportsAnErrorAndDoesNotCallTheModel()
     {
         var runner = new ScriptedRunner();
-        await CliCommands.SchemaAsync("does-not-exist.csv", null, useAi: true, null, null, null, ClientFor(runner));
+        await cliCommands.SchemaAsync("does-not-exist.csv", null, useAi: true, null, null, null, ClientFor(runner));
 
         Assert.Empty(runner.Prompts);
         Assert.Contains("File not found", output.ToString(), StringComparison.Ordinal);
@@ -187,7 +188,7 @@ public class CliAiCommandTests : IDisposable
     [Fact]
     public async Task Schema_ModelFailure_IsReportedRatherThanThrown()
     {
-        await CliCommands.SchemaAsync(
+        await cliCommands.SchemaAsync(
             TempFile(SAMPLE_CSV), null, useAi: true, null, null, null, new LlmClient(LlmProvider.Google, null, new FailingRunner()));
 
         Assert.Contains("Schema generation failed", output.ToString(), StringComparison.Ordinal);
@@ -199,7 +200,7 @@ public class CliAiCommandTests : IDisposable
     public async Task Query_SendsTheProfileAndSampleRowsAndShowsTheAnswer()
     {
         var runner = new ScriptedRunner("Alice is the oldest.");
-        await CliCommands.QueryAsync(TempFile(SAMPLE_CSV), null, null, "who is oldest?", null, null, null, ClientFor(runner));
+        await cliCommands.QueryAsync(TempFile(SAMPLE_CSV), null, null, "who is oldest?", null, null, null, ClientFor(runner));
 
         string prompt = Assert.Single(runner.Prompts);
         Assert.Contains("who is oldest?", prompt, StringComparison.Ordinal);
@@ -213,7 +214,7 @@ public class CliAiCommandTests : IDisposable
     {
         // An unescaped pipe would break the markdown table the model is shown.
         var runner = new ScriptedRunner("ok");
-        await CliCommands.QueryAsync(
+        await cliCommands.QueryAsync(
             TempFile("Name,Note\nAlice,\"x|y\""), ',', null, "q", null, null, null, ClientFor(runner));
 
         Assert.Contains("x\\|y", Assert.Single(runner.Prompts), StringComparison.Ordinal);
@@ -224,7 +225,7 @@ public class CliAiCommandTests : IDisposable
     {
         var runner = new ScriptedRunner("ok");
 
-        Assert.True(await CliCommands.QueryAsync(TempFile(SAMPLE_CSV, ".data"), ',', null,
+        Assert.True(await cliCommands.QueryAsync(TempFile(SAMPLE_CSV, ".data"), ',', null,
             "count", null, null, null, ClientFor(runner)), output.ToString());
 
         Assert.Contains("| Alice | 30 |", Assert.Single(runner.Prompts), StringComparison.Ordinal);
@@ -236,7 +237,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("ok");
         string csv = "Name,Age\n" + string.Join('\n', Enumerable.Range(0, 200).Select(i => $"n{i},{i}"));
 
-        Assert.True(await CliCommands.QueryAsync(
+        Assert.True(await cliCommands.QueryAsync(
             TempFile(csv), null, null, "count the rows", null, null, null, ClientFor(runner)));
 
         string prompt = Assert.Single(runner.Prompts);
@@ -251,7 +252,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("ok");
         string csv = "Name;Age\n" + string.Join('\n', Enumerable.Range(0, 20).Select(i => $"猫{i};{i}"));
 
-        Assert.True(await CliCommands.QueryAsync(TempFile(csv, encoding: Encoding.BigEndianUnicode),
+        Assert.True(await cliCommands.QueryAsync(TempFile(csv, encoding: Encoding.BigEndianUnicode),
             null, null, "count", null, null, null, ClientFor(runner)));
 
         string prompt = Assert.Single(runner.Prompts);
@@ -270,8 +271,8 @@ public class CliAiCommandTests : IDisposable
             Age = i.ToString(CultureInfo.InvariantCulture)
         }));
 
-        Assert.True(await CliCommands.ProfileAsync(path, null, "Records"), output.ToString());
-        Assert.True(await CliCommands.QueryAsync(path, null, "Records", "count", null, null, null, ClientFor(runner)),
+        Assert.True(await cliCommands.ProfileAsync(path, null, "Records"), output.ToString());
+        Assert.True(await cliCommands.QueryAsync(path, null, "Records", "count", null, null, null, ClientFor(runner)),
             output.ToString());
 
         string prompt = Assert.Single(runner.Prompts);
@@ -303,8 +304,8 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner();
         string outputPath = TempPath();
 
-        Assert.True(await CliCommands.ProfileAsync(path, null, "Records"), output.ToString());
-        Assert.True(await CliCommands.TranslateAsync(path, null, "Records", "unchanged", outputPath,
+        Assert.True(await cliCommands.ProfileAsync(path, null, "Records"), output.ToString());
+        Assert.True(await cliCommands.TranslateAsync(path, null, "Records", "unchanged", outputPath,
             batchSize: 2, null, null, null, ClientFor(runner)), output.ToString());
 
         Assert.Empty(runner.Prompts);
@@ -318,8 +319,8 @@ public class CliAiCommandTests : IDisposable
         string csv = "Name,Age\n" + string.Concat(Enumerable.Range(0, 100_001).Select(i => $"n{i},{i}\n"));
         string path = TempFile(csv, encoding: Encoding.Unicode);
 
-        Assert.True(await CliCommands.ProfileAsync(path, ',', null), output.ToString());
-        Assert.True(await CliCommands.QueryAsync(path, ',', null, "count", null, null, null, ClientFor(runner)),
+        Assert.True(await cliCommands.ProfileAsync(path, ',', null), output.ToString());
+        Assert.True(await cliCommands.QueryAsync(path, ',', null, "count", null, null, null, ClientFor(runner)),
             output.ToString());
         Assert.Contains($"({100_001:N0} rows)", Assert.Single(runner.Prompts), StringComparison.Ordinal);
     }
@@ -330,7 +331,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("ok");
         string csv = "Value\n" + string.Concat(Enumerable.Repeat("small\n", 10)) + new string('x', 600_000);
 
-        Assert.True(await CliCommands.QueryAsync(
+        Assert.True(await cliCommands.QueryAsync(
             TempFile(csv), ',', null, "count", null, null, null, ClientFor(runner)));
 
         Assert.Contains("(11 rows)", Assert.Single(runner.Prompts), StringComparison.Ordinal);
@@ -342,7 +343,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("ok");
         string csv = "\"" + new string('x', 70_000) + "\";B\n1;2";
 
-        Assert.False(await CliCommands.QueryAsync(
+        Assert.False(await cliCommands.QueryAsync(
             TempFile(csv), null, null, "count", null, null, null, ClientFor(runner)));
 
         Assert.Empty(runner.Prompts);
@@ -353,7 +354,7 @@ public class CliAiCommandTests : IDisposable
     public async Task Query_MissingFile_ReportsAnError()
     {
         var runner = new ScriptedRunner();
-        await CliCommands.QueryAsync("nope.csv", null, null, "q", null, null, null, ClientFor(runner));
+        await cliCommands.QueryAsync("nope.csv", null, null, "q", null, null, null, ClientFor(runner));
 
         Assert.Empty(runner.Prompts);
         Assert.Contains("File not found", output.ToString(), StringComparison.Ordinal);
@@ -362,7 +363,7 @@ public class CliAiCommandTests : IDisposable
     [Fact]
     public async Task Query_ModelFailure_IsReportedRatherThanThrown()
     {
-        await CliCommands.QueryAsync(
+        await cliCommands.QueryAsync(
             TempFile(SAMPLE_CSV), null, null, "q", null, null, null, new LlmClient(LlmProvider.Google, null, new FailingRunner()));
 
         Assert.Contains("Query failed", output.ToString(), StringComparison.Ordinal);
@@ -376,7 +377,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("{\"Name\":\"ALICE\",\"Age\":\"30\"}\n{\"Name\":\"BOB\",\"Age\":\"25\"}");
         string outputPath = TempPath();
 
-        await CliCommands.TranslateAsync(
+        await cliCommands.TranslateAsync(
             TempFile(SAMPLE_CSV), null, null, "uppercase the names", outputPath, batchSize: 10, null, null, null, ClientFor(runner));
 
         string written = File.ReadAllText(outputPath);
@@ -392,7 +393,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("{\"Upper\":\"ALICE\",\"Decade\":\"3\"}");
         string outputPath = TempPath();
 
-        await CliCommands.TranslateAsync(
+        await cliCommands.TranslateAsync(
             TempFile("Name,Age\nAlice,30"), null, null, "t", outputPath, batchSize: 10, null, null, null, ClientFor(runner));
 
         Assert.StartsWith("Upper,Decade", File.ReadAllText(outputPath), StringComparison.Ordinal);
@@ -404,7 +405,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("{\"Renamed\":\"caf\\u00e9\",\"Count\":12,\"Enabled\":true,\"Optional\":null}");
         string outputPath = TempPath();
 
-        Assert.True(await CliCommands.TranslateAsync(
+        Assert.True(await cliCommands.TranslateAsync(
             TempFile("Name,Note\n\"A\"\"B\",\"line 1\nline 2\""), ',', null, "t", outputPath,
             batchSize: 1, null, null, null, ClientFor(runner)));
 
@@ -425,7 +426,7 @@ public class CliAiCommandTests : IDisposable
     {
         var runner = new ScriptedRunner("{\"Name\":\"ok\",\"Other\":\"x\"}");
 
-        Assert.True(await CliCommands.TranslateAsync(
+        Assert.True(await cliCommands.TranslateAsync(
             TempFile("Name,Other,Name\nfirst,x,last"), ',', null, "t", TempPath(),
             batchSize: 1, null, null, null, ClientFor(runner)));
 
@@ -450,7 +451,7 @@ public class CliAiCommandTests : IDisposable
         AnsiConsoleApi.Current = new SystemConsole(TextWriter.Synchronized(output));
         var runner = new ScriptedRunner("{\"Name\":\"first\",\"Name\":\"second\"}");
 
-        bool succeeded = await CliCommands.TranslateAsync(
+        bool succeeded = await cliCommands.TranslateAsync(
             TempFile("Name\ninput"), ',', null, "t", outputPath,
             batchSize: 1, null, null, null, ClientFor(runner));
 
@@ -469,7 +470,7 @@ public class CliAiCommandTests : IDisposable
             "{\"Name\":\"z\",\"Age\":\"3\"}");
         string csv = "Name,Age\n" + string.Join('\n', Enumerable.Range(0, 5).Select(i => $"n{i},{i}"));
 
-        await CliCommands.TranslateAsync(
+        await cliCommands.TranslateAsync(
             TempFile(csv), null, null, "t", TempPath(), batchSize: 2, null, null, null, ClientFor(runner));
 
         // 5 rows in batches of 2 is three calls, the last one short.
@@ -483,7 +484,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("{\"Name\":\"ok\"}\n{\"Name\":\"ok\"}", "{\"Name\":\"ok\"}");
         string outputPath = TempPath();
 
-        Assert.True(await CliCommands.TranslateAsync(
+        Assert.True(await cliCommands.TranslateAsync(
             TempFile("Name\nA\nB\nC", encoding: Encoding.Unicode), null, null, "t",
             outputPath, batchSize: 2, null, null, null, ClientFor(runner)));
 
@@ -507,7 +508,7 @@ public class CliAiCommandTests : IDisposable
         }));
         string outputPath = TempPath();
 
-        Assert.True(await CliCommands.TranslateAsync(path, null, "Records", "unchanged", outputPath,
+        Assert.True(await cliCommands.TranslateAsync(path, null, "Records", "unchanged", outputPath,
             batchSize: 2, null, null, null, ClientFor(runner)), output.ToString());
 
         Assert.Equal(3, runner.Prompts.Count);
@@ -527,7 +528,7 @@ public class CliAiCommandTests : IDisposable
         string outputPath = TempPath();
         File.WriteAllText(outputPath, "previous result");
 
-        Assert.False(await CliCommands.TranslateAsync(
+        Assert.False(await cliCommands.TranslateAsync(
             TempFile("Name\nA\nB\n"), ',', null, "t", outputPath, batchSize: 2, null, null, null, ClientFor(runner)));
 
         Assert.Equal("previous result", File.ReadAllText(outputPath));
@@ -544,7 +545,7 @@ public class CliAiCommandTests : IDisposable
         const UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         File.SetUnixFileMode(outputPath, mode);
 
-        Assert.True(await CliCommands.TranslateAsync(
+        Assert.True(await cliCommands.TranslateAsync(
             TempFile("Name\nAlice\n"), ',', null, "t", outputPath, batchSize: 1, null, null, null,
             ClientFor(new ScriptedRunner("{\"Name\":\"translated\"}"))));
 
@@ -558,7 +559,7 @@ public class CliAiCommandTests : IDisposable
         string csv = "Value\n" + new string('x', 600_000);
         string outputPath = TempPath();
 
-        Assert.True(await CliCommands.TranslateAsync(
+        Assert.True(await cliCommands.TranslateAsync(
             TempFile(csv), ',', null, "t", outputPath, batchSize: 1, null, null, null, ClientFor(runner)));
 
         Assert.Single(runner.Prompts);
@@ -571,7 +572,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("Here you go:\n{\"Name\":\"ok\",\"Age\":\"1\"}\nthat's all");
         string outputPath = TempPath();
 
-        await CliCommands.TranslateAsync(
+        await cliCommands.TranslateAsync(
             TempFile("Name,Age\nAlice,30"), null, null, "t", outputPath, batchSize: 10, null, null, null, ClientFor(runner));
 
         string written = File.ReadAllText(outputPath);
@@ -585,7 +586,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("{\"Name\":\"good\",\"Age\":\"1\"}\n{\"broken\": ");
         string outputPath = TempPath();
 
-        await CliCommands.TranslateAsync(
+        await cliCommands.TranslateAsync(
             TempFile("Name,Age\nAlice,30"), null, null, "t", outputPath, batchSize: 10, null, null, null, ClientFor(runner));
 
         Assert.Contains("Failed to parse output line", output.ToString(), StringComparison.Ordinal);
@@ -598,7 +599,7 @@ public class CliAiCommandTests : IDisposable
         var runner = new ScriptedRunner("{\"Name\":\"a\",\"Age\":\"1\"}\n{\"Name\":\"b\"}");
         string outputPath = TempPath();
 
-        await CliCommands.TranslateAsync(
+        await cliCommands.TranslateAsync(
             TempFile("Name,Age\nAlice,30\nBob,25"), null, null, "t", outputPath, batchSize: 10, null, null, null, ClientFor(runner));
 
         Assert.Contains("b,", File.ReadAllText(outputPath), StringComparison.Ordinal);
@@ -608,7 +609,7 @@ public class CliAiCommandTests : IDisposable
     public async Task Translate_MissingFile_ReportsAnError()
     {
         var runner = new ScriptedRunner();
-        await CliCommands.TranslateAsync(
+        await cliCommands.TranslateAsync(
             "nope.csv", null, null, "t", TempPath(), batchSize: 10, null, null, null, ClientFor(runner));
 
         Assert.Empty(runner.Prompts);
@@ -618,7 +619,7 @@ public class CliAiCommandTests : IDisposable
     [Fact]
     public async Task Translate_ModelFailure_IsReportedRatherThanThrown()
     {
-        await CliCommands.TranslateAsync(
+        await cliCommands.TranslateAsync(
             TempFile(SAMPLE_CSV), null, null, "t", TempPath(), batchSize: 10, null, null, null,
             new LlmClient(LlmProvider.Google, null, new FailingRunner()));
 
@@ -631,7 +632,7 @@ public class CliAiCommandTests : IDisposable
         string input = TempFile(SAMPLE_CSV);
         var runner = new ScriptedRunner("{}");
 
-        Assert.False(await CliCommands.TranslateAsync(
+        Assert.False(await cliCommands.TranslateAsync(
             input, null, null, "t", input, batchSize: 2, null, null, null, ClientFor(runner)));
 
         Assert.Equal(SAMPLE_CSV, File.ReadAllText(input));

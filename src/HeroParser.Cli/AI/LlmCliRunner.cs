@@ -35,7 +35,7 @@ internal sealed class ProcessLlmCliRunner : ILlmCliRunner
     /// <inheritdoc />
     public async Task<string> RunAsync(string commandName, string arguments, string prompt, CancellationToken cancellationToken)
     {
-        string resolvedCommand = LocalCliLocator.ResolveCommandPath(commandName);
+        string resolvedCommand = new LocalCliLocator(commandName).ResolvePath();
         string finalFileName = resolvedCommand;
         string finalArguments = arguments;
 

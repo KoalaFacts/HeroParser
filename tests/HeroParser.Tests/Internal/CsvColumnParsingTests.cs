@@ -287,7 +287,7 @@ public class Utf8SpanParserFactoryTests
     [Fact]
     public void GetParser_String_Decodes()
     {
-        var parser = Utf8SpanParserFactory.GetParser<string>();
+        var parser = new Utf8SpanParserFactory().GetParser<string>();
         Assert.Equal("hi", parser("hi"u8, CultureInfo.InvariantCulture));
     }
 
@@ -306,73 +306,78 @@ public class Utf8SpanParserFactoryTests
     [InlineData(typeof(Guid))]
     public void GetParser_ValueTypes_AndNullableVariants(Type t)
     {
+        var factory = new Utf8SpanParserFactory();
         var method = typeof(Utf8SpanParserFactory).GetMethod(
             nameof(Utf8SpanParserFactory.GetParser),
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
-        var valueParser = method.MakeGenericMethod(t).Invoke(null, null);
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)!;
+        var valueParser = method.MakeGenericMethod(t).Invoke(factory, null);
         Assert.NotNull(valueParser);
         var nullableT = typeof(Nullable<>).MakeGenericType(t);
-        var nullableParser = method.MakeGenericMethod(nullableT).Invoke(null, null);
+        var nullableParser = method.MakeGenericMethod(nullableT).Invoke(factory, null);
         Assert.NotNull(nullableParser);
     }
 
     [Fact]
     public void GetParser_Enum_AndNullableEnum()
     {
-        var parser = Utf8SpanParserFactory.GetParser<Color>();
+        var factory = new Utf8SpanParserFactory();
+        var parser = factory.GetParser<Color>();
         Assert.Equal(Color.Red, parser("Red"u8, CultureInfo.InvariantCulture));
-        var nparser = Utf8SpanParserFactory.GetParser<Color?>();
+        var nparser = factory.GetParser<Color?>();
         Assert.Null(nparser(""u8, CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void GetParser_Int_ParsesValid()
     {
-        var parser = Utf8SpanParserFactory.GetParser<int>();
+        var parser = new Utf8SpanParserFactory().GetParser<int>();
         Assert.Equal(42, parser("42"u8, CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void GetParser_Int_ThrowsOnInvalid()
     {
-        var parser = Utf8SpanParserFactory.GetParser<int>();
+        var parser = new Utf8SpanParserFactory().GetParser<int>();
         Assert.Throws<FormatException>(() => parser("abc"u8, CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void GetParser_Long_Short_Byte()
     {
-        Assert.Equal(1L, Utf8SpanParserFactory.GetParser<long>()("1"u8, CultureInfo.InvariantCulture));
-        Assert.Equal((short)1, Utf8SpanParserFactory.GetParser<short>()("1"u8, CultureInfo.InvariantCulture));
-        Assert.Equal((byte)1, Utf8SpanParserFactory.GetParser<byte>()("1"u8, CultureInfo.InvariantCulture));
+        var factory = new Utf8SpanParserFactory();
+        Assert.Equal(1L, factory.GetParser<long>()("1"u8, CultureInfo.InvariantCulture));
+        Assert.Equal((short)1, factory.GetParser<short>()("1"u8, CultureInfo.InvariantCulture));
+        Assert.Equal((byte)1, factory.GetParser<byte>()("1"u8, CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void GetParser_Decimal_Double_Single()
     {
-        Assert.Equal(3.14m, Utf8SpanParserFactory.GetParser<decimal>()("3.14"u8, CultureInfo.InvariantCulture));
-        Assert.Equal(3.14, Utf8SpanParserFactory.GetParser<double>()("3.14"u8, CultureInfo.InvariantCulture), 5);
-        Assert.Equal(3.14f, Utf8SpanParserFactory.GetParser<float>()("3.14"u8, CultureInfo.InvariantCulture), 4);
+        var factory = new Utf8SpanParserFactory();
+        Assert.Equal(3.14m, factory.GetParser<decimal>()("3.14"u8, CultureInfo.InvariantCulture));
+        Assert.Equal(3.14, factory.GetParser<double>()("3.14"u8, CultureInfo.InvariantCulture), 5);
+        Assert.Equal(3.14f, factory.GetParser<float>()("3.14"u8, CultureInfo.InvariantCulture), 4);
     }
 
     [Fact]
     public void GetParser_Bool_DateTime_DateOnly_TimeOnly_Guid()
     {
-        Assert.True(Utf8SpanParserFactory.GetParser<bool>()("true"u8, CultureInfo.InvariantCulture));
+        var factory = new Utf8SpanParserFactory();
+        Assert.True(factory.GetParser<bool>()("true"u8, CultureInfo.InvariantCulture));
         Assert.Equal(new DateTime(2024, 1, 15),
-            Utf8SpanParserFactory.GetParser<DateTime>()("2024-01-15"u8, CultureInfo.InvariantCulture));
+            factory.GetParser<DateTime>()("2024-01-15"u8, CultureInfo.InvariantCulture));
         Assert.Equal(new DateOnly(2024, 1, 15),
-            Utf8SpanParserFactory.GetParser<DateOnly>()("2024-01-15"u8, CultureInfo.InvariantCulture));
+            factory.GetParser<DateOnly>()("2024-01-15"u8, CultureInfo.InvariantCulture));
         Assert.Equal(new TimeOnly(10, 30),
-            Utf8SpanParserFactory.GetParser<TimeOnly>()("10:30"u8, CultureInfo.InvariantCulture));
+            factory.GetParser<TimeOnly>()("10:30"u8, CultureInfo.InvariantCulture));
         Assert.NotEqual(Guid.Empty,
-            Utf8SpanParserFactory.GetParser<Guid>()("12345678-1234-1234-1234-123456789012"u8, CultureInfo.InvariantCulture));
+            factory.GetParser<Guid>()("12345678-1234-1234-1234-123456789012"u8, CultureInfo.InvariantCulture));
     }
 
     [Fact]
     public void GetParser_NullableInt_EmptyReturnsNull()
     {
-        var parser = Utf8SpanParserFactory.GetParser<int?>();
+        var parser = new Utf8SpanParserFactory().GetParser<int?>();
         Assert.Null(parser(""u8, CultureInfo.InvariantCulture));
         Assert.Null(parser("   "u8, CultureInfo.InvariantCulture));
         Assert.Equal(42, parser("42"u8, CultureInfo.InvariantCulture));
@@ -381,7 +386,7 @@ public class Utf8SpanParserFactoryTests
     [Fact]
     public void GetParser_UnsupportedType_Throws()
     {
-        Assert.Throws<NotSupportedException>(Utf8SpanParserFactory.GetParser<Uri>);
+        Assert.Throws<NotSupportedException>(() => new Utf8SpanParserFactory().GetParser<TimeZoneInfo>());
     }
 }
 #pragma warning restore IL2026, IL3050

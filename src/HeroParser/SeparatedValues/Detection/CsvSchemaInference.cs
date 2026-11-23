@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
 using HeroParser.SeparatedValues.Reading.Streaming;
@@ -24,7 +25,15 @@ public enum CsvInferredType
     /// <summary>Date and/or time values.</summary>
     DateTime,
     /// <summary>GUID/UUID values.</summary>
-    Guid
+    Guid,
+    /// <summary>Calendar date values without time or offset components.</summary>
+    DateOnly,
+    /// <summary>Time-of-day values without date or offset components.</summary>
+    TimeOnly,
+    /// <summary>Date and time values with an explicit UTC/time-zone offset.</summary>
+    DateTimeOffset,
+    /// <summary>Time interval / duration values.</summary>
+    TimeSpan
 }
 
 /// <summary>
@@ -82,6 +91,14 @@ public sealed record CsvSchemaInferenceOptions
     public long MaxScannedInputSize { get; init; } = 128L * 1024 * 1024;
 
     /// <summary>
+    /// Gets or sets whether schema inference distinguishes <see cref="CsvInferredType.DateOnly"/>,
+    /// <see cref="CsvInferredType.TimeOnly"/>, <see cref="CsvInferredType.DateTimeOffset"/>, and
+    /// <see cref="CsvInferredType.TimeSpan"/> instead of grouping temporal values under
+    /// <see cref="CsvInferredType.DateTime"/> or <see cref="CsvInferredType.String"/> (default: <see langword="false"/>).
+    /// </summary>
+    public bool DistinguishTemporalTypes { get; init; }
+
+    /// <summary>
     /// Gets the default options.
     /// </summary>
     public static CsvSchemaInferenceOptions Default { get; } = new();
@@ -120,9 +137,9 @@ public static class CsvSchemaInference
         ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MaxRowSize, CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxScannedInputSize);
 
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+        await using var stream = new CompressedFile(path).OpenRead(
             bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return await InferAsync(stream, options, cancellationToken).ConfigureAwait(false);
+        return await InferCoreAsync(stream, options, requireSeekableForAutoDelimiter: false, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Infers a stream's CSV schema from a bounded number of rows, leaving the stream open.</summary>
@@ -130,8 +147,15 @@ public static class CsvSchemaInference
     /// <param name="options">Inference options. Non-seekable streams require an explicit delimiter.</param>
     /// <param name="cancellationToken">Cancels reads.</param>
     /// <returns>Column types inferred only from the sampled rows.</returns>
-    public static async Task<CsvSchemaInferenceResult> InferAsync(
+    public static Task<CsvSchemaInferenceResult> InferAsync(
         Stream stream, CsvSchemaInferenceOptions? options = null, CancellationToken cancellationToken = default)
+        => InferCoreAsync(stream, options, requireSeekableForAutoDelimiter: true, cancellationToken);
+
+    private static async Task<CsvSchemaInferenceResult> InferCoreAsync(
+        Stream stream,
+        CsvSchemaInferenceOptions? options,
+        bool requireSeekableForAutoDelimiter,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(stream);
         if (!stream.CanRead)
@@ -143,7 +167,7 @@ public static class CsvSchemaInference
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxRowSize);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MaxRowSize, CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxScannedInputSize);
-        if (!stream.CanSeek && options.Delimiter is null)
+        if (requireSeekableForAutoDelimiter && !stream.CanSeek && options.Delimiter is null)
             throw new ArgumentException("Non-seekable streams require an explicit delimiter.", nameof(options));
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -153,7 +177,7 @@ public static class CsvSchemaInference
             var prefix = new byte[(int)Math.Min(options.MaxScannedInputSize,
                 options.Delimiter is null ? DETECTION_SAMPLE_BYTES : 2)];
             int length = await ReadPrefixAsync(stream, prefix, cancellationToken).ConfigureAwait(false);
-            bool hasMore = stream.CanSeek && stream.Position < stream.Length;
+            bool hasMore = stream.CanSeek ? stream.Position < stream.Length : length == prefix.Length;
             char delimiter = options.Delimiter ?? DetectSampleDelimiter(prefix.AsSpan(0, length),
                 hasMore && length < options.MaxScannedInputSize);
             Encoding? encoding = GetUtf16Encoding(prefix.AsSpan(0, length));
@@ -215,7 +239,7 @@ public static class CsvSchemaInference
         {
             headers[i] = header[i].UnquoteToString();
             embeddedLines += CountNewlines(headers[i].AsSpan());
-            candidates[i] = new ColumnTypeTracker();
+            candidates[i] = new ColumnTypeTracker(options.DistinguishTemporalTypes);
         }
 
         bool hasSkippedEmptyRows = header.SourceLineNumber > 1;
@@ -416,7 +440,7 @@ public static class CsvSchemaInference
         // Track type candidates per column
         var candidates = new ColumnTypeTracker[columnCount];
         for (int i = 0; i < columnCount; i++)
-            candidates[i] = new ColumnTypeTracker();
+            candidates[i] = new ColumnTypeTracker(options.DistinguishTemporalTypes);
 
         int sampledRows = 0;
         int expectedNextLine;
@@ -575,13 +599,18 @@ public static class CsvSchemaInference
     }
 
 
-    private sealed class ColumnTypeTracker
+    private sealed class ColumnTypeTracker(bool distinguishTemporalTypes)
     {
         private bool hasIntegers;
         private bool hasLongs;
         private bool hasDecimals;
         private bool hasBooleans;
         private bool hasDateTimes;
+        private bool hasDateOnly;
+        private bool hasTimeOnly;
+        private bool hasTimeOnlyNonTimeSpan;
+        private bool hasDateTimeOffsets;
+        private bool hasTimeSpan;
         private bool hasGuids;
         private bool hasStrings;
         private int nonEmptyCount;
@@ -633,6 +662,46 @@ public static class CsvSchemaInference
                 return;
             }
 
+            if (!distinguishTemporalTypes)
+            {
+                if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                {
+                    hasDateTimes = true;
+                    return;
+                }
+
+                hasStrings = true;
+                return;
+            }
+
+            if (!HasTimeOrOffset(value) && DateOnly.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            {
+                hasDateOnly = true;
+                return;
+            }
+
+            if (!HasDatePart(value) && TimeOnly.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            {
+                hasTimeOnly = true;
+                if (!TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out _))
+                {
+                    hasTimeOnlyNonTimeSpan = true;
+                }
+                return;
+            }
+
+            if (value.Contains(':') && TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out _))
+            {
+                hasTimeSpan = true;
+                return;
+            }
+
+            if (HasExplicitTimeZoneOffset(value) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            {
+                hasDateTimeOffsets = true;
+                return;
+            }
+
             if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             {
                 hasDateTimes = true;
@@ -640,6 +709,46 @@ public static class CsvSchemaInference
             }
 
             hasStrings = true;
+        }
+
+        private static bool HasTimeOrOffset(string value)
+        {
+            if (value.Contains(':') || value.Contains('+'))
+                return true;
+
+            ReadOnlySpan<char> trimmed = value.AsSpan().TrimEnd();
+            return trimmed.Length > 0 && trimmed[^1] is 'Z' or 'z';
+        }
+
+        private static bool HasDatePart(string value)
+        {
+            if (HasExplicitTimeZoneOffset(value))
+                return true;
+
+            foreach (char c in value)
+            {
+                if (c is '-' or '/' or 'T' or 't')
+                    return true;
+            }
+
+            return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.NoCurrentDateDefault, out var dt)
+                && dt.Date != DateTime.MinValue;
+        }
+
+        private static bool HasExplicitTimeZoneOffset(string value)
+        {
+            ReadOnlySpan<char> trimmed = value.AsSpan().TrimEnd();
+            if (trimmed.IsEmpty)
+                return false;
+
+            if (trimmed[^1] is 'Z' or 'z')
+                return true;
+
+            if (trimmed.Contains('+'))
+                return true;
+
+            int lastDash = trimmed.LastIndexOf('-');
+            return lastDash > 0 && trimmed[..lastDash].Contains(':');
         }
 
         public CsvInferredType GetInferredType()
@@ -651,21 +760,44 @@ public static class CsvSchemaInference
             if (hasStrings)
                 return CsvInferredType.String;
 
+            bool hasAnyTemporal = hasDateTimes || hasDateOnly || hasTimeOnly || hasDateTimeOffsets || hasTimeSpan;
+
             // Boolean: only booleans
-            if (hasBooleans && !hasIntegers && !hasLongs && !hasDecimals && !hasGuids && !hasDateTimes)
+            if (hasBooleans && !hasIntegers && !hasLongs && !hasDecimals && !hasGuids && !hasAnyTemporal)
                 return CsvInferredType.Boolean;
 
             // Guid: only guids
-            if (hasGuids && !hasIntegers && !hasLongs && !hasDecimals && !hasBooleans && !hasDateTimes)
+            if (hasGuids && !hasIntegers && !hasLongs && !hasDecimals && !hasBooleans && !hasAnyTemporal)
                 return CsvInferredType.Guid;
 
-            // DateTime: only datetimes
-            if (hasDateTimes && !hasIntegers && !hasLongs && !hasDecimals && !hasBooleans && !hasGuids)
-                return CsvInferredType.DateTime;
+            // Temporal hierarchy and widening
+            if (hasAnyTemporal && !hasIntegers && !hasLongs && !hasDecimals && !hasBooleans && !hasGuids)
+            {
+                if (!distinguishTemporalTypes)
+                    return CsvInferredType.DateTime;
+
+                bool hasDates = hasDateOnly || hasDateTimes || hasDateTimeOffsets;
+                if (hasTimeOnly || hasTimeSpan)
+                {
+                    if (hasDates)
+                        return CsvInferredType.String;
+                    if (hasTimeOnly && !hasTimeSpan)
+                        return CsvInferredType.TimeOnly;
+                    if (hasTimeSpan && (!hasTimeOnly || !hasTimeOnlyNonTimeSpan))
+                        return CsvInferredType.TimeSpan;
+                    return CsvInferredType.String;
+                }
+
+                if (hasDateTimeOffsets)
+                    return CsvInferredType.DateTimeOffset;
+                if (hasDateTimes)
+                    return CsvInferredType.DateTime;
+                return CsvInferredType.DateOnly;
+            }
 
             // Numeric hierarchy: int < long < decimal
             bool hasAnyNumeric = hasIntegers || hasLongs || hasDecimals;
-            if (hasAnyNumeric && !hasBooleans && !hasGuids && !hasDateTimes)
+            if (hasAnyNumeric && !hasBooleans && !hasGuids && !hasAnyTemporal)
             {
                 if (hasDecimals)
                     return CsvInferredType.Decimal;

@@ -281,3 +281,7 @@ npm/packages/heroparser/_framework/
 
 # Small, checked-in regression inputs for the CI report validator.
 !.github/scripts/tests/fixtures/*.trx
+
+# Python bytecode
+__pycache__/
+*.py[cod]

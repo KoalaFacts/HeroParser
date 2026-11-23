@@ -36,54 +36,30 @@ internal sealed class DynamicColumnStats
     public bool CategoriesTruncated { get; set; }
 
     internal Utf8ProfileCache? Utf8Cache;
-}
 
-internal static class DynamicProfiler
-{
-    public static List<DynamicColumnStats> Analyze(string[] headers, List<string[]> rows)
-    {
-        var statsList = CreateStats(headers);
-
-        foreach (var row in rows)
-        {
-            ObserveRow(statsList, row);
-        }
-
-        return statsList;
-    }
-
-    public static List<DynamicColumnStats> CreateStats(string[] headers)
-        => [.. headers.Select(header => new DynamicColumnStats { Name = header })];
-
-    public static void ObserveRow(List<DynamicColumnStats> statsList, string[] row)
-    {
-        for (int i = 0; i < statsList.Count; i++)
-            ObserveCell(statsList[i], i < row.Length ? row[i] : null);
-    }
-
-    public static void ObserveCell(DynamicColumnStats stats, string? value)
+    public void Observe(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
-            stats.NullCount++;
+            NullCount++;
         else
         {
-            stats.NonNullCount++;
-            ObserveValue(value, stats);
+            NonNullCount++;
+            ObserveValue(value);
         }
     }
 
-    public static void ObserveCellUtf8(DynamicColumnStats stats, ReadOnlySpan<byte> value)
+    public void ObserveUtf8(ReadOnlySpan<byte> value)
     {
         if (value.IsEmpty)
         {
-            stats.NullCount++;
+            NullCount++;
             return;
         }
 
-        if (stats.Utf8Cache is { } cache && stats.ValueCounts.Count <= 16 &&
+        if (Utf8Cache is { } cache && ValueCounts.Count <= 16 &&
             cache.TryGet(value, out var cachedKind, out var cachedText))
         {
-            ReplayCachedValue(stats, cachedKind, cachedText);
+            ReplayCachedValue(cachedKind, cachedText);
             return;
         }
 
@@ -92,25 +68,25 @@ internal static class DynamicProfiler
         {
             if (Utf8Parser.TryParse(value, out int intValue, out int consumed) && consumed == value.Length)
             {
-                stats.NonNullCount++;
-                stats.IntCount++;
-                UpdateNumericRange(intValue, stats);
+                NonNullCount++;
+                IntCount++;
+                UpdateNumericRange(intValue);
                 return;
             }
 
             if (Utf8Parser.TryParse(value, out long longValue, out consumed) && consumed == value.Length)
             {
-                stats.NonNullCount++;
-                stats.LongCount++;
-                UpdateNumericRange(longValue, stats);
+                NonNullCount++;
+                LongCount++;
+                UpdateNumericRange(longValue);
                 return;
             }
 
             if (Utf8Parser.TryParse(value, out double doubleValue, out consumed) && consumed == value.Length)
             {
-                stats.NonNullCount++;
-                stats.DecimalCount++;
-                UpdateNumericRange(doubleValue, stats);
+                NonNullCount++;
+                DecimalCount++;
+                UpdateNumericRange(doubleValue);
                 return;
             }
         }
@@ -119,154 +95,206 @@ internal static class DynamicProfiler
         ProfileValueKind kind;
         if (string.IsNullOrWhiteSpace(text))
         {
-            stats.NullCount++;
+            NullCount++;
             kind = ProfileValueKind.Null;
         }
         else
         {
-            stats.NonNullCount++;
-            kind = ObserveValue(text, stats);
+            NonNullCount++;
+            kind = ObserveValue(text);
         }
 
         if (kind != ProfileValueKind.Uncached && value.Length <= 256 &&
-            stats.ValueCounts.Count <= 16 && !stats.CategoriesTruncated)
+            ValueCounts.Count <= 16 && !CategoriesTruncated)
         {
-            (stats.Utf8Cache ??= new Utf8ProfileCache()).Store(value, kind, text);
+            (Utf8Cache ??= new Utf8ProfileCache()).Store(value, kind, text);
         }
     }
 
-    private static void ReplayCachedValue(DynamicColumnStats stats, ProfileValueKind kind, string? text)
+    public string InferTypeName()
+    {
+        if (NonNullCount == 0)
+            return "String";
+
+        if (StringCount > 0)
+            return "String";
+
+        if (BoolCount > 0 && IntCount == 0 && LongCount == 0 && DecimalCount == 0 && DateTimeCount == 0 && GuidCount == 0)
+            return "Boolean";
+
+        if (GuidCount > 0 && IntCount == 0 && LongCount == 0 && DecimalCount == 0 && DateTimeCount == 0 && BoolCount == 0)
+            return "Guid";
+
+        if (DateTimeCount > 0 && IntCount == 0 && LongCount == 0 && DecimalCount == 0 && GuidCount == 0 && BoolCount == 0)
+            return "DateTime";
+
+        if (IntCount > 0 || LongCount > 0 || DecimalCount > 0)
+        {
+            if (DecimalCount > 0)
+                return "Decimal";
+            return "Integer";
+        }
+
+        return "String";
+    }
+
+    private void ReplayCachedValue(ProfileValueKind kind, string? text)
     {
         switch (kind)
         {
             case ProfileValueKind.Null:
-                stats.NullCount++;
+                NullCount++;
                 return;
             case ProfileValueKind.True:
-                stats.BoolCount++;
-                stats.TrueCount++;
+                BoolCount++;
+                TrueCount++;
                 break;
             case ProfileValueKind.False:
-                stats.BoolCount++;
-                stats.FalseCount++;
+                BoolCount++;
+                FalseCount++;
                 break;
             case ProfileValueKind.Guid:
-                stats.GuidCount++;
+                GuidCount++;
                 break;
             case ProfileValueKind.DateTime:
-                stats.DateTimeCount++;
+                DateTimeCount++;
                 break;
             case ProfileValueKind.String:
-                stats.StringCount++;
+                StringCount++;
                 break;
             case ProfileValueKind.Uncached:
             default:
                 throw new InvalidOperationException("Only classified non-null values can be replayed.");
         }
-        stats.NonNullCount++;
-        TrackCategory(text!, stats);
+        NonNullCount++;
+        TrackCategory(text!);
     }
 
-    public static string GenerateContextCard(string datasetName, string[] headers, List<string[]> rows)
-    {
-        var statsList = Analyze(headers, rows);
-        return RenderMarkdownCard(datasetName, rows.Count, statsList);
-    }
-
-    public static string GenerateContextCard(string datasetName, int totalRows, List<DynamicColumnStats> stats)
-        => RenderMarkdownCard(datasetName, totalRows, stats);
-
-    private static ProfileValueKind ObserveValue(string value, DynamicColumnStats stats)
+    private ProfileValueKind ObserveValue(string value)
     {
         // Check Boolean
         if (bool.TryParse(value, out var bVal))
         {
-            stats.BoolCount++;
-            if (bVal) stats.TrueCount++;
-            else stats.FalseCount++;
-            TrackCategory(value, stats);
+            BoolCount++;
+            if (bVal) TrueCount++;
+            else FalseCount++;
+            TrackCategory(value);
             return bVal ? ProfileValueKind.True : ProfileValueKind.False;
         }
 
         // Check Integer (Int32)
         if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var iVal))
         {
-            stats.IntCount++;
-            UpdateNumericRange(iVal, stats);
+            IntCount++;
+            UpdateNumericRange(iVal);
             return ProfileValueKind.Uncached;
         }
 
         // Check Long (Int64)
         if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var lVal))
         {
-            stats.LongCount++;
-            UpdateNumericRange(lVal, stats);
+            LongCount++;
+            UpdateNumericRange(lVal);
             return ProfileValueKind.Uncached;
         }
 
         // Check Decimal/Double
         if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var dVal))
         {
-            stats.DecimalCount++;
-            UpdateNumericRange(dVal, stats);
+            DecimalCount++;
+            UpdateNumericRange(dVal);
             return ProfileValueKind.Uncached;
         }
 
         // Check Guid
         if (Guid.TryParse(value, out _))
         {
-            stats.GuidCount++;
-            TrackCategory(value, stats);
+            GuidCount++;
+            TrackCategory(value);
             return ProfileValueKind.Guid;
         }
 
         // Check DateTime
         if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
         {
-            stats.DateTimeCount++;
-            TrackCategory(value, stats);
+            DateTimeCount++;
+            TrackCategory(value);
             return ProfileValueKind.DateTime;
         }
 
         // Fallback: String
-        stats.StringCount++;
-        TrackCategory(value, stats);
+        StringCount++;
+        TrackCategory(value);
         return ProfileValueKind.String;
     }
 
-    private static void UpdateNumericRange(double value, DynamicColumnStats stats)
+    private void UpdateNumericRange(double value)
     {
-        if (value < stats.Min) stats.Min = value;
-        if (value > stats.Max) stats.Max = value;
-        stats.Sum += value;
+        if (value < Min) Min = value;
+        if (value > Max) Max = value;
+        Sum += value;
     }
 
-    private static void TrackCategory(string value, DynamicColumnStats stats)
+    private void TrackCategory(string value)
     {
         // The profile retains bounded examples, not an exact distinct-count index.
-        if (value.Length > 256 || (stats.ValueCounts.Count >= 100 && !stats.ValueCounts.ContainsKey(value)))
+        if (value.Length > 256 || (ValueCounts.Count >= 100 && !ValueCounts.ContainsKey(value)))
         {
-            stats.CategoriesTruncated = true;
+            CategoriesTruncated = true;
             return;
         }
 
-        stats.ValueCounts[value] = stats.ValueCounts.TryGetValue(value, out var count) ? count + 1 : 1;
+        ValueCounts[value] = ValueCounts.TryGetValue(value, out var count) ? count + 1 : 1;
+    }
+}
+
+internal sealed class DynamicProfiler
+{
+    public List<DynamicColumnStats> Columns { get; }
+    public int TotalRows { get; private set; }
+
+    public DynamicProfiler(string[] headers)
+    {
+        Columns = [.. headers.Select(header => new DynamicColumnStats { Name = header })];
     }
 
-    private static string RenderMarkdownCard(string datasetName, int totalRows, List<DynamicColumnStats> statsList)
+    public DynamicProfiler(List<DynamicColumnStats> columns, int totalRows)
+    {
+        Columns = columns;
+        TotalRows = totalRows;
+    }
+
+    public void ObserveRow(string[] row)
+    {
+        for (int i = 0; i < Columns.Count; i++)
+            Columns[i].Observe(i < row.Length ? row[i] : null);
+        TotalRows++;
+    }
+
+    public void ObserveRows(IEnumerable<string[]> rows)
+    {
+        foreach (var row in rows)
+            ObserveRow(row);
+    }
+
+    public void ObserveCell(int columnIndex, string? value) => Columns[columnIndex].Observe(value);
+
+    public void ObserveCellUtf8(int columnIndex, ReadOnlySpan<byte> value) => Columns[columnIndex].ObserveUtf8(value);
+
+    public string GenerateContextCard(string datasetName)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"### Dataset Profile: {datasetName} ({totalRows:N0} rows)");
+        sb.AppendLine($"### Dataset Profile: {datasetName} ({TotalRows:N0} rows)");
 
-        foreach (var stats in statsList)
+        foreach (var stats in Columns)
         {
-            double nullPct = totalRows > 0 ? (double)stats.NullCount / totalRows * 100 : 0;
+            double nullPct = TotalRows > 0 ? (double)stats.NullCount / TotalRows * 100 : 0;
             string nullStr = stats.NullCount > 0 ? $", {nullPct:F1}% Null" : ", 0% Null";
-            string typeName = InferTypeName(stats);
+            string typeName = stats.InferTypeName();
 
             sb.Append($"- **{stats.Name}** ({typeName}{nullStr}): ");
 
-            if (totalRows == 0)
+            if (TotalRows == 0)
             {
                 sb.AppendLine("No data available.");
                 continue;
@@ -281,7 +309,7 @@ internal static class DynamicProfiler
             }
             else if (typeName == "Boolean")
             {
-                double truePct = totalRows > 0 ? (double)stats.TrueCount / totalRows * 100 : 0;
+                double truePct = TotalRows > 0 ? (double)stats.TrueCount / TotalRows * 100 : 0;
                 sb.AppendLine($"Boolean. True: {stats.TrueCount:N0} ({truePct:F1}%), False: {stats.FalseCount:N0} ({100 - truePct:F1}%).");
             }
             else
@@ -296,7 +324,7 @@ internal static class DynamicProfiler
                     sb.Append(stats.CategoriesTruncated ? " Top tracked values: " : " Top values: ");
                     for (int j = 0; j < topValues.Count; j++)
                     {
-                        double pct = (double)topValues[j].Value / totalRows * 100;
+                        double pct = (double)topValues[j].Value / TotalRows * 100;
                         sb.Append($"\"{topValues[j].Key}\" ({pct:F1}%)");
                         if (j < topValues.Count - 1) sb.Append(", ");
                     }
@@ -306,32 +334,5 @@ internal static class DynamicProfiler
         }
 
         return sb.ToString();
-    }
-
-    public static string InferTypeName(DynamicColumnStats stats)
-    {
-        if (stats.NonNullCount == 0)
-            return "String";
-
-        if (stats.StringCount > 0)
-            return "String";
-
-        if (stats.BoolCount > 0 && stats.IntCount == 0 && stats.LongCount == 0 && stats.DecimalCount == 0 && stats.DateTimeCount == 0 && stats.GuidCount == 0)
-            return "Boolean";
-
-        if (stats.GuidCount > 0 && stats.IntCount == 0 && stats.LongCount == 0 && stats.DecimalCount == 0 && stats.DateTimeCount == 0 && stats.BoolCount == 0)
-            return "Guid";
-
-        if (stats.DateTimeCount > 0 && stats.IntCount == 0 && stats.LongCount == 0 && stats.DecimalCount == 0 && stats.GuidCount == 0 && stats.BoolCount == 0)
-            return "DateTime";
-
-        if (stats.IntCount > 0 || stats.LongCount > 0 || stats.DecimalCount > 0)
-        {
-            if (stats.DecimalCount > 0)
-                return "Decimal";
-            return "Integer";
-        }
-
-        return "String";
     }
 }

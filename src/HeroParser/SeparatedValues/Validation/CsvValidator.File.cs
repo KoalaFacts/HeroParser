@@ -1,3 +1,4 @@
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Reading.Streaming;
@@ -25,198 +26,217 @@ public static partial class CsvValidator
         options ??= new CsvValidationOptions();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxErrors);
 
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+        Stream stream = new CompressedFile(path).OpenRead(
             bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var sample = new byte[DETECTION_SAMPLE_BYTES];
-        int sampleLength = await ReadSampleAsync(stream, sample, cancellationToken).ConfigureAwait(false);
-
-        char delimiter = options.Delimiter ?? ',';
-        bool whitespaceOnly = sampleLength == 0 || (IsWhiteSpaceOnly(sample.AsSpan(0, sampleLength)) &&
-            await IsRemainingWhiteSpaceAsync(stream, cancellationToken).ConfigureAwait(false));
-        if (whitespaceOnly)
-        {
-            return new CsvValidationResult
-            {
-                Delimiter = delimiter,
-                Errors = options.AllowEmptyFile ? [] : [new CsvValidationError
-                {
-                    ErrorType = CsvValidationErrorType.EmptyFile,
-                    Message = "CSV file is empty"
-                }]
-            };
-        }
-
-        if (!options.Delimiter.HasValue && options.ExpectedColumnCount != 1)
-        {
-            try
-            {
-                if (options.SkipRows > 0)
-                {
-                    stream.Position = 0;
-                    await SkipLogicalRowsAsync(stream, options.SkipRows, options.GetEffectiveParseOptions().MaxRowSize,
-                        sample, cancellationToken).ConfigureAwait(false);
-                    sampleLength = await ReadSampleAsync(stream, sample, cancellationToken).ConfigureAwait(false);
-                }
-                if (sampleLength > 0)
-                    delimiter = CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
-            }
-            catch (CsvException ex)
-            {
-                return new CsvValidationResult
-                {
-                    Delimiter = delimiter,
-                    Errors = [new CsvValidationError
-                    {
-                        ErrorType = CsvValidationErrorType.ParseError,
-                        Message = $"Parse error: {ex.Message}"
-                    }]
-                };
-            }
-            catch (InvalidOperationException ex)
-            {
-                return new CsvValidationResult
-                {
-                    Delimiter = delimiter,
-                    Errors = [new CsvValidationError
-                    {
-                        ErrorType = CsvValidationErrorType.DelimiterDetectionFailed,
-                        Message = $"Could not detect delimiter: {ex.Message}"
-                    }]
-                };
-            }
-        }
-
-        stream.Position = 0;
-        var parseOptions = options.GetEffectiveParseOptions() with { Delimiter = delimiter };
-        if (options.ParseOptions is null)
-            parseOptions = parseOptions with { MaxRowCount = int.MaxValue };
-        parseOptions.Validate();
-
-        var errors = new List<CsvValidationError>();
-        var headers = new List<string>();
-        int totalRows = 0;
-        int detectedColumnCount = 0;
-        int expectedColumnCount = options.ExpectedColumnCount ?? 0;
-        bool stoppedEarly = false;
-
-        CsvValidationResult Result() => new()
-        {
-            Errors = errors,
-            Headers = headers,
-            TotalRows = totalRows,
-            ColumnCount = detectedColumnCount,
-            Delimiter = delimiter,
-            StoppedEarly = stoppedEarly
-        };
-
-        await using var reader = new CsvAsyncStreamReader(stream, parseOptions, leaveOpen: true,
-            initialBufferSize: 16 * 1024);
         try
         {
-            for (int i = 0; i < options.SkipRows && await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false); i++)
-                totalRows++;
+            var sample = new byte[DETECTION_SAMPLE_BYTES];
+            int sampleLength = await ReadSampleAsync(stream, sample, cancellationToken).ConfigureAwait(false);
 
-            if (options.HasHeaderRow && await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            char delimiter = options.Delimiter ?? ',';
+            bool whitespaceOnly = sampleLength == 0 || (IsWhiteSpaceOnly(sample.AsSpan(0, sampleLength)) &&
+                await IsRemainingWhiteSpaceAsync(stream, cancellationToken).ConfigureAwait(false));
+            if (whitespaceOnly)
             {
-                totalRows++;
-                var header = reader.Current;
-                detectedColumnCount = header.ColumnCount;
-                for (int i = 0; i < header.ColumnCount; i++)
-                    headers.Add(HeaderName(header, i, parseOptions));
-
-                if (options.RequiredHeaders is not null)
+                return new CsvValidationResult
                 {
-                    foreach (var required in options.RequiredHeaders)
+                    Delimiter = delimiter,
+                    Errors = options.AllowEmptyFile ? [] : [new CsvValidationError
                     {
-                        if (!headers.Contains(required, StringComparer.OrdinalIgnoreCase))
-                            errors.Add(new CsvValidationError
-                            {
-                                ErrorType = CsvValidationErrorType.MissingHeader,
-                                Message = $"Required header '{required}' is missing",
-                                RowNumber = 1,
-                                Expected = required
-                            });
-                        if (errors.Count >= options.MaxErrors)
-                        {
-                            stoppedEarly = true;
-                            return Result();
-                        }
-                    }
-                }
-
-                if (expectedColumnCount > 0 && header.ColumnCount != expectedColumnCount)
-                    errors.Add(new CsvValidationError
-                    {
-                        ErrorType = CsvValidationErrorType.ColumnCountMismatch,
-                        Message = $"Header has {header.ColumnCount} columns, expected {expectedColumnCount}",
-                        RowNumber = 1,
-                        Expected = expectedColumnCount.ToString(),
-                        Actual = header.ColumnCount.ToString()
-                    });
+                        ErrorType = CsvValidationErrorType.EmptyFile,
+                        Message = "CSV file is empty"
+                    }]
+                };
             }
 
-            while (errors.Count < options.MaxErrors && await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            if (!options.Delimiter.HasValue && options.ExpectedColumnCount != 1)
             {
-                totalRows++;
-                int columnCount = reader.Current.ColumnCount;
-                if (detectedColumnCount == 0)
-                    detectedColumnCount = columnCount;
-
-                if (options.CheckConsistentColumnCount)
+                try
                 {
-                    int expected = expectedColumnCount > 0 ? expectedColumnCount : detectedColumnCount;
-                    if (columnCount != expected)
+                    if (options.SkipRows > 0)
+                    {
+                        stream = await RewindOrReopenAsync(stream, path).ConfigureAwait(false);
+                        sampleLength = await ReadSampleAfterSkippingRowsAsync(stream, options.SkipRows,
+                            options.GetEffectiveParseOptions().MaxRowSize, sample, cancellationToken).ConfigureAwait(false);
+                    }
+                    if (sampleLength > 0)
+                        delimiter = CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
+                }
+                catch (CsvException ex)
+                {
+                    return new CsvValidationResult
+                    {
+                        Delimiter = delimiter,
+                        Errors = [new CsvValidationError
+                        {
+                            ErrorType = CsvValidationErrorType.ParseError,
+                            Message = $"Parse error: {ex.Message}"
+                        }]
+                    };
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return new CsvValidationResult
+                    {
+                        Delimiter = delimiter,
+                        Errors = [new CsvValidationError
+                        {
+                            ErrorType = CsvValidationErrorType.DelimiterDetectionFailed,
+                            Message = $"Could not detect delimiter: {ex.Message}"
+                        }]
+                    };
+                }
+            }
+
+            stream = await RewindOrReopenAsync(stream, path).ConfigureAwait(false);
+            var parseOptions = options.GetEffectiveParseOptions() with { Delimiter = delimiter };
+            if (options.ParseOptions is null)
+                parseOptions = parseOptions with { MaxRowCount = int.MaxValue };
+            parseOptions.Validate();
+
+            var errors = new List<CsvValidationError>();
+            var headers = new List<string>();
+            int totalRows = 0;
+            int detectedColumnCount = 0;
+            int expectedColumnCount = options.ExpectedColumnCount ?? 0;
+            bool stoppedEarly = false;
+
+            CsvValidationResult Result() => new()
+            {
+                Errors = errors,
+                Headers = headers,
+                TotalRows = totalRows,
+                ColumnCount = detectedColumnCount,
+                Delimiter = delimiter,
+                StoppedEarly = stoppedEarly
+            };
+
+            await using var reader = new CsvAsyncStreamReader(stream, parseOptions, leaveOpen: true,
+                initialBufferSize: 16 * 1024);
+            try
+            {
+                for (int i = 0; i < options.SkipRows && await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false); i++)
+                    totalRows++;
+
+                if (options.HasHeaderRow && await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    totalRows++;
+                    var header = reader.Current;
+                    detectedColumnCount = header.ColumnCount;
+                    for (int i = 0; i < header.ColumnCount; i++)
+                        headers.Add(HeaderName(header, i, parseOptions));
+
+                    if (options.RequiredHeaders is not null)
+                    {
+                        foreach (var required in options.RequiredHeaders)
+                        {
+                            if (!headers.Contains(required, StringComparer.OrdinalIgnoreCase))
+                                errors.Add(new CsvValidationError
+                                {
+                                    ErrorType = CsvValidationErrorType.MissingHeader,
+                                    Message = $"Required header '{required}' is missing",
+                                    RowNumber = 1,
+                                    Expected = required
+                                });
+                            if (errors.Count >= options.MaxErrors)
+                            {
+                                stoppedEarly = true;
+                                return Result();
+                            }
+                        }
+                    }
+
+                    if (expectedColumnCount > 0 && header.ColumnCount != expectedColumnCount)
                         errors.Add(new CsvValidationError
                         {
-                            ErrorType = CsvValidationErrorType.InconsistentColumnCount,
-                            Message = $"Row has {columnCount} columns, expected {expected}",
-                            RowNumber = totalRows,
-                            Expected = expected.ToString(),
-                            Actual = columnCount.ToString()
+                            ErrorType = CsvValidationErrorType.ColumnCountMismatch,
+                            Message = $"Header has {header.ColumnCount} columns, expected {expectedColumnCount}",
+                            RowNumber = 1,
+                            Expected = expectedColumnCount.ToString(),
+                            Actual = header.ColumnCount.ToString()
                         });
                 }
 
-                if (errors.Count >= options.MaxErrors)
+                while (errors.Count < options.MaxErrors && await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    stoppedEarly = true;
-                    break;
+                    totalRows++;
+                    int columnCount = reader.Current.ColumnCount;
+                    if (detectedColumnCount == 0)
+                        detectedColumnCount = columnCount;
+
+                    if (options.CheckConsistentColumnCount)
+                    {
+                        int expected = expectedColumnCount > 0 ? expectedColumnCount : detectedColumnCount;
+                        if (columnCount != expected)
+                            errors.Add(new CsvValidationError
+                            {
+                                ErrorType = CsvValidationErrorType.InconsistentColumnCount,
+                                Message = $"Row has {columnCount} columns, expected {expected}",
+                                RowNumber = totalRows,
+                                Expected = expected.ToString(),
+                                Actual = columnCount.ToString()
+                            });
+                    }
+
+                    if (errors.Count >= options.MaxErrors)
+                    {
+                        stoppedEarly = true;
+                        break;
+                    }
+
+                    if (options.MaxRows > 0 && totalRows > options.MaxRows)
+                    {
+                        errors.Add(new CsvValidationError
+                        {
+                            ErrorType = CsvValidationErrorType.TooManyRows,
+                            Message = $"CSV exceeds maximum allowed rows ({options.MaxRows})",
+                            RowNumber = totalRows
+                        });
+                        break;
+                    }
                 }
 
-                if (options.MaxRows > 0 && totalRows > options.MaxRows)
-                {
+                stoppedEarly = errors.Count >= options.MaxErrors;
+            }
+            catch (CsvException ex)
+            {
+                if (errors.Count < options.MaxErrors)
                     errors.Add(new CsvValidationError
                     {
-                        ErrorType = CsvValidationErrorType.TooManyRows,
-                        Message = $"CSV exceeds maximum allowed rows ({options.MaxRows})",
-                        RowNumber = totalRows
+                        ErrorType = CsvValidationErrorType.ParseError,
+                        Message = $"Parse error: {ex.Message}",
+                        RowNumber = ex.Row ?? 0,
+                        ColumnNumber = ex.Column ?? 0
                     });
-                    break;
-                }
             }
 
-            stoppedEarly = errors.Count >= options.MaxErrors;
-        }
-        catch (CsvException ex)
-        {
-            if (errors.Count < options.MaxErrors)
+            int nonDataRows = options.SkipRows + (options.HasHeaderRow ? 1 : 0);
+            if (totalRows <= nonDataRows && !options.AllowEmptyFile && errors.Count < options.MaxErrors)
                 errors.Add(new CsvValidationError
                 {
-                    ErrorType = CsvValidationErrorType.ParseError,
-                    Message = $"Parse error: {ex.Message}",
-                    RowNumber = ex.Row ?? 0,
-                    ColumnNumber = ex.Column ?? 0
+                    ErrorType = CsvValidationErrorType.EmptyFile,
+                    Message = "CSV contains no data rows"
                 });
+
+            return Result();
+        }
+        finally
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async ValueTask<Stream> RewindOrReopenAsync(Stream stream, string path)
+    {
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+            return stream;
         }
 
-        int nonDataRows = options.SkipRows + (options.HasHeaderRow ? 1 : 0);
-        if (totalRows <= nonDataRows && !options.AllowEmptyFile && errors.Count < options.MaxErrors)
-            errors.Add(new CsvValidationError
-            {
-                ErrorType = CsvValidationErrorType.EmptyFile,
-                Message = "CSV contains no data rows"
-            });
-
-        return Result();
+        await stream.DisposeAsync().ConfigureAwait(false);
+        return new CompressedFile(path).OpenRead(
+            bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
     }
 
     private static async Task<int> ReadSampleAsync(Stream stream, byte[] sample, CancellationToken cancellationToken)
@@ -244,7 +264,7 @@ public static partial class CsvValidator
         return true;
     }
 
-    private static async Task SkipLogicalRowsAsync(Stream stream, int rows, int? maxRowSize, byte[] buffer,
+    private static async Task<int> ReadSampleAfterSkippingRowsAsync(Stream stream, int rows, int? maxRowSize, byte[] sample,
         CancellationToken cancellationToken)
     {
         bool quoted = false;
@@ -253,11 +273,11 @@ public static partial class CsvValidator
         int rowLimit = maxRowSize ?? CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE;
         long rowBytes = 0;
         int read;
-        while (skipped < rows && (read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        while (skipped < rows && (read = await stream.ReadAsync(sample, cancellationToken).ConfigureAwait(false)) > 0)
         {
             for (int i = 0; i < read; i++)
             {
-                byte value = buffer[i];
+                byte value = sample[i];
                 if (afterCr)
                 {
                     afterCr = false;
@@ -277,17 +297,41 @@ public static partial class CsvValidator
                         afterCr = true;
                     if (skipped == rows)
                     {
-                        stream.Position -= read - i - 1;
-                        if (afterCr && stream.Position < stream.Length)
+                        int start = i + 1;
+                        if (value == (byte)'\r')
                         {
-                            int next = stream.ReadByte();
-                            if (next != (byte)'\n')
-                                stream.Position--;
+                            if (start < read)
+                            {
+                                if (sample[start] == (byte)'\n')
+                                    start++;
+                            }
+                            else
+                            {
+                                read = await stream.ReadAsync(sample, cancellationToken).ConfigureAwait(false);
+                                if (read == 0)
+                                    return 0;
+                                start = sample[0] == (byte)'\n' ? 1 : 0;
+                            }
                         }
-                        return;
+
+                        int remaining = read - start;
+                        if (remaining > 0 && start > 0)
+                            Buffer.BlockCopy(sample, start, sample, 0, remaining);
+
+                        while (remaining < sample.Length)
+                        {
+                            int extra = await stream.ReadAsync(sample.AsMemory(remaining), cancellationToken).ConfigureAwait(false);
+                            if (extra == 0)
+                                break;
+                            remaining += extra;
+                        }
+
+                        return remaining;
                     }
                 }
             }
         }
+
+        return 0;
     }
 }

@@ -4,6 +4,23 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ## [Unreleased]
 
+### Added
+- **ARM64 & Portable `Vector128` SIMD Scanner**: Added ARM64 `AdvSimd` (NEON) and portable 128-bit `Vector128` support to `CsvRowBatchScanner`, paired with a branchless 6-step software prefix-XOR quote mask fallback when `PCLMULQDQ` is unavailable.
+- **NativeAOT-Safe `IDataReader` / `DbDataReader` Support Across Formats**: Added reflection-free `Csv.WriteFromDataReader*`, `Excel.WriteFromDataReader*`, `FixedWidth.WriteFromDataReader*`, `Jsonl.WriteFromDataReader*`, `Htb.CreateDataReader`, and `Htb.WriteFromDataReader*` sync and async streaming APIs.
+- **Transparent `.gz`, `.br`, and `.zst`/`.zstd` File Compression**: Added automatic GZip (`.gz`), Brotli (`.br`), and Zstandard (`.zst`/`.zstd` on .NET 11+ using built-in `ZstandardStream`, with zero external dependencies) compression and decompression across CSV (including row & multi-schema readers), Fixed-Width, JSONL, HTB, schema inference, file validation, converters, and the CLI by file extension, enforcing `MaxInputSize` zip-bomb limits during decompression.
+- **JSONL Writer Overload Parity**: Added `IEnumerable<T>` async (`ToFileAsync` / `ToStreamAsync`) and AOT-safe `JsonTypeInfo<T>` static facade overloads (`SerializeRecords`, `WriteToFile*`, `WriteToStream*`) to match the CSV and Fixed-Width writer surfaces.
+- **Expanded CLI `convert` Matrix**: Added streaming conversions for CSV/TSV ↔ `.htb`, CSV/TSV → `.xlsx`, JSONL → `.xlsx`, and transparent `.gz`/`.br`/`.zst` inputs/outputs in `heroparser convert`.
+- **Expanded WebAssembly / npm Capabilities**: Exposed `validateCsv`, `inferCsvSchema`, `repairLlmCsv`, and `convertCsvToJsonl` in `HeroParser.Wasm` and the `heroparser` npm package.
+- **Comprehensive Extended .NET Type Support Across All Formats**: Filled missing runtime/fluent-map/generator/writer gaps for `DateTimeOffset`, `uint`, `ulong`, `ushort`, and `sbyte`; added built-in support for `TimeSpan` (including `TimeSpanFormat` / `.WithTimeSpanFormat(...)`), `char`, `Half`, `Int128`, `UInt128`, `BigInteger`, `Uri`, and `byte[]` (Base64 in CSV, Fixed-Width, Excel, and JSONL; raw binary in HTB with `HtbDataReader.GetBytes` and new `HtbDataType` tags `11..27`) across source generators, fluent maps, reflection binders, column APIs, DataReaders, and `Range` validation; added generic `ISpanParsable<T>`/`IUtf8SpanParsable<T>` parsing and `ISpanFormattable`/`IFormattable` formatting across CSV, Fixed-Width, and JSONL; and added opt-in `CsvSchemaInferenceOptions.DistinguishTemporalTypes` to differentiate `DateOnly`, `TimeOnly`, `DateTimeOffset`, and `TimeSpan`.
+
+### Changed
+- **JSONL Source Generator & Low/Zero-Allocation Hardening**: Replaced the internal `GeneratorHelpers` static class with cohesive domain value types (`TypeMetadata`, `RecordTypeTarget`, `SymbolAttributes`, `ParsedPropertyAttributes`, `ParsedValidationRules`, `CSharpLiterals`, `SourceBuilder`); upgraded `JsonlRecordBinderGenerator` with `float[]` (`ArrayPool<float>` staging), `[Parse(Format)]`, `[Validate]`, extended CLR types, and stackalloc UTF-8 span decoding via `Utf8JsonReader`; eliminated temporary byte/string allocations across `HtbStreamReader.ReadBigInteger`, `CsvStreamWriter`/`CsvAsyncStreamWriter`, `ExcelRecordWriter`, generated Excel cell formatters, and non-boxing `DataReaderColumnPlan` exports across all five formats.
+- **Direct Span Formatting in `CsvAsyncStreamWriter`**: Eliminated intermediate `stackalloc` and buffer copies for `ISpanFormattable` fields by formatting directly into the async writer buffer while preserving `MaxFieldSize`, culture-aware quoting, and injection protection.
+
+### Fixed
+- **Async & Pre-Read `JsonlDataReader` Behavior**: Added lazy first-row peeking so `HasRows` and `FieldCount`/schema metadata are accurate before calling `Read()`, implemented true async line reading in `JsonlLineReader`, ensured peeked JSON documents are disposed, and enforced `EnsureNotClosed` / `ValidateOrdinal` guards.
+- **Non-Seekable `.csv.gz` Preamble Skipping**: Updated `CsvValidator.ValidateFileAsync` to skip `SkipRows` without accessing `Stream.Position` on non-seekable streams such as gzip inputs.
+
 ## [2.9.1] - 2026-11-16
 
 Patch release introducing `TabularDataReader`, zero-allocation UTF-8 column/generator parsing, CSV SIMD and streaming throughput improvements, internal structural consolidation, and culture-aware numeric Excel cell binding.

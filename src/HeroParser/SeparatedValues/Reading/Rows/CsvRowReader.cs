@@ -149,13 +149,14 @@ public ref struct CsvRowReader<T> where T : unmanaged, IEquatable<T>
             int rowStartLine = trackLineNumbers ? sourceLineNumber : 0; // Only capture when tracking enabled
             var columnEndsSpan = columnEndsBuffer is not null ? columnEndsBuffer.Span : cursor!.ScratchEnds.AsSpan();
 
+            var rowParser = new CsvRowParser(options);
             CsvRowParseResult result = !trackLineNumbers
                 ? (enableQuotedFields
-                    ? CsvRowParser.ParseRow<T, NoTrackLineNumbers, QuotesEnabled>(remaining, options, columnEndsSpan)
-                    : CsvRowParser.ParseRow<T, NoTrackLineNumbers, QuotesDisabled>(remaining, options, columnEndsSpan))
+                    ? rowParser.ParseRow<T, NoTrackLineNumbers, QuotesEnabled>(remaining, columnEndsSpan)
+                    : rowParser.ParseRow<T, NoTrackLineNumbers, QuotesDisabled>(remaining, columnEndsSpan))
                 : (enableQuotedFields
-                    ? CsvRowParser.ParseRow<T, TrackLineNumbers, QuotesEnabled>(remaining, options, columnEndsSpan)
-                    : CsvRowParser.ParseRow<T, TrackLineNumbers, QuotesDisabled>(remaining, options, columnEndsSpan));
+                    ? rowParser.ParseRow<T, TrackLineNumbers, QuotesEnabled>(remaining, columnEndsSpan)
+                    : rowParser.ParseRow<T, TrackLineNumbers, QuotesDisabled>(remaining, columnEndsSpan));
 
             if (result.CharsConsumed == 0)
                 return false;

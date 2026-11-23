@@ -131,7 +131,7 @@ public class CsvMap<T> : ICsvReadMapSource<T>, ICsvWriteMapSource<T> where T : c
         var compiled = Expression.Lambda<Action<T, TProperty>>(assign, instanceParam, valueParam).Compile();
 
         // Get the parser for this property type
-        var parse = SpanParserFactory.GetParser<TProperty>();
+        var parse = new SpanParserFactory().GetParser<TProperty>();
 
         void Setter(ref T instance, ReadOnlySpan<char> value, CultureInfo culture)
         {

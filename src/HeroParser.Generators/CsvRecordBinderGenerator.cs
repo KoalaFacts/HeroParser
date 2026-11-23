@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using static HeroParser.Generators.GeneratorHelpers;
 
 namespace HeroParser.Generators;
 
@@ -76,10 +75,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         if (ctx.TargetSymbol is not INamedTypeSymbol symbol)
             return null;
 
-        if (symbol.IsAbstract || !IsTypeAccessible(symbol))
+        var target = new RecordTypeTarget(symbol);
+        if (symbol.IsAbstract || !target.IsAccessible)
             return null;
 
-        return BuildDescriptor(symbol, ct);
+        return BuildDescriptor(target, ct);
     }
 
     private static void EmitTypedBinder(SourceProductionContext context, TypeDescriptor descriptor)
@@ -158,8 +158,6 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
     }
 
-    #region Byte-Based Binder Generation
-
     private static void EmitInlineByteBinderClass(SourceBuilder builder, string fullyQualifiedName, string safeClassName, IReadOnlyList<MemberDescriptor> members)
     {
         var binderClassName = $"CsvInlineByteSourceBinder_{safeClassName}";
@@ -172,10 +170,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         // Emit static Regex fields for Pattern validation
         foreach (var member in members)
         {
-            if (member.ValidationPattern != null)
+            if (member.Validation.Pattern != null)
             {
-                var escapedPattern = EscapeString(member.ValidationPattern);
-                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds({member.ValidationPatternTimeoutMs}));");
+                var escapedPattern = new CSharpStringLiteral(member.Validation.Pattern).Escaped;
+                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds({member.Validation.PatternTimeoutMs}));");
             }
         }
 
@@ -349,12 +347,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("var utf8 = column.Span;");
         builder.AppendLine("bool isNullVal = _nullValuesUtf8 is not null && IsNullValue(utf8, _nullValuesUtf8);");
 
-        if (member.ValidationNotNull || member.ValidationNotEmpty)
+        if (member.Validation.NotNull || member.Validation.NotEmpty)
         {
             builder.AppendLine("if (isNullVal || IsAllAsciiWhiteSpace(utf8))");
             builder.AppendLine("{");
             builder.Indent();
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
             {
                 EmitAddValidationError(builder, member, "NotNull", "Value is required");
             }
@@ -489,10 +487,48 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 EmitByteGuidParsing(builder, member);
                 break;
 
+            case "char":
+            case "System.Char":
+                EmitTryParseScalar(builder, member, "TryParseChar", isByte: true);
+                break;
+
+            case "System.TimeSpan":
+                EmitDateTimeParsingWithFormat(builder, member, "TryParseTimeSpan", isByte: true);
+                break;
+
+            case "System.Half":
+                EmitByteNumericParsing(builder, member, "TryParseHalf");
+                break;
+
+            case "System.Int128":
+                EmitByteNumericParsing(builder, member, "TryParseInt128");
+                break;
+
+            case "System.UInt128":
+                EmitByteNumericParsing(builder, member, "TryParseUInt128");
+                break;
+
+            case "System.Numerics.BigInteger":
+                EmitByteNumericParsing(builder, member, "TryParseBigInteger");
+                break;
+
+            case "System.Uri":
+                EmitUriParsing(builder, member, isByte: true);
+                break;
+
+            case "byte[]":
+            case "System.Byte[]":
+                EmitBase64BytesParsing(builder, member, isByte: true);
+                break;
+
             default:
                 if (member.IsEnum)
                 {
                     EmitByteEnumParsing(builder, member);
+                }
+                else if (member.IsUtf8SpanParsable || member.IsSpanParsable)
+                {
+                    EmitSpanParsableParsing(builder, member, isByte: true);
                 }
                 else
                 {
@@ -526,6 +562,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine($"if (column.TryParseSingle(out var parsed_{propertyName}, _culture))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
+        else if (baseType is "System.Half" or "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger")
+        {
+            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, _culture))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+        }
         else
         {
             // For integer types, Utf8Parser is efficient and invariant culture is standard
@@ -534,9 +575,9 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
         if (!isNullable)
         {
-            // When ValidationNotNull is set, let the NotNull validation handle empty/whitespace with a soft error;
+            // When Validation.NotNull is set, let the NotNull validation handle empty/whitespace with a soft error;
             // otherwise throw a hard parse error for any failure including empty/whitespace values.
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
@@ -554,7 +595,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
@@ -572,7 +613,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         if (format != null)
         {
             // Use format string with culture
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, \"{EscapeString(format)}\", _culture))");
+            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, \"{new CSharpStringLiteral(format).Escaped}\", _culture))");
         }
         else
         {
@@ -582,7 +623,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
@@ -600,7 +641,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
@@ -612,14 +653,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     {
         var propertyName = member.MemberName;
         var indexField = $"_{propertyName}Index";
-        var enumType = GetEnumTypeArgument(member.TypeofTypeName);
+        var enumType = member.UnderlyingTypeName;
         var isNullable = member.IsNullable;
 
         builder.AppendLine($"if (column.TryParseEnum<{enumType}>(out var parsed_{propertyName}))");
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(utf8))");
             else
                 builder.AppendLine("else");
@@ -715,14 +756,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    #region Validation Code Generation
-
     private static bool HasAnyValidation(MemberDescriptor member, bool excludeNotNull = false)
     {
-        return (!excludeNotNull && member.ValidationNotNull) || member.ValidationNotEmpty
-            || member.ValidationMaxLength >= 0 || member.ValidationMinLength >= 0
-            || !double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax)
-            || member.ValidationPattern != null;
+        return (!excludeNotNull && member.Validation.NotNull) || member.Validation.NotEmpty
+            || member.Validation.MaxLength >= 0 || member.Validation.MinLength >= 0
+            || member.Validation.HasRange
+            || member.Validation.Pattern != null;
     }
 
     private static bool HasAnyValidation(IReadOnlyList<MemberDescriptor> members)
@@ -734,7 +773,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     private static void EmitValidationChecks(SourceBuilder builder, MemberDescriptor member, bool excludeNotNull = false)
     {
         // NotNull validation — catches both empty and whitespace-only values
-        if (member.ValidationNotNull && !excludeNotNull)
+        if (member.Validation.NotNull && !excludeNotNull)
         {
             builder.AppendLine("if (IsAllAsciiWhiteSpace(utf8))");
             builder.AppendLine("{");
@@ -746,7 +785,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
 
         // NotEmpty validation (string only)
-        if (member.ValidationNotEmpty)
+        if (member.Validation.NotEmpty)
         {
             builder.AppendLine($"if (!utf8.IsEmpty && string.IsNullOrWhiteSpace(instance.{member.MemberName}))");
             builder.AppendLine("{");
@@ -758,43 +797,43 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
 
         // MaxLength validation (string only)
-        if (member.ValidationMaxLength >= 0)
+        if (member.Validation.MaxLength >= 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.ValidationMaxLength})");
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.Validation.MaxLength})");
             builder.AppendLine("{");
             builder.Indent();
-            EmitAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.ValidationMaxLength}");
+            EmitAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.Validation.MaxLength}");
             builder.AppendLine("valid = false;");
             builder.Unindent();
             builder.AppendLine("}");
         }
 
         // MinLength validation (string only)
-        if (member.ValidationMinLength >= 0)
+        if (member.Validation.MinLength >= 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.ValidationMinLength})");
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.Validation.MinLength})");
             builder.AppendLine("{");
             builder.Indent();
-            EmitAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.ValidationMinLength}");
+            EmitAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.Validation.MinLength}");
             builder.AppendLine("valid = false;");
             builder.Unindent();
             builder.AppendLine("}");
         }
 
         // Range validation (numeric only)
-        if (!double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax))
+        if (member.Validation.HasRange)
         {
             var valueExpr = $"instance.{member.MemberName}";
             var conditions = new List<string>();
-            if (!double.IsNaN(member.ValidationRangeMin))
-                conditions.Add($"{valueExpr} < {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
-            if (!double.IsNaN(member.ValidationRangeMax))
-                conditions.Add($"{valueExpr} > {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
+            if (member.Validation.HasRangeMin)
+                conditions.Add($"{valueExpr} < {member.Validation.FormatRangeMinLiteral(member.BaseTypeName)}");
+            if (member.Validation.HasRangeMax)
+                conditions.Add($"{valueExpr} > {member.Validation.FormatRangeMaxLiteral(member.BaseTypeName)}");
 
             builder.AppendLine($"if (!utf8.IsEmpty && ({string.Join(" || ", conditions)}))");
             builder.AppendLine("{");
             builder.Indent();
-            var rangeMsg = GeneratorHelpers.FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
+            var rangeMsg = member.Validation.FormatRangeMessage();
             EmitAddValidationError(builder, member, "Range", rangeMsg);
             builder.AppendLine("valid = false;");
             builder.Unindent();
@@ -802,7 +841,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
 
         // Pattern validation (string only)
-        if (member.ValidationPattern != null)
+        if (member.Validation.Pattern != null)
         {
             builder.AppendLine($"if (instance.{member.MemberName} != null && !_pattern_{member.MemberName}.IsMatch(instance.{member.MemberName}))");
             builder.AppendLine("{");
@@ -826,15 +865,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"ColumnName = {columnName},");
         builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
         builder.AppendLine($"Rule = \"{rule}\",");
-        builder.AppendLine($"Message = \"{EscapeString(message)}\",");
+        builder.AppendLine($"Message = \"{new CSharpStringLiteral(message).Escaped}\",");
         builder.AppendLine($"RawValue = row[{indexField}].ToString()");
         builder.Unindent();
         builder.AppendLine("});");
     }
-
-    #endregion
-
-    #endregion
 
     private static void EmitRegistration(SourceProductionContext context, IReadOnlyList<TypeDescriptor> descriptors)
     {
@@ -855,6 +890,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("{");
         builder.Indent();
 
+        bool needsExcelSpanHelper = false;
         foreach (var descriptor in descriptors)
         {
             // Filter members for binder (those with setters)
@@ -870,7 +906,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             if (writerMembers.Count > 0)
             {
                 EmitWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers);
-                EmitExcelWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers);
+                EmitExcelWriterRegistration(builder, descriptor.FullyQualifiedName, writerMembers, ref needsExcelSpanHelper);
 
                 var csvDirectWriterClassName = $"global::{GENERATED_BYTE_NAMESPACE}.CsvInlineSourceWriter_{descriptor.SafeClassName}";
                 builder.AppendLine($"{WRITER_FACTORY_TYPE}.RegisterDirectWriter<{descriptor.FullyQualifiedName}>(new {csvDirectWriterClassName}());");
@@ -879,6 +915,23 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         builder.Unindent();
         builder.AppendLine("}");
+
+        if (needsExcelSpanHelper)
+        {
+            builder.AppendLine();
+            builder.AppendLine("private static void WriteExcelSpanFormattable<TValue>(global::HeroParser.Excels.Xlsx.XlsxWriter.SheetWriter sw, int colIndex, TValue value, string? format, global::System.Globalization.CultureInfo culture)");
+            builder.AppendLine("    where TValue : global::System.ISpanFormattable");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("global::System.Span<char> tmp = stackalloc char[128];");
+            builder.AppendLine("if (value.TryFormat(tmp, out int written, format, culture))");
+            builder.AppendLine("    sw.WriteCellString(colIndex, tmp[..written]);");
+            builder.AppendLine("else");
+            builder.AppendLine("    sw.WriteCellString(colIndex, ((global::System.IFormattable)value).ToString(format, culture));");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
         builder.Unindent();
         builder.AppendLine("}");
 
@@ -934,7 +987,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
             builder.AppendLine($"{member.GetterFactory},");
             builder.AppendLine(member.ExcludeIfAllEmpty ? "true," : "false,");
-            EmitValidationParam(builder, member);
+            member.Validation.EmitWriteValidationArgument(builder);
             builder.Unindent();
         }
 
@@ -943,7 +996,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    private static void EmitExcelWriterRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    private static void EmitExcelWriterRegistration(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members, ref bool needsExcelSpanHelper)
     {
         // Emit the templates array
         builder.AppendLine($"var excelTemplates_{fullyQualifiedName.Replace(".", "_").Replace("::", "_")} = new {EXCEL_WRITER_TYPE}<{fullyQualifiedName}>.WriterTemplate[]");
@@ -960,7 +1013,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var writerFormat = member.WriteFormat ?? member.Format;
             builder.AppendLine(writerFormat is null ? "null," : $"\"{writerFormat}\",");
             builder.AppendLine($"{member.GetterFactory},");
-            EmitValidationParam(builder, member);
+            member.Validation.EmitWriteValidationArgument(builder);
             builder.Unindent();
         }
 
@@ -970,25 +1023,13 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         // Register with both templates and direct writer
         builder.AppendLine($"{EXCEL_WRITER_FACTORY_TYPE}.RegisterGeneratedWriter(typeof({fullyQualifiedName}), options => {EXCEL_WRITER_TYPE}<{fullyQualifiedName}>.CreateFromTemplates(options, excelTemplates_{fullyQualifiedName.Replace(".", "_").Replace("::", "_")},");
         builder.Indent();
-        EmitExcelDirectWriter(builder, fullyQualifiedName, members);
+        EmitExcelDirectWriter(builder, fullyQualifiedName, members, ref needsExcelSpanHelper);
         builder.Unindent();
         builder.AppendLine("));");
         builder.AppendLine();
     }
 
-    private static void EmitValidationParam(SourceBuilder builder, MemberDescriptor member)
-        => EmitWriteValidationArgument(
-            builder,
-            member.ValidationNotNull,
-            member.ValidationNotEmpty,
-            member.ValidationMaxLength,
-            member.ValidationMinLength,
-            member.ValidationRangeMin,
-            member.ValidationRangeMax,
-            member.ValidationPattern,
-            member.ValidationPatternTimeoutMs);
-
-    private static void EmitExcelDirectWriter(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members)
+    private static void EmitExcelDirectWriter(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> members, ref bool needsExcelSpanHelper)
     {
         // Emit a lambda that writes each property directly without boxing
         builder.AppendLine($"(global::HeroParser.Excels.Xlsx.XlsxWriter.SheetWriter sw, {fullyQualifiedName} record, int rowNumber, global::HeroParser.Excels.Core.ExcelWriteOptions opts) =>");
@@ -1007,7 +1048,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var member = members[i];
             int colIndex = i + 1;
             var writerFormat = member.WriteFormat ?? member.Format;
-            EmitExcelDirectCellWrite(builder, member, colIndex, writerFormat);
+            EmitExcelDirectCellWrite(builder, member, colIndex, writerFormat, ref needsExcelSpanHelper);
         }
 
         builder.AppendLine("sw.EndRow();");
@@ -1015,18 +1056,18 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("}");
     }
 
-    private static void EmitExcelDirectCellWrite(SourceBuilder builder, MemberDescriptor member, int colIndex, string? format)
+    private static void EmitExcelDirectCellWrite(SourceBuilder builder, MemberDescriptor member, int colIndex, string? format, ref bool needsExcelSpanHelper)
     {
         var propExpr = $"record.{member.MemberName}";
         var baseType = member.BaseTypeName;
 
-        // Handle nullable value types
-        if (member.IsNullable && baseType != "string")
+        // Handle nullable value types vs reference types vs non-nullable value types
+        if (member.IsNullable && !member.IsReferenceType)
         {
             builder.AppendLine($"if ({propExpr}.HasValue)");
             builder.AppendLine("{");
             builder.Indent();
-            EmitExcelDirectCellWriteCore(builder, $"{propExpr}.Value", baseType, member.IsEnum, colIndex, format);
+            EmitExcelDirectCellWriteCore(builder, $"{propExpr}.Value", baseType, member.IsEnum, member.IsSpanFormattable, member.IsFormattable, colIndex, format, ref needsExcelSpanHelper);
             builder.Unindent();
             builder.AppendLine("}");
             builder.AppendLine("else");
@@ -1044,10 +1085,24 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             return;
         }
 
-        EmitExcelDirectCellWriteCore(builder, propExpr, baseType, member.IsEnum, colIndex, format);
+        if (member.IsReferenceType)
+        {
+            builder.AppendLine($"var v{colIndex} = {propExpr};");
+            builder.AppendLine($"if (v{colIndex} is null)");
+            builder.AppendLine($"    sw.WriteCellEmpty({colIndex});");
+            builder.AppendLine("else");
+            builder.AppendLine("{");
+            builder.Indent();
+            EmitExcelDirectCellWriteCore(builder, $"v{colIndex}", baseType, member.IsEnum, member.IsSpanFormattable, member.IsFormattable, colIndex, format, ref needsExcelSpanHelper);
+            builder.Unindent();
+            builder.AppendLine("}");
+            return;
+        }
+
+        EmitExcelDirectCellWriteCore(builder, propExpr, baseType, member.IsEnum, member.IsSpanFormattable, member.IsFormattable, colIndex, format, ref needsExcelSpanHelper);
     }
 
-    private static void EmitExcelDirectCellWriteCore(SourceBuilder builder, string valueExpr, string baseType, bool isEnum, int colIndex, string? format)
+    private static void EmitExcelDirectCellWriteCore(SourceBuilder builder, string valueExpr, string baseType, bool isEnum, bool isSpanFormattable, bool isFormattable, int colIndex, string? format, ref bool needsExcelSpanHelper)
     {
         // For types that support runtime format options, check both the attribute format and the options format.
         // Attribute format takes precedence, then options format, then default behavior.
@@ -1055,28 +1110,61 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         switch (baseType)
         {
-            case "int" or "System.Int32" or "long" or "System.Int64" or "short" or "System.Int16"
-                or "byte" or "System.Byte" or "uint" or "System.UInt32" or "ulong" or "System.UInt64"
+            case "int" or "System.Int32" or "short" or "System.Int16"
+                or "byte" or "System.Byte" or "uint" or "System.UInt32"
                 or "ushort" or "System.UInt16" or "sbyte" or "System.SByte"
                 or "double" or "System.Double" or "float" or "System.Single":
+                needsExcelSpanHelper = true;
                 if (format != null)
                 {
                     // Attribute format is known at compile time — always use it
-                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
                 }
                 else
                 {
                     // Check runtime NumberFormat option
-                    builder.AppendLine($"if (opts.NumberFormat is not null)");
-                    builder.AppendLine($"    sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.NumberFormat, culture));");
+                    builder.AppendLine("if (opts.NumberFormat is not null)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.NumberFormat, culture);");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    sw.WriteCellNumber({colIndex}, (double){valueExpr});");
+                }
+                break;
+
+            case "long" or "System.Int64":
+                needsExcelSpanHelper = true;
+                if (format != null)
+                {
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
+                }
+                else
+                {
+                    // IEEE-754 double only represents integers exactly up to +/- 2^53 (9_007_199_254_740_992)
+                    builder.AppendLine($"if (opts.NumberFormat is not null || {valueExpr} is < -9_007_199_254_740_992L or > 9_007_199_254_740_992L)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.NumberFormat, culture);");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    sw.WriteCellNumber({colIndex}, (double){valueExpr});");
+                }
+                break;
+
+            case "ulong" or "System.UInt64":
+                needsExcelSpanHelper = true;
+                if (format != null)
+                {
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
+                }
+                else
+                {
+                    builder.AppendLine($"if (opts.NumberFormat is not null || {valueExpr} > 9_007_199_254_740_992UL)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.NumberFormat, culture);");
                     builder.AppendLine("else");
                     builder.AppendLine($"    sw.WriteCellNumber({colIndex}, (double){valueExpr});");
                 }
                 break;
 
             case "decimal" or "System.Decimal":
-                // Always write decimal as string to preserve precision
-                builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr ?? "opts.NumberFormat"}, culture));");
+                needsExcelSpanHelper = true;
+                // Always write decimal as span-formatted string to preserve precision
+                builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr ?? "opts.NumberFormat"}, culture);");
                 break;
 
             case "bool" or "System.Boolean":
@@ -1087,63 +1175,133 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 break;
 
             case "System.DateTime":
+                needsExcelSpanHelper = true;
                 if (format != null)
                 {
-                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
                 }
                 else
                 {
-                    builder.AppendLine($"if (opts.DateTimeFormat is not null)");
-                    builder.AppendLine($"    sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.DateTimeFormat, culture));");
+                    builder.AppendLine("if (opts.DateTimeFormat is not null)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.DateTimeFormat, culture);");
                     builder.AppendLine("else");
                     builder.AppendLine($"    sw.WriteCellDate({colIndex}, {valueExpr});");
                 }
                 break;
 
             case "System.DateTimeOffset":
+                needsExcelSpanHelper = true;
                 // Write as ISO 8601 by default to preserve offset
                 if (format != null)
-                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
                 else
-                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.DateTimeFormat ?? \"O\", culture));");
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.DateTimeFormat ?? \"O\", culture);");
                 break;
 
             case "System.DateOnly":
+                needsExcelSpanHelper = true;
                 if (format != null)
                 {
-                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
                 }
                 else
                 {
-                    builder.AppendLine($"if (opts.DateOnlyFormat is not null)");
-                    builder.AppendLine($"    sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.DateOnlyFormat, culture));");
+                    builder.AppendLine("if (opts.DateOnlyFormat is not null)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.DateOnlyFormat, culture);");
                     builder.AppendLine("else");
                     builder.AppendLine($"    sw.WriteCellDate({colIndex}, {valueExpr}.ToDateTime(System.TimeOnly.MinValue));");
                 }
                 break;
 
             case "System.TimeOnly":
+                needsExcelSpanHelper = true;
                 if (format != null)
-                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString({fmtExpr}, culture));");
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
                 else
-                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString(opts.TimeOnlyFormat ?? \"HH:mm:ss\", culture));");
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.TimeOnlyFormat ?? \"HH:mm:ss\", culture);");
+                break;
+
+            case "System.TimeSpan":
+                needsExcelSpanHelper = true;
+                if (format != null)
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
+                else
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.TimeSpanFormat ?? \"c\", culture);");
+                break;
+
+            case "char" or "System.Char":
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("global::System.Span<char> ch = stackalloc char[1];");
+                builder.AppendLine($"ch[0] = {valueExpr};");
+                builder.AppendLine($"sw.WriteCellString({colIndex}, ch);");
+                builder.Unindent();
+                builder.AppendLine("}");
+                break;
+
+            case "System.Half":
+                needsExcelSpanHelper = true;
+                if (format != null)
+                {
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
+                }
+                else
+                {
+                    builder.AppendLine("if (opts.NumberFormat is not null)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.NumberFormat, culture);");
+                    builder.AppendLine($"else if (global::System.Half.IsFinite({valueExpr}))");
+                    builder.AppendLine($"    sw.WriteCellNumber({colIndex}, (double){valueExpr});");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, null, culture);");
+                }
+                break;
+
+            case "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger":
+                needsExcelSpanHelper = true;
+                builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr ?? "opts.NumberFormat"}, culture);");
+                break;
+
+            case "System.Uri":
+                builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.OriginalString);");
+                break;
+
+            case "byte[]" or "System.Byte[]":
+                builder.AppendLine($"if ({valueExpr}.Length == 0)");
+                builder.AppendLine($"    sw.WriteCellEmpty({colIndex});");
+                builder.AppendLine("else");
+                builder.AppendLine($"    sw.WriteCellString({colIndex}, global::System.Convert.ToBase64String({valueExpr}));");
                 break;
 
             case "System.Guid":
-                builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString());");
+                needsExcelSpanHelper = true;
+                builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, null, culture);");
                 break;
 
             default:
                 if (isEnum)
+                {
                     builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString());");
+                }
+                else if (isSpanFormattable)
+                {
+                    needsExcelSpanHelper = true;
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr ?? "null"}, culture);");
+                }
+                else if (isFormattable)
+                {
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, ((global::System.IFormattable){valueExpr}).ToString({fmtExpr ?? "null"}, culture));");
+                }
                 else
-                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}?.ToString() ?? \"\");");
+                {
+                    builder.AppendLine($"sw.WriteCellString({colIndex}, {valueExpr}.ToString() ?? \"\");");
+                }
                 break;
         }
     }
 
-    private static TypeDescriptor? BuildDescriptor(INamedTypeSymbol type, CancellationToken ct)
+    private static TypeDescriptor? BuildDescriptor(RecordTypeTarget target, CancellationToken ct)
     {
+        var type = target.Symbol;
         var members = new List<MemberDescriptor>();
         var diagnostics = new List<Diagnostic>();
 
@@ -1161,7 +1319,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 continue;
 
             // [TabularMap] — Name, Index (convention: use property name when absent)
-            var mapAttribute = GetFirstMatchingAttribute(property, columnAttributeNames);
+            var mapAttribute = new SymbolAttributes(property).FindFirst(columnAttributeNames);
             var headerName = property.Name;
             int? attributeIndex = null;
 
@@ -1188,7 +1346,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             var writeFormat = parsedAttrs.WriteFormat;
             var excludeIfAllEmpty = parsedAttrs.ExcludeIfAllEmpty;
 
-            if (!IsSupportedType(property.Type))
+            var typeMeta = new TypeMetadata(property.Type);
+            if (!typeMeta.IsSupported)
             {
                 diagnostics.Add(Diagnostic.Create(
                     unsupportedPropertyTypeDiagnostic,
@@ -1198,18 +1357,17 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 continue;
             }
 
-            var typeName = property.Type.ToDisplayString(FullyQualifiedFormatWithNullable);
+            var typeName = typeMeta.FullyQualifiedName;
             var typeofTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var headerLiteral = EscapeString(headerName);
-            var formatLiteral = format != null ? EscapeString(format) : null;
-            var writeFormatLiteral = writeFormat != null ? EscapeString(writeFormat) : null;
+            var headerLiteral = new CSharpStringLiteral(headerName).Escaped;
+            var formatLiteral = format != null ? new CSharpStringLiteral(format).Escaped : null;
+            var writeFormatLiteral = writeFormat != null ? new CSharpStringLiteral(writeFormat).Escaped : null;
 
-            var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
-            var isReadOnlyMemoryChar = IsReadOnlyMemoryChar(property.Type);
+            var baseTypeName = typeMeta.BaseTypeName;
             var validation = ParsedValidationRules.ExtractAndValidate(property, baseTypeName, diagnostics);
 
-            var setterFactory = hasSetter ? CreateSetter(typeName, type, property.Name) : null;
-            var getterFactory = hasGetter ? CreateGetter(type, property.Name) : null;
+            var setterFactory = hasSetter ? target.CreateSetterExpression(property.Name, typeName) : null;
+            var getterFactory = hasGetter ? target.CreateGetterExpression(property.Name) : null;
 
             members.Add(new MemberDescriptor(
                 property.Name,
@@ -1221,17 +1379,16 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 setterFactory,
                 getterFactory,
                 baseTypeName,
-                isNullable,
-                isEnum,
-                isReadOnlyMemoryChar,
-                validation.NotNull,
-                validation.NotEmpty,
-                validation.MaxLength,
-                validation.MinLength,
-                validation.RangeMin,
-                validation.RangeMax,
-                validation.Pattern,
-                validation.PatternTimeoutMs,
+                typeMeta.IsNullable,
+                typeMeta.IsEnum,
+                property.Type.IsReferenceType,
+                typeMeta.UnderlyingFullyQualifiedName,
+                typeMeta.IsSpanParsable,
+                typeMeta.IsUtf8SpanParsable,
+                typeMeta.IsSpanFormattable,
+                typeMeta.IsFormattable,
+                typeMeta.IsReadOnlyMemoryChar,
+                validation,
                 writeFormatLiteral,
                 excludeIfAllEmpty));
         }
@@ -1239,12 +1396,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         if (members.Count == 0 && diagnostics.Count == 0)
             return null;
 
-        var fqName = type.ToDisplayString(FullyQualifiedFormatWithNullable);
-        var safeClassName = CreateSafeClassName(type);
-        return new TypeDescriptor(fqName, safeClassName, members, diagnostics, type.IsValueType);
+        return new TypeDescriptor(target.FullyQualifiedName, target.SafeClassName, members, diagnostics, type.IsValueType);
     }
-
-    #region Char-Based Binder Generation
 
     private static void EmitInlineCharBinderClass(SourceBuilder builder, string fullyQualifiedName, string safeClassName, IReadOnlyList<MemberDescriptor> members)
     {
@@ -1259,10 +1412,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         // Emit static Regex fields for Pattern validation
         foreach (var member in members)
         {
-            if (member.ValidationPattern != null)
+            if (member.Validation.Pattern != null)
             {
-                var escapedPattern = EscapeString(member.ValidationPattern);
-                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds({member.ValidationPatternTimeoutMs}));");
+                var escapedPattern = new CSharpStringLiteral(member.Validation.Pattern).Escaped;
+                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds({member.Validation.PatternTimeoutMs}));");
             }
         }
 
@@ -1427,12 +1580,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
         builder.AppendLine("bool isNullVal = _nullValuesChar is not null && IsNullValue(span, _nullValuesChar);");
 
-        if (member.ValidationNotNull || member.ValidationNotEmpty)
+        if (member.Validation.NotNull || member.Validation.NotEmpty)
         {
             builder.AppendLine("if (isNullVal || IsAllAsciiWhiteSpace(span))");
             builder.AppendLine("{");
             builder.Indent();
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
             {
                 EmitCharAddValidationError(builder, member, "NotNull", "Value is required");
             }
@@ -1567,10 +1720,48 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 EmitCharGuidParsing(builder, member);
                 break;
 
+            case "char":
+            case "System.Char":
+                EmitTryParseScalar(builder, member, "TryParseChar", isByte: false);
+                break;
+
+            case "System.TimeSpan":
+                EmitDateTimeParsingWithFormat(builder, member, "TryParseTimeSpan", isByte: false);
+                break;
+
+            case "System.Half":
+                EmitCharNumericParsing(builder, member, "TryParseHalf");
+                break;
+
+            case "System.Int128":
+                EmitCharNumericParsing(builder, member, "TryParseInt128");
+                break;
+
+            case "System.UInt128":
+                EmitCharNumericParsing(builder, member, "TryParseUInt128");
+                break;
+
+            case "System.Numerics.BigInteger":
+                EmitCharNumericParsing(builder, member, "TryParseBigInteger");
+                break;
+
+            case "System.Uri":
+                EmitUriParsing(builder, member, isByte: false);
+                break;
+
+            case "byte[]":
+            case "System.Byte[]":
+                EmitBase64BytesParsing(builder, member, isByte: false);
+                break;
+
             default:
                 if (member.IsEnum)
                 {
                     EmitCharEnumParsing(builder, member);
+                }
+                else if (member.IsSpanParsable || member.IsUtf8SpanParsable)
+                {
+                    EmitSpanParsableParsing(builder, member, isByte: false);
                 }
                 else
                 {
@@ -1603,6 +1794,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine($"if (float.TryParse(span, NumberStyles.Float | NumberStyles.AllowThousands, _culture, out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
+        else if (baseType is "System.Half" or "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger")
+        {
+            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, _culture))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+        }
         else
         {
             builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}))");
@@ -1610,8 +1806,148 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
+            else
+                builder.AppendLine("else");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+        }
+    }
+
+    private static void EmitTryParseScalar(SourceBuilder builder, MemberDescriptor member, string parseMethod, bool isByte)
+    {
+        var propertyName = member.MemberName;
+        var indexField = $"_{propertyName}Index";
+        var wsVar = isByte ? "utf8" : "span";
+
+        builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}))");
+        builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+        if (!member.IsNullable)
+        {
+            if (member.Validation.NotNull)
+                builder.AppendLine($"else if (!IsAllAsciiWhiteSpace({wsVar}))");
+            else
+                builder.AppendLine("else");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+        }
+    }
+
+    private static void EmitDateTimeParsingWithFormat(SourceBuilder builder, MemberDescriptor member, string parseMethod, bool isByte)
+    {
+        var propertyName = member.MemberName;
+        var indexField = $"_{propertyName}Index";
+        var wsVar = isByte ? "utf8" : "span";
+
+        if (member.Format != null)
+            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, \"{new CSharpStringLiteral(member.Format).Escaped}\", _culture))");
+        else
+            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, _culture))");
+
+        builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+        if (!member.IsNullable)
+        {
+            if (member.Validation.NotNull)
+                builder.AppendLine($"else if (!IsAllAsciiWhiteSpace({wsVar}))");
+            else
+                builder.AppendLine("else");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+        }
+    }
+
+    private static void EmitUriParsing(SourceBuilder builder, MemberDescriptor member, bool isByte)
+    {
+        var propertyName = member.MemberName;
+        var indexField = $"_{propertyName}Index";
+        var wsVar = isByte ? "utf8" : "span";
+
+        if (member.IsNullable)
+        {
+            builder.AppendLine($"if (IsAllAsciiWhiteSpace({wsVar}))");
+            builder.AppendLine($"    instance.{propertyName} = null;");
+            builder.AppendLine($"else if (column.TryParseUri(out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+        }
+        else
+        {
+            builder.AppendLine($"if (column.TryParseUri(out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            if (member.Validation.NotNull)
+                builder.AppendLine($"else if (!IsAllAsciiWhiteSpace({wsVar}))");
+            else
+                builder.AppendLine("else");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+        }
+    }
+
+    private static void EmitBase64BytesParsing(SourceBuilder builder, MemberDescriptor member, bool isByte)
+    {
+        var propertyName = member.MemberName;
+        var indexField = $"_{propertyName}Index";
+        var wsVar = isByte ? "utf8" : "span";
+
+        if (member.IsNullable)
+        {
+            builder.AppendLine($"if (IsAllAsciiWhiteSpace({wsVar}))");
+            builder.AppendLine($"    instance.{propertyName} = null;");
+            builder.AppendLine($"else if (column.TryParseBase64Bytes(out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("else");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+        }
+        else
+        {
+            builder.AppendLine($"if (column.TryParseBase64Bytes(out var parsed_{propertyName}))");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            if (member.Validation.NotNull)
+                builder.AppendLine($"else if (!IsAllAsciiWhiteSpace({wsVar}))");
+            else
+                builder.AppendLine("else");
+            builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+        }
+    }
+
+    private static void EmitSpanParsableParsing(SourceBuilder builder, MemberDescriptor member, bool isByte)
+    {
+        var propertyName = member.MemberName;
+        var indexField = $"_{propertyName}Index";
+        var wsVar = isByte ? "utf8" : "span";
+        var call = (isByte && member.IsUtf8SpanParsable) || (!isByte && !member.IsSpanParsable && member.IsUtf8SpanParsable)
+            ? $"column.TryParseUtf8<{member.UnderlyingTypeName}>(out var parsed_{propertyName}, _culture)"
+            : $"column.TryParse<{member.UnderlyingTypeName}>(out var parsed_{propertyName}, _culture)";
+        var assignCond = member.IsReferenceType ? $"{call} && parsed_{propertyName} is not null" : call;
+
+        if (member.IsNullable)
+        {
+            if (member.IsReferenceType)
+            {
+                builder.AppendLine($"if (IsAllAsciiWhiteSpace({wsVar}))");
+                builder.AppendLine($"    instance.{propertyName} = null;");
+                builder.AppendLine($"else if ({assignCond})");
+                builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+                builder.AppendLine("else");
+                builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+            }
+            else
+            {
+                builder.AppendLine($"if (!IsAllAsciiWhiteSpace({wsVar}))");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine($"if ({assignCond})");
+                builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+                builder.AppendLine("else");
+                builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+        }
+        else
+        {
+            builder.AppendLine($"if ({assignCond})");
+            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            if (member.Validation.NotNull)
+                builder.AppendLine($"else if (!IsAllAsciiWhiteSpace({wsVar}))");
             else
                 builder.AppendLine("else");
             builder.AppendLine($"    throw CreateParseException(row[{indexField}].Span, \"{member.HeaderName}\", rowNumber, {indexField});");
@@ -1628,7 +1964,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
@@ -1645,7 +1981,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         if (format != null)
         {
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, \"{EscapeString(format)}\", _culture))");
+            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, \"{new CSharpStringLiteral(format).Escaped}\", _culture))");
         }
         else
         {
@@ -1654,7 +1990,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
@@ -1672,7 +2008,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
@@ -1684,14 +2020,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
     {
         var propertyName = member.MemberName;
         var indexField = $"_{propertyName}Index";
-        var enumType = GetEnumTypeArgument(member.TypeofTypeName);
+        var enumType = member.UnderlyingTypeName;
         var isNullable = member.IsNullable;
 
         builder.AppendLine($"if (column.TryParseEnum<{enumType}>(out var parsed_{propertyName}))");
         builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         if (!isNullable)
         {
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
                 builder.AppendLine("else if (!IsAllAsciiWhiteSpace(span))");
             else
                 builder.AppendLine("else");
@@ -1789,7 +2125,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
     private static void EmitCharValidationChecks(SourceBuilder builder, MemberDescriptor member, bool excludeNotNull = false)
     {
-        if (member.ValidationNotNull && !excludeNotNull)
+        if (member.Validation.NotNull && !excludeNotNull)
         {
             builder.AppendLine("if (IsAllAsciiWhiteSpace(span))");
             builder.AppendLine("{");
@@ -1800,7 +2136,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine("}");
         }
 
-        if (member.ValidationNotEmpty)
+        if (member.Validation.NotEmpty)
         {
             builder.AppendLine($"if (!span.IsEmpty && string.IsNullOrWhiteSpace(instance.{member.MemberName}))");
             builder.AppendLine("{");
@@ -1811,48 +2147,48 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine("}");
         }
 
-        if (member.ValidationMaxLength >= 0)
+        if (member.Validation.MaxLength >= 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.ValidationMaxLength})");
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.Validation.MaxLength})");
             builder.AppendLine("{");
             builder.Indent();
-            EmitCharAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.ValidationMaxLength}");
+            EmitCharAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.Validation.MaxLength}");
             builder.AppendLine("valid = false;");
             builder.Unindent();
             builder.AppendLine("}");
         }
 
-        if (member.ValidationMinLength >= 0)
+        if (member.Validation.MinLength >= 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.ValidationMinLength})");
+            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.Validation.MinLength})");
             builder.AppendLine("{");
             builder.Indent();
-            EmitCharAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.ValidationMinLength}");
+            EmitCharAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.Validation.MinLength}");
             builder.AppendLine("valid = false;");
             builder.Unindent();
             builder.AppendLine("}");
         }
 
-        if (!double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax))
+        if (member.Validation.HasRange)
         {
             var valueExpr = $"instance.{member.MemberName}";
             var conditions = new List<string>();
-            if (!double.IsNaN(member.ValidationRangeMin))
-                conditions.Add($"{valueExpr} < {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMin, member.BaseTypeName)}");
-            if (!double.IsNaN(member.ValidationRangeMax))
-                conditions.Add($"{valueExpr} > {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMax, member.BaseTypeName)}");
+            if (member.Validation.HasRangeMin)
+                conditions.Add($"{valueExpr} < {member.Validation.FormatRangeMinLiteral(member.BaseTypeName)}");
+            if (member.Validation.HasRangeMax)
+                conditions.Add($"{valueExpr} > {member.Validation.FormatRangeMaxLiteral(member.BaseTypeName)}");
 
             builder.AppendLine($"if (!span.IsEmpty && ({string.Join(" || ", conditions)}))");
             builder.AppendLine("{");
             builder.Indent();
-            var rangeMsg = GeneratorHelpers.FormatRangeMessage(member.ValidationRangeMin, member.ValidationRangeMax);
+            var rangeMsg = member.Validation.FormatRangeMessage();
             EmitCharAddValidationError(builder, member, "Range", rangeMsg);
             builder.AppendLine("valid = false;");
             builder.Unindent();
             builder.AppendLine("}");
         }
 
-        if (member.ValidationPattern != null)
+        if (member.Validation.Pattern != null)
         {
             builder.AppendLine($"if (instance.{member.MemberName} != null && !_pattern_{member.MemberName}.IsMatch(instance.{member.MemberName}))");
             builder.AppendLine("{");
@@ -1876,13 +2212,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine($"ColumnName = {columnName},");
         builder.AppendLine($"PropertyName = \"{member.MemberName}\",");
         builder.AppendLine($"Rule = \"{rule}\",");
-        builder.AppendLine($"Message = \"{EscapeString(message)}\",");
+        builder.AppendLine($"Message = \"{new CSharpStringLiteral(message).Escaped}\",");
         builder.AppendLine($"RawValue = row[{indexField}].ToString()");
         builder.Unindent();
         builder.AppendLine("});");
     }
-
-    #endregion
 
     private sealed record TypeDescriptor(
         string FullyQualifiedName,
@@ -1903,17 +2237,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         string BaseTypeName,
         bool IsNullable,
         bool IsEnum,
+        bool IsReferenceType,
+        string UnderlyingTypeName,
+        bool IsSpanParsable,
+        bool IsUtf8SpanParsable,
+        bool IsSpanFormattable,
+        bool IsFormattable,
         bool IsReadOnlyMemoryChar,
-        // Validation fields:
-        bool ValidationNotNull,
-        bool ValidationNotEmpty,
-        int ValidationMaxLength,       // -1 = unchecked
-        int ValidationMinLength,       // -1 = unchecked
-        double ValidationRangeMin,     // NaN = unchecked
-        double ValidationRangeMax,     // NaN = unchecked
-        string? ValidationPattern,
-        int ValidationPatternTimeoutMs,  // default 1000
-                                         // Writer fields:
+        ParsedValidationRules Validation,
         string? WriteFormat,
         bool ExcludeIfAllEmpty);
 
@@ -1963,9 +2294,72 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.Unindent();
         builder.AppendLine("}");
 
+        bool needsCustomSpanFormattableHelper = false;
+        bool needsCustomFormattableHelper = false;
+        foreach (var m in members)
+        {
+            if (m.IsEnum || IsBuiltInCsvWriteType(m.BaseTypeName))
+                continue;
+            if (m.IsSpanFormattable)
+                needsCustomSpanFormattableHelper = true;
+            else if (m.IsFormattable)
+                needsCustomFormattableHelper = true;
+        }
+
+        if (needsCustomSpanFormattableHelper)
+        {
+            builder.AppendLine();
+            builder.AppendLine("private static bool TryFormatSpan<TValue>(TValue value, global::System.Span<char> destination, out int written, string? format, global::System.IFormatProvider? provider)");
+            builder.AppendLine("    where TValue : global::System.ISpanFormattable");
+            builder.AppendLine("    => value.TryFormat(destination, out written, format, provider);");
+            builder.AppendLine();
+            builder.AppendLine("private static string FormatSpanToString<TValue>(TValue value, string? format, global::System.IFormatProvider? provider)");
+            builder.AppendLine("    where TValue : global::System.ISpanFormattable");
+            builder.AppendLine("    => ((global::System.IFormattable)value).ToString(format, provider);");
+        }
+
+        if (needsCustomFormattableHelper)
+        {
+            builder.AppendLine();
+            builder.AppendLine("private static string FormatFormattable<TValue>(TValue value, string? format, global::System.IFormatProvider? provider)");
+            builder.AppendLine("    where TValue : global::System.IFormattable");
+            builder.AppendLine("    => value.ToString(format, provider);");
+        }
+
         builder.Unindent();
         builder.AppendLine("}");
     }
+
+    private static bool IsBuiltInCsvWriteType(string baseType) => baseType switch
+    {
+        "string" or "System.String"
+            or "int" or "System.Int32"
+            or "long" or "System.Int64"
+            or "short" or "System.Int16"
+            or "byte" or "System.Byte"
+            or "uint" or "System.UInt32"
+            or "ulong" or "System.UInt64"
+            or "ushort" or "System.UInt16"
+            or "sbyte" or "System.SByte"
+            or "double" or "System.Double"
+            or "float" or "System.Single"
+            or "decimal" or "System.Decimal"
+            or "bool" or "System.Boolean"
+            or "char" or "System.Char"
+            or "System.DateTime"
+            or "System.DateTimeOffset"
+            or "System.DateOnly"
+            or "System.TimeOnly"
+            or "System.TimeSpan"
+            or "System.Guid"
+            or "System.Half"
+            or "System.Int128"
+            or "System.UInt128"
+            or "System.Numerics.BigInteger"
+            or "System.Uri"
+            or "byte[]" or "System.Byte[]" => true,
+        _ => false
+    };
 
     private static void EmitCsvWriteField(SourceBuilder builder, MemberDescriptor member, bool isAsync)
     {
@@ -1975,15 +2369,14 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         var format = member.WriteFormat ?? member.Format;
 
         var propExpr = $"record.{propertyName}";
-        var valueExpr = isNullable ? $"{propExpr}.Value" : propExpr;
 
-        // If it's nullable, wrap in HasValue check
-        if (isNullable && baseType != "string")
+        if (isNullable && !member.IsReferenceType)
         {
+            var valueExpr = $"{propExpr}.Value";
             builder.AppendLine($"if ({propExpr}.HasValue)");
             builder.AppendLine("{");
             builder.Indent();
-            EmitCsvWriteFieldCore(builder, valueExpr, baseType, member.IsEnum, format, isAsync);
+            EmitCsvWriteFieldCore(builder, valueExpr, baseType, member.IsEnum, member.IsSpanFormattable, member.IsFormattable, format, isAsync);
             builder.Unindent();
             builder.AppendLine("}");
             builder.AppendLine("else");
@@ -1996,46 +2389,43 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.Unindent();
             builder.AppendLine("}");
         }
-        else if (baseType == "string")
+        else if (member.IsReferenceType)
         {
+            var localVar = $"val_{propertyName}";
+            builder.AppendLine($"var {localVar} = {propExpr};");
+            builder.AppendLine($"if ({localVar} is null)");
+            builder.AppendLine("{");
+            builder.Indent();
             if (isAsync)
-            {
-                builder.AppendLine($"if ({propExpr} is null)");
-                builder.AppendLine("{");
-                builder.Indent();
                 builder.AppendLine($"await writer.WriteFieldAsync((string?)null, cancellationToken).ConfigureAwait(false);");
-                builder.Unindent();
-                builder.AppendLine("}");
-                builder.AppendLine("else");
-                builder.AppendLine("{");
-                builder.Indent();
-                builder.AppendLine($"await writer.WriteFieldAsync({propExpr}, cancellationToken).ConfigureAwait(false);");
-                builder.Unindent();
-                builder.AppendLine("}");
+            else
+                builder.AppendLine($"writer.WriteField((string?)null);");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("else");
+            builder.AppendLine("{");
+            builder.Indent();
+            if (baseType == "string")
+            {
+                if (isAsync)
+                    builder.AppendLine($"await writer.WriteFieldAsync({localVar}, cancellationToken).ConfigureAwait(false);");
+                else
+                    builder.AppendLine($"writer.WriteField({localVar});");
             }
             else
             {
-                builder.AppendLine($"if ({propExpr} is null)");
-                builder.AppendLine("{");
-                builder.Indent();
-                builder.AppendLine($"writer.WriteField((string?)null);");
-                builder.Unindent();
-                builder.AppendLine("}");
-                builder.AppendLine("else");
-                builder.AppendLine("{");
-                builder.Indent();
-                builder.AppendLine($"writer.WriteField({propExpr});");
-                builder.Unindent();
-                builder.AppendLine("}");
+                EmitCsvWriteFieldCore(builder, localVar, baseType, member.IsEnum, member.IsSpanFormattable, member.IsFormattable, format, isAsync);
             }
+            builder.Unindent();
+            builder.AppendLine("}");
         }
         else
         {
-            EmitCsvWriteFieldCore(builder, propExpr, baseType, member.IsEnum, format, isAsync);
+            EmitCsvWriteFieldCore(builder, propExpr, baseType, member.IsEnum, member.IsSpanFormattable, member.IsFormattable, format, isAsync);
         }
     }
 
-    private static void EmitCsvWriteFieldCore(SourceBuilder builder, string valueExpr, string baseType, bool isEnum, string? format, bool isAsync)
+    private static void EmitCsvWriteFieldCore(SourceBuilder builder, string valueExpr, string baseType, bool isEnum, bool isCustomSpanFormattable, bool isCustomFormattable, string? format, bool isAsync)
     {
         // 1. Enums
         if (isEnum)
@@ -2047,21 +2437,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             return;
         }
 
-        // 2. Primitives without format string
-        bool isPrimitive = baseType switch
-        {
-            "int" or "System.Int32" => true,
-            "long" or "System.Int64" => true,
-            "double" or "System.Double" => true,
-            "float" or "System.Single" => true,
-            "decimal" or "System.Decimal" => true,
-            "bool" or "System.Boolean" => true,
-            "System.DateTime" => true,
-            "System.Guid" => true,
-            _ => false
-        };
-
-        if (isPrimitive && format == null)
+        // 2. Reference / special built-in types that do not use TryFormat
+        if (baseType is "char" or "System.Char")
         {
             if (isAsync)
                 builder.AppendLine($"await writer.WriteFieldAsync({valueExpr}, cancellationToken).ConfigureAwait(false);");
@@ -2070,11 +2447,71 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             return;
         }
 
-        // 3. Types supporting TryFormat (either primitive with format, or other ISpanFormattable like DateTimeOffset)
-        bool isSpanFormattable = baseType switch
+        if (baseType is "System.Uri")
+        {
+            if (isAsync)
+                builder.AppendLine($"await writer.WriteFieldAsync({valueExpr}.OriginalString, cancellationToken).ConfigureAwait(false);");
+            else
+                builder.AppendLine($"writer.WriteField({valueExpr}.OriginalString);");
+            return;
+        }
+
+        if (baseType is "byte[]" or "System.Byte[]")
+        {
+            if (isAsync)
+                builder.AppendLine($"await writer.WriteFieldAsync(global::System.Convert.ToBase64String({valueExpr}), cancellationToken).ConfigureAwait(false);");
+            else
+                builder.AppendLine($"writer.WriteField(global::System.Convert.ToBase64String({valueExpr}));");
+            return;
+        }
+
+        // 3. Direct non-boxing WriteField / WriteFieldAsync overloads when no per-property format override
+        bool hasDirectOverload = baseType switch
         {
             "int" or "System.Int32" => true,
             "long" or "System.Int64" => true,
+            "short" or "System.Int16" => true,
+            "ushort" or "System.UInt16" => true,
+            "byte" or "System.Byte" => true,
+            "sbyte" or "System.SByte" => true,
+            "uint" or "System.UInt32" => true,
+            "ulong" or "System.UInt64" => true,
+            "double" or "System.Double" => true,
+            "float" or "System.Single" => true,
+            "decimal" or "System.Decimal" => true,
+            "bool" or "System.Boolean" => true,
+            "System.DateTime" => true,
+            "System.DateTimeOffset" => true,
+            "System.DateOnly" => true,
+            "System.TimeOnly" => true,
+            "System.TimeSpan" => true,
+            "System.Guid" => true,
+            "System.Half" => true,
+            "System.Int128" => true,
+            "System.UInt128" => true,
+            _ => false
+        };
+
+        if (hasDirectOverload && format == null)
+        {
+            if (isAsync)
+                builder.AppendLine($"await writer.WriteFieldAsync({valueExpr}, cancellationToken).ConfigureAwait(false);");
+            else
+                builder.AppendLine($"writer.WriteField({valueExpr});");
+            return;
+        }
+
+        // 4. Known ISpanFormattable types (when format != null or BigInteger without dedicated overload)
+        bool isKnownSpanFormattable = baseType switch
+        {
+            "int" or "System.Int32" => true,
+            "long" or "System.Int64" => true,
+            "short" or "System.Int16" => true,
+            "byte" or "System.Byte" => true,
+            "uint" or "System.UInt32" => true,
+            "ulong" or "System.UInt64" => true,
+            "ushort" or "System.UInt16" => true,
+            "sbyte" or "System.SByte" => true,
             "double" or "System.Double" => true,
             "float" or "System.Single" => true,
             "decimal" or "System.Decimal" => true,
@@ -2083,15 +2520,20 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             "System.DateTimeOffset" => true,
             "System.DateOnly" => true,
             "System.TimeOnly" => true,
+            "System.TimeSpan" => true,
+            "System.Half" => true,
+            "System.Int128" => true,
+            "System.UInt128" => true,
+            "System.Numerics.BigInteger" => true,
             _ => false
         };
 
-        if (isSpanFormattable)
+        if (isKnownSpanFormattable)
         {
-            var formatArg = format != null ? $"\"{format}\"" : "null";
+            var formatArg = format != null ? new CSharpStringLiteral(format).Quoted : "null";
             if (isAsync)
             {
-                builder.AppendLine($"await writer.WriteFieldAsync({valueExpr}.ToString({formatArg}, writer.Culture), cancellationToken).ConfigureAwait(false);");
+                builder.AppendLine($"await writer.WriteFieldAsync({valueExpr}, {formatArg}, cancellationToken).ConfigureAwait(false);");
             }
             else
             {
@@ -2116,7 +2558,49 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             return;
         }
 
-        // 4. Default fallback: ToString()
+        // 5. Custom ISpanFormattable (uses generic helper on sync fallback and direct generic WriteFieldAsync on async)
+        if (isCustomSpanFormattable)
+        {
+            var formatArg = format != null ? new CSharpStringLiteral(format).Quoted : "null";
+            if (isAsync)
+            {
+                builder.AppendLine($"await writer.WriteFieldAsync({valueExpr}, {formatArg}, cancellationToken).ConfigureAwait(false);");
+            }
+            else
+            {
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("global::System.Span<char> tmp = stackalloc char[128];");
+                builder.AppendLine($"if (TryFormatSpan({valueExpr}, tmp, out int written, {formatArg}, writer.Culture))");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("writer.WriteField(tmp[..written]);");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine($"writer.WriteField(FormatSpanToString({valueExpr}, {formatArg}, writer.Culture));");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+            return;
+        }
+
+        // 6. Custom IFormattable
+        if (isCustomFormattable)
+        {
+            var formatArg = format != null ? new CSharpStringLiteral(format).Quoted : "null";
+            if (isAsync)
+                builder.AppendLine($"await writer.WriteFieldAsync(FormatFormattable({valueExpr}, {formatArg}, writer.Culture), cancellationToken).ConfigureAwait(false);");
+            else
+                builder.AppendLine($"writer.WriteField(FormatFormattable({valueExpr}, {formatArg}, writer.Culture));");
+            return;
+        }
+
+        // 7. Default fallback: ToString()
         if (isAsync)
             builder.AppendLine($"await writer.WriteFieldAsync({valueExpr}.ToString(), cancellationToken).ConfigureAwait(false);");
         else

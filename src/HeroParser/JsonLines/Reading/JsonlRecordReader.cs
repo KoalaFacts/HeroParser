@@ -117,7 +117,7 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
                 recordIndex++;
                 continue;
             }
-            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException or Validation.ValidationException))
             {
                 throw new JsonlException(
                     JsonlErrorCode.DeserializeError,

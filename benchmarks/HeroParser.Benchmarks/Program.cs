@@ -42,7 +42,9 @@ public class Program
         typeof(ExcelReadBenchmarks),
         typeof(JsonlBenchmark),
         typeof(HtbBenchmark),
-        typeof(WriteGeneratorBenchmarks)
+        typeof(WriteGeneratorBenchmarks),
+        typeof(DataReaderExportBenchmarks),
+        typeof(CompressionBenchmarks)
     ];
 
     private static readonly Dictionary<string, Type[]> benchmarkGroups = new(StringComparer.Ordinal)
@@ -125,7 +127,9 @@ public class Program
         ["--excel-read"] = [typeof(ExcelReadBenchmarks)],
         ["--jsonl"] = [typeof(JsonlBenchmark)],
         ["--htb"] = [typeof(HtbBenchmark)],
-        ["--write-generator"] = [typeof(WriteGeneratorBenchmarks)]
+        ["--write-generator"] = [typeof(WriteGeneratorBenchmarks)],
+        ["--datareader-export"] = [typeof(DataReaderExportBenchmarks)],
+        ["--compression"] = [typeof(CompressionBenchmarks)]
     };
 
     public static void Main(string[] args)
@@ -200,6 +204,8 @@ public class Program
         Console.WriteLine("  --excel-read          Run Excel (.xlsx) reading benchmarks");
         Console.WriteLine("  --jsonl               Run JSONL reading, writing, and conversion benchmarks");
         Console.WriteLine("  --htb                 Run HTB reading and writing benchmarks");
+        Console.WriteLine("  --datareader-export   Run DbDataReader streaming export benchmarks across all 5 formats");
+        Console.WriteLine("  --compression         Run transparent .gz / .br / .zst compression benchmarks");
         Console.WriteLine("  --all                 Run all benchmarks");
         Console.WriteLine();
         Console.WriteLine("Hardware:");

@@ -18,8 +18,6 @@ public static class CsvRecordBinderFactory
     private static readonly ConcurrentDictionary<Type, object> charBinderFactories = new();
     private static readonly ConcurrentDictionary<Type, object> descriptorFactories = new();
 
-    #region Char Binder Registration
-
     /// <summary>
     /// Registers a char binder factory for maximum performance inline binding from char spans.
     /// </summary>
@@ -31,10 +29,6 @@ public static class CsvRecordBinderFactory
         ArgumentNullException.ThrowIfNull(factory);
         charBinderFactories[typeof(T)] = factory;
     }
-
-    #endregion
-
-    #region Char Binder (Adapter over Byte Binder)
 
     /// <summary>
     /// Gets a char binder for the specified type, prioritizing the generated char binder if available,
@@ -63,10 +57,6 @@ public static class CsvRecordBinderFactory
         var byteBinder = GetByteBinder<T>(options);
         return new CsvCharToByteBinderAdapter<T>(byteBinder, delimiter);
     }
-
-    #endregion
-
-    #region Byte Binder Registration
 
     /// <summary>
     /// Registers a byte binder factory for maximum performance inline binding with Utf8Parser.
@@ -116,10 +106,6 @@ public static class CsvRecordBinderFactory
         return false;
     }
 
-    #endregion
-
-    #region Descriptor Registration
-
     /// <summary>
     /// Registers a descriptor factory for descriptor-based binding.
     /// The descriptor is cached and shared across all binding operations.
@@ -150,6 +136,4 @@ public static class CsvRecordBinderFactory
         descriptor = null;
         return false;
     }
-
-    #endregion
 }

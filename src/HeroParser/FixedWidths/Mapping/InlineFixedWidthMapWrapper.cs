@@ -122,7 +122,7 @@ internal sealed class InlineFixedWidthMapWrapper<T> : IFixedWidthReadMapSource<T
         var assign = Expression.Assign(propertyAccess, valueParam);
         var compiled = Expression.Lambda<Action<T, TProperty>>(assign, instanceParam, valueParam).Compile();
 
-        var parse = SpanParserFactory.GetParser<TProperty>();
+        var parse = new SpanParserFactory().GetParser<TProperty>();
 
         void Setter(ref T instance, ReadOnlySpan<char> value, CultureInfo culture)
         {
@@ -141,7 +141,7 @@ internal sealed class InlineFixedWidthMapWrapper<T> : IFixedWidthReadMapSource<T
         var assign = Expression.Assign(propertyAccess, valueParam);
         var compiled = Expression.Lambda<Action<T, TProperty>>(assign, instanceParam, valueParam).Compile();
 
-        var parse = Utf8SpanParserFactory.GetParser<TProperty>();
+        var parse = new Utf8SpanParserFactory().GetParser<TProperty>();
 
         void Setter(ref T instance, ReadOnlySpan<byte> value, CultureInfo culture)
         {

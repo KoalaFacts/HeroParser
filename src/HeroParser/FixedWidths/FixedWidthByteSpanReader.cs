@@ -74,7 +74,7 @@ public ref struct FixedWidthByteSpanReader
         while (skipped < rowsToSkip && position < bytes.Length)
         {
             var remaining = bytes[position..];
-            var lineEnd = FixedWidthLineScanner.FindLineEnd(remaining);
+            var lineEnd = new FixedWidthLineScanner().FindLineEnd(remaining);
 
             if (lineEnd == -1)
             {
@@ -111,7 +111,7 @@ public ref struct FixedWidthByteSpanReader
 
             if (options.TrackSourceLineNumbers)
             {
-                sourceLineNumber += FixedWidthLineScanner.CountNewlines(bytes.Slice(position, recordLength), ref previousRecordEndedWithCr);
+                sourceLineNumber += new FixedWidthLineScanner().CountNewlines(bytes.Slice(position, recordLength), ref previousRecordEndedWithCr);
             }
 
             position += recordLength;
@@ -195,7 +195,7 @@ public ref struct FixedWidthByteSpanReader
         // Track newlines within the record for source line tracking
         if (options.TrackSourceLineNumbers)
         {
-            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan, ref previousRecordEndedWithCr);
+            sourceLineNumber += new FixedWidthLineScanner().CountNewlines(recordSpan, ref previousRecordEndedWithCr);
         }
 
         return true;
@@ -206,7 +206,7 @@ public ref struct FixedWidthByteSpanReader
         while (position < bytes.Length)
         {
             var remaining = bytes[position..];
-            var lineEnd = FixedWidthLineScanner.FindLineEnd(remaining);
+            var lineEnd = new FixedWidthLineScanner().FindLineEnd(remaining);
 
             ReadOnlySpan<byte> line;
             int consumed;
@@ -240,7 +240,7 @@ public ref struct FixedWidthByteSpanReader
 
             // Handle comment lines
             if (options.CommentCharacter is { } commentChar &&
-                FixedWidthLineScanner.StartsWithComment(line, commentChar))
+                new FixedWidthLineScanner().StartsWithComment(line, commentChar))
             {
                 if (options.TrackSourceLineNumbers)
                     sourceLineNumber++;

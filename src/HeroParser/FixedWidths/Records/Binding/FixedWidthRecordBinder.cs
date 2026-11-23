@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -27,6 +28,8 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthSourceBinder<T> whe
     private readonly HashSet<string>? nullValues;
     private readonly CustomConverterDictionary? customConverters;
 
+    [RequiresUnreferencedCode("Reflection-based binding may not work with trimming. Use [GenerateBinder] attribute for AOT/trimming support.")]
+    [RequiresDynamicCode("Reflection-based binding requires dynamic code. Use [GenerateBinder] attribute for AOT support.")]
     private FixedWidthRecordBinder(
         CultureInfo culture,
         FixedWidthDeserializeErrorHandler? errorHandler,
@@ -59,7 +62,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthSourceBinder<T> whe
             var template = templates[i];
             layouts[i] = new FixedWidthFieldLayout(template.MemberName, template.Start, template.Length);
         }
-        FixedWidthFieldLayoutValidator.Validate(layouts);
+        new FixedWidthFieldLayoutValidator(layouts).Validate();
 
         return new FixedWidthRecordBinder<T>(
             culture ?? CultureInfo.InvariantCulture,
@@ -634,17 +637,16 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthSourceBinder<T> whe
         }
     }
 
+    [RequiresUnreferencedCode("Uses runtime-discovered converters which may require reflection for enum and generic ISpanParsable binding.")]
+    [RequiresDynamicCode("Uses MakeGenericMethod for generic ISpanParsable converters.")]
     private List<FieldBinding> InstantiateBindings(IReadOnlyList<BindingTemplate> templates)
     {
         var list = new List<FieldBinding>(templates.Count);
 
         foreach (var template in templates)
         {
-            var converter = ConverterFactory.CreateConverter(
-                template.TargetType,
-                culture,
-                template.Format,
-                customConverters);
+            var factory = new ConverterFactory(culture, customConverters);
+            var converter = factory.CreateConverter(template.TargetType, template.Format);
             list.Add(new FieldBinding(
                 template.MemberName,
                 template.TargetType,
@@ -679,7 +681,7 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthSourceBinder<T> whe
 
         foreach (var (property, attribute) in members)
         {
-            var setter = SetterFactory.CreateSetter(property);
+            Action<object, object?> setter = property.SetValue;
             var parseAttr = property.GetCustomAttribute<ParseAttribute>();
 
             bindings.Add(new BindingTemplate(
@@ -745,23 +747,13 @@ internal sealed class FieldBinding(
 internal delegate bool ColumnConverter(ReadOnlySpan<char> span, out object? value);
 
 /// <summary>
-/// Factory for creating property setters.
-/// </summary>
-internal static class SetterFactory
-{
-    public static Action<object, object?> CreateSetter(PropertyInfo property) => property.SetValue;
-}
-
-/// <summary>
 /// Factory for creating type converters.
 /// </summary>
-internal static class ConverterFactory
+internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDictionary? customConverters)
 {
-    public static ColumnConverter CreateConverter(
-        Type targetType,
-        CultureInfo culture,
-        string? format,
-        CustomConverterDictionary? customConverters = null)
+    [RequiresUnreferencedCode("Uses MakeGenericMethod for generic ISpanParsable<T> converters.")]
+    [RequiresDynamicCode("Uses MakeGenericMethod for generic ISpanParsable<T> converters.")]
+    public ColumnConverter CreateConverter(Type targetType, string? format)
     {
         // Handle nullable types
         var underlyingType = Nullable.GetUnderlyingType(targetType);
@@ -786,16 +778,30 @@ internal static class ConverterFactory
             _ when actualType == typeof(long) => new Int64Converter(culture).Convert,
             _ when actualType == typeof(short) => new Int16Converter(culture).Convert,
             _ when actualType == typeof(byte) => new ByteConverter(culture).Convert,
+            _ when actualType == typeof(uint) => new NumberConverter<uint>(culture, NumberStyles.Integer).Convert,
+            _ when actualType == typeof(ulong) => new NumberConverter<ulong>(culture, NumberStyles.Integer).Convert,
+            _ when actualType == typeof(ushort) => new NumberConverter<ushort>(culture, NumberStyles.Integer).Convert,
+            _ when actualType == typeof(sbyte) => new NumberConverter<sbyte>(culture, NumberStyles.Integer).Convert,
             _ when actualType == typeof(decimal) => new DecimalConverter(culture).Convert,
             _ when actualType == typeof(double) => new DoubleConverter(culture).Convert,
             _ when actualType == typeof(float) => new SingleConverter(culture).Convert,
+            _ when actualType == typeof(Half) => new NumberConverter<Half>(culture, NumberStyles.Float | NumberStyles.AllowThousands).Convert,
+            _ when actualType == typeof(Int128) => new NumberConverter<Int128>(culture, NumberStyles.Integer).Convert,
+            _ when actualType == typeof(UInt128) => new NumberConverter<UInt128>(culture, NumberStyles.Integer).Convert,
+            _ when actualType == typeof(BigInteger) => new NumberConverter<BigInteger>(culture, NumberStyles.Integer).Convert,
+            _ when actualType == typeof(char) => ConvertToChar,
             _ when actualType == typeof(bool) => ConvertToBoolean,
             _ when actualType == typeof(DateTime) => new DateTimeConverter(culture, format).Convert,
             _ when actualType == typeof(DateTimeOffset) => new DateTimeOffsetConverter(culture, format).Convert,
             _ when actualType == typeof(DateOnly) => new DateOnlyConverter(culture, format).Convert,
             _ when actualType == typeof(TimeOnly) => new TimeOnlyConverter(culture, format).Convert,
+            _ when actualType == typeof(TimeSpan) => new TimeSpanConverter(culture, format).Convert,
             _ when actualType == typeof(Guid) => ConvertToGuid,
+            _ when actualType == typeof(Uri) => ConvertToUri,
+            _ when actualType == typeof(byte[]) => ConvertToBase64Bytes,
             _ when actualType.IsEnum => new EnumConverter(actualType).Convert,
+            _ when ImplementsSelfInterface(actualType, typeof(ISpanParsable<>)) => CreateSpanParsableConverter(actualType, culture),
+            _ when ImplementsSelfInterface(actualType, typeof(IUtf8SpanParsable<>)) => CreateUtf8SpanParsableConverter(actualType, culture),
             _ => throw new NotSupportedException($"Type '{targetType}' is not supported for fixed-width binding. " +
                 $"Register a custom converter using .RegisterConverter<{actualType.Name}>().")
         };
@@ -1087,6 +1093,166 @@ internal static class ConverterFactory
             if (Enum.TryParse(enumType, span, ignoreCase: true, out var result))
             {
                 value = result;
+                return true;
+            }
+
+            value = null;
+            return false;
+        }
+    }
+
+    private static bool ConvertToChar(ReadOnlySpan<char> span, out object? value)
+    {
+        if (span.Length == 1)
+        {
+            value = span[0];
+            return true;
+        }
+        value = null;
+        return false;
+    }
+
+    private static bool ConvertToUri(ReadOnlySpan<char> span, out object? value)
+    {
+        if (span.IsEmpty || span.IsWhiteSpace())
+        {
+            value = null;
+            return true;
+        }
+        if (Uri.TryCreate(new string(span.Trim()), UriKind.RelativeOrAbsolute, out var uri))
+        {
+            value = uri;
+            return true;
+        }
+        value = null;
+        return false;
+    }
+
+    private static bool ConvertToBase64Bytes(ReadOnlySpan<char> span, out object? value)
+    {
+        if (Utf8SpanParser.TryParseBase64Chars(span, out var bytes))
+        {
+            value = bytes;
+            return true;
+        }
+        value = null;
+        return false;
+    }
+
+    private sealed class NumberConverter<TNum>(CultureInfo culture, NumberStyles styles) where TNum : INumberBase<TNum>
+    {
+        public bool Convert(ReadOnlySpan<char> span, out object? value)
+        {
+            if (TNum.TryParse(span, styles, culture, out var result))
+            {
+                value = result;
+                return true;
+            }
+            value = null;
+            return false;
+        }
+    }
+
+    private sealed class TimeSpanConverter(CultureInfo culture, string? format)
+    {
+        public bool Convert(ReadOnlySpan<char> span, out object? value)
+        {
+            if (format is not null)
+            {
+                if (TimeSpan.TryParseExact(span, format, culture, out var exactResult))
+                {
+                    value = exactResult;
+                    return true;
+                }
+            }
+            else if (TimeSpan.TryParse(span, culture, out var result))
+            {
+                value = result;
+                return true;
+            }
+
+            value = null;
+            return false;
+        }
+    }
+
+    [RequiresUnreferencedCode("Uses Type.GetInterfaces() to detect ISpanParsable<T> and IUtf8SpanParsable<T> implementations.")]
+    private static bool ImplementsSelfInterface(Type type, Type openGenericInterface)
+    {
+        if (type.IsAbstract || type.IsInterface)
+            return false;
+        foreach (var iface in type.GetInterfaces())
+        {
+            if (iface.IsGenericType &&
+                iface.GetGenericTypeDefinition() == openGenericInterface &&
+                iface.GetGenericArguments()[0] == type)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [RequiresUnreferencedCode("Uses MakeGenericMethod for ISpanParsable<T> conversion.")]
+    [RequiresDynamicCode("Uses MakeGenericMethod for ISpanParsable<T> conversion.")]
+    private static ColumnConverter CreateSpanParsableConverter(Type actualType, CultureInfo culture)
+    {
+        var method = typeof(ConverterFactory).GetMethod(
+            nameof(CreateSpanParsableGeneric),
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+        return (ColumnConverter)method.MakeGenericMethod(actualType).Invoke(null, [culture, !actualType.IsValueType])!;
+    }
+
+    private static ColumnConverter CreateSpanParsableGeneric<TValue>(CultureInfo culture, bool allowEmptyAsNull)
+        where TValue : ISpanParsable<TValue>
+    {
+        return Convert;
+
+        bool Convert(ReadOnlySpan<char> span, out object? value)
+        {
+            if (allowEmptyAsNull && (span.IsEmpty || span.IsWhiteSpace()))
+            {
+                value = null;
+                return true;
+            }
+
+            if (TValue.TryParse(span, culture, out var parsed))
+            {
+                value = parsed;
+                return true;
+            }
+
+            value = null;
+            return false;
+        }
+    }
+
+    [RequiresUnreferencedCode("Uses MakeGenericMethod for IUtf8SpanParsable<T> conversion.")]
+    [RequiresDynamicCode("Uses MakeGenericMethod for IUtf8SpanParsable<T> conversion.")]
+    private static ColumnConverter CreateUtf8SpanParsableConverter(Type actualType, CultureInfo culture)
+    {
+        var method = typeof(ConverterFactory).GetMethod(
+            nameof(CreateUtf8SpanParsableGeneric),
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+        return (ColumnConverter)method.MakeGenericMethod(actualType).Invoke(null, [culture, !actualType.IsValueType])!;
+    }
+
+    private static ColumnConverter CreateUtf8SpanParsableGeneric<TValue>(CultureInfo culture, bool allowEmptyAsNull)
+        where TValue : IUtf8SpanParsable<TValue>
+    {
+        return Convert;
+
+        bool Convert(ReadOnlySpan<char> span, out object? value)
+        {
+            if (allowEmptyAsNull && (span.IsEmpty || span.IsWhiteSpace()))
+            {
+                value = null;
+                return true;
+            }
+
+            if (Utf8SpanParser.TryParseUtf8FromChars<TValue>(span, culture, out var parsed))
+            {
+                value = parsed;
                 return true;
             }
 

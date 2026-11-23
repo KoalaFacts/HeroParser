@@ -1,3 +1,4 @@
+using HeroParser.SeparatedValues.Reading.Shared;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -6,39 +7,36 @@ using System.Runtime.Intrinsics.X86;
 
 namespace HeroParser.SeparatedValues.Writing;
 
-internal static class CsvWriterQuoting
+internal readonly struct CsvWriterQuoting(
+    char delimiter,
+    char quote,
+    IReadOnlySet<char>? additionalDangerousChars = null)
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static (bool needsQuoting, int quoteCount) AnalyzeFieldForQuoting(
-        ReadOnlySpan<char> value,
-        char delimiter,
-        char quote)
+    internal (bool needsQuoting, int quoteCount) AnalyzeFieldForQuoting(ReadOnlySpan<char> value)
     {
-        if (global::HeroParser.SeparatedValues.Reading.Shared.HardwareCapabilities.Avx512BWIsSupported && value.Length >= Vector512<ushort>.Count)
+        if (HardwareCapabilities.Current.Avx512BWIsSupported && value.Length >= Vector512<ushort>.Count)
         {
-            return AnalyzeFieldSimd512(value, delimiter, quote);
+            return AnalyzeFieldSimd512(value);
         }
         else if (Avx2.IsSupported && value.Length >= Vector256<ushort>.Count)
         {
-            return AnalyzeFieldSimd256(value, delimiter, quote);
+            return AnalyzeFieldSimd256(value);
         }
         else if (Sse2.IsSupported && value.Length >= Vector128<ushort>.Count)
         {
-            return AnalyzeFieldSimd128(value, delimiter, quote);
+            return AnalyzeFieldSimd128(value);
         }
         else if (Sse2.IsSupported && value.Length >= 4)
         {
-            return AnalyzeFieldSimdShort(value, delimiter, quote);
+            return AnalyzeFieldSimdShort(value);
         }
 
-        return AnalyzeFieldScalar(value, delimiter, quote);
+        return AnalyzeFieldScalar(value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static (bool needsQuoting, int quoteCount) AnalyzeFieldSimdShort(
-        ReadOnlySpan<char> value,
-        char delimiter,
-        char quote)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldSimdShort(ReadOnlySpan<char> value)
     {
         ref byte byteRef = ref Unsafe.As<char, byte>(ref MemoryMarshal.GetReference(value));
         ulong lo = Unsafe.ReadUnaligned<ulong>(ref byteRef);
@@ -69,10 +67,7 @@ internal static class CsvWriterQuoting
         return (true, quoteCount);
     }
 
-    private static (bool needsQuoting, int quoteCount) AnalyzeFieldSimd512(
-        ReadOnlySpan<char> value,
-        char delimiter,
-        char quote)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldSimd512(ReadOnlySpan<char> value)
     {
         var delimiterVec = Vector512.Create((ushort)delimiter);
         var quoteVec = Vector512.Create((ushort)quote);
@@ -138,7 +133,7 @@ internal static class CsvWriterQuoting
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static int CountQuotes(ReadOnlySpan<char> value, char quote)
+    internal int CountQuotes(ReadOnlySpan<char> value)
     {
         int count = 0;
         foreach (char c in value)
@@ -149,10 +144,7 @@ internal static class CsvWriterQuoting
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static (bool needsQuoting, int quoteCount) AnalyzeFieldScalar(
-        ReadOnlySpan<char> value,
-        char delimiter,
-        char quote)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldScalar(ReadOnlySpan<char> value)
     {
         bool needsQuoting = false;
         int quoteCount = 0;
@@ -174,10 +166,7 @@ internal static class CsvWriterQuoting
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static (bool needsQuoting, int quoteCount) AnalyzeFieldSimd256(
-        ReadOnlySpan<char> value,
-        char delimiter,
-        char quote)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldSimd256(ReadOnlySpan<char> value)
     {
         var delimiterVec = Vector256.Create((ushort)delimiter);
         var quoteVec = Vector256.Create((ushort)quote);
@@ -243,10 +232,7 @@ internal static class CsvWriterQuoting
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static (bool needsQuoting, int quoteCount) AnalyzeFieldSimd128(
-        ReadOnlySpan<char> value,
-        char delimiter,
-        char quote)
+    private (bool needsQuoting, int quoteCount) AnalyzeFieldSimd128(ReadOnlySpan<char> value)
     {
         var delimiterVec = Vector128.Create((ushort)delimiter);
         var quoteVec = Vector128.Create((ushort)quote);
@@ -313,14 +299,14 @@ internal static class CsvWriterQuoting
 
     // Default dangerous characters for CSV injection (always dangerous)
     // Note: '-' and '+' are handled separately with smart detection
-    internal static ReadOnlySpan<char> AlwaysDangerousChars => ['=', '@', '\t', '\r'];
+    private static ReadOnlySpan<char> AlwaysDangerousChars => ['=', '@', '\t', '\r'];
 
     /// <summary>
     /// Checks if a field starts with a dangerous character that could trigger formula execution.
     /// Uses switch statement for O(1) lookup of common dangerous characters.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool IsDangerousField(ReadOnlySpan<char> value, IReadOnlySet<char>? additionalDangerousChars)
+    internal bool IsDangerousField(ReadOnlySpan<char> value)
     {
         if (value.IsEmpty) return false;
 
@@ -356,9 +342,7 @@ internal static class CsvWriterQuoting
     /// <summary>
     /// Strips dangerous leading characters from a value.
     /// </summary>
-    internal static ReadOnlySpan<char> StripDangerousPrefix(
-        ReadOnlySpan<char> value,
-        IReadOnlySet<char>? additionalDangerousChars)
+    internal ReadOnlySpan<char> StripDangerousPrefix(ReadOnlySpan<char> value)
     {
         int start = 0;
         while (start < value.Length)

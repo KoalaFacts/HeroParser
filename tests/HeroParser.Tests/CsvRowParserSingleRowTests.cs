@@ -65,7 +65,7 @@ public class CsvRowParserSingleRowTests
         var ends = new int[endsLength];
         try
         {
-            var result = CsvRowParser.ParseRow(data, options, ends, options.TrackSourceLineNumbers);
+            var result = new CsvRowParser(options).ParseRow(data, ends, options.TrackSourceLineNumbers);
             return new ParseOutcome(result, ends[..(result.ColumnCount + 1)], null, null, null);
         }
         catch (CsvException ex)

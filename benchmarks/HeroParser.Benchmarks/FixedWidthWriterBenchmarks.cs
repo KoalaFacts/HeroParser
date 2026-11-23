@@ -481,8 +481,6 @@ public class FixedWidthAsyncWriterBenchmarks
         public DateTime Date { get; set; }
     }
 
-    #region Sync vs Async - Raw Row Writing
-
     [Benchmark(Baseline = true)]
     public void SyncWriter_RawRows_MemoryStream()
     {
@@ -518,10 +516,6 @@ public class FixedWidthAsyncWriterBenchmarks
         await writer.FlushAsync().ConfigureAwait(false);
     }
 
-    #endregion
-
-    #region Sync vs Async - Factory Method Comparison
-
     [Benchmark]
     public void SyncWriter_CreateStreamWriter_Stream()
     {
@@ -556,10 +550,6 @@ public class FixedWidthAsyncWriterBenchmarks
         await writer.FlushAsync().ConfigureAwait(false);
     }
 
-    #endregion
-
-    #region Sync vs Async - Record Writing to Stream
-
     [Benchmark]
     public void SyncWriter_Records_MemoryStream()
     {
@@ -584,10 +574,6 @@ public class FixedWidthAsyncWriterBenchmarks
         await FixedWidth.Write<AsyncWriteRecord>().ToStreamAsync(ms, records).ConfigureAwait(false);
     }
 
-    #endregion
-
-    #region Sync vs Async - File Writing
-
     [Benchmark]
     public void SyncWriter_Records_File()
     {
@@ -608,10 +594,6 @@ public class FixedWidthAsyncWriterBenchmarks
     {
         await FixedWidth.Write<AsyncWriteRecord>().ToFileAsync(filePath, records).ConfigureAwait(false);
     }
-
-    #endregion
-
-    #region Builder API - Sync vs Async Streaming
 
     [Benchmark]
     public void SyncBuilder_ToStream()
@@ -639,10 +621,6 @@ public class FixedWidthAsyncWriterBenchmarks
         await FixedWidth.Write<AsyncWriteRecord>()
             .ToStreamAsyncStreaming(ms, records).ConfigureAwait(false);
     }
-
-    #endregion
-
-    #region Async Writer with Options
 
     [Benchmark]
     public async Task AsyncWriter_RightAligned()
@@ -680,10 +658,6 @@ public class FixedWidthAsyncWriterBenchmarks
         await writer.FlushAsync().ConfigureAwait(false);
     }
 
-    #endregion
-
-    #region Helpers
-
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
         foreach (var item in source)
@@ -692,7 +666,5 @@ public class FixedWidthAsyncWriterBenchmarks
         }
         await Task.CompletedTask; // Ensure async state machine is generated
     }
-
-    #endregion
 }
 

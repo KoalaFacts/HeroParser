@@ -143,6 +143,15 @@ public sealed record FixedWidthWriteOptions
     public string? TimeOnlyFormat { get; init; }
 
     /// <summary>
+    /// Gets or sets the format string for <see cref="TimeSpan"/> values.
+    /// </summary>
+    /// <remarks>
+    /// When null, uses the default constant ("c") format.
+    /// Example: "c" or "g".
+    /// </remarks>
+    public string? TimeSpanFormat { get; init; }
+
+    /// <summary>
     /// Gets or sets the format string for numeric values.
     /// </summary>
     /// <remarks>

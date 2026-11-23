@@ -81,7 +81,7 @@ internal sealed class CsvRowBatchCursor : IDisposable
     /// </summary>
     public static CsvRowBatchCursor? TryCreate(CsvReadOptions options, int endsCapacity = CsvRowBatchScanner.DEFAULT_ENDS_CAPACITY)
     {
-        if (!CsvRowBatchScanner.IsSupported(options))
+        if (!new CsvRowBatchScanner(options).IsSupported())
             return null;
 
         int capacity = Math.Max(endsCapacity, CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount));
@@ -171,13 +171,14 @@ internal sealed class CsvRowBatchCursor : IDisposable
         Span<int> rowStartsSpan = rowStarts;
         Span<int> sourceLinesSpan = sourceLines is { } lines ? lines : default;
 
+        var scanner = new CsvRowBatchScanner(options);
         rowCount = !trackLineNumbers
             ? (quotes
-                ? CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out int errorRowStart)
-                : CsvRowBatchScanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart))
+                ? scanner.Scan<T, NoTrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out int errorRowStart)
+                : scanner.Scan<T, NoTrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart))
             : (quotes
-                ? CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart)
-                : CsvRowBatchScanner.Scan<T, TrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, options, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart));
+                ? scanner.Scan<T, TrackLineNumbers, QuotesEnabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart)
+                : scanner.Scan<T, TrackLineNumbers, QuotesDisabled>(window, 0, sourceLine, isFinalBlock, singleRow: false, endsSpan, rowStartsSpan, sourceLinesSpan, out consumed, out nextSourceLine, out errorRowStart));
 
         index = 0;
         rowFlagged = errorRowStart >= 0;

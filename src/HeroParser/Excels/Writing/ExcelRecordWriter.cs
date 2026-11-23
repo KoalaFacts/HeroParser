@@ -289,7 +289,7 @@ public sealed class ExcelRecordWriter<T>
                 if (accessor.Validation is { HasAnyRule: true } rules)
                 {
                     validationErrors ??= [];
-                    WriteValidationRunner.Validate(accessor.GetValue(record), accessor.MemberName, rowNumber, i, rules, validationErrors, options.Culture ?? CultureInfo.InvariantCulture);
+                    rules.Validate(accessor.GetValue(record), accessor.MemberName, rowNumber, i, validationErrors, options.Culture ?? CultureInfo.InvariantCulture);
                 }
             }
 
@@ -425,7 +425,7 @@ public sealed class ExcelRecordWriter<T>
 
             case DateTime dt:
                 if (format is not null || options.DateTimeFormat is not null)
-                    sheetWriter.WriteCellString(columnIndex, dt.ToString(format ?? options.DateTimeFormat, culture), styleIndex);
+                    WriteCellSpanFormattable(sheetWriter, columnIndex, dt, format ?? options.DateTimeFormat, culture, styleIndex);
                 else
                     sheetWriter.WriteCellDate(columnIndex, dt, styleIndex);
                 return;
@@ -433,32 +433,83 @@ public sealed class ExcelRecordWriter<T>
             case DateTimeOffset dto:
                 // Default to ISO 8601 round-trip format ("O") to preserve UTC offset.
                 // When an explicit format is provided, use that instead.
-                sheetWriter.WriteCellString(columnIndex, dto.ToString(format ?? options.DateTimeFormat ?? "O", culture), styleIndex);
+                WriteCellSpanFormattable(sheetWriter, columnIndex, dto, format ?? options.DateTimeFormat ?? "O", culture, styleIndex);
                 return;
 
             case DateOnly d:
                 {
-                    var dtValue = d.ToDateTime(TimeOnly.MinValue);
                     if (format is not null || options.DateOnlyFormat is not null)
-                        sheetWriter.WriteCellString(columnIndex, d.ToString(format ?? options.DateOnlyFormat, culture), styleIndex);
+                        WriteCellSpanFormattable(sheetWriter, columnIndex, d, format ?? options.DateOnlyFormat, culture, styleIndex);
                     else
-                        sheetWriter.WriteCellDate(columnIndex, dtValue, styleIndex);
+                        sheetWriter.WriteCellDate(columnIndex, d.ToDateTime(TimeOnly.MinValue), styleIndex);
                 }
                 return;
 
             case TimeOnly t:
-                sheetWriter.WriteCellString(columnIndex, t.ToString(format ?? options.TimeOnlyFormat ?? "HH:mm:ss", culture), styleIndex);
+                WriteCellSpanFormattable(sheetWriter, columnIndex, t, format ?? options.TimeOnlyFormat ?? "HH:mm:ss", culture, styleIndex);
+                return;
+
+            case TimeSpan ts:
+                WriteCellSpanFormattable(sheetWriter, columnIndex, ts, format ?? options.TimeSpanFormat ?? "c", culture, styleIndex);
+                return;
+
+            case char ch:
+                {
+                    Span<char> chBuf = [ch];
+                    sheetWriter.WriteCellString(columnIndex, chBuf, styleIndex);
+                }
+                return;
+
+            case Half half:
+                if (format is not null || options.NumberFormat is not null)
+                {
+                    WriteCellSpanFormattable(sheetWriter, columnIndex, half, format ?? options.NumberFormat, culture, styleIndex);
+                }
+                else
+                {
+                    double halfDouble = (double)half;
+                    if (double.IsFinite(halfDouble))
+                        sheetWriter.WriteCellNumber(columnIndex, halfDouble, styleIndex);
+                    else
+                        WriteCellSpanFormattable(sheetWriter, columnIndex, half, format: null, culture, styleIndex);
+                }
+                return;
+
+            case Int128 i128:
+                WriteCellSpanFormattable(sheetWriter, columnIndex, i128, format ?? options.NumberFormat, culture, styleIndex);
+                return;
+
+            case UInt128 u128:
+                WriteCellSpanFormattable(sheetWriter, columnIndex, u128, format ?? options.NumberFormat, culture, styleIndex);
+                return;
+
+            case BigInteger bi:
+                WriteCellSpanFormattable(sheetWriter, columnIndex, bi, format ?? options.NumberFormat, culture, styleIndex);
+                return;
+
+            case Uri uri:
+                sheetWriter.WriteCellString(columnIndex, uri.OriginalString, styleIndex);
+                return;
+
+            case byte[] bytes:
+                if (bytes.Length == 0)
+                    sheetWriter.WriteCellEmpty(columnIndex, styleIndex);
+                else
+                    sheetWriter.WriteCellString(columnIndex, Convert.ToBase64String(bytes), styleIndex);
                 return;
 
             case Guid g:
-                sheetWriter.WriteCellString(columnIndex, g.ToString(), styleIndex);
+                WriteCellSpanFormattable(sheetWriter, columnIndex, g, format: null, culture, styleIndex);
                 return;
 
             case int i:
                 WriteNumericCell(sheetWriter, columnIndex, i, format, options, culture, styleIndex);
                 return;
             case long l:
-                WriteNumericCell(sheetWriter, columnIndex, l, format, options, culture, styleIndex);
+                if (format is not null || options.NumberFormat is not null || l is < -9_007_199_254_740_992L or > 9_007_199_254_740_992L)
+                    WriteCellSpanFormattable(sheetWriter, columnIndex, l, format ?? options.NumberFormat, culture, styleIndex);
+                else
+                    sheetWriter.WriteCellNumber(columnIndex, l, styleIndex);
                 return;
             case short s16:
                 WriteNumericCell(sheetWriter, columnIndex, s16, format, options, culture, styleIndex);
@@ -470,7 +521,10 @@ public sealed class ExcelRecordWriter<T>
                 WriteNumericCell(sheetWriter, columnIndex, u, format, options, culture, styleIndex);
                 return;
             case ulong ul:
-                WriteNumericCell(sheetWriter, columnIndex, ul, format, options, culture, styleIndex);
+                if (format is not null || options.NumberFormat is not null || ul > 9_007_199_254_740_992UL)
+                    WriteCellSpanFormattable(sheetWriter, columnIndex, ul, format ?? options.NumberFormat, culture, styleIndex);
+                else
+                    sheetWriter.WriteCellNumber(columnIndex, ul, styleIndex);
                 return;
             case ushort u16:
                 WriteNumericCell(sheetWriter, columnIndex, u16, format, options, culture, styleIndex);
@@ -487,12 +541,14 @@ public sealed class ExcelRecordWriter<T>
 
             case decimal dec:
                 // Always write decimal as string to preserve full precision (double cast loses >15 significant digits)
-                sheetWriter.WriteCellString(columnIndex, dec.ToString(format ?? options.NumberFormat, culture), styleIndex);
+                WriteCellSpanFormattable(sheetWriter, columnIndex, dec, format ?? options.NumberFormat, culture, styleIndex);
                 return;
 
             default:
-                // Fallback: use IFormattable if format specified, otherwise ToString
-                if (format is not null && value is IFormattable formattable)
+                // Fallback: use ISpanFormattable / IFormattable if format specified, otherwise ToString
+                if (value is ISpanFormattable spanFormattable)
+                    WriteCellSpanFormattable(sheetWriter, columnIndex, spanFormattable, format, culture, styleIndex);
+                else if (format is not null && value is IFormattable formattable)
                     sheetWriter.WriteCellString(columnIndex, formattable.ToString(format, culture), styleIndex);
                 else
                 {
@@ -517,9 +573,25 @@ public sealed class ExcelRecordWriter<T>
         where TNum : INumber<TNum>
     {
         if (format is not null || options.NumberFormat is not null)
-            sheetWriter.WriteCellString(columnIndex, value.ToString(format ?? options.NumberFormat, culture), styleIndex);
+            WriteCellSpanFormattable(sheetWriter, columnIndex, value, format ?? options.NumberFormat, culture, styleIndex);
         else
             sheetWriter.WriteCellNumber(columnIndex, double.CreateChecked(value), styleIndex);
+    }
+
+    private static void WriteCellSpanFormattable<TValue>(
+        XlsxWriter.SheetWriter sheetWriter,
+        int columnIndex,
+        TValue value,
+        string? format,
+        CultureInfo culture,
+        int? styleIndex)
+        where TValue : ISpanFormattable
+    {
+        Span<char> tmp = stackalloc char[128];
+        if (value.TryFormat(tmp, out int written, format, culture))
+            sheetWriter.WriteCellString(columnIndex, tmp[..written], styleIndex);
+        else
+            sheetWriter.WriteCellString(columnIndex, ((IFormattable)value).ToString(format, culture), styleIndex);
     }
 
     private static PropertyAccessor[] InstantiateAccessors(IReadOnlyList<WriterTemplate> templates)
@@ -567,7 +639,7 @@ public sealed class ExcelRecordWriter<T>
                 property.Name,
                 headerName,
                 format,
-                PropertyAccessorCompiler.CompileBoxedGetter(property),
+                new PropertyAccessorCompiler(property).CompileBoxedGetter(),
                 property.PropertyType,
                 validation);
         }

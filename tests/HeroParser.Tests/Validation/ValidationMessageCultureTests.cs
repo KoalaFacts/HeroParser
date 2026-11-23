@@ -40,16 +40,17 @@ public class ValidationMessageCultureTests
         WithCulture(cultureName, () =>
         {
             var errors = new List<ValidationError>();
-            PropertyValidationRunner.Validate(
+            var runner = new PropertyValidationRunner(CultureInfo.InvariantCulture);
+            runner.Validate(
                 "1234.5".AsSpan(), "Amount", 1, 0, null,
                 notEmpty: false, minLength: null, maxLength: null,
                 rangeMin: 0.5, rangeMax: 100.5, pattern: null,
-                errors, CultureInfo.InvariantCulture);
-            PropertyValidationRunner.Validate(
+                errors);
+            runner.Validate(
                 "-0.25".AsSpan(), "Amount", 2, 0, null,
                 notEmpty: false, minLength: null, maxLength: null,
                 rangeMin: 0.5, rangeMax: 100.5, pattern: null,
-                errors, CultureInfo.InvariantCulture);
+                errors);
 
             Assert.Equal([EXPECTED_MAX, EXPECTED_MIN], errors.Select(e => e.Message));
         });
@@ -64,16 +65,17 @@ public class ValidationMessageCultureTests
         WithCulture(cultureName, () =>
         {
             var errors = new List<ValidationError>();
-            PropertyValidationRunner.Validate(
+            var runner = new PropertyValidationRunner(CultureInfo.InvariantCulture);
+            runner.Validate(
                 "1234.5", "Amount", 1, 0, null,
                 notEmpty: false, minLength: null, maxLength: null,
                 rangeMin: 0.5, rangeMax: 100.5, pattern: null,
-                errors, CultureInfo.InvariantCulture);
-            PropertyValidationRunner.Validate(
+                errors);
+            runner.Validate(
                 "-0.25", "Amount", 2, 0, null,
                 notEmpty: false, minLength: null, maxLength: null,
                 rangeMin: 0.5, rangeMax: 100.5, pattern: null,
-                errors, CultureInfo.InvariantCulture);
+                errors);
 
             Assert.Equal([EXPECTED_MAX, EXPECTED_MIN], errors.Select(e => e.Message));
         });
@@ -84,11 +86,11 @@ public class ValidationMessageCultureTests
     {
         // A de-DE reader parses "1234,5" as 1234.5; the message still uses '.' (RawValue keeps the input).
         var errors = new List<ValidationError>();
-        PropertyValidationRunner.Validate(
+        new PropertyValidationRunner(CultureInfo.GetCultureInfo("de-DE")).Validate(
             "1234,5", "Amount", 1, 0, null,
             notEmpty: false, minLength: null, maxLength: null,
             rangeMin: 0.5, rangeMax: 100.5, pattern: null,
-            errors, CultureInfo.GetCultureInfo("de-DE"));
+            errors);
 
         var error = Assert.Single(errors);
         Assert.Equal(EXPECTED_MAX, error.Message);
@@ -107,8 +109,8 @@ public class ValidationMessageCultureTests
                 NotNull: false, NotEmpty: false, MaxLength: null, MinLength: null,
                 RangeMin: 0.5, RangeMax: 100.5, Pattern: null);
             var errors = new List<ValidationError>();
-            WriteValidationRunner.Validate(1234.5, "Amount", 1, 0, rules, errors, CultureInfo.InvariantCulture);
-            WriteValidationRunner.Validate(-0.25m, "Amount", 2, 0, rules, errors, CultureInfo.InvariantCulture);
+            rules.Validate(1234.5, "Amount", 1, 0, errors, CultureInfo.InvariantCulture);
+            rules.Validate(-0.25m, "Amount", 2, 0, errors, CultureInfo.InvariantCulture);
 
             Assert.Equal([EXPECTED_MAX, EXPECTED_MIN], errors.Select(e => e.Message));
         });

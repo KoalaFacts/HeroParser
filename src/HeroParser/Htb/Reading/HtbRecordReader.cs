@@ -9,6 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -342,8 +343,6 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
         recordHeaderParsed = true;
     }
 
-    #region Reflection Fallback Helper Methods
-
     internal object ReadColumnValueInternal(HtbDataType type)
     {
         switch (type)
@@ -358,6 +357,23 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
             case HtbDataType.Guid: return ReadGuid();
             case HtbDataType.String: return ReadString();
             case HtbDataType.FloatArray: return ReadFloatArray();
+            case HtbDataType.DateTimeOffset: return ReadDateTimeOffset();
+            case HtbDataType.DateOnly: return ReadDateOnly();
+            case HtbDataType.TimeOnly: return ReadTimeOnly();
+            case HtbDataType.TimeSpan: return ReadTimeSpan();
+            case HtbDataType.Int16: return ReadInt16();
+            case HtbDataType.UInt16: return ReadUInt16();
+            case HtbDataType.Byte: return ReadByte();
+            case HtbDataType.SByte: return ReadSByte();
+            case HtbDataType.UInt32: return ReadUInt32();
+            case HtbDataType.UInt64: return ReadUInt64();
+            case HtbDataType.Char: return ReadChar();
+            case HtbDataType.Half: return ReadHalf();
+            case HtbDataType.Int128: return ReadInt128();
+            case HtbDataType.UInt128: return ReadUInt128();
+            case HtbDataType.ByteArray: return ReadByteArray();
+            case HtbDataType.BigInteger: return ReadBigInteger();
+            case HtbDataType.Uri: return ReadUri();
             default:
                 throw new HtbException(HtbErrorCode.CorruptData, $"Unsupported Column DataType: {type}");
         }
@@ -377,12 +393,27 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
             case HtbDataType.Guid: return await ReadGuidAsync().ConfigureAwait(false);
             case HtbDataType.String: return await ReadStringAsync().ConfigureAwait(false);
             case HtbDataType.FloatArray: return await ReadFloatArrayAsync().ConfigureAwait(false);
+            case HtbDataType.DateTimeOffset: return await ReadDateTimeOffsetAsync().ConfigureAwait(false);
+            case HtbDataType.DateOnly: return await ReadDateOnlyAsync().ConfigureAwait(false);
+            case HtbDataType.TimeOnly: return await ReadTimeOnlyAsync().ConfigureAwait(false);
+            case HtbDataType.TimeSpan: return await ReadTimeSpanAsync().ConfigureAwait(false);
+            case HtbDataType.Int16: return await ReadInt16Async().ConfigureAwait(false);
+            case HtbDataType.UInt16: return await ReadUInt16Async().ConfigureAwait(false);
+            case HtbDataType.Byte: return await ReadByteAsync().ConfigureAwait(false);
+            case HtbDataType.SByte: return await ReadSByteAsync().ConfigureAwait(false);
+            case HtbDataType.UInt32: return await ReadUInt32Async().ConfigureAwait(false);
+            case HtbDataType.UInt64: return await ReadUInt64Async().ConfigureAwait(false);
+            case HtbDataType.Char: return await ReadCharAsync().ConfigureAwait(false);
+            case HtbDataType.Half: return await ReadHalfAsync().ConfigureAwait(false);
+            case HtbDataType.Int128: return await ReadInt128Async().ConfigureAwait(false);
+            case HtbDataType.UInt128: return await ReadUInt128Async().ConfigureAwait(false);
+            case HtbDataType.ByteArray: return await ReadByteArrayAsync().ConfigureAwait(false);
+            case HtbDataType.BigInteger: return await ReadBigIntegerAsync().ConfigureAwait(false);
+            case HtbDataType.Uri: return await ReadUriAsync().ConfigureAwait(false);
             default:
                 throw new HtbException(HtbErrorCode.CorruptData, $"Unsupported Column DataType: {type}");
         }
     }
-
-    #endregion
 
     [RequiresUnreferencedCode("Validation using attributes requires reflection.")]
     private void ValidateRecord(T record)
@@ -429,23 +460,15 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     }
 
                     // 5. RangeMin validation
-                    if (!double.IsNaN(validate.RangeMin))
+                    if (!double.IsNaN(validate.RangeMin) && TryToDouble(val, out double minVal) && minVal < validate.RangeMin)
                     {
-                        double numericVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
-                        if (numericVal < validate.RangeMin)
-                        {
-                            throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} must be at least {validate.RangeMin}."));
-                        }
+                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {minVal} must be at least {validate.RangeMin}."));
                     }
 
                     // 6. RangeMax validation
-                    if (!double.IsNaN(validate.RangeMax))
+                    if (!double.IsNaN(validate.RangeMax) && TryToDouble(val, out double maxVal) && maxVal > validate.RangeMax)
                     {
-                        double numericVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
-                        if (numericVal > validate.RangeMax)
-                        {
-                            throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} cannot exceed {validate.RangeMax}."));
-                        }
+                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {maxVal} cannot exceed {validate.RangeMax}."));
                     }
 
                     // 7. Pattern validation
@@ -462,6 +485,28 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     }
                 }
             }
+        }
+    }
+
+    private static bool TryToDouble(object value, out double numericValue)
+    {
+        switch (value)
+        {
+            case Half h:
+                numericValue = (double)h;
+                return true;
+            case Int128 i128:
+                numericValue = (double)i128;
+                return true;
+            case UInt128 u128:
+                numericValue = (double)u128;
+                return true;
+            case BigInteger bi:
+                numericValue = (double)bi;
+                return true;
+            default:
+                numericValue = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                return true;
         }
     }
 }

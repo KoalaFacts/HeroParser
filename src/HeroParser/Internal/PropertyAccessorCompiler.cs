@@ -7,10 +7,10 @@ namespace HeroParser.Internal;
 /// <summary>
 /// Compiles fast property getter delegates for reflection-based record writers.
 /// </summary>
-internal static class PropertyAccessorCompiler
+internal readonly struct PropertyAccessorCompiler(PropertyInfo property)
 {
     [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
-    internal static Func<object, object?> CompileBoxedGetter(PropertyInfo property)
+    internal Func<object, object?> CompileBoxedGetter()
     {
         // Expression: (object instance) => (object?)((TDeclaring)instance).Property
         var instanceParam = Expression.Parameter(typeof(object), "instance");
@@ -25,7 +25,7 @@ internal static class PropertyAccessorCompiler
     }
 
     [RequiresDynamicCode("Uses Expression.Compile to emit a property getter at runtime.")]
-    internal static Func<T, object?> CompileTypedGetter<T>(PropertyInfo property)
+    internal Func<T, object?> CompileTypedGetter<T>()
     {
         var param = Expression.Parameter(typeof(T), "x");
         var access = Expression.Property(param, property);

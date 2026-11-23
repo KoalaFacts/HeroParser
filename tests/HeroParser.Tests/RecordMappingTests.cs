@@ -127,8 +127,6 @@ public class RecordMappingTests
         public int Score { get; set; }
     }
 
-    #region Format Attribute Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FormatAttribute_ParsesDateWithCustomFormat()
@@ -177,10 +175,6 @@ public class RecordMappingTests
         [Parse(Format = "yyyy-MM-dd HH:mm:ss")]
         public DateTime Timestamp { get; set; }
     }
-
-    #endregion
-
-    #region Culture Option Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -235,10 +229,6 @@ public class RecordMappingTests
         public int Id { get; set; }
         public DateOnly Date { get; set; }
     }
-
-    #endregion
-
-    #region Byte-Based Record Reading Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -339,10 +329,6 @@ public class RecordMappingTests
         public DateTime Timestamp { get; set; }
     }
 
-    #endregion
-
-    #region Delimiter Tests (Char API Bug Fix)
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CharApi_WithSemicolonDelimiter_BindsCorrectly()
@@ -435,6 +421,4 @@ public class RecordMappingTests
         public int Age { get; set; }
         public string City { get; set; } = string.Empty;
     }
-
-    #endregion
 }

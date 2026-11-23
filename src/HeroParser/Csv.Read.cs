@@ -1,4 +1,5 @@
 using System.Buffers;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Records;
@@ -196,16 +197,21 @@ public static partial class Csv
         CsvReadOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(path);
-        long fileLength = new FileInfo(path).Length;
-        if (fileLength > DEFAULT_MAX_BUFFERED_STREAM_BYTES)
-        {
-            throw new CsvException(
-                CsvErrorCode.ParseError,
-                string.Create(CultureInfo.InvariantCulture, $"File length exceeds maximum buffered size of {DEFAULT_MAX_BUFFERED_STREAM_BYTES:N0} bytes. ") +
-                "Use Csv.CreateAsyncStreamReader for large inputs.");
-        }
+        long maxAllowed = options?.MaxInputSize is { } maxInput
+            ? Math.Min(DEFAULT_MAX_BUFFERED_STREAM_BYTES, maxInput)
+            : DEFAULT_MAX_BUFFERED_STREAM_BYTES;
 
-        fileBytes = File.ReadAllBytes(path);
+        fileBytes = new CompressedFile(path).ReadAllBytes(
+            maxAllowed,
+            total =>
+            {
+                options?.ValidateInputSize(total);
+                return new CsvException(
+                    CsvErrorCode.ParseError,
+                    string.Create(CultureInfo.InvariantCulture, $"File length exceeds maximum buffered size of {DEFAULT_MAX_BUFFERED_STREAM_BYTES:N0} bytes. ") +
+                    "Use Csv.CreateAsyncStreamReader for large inputs.");
+            });
+
         return ReadFromByteSpan(fileBytes, options);
     }
 
@@ -365,15 +371,19 @@ public static partial class Csv
         options ??= CsvReadOptions.Default;
         options.Validate();
 
-        var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
+        var stream = new CompressedFile(path).OpenRead(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        return new CsvAsyncStreamReader(stream, options, leaveOpen: false, initialBufferSize: bufferSize);
+        try
+        {
+            return new CsvAsyncStreamReader(stream, options, leaveOpen: false, initialBufferSize: bufferSize);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

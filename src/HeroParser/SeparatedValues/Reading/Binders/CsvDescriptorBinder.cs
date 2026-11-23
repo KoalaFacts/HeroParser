@@ -161,13 +161,12 @@ public sealed class CsvDescriptorBinder<T> : ICsvSourceBinder<char, T> where T :
 
                     if (prop.Validation is { HasAnyRule: true } validation)
                     {
-                        hasErrors |= PropertyValidationRunner.Validate(
+                        hasErrors |= new PropertyValidationRunner(cultureLocal).Validate(
                             span, prop.Name, rowNumber, idx,
                             columnName: colName,
                             validation.NotEmpty, validation.MinLength, validation.MaxLength,
                             validation.RangeMin, validation.RangeMax, validation.Pattern,
-                            errors,
-                            cultureLocal);
+                            errors);
                     }
                 }
             }

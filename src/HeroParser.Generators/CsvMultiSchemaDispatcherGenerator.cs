@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
-using static HeroParser.Generators.GeneratorHelpers;
 
 namespace HeroParser.Generators;
 
@@ -118,12 +117,10 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
                 continue;
 
             var returnTypeName = recordTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var safeTypeName = CreateSafeClassName(recordTypeSymbol);
+            var safeTypeName = new RecordTypeTarget(recordTypeSymbol).SafeClassName;
 
             // Check if record type has [GenerateBinder] attribute (required for AOT)
-            bool hasGenerateBinderAttribute = recordTypeSymbol.GetAttributes()
-                .Any(a => a.AttributeClass != null &&
-                          generateBinderAttributeNames.Contains(a.AttributeClass.ToDisplayString()));
+            bool hasGenerateBinderAttribute = new SymbolAttributes(recordTypeSymbol).FindFirst(generateBinderAttributeNames) is not null;
 
             mappings.Add(new DiscriminatorMapping(
                 DiscriminatorValue: discriminatorValue!,
@@ -213,7 +210,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
             builder.AppendLine("for (int i = 0; i < headerRow.ColumnCount; i++)");
             builder.AppendLine("{");
             builder.Indent();
-            builder.AppendLine($"if (SpanEqualsBYTE(headerRow[i].Span, \"{EscapeString(descriptor.DiscriminatorColumn!)}\"u8))");
+            builder.AppendLine($"if (SpanEqualsBYTE(headerRow[i].Span, \"{new CSharpStringLiteral(descriptor.DiscriminatorColumn!).Escaped}\"u8))");
             builder.AppendLine("{");
             builder.Indent();
             builder.AppendLine("_discriminatorIndex = i;");
@@ -334,7 +331,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
                 {
                     var mapping = mappings[0];
                     var resultVar = $"result_{mapping.SafeTypeName}";
-                    builder.AppendLine($"{length} when SpanEqualsBYTE(span, \"{EscapeString(mapping.DiscriminatorValue)}\"u8) => _byteBinder_{mapping.SafeTypeName}.TryBind(row, rowNumber, out var {resultVar}) ? {resultVar} : null,");
+                    builder.AppendLine($"{length} when SpanEqualsBYTE(span, \"{new CSharpStringLiteral(mapping.DiscriminatorValue).Escaped}\"u8) => _byteBinder_{mapping.SafeTypeName}.TryBind(row, rowNumber, out var {resultVar}) ? {resultVar} : null,");
                 }
                 else
                 {
@@ -362,7 +359,7 @@ public sealed class CsvMultiSchemaDispatcherGenerator : IIncrementalGenerator
 
         foreach (var mapping in mappings)
         {
-            builder.AppendLine($"if (SpanEqualsBYTE(span, \"{EscapeString(mapping.DiscriminatorValue)}\"u8))");
+            builder.AppendLine($"if (SpanEqualsBYTE(span, \"{new CSharpStringLiteral(mapping.DiscriminatorValue).Escaped}\"u8))");
             var resultVar = $"result_{mapping.SafeTypeName}";
             builder.AppendLine($"    return _byteBinder_{mapping.SafeTypeName}.TryBind(row, rowNumber, out var {resultVar}) ? {resultVar} : null;");
         }

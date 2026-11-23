@@ -20,6 +20,7 @@ public sealed class ExcelWriterBuilder<T> where T : new()
     private string? dateTimeFormat;
     private string? dateOnlyFormat;
     private string? timeOnlyFormat;
+    private string? timeSpanFormat;
     private string? numberFormat;
     private int? maxRowCount;
     private ValidationMode validationMode = ValidationMode.Strict;
@@ -109,6 +110,18 @@ public sealed class ExcelWriterBuilder<T> where T : new()
     public ExcelWriterBuilder<T> WithTimeOnlyFormat(string format)
     {
         timeOnlyFormat = format;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the format string for <see cref="TimeSpan"/> values.
+    /// </summary>
+    /// <param name="format">The format string (e.g., "c" or "g").</param>
+    /// <returns>This builder for method chaining.</returns>
+    public ExcelWriterBuilder<T> WithTimeSpanFormat(string format)
+    {
+        timeSpanFormat = format;
         cachedOptions = null;
         return this;
     }
@@ -366,8 +379,6 @@ public sealed class ExcelWriterBuilder<T> where T : new()
         throw new ArgumentException("Expression must select a property on the record type.", nameof(propertySelector));
     }
 
-    #region Terminal Methods
-
     /// <summary>
     /// Writes records to an Excel file at the specified path.
     /// </summary>
@@ -524,10 +535,6 @@ public sealed class ExcelWriterBuilder<T> where T : new()
         return await Task.Run(() => ToBytes(materialized), ct).ConfigureAwait(false);
     }
 
-    #endregion
-
-    #region Private Helpers
-
     /// <summary>Gets the current options, building them if not already cached.</summary>
     internal ExcelWriteOptions GetOptions()
     {
@@ -538,6 +545,7 @@ public sealed class ExcelWriterBuilder<T> where T : new()
             DateTimeFormat = dateTimeFormat,
             DateOnlyFormat = dateOnlyFormat,
             TimeOnlyFormat = timeOnlyFormat,
+            TimeSpanFormat = timeSpanFormat,
             NumberFormat = numberFormat,
             MaxRowCount = maxRowCount,
             ValidationMode = validationMode,
@@ -580,8 +588,6 @@ public sealed class ExcelWriterBuilder<T> where T : new()
             list.Add(record);
         return list;
     }
-
-    #endregion
 }
 
 internal readonly record struct ExcelMergeRange

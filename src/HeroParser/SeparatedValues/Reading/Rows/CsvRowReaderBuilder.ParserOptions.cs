@@ -2,8 +2,6 @@ namespace HeroParser.SeparatedValues.Reading.Rows;
 
 public sealed partial class CsvRowReaderBuilder
 {
-    #region Parser Options
-
     /// <summary>
     /// Sets the field delimiter character.
     /// </summary>
@@ -162,10 +160,6 @@ public sealed partial class CsvRowReaderBuilder
         return this;
     }
 
-    #endregion
-
-    #region Row Options
-
     /// <summary>
     /// Skips the specified number of rows before returning data.
     /// </summary>
@@ -180,6 +174,4 @@ public sealed partial class CsvRowReaderBuilder
         skipRows = rowCount;
         return this;
     }
-
-    #endregion
 }

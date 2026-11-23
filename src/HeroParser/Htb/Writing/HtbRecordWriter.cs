@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using HeroParser.Htbs.Records;
@@ -232,6 +233,23 @@ public sealed class HtbRecordWriter<T> : HtbStreamWriter where T : new()
             case HtbDataType.Guid: WriteGuid((Guid)val); break;
             case HtbDataType.String: WriteString((string)val); break;
             case HtbDataType.FloatArray: WriteFloatArray((float[])val); break;
+            case HtbDataType.DateTimeOffset: WriteDateTimeOffset((DateTimeOffset)val); break;
+            case HtbDataType.DateOnly: WriteDateOnly((DateOnly)val); break;
+            case HtbDataType.TimeOnly: WriteTimeOnly((TimeOnly)val); break;
+            case HtbDataType.TimeSpan: WriteTimeSpan((TimeSpan)val); break;
+            case HtbDataType.Int16: WriteInt16((short)val); break;
+            case HtbDataType.UInt16: WriteUInt16((ushort)val); break;
+            case HtbDataType.Byte: WriteByte((byte)val); break;
+            case HtbDataType.SByte: WriteSByte((sbyte)val); break;
+            case HtbDataType.UInt32: WriteUInt32((uint)val); break;
+            case HtbDataType.UInt64: WriteUInt64((ulong)val); break;
+            case HtbDataType.Char: WriteChar((char)val); break;
+            case HtbDataType.Half: WriteHalf((Half)val); break;
+            case HtbDataType.Int128: WriteInt128((Int128)val); break;
+            case HtbDataType.UInt128: WriteUInt128((UInt128)val); break;
+            case HtbDataType.ByteArray: WriteByteArray((byte[])val); break;
+            case HtbDataType.BigInteger: WriteBigInteger((BigInteger)val); break;
+            case HtbDataType.Uri: WriteUri((Uri)val); break;
             default:
                 throw new HtbException(HtbErrorCode.SerializationError, $"Unsupported column type: {type}");
         }

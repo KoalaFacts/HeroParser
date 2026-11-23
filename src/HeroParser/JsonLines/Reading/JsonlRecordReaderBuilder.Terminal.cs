@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Globalization;
+using HeroParser.Internal;
 
 namespace HeroParser.JsonLines.Reading;
 
@@ -56,11 +57,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(typeInfo);
         this.typeInfo = typeInfo;
 
-        FileStream stream = new(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
+        Stream stream = new CompressedFile(path).OpenRead(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         await using var streamDisposal = stream.ConfigureAwait(false);
@@ -158,11 +155,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(path);
 
-        FileStream stream = new(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
+        Stream stream = new CompressedFile(path).OpenRead(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         await using var streamDisposal = stream.ConfigureAwait(false);
@@ -225,7 +218,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
 
         Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out var binder);
 
-        await foreach (JsonlLine line in JsonlPipeLineReader.ReadLinesAsync(reader, options, cancellationToken).ConfigureAwait(false))
+        await foreach (JsonlLine line in new JsonlPipeLineReader(reader, options).ReadLinesAsync(cancellationToken).ConfigureAwait(false))
         {
             ReadOnlySpan<byte> bytes = line.Utf8.Span;
 
@@ -277,7 +270,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
                 recordIndex++;
                 continue;
             }
-            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException or Validation.ValidationException))
             {
                 throw new JsonlException(
                     JsonlErrorCode.DeserializeError,

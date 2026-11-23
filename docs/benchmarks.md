@@ -80,8 +80,9 @@ The former 35–64% and 1.9× claims are not maintained as current guarantees: t
 
 - **Span field access**: raw readers can expose fields without allocating a string for each field. Decoding to strings, constructing records or arrays, typed conversion, and owned PipeReader rows have separate costs.
 - **Scan-Ahead Row Batches**: the scanner records column ends for batches of rows into pooled buffers; row iteration consumes those offsets.
-- **Quote-Aware SIMD**: supported CPUs use vector comparisons and PCLMULQDQ quote masks; runtime capability checks and options select the applicable path or scalar fallback.
+- **Quote-Aware SIMD**: supported CPUs use vector comparisons and PCLMULQDQ quote masks on x86-64 (AVX-512/AVX2), or ARM64 `AdvSimd` (NEON) and portable `Vector128` SIMD with branchless 6-step software prefix-XOR quote tracking; runtime capability checks and options select the applicable path or scalar fallback.
 - **UTF-16 Pack-and-Saturate**: supported char scanning packs vectors with saturation and shares byte-mask analysis. This supports direct `string` scanning; it does not guarantee identical UTF-8 and UTF-16 timings.
+- **Low-Allocation Writers, Generated Binders & DataReader Exports**: sync and async text writers format `ISpanFormattable` values directly via spans, `[GenerateBinder]` JSONL readers parse unescaped spans cleanly via stackalloc/`ArrayPool<float>`, and `WriteFromDataReader*` exports reuse cached column plans to avoid per-row `object[]` arrays and value-type boxing.
 
 See [`CsvRowBatchScanner`](../src/HeroParser/SeparatedValues/Reading/Shared/CsvRowBatchScanner.cs) for the current scanner and its option restrictions.
 
@@ -113,7 +114,9 @@ While the benchmarks deploy automatically upon successful release creation, you 
 To execute these benchmarks on your local hardware:
 
 ```bash
-dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net10.0 -- --vs-sep-reading
+dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net11.0 -- --vs-sep-reading
+dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net11.0 -- --datareader-export
+dotnet run -c Release --project benchmarks/HeroParser.Benchmarks --framework net11.0 -- --compression
 ```
 
 This runs the fixture in your checkout. To reproduce the archived table, use a separate checkout of `cba2bcdbf57597d87a159316e4d06969c1278d01`; running the corrected fixture cannot reproduce the legacy workload. For a production-code A/B, run the **same corrected benchmark source** against both builds on the same machine, validate equivalent results before timing, and retain every sample. Report scan-only, field-decoding, typed-materialization, and I/O workloads separately.

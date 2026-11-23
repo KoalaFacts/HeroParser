@@ -4,17 +4,17 @@ using System.Text;
 
 namespace HeroParser.FixedWidths;
 
-internal static class FixedWidthLineScanner
+internal readonly struct FixedWidthLineScanner
 {
     private const byte CR = (byte)'\r';
     private const byte LF = (byte)'\n';
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool ContainsLineBreak(ReadOnlySpan<char> span)
+    public bool ContainsLineBreak(ReadOnlySpan<char> span)
         => span.IndexOfAny('\r', '\n') >= 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int FindLineEnd(ReadOnlySpan<byte> span)
+    public int FindLineEnd(ReadOnlySpan<byte> span)
     {
         for (int i = 0; i < span.Length; i++)
         {
@@ -25,12 +25,12 @@ internal static class FixedWidthLineScanner
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int FindLineEnd(ReadOnlySpan<char> span)
+    public int FindLineEnd(ReadOnlySpan<char> span)
         => span.IndexOfAny('\r', '\n');
 
     // Fixed-width UTF-8 readers must compare the encoded comment character,
     // not its truncated low byte (which can also match unrelated data such as NUL).
-    public static bool StartsWithComment(ReadOnlySpan<byte> line, char commentChar)
+    public bool StartsWithComment(ReadOnlySpan<byte> line, char commentChar)
     {
         if (line.IsEmpty || char.IsSurrogate(commentChar))
         {
@@ -47,7 +47,7 @@ internal static class FixedWidthLineScanner
         return line.StartsWith(utf8[..byteCount]);
     }
 
-    public static bool StartsWithComment(ReadOnlySequence<byte> line, char commentChar)
+    public bool StartsWithComment(ReadOnlySequence<byte> line, char commentChar)
     {
         if (line.IsEmpty || char.IsSurrogate(commentChar))
         {
@@ -79,14 +79,14 @@ internal static class FixedWidthLineScanner
         return Encoding.UTF8.GetBytes(character, utf8);
     }
 
-    public static int CountNewlines(ReadOnlySpan<byte> span)
+    public int CountNewlines(ReadOnlySpan<byte> span)
     {
         bool previousWasCr = false;
         return CountNewlines(span, ref previousWasCr);
     }
 
     // A trailing CR counts immediately; a leading LF in the next chunk belongs to that CRLF.
-    public static int CountNewlines(ReadOnlySpan<byte> span, ref bool previousWasCr)
+    public int CountNewlines(ReadOnlySpan<byte> span, ref bool previousWasCr)
     {
         if (span.IsEmpty)
         {
@@ -115,13 +115,13 @@ internal static class FixedWidthLineScanner
         return count;
     }
 
-    public static int CountNewlines(ReadOnlySequence<byte> sequence)
+    public int CountNewlines(ReadOnlySequence<byte> sequence)
     {
         bool previousWasCr = false;
         return CountNewlines(sequence, ref previousWasCr);
     }
 
-    public static int CountNewlines(ReadOnlySequence<byte> sequence, ref bool previousWasCr)
+    public int CountNewlines(ReadOnlySequence<byte> sequence, ref bool previousWasCr)
     {
         int count = 0;
         foreach (var segment in sequence)
@@ -132,13 +132,13 @@ internal static class FixedWidthLineScanner
         return count;
     }
 
-    public static int CountNewlines(ReadOnlySpan<char> span)
+    public int CountNewlines(ReadOnlySpan<char> span)
     {
         bool previousWasCr = false;
         return CountNewlines(span, ref previousWasCr);
     }
 
-    public static int CountNewlines(ReadOnlySpan<char> span, ref bool previousWasCr)
+    public int CountNewlines(ReadOnlySpan<char> span, ref bool previousWasCr)
     {
         if (span.IsEmpty)
         {

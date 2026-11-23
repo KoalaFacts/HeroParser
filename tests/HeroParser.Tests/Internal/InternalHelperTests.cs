@@ -194,24 +194,24 @@ public class FixedWidthLineScannerTests
     [Fact]
     public void ContainsLineBreak_Chars()
     {
-        Assert.False(FixedWidthLineScanner.ContainsLineBreak("abc".AsSpan()));
-        Assert.True(FixedWidthLineScanner.ContainsLineBreak("ab\nc".AsSpan()));
-        Assert.True(FixedWidthLineScanner.ContainsLineBreak("ab\rc".AsSpan()));
+        Assert.False(new FixedWidthLineScanner().ContainsLineBreak("abc".AsSpan()));
+        Assert.True(new FixedWidthLineScanner().ContainsLineBreak("ab\nc".AsSpan()));
+        Assert.True(new FixedWidthLineScanner().ContainsLineBreak("ab\rc".AsSpan()));
     }
 
     [Fact]
     public void FindLineEnd_Bytes_FindsFirst()
     {
-        Assert.Equal(3, FixedWidthLineScanner.FindLineEnd("abc\ndef"u8));
-        Assert.Equal(3, FixedWidthLineScanner.FindLineEnd("abc\rdef"u8));
-        Assert.Equal(-1, FixedWidthLineScanner.FindLineEnd("abcdef"u8));
+        Assert.Equal(3, new FixedWidthLineScanner().FindLineEnd("abc\ndef"u8));
+        Assert.Equal(3, new FixedWidthLineScanner().FindLineEnd("abc\rdef"u8));
+        Assert.Equal(-1, new FixedWidthLineScanner().FindLineEnd("abcdef"u8));
     }
 
     [Fact]
     public void FindLineEnd_Chars_FindsFirst()
     {
-        Assert.Equal(3, FixedWidthLineScanner.FindLineEnd("abc\ndef".AsSpan()));
-        Assert.Equal(-1, FixedWidthLineScanner.FindLineEnd("abcdef".AsSpan()));
+        Assert.Equal(3, new FixedWidthLineScanner().FindLineEnd("abc\ndef".AsSpan()));
+        Assert.Equal(-1, new FixedWidthLineScanner().FindLineEnd("abcdef".AsSpan()));
     }
 
     [Theory]
@@ -225,7 +225,7 @@ public class FixedWidthLineScannerTests
     [InlineData("\n\n\n", 3)]
     public void CountNewlines_Bytes(string input, int expected)
     {
-        Assert.Equal(expected, FixedWidthLineScanner.CountNewlines(System.Text.Encoding.ASCII.GetBytes(input).AsSpan()));
+        Assert.Equal(expected, new FixedWidthLineScanner().CountNewlines(System.Text.Encoding.ASCII.GetBytes(input).AsSpan()));
     }
 
     [Theory]
@@ -237,14 +237,14 @@ public class FixedWidthLineScannerTests
     [InlineData("a\nb\nc", 2)]
     public void CountNewlines_Chars(string input, int expected)
     {
-        Assert.Equal(expected, FixedWidthLineScanner.CountNewlines(input.AsSpan()));
+        Assert.Equal(expected, new FixedWidthLineScanner().CountNewlines(input.AsSpan()));
     }
 
     [Fact]
     public void CountNewlines_Sequence_Single_Segment()
     {
         var sequence = new ReadOnlySequence<byte>(System.Text.Encoding.ASCII.GetBytes("a\nb\r\nc\r"));
-        Assert.Equal(3, FixedWidthLineScanner.CountNewlines(sequence));
+        Assert.Equal(3, new FixedWidthLineScanner().CountNewlines(sequence));
     }
 
     [Fact]
@@ -255,7 +255,7 @@ public class FixedWidthLineScannerTests
         var sequence = new ReadOnlySequence<byte>(first, 0, second, second.Memory.Length);
         // CR is the last byte of segment 1, LF is the first of segment 2 -> one CRLF
         // Then LF in segment 2 -> another newline. Total = 2.
-        Assert.Equal(2, FixedWidthLineScanner.CountNewlines(sequence));
+        Assert.Equal(2, new FixedWidthLineScanner().CountNewlines(sequence));
     }
 
     [Fact]
@@ -264,7 +264,7 @@ public class FixedWidthLineScannerTests
         var first = new TestSegment("a\r"u8.ToArray());
         var second = first.Append("bc"u8.ToArray());
         var sequence = new ReadOnlySequence<byte>(first, 0, second, second.Memory.Length);
-        Assert.Equal(1, FixedWidthLineScanner.CountNewlines(sequence));
+        Assert.Equal(1, new FixedWidthLineScanner().CountNewlines(sequence));
     }
 
     private sealed class TestSegment : ReadOnlySequenceSegment<byte>

@@ -101,13 +101,14 @@ public class CoveragePushTests4
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     [RequiresUnreferencedCode("test uses fluent mapping")]
     [RequiresDynamicCode("test uses fluent mapping")]
-    public void FixedWidth_FluentMap_DateTimeOffsetConverter_NotSupported()
+    public void FixedWidth_FluentMap_DateTimeOffsetConverter()
     {
-        // DateTimeOffset is not supported by the fluent (reflection) ConverterFactory.
-        Assert.Throws<NotSupportedException>(() => FixedWidth.Read<PlainDtoRow>()
+        var rows = FixedWidth.Read<PlainDtoRow>()
             .Map(r => r.Value, c => c.Start(0).Length(25))
             .FromText("2024-06-01T12:30:45+00:00\n")
-            .ToList());
+            .ToList();
+        Assert.Single(rows);
+        Assert.Equal(new DateTimeOffset(2024, 6, 1, 12, 30, 45, TimeSpan.Zero), rows[0].Value);
     }
 
     [Fact]

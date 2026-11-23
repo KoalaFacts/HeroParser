@@ -192,6 +192,26 @@ using var reader = Jsonl.CreateDataReader("training.jsonl", readerOptions: optio
 
 The JSONPath syntax supports dotted keys and bracket-indexed arrays (`key.key[idx].key`). Missing keys produce `DBNull`.
 
+**Exporting an `IDataReader` / `DbDataReader` to JSONL (no reflection, non-boxing):**
+
+`Jsonl.WriteFromDataReader*` inspects column schemas once on the first row and streams each row directly to `Utf8JsonWriter` without boxing `ISpanFormattable` values:
+
+```csharp
+using System.Data;
+
+using var table = new DataTable();
+table.Columns.Add("Id", typeof(int));
+table.Columns.Add("Captured", typeof(DateOnly));
+table.Rows.Add(7, new DateOnly(2026, 4, 1));
+
+using var reader = table.CreateDataReader();
+string jsonlOutput = Jsonl.WriteFromDataReaderToText(reader);
+
+// Also supports compressed files (.gz, .br, .zst/.zstd), streams, and async DbDataReader
+using var fileReader = table.CreateDataReader();
+Jsonl.WriteFromDataReaderToFile("export.jsonl.gz", fileReader);
+```
+
 ### 1.7 OnError callback
 
 ```csharp
@@ -220,7 +240,25 @@ Jsonl.Read<ChatExample>()
 
 ### 1.9 AOT / trimming support
 
-Pass a `JsonTypeInfo<T>` produced by a source-generated `JsonSerializerContext` to bypass reflection entirely:
+HeroParser offers two AOT- and trim-safe options for JSONL:
+
+1. **`[GenerateBinder]` (low/zero-allocation direct `Utf8JsonReader` binder)** — recommended for flat typed schemas with scalar, temporal (`DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan`), wide numeric (`Half`, `Int128`, `UInt128`, `BigInteger`), or `float[]` embedding fields. Unescaped tokens decode on the stack (`stackalloc`) and `float[]` arrays stage via `ArrayPool<float>.Shared`:
+
+```csharp
+[GenerateBinder]
+public sealed class FlatTrainingRow
+{
+    public int Id { get; set; }
+    public DateOnly Date { get; set; }
+    public float[]? Embedding { get; set; }
+}
+
+List<FlatTrainingRow> flatRows = Jsonl.Read<FlatTrainingRow>()
+    .FromFile("training.jsonl.gz")
+    .ToList();
+```
+
+2. **`JsonTypeInfo<T>` from `System.Text.Json`'s source generator** — recommended for deeply nested object graphs such as multi-turn chat transcripts:
 
 ```csharp
 using System.Text.Json.Serialization;
@@ -235,7 +273,7 @@ var records = Jsonl.Read<ChatExample>()
     .ToList();
 ```
 
-Reflection-based overloads carry `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` so AOT/trim users get a clear build warning telling them to switch to `WithTypeInfo`. The `JsonTypeInfo<T>` path is fully trim/AOT-safe.
+Reflection-based overloads carry `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` so AOT/trim users get a clear build warning telling them to add `[GenerateBinder]` or pass `WithTypeInfo`. Both `[GenerateBinder]` and `JsonTypeInfo<T>` are fully trim/AOT-safe.
 
 ---
 
@@ -250,14 +288,15 @@ IAsyncEnumerable<ChatExample> asyncRecords = AsyncEnumerable.Empty<ChatExample>(
 ```csharp
 IEnumerable<ChatExample> records = BuildTrainingData();
 
-// To a file
+// To a file (`.gz`, `.br`, and `.zst`/`.zstd` extensions compress transparently)
 Jsonl.Write<ChatExample>().ToFile("out.jsonl", records);
 
 // To a string
 string text = Jsonl.Write<ChatExample>().ToText(records);
 
-// Async, from an IAsyncEnumerable source
-await Jsonl.Write<ChatExample>().ToFileAsync("out.jsonl", asyncRecords);
+// Async, from an IEnumerable<T> or IAsyncEnumerable<T> source
+await Jsonl.Write<ChatExample>().ToFileAsync("out.jsonl", records);
+await Jsonl.Write<ChatExample>().ToFileAsync("out.jsonl.gz", asyncRecords);
 ```
 
 ### 2.2 Fluent builder options
@@ -296,7 +335,7 @@ await Jsonl.Write<ChatExample>()
     .ToStreamAsync(output, asyncRecords);
 ```
 
-For AOT, pass `JsonTypeInfo<T>` via `.WithTypeInfo(...)` exactly as on the read side.
+For AOT, use `[GenerateBinder]` on the record type or pass `JsonTypeInfo<T>` via `.WithTypeInfo(...)` (also supported by static `Jsonl.SerializeRecords`, `Jsonl.WriteToFile*`, and `Jsonl.WriteToStream*` overloads). Both `IEnumerable<T>` and `IAsyncEnumerable<T>` are supported for async writes.
 
 ### 2.4 OnError callback
 

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Writing;
 
@@ -30,8 +31,9 @@ public static class JsonlToCsvConverter
         ArgumentNullException.ThrowIfNull(jsonlPath);
         ArgumentNullException.ThrowIfNull(csvPath);
         JsonlToCsvOptions opt = options ?? JsonlToCsvOptions.Default;
-        using FileStream input = new(jsonlPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using StreamWriter output = new(new FileStream(csvPath, FileMode.Create, FileAccess.Write, FileShare.None), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        using Stream input = new CompressedFile(jsonlPath).OpenRead();
+        using Stream outputStream = new CompressedFile(csvPath).OpenWrite();
+        using StreamWriter output = new(outputStream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         ConvertCore(input, output, opt);
     }
 

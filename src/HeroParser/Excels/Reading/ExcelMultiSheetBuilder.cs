@@ -93,6 +93,8 @@ public sealed class ExcelMultiSheetBuilder
         };
         var binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions, delimiter: '\x01');
 
+        var rowAdapter = new XlsxRowAdapter();
+
         // Read header row
         var headerCells = sheetReader.ReadNextRow();
         if (headerCells is null)
@@ -100,16 +102,12 @@ public sealed class ExcelMultiSheetBuilder
 
         if (binder.NeedsHeaderResolution)
         {
-            var headerBuffer = new char[XlsxRowAdapter.CalculateBufferSize(headerCells) + 1];
-            var headerColumnEnds = new int[headerCells.Length + 1];
-            var headerRow = XlsxRowAdapter.CreateRow(headerCells, 0, headerBuffer, headerColumnEnds);
+            var headerRow = rowAdapter.CreateRow(headerCells, 0);
             binder.BindHeader(headerRow, 0);
         }
 
         var results = new List<T>();
         var errors = new List<ValidationError>();
-        char[] buffer = [];
-        int[] columnEnds = [];
 
         while (true)
         {
@@ -117,8 +115,7 @@ public sealed class ExcelMultiSheetBuilder
             if (cells is null)
                 break;
 
-            XlsxRowAdapter.EnsureBuffers(cells, ref buffer, ref columnEnds);
-            var csvRow = XlsxRowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber, buffer, columnEnds);
+            var csvRow = rowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber);
 
             if (binder.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record, errors))
             {

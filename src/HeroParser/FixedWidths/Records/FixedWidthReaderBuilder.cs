@@ -70,8 +70,6 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
 
     internal FixedWidthReaderBuilder() { }
 
-    #region Parser Options
-
     /// <summary>
     /// Sets the fixed record length for non-line-based parsing.
     /// When specified, records are read as fixed-length blocks without regard to line endings.
@@ -264,10 +262,6 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         return this;
     }
 
-    #endregion
-
-    #region Record Options
-
     /// <summary>
     /// Sets the culture for parsing values.
     /// </summary>
@@ -411,10 +405,6 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         }
     }
 
-    #endregion
-
-    #region Fluent Map
-
     /// <summary>
     /// Configures a fluent map to control field layout and property binding for reading.
     /// </summary>
@@ -461,10 +451,6 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         readMapSource = wrapper;
         return wrapper;
     }
-
-    #endregion
-
-    #region Terminal Methods
 
     /// <summary>
     /// Reads records from a fixed-width string.
@@ -562,10 +548,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         ArgumentException.ThrowIfNullOrEmpty(path);
 
         var options = GetOptions();
-        var fileInfo = new FileInfo(path);
-        options.ValidateInputSize(fileInfo.Length);
-
-        var text = File.ReadAllText(path, encoding);
+        var text = FixedWidthFactory.ReadFileText(path, options, encoding);
         return FromText(text);
     }
 
@@ -602,10 +585,7 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         ArgumentException.ThrowIfNullOrEmpty(path);
 
         var options = GetOptions();
-        var fileInfo = new FileInfo(path);
-        options.ValidateInputSize(fileInfo.Length);
-
-        var text = await File.ReadAllTextAsync(path, encoding, cancellationToken).ConfigureAwait(false);
+        var text = await FixedWidthFactory.ReadFileTextAsync(path, options, encoding, cancellationToken).ConfigureAwait(false);
         foreach (var record in FromText(text))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -734,16 +714,9 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             throw new NotSupportedException("ForEach methods are not supported with fluent maps. Use FromFile() instead.");
 
         var options = GetOptions();
-        var fileInfo = new FileInfo(path);
-        options.ValidateInputSize(fileInfo.Length);
-
-        var text = File.ReadAllText(path, encoding);
+        var text = FixedWidthFactory.ReadFileText(path, options, encoding);
         ForEachFromText(text, callback);
     }
-
-    #endregion
-
-    #region Options Construction
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void InvalidateCache()
@@ -770,9 +743,6 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
             ValidationMode = validationMode
         };
     }
-
-
-    #endregion
 }
 
 /// <summary>
@@ -800,8 +770,6 @@ public sealed class FixedWidthReaderBuilder
     private FixedWidthReadOptions? cachedOptions;
 
     internal FixedWidthReaderBuilder() { }
-
-    #region Parser Options
 
     /// <summary>
     /// Sets the fixed record length for non-line-based parsing.
@@ -992,10 +960,6 @@ public sealed class FixedWidthReaderBuilder
         return this;
     }
 
-    #endregion
-
-    #region Terminal Methods
-
     /// <summary>
     /// Creates a reader from fixed-width text for manual row-by-row reading.
     /// </summary>
@@ -1021,10 +985,7 @@ public sealed class FixedWidthReaderBuilder
         ArgumentException.ThrowIfNullOrEmpty(path);
 
         var options = GetOptions();
-        var fileInfo = new FileInfo(path);
-        options.ValidateInputSize(fileInfo.Length);
-
-        var text = File.ReadAllText(path, encoding);
+        var text = FixedWidthFactory.ReadFileText(path, options, encoding);
         return FromText(text);
     }
 
@@ -1099,10 +1060,6 @@ public sealed class FixedWidthReaderBuilder
         return FixedWidthFactory.ReadFromPipeReaderAsync(reader, GetOptions(), cancellationToken);
     }
 
-    #endregion
-
-    #region Private Helpers
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void InvalidateCache()
     {
@@ -1126,8 +1083,6 @@ public sealed class FixedWidthReaderBuilder
             MaxInputSize = maxInputSize
         };
     }
-
-    #endregion
 }
 
 /// <summary>

@@ -676,7 +676,7 @@ public readonly struct CsvPipeColumn
     /// Converts the column value to a string, stripping quote characters.
     /// </summary>
     public string ToUnquotedString()
-        => CsvPipeColumnText.Decode(Span, quote, escape, enableQuotedFields);
+        => new CsvPipeColumnText(quote, escape, enableQuotedFields).Decode(Span);
 
     /// <summary>
     /// Converts the column value to decoded, unquoted text.

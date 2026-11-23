@@ -13,8 +13,6 @@ namespace HeroParser.Tests;
 [Collection("AsyncWriterTests")]
 public class WriterTests
 {
-    #region Basic Writing
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void WriteRow_SimpleStrings_WritesCorrectly()
@@ -83,10 +81,6 @@ public class WriterTests
 
         Assert.Equal("a,,c\r\n", sw.ToString());
     }
-
-    #endregion
-
-    #region Quoting Behavior
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -182,10 +176,6 @@ public class WriterTests
         Assert.Equal("normal,\"with,comma\",also normal\r\n", sw.ToString());
     }
 
-    #endregion
-
-    #region Custom Delimiters
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CustomDelimiter_Tab_WritesCorrectly()
@@ -228,10 +218,6 @@ public class WriterTests
         Assert.Equal("a|b|c\r\n", sw.ToString());
     }
 
-    #endregion
-
-    #region Custom Newlines
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CustomNewLine_LF_WritesCorrectly()
@@ -245,10 +231,6 @@ public class WriterTests
 
         Assert.Equal("a,b,c\n", sw.ToString());
     }
-
-    #endregion
-
-    #region Type Formatting
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -323,10 +305,6 @@ public class WriterTests
         Assert.Equal("1234,56\r\n", sw.ToString());
     }
 
-    #endregion
-
-    #region Record Writing
-
     [GenerateBinder]
     internal class TestPerson
     {
@@ -396,10 +374,6 @@ public class WriterTests
         Assert.Contains("Years Old", csv);
     }
 
-    #endregion
-
-    #region Low-Level Writer API
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CreateWriter_ManualWriting_Works()
@@ -414,10 +388,6 @@ public class WriterTests
         Assert.Contains("Name,Age", sw.ToString());
         Assert.Contains("Alice,30", sw.ToString());
     }
-
-    #endregion
-
-    #region Stream and File Writing
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -460,10 +430,6 @@ public class WriterTests
             File.Delete(tempPath);
         }
     }
-
-    #endregion
-
-    #region Round-Trip Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -758,10 +724,6 @@ public class WriterTests
         Assert.Equal("LA", reader.Current[2].UnquoteToString());
     }
 
-    #endregion
-
-    #region Edge Cases
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void WriteRow_EmptyRow_WritesNewline()
@@ -843,10 +805,6 @@ public class WriterTests
         Assert.Single(lines);
     }
 
-    #endregion
-
-    #region Disposal and Resource Management
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Dispose_FlushesBuffer()
@@ -886,10 +844,6 @@ public class WriterTests
         Assert.Throws<ObjectDisposedException>(() => writer.WriteRow("test"));
     }
 
-    #endregion
-
-    #region Options Validation
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void InvalidDelimiter_ThrowsException()
@@ -909,10 +863,6 @@ public class WriterTests
         using var sw = new StringWriter();
         Assert.Throws<CsvException>(() => new CsvStreamWriter(sw, options));
     }
-
-    #endregion
-
-    #region WriteFormat Tests
 
     [GenerateBinder]
     internal class WriteFormatRecord
@@ -1041,7 +991,5 @@ public class WriterTests
         [Format(WriteFormat = "N2")]
         public decimal Amount { get; set; }
     }
-
-    #endregion
 }
 

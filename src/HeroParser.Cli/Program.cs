@@ -17,9 +17,14 @@ using SysConsole = System.Console;
 
 namespace HeroParser.Cli;
 
-internal static class Program
+internal sealed class Program
 {
-    public static async Task<int> Main(string[] args)
+    private readonly CliConsole console = new();
+    private readonly CliCommands commands = new();
+
+    public static Task<int> Main(string[] args) => new Program().RunAsync(args);
+
+    private async Task<int> RunAsync(string[] args)
     {
         if (args.Length == 0)
         {
@@ -42,7 +47,7 @@ internal static class Program
         {
             if (SysConsole.IsOutputRedirected || SysConsole.IsInputRedirected)
             {
-                return await CliCommands.ProfileAsync(args[0], null, null) ? 0 : 1;
+                return await commands.ProfileAsync(args[0], null, null) ? 0 : 1;
             }
             await new InteractiveWizard(AnsiConsole.Current).RunAsync(args[0]);
             return 0;
@@ -79,7 +84,7 @@ internal static class Program
                 }
                 else
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
             }
@@ -88,7 +93,7 @@ internal static class Program
                 if (i + 1 < args.Length) sheet = args[++i];
                 else
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
             }
@@ -97,7 +102,7 @@ internal static class Program
                 if (i + 1 < args.Length) shape = args[++i];
                 else
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
             }
@@ -106,7 +111,7 @@ internal static class Program
                 if (i + 1 < args.Length) provider = args[++i];
                 else
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
             }
@@ -115,7 +120,7 @@ internal static class Program
                 if (i + 1 < args.Length) key = args[++i];
                 else
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
             }
@@ -124,7 +129,7 @@ internal static class Program
                 if (i + 1 < args.Length) model = args[++i];
                 else
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
             }
@@ -133,7 +138,7 @@ internal static class Program
                 if (i + 1 < args.Length) output = args[++i];
                 else
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
             }
@@ -144,13 +149,13 @@ internal static class Program
                     if (int.TryParse(args[++i], out var bs) && bs > 0) batchSize = bs;
                     else
                     {
-                        ConsoleUtils.Error("--batch-size must be a positive integer");
+                        console.Error("--batch-size must be a positive integer");
                         return 1;
                     }
                 }
                 else
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
             }
@@ -158,7 +163,7 @@ internal static class Program
             {
                 if (i + 1 >= args.Length || args[i + 1].StartsWith('-'))
                 {
-                    ConsoleUtils.Error("Missing value for option: " + arg);
+                    console.Error("Missing value for option: " + arg);
                     return 1;
                 }
                 if (arg == "--plan") planPath = args[++i];
@@ -169,14 +174,14 @@ internal static class Program
             {
                 if (command != "inspect")
                 {
-                    ConsoleUtils.Error("--sample-rows is only supported by inspect");
+                    console.Error("--sample-rows is only supported by inspect");
                     return 1;
                 }
                 if (i + 1 < args.Length && int.TryParse(args[++i], out var count) && count is > 0 and <= 10000)
                     sampleRows = count;
                 else
                 {
-                    ConsoleUtils.Error("--sample-rows must be an integer from 1 to 10000");
+                    console.Error("--sample-rows must be an integer from 1 to 10000");
                     return 1;
                 }
             }
@@ -191,7 +196,7 @@ internal static class Program
             }
             else if (arg.StartsWith("-"))
             {
-                ConsoleUtils.Error($"Unknown option: {arg}");
+                console.Error($"Unknown option: {arg}");
                 return 1;
             }
             else
@@ -205,22 +210,22 @@ internal static class Program
         {
             if (savePlanPath is not null && command != "inspect")
             {
-                ConsoleUtils.Error("--save-plan is only supported by inspect");
+                console.Error("--save-plan is only supported by inspect");
                 return 1;
             }
             if (planPath is not null && command is not ("validate" or "convert" or "schema"))
             {
-                ConsoleUtils.Error("--plan is only supported by validate, convert, and schema");
+                console.Error("--plan is only supported by validate, convert, and schema");
                 return 1;
             }
             if (reportPath is not null && command != "validate")
             {
-                ConsoleUtils.Error("--report is only supported by validate");
+                console.Error("--report is only supported by validate");
                 return 1;
             }
             if (planPath is not null && delimiter.HasValue)
             {
-                ConsoleUtils.Error("--plan and --delimiter cannot be combined; edit the plan delimiter instead");
+                console.Error("--plan and --delimiter cannot be combined; edit the plan delimiter instead");
                 return 1;
             }
             CsvImportPlan? plan = planPath is null ? null : CsvImportPlan.Load(planPath);
@@ -231,118 +236,118 @@ internal static class Program
                 case "inspect":
                     if (positionalArgs.Count != 1)
                     {
-                        ConsoleUtils.Error("Usage: heroparser inspect <file> [--delimiter <char>] [--sample-rows <1-10000>] [--save-plan <file>]");
+                        console.Error("Usage: heroparser inspect <file> [--delimiter <char>] [--sample-rows <1-10000>] [--save-plan <file>]");
                         return 1;
                     }
-                    if (!await CliCommands.InspectAsync(positionalArgs[0], delimiter, sampleRows, savePlanPath)) return 1;
+                    if (!await commands.InspectAsync(positionalArgs[0], delimiter, sampleRows, savePlanPath)) return 1;
                     break;
 
                 case "detect":
                     if (positionalArgs.Count < 1)
                     {
-                        ConsoleUtils.Error("Usage: heroparser detect <file>");
+                        console.Error("Usage: heroparser detect <file>");
                         return 1;
                     }
-                    if (!CliCommands.Detect(positionalArgs[0])) return 1;
+                    if (!commands.Detect(positionalArgs[0])) return 1;
                     break;
 
                 case "validate":
                     if (positionalArgs.Count < 1)
                     {
-                        ConsoleUtils.Error("Usage: heroparser validate <file> [options]");
+                        console.Error("Usage: heroparser validate <file> [options]");
                         return 1;
                     }
-                    if (!await CliCommands.ValidateAsync(positionalArgs[0], delimiter, plan, reportPath)) return 1;
+                    if (!await commands.ValidateAsync(positionalArgs[0], delimiter, plan, reportPath)) return 1;
                     break;
 
                 case "profile":
                     if (positionalArgs.Count < 1)
                     {
-                        ConsoleUtils.Error("Usage: heroparser profile <file> [options]");
+                        console.Error("Usage: heroparser profile <file> [options]");
                         return 1;
                     }
-                    if (!await CliCommands.ProfileAsync(positionalArgs[0], delimiter, sheet)) return 1;
+                    if (!await commands.ProfileAsync(positionalArgs[0], delimiter, sheet)) return 1;
                     break;
 
                 case "convert":
                     if (positionalArgs.Count < 1)
                     {
-                        ConsoleUtils.Error("Usage: heroparser convert <input> [output] [options]");
+                        console.Error("Usage: heroparser convert <input> [output] [options]");
                         return 1;
                     }
                     string outPath = positionalArgs.Count > 1 ? positionalArgs[1] : output!;
                     if (string.IsNullOrWhiteSpace(outPath))
                     {
-                        ConsoleUtils.Error("Output file path is required. Specify it as second argument or use --output flag.");
+                        console.Error("Output file path is required. Specify it as second argument or use --output flag.");
                         return 1;
                     }
                     if (planPath is not null && PathsAlias(outPath, planPath))
                     {
-                        ConsoleUtils.Error("Conversion output path must differ from the import plan path.");
+                        console.Error("Conversion output path must differ from the import plan path.");
                         return 1;
                     }
-                    if (!CliCommands.Convert(positionalArgs[0], outPath, delimiter, shape, sheet, plan)) return 1;
+                    if (!commands.Convert(positionalArgs[0], outPath, delimiter, shape, sheet, plan)) return 1;
                     break;
 
                 case "repair":
                     if (positionalArgs.Count < 1)
                     {
-                        ConsoleUtils.Error("Usage: heroparser repair <input> [output]");
+                        console.Error("Usage: heroparser repair <input> [output]");
                         return 1;
                     }
                     string repairOut = positionalArgs.Count > 1 ? positionalArgs[1] : output!;
                     if (string.IsNullOrWhiteSpace(repairOut))
                     {
-                        ConsoleUtils.Error("Output file path is required. Specify it as second argument or use --output flag.");
+                        console.Error("Output file path is required. Specify it as second argument or use --output flag.");
                         return 1;
                     }
-                    if (!CliCommands.Repair(positionalArgs[0], repairOut)) return 1;
+                    if (!commands.Repair(positionalArgs[0], repairOut)) return 1;
                     break;
 
                 case "schema":
                     if (positionalArgs.Count < 1)
                     {
-                        ConsoleUtils.Error("Usage: heroparser schema <file> [options]");
+                        console.Error("Usage: heroparser schema <file> [options]");
                         return 1;
                     }
-                    if (!await CliCommands.SchemaAsync(positionalArgs[0], delimiter, useAi, provider, key, model, plan: plan)) return 1;
+                    if (!await commands.SchemaAsync(positionalArgs[0], delimiter, useAi, provider, key, model, plan: plan)) return 1;
                     break;
 
                 case "query":
                 case "ask":
                     if (positionalArgs.Count < 2)
                     {
-                        ConsoleUtils.Error("Usage: heroparser query <file> <prompt> [options]");
+                        console.Error("Usage: heroparser query <file> <prompt> [options]");
                         return 1;
                     }
                     string queryPrompt = string.Join(" ", positionalArgs.Skip(1));
-                    if (!await CliCommands.QueryAsync(positionalArgs[0], delimiter, sheet, queryPrompt, provider, key, model)) return 1;
+                    if (!await commands.QueryAsync(positionalArgs[0], delimiter, sheet, queryPrompt, provider, key, model)) return 1;
                     break;
 
                 case "translate":
                     if (positionalArgs.Count < 2)
                     {
-                        ConsoleUtils.Error("Usage: heroparser translate <file> <prompt> --output <output_file> [options]");
+                        console.Error("Usage: heroparser translate <file> <prompt> --output <output_file> [options]");
                         return 1;
                     }
                     if (string.IsNullOrWhiteSpace(output))
                     {
-                        ConsoleUtils.Error("Output file path is required for translate. Please specify via --output.");
+                        console.Error("Output file path is required for translate. Please specify via --output.");
                         return 1;
                     }
                     string transformPrompt = string.Join(" ", positionalArgs.Skip(1));
-                    if (!await CliCommands.TranslateAsync(positionalArgs[0], delimiter, sheet, transformPrompt, output, batchSize, provider, key, model)) return 1;
+                    if (!await commands.TranslateAsync(positionalArgs[0], delimiter, sheet, transformPrompt, output, batchSize, provider, key, model)) return 1;
                     break;
 
                 default:
-                    ConsoleUtils.Error($"Unknown command: {command}");
+                    console.Error($"Unknown command: {command}");
                     PrintHelp();
                     return 1;
             }
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Command execution failed: {ex.Message}");
+            console.Error($"Command execution failed: {ex.Message}");
             return 1;
         }
 
@@ -398,7 +403,7 @@ internal static class Program
         return false;
     }
 
-    private static void PrintHelp()
+    private void PrintHelp()
     {
         SysConsole.WriteLine("\n========================================================");
         SysConsole.WriteLine("    HeroParser CLI — High-Performance & AI-Native       ");
@@ -435,7 +440,7 @@ internal static class Program
         SysConsole.WriteLine("========================================================\n");
     }
 
-    private static void PrintCommandHelp(string command)
+    private void PrintCommandHelp(string command)
     {
         SysConsole.WriteLine($"\nHelp for command: {command}");
         SysConsole.WriteLine("=========================");
@@ -483,7 +488,7 @@ internal static class Program
                 SysConsole.WriteLine("Usage: heroparser translate <input> \"Translate the Name field to French\" --output <output>");
                 break;
             default:
-                ConsoleUtils.Error($"Unknown command: {command}");
+                console.Error($"Unknown command: {command}");
                 break;
         }
         SysConsole.WriteLine();

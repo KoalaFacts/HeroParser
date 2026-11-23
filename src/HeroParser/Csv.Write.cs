@@ -1,3 +1,4 @@
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Writing;
 using System.Text;
 
@@ -63,9 +64,17 @@ public static partial class Csv
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
 
-        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        var textWriter = new StreamWriter(stream, encoding);
-        return new CsvStreamWriter(textWriter, options, leaveOpen: false);
+        var stream = new CompressedFile(path).OpenWrite();
+        try
+        {
+            var textWriter = new StreamWriter(stream, encoding);
+            return new CsvStreamWriter(textWriter, options, leaveOpen: false);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -244,7 +253,7 @@ public static partial class Csv
 
         options.Validate();
 
-        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var stream = new CompressedFile(path).OpenWrite();
         using var textWriter = new StreamWriter(stream, encoding);
         using var writer = new CsvStreamWriter(textWriter, options);
         var recordWriter = CsvRecordWriterFactory.GetWriter<T>(options);
@@ -274,11 +283,7 @@ public static partial class Csv
 
         options.Validate();
 
-        var stream = new FileStream(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
+        var stream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
@@ -312,11 +317,7 @@ public static partial class Csv
 
         options.Validate();
 
-        var stream = new FileStream(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
+        var stream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);

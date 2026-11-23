@@ -40,8 +40,8 @@ public class DynamicProfilerTests
         var expected = new DynamicColumnStats();
         var actual = new DynamicColumnStats();
 
-        DynamicProfiler.ObserveCell(expected, value);
-        DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+        expected.Observe(value);
+        actual.ObserveUtf8(Encoding.UTF8.GetBytes(value));
 
         AssertSameStats(expected, actual);
     }
@@ -58,8 +58,8 @@ public class DynamicProfilerTests
             .Concat(Enumerable.Repeat("North", 30))
             .Append(new string('x', 300)))
         {
-            DynamicProfiler.ObserveCell(expected, value);
-            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+            expected.Observe(value);
+            actual.ObserveUtf8(Encoding.UTF8.GetBytes(value));
         }
 
         AssertSameStats(expected, actual);
@@ -75,8 +75,8 @@ public class DynamicProfilerTests
         for (int i = 0; i < 320; i++)
         {
             string value = values[i % values.Length];
-            DynamicProfiler.ObserveCell(expected, value);
-            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+            expected.Observe(value);
+            actual.ObserveUtf8(Encoding.UTF8.GetBytes(value));
         }
 
         Assert.Equal(16, actual.ValueCounts.Count);
@@ -95,8 +95,8 @@ public class DynamicProfilerTests
         for (int i = 0; i < 340; i++)
         {
             string value = variants[i % variants.Length];
-            DynamicProfiler.ObserveCell(expected, value);
-            DynamicProfiler.ObserveCellUtf8(actual, Encoding.UTF8.GetBytes(value));
+            expected.Observe(value);
+            actual.ObserveUtf8(Encoding.UTF8.GetBytes(value));
         }
 
         Assert.Single(actual.ValueCounts);
@@ -127,8 +127,23 @@ public class DynamicProfilerTests
 
     private static string TypeOfColumn(params string[] values)
     {
-        var stats = DynamicProfiler.Analyze(["Col"], [.. values.Select(v => new[] { v })]);
-        return DynamicProfiler.InferTypeName(stats[0]);
+        var profiler = new DynamicProfiler(["Col"]);
+        profiler.ObserveRows([.. values.Select(v => new[] { v })]);
+        return profiler.Columns[0].InferTypeName();
+    }
+
+    private static List<DynamicColumnStats> Analyze(string[] headers, IEnumerable<string[]> rows)
+    {
+        var profiler = new DynamicProfiler(headers);
+        profiler.ObserveRows(rows);
+        return profiler.Columns;
+    }
+
+    private static string GenerateContextCard(string datasetName, string[] headers, List<string[]> rows)
+    {
+        var profiler = new DynamicProfiler(headers);
+        profiler.ObserveRows(rows);
+        return profiler.GenerateContextCard(datasetName);
     }
 
     [Theory]
@@ -162,7 +177,7 @@ public class DynamicProfilerTests
     [Fact]
     public void Analyze_CountsNullsAndValues()
     {
-        var stats = DynamicProfiler.Analyze(["A", "B"], [["1", "x"], ["", "y"], ["3", "x"]]);
+        var stats = Analyze(["A", "B"], [["1", "x"], ["", "y"], ["3", "x"]]);
 
         Assert.Equal(2, stats[0].NonNullCount);
         Assert.Equal(1, stats[0].NullCount);
@@ -176,7 +191,7 @@ public class DynamicProfilerTests
     public void Analyze_ShortRow_CountsTheMissingColumnsAsNull()
     {
         // A ragged row must not throw or shift values into the wrong column.
-        var stats = DynamicProfiler.Analyze(["A", "B", "C"], [["1"]]);
+        var stats = Analyze(["A", "B", "C"], [["1"]]);
 
         Assert.Equal(1, stats[0].NonNullCount);
         Assert.Equal(1, stats[1].NullCount);
@@ -186,7 +201,7 @@ public class DynamicProfilerTests
     [Fact]
     public void Analyze_BooleanColumn_SplitsTrueAndFalse()
     {
-        var stats = DynamicProfiler.Analyze(["Flag"], [["true"], ["false"], ["true"]]);
+        var stats = Analyze(["Flag"], [["true"], ["false"], ["true"]]);
         Assert.Equal(2, stats[0].TrueCount);
         Assert.Equal(1, stats[0].FalseCount);
     }
@@ -196,7 +211,7 @@ public class DynamicProfilerTests
     {
         // Unbounded tracking would let a high-cardinality column exhaust memory.
         var rows = Enumerable.Range(0, 250).Select(i => new[] { $"v{i}" }).ToList();
-        var stats = DynamicProfiler.Analyze(["Col"], rows);
+        var stats = Analyze(["Col"], rows);
 
         Assert.Equal(100, stats[0].ValueCounts.Count);
         Assert.Equal(250, stats[0].NonNullCount);
@@ -208,7 +223,7 @@ public class DynamicProfilerTests
     {
         var rows = Enumerable.Range(0, 150).Select(i => new[] { $"v{i}" }).ToList();
         rows.Add(["v0"]);
-        var stats = DynamicProfiler.Analyze(["Col"], rows);
+        var stats = Analyze(["Col"], rows);
 
         Assert.Equal(2, stats[0].ValueCounts["v0"]);
     }
@@ -216,7 +231,7 @@ public class DynamicProfilerTests
     [Fact]
     public void Analyze_DoesNotRetainOversizedCategoryValues()
     {
-        var stats = DynamicProfiler.Analyze(["Col"], [[new string('x', 1000)]]);
+        var stats = Analyze(["Col"], [[new string('x', 1000)]]);
 
         Assert.Empty(stats[0].ValueCounts);
         Assert.True(stats[0].CategoriesTruncated);
@@ -225,7 +240,7 @@ public class DynamicProfilerTests
     [Fact]
     public void GenerateContextCard_DescribesNumericColumns()
     {
-        string card = DynamicProfiler.GenerateContextCard("sales.csv", ["Amount"], [["10"], ["20"], ["30"]]);
+        string card = GenerateContextCard("sales.csv", ["Amount"], [["10"], ["20"], ["30"]]);
 
         Assert.Contains("sales.csv", card, StringComparison.Ordinal);
         Assert.Contains("3 rows", card, StringComparison.Ordinal);
@@ -236,14 +251,14 @@ public class DynamicProfilerTests
     [Fact]
     public void GenerateContextCard_DescribesBooleanColumns()
     {
-        string card = DynamicProfiler.GenerateContextCard("f.csv", ["Flag"], [["true"], ["false"]]);
+        string card = GenerateContextCard("f.csv", ["Flag"], [["true"], ["false"]]);
         Assert.Contains("Boolean. True: 1 (50.0%), False: 1 (50.0%)", card, StringComparison.Ordinal);
     }
 
     [Fact]
     public void GenerateContextCard_ListsTheTopCategories()
     {
-        string card = DynamicProfiler.GenerateContextCard(
+        string card = GenerateContextCard(
             "f.csv", ["City"], [["Oslo"], ["Oslo"], ["Bergen"], ["Tromso"], ["Alta"]]);
 
         Assert.Contains("4 distinct categories", card, StringComparison.Ordinal);
@@ -254,14 +269,14 @@ public class DynamicProfilerTests
     [Fact]
     public void GenerateContextCard_ReportsNullShare()
     {
-        string card = DynamicProfiler.GenerateContextCard("f.csv", ["A"], [["1"], [""], ["3"], ["4"]]);
+        string card = GenerateContextCard("f.csv", ["A"], [["1"], [""], ["3"], ["4"]]);
         Assert.Contains("25.0% Null", card, StringComparison.Ordinal);
     }
 
     [Fact]
     public void GenerateContextCard_EmptyDataset_SaysSo()
     {
-        string card = DynamicProfiler.GenerateContextCard("empty.csv", ["A", "B"], []);
+        string card = GenerateContextCard("empty.csv", ["A", "B"], []);
 
         Assert.Contains("0 rows", card, StringComparison.Ordinal);
         Assert.Contains("No data available.", card, StringComparison.Ordinal);
@@ -271,7 +286,7 @@ public class DynamicProfilerTests
     public void GenerateContextCard_NumericColumnWithNoParsedValues_ReportsZeroRange()
     {
         // Min/Max start at their sentinel extremes; without values the card must not print those.
-        string card = DynamicProfiler.GenerateContextCard("f.csv", ["A"], [["x"]]);
+        string card = GenerateContextCard("f.csv", ["A"], [["x"]]);
         Assert.DoesNotContain("E+308", card, StringComparison.Ordinal);
     }
 }

@@ -176,7 +176,7 @@ internal sealed partial class CliCommands
                 return false;
             }
             var result = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength)
-                ? Csv.Validate(File.ReadAllText(path), options)
+                ? Csv.Validate(ReadAllTextDecompressed(path), options)
                 : await Csv.ValidateFileAsync(path, options).ConfigureAwait(false);
 
             if (reportPath is not null)
@@ -416,7 +416,7 @@ internal sealed partial class CliCommands
             }
             else if (IsCsvInput(inputPath) && outExt == ".txt") // CSV -> FixedWidth
             {
-                var csvData = File.ReadAllText(inputPath);
+                var csvData = ReadAllTextDecompressed(inputPath);
                 var schema = Csv.InferSchema(csvData, new CsvSchemaInferenceOptions { Delimiter = inputDelimiter });
 
                 // Map columns to widths matching their observed max lengths
@@ -447,7 +447,7 @@ internal sealed partial class CliCommands
                 var allRows = Excel.Read().WithoutHeader().FromSheet(sheet ?? "Sheet1").FromFile(inputPath);
                 if (allRows.Count == 0)
                 {
-                    using (var emptyStream = OpenWriteStream(outputPath)) { }
+                    using (OpenWriteStream(outputPath)) { }
                     console.Warning("Excel sheet was empty.");
                     return true;
                 }
@@ -1322,6 +1322,13 @@ Instructions:
             fileStream.Dispose();
             throw;
         }
+    }
+
+    private static string ReadAllTextDecompressed(string path)
+    {
+        using var stream = OpenReadStream(path);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
     }
 
     private static (byte[] Bytes, int Length) ReadCsvSample(string path)

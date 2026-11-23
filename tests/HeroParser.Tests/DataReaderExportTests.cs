@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using System.Numerics;
 using System.Text;
 using HeroParser.Conversion;
 using HeroParser.Excels.Core;
@@ -7,6 +8,7 @@ using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Writing;
 using HeroParser.Htbs;
 using HeroParser.Htbs.Records;
+using HeroParser.JsonLines;
 using HeroParser.JsonLines.Writing;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Writing;
@@ -400,5 +402,129 @@ public class DataReaderExportTests
         {
             Directory.Delete(dir, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task Jsonl_WriteFromDataReader_RejectsNonUtf8Encoding()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var table = CreateSampleTable();
+        var unicodeOptions = new JsonlWriteOptions { Encoding = Encoding.Unicode };
+
+        using (var r1 = table.CreateDataReader())
+        await using (var s1 = new MemoryStream())
+        {
+            var ex = Assert.Throws<JsonlException>(() => Jsonl.WriteFromDataReader(r1, s1, unicodeOptions));
+            Assert.Equal(JsonlErrorCode.InvalidOptions, ex.ErrorCode);
+        }
+
+        using (var r2 = table.CreateDataReader())
+        {
+            var ex = Assert.Throws<JsonlException>(() => Jsonl.WriteFromDataReaderToText(r2, unicodeOptions));
+            Assert.Equal(JsonlErrorCode.InvalidOptions, ex.ErrorCode);
+        }
+
+        await using (var r3 = table.CreateDataReader())
+        await using (var s3 = new MemoryStream())
+        {
+            var ex = await Assert.ThrowsAsync<JsonlException>(
+                () => Jsonl.WriteFromDataReaderAsync(r3, s3, unicodeOptions, cancellationToken: ct).AsTask());
+            Assert.Equal(JsonlErrorCode.InvalidOptions, ex.ErrorCode);
+        }
+
+        using (var r4 = table.CreateDataReader())
+        {
+            string utf8Text = Jsonl.WriteFromDataReaderToText(r4, new JsonlWriteOptions { Encoding = Encoding.UTF8 });
+            Assert.Contains("\"Name\":\"Alice\"", utf8Text);
+        }
+
+        using var r5 = table.CreateDataReader();
+        string utf8NoBomText = Jsonl.WriteFromDataReaderToText(
+            r5,
+            new JsonlWriteOptions { Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false) });
+        Assert.Contains("\"Name\":\"Alice\"", utf8NoBomText);
+    }
+
+    [Fact]
+    public async Task Htb_WriteFromDataReaderAsync_DoesNotPerformSynchronousStreamWrites()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var table = new DataTable();
+        table.Columns.Add("Id", typeof(int));
+        table.Columns.Add("LongText", typeof(string));
+        table.Columns.Add("Payload", typeof(byte[]));
+        table.Columns.Add("Vec", typeof(float[]));
+        table.Columns.Add("Link", typeof(Uri));
+        table.Columns.Add("Big", typeof(BigInteger));
+
+        string largeText = new('x', 20_000);
+        byte[] largeBytes = [.. Enumerable.Range(0, 20_000).Select(static i => (byte)(i % 251))];
+        float[] largeVec = [.. Enumerable.Range(0, 5_200).Select(static i => i * 0.25f)];
+        var uri = new Uri("https://example.com/heroparser/v2.10");
+        BigInteger bigInt = BigInteger.Parse("9876543210987654321098765432109876543210", CultureInfo.InvariantCulture);
+
+        table.Rows.Add(1, largeText, largeBytes, largeVec, uri, bigInt);
+        for (int i = 2; i <= 500; i++)
+        {
+            table.Rows.Add(i, $"row-payload-{i:D4}-padding-to-exceed-16kb-buffer", new byte[] { (byte)(i & 0xFF) }, new float[] { i }, uri, bigInt + i);
+        }
+
+        using var backingStream = new MemoryStream();
+        await using (var nonSyncStream = new NonSyncWriteStream(backingStream))
+        await using (var sourceReader = table.CreateDataReader())
+        {
+            await HeroParser.Htb.WriteFromDataReaderAsync(sourceReader, nonSyncStream, leaveOpen: false, cancellationToken: ct);
+        }
+
+        backingStream.Position = 0;
+        using var dr = HeroParser.Htb.CreateDataReader(backingStream, leaveOpen: true);
+        Assert.True(await dr.ReadAsync(ct));
+        Assert.Equal(1, dr.GetInt32(0));
+        Assert.Equal(largeText, dr.GetString(1));
+        Assert.Equal(largeBytes, Assert.IsType<byte[]>(dr.GetValue(2)));
+        Assert.Equal(largeVec, Assert.IsType<float[]>(dr.GetValue(3)));
+        Assert.Equal(uri, Assert.IsType<Uri>(dr.GetValue(4)));
+        Assert.Equal(bigInt, Assert.IsType<BigInteger>(dr.GetValue(5)));
+
+        int rowCount = 1;
+        while (await dr.ReadAsync(ct))
+        {
+            rowCount++;
+        }
+        Assert.Equal(500, rowCount);
+    }
+
+    private sealed class NonSyncWriteStream(MemoryStream inner) : Stream
+    {
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => inner.Length;
+        public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
+
+        public override void Flush()
+            => throw new InvalidOperationException("Synchronous Flush is disallowed.");
+
+        public override Task FlushAsync(CancellationToken cancellationToken)
+            => inner.FlushAsync(cancellationToken);
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count)
+            => throw new InvalidOperationException("Synchronous Write is disallowed.");
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+            => throw new InvalidOperationException("Synchronous Write is disallowed.");
+
+        public override void WriteByte(byte value)
+            => throw new InvalidOperationException("Synchronous WriteByte is disallowed.");
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => inner.WriteAsync(buffer, offset, count, cancellationToken);
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            => inner.WriteAsync(buffer, cancellationToken);
     }
 }

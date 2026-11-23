@@ -206,34 +206,7 @@ public static partial class Excel
         {
             int colIndex = i + 1;
             DataReaderColumnKind kind = plan[i];
-            if (kind == DataReaderColumnKind.String)
-            {
-                object? raw = reader.GetValue(i);
-                if (raw is null or DBNull)
-                {
-                    if (string.IsNullOrEmpty(options.NullValue))
-                        sheetWriter.WriteCellEmpty(colIndex);
-                    else
-                        sheetWriter.WriteCellString(colIndex, options.NullValue);
-                }
-                else if (raw is string str)
-                {
-                    sheetWriter.WriteCellString(colIndex, str);
-                }
-                else
-                {
-                    WriteExcelCellValue(sheetWriter, colIndex, raw, options);
-                }
-                continue;
-            }
-
-            if (kind == DataReaderColumnKind.Object)
-            {
-                WriteExcelCellValue(sheetWriter, colIndex, reader.GetValue(i), options);
-                continue;
-            }
-
-            if (reader.IsDBNull(i))
+            if (kind is not (DataReaderColumnKind.String or DataReaderColumnKind.Object) && reader.IsDBNull(i))
             {
                 if (string.IsNullOrEmpty(options.NullValue))
                     sheetWriter.WriteCellEmpty(colIndex);
@@ -244,6 +217,29 @@ public static partial class Excel
 
             switch (kind)
             {
+                case DataReaderColumnKind.String:
+                    {
+                        object? raw = reader.GetValue(i);
+                        if (raw is null or DBNull)
+                        {
+                            if (string.IsNullOrEmpty(options.NullValue))
+                                sheetWriter.WriteCellEmpty(colIndex);
+                            else
+                                sheetWriter.WriteCellString(colIndex, options.NullValue);
+                        }
+                        else if (raw is string str)
+                        {
+                            sheetWriter.WriteCellString(colIndex, str);
+                        }
+                        else
+                        {
+                            WriteExcelCellValue(sheetWriter, colIndex, raw, options);
+                        }
+                    }
+                    break;
+                case DataReaderColumnKind.Object:
+                    WriteExcelCellValue(sheetWriter, colIndex, reader.GetValue(i), options);
+                    break;
                 case DataReaderColumnKind.Boolean:
                     sheetWriter.WriteCellBoolean(colIndex, reader.GetBoolean(i));
                     break;
@@ -317,8 +313,6 @@ public static partial class Excel
                         sheetWriter.WriteCellString(colIndex, chBuf);
                     }
                     break;
-                case DataReaderColumnKind.String:
-                case DataReaderColumnKind.Object:
                 default:
                     break;
             }

@@ -187,26 +187,7 @@ public static partial class Csv
             for (int i = 0; i < fieldCount; i++)
             {
                 DataReaderColumnKind kind = plan[i];
-                if (kind == DataReaderColumnKind.String)
-                {
-                    object? raw = reader.GetValue(i);
-                    if (raw is null or DBNull)
-                        csvWriter.WriteField(nullValue);
-                    else if (raw is string str)
-                        csvWriter.WriteField(str);
-                    else
-                        csvWriter.WriteFormattedField(raw);
-                    continue;
-                }
-
-                if (kind == DataReaderColumnKind.Object)
-                {
-                    object? raw = reader.GetValue(i);
-                    csvWriter.WriteFormattedField(raw is DBNull ? null : raw);
-                    continue;
-                }
-
-                if (reader.IsDBNull(i))
+                if (kind is not (DataReaderColumnKind.String or DataReaderColumnKind.Object) && reader.IsDBNull(i))
                 {
                     csvWriter.WriteField(nullValue);
                     continue;
@@ -214,6 +195,23 @@ public static partial class Csv
 
                 switch (kind)
                 {
+                    case DataReaderColumnKind.String:
+                        {
+                            object? raw = reader.GetValue(i);
+                            if (raw is null or DBNull)
+                                csvWriter.WriteField(nullValue);
+                            else if (raw is string str)
+                                csvWriter.WriteField(str);
+                            else
+                                csvWriter.WriteFormattedField(raw);
+                        }
+                        break;
+                    case DataReaderColumnKind.Object:
+                        {
+                            object? raw = reader.GetValue(i);
+                            csvWriter.WriteFormattedField(raw is DBNull ? null : raw);
+                        }
+                        break;
                     case DataReaderColumnKind.Int32:
                         csvWriter.WriteField(reader.GetInt32(i), numberFormat);
                         break;
@@ -247,8 +245,6 @@ public static partial class Csv
                     case DataReaderColumnKind.Char:
                         csvWriter.WriteField(reader.GetChar(i));
                         break;
-                    case DataReaderColumnKind.String:
-                    case DataReaderColumnKind.Object:
                     default:
                         break;
                 }
@@ -288,26 +284,7 @@ public static partial class Csv
             for (int i = 0; i < fieldCount; i++)
             {
                 DataReaderColumnKind kind = plan[i];
-                if (kind == DataReaderColumnKind.String)
-                {
-                    object? raw = reader.GetValue(i);
-                    if (raw is null or DBNull)
-                        await csvWriter.WriteFieldAsync(nullValue, cancellationToken).ConfigureAwait(false);
-                    else if (raw is string str)
-                        await csvWriter.WriteFieldAsync(str, cancellationToken).ConfigureAwait(false);
-                    else
-                        await csvWriter.WriteFormattedFieldAsync(raw, cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                if (kind == DataReaderColumnKind.Object)
-                {
-                    object? raw = reader.GetValue(i);
-                    await csvWriter.WriteFormattedFieldAsync(raw is DBNull ? null : raw, cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                if (reader.IsDBNull(i))
+                if (kind is not (DataReaderColumnKind.String or DataReaderColumnKind.Object) && reader.IsDBNull(i))
                 {
                     await csvWriter.WriteFieldAsync(nullValue, cancellationToken).ConfigureAwait(false);
                     continue;
@@ -315,6 +292,23 @@ public static partial class Csv
 
                 switch (kind)
                 {
+                    case DataReaderColumnKind.String:
+                        {
+                            object? raw = reader.GetValue(i);
+                            if (raw is null or DBNull)
+                                await csvWriter.WriteFieldAsync(nullValue, cancellationToken).ConfigureAwait(false);
+                            else if (raw is string str)
+                                await csvWriter.WriteFieldAsync(str, cancellationToken).ConfigureAwait(false);
+                            else
+                                await csvWriter.WriteFormattedFieldAsync(raw, cancellationToken).ConfigureAwait(false);
+                        }
+                        break;
+                    case DataReaderColumnKind.Object:
+                        {
+                            object? raw = reader.GetValue(i);
+                            await csvWriter.WriteFormattedFieldAsync(raw is DBNull ? null : raw, cancellationToken).ConfigureAwait(false);
+                        }
+                        break;
                     case DataReaderColumnKind.Int32:
                         await csvWriter.WriteFieldAsync(reader.GetInt32(i), numberFormat, cancellationToken).ConfigureAwait(false);
                         break;
@@ -348,8 +342,6 @@ public static partial class Csv
                     case DataReaderColumnKind.Char:
                         await csvWriter.WriteFieldAsync(reader.GetChar(i), cancellationToken).ConfigureAwait(false);
                         break;
-                    case DataReaderColumnKind.String:
-                    case DataReaderColumnKind.Object:
                     default:
                         break;
                 }

@@ -130,7 +130,7 @@ public static partial class Htb
         var writer = new HtbStreamWriter(stream, options, leaveOpen);
         await using (writer.ConfigureAwait(false))
         {
-            await writer.WriteHeaderAsync(resolvedSchema).ConfigureAwait(false);
+            await writer.WriteHeaderAsync(resolvedSchema, cancellationToken).ConfigureAwait(false);
 
             byte[] mask = ArrayPool<byte>.Shared.Rent(maskLen);
             DataReaderColumnPlan plan = default;
@@ -146,21 +146,27 @@ public static partial class Htb
 
                     for (int i = 0; i < colCount; i++)
                     {
-                        if (reader.IsDBNull(i))
+                        if (await reader.IsDBNullAsync(i, cancellationToken).ConfigureAwait(false))
                             mask[i / 8] |= (byte)(1 << (i % 8));
                     }
 
-                    await writer.WriteMaskAsync(mask.AsMemory(0, maskLen)).ConfigureAwait(false);
+                    await writer.WriteMaskAsync(mask.AsMemory(0, maskLen), cancellationToken).ConfigureAwait(false);
                     for (int i = 0; i < colCount; i++)
                     {
                         if ((mask[i / 8] & (1 << (i % 8))) != 0)
                             continue;
 
-                        WritePlannedColumnValue(reader, i, plan[i], writer, resolvedSchema.Columns[i].DataType);
+                        await WritePlannedColumnValueAsync(
+                            reader,
+                            i,
+                            plan[i],
+                            writer,
+                            resolvedSchema.Columns[i].DataType,
+                            cancellationToken).ConfigureAwait(false);
                     }
                 }
 
-                await writer.FlushAsync().ConfigureAwait(false);
+                await writer.FlushInternalAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -330,6 +336,124 @@ public static partial class Htb
                     WriteColumnValue(writer, dataType, val);
                 return;
         }
+    }
+
+    private static async ValueTask WritePlannedColumnValueAsync(
+        IDataRecord reader,
+        int ordinal,
+        DataReaderColumnKind kind,
+        HtbStreamWriter writer,
+        HtbDataType dataType,
+        CancellationToken cancellationToken)
+    {
+        if (dataType == HtbDataType.String && kind == DataReaderColumnKind.String)
+        {
+            await writer.WriteStringAsync(reader.GetString(ordinal), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (!writer.HasBufferSpace(16))
+            await writer.FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+
+        switch (dataType, kind)
+        {
+            case (HtbDataType.Int32, DataReaderColumnKind.Int32):
+                writer.WriteInt32(reader.GetInt32(ordinal));
+                return;
+            case (HtbDataType.Int64, DataReaderColumnKind.Int64):
+                writer.WriteInt64(reader.GetInt64(ordinal));
+                return;
+            case (HtbDataType.Int16, DataReaderColumnKind.Int16):
+                writer.WriteInt16(reader.GetInt16(ordinal));
+                return;
+            case (HtbDataType.Byte, DataReaderColumnKind.Byte):
+                writer.WriteByte(reader.GetByte(ordinal));
+                return;
+            case (HtbDataType.Float, DataReaderColumnKind.Single):
+                writer.WriteFloat(reader.GetFloat(ordinal));
+                return;
+            case (HtbDataType.Double, DataReaderColumnKind.Double):
+                writer.WriteDouble(reader.GetDouble(ordinal));
+                return;
+            case (HtbDataType.Decimal, DataReaderColumnKind.Decimal):
+                writer.WriteDecimal(reader.GetDecimal(ordinal));
+                return;
+            case (HtbDataType.Boolean, DataReaderColumnKind.Boolean):
+                writer.WriteBoolean(reader.GetBoolean(ordinal));
+                return;
+            case (HtbDataType.Char, DataReaderColumnKind.Char):
+                writer.WriteChar(reader.GetChar(ordinal));
+                return;
+            case (HtbDataType.DateTime, DataReaderColumnKind.DateTime):
+                writer.WriteDateTime(reader.GetDateTime(ordinal));
+                return;
+            case (HtbDataType.Guid, DataReaderColumnKind.Guid):
+                writer.WriteGuid(reader.GetGuid(ordinal));
+                return;
+            default:
+                object? val = reader.GetValue(ordinal);
+                if (val is not null and not DBNull)
+                    await WriteColumnValueAsync(writer, dataType, val, cancellationToken).ConfigureAwait(false);
+                return;
+        }
+    }
+
+    private static async ValueTask WriteColumnValueAsync(
+        HtbStreamWriter writer,
+        HtbDataType dataType,
+        object val,
+        CancellationToken cancellationToken)
+    {
+        if (dataType == HtbDataType.ByteArray)
+        {
+            await writer.WriteByteArrayAsync(val is byte[] byteArr
+                ? byteArr
+                : Convert.FromBase64String(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (dataType == HtbDataType.BigInteger)
+        {
+            await writer.WriteBigIntegerAsync(val is BigInteger bi
+                ? bi
+                : BigInteger.Parse(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty, CultureInfo.InvariantCulture), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (dataType == HtbDataType.Uri)
+        {
+            await writer.WriteUriAsync(val is Uri uri
+                ? uri
+                : new Uri(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty, UriKind.RelativeOrAbsolute), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (dataType == HtbDataType.String)
+        {
+            string str = val switch
+            {
+                string s => s,
+                Uri uriVal => uriVal.OriginalString,
+                byte[] raw => Convert.ToBase64String(raw),
+                IFormattable fmt => fmt.ToString(null, CultureInfo.InvariantCulture),
+                _ => val.ToString() ?? string.Empty
+            };
+            await writer.WriteStringAsync(str, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (dataType == HtbDataType.FloatArray)
+        {
+            if (val is float[] arr)
+                await writer.WriteFloatArrayAsync(arr, cancellationToken).ConfigureAwait(false);
+            else
+                throw new HtbException(HtbErrorCode.SerializationError, $"Expected float[] for FloatArray column, got {val.GetType().Name}.");
+            return;
+        }
+
+        if (!writer.HasBufferSpace(16))
+            await writer.FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+        WriteColumnValue(writer, dataType, val);
     }
 
     private static void WriteColumnValue(HtbStreamWriter writer, HtbDataType dataType, object val)

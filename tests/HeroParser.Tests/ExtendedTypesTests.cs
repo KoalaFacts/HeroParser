@@ -1166,7 +1166,10 @@ public class ExtendedTypesTests
         roundHtb.Position = 0;
         var convertedRecords = HeroParser.Htb.Read<HtbExtendedRecord>().FromStream(roundHtb).ToList();
         Assert.Single(convertedRecords);
+        Assert.Equal(sample.OffsetVal, convertedRecords[0].OffsetVal);
         Assert.Equal(sample.DateVal, convertedRecords[0].DateVal);
+        Assert.Equal(sample.TimeVal, convertedRecords[0].TimeVal);
+        Assert.Equal(sample.DurationVal, convertedRecords[0].DurationVal);
         Assert.Equal(sample.ULongVal, convertedRecords[0].ULongVal);
         Assert.Equal(sample.BigIntVal, convertedRecords[0].BigIntVal);
 

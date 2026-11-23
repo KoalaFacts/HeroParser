@@ -127,8 +127,7 @@ public static partial class Jsonl
 
         using var stream = new MemoryStream();
         WriteFromDataReader(reader, stream, options, leaveOpen: true);
-        Encoding encoding = (options ?? JsonlWriteOptions.Default).Encoding ?? Encoding.UTF8;
-        return encoding.GetString(stream.GetBuffer(), 0, (int)stream.Length);
+        return Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
     }
 
     /// <summary>
@@ -252,10 +251,7 @@ public static partial class Jsonl
     }
 
     private static byte[] GetNewlineBytes(JsonlWriteOptions options)
-    {
-        Encoding encoding = options.Encoding ?? new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        return encoding.GetBytes(options.NewLine);
-    }
+        => Encoding.UTF8.GetBytes(options.NewLine);
 
     private static void WriteDataReaderRecord(
         IDataRecord reader,
@@ -273,25 +269,7 @@ public static partial class Jsonl
         {
             writer.WritePropertyName(columnNames[i]);
             DataReaderColumnKind kind = plan[i];
-            if (kind == DataReaderColumnKind.String)
-            {
-                object? raw = reader.GetValue(i);
-                if (raw is null or DBNull)
-                    writer.WriteNullValue();
-                else if (raw is string s)
-                    writer.WriteStringValue(s);
-                else
-                    WriteJsonValue(writer, raw);
-                continue;
-            }
-
-            if (kind == DataReaderColumnKind.Object)
-            {
-                WriteJsonValue(writer, reader.GetValue(i));
-                continue;
-            }
-
-            if (reader.IsDBNull(i))
+            if (kind is not (DataReaderColumnKind.String or DataReaderColumnKind.Object) && reader.IsDBNull(i))
             {
                 writer.WriteNullValue();
                 continue;
@@ -299,6 +277,20 @@ public static partial class Jsonl
 
             switch (kind)
             {
+                case DataReaderColumnKind.String:
+                    {
+                        object? raw = reader.GetValue(i);
+                        if (raw is null or DBNull)
+                            writer.WriteNullValue();
+                        else if (raw is string s)
+                            writer.WriteStringValue(s);
+                        else
+                            WriteJsonValue(writer, raw);
+                    }
+                    break;
+                case DataReaderColumnKind.Object:
+                    WriteJsonValue(writer, reader.GetValue(i));
+                    break;
                 case DataReaderColumnKind.Int32:
                     writer.WriteNumberValue(reader.GetInt32(i));
                     break;
@@ -347,8 +339,6 @@ public static partial class Jsonl
                         writer.WriteStringValue(chars);
                     }
                     break;
-                case DataReaderColumnKind.String:
-                case DataReaderColumnKind.Object:
                 default:
                     break;
             }

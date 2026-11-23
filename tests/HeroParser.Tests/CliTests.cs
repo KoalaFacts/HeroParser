@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.IO.Compression;
+using System.Text;
 using System.Threading.Tasks;
 using Xunit;
 using HeroParser.Cli;
@@ -244,6 +246,45 @@ public sealed class CliTests
             Assert.Equal("Name,Age,Score", lines[0]);
             Assert.Equal("Alice,30,9.5", lines[1]);
             Assert.Equal("Bob,25,8.0", lines[2]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Convert_CompressedCsvToFixedWidth_DecompressesInputCorrectly()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"heroparser-cli-gz-fw-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string gzCsvPath = Path.Combine(dir, "input.csv.gz");
+            string txtOutPath = Path.Combine(dir, "output.txt");
+            string gzTxtOutPath = Path.Combine(dir, "output.txt.gz");
+
+            using (var fs = File.Create(gzCsvPath))
+            using (var gz = new GZipStream(fs, CompressionLevel.Fastest))
+            using (var sw = new StreamWriter(gz, Encoding.UTF8))
+            {
+                sw.Write("Name,Age,City\nAlice,30,Sydney\nBob,25,Melbourne\n");
+            }
+
+            Assert.True(cliCommands.Convert(gzCsvPath, txtOutPath, null, null, null));
+            Assert.True(File.Exists(txtOutPath));
+            string fixedText = File.ReadAllText(txtOutPath);
+            Assert.Contains("Alice", fixedText, StringComparison.Ordinal);
+            Assert.Contains("Sydney", fixedText, StringComparison.Ordinal);
+            Assert.Contains("Melbourne", fixedText, StringComparison.Ordinal);
+
+            Assert.True(cliCommands.Convert(gzCsvPath, gzTxtOutPath, null, null, null));
+            Assert.True(File.Exists(gzTxtOutPath));
+            using var readFs = File.OpenRead(gzTxtOutPath);
+            using var readGz = new GZipStream(readFs, CompressionMode.Decompress);
+            using var reader = new StreamReader(readGz, Encoding.UTF8);
+            string gzFixedText = reader.ReadToEnd();
+            Assert.Equal(fixedText, gzFixedText);
         }
         finally
         {

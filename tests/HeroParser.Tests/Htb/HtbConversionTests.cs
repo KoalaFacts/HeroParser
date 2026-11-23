@@ -453,6 +453,94 @@ public class HtbConversionTests
         Assert.Contains("is not nullable but has an empty value", ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Convert_And_ConvertAsync_PreserveFullTemporalPrecision()
+    {
+        var schema = new HtbSchema([
+            new HtbColumn("Timestamp", HtbDataType.DateTime, isNullable: false),
+            new HtbColumn("OffsetTime", HtbDataType.DateTimeOffset, isNullable: false),
+            new HtbColumn("Date", HtbDataType.DateOnly, isNullable: false),
+            new HtbColumn("Clock", HtbDataType.TimeOnly, isNullable: false),
+            new HtbColumn("Duration", HtbDataType.TimeSpan, isNullable: false)
+        ]);
+
+        var expectedDt = new DateTime(2026, 11, 24, 14, 30, 45, 789, DateTimeKind.Unspecified).AddTicks(1234);
+        var expectedDto = new DateTimeOffset(2026, 11, 24, 14, 30, 45, 789, TimeSpan.FromHours(5)).AddTicks(1234);
+        var expectedDate = new DateOnly(2026, 11, 24);
+        var expectedTime = new TimeOnly(14, 30, 45, 789).Add(TimeSpan.FromTicks(1234));
+        var expectedSpan = new TimeSpan(2, 14, 30, 45, 789).Add(TimeSpan.FromTicks(1234));
+
+        string sourceCsv =
+            "Timestamp,OffsetTime,Date,Clock,Duration\r\n" +
+            $"{expectedDt:O},{expectedDto:O},{expectedDate:O},{expectedTime:O},{expectedSpan:c}\r\n";
+
+        using var htbStream = new MemoryStream();
+        CsvToHtbConverter.Convert(sourceCsv, htbStream, schema);
+
+        htbStream.Position = 0;
+        using var csvWriter = new StringWriter();
+        HtbToCsvConverter.Convert(htbStream, csvWriter);
+        string csvText = csvWriter.ToString();
+
+        Assert.Contains("14:30:45.7891234", csvText, StringComparison.Ordinal);
+
+        using var roundHtb = new MemoryStream();
+        CsvToHtbConverter.Convert(csvText, roundHtb, schema);
+        roundHtb.Position = 0;
+        using var drSync = HeroParser.Htb.CreateDataReader(roundHtb);
+        Assert.True(drSync.Read());
+        Assert.Equal(expectedDt, drSync.GetDateTime(0));
+        Assert.Equal(expectedDto, Assert.IsType<DateTimeOffset>(drSync.GetValue(1)));
+        Assert.Equal(expectedDate, Assert.IsType<DateOnly>(drSync.GetValue(2)));
+        Assert.Equal(expectedTime, Assert.IsType<TimeOnly>(drSync.GetValue(3)));
+        Assert.Equal(expectedSpan, Assert.IsType<TimeSpan>(drSync.GetValue(4)));
+    }
+
+    [Fact]
+    public async Task ConvertAsync_PreservesFullTemporalPrecision()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var schema = new HtbSchema([
+            new HtbColumn("Timestamp", HtbDataType.DateTime, isNullable: false),
+            new HtbColumn("OffsetTime", HtbDataType.DateTimeOffset, isNullable: false),
+            new HtbColumn("Date", HtbDataType.DateOnly, isNullable: false),
+            new HtbColumn("Clock", HtbDataType.TimeOnly, isNullable: false),
+            new HtbColumn("Duration", HtbDataType.TimeSpan, isNullable: false)
+        ]);
+
+        var expectedDt = new DateTime(2026, 11, 24, 14, 30, 45, 789, DateTimeKind.Unspecified).AddTicks(1234);
+        var expectedDto = new DateTimeOffset(2026, 11, 24, 14, 30, 45, 789, TimeSpan.FromHours(-7)).AddTicks(5678);
+        var expectedDate = new DateOnly(2026, 11, 24);
+        var expectedTime = new TimeOnly(14, 30, 45, 789).Add(TimeSpan.FromTicks(5678));
+        var expectedSpan = new TimeSpan(1, 2, 3, 4, 567).Add(TimeSpan.FromTicks(8901));
+
+        string sourceCsv =
+            "Timestamp,OffsetTime,Date,Clock,Duration\r\n" +
+            $"{expectedDt:O},{expectedDto:O},{expectedDate:O},{expectedTime:O},{expectedSpan:c}\r\n";
+
+        using var csvStream = new MemoryStream(Encoding.UTF8.GetBytes(sourceCsv));
+        using var htbStream = new MemoryStream();
+        await CsvToHtbConverter.ConvertAsync(csvStream, htbStream, schema, cancellationToken: ct);
+
+        htbStream.Position = 0;
+        using var csvWriter = new StringWriter();
+        await HtbToCsvConverter.ConvertAsync(htbStream, csvWriter, cancellationToken: ct);
+        string csvText = csvWriter.ToString();
+
+        using var csvRoundStream = new MemoryStream(Encoding.UTF8.GetBytes(csvText));
+        using var roundHtb = new MemoryStream();
+        await CsvToHtbConverter.ConvertAsync(csvRoundStream, roundHtb, schema, cancellationToken: ct);
+        roundHtb.Position = 0;
+
+        using var drAsync = HeroParser.Htb.CreateDataReader(roundHtb);
+        Assert.True(await drAsync.ReadAsync(ct));
+        Assert.Equal(expectedDt, drAsync.GetDateTime(0));
+        Assert.Equal(expectedDto, Assert.IsType<DateTimeOffset>(drAsync.GetValue(1)));
+        Assert.Equal(expectedDate, Assert.IsType<DateOnly>(drAsync.GetValue(2)));
+        Assert.Equal(expectedTime, Assert.IsType<TimeOnly>(drAsync.GetValue(3)));
+        Assert.Equal(expectedSpan, Assert.IsType<TimeSpan>(drAsync.GetValue(4)));
+    }
+
     private static (int? Id, string? Name) ReadSingleRow(MemoryStream htbStream)
     {
         htbStream.Position = 0;

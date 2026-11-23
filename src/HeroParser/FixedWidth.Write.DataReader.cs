@@ -249,26 +249,7 @@ public static partial class FixedWidth
                 }
 
                 DataReaderColumnKind kind = plan[ordinal];
-                if (kind == DataReaderColumnKind.String)
-                {
-                    object? raw = reader.GetValue(ordinal);
-                    if (raw is null or DBNull)
-                        fixedWriter.WriteField(nullValue, col.Width, col.Alignment, col.PadChar);
-                    else if (raw is string str)
-                        fixedWriter.WriteField(str, col.Width, col.Alignment, col.PadChar);
-                    else
-                        fixedWriter.WriteField(raw, col.Width, col.Alignment, col.PadChar);
-                    continue;
-                }
-
-                if (kind == DataReaderColumnKind.Object)
-                {
-                    object? raw = reader.GetValue(ordinal);
-                    fixedWriter.WriteField(raw is DBNull ? null : raw, col.Width, col.Alignment, col.PadChar);
-                    continue;
-                }
-
-                if (reader.IsDBNull(ordinal))
+                if (kind is not (DataReaderColumnKind.String or DataReaderColumnKind.Object) && reader.IsDBNull(ordinal))
                 {
                     fixedWriter.WriteField(nullValue, col.Width, col.Alignment, col.PadChar);
                     continue;
@@ -276,6 +257,23 @@ public static partial class FixedWidth
 
                 switch (kind)
                 {
+                    case DataReaderColumnKind.String:
+                        {
+                            object? raw = reader.GetValue(ordinal);
+                            if (raw is null or DBNull)
+                                fixedWriter.WriteField(nullValue, col.Width, col.Alignment, col.PadChar);
+                            else if (raw is string str)
+                                fixedWriter.WriteField(str, col.Width, col.Alignment, col.PadChar);
+                            else
+                                fixedWriter.WriteField(raw, col.Width, col.Alignment, col.PadChar);
+                        }
+                        break;
+                    case DataReaderColumnKind.Object:
+                        {
+                            object? raw = reader.GetValue(ordinal);
+                            fixedWriter.WriteField(raw is DBNull ? null : raw, col.Width, col.Alignment, col.PadChar);
+                        }
+                        break;
                     case DataReaderColumnKind.Int32:
                         fixedWriter.WriteField(reader.GetInt32(ordinal), col.Width, col.Alignment, col.PadChar);
                         break;
@@ -312,8 +310,6 @@ public static partial class FixedWidth
                             fixedWriter.WriteField(chBuf, col.Width, col.Alignment, col.PadChar);
                         }
                         break;
-                    case DataReaderColumnKind.String:
-                    case DataReaderColumnKind.Object:
                     default:
                         break;
                 }
@@ -363,26 +359,8 @@ public static partial class FixedWidth
                 }
 
                 DataReaderColumnKind kind = plan[ordinal];
-                if (kind == DataReaderColumnKind.String)
-                {
-                    object? raw = reader.GetValue(ordinal);
-                    if (raw is null or DBNull)
-                        await fixedWriter.WriteFieldAsync(nullValue.AsMemory(), col.Width, col.Alignment, col.PadChar, cancellationToken).ConfigureAwait(false);
-                    else if (raw is string str)
-                        await fixedWriter.WriteFieldAsync(str.AsMemory(), col.Width, col.Alignment, col.PadChar, cancellationToken).ConfigureAwait(false);
-                    else
-                        await fixedWriter.WriteFieldAsync(raw, col.Width, col.Alignment, col.PadChar, null, cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                if (kind == DataReaderColumnKind.Object)
-                {
-                    object? raw = reader.GetValue(ordinal);
-                    await fixedWriter.WriteFieldAsync(raw is DBNull ? null : raw, col.Width, col.Alignment, col.PadChar, null, cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                if (await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false))
+                if (kind is not (DataReaderColumnKind.String or DataReaderColumnKind.Object) &&
+                    await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false))
                 {
                     await fixedWriter.WriteFieldAsync(nullValue.AsMemory(), col.Width, col.Alignment, col.PadChar, cancellationToken).ConfigureAwait(false);
                     continue;
@@ -390,6 +368,23 @@ public static partial class FixedWidth
 
                 switch (kind)
                 {
+                    case DataReaderColumnKind.String:
+                        {
+                            object? raw = reader.GetValue(ordinal);
+                            if (raw is null or DBNull)
+                                await fixedWriter.WriteFieldAsync(nullValue.AsMemory(), col.Width, col.Alignment, col.PadChar, cancellationToken).ConfigureAwait(false);
+                            else if (raw is string str)
+                                await fixedWriter.WriteFieldAsync(str.AsMemory(), col.Width, col.Alignment, col.PadChar, cancellationToken).ConfigureAwait(false);
+                            else
+                                await fixedWriter.WriteFieldAsync(raw, col.Width, col.Alignment, col.PadChar, null, cancellationToken).ConfigureAwait(false);
+                        }
+                        break;
+                    case DataReaderColumnKind.Object:
+                        {
+                            object? raw = reader.GetValue(ordinal);
+                            await fixedWriter.WriteFieldAsync(raw is DBNull ? null : raw, col.Width, col.Alignment, col.PadChar, null, cancellationToken).ConfigureAwait(false);
+                        }
+                        break;
                     case DataReaderColumnKind.Int32:
                         await fixedWriter.WriteSpanFormattableFieldAsync(reader.GetInt32(ordinal), col.Width, col.Alignment, col.PadChar, numberFormat, cancellationToken).ConfigureAwait(false);
                         break;
@@ -423,8 +418,6 @@ public static partial class FixedWidth
                     case DataReaderColumnKind.Char:
                         await fixedWriter.WriteCharFieldAsync(reader.GetChar(ordinal), col.Width, col.Alignment, col.PadChar, cancellationToken).ConfigureAwait(false);
                         break;
-                    case DataReaderColumnKind.String:
-                    case DataReaderColumnKind.Object:
                     default:
                         break;
                 }

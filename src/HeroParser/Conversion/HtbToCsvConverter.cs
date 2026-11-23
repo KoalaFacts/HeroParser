@@ -29,12 +29,7 @@ public static class HtbToCsvConverter
         using var reader = new HtbStreamReader(htbStream, HtbReadOptions.Default, leaveOpen: true);
         var schema = reader.ParseHeader();
 
-        var csvWriteOptions = new CsvWriteOptions
-        {
-            Delimiter = options.Delimiter,
-            NewLine = options.NewLine,
-            QuoteStyle = options.QuoteAll ? QuoteStyle.Always : QuoteStyle.WhenNeeded
-        };
+        CsvWriteOptions csvWriteOptions = CreateCsvWriteOptions(options);
 
         using var writer = new CsvStreamWriter(csvWriter, csvWriteOptions, leaveOpen: true);
 
@@ -235,12 +230,7 @@ public static class HtbToCsvConverter
         using var reader = new HtbStreamReader(htbStream, HtbReadOptions.Default, leaveOpen: true);
         var schema = await reader.ParseHeaderAsync().ConfigureAwait(false);
 
-        var csvWriteOptions = new CsvWriteOptions
-        {
-            Delimiter = options.Delimiter,
-            NewLine = options.NewLine,
-            QuoteStyle = options.QuoteAll ? QuoteStyle.Always : QuoteStyle.WhenNeeded
-        };
+        CsvWriteOptions csvWriteOptions = CreateCsvWriteOptions(options);
 
         using var writer = new CsvStreamWriter(csvWriter, csvWriteOptions, leaveOpen: true);
 
@@ -407,6 +397,17 @@ public static class HtbToCsvConverter
             });
         }
     }
+
+    private static CsvWriteOptions CreateCsvWriteOptions(HtbToCsvOptions options) => new()
+    {
+        Delimiter = options.Delimiter,
+        NewLine = options.NewLine,
+        QuoteStyle = options.QuoteAll ? QuoteStyle.Always : QuoteStyle.WhenNeeded,
+        DateTimeFormat = "O",
+        DateOnlyFormat = "O",
+        TimeOnlyFormat = "O",
+        TimeSpanFormat = "c"
+    };
 
     private static string FormatFloatArray(float[] arr)
     {

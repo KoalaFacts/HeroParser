@@ -293,7 +293,7 @@ async function run() {
   // 12. CSV <-> HTB Binary Round Trip Tests
   console.log("\n[Test 12] Encoding CSV -> HTB, inspecting schema, and decoding HTB -> CSV...");
   const htbSourceCsv =
-    "Id,Name,Score,Active,HireDate\n1,Alice,98.5,true,2024-03-15\n2,Bob,,false,2025-07-01";
+    "Id,Name,Score,Active,HireDate,CheckIn\n1,Alice,98.5,true,2024-03-15,14:30:45.789\n2,Bob,,false,2025-07-01,09:05:12";
   const htbBytes = convertCsvToHtb(htbSourceCsv, { distinguishTemporalTypes: true });
   if (!(htbBytes instanceof Uint8Array) || htbBytes.byteLength < 10) {
     throw new Error("convertCsvToHtb returned empty payload!");
@@ -302,17 +302,24 @@ async function run() {
   console.log(htbInfo);
   if (
     htbInfo.recordCount !== 2 ||
-    htbInfo.columns.length !== 5 ||
+    htbInfo.columns.length !== 6 ||
     htbInfo.columns[0].dataType !== "Int32" ||
     htbInfo.columns[2].dataType !== "Decimal" ||
     htbInfo.columns[3].dataType !== "Boolean" ||
-    htbInfo.columns[4].dataType !== "DateOnly"
+    htbInfo.columns[4].dataType !== "DateOnly" ||
+    htbInfo.columns[5].dataType !== "TimeOnly"
   ) {
     throw new Error(`HTB inspection failed! Got ${JSON.stringify(htbInfo)}`);
   }
   const decodedCsv = convertHtbToCsv(htbBytes);
   const decodedRows = readCsv(decodedCsv);
-  if (decodedRows.length !== 2 || decodedRows[0].Name !== "Alice" || decodedRows[1].Score !== "") {
+  if (
+    decodedRows.length !== 2 ||
+    decodedRows[0].Name !== "Alice" ||
+    decodedRows[1].Score !== "" ||
+    decodedRows[0].HireDate !== "2024-03-15" ||
+    !decodedRows[0].CheckIn.startsWith("14:30:45.789")
+  ) {
     throw new Error(`HTB -> CSV round trip failed! Got ${JSON.stringify(decodedRows)}`);
   }
   console.log("✓ HTB binary encode/inspect/decode passed!");

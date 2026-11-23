@@ -15,7 +15,7 @@ This skill is the repo-specific half of the "HeroParser 推进计划" scheduled 
 
 ## Setup
 - Read CLAUDE.md (AGENTS.md is a pointer to it), CHANGELOG.md, `.github/workflows/README.md`, `verify-heroparser`, and the bodies of the task's last few PRs (the run log).
-- SDKs into one scratch folder, first on PATH: `dotnet-install.sh --channel 11.0 --quality preview` and `--channel 10.0`, then `dotnet workload install wasm-tools wasm-tools-net10` (the Wasm project targets net10.0; the solution does not build without it). Add 8.0/9.0 runtimes only when needed.
+- SDKs into one scratch folder, first on PATH: `dotnet-install.sh --channel 11.0` (GA since 2026-11-10) and `--channel 10.0`, then `dotnet workload install wasm-tools wasm-tools-net10` (the Wasm project targets net10.0; the solution does not build without it). Add 8.0/9.0 runtimes only when needed.
 - Node 24+ and npm 12 (`npm install --prefix <scratch> npm@12`).
 
 ## Gate
@@ -56,7 +56,7 @@ The "Maintenance ledger" section of CLAUDE.md (no separate ledger file exists; d
 ## Docs scope
 - CLAUDE.md is the source of agent guidance; AGENTS.md is a pointer, enforced by `check-docs.ts`. `.agents/skills/` and `.claude/skills/` are identical copies, also enforced.
 - `docs/perf/` notes are benchmark evidence and stay where they are (at most a one-line status note at the top); superseded non-evidence notes are folded into their owning page and deleted; no archive folder.
-- Version wording stays "coming in 2.9.0" until released.
+- 2.9.0 and 2.9.1 are released; unreleased changes go under CHANGELOG `[Unreleased]` without naming a future version.
 
 ## Report extras
 - .NET 11 status and the SDK CI used.

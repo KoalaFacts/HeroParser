@@ -460,15 +460,20 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     }
 
                     // 5. RangeMin validation
-                    if (!double.IsNaN(validate.RangeMin) && TryToDouble(val, out double minVal) && minVal < validate.RangeMin)
+                    // A value that is not a number (e.g. an empty or non-numeric string) is not range-checked,
+                    // as in the CSV, Fixed-Width and write-side validation runners.
+                    bool hasRange = !double.IsNaN(validate.RangeMin) || !double.IsNaN(validate.RangeMax);
+                    double numericVal = 0;
+                    bool isNumeric = hasRange && TryToDouble(val, out numericVal);
+                    if (isNumeric && !double.IsNaN(validate.RangeMin) && numericVal < validate.RangeMin)
                     {
-                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {minVal} must be at least {validate.RangeMin}."));
+                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} must be at least {validate.RangeMin}."));
                     }
 
                     // 6. RangeMax validation
-                    if (!double.IsNaN(validate.RangeMax) && TryToDouble(val, out double maxVal) && maxVal > validate.RangeMax)
+                    if (isNumeric && !double.IsNaN(validate.RangeMax) && numericVal > validate.RangeMax)
                     {
-                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {maxVal} cannot exceed {validate.RangeMax}."));
+                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} cannot exceed {validate.RangeMax}."));
                     }
 
                     // 7. Pattern validation
@@ -490,8 +495,11 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
 
     private static bool TryToDouble(object value, out double numericValue)
     {
+        // HTB has no culture setting: text is read in invariant notation, with Convert.ToDouble(string)'s styles.
         switch (value)
         {
+            case string text:
+                return double.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out numericValue);
             case Half h:
                 numericValue = (double)h;
                 return true;
@@ -505,8 +513,16 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                 numericValue = (double)bi;
                 return true;
             default:
-                numericValue = Convert.ToDouble(value, CultureInfo.InvariantCulture);
-                return true;
+                try
+                {
+                    numericValue = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                    return true;
+                }
+                catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+                {
+                    numericValue = 0;
+                    return false;
+                }
         }
     }
 }

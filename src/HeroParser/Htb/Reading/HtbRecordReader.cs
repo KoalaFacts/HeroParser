@@ -384,6 +384,24 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
 
     #endregion
 
+    private static bool TryGetRangeValue(object value, out double numericValue)
+    {
+        // HTB has no culture setting: text is read in invariant notation, with Convert.ToDouble(string)'s styles.
+        if (value is string text)
+            return double.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out numericValue);
+
+        try
+        {
+            numericValue = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            return true;
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            numericValue = 0;
+            return false;
+        }
+    }
+
     [RequiresUnreferencedCode("Validation using attributes requires reflection.")]
     private void ValidateRecord(T record)
     {
@@ -429,9 +447,13 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     }
 
                     // 5. RangeMin validation
-                    if (!double.IsNaN(validate.RangeMin))
+                    // A value that is not a number (e.g. an empty or non-numeric string) is not range-checked,
+                    // as in the CSV, Fixed-Width and write-side validation runners.
+                    bool hasRange = !double.IsNaN(validate.RangeMin) || !double.IsNaN(validate.RangeMax);
+                    double numericVal = 0;
+                    bool isNumeric = hasRange && TryGetRangeValue(val, out numericVal);
+                    if (isNumeric && !double.IsNaN(validate.RangeMin))
                     {
-                        double numericVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
                         if (numericVal < validate.RangeMin)
                         {
                             throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} must be at least {validate.RangeMin}."));
@@ -439,9 +461,8 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     }
 
                     // 6. RangeMax validation
-                    if (!double.IsNaN(validate.RangeMax))
+                    if (isNumeric && !double.IsNaN(validate.RangeMax))
                     {
-                        double numericVal = Convert.ToDouble(val, CultureInfo.InvariantCulture);
                         if (numericVal > validate.RangeMax)
                         {
                             throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} cannot exceed {validate.RangeMax}."));

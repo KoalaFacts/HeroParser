@@ -239,6 +239,48 @@ public class HtbTests
         }
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("n/a")]
+    [InlineData("   ")]
+    public void TestRangeValidationSkipsTextThatIsNotANumber(string amount)
+    {
+        // A text column with a range constraint may hold an empty or non-numeric value. As in the CSV, Fixed-Width
+        // and write-side runners, such a value is not range-checked; before, Convert.ToDouble threw FormatException.
+        using var ms = new MemoryStream();
+        HeroParser.Htb.Write<TextRangeRecord>().ToStream(ms, [new TextRangeRecord { Id = 1, Amount = amount }], leaveOpen: true);
+        ms.Position = 0;
+
+        var parsed = HeroParser.Htb.Read<TextRangeRecord>()
+            .WithValidationMode(ValidationMode.Strict)
+            .FromStream(ms, leaveOpen: true)
+            .ToList();
+
+        Assert.Equal(amount, Assert.Single(parsed).Amount);
+    }
+
+    [Fact]
+    public void TestLenientModeKeepsNonNumericTextAndSkipsOutOfRangeText()
+    {
+        TextRangeRecord[] records =
+        [
+            new() { Id = 1, Amount = "" },
+            new() { Id = 2, Amount = "500" },
+            new() { Id = 3, Amount = "42" },
+        ];
+
+        using var ms = new MemoryStream();
+        HeroParser.Htb.Write<TextRangeRecord>().ToStream(ms, records, leaveOpen: true);
+        ms.Position = 0;
+
+        var parsed = HeroParser.Htb.Read<TextRangeRecord>()
+            .WithValidationMode(ValidationMode.Lenient)
+            .FromStream(ms, leaveOpen: true)
+            .ToList();
+
+        Assert.Equal([1, 3], parsed.Select(r => r.Id));
+    }
+
     [Fact]
     public void TestValidationLenientValidationModeWithSkip()
     {

@@ -11,6 +11,9 @@ All notable changes to HeroParser are documented in this file. This project foll
 - **Range validation skipped negative values under fa-IR, ar-SA and he-IL.** After the fixes above, a fluent `CsvMap` / `FixedWidthMap` column with `.Range(0, 100)` bound `-5` but never range-checked it, because the check parsed only the culture's own sign; the row was accepted. The read-side range check and the writers' check on string properties now read the ASCII `-` the same way the binders do.
 - **HTB: an empty or non-numeric text value failed a range-validated read.** `Htb.Read<T>()` threw a raw `FormatException` (not `HtbException`, so Lenient mode did not skip the record either) when a `string` property with `[Validate(RangeMin/RangeMax)]` held `""`, whitespace or text such as `n/a`. Such a value is now not range-checked, as in the CSV, Fixed-Width and write-side validation; numeric text is still checked in invariant notation.
 
+### Dependencies
+- Benchmarks: `CsvHelper` 34.0.0 → 34.1.0 (comparison benchmarks only; not a dependency of any shipped package).
+
 ## [2.9.1] - 2026-11-16
 
 Patch release introducing `TabularDataReader`, zero-allocation UTF-8 column/generator parsing, CSV SIMD and streaming throughput improvements, internal structural consolidation, and culture-aware numeric Excel cell binding.

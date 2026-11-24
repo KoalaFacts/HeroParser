@@ -33,6 +33,7 @@ All notable changes to HeroParser are documented in this file. This project foll
 
 ### Dependencies
 - Browser demo: `vue` `3.6.0-rc.14` → `3.6.0-rc.16`, `vite-plus` `1.5.0` → `1.7.0`, `@vitejs/plugin-vue` `6.0.10` → `6.0.11`, `playwright` `1.64.1` → `1.65.1`; `onnxruntime-web` stays pinned at `1.20.1` and `typescript` stays on `~6.0.3`.
+- Benchmarks: `CsvHelper` 34.0.0 → 34.1.0 (comparison benchmarks only; not a dependency of any shipped package).
 
 ## [2.9.1] - 2026-11-16
 

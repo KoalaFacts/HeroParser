@@ -1,11 +1,12 @@
 ---
 name: advance-heroparser
 description: How the scheduled task advances HeroParser — goal, gate, work order, scope and project rules. Read with agent-harness/skills/autonomous-dev at the start of every run.
+ledger: CLAUDE.md#maintenance-ledger
 ---
 
 # Advance HeroParser
 
-This skill is the repo-specific half of the "HeroParser 推进计划" scheduled task; the run loop is `agent-harness/skills/autonomous-dev` and the owner's seed is `agent-harness/projects/heroparser.md`. Where this file and the seed differ, the stricter wins. It never relaxes the hard limits in the scheduled task's prompt.
+This skill is the repo-specific half of the "HeroParser 推进计划" scheduled task; the run loop is `agent-harness/skills/autonomous-dev`. It was created from the owner's former seed `agent-harness/projects/heroparser.md`, which is retired (owner, 2026-11-25): every owner rule it held is in this file, and the scheduled task's prompt and this file are the project rules. It never relaxes the hard limits in the scheduled task's prompt.
 
 ## Goal and metric
 - HeroParser: a .NET CSV / Fixed-Width / Excel / JSONL / HTB parser library with a source generator, a console engine, a CLI, a WebAssembly npm package and a browser demo.

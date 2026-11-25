@@ -9,10 +9,13 @@ using HeroParser.Htbs.Records;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Validation;
+using HeroParser.Tests.ConsoleUi;
 using Xunit;
 
 namespace HeroParser.Tests;
 
+// Some cases run CLI commands (profile, convert) that write through AnsiConsole.Current.
+[Collection(AnsiConsoleCurrentCollection.NAME)]
 [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public partial class FileCompressionTests
 {

@@ -135,7 +135,7 @@ public class BlackHatSecurityTests
     [Fact]
     public void Test_XlsxXmlSettings_ProhibitsDtdAndResolver()
     {
-        var settings = HeroParser.Excels.Xlsx.XlsxXml.CreateReaderSettings();
+        var settings = new HeroParser.Excels.Xlsx.XlsxXml().CreateReaderSettings();
         Assert.NotNull(settings);
         Assert.Equal(System.Xml.DtdProcessing.Prohibit, settings.DtdProcessing);
         Assert.True(settings.MaxCharactersInDocument > 0);

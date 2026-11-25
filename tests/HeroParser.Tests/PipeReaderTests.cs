@@ -19,8 +19,6 @@ public class PipeReaderTests
         public int Age { get; set; }
     }
 
-    #region Basic Reading
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ReadFromPipeReader_SimpleData_ParsesCorrectly()
@@ -147,10 +145,6 @@ public class PipeReaderTests
 
         Assert.Equal(["Name", "Alice"], names);
     }
-
-    #endregion
-
-    #region Borrowed Reader
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -432,10 +426,6 @@ public class PipeReaderTests
         Assert.Equal(25, records[1].Age);
     }
 
-    #endregion
-
-    #region Custom Options
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ReadFromPipeReader_CustomDelimiter_UsesDelimiter()
@@ -533,10 +523,6 @@ public class PipeReaderTests
         Assert.Equal(["Name", "Alice"], names);
     }
 
-    #endregion
-
-    #region Security Limits
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ReadFromPipeReader_MaxRowCount_ThrowsWhenExceeded()
@@ -608,10 +594,6 @@ public class PipeReaderTests
         Assert.Equal(CsvErrorCode.ParseError, ex.ErrorCode);
     }
 
-    #endregion
-
-    #region Cancellation
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ReadFromPipeReader_CancelledToken_StopsReading()
@@ -633,10 +615,6 @@ public class PipeReaderTests
 
         Assert.Equal(1, count);
     }
-
-    #endregion
-
-    #region Large Data / Chunked Reading
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -694,10 +672,6 @@ public class PipeReaderTests
         Assert.Equal("Bob", rows[2]);
     }
 
-    #endregion
-
-    #region Null Argument Handling
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task ReadFromPipeReader_NullReader_ThrowsArgumentNullException()
@@ -709,10 +683,6 @@ public class PipeReaderTests
         });
     }
 
-    #endregion
-
-    #region Helpers
-
     private static Pipe CreatePipeFromString(string data)
     {
         var pipe = new Pipe();
@@ -721,6 +691,4 @@ public class PipeReaderTests
         pipe.Writer.Complete();
         return pipe;
     }
-
-    #endregion
 }

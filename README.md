@@ -7,16 +7,21 @@
 **HeroParser** is a low-allocation, SIMD-accelerated tabular data parser and writer for .NET 8, 9, 10, and 11 (the net11.0 build ships from 2.9.0). Designed for extreme speed, memory efficiency, and Native AOT compatibility, it also offers first-class integrations for AI agents, vector embeddings, and LLM pipelines.
 
 ### Why Choose HeroParser?
-* **SIMD on x86-64**: the CSV row scanner uses AVX-512 or AVX2 (with PCLMULQDQ for quote tracking), and the CSV writer's quote analysis uses AVX-512, AVX2 or SSE2. Other CPUs, including ARM64, and WebAssembly use the scalar paths.
+* **Cross-Platform SIMD**: the CSV row scanner uses AVX-512 or AVX2 on x86-64 (with PCLMULQDQ quote tracking), plus ARM64 `AdvSimd` (NEON) and portable 128-bit `Vector128` SIMD (with branchless software prefix-XOR quote tracking), falling back to scalar paths when hardware SIMD is unavailable; the CSV writer's quote analysis uses AVX-512, AVX2, or SSE2.
 * **AI-Native integrations**: Built-in support for token-budgeted chunking, LLM output structured repair, vector embedding pipelines, and agent tool mapping.
-* **Low Footprint**: Span row readers expose fields without creating a string for every field. Typed records, decoded strings, and streaming APIs have their own allocation costs; see the [benchmark scope and evidence](docs/benchmarks.md).
-* **Unified Attributes**: Annotate your C# classes once, and use them across CSV, Excel, Fixed-Width, and HTB APIs.
+* **Low / Zero Memory Footprint**: Span row readers (`ReadOnlySpan<byte>` / `ReadOnlySpan<char>`) scan and parse primitive fields without allocating per-field strings, backed by `ArrayPool` row buffers, direct-to-buffer `ISpanFormattable` formatting in sync/async writers, non-boxing `DbDataReader` exports, streaming `.gz`/`.br`/`.zst` compression, and `[GenerateBinder]` AOT binders. Typed records, decoded strings, and materialized collections still allocate; see the [benchmark scope and evidence](docs/benchmarks.md).
+* **Unified Attributes & Ecosystem**: Annotate your C# classes once for CSV, Excel, Fixed-Width, JSONL, and HTB, stream database results out with NativeAOT-safe `DbDataReader` export, and read or write `.gz`, `.br`, and `.zst`/`.zstd` (.NET 11+) files transparently by extension.
 
 ---
 
 ## Performance & Memory
 
 Performance depends on the input, API, runtime, and CPU. Both UTF-8 (`byte[]`) and UTF-16 (`string`) span readers support SIMD scanning; use the representation you already have to avoid unnecessary encoding conversions.
+
+Allocation profile by API tier:
+* **Zero-string-allocation row scanning**: `Csv.ReadFromByteSpan`, `Csv.ReadFromText`, and `Csv.ReadFromPipeReaderAsync` expose `ReadOnlySpan<byte>` / `ReadOnlySpan<char>` fields and parse primitives (`int`, `decimal`, `DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan`, `Half`, `Int128`, `UInt128`, `Guid`) without allocating per-field strings.
+* **Streaming & low-footprint I/O**: async readers, `[GenerateBinder]` JSONL/HTB/CSV/Fixed-Width paths, direct-to-buffer writers, transparent `.gz`/`.br`/`.zst` streams, and `WriteFromDataReader*` reuse pooled scratch buffers and format `ISpanFormattable` values directly via spans.
+* **Materialized outputs**: `ToList()`, `ToText()`, decoded `string` properties, and JSON/Excel DOM structures allocate the requested objects and output buffers.
 
 The [2026-10-23 CI report, Base `cba2bcd`](https://github.com/KoalaFacts/HeroParser/pull/156#issuecomment-6355972696) measured **176 B per operation** for HeroParser's legacy 10,000-row × 25-column count-only fixture on AMD EPYC 7763, Ubuntu 24.04, .NET 10.0.13. Input preparation was outside the timed operation; the test did not decode every field, bind typed records, or perform file I/O. Its library options were not equivalent, so the archived comparison does not establish a general performance ranking. The corrected fixture requires a new baseline.
 
@@ -210,7 +215,11 @@ Perfect for AI fine-tuning datasets, streamed LLM responses, and database bulk l
 ```csharp
 using System.Text.Json.Serialization;
 
-// Read JSONL files using source-generated JSON metadata (AOT-safe)
+// Option A: Read JSONL using [GenerateBinder] (zero reflection, AOT-safe span parsing via Utf8JsonReader)
+using var binderReader = Jsonl.Read<Product>().FromFile("products.jsonl");
+var binderRecords = binderReader.ToList();
+
+// Option B: Read & write JSONL using source-generated JsonTypeInfo<T> metadata (AOT-safe)
 using var reader = Jsonl.Read<Product>()
     .FromFile("products.jsonl", ProductJsonContext.Default.Product);
 var records = reader.ToList();
@@ -222,7 +231,7 @@ Jsonl.Write<Product>().ToFile("out.jsonl", records, ProductJsonContext.Default.P
 internal partial class ProductJsonContext : JsonSerializerContext { }
 ```
 
-JSONL uses the System.Text.Json source-generated context above; `[GenerateBinder]` does not generate JSON serialization metadata.
+Add `[GenerateBinder]` on your record class for reflection-free, AOT-safe JSONL **reading** (`float[]` embeddings, `[Parse]`, `[Validate]`, and extended CLR types). JSONL **writing** (and custom `System.Text.Json` options) uses `JsonTypeInfo<T>` above.
 
 ### High-Throughput Tabular Binary (HTB)
 
@@ -281,14 +290,14 @@ AnsiConsole.Write(table);
 
 Annotate a single record class once, and read or write it across multiple formats:
 
-| Attribute | Purpose | CSV | Excel | Fixed-Width | HTB |
-|-----------|---------|:---:|:---:|:---:|:---:|
-| `[GenerateBinder]` | Emits Roslyn source-generated, reflection-free mapping binder | Yes | Yes | Yes | Yes |
-| `[TabularMap(Name, Index)]` | Maps property to column header or index | Yes | Yes | No | Yes |
-| `[PositionalMap(Start, Length...)]` | Declares character position, alignment, and pad characters | No | No | Yes | No |
-| `[Parse(Format)]` | Converts raw values to custom types (e.g. DateTime format) | Yes | Yes | Yes | No |
-| `[Format(WriteFormat...)]` | Customizes output formatting during serialization | Yes | Yes | Yes | No |
-| `[Validate(Range, Pattern...)]` | Validates properties bidirectionally (Strict/Lenient modes) | Yes | Yes | Yes | Yes |
+| Attribute | Purpose | CSV | Excel | Fixed-Width | JSONL | HTB |
+|-----------|---------|:---:|:---:|:---:|:---:|:---:|
+| `[GenerateBinder]` | Emits Roslyn source-generated, reflection-free mapping binder | Yes | Yes | Yes | Yes (Read) | Yes |
+| `[TabularMap(Name, Index)]` | Maps property to column header or index | Yes | Yes | No | Yes | Yes |
+| `[PositionalMap(Start, Length...)]` | Declares character position, alignment, and pad characters | No | No | Yes | No | No |
+| `[Parse(Format)]` | Converts raw values to custom types (e.g. DateTime format) | Yes | Yes | Yes | Yes | No |
+| `[Format(WriteFormat...)]` | Customizes output formatting during serialization | Yes | Yes | Yes | No | No |
+| `[Validate(Range, Pattern...)]` | Validates properties bidirectionally (Strict/Lenient modes) | Yes | Yes | Yes | Yes (Read) | Yes |
 
 ---
 
@@ -372,19 +381,22 @@ internal partial class DeveloperJsonContext : JsonSerializerContext { }
 
 ## Key Features
 
-* **SIMD-accelerated CSV parsing on x86-64** — AVX-512 and AVX2, with PCLMULQDQ-based branchless quote tracking; scalar elsewhere
-* **Allocation-conscious scanning** — span field access and pooled buffers; allocation profiles vary by API, options, and output representation
-* **AOT/trimming ready** — source generators emit reflection-free binders; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
+* **Cross-platform SIMD CSV scanning** — AVX-512 and AVX2 (with PCLMULQDQ quote tracking) on x86-64, plus ARM64 `AdvSimd` (NEON) and portable 128-bit hardware `Vector128` SIMD (with branchless 6-step software prefix-XOR quote tracking); scalar fallback where SIMD is unavailable
+* **Allocation-conscious scanning & writing** — span field access, pooled buffers, direct-to-buffer `ISpanFormattable` formatting in CSV/Fixed-Width/Excel/JSONL writers, and non-boxing `DbDataReader` exports; allocation profiles vary by API, options, and output representation
+* **AOT/trimming ready** — source generators emit reflection-free binders for CSV, Fixed-Width, Excel, JSONL (read), and HTB; annotated with `[RequiresUnreferencedCode]` where reflection is unavoidable
 * **Async streaming** — `IAsyncEnumerable<T>` for CSV, Fixed-Width, Excel, JSONL, and HTB; true non-blocking I/O with sync fast paths
+* **Transparent `.gz`, `.br`, and `.zst`/`.zstd` compression** — automatic streaming compression/decompression by file extension across readers, writers, converters, schema inference, validation, and CLI commands (zero-dependency `ZstandardStream` on .NET 11+), enforcing `MaxInputSize` decompression caps
+* **Extended CLR types & `ISpanParsable<T>`** — full read/write/generator/validation support for `DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan` (`TimeSpanFormat`), `char`, `Half`, `Int128`, `UInt128`, `BigInteger`, `Uri`, and `byte[]` (Base64 in text/Excel/JSONL, raw binary in HTB), plus generic `ISpanParsable<T>`/`IUtf8SpanParsable<T>`/`ISpanFormattable`
 * **Excel without extra dependencies** — reads and writes `.xlsx` using only `System.IO.Compression` and `System.Xml`
-* **JSONL for AI/ML pipelines** — `Jsonl.Read<T>()` / `Jsonl.Write<T>()` mirror the CSV builder pattern; AOT-safe via `JsonTypeInfo<T>`; `CsvToJsonlConverter` projects tabular data into OpenAI/Anthropic fine-tuning shapes
-* **HTB binary format** — float-array embedding support, big-endian byte-order reversal, and direct CSV ↔ HTB conversion
+* **JSONL for AI/ML pipelines** — `Jsonl.Read<T>()` / `Jsonl.Write<T>()` mirror the CSV builder pattern; AOT-safe via `[GenerateBinder]` (read) or `JsonTypeInfo<T>`; `CsvToJsonlConverter` projects tabular data into OpenAI/Anthropic fine-tuning shapes
+* **HTB binary format** — float-array embedding support, extended binary tags (`byte[]`, 128-bit/big integers, temporal types), big-endian byte-order reversal, and direct CSV ↔ HTB conversion
 * **Embedding-API batching** — `IAsyncEnumerable<T>.BatchAsync(size)` groups streamed records into fixed-size batches for OpenAI/Voyage/Cohere/Anthropic embedding calls
 * **Inline vector parser** — `VectorParser.ParseFloats(span)` handles pre-computed embeddings (`"[0.1,0.2,…]"`, comma/semicolon/whitespace separators, culture-aware)
-* **DataReader support** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()` for database bulk loading via `SqlBulkCopy` (`CsvDataReader`, `FixedWidthDataReader`, and `ExcelDataReader` share the `TabularDataReader` `DbDataReader` base class)
+* **DataReader import & export** — `Csv.CreateDataReader()`, `FixedWidth.CreateDataReader()`, `Excel.CreateDataReader()`, `Jsonl.CreateDataReader()`, and `Htb.CreateDataReader()` for streaming database bulk loads (`CsvDataReader`, `FixedWidthDataReader`, and `ExcelDataReader` inherit `TabularDataReader`), plus reflection-free, non-boxing `WriteFromDataReader*` export APIs across all five formats
 * **PipeReader integration** — `Csv.ReadFromPipeReaderAsync(pipe)` for network streaming without buffering the entire payload
 * **Multi-schema CSV** — discriminator-based row routing to different record types, with runtime and source-generated dispatch
-* **Delimiter detection** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score
+* **Delimiter detection & schema inference** — auto-detect comma, semicolon, pipe, or tab from sample rows with a confidence score, and infer column types with optional `DistinguishTemporalTypes` (`DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan`)
+* **WebAssembly / JavaScript preview** — `readCsv`, `writeCsv`, `readFixedWidth`, `writeFixedWidth`, `readExcel`, `writeExcel`, `detectCsvDelimiter`, `validateCsv`, `inferCsvSchema`, `repairLlmCsv`, and `convertCsvToJsonl` in [the npm preview package](npm/packages/heroparser/README.md)
 * **CSV validation** — pre-flight structural checks with detailed per-row error reporting
 * **Field validation** — `[Validate]` constraints (NotNull, NotEmpty, Range, Pattern) collected lazily; in strict mode (the default) `ToList()` and other terminal methods throw a `ValidationException` when any row failed
 * **CSV injection protection** — configurable sanitization modes for user-data exports

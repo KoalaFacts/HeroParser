@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using static HeroParser.Generators.GeneratorHelpers;
 
 namespace HeroParser.Generators;
 
@@ -39,7 +38,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor unsupportedPropertyTypeDiagnostic = new(
         "HERO101",
         "Unsupported property type for JSONL",
-        "Property '{0}' of type '{1}' is not supported by the JSONL record binder generator. Supported types include primitives, DateTime, DateTimeOffset, DateOnly, TimeOnly, Guid, enums, and string.",
+        "Property '{0}' of type '{1}' is supported only when its type is supported by the JSONL record binder generator. Supported types include primitives, float[], byte[], DateTime, DateTimeOffset, DateOnly, TimeOnly, TimeSpan, Guid, Half, Int128, UInt128, BigInteger, Uri, enums, string, ISpanParsable<T>, and IUtf8SpanParsable<T>.",
         "HeroParser.Generators",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -73,10 +72,11 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         if (ctx.TargetSymbol is not INamedTypeSymbol symbol)
             return null;
 
-        if (symbol.IsAbstract || !IsTypeAccessible(symbol))
+        var target = new RecordTypeTarget(symbol);
+        if (symbol.IsAbstract || !target.IsAccessible)
             return null;
 
-        return BuildDescriptor(symbol, ct);
+        return BuildDescriptor(target, ct);
     }
 
     private static void EmitTypedBinder(SourceProductionContext context, TypeDescriptor descriptor)
@@ -106,6 +106,16 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("{");
         builder.Indent();
 
+        // Emit static Regex fields for Pattern validation
+        foreach (var member in binderMembers)
+        {
+            if (member.Validation.Pattern != null && IsStringMember(member))
+            {
+                var escapedPattern = new CSharpStringLiteral(member.Validation.Pattern).Escaped;
+                builder.AppendLine($"private static readonly global::System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", global::System.Text.RegularExpressions.RegexOptions.None, global::System.TimeSpan.FromMilliseconds({member.Validation.PatternTimeoutMs}));");
+            }
+        }
+
         // Emit static property names keys (ReadOnlySpan<byte> properties)
         for (int i = 0; i < binderMembers.Count; i++)
         {
@@ -113,7 +123,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
             var candidates = GetKeyCandidates(member);
             for (int k = 0; k < candidates.Count; k++)
             {
-                var candidate = EscapeString(candidates[k]);
+                var candidate = new CSharpStringLiteral(candidates[k]).Escaped;
                 builder.AppendLine($"private static System.ReadOnlySpan<byte> Key_{member.MemberName}_{k} => \"{candidate}\"u8;");
             }
         }
@@ -121,6 +131,9 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
 
         builder.AppendLine($"internal static {BINDER_INTERFACE_TYPE}byte, {descriptor.FullyQualifiedName}> Instance {{ get; }} = new {binderClassName}();");
         builder.AppendLine();
+
+        bool anyValidation = HasAnyValidation(binderMembers);
+        var valueTypePresenceFlags = GetValueTypePresenceMembers(binderMembers);
 
         builder.AppendLine($"public {descriptor.FullyQualifiedName} Bind(ReadOnlySpan<byte> line)");
         builder.AppendLine("{");
@@ -130,12 +143,31 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("    throw new JsonException(\"Expected start of JSON object.\");");
         builder.AppendLine();
         builder.AppendLine($"var record = new {descriptor.FullyQualifiedName}();");
+        foreach (var flagMember in valueTypePresenceFlags)
+        {
+            builder.AppendLine($"bool _has_{flagMember.MemberName} = false;");
+        }
         builder.AppendLine();
         builder.AppendLine("while (reader.Read())");
         builder.AppendLine("{");
         builder.Indent();
         builder.AppendLine("if (reader.TokenType == JsonTokenType.EndObject)");
-        builder.AppendLine("    return record;");
+        if (anyValidation)
+        {
+            builder.AppendLine("{");
+            builder.Indent();
+            var args = valueTypePresenceFlags.Count == 0
+                ? "record"
+                : "record, " + string.Join(", ", valueTypePresenceFlags.Select(m => $"_has_{m.MemberName}"));
+            builder.AppendLine($"ValidateRecord({args});");
+            builder.AppendLine("return record;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+        else
+        {
+            builder.AppendLine("    return record;");
+        }
         builder.AppendLine();
         builder.AppendLine("if (reader.TokenType == JsonTokenType.PropertyName)");
         builder.AppendLine("{");
@@ -161,6 +193,10 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine("{");
             builder.Indent();
             EmitPropertyParsing(builder, member);
+            if (RequiresValueTypePresenceFlag(member))
+            {
+                builder.AppendLine($"_has_{member.MemberName} = true;");
+            }
             builder.Unindent();
             builder.AppendLine("}");
         }
@@ -180,6 +216,103 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine("throw new JsonException(\"JSON object was truncated or malformed.\");");
         builder.Unindent();
         builder.AppendLine("}"); // end of Bind method
+
+        if (anyValidation)
+        {
+            EmitValidateMethod(builder, descriptor, binderMembers, valueTypePresenceFlags);
+        }
+
+        if (NeedsCharDecodeHelper(binderMembers))
+        {
+            builder.AppendLine();
+            builder.AppendLine("private static bool TryDecodeUnescapedChars(ref Utf8JsonReader reader, scoped global::System.Span<char> destination, out int charsWritten)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("if (reader.TokenType == JsonTokenType.String && !reader.HasValueSequence && !reader.ValueIsEscaped && reader.ValueSpan.Length <= destination.Length)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("charsWritten = global::System.Text.Encoding.UTF8.GetChars(reader.ValueSpan, destination);");
+            builder.AppendLine("return true;");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("charsWritten = 0;");
+            builder.AppendLine("return false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        if (binderMembers.Any(m => m.IsSpanParsable))
+        {
+            builder.AppendLine();
+            builder.AppendLine("private static bool TryParseSpan<TValue>(ref Utf8JsonReader reader, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TValue result)");
+            builder.AppendLine("    where TValue : global::System.ISpanParsable<TValue>");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("if (reader.TokenType == JsonTokenType.String)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("if (!reader.HasValueSequence && !reader.ValueIsEscaped && reader.ValueSpan.Length <= 128)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+            builder.AppendLine("int written = global::System.Text.Encoding.UTF8.GetChars(reader.ValueSpan, chars);");
+            builder.AppendLine("return TValue.TryParse(chars[..written], global::System.Globalization.CultureInfo.InvariantCulture, out result);");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("string? value = reader.GetString();");
+            builder.AppendLine("if (value is not null)");
+            builder.AppendLine("    return TValue.TryParse(value.AsSpan(), global::System.Globalization.CultureInfo.InvariantCulture, out result);");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("result = default;");
+            builder.AppendLine("return false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+
+        if (binderMembers.Any(m => m.IsUtf8SpanParsable))
+        {
+            builder.AppendLine();
+            builder.AppendLine("private static bool TryParseUtf8Span<TValue>(ref Utf8JsonReader reader, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out TValue result)");
+            builder.AppendLine("    where TValue : global::System.IUtf8SpanParsable<TValue>");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("if (reader.TokenType == JsonTokenType.String)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("if (!reader.HasValueSequence && !reader.ValueIsEscaped)");
+            builder.AppendLine("    return TValue.TryParse(reader.ValueSpan, global::System.Globalization.CultureInfo.InvariantCulture, out result);");
+            builder.AppendLine();
+            builder.AppendLine("string? value = reader.GetString();");
+            builder.AppendLine("if (value is not null)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("int maxBytes = global::System.Text.Encoding.UTF8.GetMaxByteCount(value.Length);");
+            builder.AppendLine("byte[]? rented = maxBytes <= 256 ? null : global::System.Buffers.ArrayPool<byte>.Shared.Rent(maxBytes);");
+            builder.AppendLine("global::System.Span<byte> buffer = rented is null ? stackalloc byte[256] : rented;");
+            builder.AppendLine("try");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("int written = global::System.Text.Encoding.UTF8.GetBytes(value, buffer);");
+            builder.AppendLine("return TValue.TryParse(buffer[..written], global::System.Globalization.CultureInfo.InvariantCulture, out result);");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("finally");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("if (rented is not null)");
+            builder.AppendLine("    global::System.Buffers.ArrayPool<byte>.Shared.Return(rented);");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine("result = default;");
+            builder.AppendLine("return false;");
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
 
         builder.Unindent();
         builder.AppendLine("}"); // end of byte class
@@ -353,23 +486,185 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                 builder.AppendLine($"record.{propertyName} = reader.GetBoolean();");
                 break;
 
+            case "float[]":
+            case "System.Single[]":
+                if (!member.IsNullable)
+                {
+                    builder.AppendLine("if (reader.TokenType == JsonTokenType.Null)");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine($"record.{propertyName} = null!;");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                    builder.AppendLine("else if (reader.TokenType == JsonTokenType.StartArray)");
+                }
+                else
+                {
+                    builder.AppendLine("if (reader.TokenType == JsonTokenType.StartArray)");
+                }
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("var pool = global::System.Buffers.ArrayPool<float>.Shared;");
+                builder.AppendLine("float[] buf = pool.Rent(64);");
+                builder.AppendLine("int count = 0;");
+                builder.AppendLine("try");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("if (count == buf.Length)");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("float[] grown = pool.Rent(buf.Length * 2);");
+                builder.AppendLine("global::System.Array.Copy(buf, grown, count);");
+                builder.AppendLine("pool.Return(buf);");
+                builder.AppendLine("buf = grown;");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("buf[count++] = reader.GetSingle();");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("if (reader.TokenType != JsonTokenType.EndArray)");
+                builder.AppendLine("    throw new JsonException(\"Unterminated JSON array.\");");
+                builder.AppendLine($"record.{propertyName} = count == 0 ? global::System.Array.Empty<float>() : global::System.MemoryExtensions.AsSpan(buf, 0, count).ToArray();");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("finally");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("pool.Return(buf);");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("throw new JsonException(\"Expected JSON array for float[] property.\");");
+                builder.Unindent();
+                builder.AppendLine("}");
+                break;
+
             case "System.DateTime":
-                builder.AppendLine($"record.{propertyName} = reader.GetDateTime();");
+                if (member.ParseFormat is { } dtFormat)
+                {
+                    var escapedDtFormat = new CSharpStringLiteral(dtFormat).Escaped;
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                    builder.AppendLine("if (TryDecodeUnescapedChars(ref reader, chars, out int written))");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine($"record.{propertyName} = global::System.DateTime.ParseExact(chars[..written], \"{escapedDtFormat}\", global::System.Globalization.CultureInfo.InvariantCulture);");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                    builder.AppendLine("else");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine("string? s = reader.GetString();");
+                    builder.AppendLine($"record.{propertyName} = s is not null ? global::System.DateTime.ParseExact(s, \"{escapedDtFormat}\", global::System.Globalization.CultureInfo.InvariantCulture) : default;");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                }
+                else
+                {
+                    builder.AppendLine($"record.{propertyName} = reader.GetDateTime();");
+                }
                 break;
 
             case "System.DateTimeOffset":
-                builder.AppendLine($"record.{propertyName} = reader.GetDateTimeOffset();");
+                if (member.ParseFormat is { } dtoFormat)
+                {
+                    var escapedDtoFormat = new CSharpStringLiteral(dtoFormat).Escaped;
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                    builder.AppendLine("if (TryDecodeUnescapedChars(ref reader, chars, out int written))");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine($"record.{propertyName} = global::System.DateTimeOffset.ParseExact(chars[..written], \"{escapedDtoFormat}\", global::System.Globalization.CultureInfo.InvariantCulture);");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                    builder.AppendLine("else");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine("string? s = reader.GetString();");
+                    builder.AppendLine($"record.{propertyName} = s is not null ? global::System.DateTimeOffset.ParseExact(s, \"{escapedDtoFormat}\", global::System.Globalization.CultureInfo.InvariantCulture) : default;");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                }
+                else
+                {
+                    builder.AppendLine($"record.{propertyName} = reader.GetDateTimeOffset();");
+                }
                 break;
 
             case "System.Guid":
-                builder.AppendLine($"record.{propertyName} = reader.GetGuid();");
+                if (member.ParseFormat is { } guidFormat)
+                {
+                    var escapedGuidFormat = new CSharpStringLiteral(guidFormat).Escaped;
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                    builder.AppendLine("if (TryDecodeUnescapedChars(ref reader, chars, out int written))");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine($"record.{propertyName} = global::System.Guid.ParseExact(chars[..written], \"{escapedGuidFormat}\");");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                    builder.AppendLine("else");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine("string? s = reader.GetString();");
+                    builder.AppendLine($"record.{propertyName} = s is not null ? global::System.Guid.ParseExact(s, \"{escapedGuidFormat}\") : default;");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                }
+                else
+                {
+                    builder.AppendLine($"record.{propertyName} = reader.GetGuid();");
+                }
                 break;
 
             case "System.DateOnly":
                 builder.AppendLine("{");
                 builder.Indent();
+                builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                builder.AppendLine("if (TryDecodeUnescapedChars(ref reader, chars, out int written))");
+                builder.AppendLine("{");
+                builder.Indent();
+                if (member.ParseFormat is { } dateOnlySpanFormat)
+                {
+                    var escapedDateOnlyFormat = new CSharpStringLiteral(dateOnlySpanFormat).Escaped;
+                    builder.AppendLine($"record.{propertyName} = DateOnly.ParseExact(chars[..written], \"{escapedDateOnlyFormat}\", global::System.Globalization.CultureInfo.InvariantCulture);");
+                }
+                else
+                {
+                    builder.AppendLine($"record.{propertyName} = DateOnly.Parse(chars[..written], global::System.Globalization.CultureInfo.InvariantCulture);");
+                }
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
                 builder.AppendLine("string? s = reader.GetString();");
-                builder.AppendLine($"record.{propertyName} = s is not null ? DateOnly.Parse(s, global::System.Globalization.CultureInfo.InvariantCulture) : default;");
+                if (member.ParseFormat is { } dateOnlyFormat)
+                {
+                    builder.AppendLine($"record.{propertyName} = s is not null ? DateOnly.ParseExact(s, \"{new CSharpStringLiteral(dateOnlyFormat).Escaped}\", global::System.Globalization.CultureInfo.InvariantCulture) : default;");
+                }
+                else
+                {
+                    builder.AppendLine($"record.{propertyName} = s is not null ? DateOnly.Parse(s, global::System.Globalization.CultureInfo.InvariantCulture) : default;");
+                }
+                builder.Unindent();
+                builder.AppendLine("}");
                 builder.Unindent();
                 builder.AppendLine("}");
                 break;
@@ -377,19 +672,224 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
             case "System.TimeOnly":
                 builder.AppendLine("{");
                 builder.Indent();
-                builder.AppendLine("string? s = reader.GetString();");
-                builder.AppendLine($"record.{propertyName} = s is not null ? TimeOnly.Parse(s, global::System.Globalization.CultureInfo.InvariantCulture) : default;");
+                builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                builder.AppendLine("if (TryDecodeUnescapedChars(ref reader, chars, out int written))");
+                builder.AppendLine("{");
+                builder.Indent();
+                if (member.ParseFormat is { } timeOnlySpanFormat)
+                {
+                    var escapedTimeOnlyFormat = new CSharpStringLiteral(timeOnlySpanFormat).Escaped;
+                    builder.AppendLine($"record.{propertyName} = TimeOnly.ParseExact(chars[..written], \"{escapedTimeOnlyFormat}\", global::System.Globalization.CultureInfo.InvariantCulture);");
+                }
+                else
+                {
+                    builder.AppendLine($"record.{propertyName} = TimeOnly.Parse(chars[..written], global::System.Globalization.CultureInfo.InvariantCulture);");
+                }
                 builder.Unindent();
                 builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("string? s = reader.GetString();");
+                if (member.ParseFormat is { } timeOnlyFormat)
+                {
+                    builder.AppendLine($"record.{propertyName} = s is not null ? TimeOnly.ParseExact(s, \"{new CSharpStringLiteral(timeOnlyFormat).Escaped}\", global::System.Globalization.CultureInfo.InvariantCulture) : default;");
+                }
+                else
+                {
+                    builder.AppendLine($"record.{propertyName} = s is not null ? TimeOnly.Parse(s, global::System.Globalization.CultureInfo.InvariantCulture) : default;");
+                }
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.Unindent();
+                builder.AppendLine("}");
+                break;
+
+            case "char":
+            case "System.Char":
+                builder.AppendLine("if (reader.TokenType == JsonTokenType.String && !reader.HasValueSequence && !reader.ValueIsEscaped && reader.ValueSpan.Length == 1 && reader.ValueSpan[0] < 0x80)");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine($"record.{propertyName} = (char)reader.ValueSpan[0];");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("string? s = reader.GetString();");
+                builder.AppendLine("if (s is null || s.Length != 1)");
+                builder.AppendLine("    throw new JsonException(\"Expected a single-character JSON string.\");");
+                builder.AppendLine($"record.{propertyName} = s[0];");
+                builder.Unindent();
+                builder.AppendLine("}");
+                break;
+
+            case "System.TimeSpan":
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                builder.AppendLine("if (TryDecodeUnescapedChars(ref reader, chars, out int written))");
+                builder.AppendLine("{");
+                builder.Indent();
+                if (member.ParseFormat is { } timeSpanSpanFormat)
+                {
+                    builder.AppendLine($"if (!global::System.TimeSpan.TryParseExact(chars[..written], \"{new CSharpStringLiteral(timeSpanSpanFormat).Escaped}\", global::System.Globalization.CultureInfo.InvariantCulture, out var ts_{propertyName}))");
+                }
+                else
+                {
+                    builder.AppendLine($"if (!global::System.TimeSpan.TryParse(chars[..written], global::System.Globalization.CultureInfo.InvariantCulture, out var ts_{propertyName}))");
+                }
+                builder.AppendLine("    throw new JsonException(\"Failed to parse TimeSpan value.\");");
+                builder.AppendLine($"record.{propertyName} = ts_{propertyName};");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("string? s = reader.GetString();");
+                if (member.ParseFormat is { } timeSpanFormat)
+                {
+                    builder.AppendLine($"if (s is null || !global::System.TimeSpan.TryParseExact(s, \"{new CSharpStringLiteral(timeSpanFormat).Escaped}\", global::System.Globalization.CultureInfo.InvariantCulture, out var ts_{propertyName}))");
+                }
+                else
+                {
+                    builder.AppendLine($"if (s is null || !global::System.TimeSpan.TryParse(s, global::System.Globalization.CultureInfo.InvariantCulture, out var ts_{propertyName}))");
+                }
+                builder.AppendLine("    throw new JsonException(\"Failed to parse TimeSpan value.\");");
+                builder.AppendLine($"record.{propertyName} = ts_{propertyName};");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.Unindent();
+                builder.AppendLine("}");
+                break;
+
+            case "System.Half":
+                builder.AppendLine("if (reader.TokenType == JsonTokenType.Number && global::System.Half.TryParse(reader.ValueSpan, global::System.Globalization.NumberStyles.Float | global::System.Globalization.NumberStyles.AllowThousands, global::System.Globalization.CultureInfo.InvariantCulture, out var halfNum))");
+                builder.AppendLine($"    record.{propertyName} = halfNum;");
+                builder.AppendLine("else if (reader.TokenType == JsonTokenType.String && !reader.HasValueSequence && !reader.ValueIsEscaped && global::System.Half.TryParse(reader.ValueSpan, global::System.Globalization.NumberStyles.Float | global::System.Globalization.NumberStyles.AllowThousands, global::System.Globalization.CultureInfo.InvariantCulture, out var halfSpanStr))");
+                builder.AppendLine($"    record.{propertyName} = halfSpanStr;");
+                builder.AppendLine("else if (reader.TokenType == JsonTokenType.String && global::System.Half.TryParse(reader.GetString(), global::System.Globalization.NumberStyles.Float | global::System.Globalization.NumberStyles.AllowThousands, global::System.Globalization.CultureInfo.InvariantCulture, out var halfStr))");
+                builder.AppendLine($"    record.{propertyName} = halfStr;");
+                builder.AppendLine("else");
+                builder.AppendLine("    throw new JsonException(\"Expected numeric or string value for Half property.\");");
+                break;
+
+            case "System.Int128":
+                builder.AppendLine("if (reader.TokenType == JsonTokenType.Number && global::System.Int128.TryParse(reader.ValueSpan, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var i128Num))");
+                builder.AppendLine($"    record.{propertyName} = i128Num;");
+                builder.AppendLine("else if (reader.TokenType == JsonTokenType.String && !reader.HasValueSequence && !reader.ValueIsEscaped && global::System.Int128.TryParse(reader.ValueSpan, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var i128SpanStr))");
+                builder.AppendLine($"    record.{propertyName} = i128SpanStr;");
+                builder.AppendLine("else if (reader.TokenType == JsonTokenType.String && global::System.Int128.TryParse(reader.GetString(), global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var i128Str))");
+                builder.AppendLine($"    record.{propertyName} = i128Str;");
+                builder.AppendLine("else");
+                builder.AppendLine("    throw new JsonException(\"Expected numeric or string value for Int128 property.\");");
+                break;
+
+            case "System.UInt128":
+                builder.AppendLine("if (reader.TokenType == JsonTokenType.Number && global::System.UInt128.TryParse(reader.ValueSpan, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var u128Num))");
+                builder.AppendLine($"    record.{propertyName} = u128Num;");
+                builder.AppendLine("else if (reader.TokenType == JsonTokenType.String && !reader.HasValueSequence && !reader.ValueIsEscaped && global::System.UInt128.TryParse(reader.ValueSpan, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var u128SpanStr))");
+                builder.AppendLine($"    record.{propertyName} = u128SpanStr;");
+                builder.AppendLine("else if (reader.TokenType == JsonTokenType.String && global::System.UInt128.TryParse(reader.GetString(), global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var u128Str))");
+                builder.AppendLine($"    record.{propertyName} = u128Str;");
+                builder.AppendLine("else");
+                builder.AppendLine("    throw new JsonException(\"Expected numeric or string value for UInt128 property.\");");
+                break;
+
+            case "System.Numerics.BigInteger":
+                builder.AppendLine("if (reader.TokenType == JsonTokenType.Number)");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("if (!reader.HasValueSequence && reader.ValueSpan.Length <= 128)");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                builder.AppendLine("int written = global::System.Text.Encoding.UTF8.GetChars(reader.ValueSpan, chars);");
+                builder.AppendLine("if (global::System.Numerics.BigInteger.TryParse(chars[..written], global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var biNumSpan))");
+                builder.AppendLine($"    record.{propertyName} = biNumSpan;");
+                builder.AppendLine("else");
+                builder.AppendLine("    throw new JsonException(\"Expected numeric or string value for BigInteger property.\");");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else if (global::System.Numerics.BigInteger.TryParse(global::System.Text.Encoding.UTF8.GetString(reader.ValueSpan), global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var biNum))");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine($"record.{propertyName} = biNum;");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("throw new JsonException(\"Expected numeric or string value for BigInteger property.\");");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                builder.AppendLine("if (TryDecodeUnescapedChars(ref reader, chars, out int written))");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("if (global::System.Numerics.BigInteger.TryParse(chars[..written], global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var biStrSpan))");
+                builder.AppendLine($"    record.{propertyName} = biStrSpan;");
+                builder.AppendLine("else");
+                builder.AppendLine("    throw new JsonException(\"Expected numeric or string value for BigInteger property.\");");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else if (reader.TokenType == JsonTokenType.String && global::System.Numerics.BigInteger.TryParse(reader.GetString(), global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var biStr))");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine($"record.{propertyName} = biStr;");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("throw new JsonException(\"Expected numeric or string value for BigInteger property.\");");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.Unindent();
+                builder.AppendLine("}");
+                break;
+
+            case "System.Uri":
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("string? s = reader.GetString();");
+                builder.AppendLine("if (string.IsNullOrWhiteSpace(s) || !global::System.Uri.TryCreate(s.Trim(), global::System.UriKind.RelativeOrAbsolute, out var parsedUri))");
+                builder.AppendLine("    throw new JsonException(\"Failed to parse Uri value.\");");
+                builder.AppendLine($"record.{propertyName} = parsedUri;");
+                builder.Unindent();
+                builder.AppendLine("}");
+                break;
+
+            case "byte[]":
+            case "System.Byte[]":
+                builder.AppendLine($"record.{propertyName} = reader.GetBytesFromBase64();");
                 break;
 
             default:
                 if (member.IsEnum)
                 {
-                    var enumType = GetEnumTypeArgument(member.TypeOfTypeName);
+                    var enumType = member.UnderlyingTypeName;
                     builder.AppendLine("if (reader.TokenType == JsonTokenType.Number)");
                     builder.AppendLine($"    record.{propertyName} = ({enumType})reader.GetInt32();");
                     builder.AppendLine("else if (reader.TokenType == JsonTokenType.String)");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine("global::System.Span<char> chars = stackalloc char[128];");
+                    builder.AppendLine("if (TryDecodeUnescapedChars(ref reader, chars, out int written))");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine($"if (Enum.TryParse<{enumType}>(chars[..written], ignoreCase: true, out var enumVal))");
+                    builder.AppendLine($"    record.{propertyName} = enumVal;");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    throw new JsonException($\"Failed to parse value '{{chars[..written].ToString()}}' as enum {enumType}.\");");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                    builder.AppendLine("else");
                     builder.AppendLine("{");
                     builder.Indent();
                     builder.AppendLine("string s = reader.GetString()!;");
@@ -399,6 +899,19 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                     builder.AppendLine($"    throw new JsonException($\"Failed to parse value '{{s}}' as enum {enumType}.\");");
                     builder.Unindent();
                     builder.AppendLine("}");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                }
+                else if (member.IsSpanParsable || member.IsUtf8SpanParsable)
+                {
+                    var parseCall = member.IsSpanParsable
+                        ? $"TryParseSpan<{member.UnderlyingTypeName}>(ref reader, out var parsed_{propertyName})"
+                        : $"TryParseUtf8Span<{member.UnderlyingTypeName}>(ref reader, out var parsed_{propertyName})";
+                    var cond = member.IsReferenceType ? $"{parseCall} && parsed_{propertyName} is not null" : parseCall;
+                    builder.AppendLine($"if ({cond})");
+                    builder.AppendLine($"    record.{propertyName} = parsed_{propertyName};");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    throw new JsonException(\"Failed to parse value for property '{propertyName}'.\");");
                 }
                 else
                 {
@@ -453,8 +966,9 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         context.AddSource("JsonlRecordBinderFactory.Registration.g.cs", builder.ToString());
     }
 
-    private static TypeDescriptor? BuildDescriptor(INamedTypeSymbol type, CancellationToken ct)
+    private static TypeDescriptor? BuildDescriptor(RecordTypeTarget target, CancellationToken ct)
     {
+        var type = target.Symbol;
         var members = new List<MemberDescriptor>();
         var diagnostics = new List<Diagnostic>();
 
@@ -471,8 +985,10 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
             if (!hasSetter && !hasGetter)
                 continue;
 
+            var attrs = new SymbolAttributes(property);
+
             // [TabularMap]
-            var mapAttribute = GetFirstMatchingAttribute(property, columnAttributeNames);
+            var mapAttribute = attrs.FindFirst(columnAttributeNames);
             string? headerName = null;
             if (mapAttribute is not null)
             {
@@ -486,7 +1002,7 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
             }
 
             // [JsonPropertyName]
-            var jsonPropertyAttribute = GetFirstMatchingAttribute(property, jsonPropertyAttributeNames);
+            var jsonPropertyAttribute = attrs.FindFirst(jsonPropertyAttributeNames);
             string? customJsonName = null;
             if (jsonPropertyAttribute is not null)
             {
@@ -496,7 +1012,8 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                 }
             }
 
-            if (!IsSupportedType(property.Type))
+            var typeMeta = new TypeMetadata(property.Type);
+            if (!IsJsonlSupportedType(typeMeta))
             {
                 diagnostics.Add(Diagnostic.Create(
                     unsupportedPropertyTypeDiagnostic,
@@ -506,43 +1023,244 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
                 continue;
             }
 
-            var typeName = property.Type.ToDisplayString(FullyQualifiedFormatWithNullable);
+            var typeName = typeMeta.FullyQualifiedName;
             var typeofTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
+            var parsedAttrs = ParsedPropertyAttributes.Extract(property);
+            var validation = ParsedValidationRules.ExtractWithoutDiagnostics(property);
 
             members.Add(new MemberDescriptor(
                 property.Name,
                 headerName,
                 typeName,
                 typeofTypeName,
-                baseTypeName,
-                isNullable,
-                isEnum,
+                typeMeta.BaseTypeName,
+                typeMeta.IsNullable,
+                typeMeta.IsEnum,
+                property.Type.IsReferenceType,
+                typeMeta.UnderlyingFullyQualifiedName,
+                typeMeta.IsSpanParsable,
+                typeMeta.IsUtf8SpanParsable,
                 customJsonName,
-                hasSetter));
+                hasSetter,
+                parsedAttrs.ParseFormat,
+                validation));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)
             return null;
 
-        var fqName = type.ToDisplayString(FullyQualifiedFormatWithNullable);
-        var safeClassName = CreateSafeClassName(type);
-        return new TypeDescriptor(fqName, safeClassName, members, diagnostics);
+        return new TypeDescriptor(target.FullyQualifiedName, target.SafeClassName, members, diagnostics);
     }
 
-    private static (string baseTypeName, bool isNullable, bool isEnum) GetBaseTypeInfo(ITypeSymbol type)
+    private static bool IsJsonlSupportedType(TypeMetadata typeMeta)
+        => typeMeta.IsSupported || IsFloatArray(typeMeta.UnderlyingSymbol);
+
+    private static bool IsFloatArray(ITypeSymbol type)
+        => type is IArrayTypeSymbol { ElementType.SpecialType: SpecialType.System_Single };
+
+    private static bool NeedsCharDecodeHelper(IReadOnlyList<MemberDescriptor> members)
     {
-        var underlying = type is INamedTypeSymbol named && named.IsGenericType && named.Name == "Nullable"
-            ? named.TypeArguments[0]
-            : type;
+        foreach (var m in members)
+        {
+            if (m.IsEnum)
+                return true;
+            if ((m.BaseTypeName is "System.DateTime" or "System.DateTimeOffset" or "System.Guid") && m.ParseFormat is not null)
+                return true;
+            if (m.BaseTypeName is "System.DateOnly" or "System.TimeOnly" or "System.TimeSpan" or "System.Numerics.BigInteger")
+                return true;
+        }
+        return false;
+    }
 
-        var baseTypeName = underlying.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-            .Replace("global::", "");
+    private static bool HasAnyValidation(MemberDescriptor member)
+        => member.Validation.NotNull
+            || (member.Validation.NotEmpty && IsStringMember(member))
+            || ((member.Validation.MaxLength >= 0 || member.Validation.MinLength >= 0) && IsLengthMember(member))
+            || (member.Validation.HasRange && IsNumericType(member.BaseTypeName))
+            || (member.Validation.Pattern != null && IsStringMember(member));
 
-        bool isNullable = type is INamedTypeSymbol n && n.IsGenericType && n.Name == "Nullable";
-        bool isEnum = underlying.TypeKind == TypeKind.Enum;
+    private static bool HasAnyValidation(IReadOnlyList<MemberDescriptor> members)
+    {
+        foreach (var m in members)
+        {
+            if (HasAnyValidation(m))
+                return true;
+        }
+        return false;
+    }
 
-        return (baseTypeName, isNullable, isEnum);
+    private static bool RequiresValueTypePresenceFlag(MemberDescriptor member)
+        => member.Validation.NotNull && !member.IsNullable && !member.IsReferenceType;
+
+    private static List<MemberDescriptor> GetValueTypePresenceMembers(IReadOnlyList<MemberDescriptor> members)
+    {
+        var list = new List<MemberDescriptor>();
+        foreach (var m in members)
+        {
+            if (RequiresValueTypePresenceFlag(m))
+                list.Add(m);
+        }
+        return list;
+    }
+
+    private static bool IsStringMember(MemberDescriptor member)
+        => member.BaseTypeName is "string" or "System.String";
+
+    private static bool IsLengthMember(MemberDescriptor member)
+        => IsStringMember(member) || member.BaseTypeName is "float[]" or "System.Single[]";
+
+    private static bool IsNumericType(string baseTypeName)
+        => baseTypeName is "int" or "System.Int32"
+            or "long" or "System.Int64"
+            or "short" or "System.Int16"
+            or "byte" or "System.Byte"
+            or "sbyte" or "System.SByte"
+            or "uint" or "System.UInt32"
+            or "ulong" or "System.UInt64"
+            or "ushort" or "System.UInt16"
+            or "double" or "System.Double"
+            or "float" or "System.Single"
+            or "decimal" or "System.Decimal"
+            or "System.Half"
+            or "System.Int128"
+            or "System.UInt128"
+            or "System.Numerics.BigInteger";
+
+    private static void EmitValidateMethod(
+        SourceBuilder builder,
+        TypeDescriptor descriptor,
+        IReadOnlyList<MemberDescriptor> members,
+        IReadOnlyList<MemberDescriptor> valueTypePresenceFlags)
+    {
+        builder.AppendLine();
+        var flagParams = valueTypePresenceFlags.Count == 0
+            ? ""
+            : ", " + string.Join(", ", valueTypePresenceFlags.Select(m => $"bool has_{m.MemberName}"));
+        builder.AppendLine($"private static void ValidateRecord({descriptor.FullyQualifiedName} record{flagParams})");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("global::System.Collections.Generic.List<global::HeroParser.Validation.ValidationError>? errors = null;");
+
+        foreach (var member in members)
+        {
+            if (!HasAnyValidation(member))
+                continue;
+
+            var colName = member.CustomJsonName ?? member.HeaderName ?? member.MemberName;
+
+            if (member.Validation.NotNull)
+            {
+                if (member.IsNullable || member.IsReferenceType)
+                    builder.AppendLine($"if (record.{member.MemberName} is null)");
+                else
+                    builder.AppendLine($"if (!has_{member.MemberName})");
+                builder.AppendLine("{");
+                builder.Indent();
+                EmitAddJsonlValidationError(builder, member.MemberName, colName, "NotNull", "Value is required", "null");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+
+            if (member.Validation.NotEmpty && IsStringMember(member))
+            {
+                builder.AppendLine($"if (record.{member.MemberName} is string strEmpty_{member.MemberName} && string.IsNullOrWhiteSpace(strEmpty_{member.MemberName}))");
+                builder.AppendLine("{");
+                builder.Indent();
+                EmitAddJsonlValidationError(builder, member.MemberName, colName, "NotEmpty", "Value must not be empty or whitespace", $"strEmpty_{member.MemberName}");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+
+            if (member.Validation.MaxLength >= 0 && IsLengthMember(member))
+            {
+                builder.AppendLine($"if (record.{member.MemberName} is not null && record.{member.MemberName}.Length > {member.Validation.MaxLength})");
+                builder.AppendLine("{");
+                builder.Indent();
+                var rawExpr = IsStringMember(member) ? $"record.{member.MemberName}" : "null";
+                EmitAddJsonlValidationError(builder, member.MemberName, colName, "MaxLength", $"Value exceeds maximum length of {member.Validation.MaxLength}", rawExpr);
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+
+            if (member.Validation.MinLength >= 0 && IsLengthMember(member))
+            {
+                builder.AppendLine($"if (record.{member.MemberName} is not null && record.{member.MemberName}.Length < {member.Validation.MinLength})");
+                builder.AppendLine("{");
+                builder.Indent();
+                var rawExpr = IsStringMember(member) ? $"record.{member.MemberName}" : "null";
+                EmitAddJsonlValidationError(builder, member.MemberName, colName, "MinLength", $"Value is shorter than minimum length of {member.Validation.MinLength}", rawExpr);
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+
+            if (member.Validation.HasRange && IsNumericType(member.BaseTypeName))
+            {
+                var valueExpr = member.IsNullable ? $"val_{member.MemberName}" : $"record.{member.MemberName}";
+                var conditions = new List<string>();
+                if (member.Validation.HasRangeMin)
+                    conditions.Add($"{valueExpr} < {member.Validation.FormatRangeMinLiteral(member.BaseTypeName)}");
+                if (member.Validation.HasRangeMax)
+                    conditions.Add($"{valueExpr} > {member.Validation.FormatRangeMaxLiteral(member.BaseTypeName)}");
+
+                var joined = string.Join(" || ", conditions);
+                if (member.IsNullable)
+                {
+                    builder.AppendLine($"if (record.{member.MemberName} is {{ }} {valueExpr} && ({joined}))");
+                }
+                else if (RequiresValueTypePresenceFlag(member))
+                {
+                    builder.AppendLine($"if (has_{member.MemberName} && ({joined}))");
+                }
+                else
+                {
+                    builder.AppendLine($"if ({joined})");
+                }
+
+                builder.AppendLine("{");
+                builder.Indent();
+                var rangeMsg = member.Validation.FormatRangeMessage();
+                EmitAddJsonlValidationError(builder, member.MemberName, colName, "Range", rangeMsg, $"{valueExpr}.ToString(global::System.Globalization.CultureInfo.InvariantCulture)");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+
+            if (member.Validation.Pattern != null && IsStringMember(member))
+            {
+                builder.AppendLine($"if (record.{member.MemberName} is string strPat_{member.MemberName} && !_pattern_{member.MemberName}.IsMatch(strPat_{member.MemberName}))");
+                builder.AppendLine("{");
+                builder.Indent();
+                EmitAddJsonlValidationError(builder, member.MemberName, colName, "Pattern", "Value does not match pattern", $"strPat_{member.MemberName}");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+        }
+
+        builder.AppendLine("if (errors is { Count: > 0 })");
+        builder.AppendLine("    throw new global::HeroParser.Validation.ValidationException(errors);");
+        builder.Unindent();
+        builder.AppendLine("}");
+    }
+
+    private static void EmitAddJsonlValidationError(
+        SourceBuilder builder,
+        string memberName,
+        string columnName,
+        string rule,
+        string message,
+        string rawValueExpr)
+    {
+        builder.AppendLine("(errors ??= new global::System.Collections.Generic.List<global::HeroParser.Validation.ValidationError>()).Add(new global::HeroParser.Validation.ValidationError");
+        builder.AppendLine("{");
+        builder.Indent();
+        builder.AppendLine("RowNumber = 0,");
+        builder.AppendLine("ColumnIndex = 0,");
+        builder.AppendLine($"ColumnName = \"{new CSharpStringLiteral(columnName).Escaped}\",");
+        builder.AppendLine($"PropertyName = \"{memberName}\",");
+        builder.AppendLine($"Rule = \"{rule}\",");
+        builder.AppendLine($"Message = \"{new CSharpStringLiteral(message).Escaped}\",");
+        builder.AppendLine($"RawValue = {rawValueExpr}");
+        builder.Unindent();
+        builder.AppendLine("});");
     }
 
     private static List<MemberDescriptor> GetMembersWithSetters(IReadOnlyList<MemberDescriptor> members)
@@ -566,6 +1284,12 @@ public sealed class JsonlRecordBinderGenerator : IIncrementalGenerator
         string BaseTypeName,
         bool IsNullable,
         bool IsEnum,
+        bool IsReferenceType,
+        string UnderlyingTypeName,
+        bool IsSpanParsable,
+        bool IsUtf8SpanParsable,
         string? CustomJsonName,
-        bool HasSetter);
+        bool HasSetter,
+        string? ParseFormat,
+        ParsedValidationRules Validation);
 }

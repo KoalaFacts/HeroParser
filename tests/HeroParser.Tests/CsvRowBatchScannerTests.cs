@@ -353,7 +353,7 @@ public class CsvRowBatchScannerTests
     {
         // Scanner-path behaviour: the per-row fallback (no AVX, e.g. Apple Silicon) caches its column
         // buffer and has never thrown here, and changing that is outside this test's scope.
-        if (!CsvRowBatchScanner.IsSupported(Options(quotes: false, track: false))) return;
+        if (!new CsvRowBatchScanner(Options(quotes: false, track: false)).IsSupported()) return;
 
         var utf8 = Encoding.UTF8.GetBytes(VaryingRows("\n", 50));
         var reader = new CsvRowReader<byte>(utf8, Options(quotes: false, track: false));
@@ -439,7 +439,7 @@ public class CsvRowBatchScannerTests
     public void CommentCharacter_UsesPerRowPath_AndSkipsComments()
     {
         var options = Options(quotes: false, track: true, commentCharacter: '#');
-        Assert.False(CsvRowBatchScanner.IsSupported(options));
+        Assert.False(new CsvRowBatchScanner(options).IsSupported());
 
         var utf8 = Encoding.UTF8.GetBytes("# header comment\na,b\n  # indented comment\nc,d\n");
         using var reader = new CsvRowReader<byte>(utf8, options);
@@ -456,7 +456,7 @@ public class CsvRowBatchScannerTests
     public void SimdDisabled_UsesPerRowPath()
     {
         var options = Options(quotes: true, track: true, useSimd: false);
-        Assert.False(CsvRowBatchScanner.IsSupported(options));
+        Assert.False(new CsvRowBatchScanner(options).IsSupported());
         AssertSameAsOracle(QuotedMix("\n"), options);
     }
 
@@ -470,9 +470,10 @@ public class CsvRowBatchScannerTests
         var ends = new int[CsvRowBatchScanner.MinEndsCapacity(options.MaxColumnCount)];
         var rowStarts = new int[2];
         var lines = new int[1];
+        var scanner = new CsvRowBatchScanner(options);
         int rows = options.EnableQuotedFields
-            ? CsvRowBatchScanner.Scan<byte, TrackLineNumbers, QuotesEnabled>(utf8, 0, 0, true, true, options, ends, rowStarts, lines, out int next, out int line, out int error)
-            : CsvRowBatchScanner.Scan<byte, TrackLineNumbers, QuotesDisabled>(utf8, 0, 0, true, true, options, ends, rowStarts, lines, out next, out line, out error);
+            ? scanner.Scan<byte, TrackLineNumbers, QuotesEnabled>(utf8, 0, 0, true, true, ends, rowStarts, lines, out int next, out int line, out int error)
+            : scanner.Scan<byte, TrackLineNumbers, QuotesDisabled>(utf8, 0, 0, true, true, ends, rowStarts, lines, out next, out line, out error);
         return new SingleScan(rows, next, line, error, ends, rowStarts);
     }
 
@@ -582,8 +583,8 @@ public class CsvRowBatchScannerTests
     {
         if (!Avx2) return;
         var withComment = Options(quotes: true, track: false, commentCharacter: '#');
-        Assert.True(CsvRowBatchScanner.IsSupportedForRow(withComment));
-        Assert.False(CsvRowBatchScanner.IsSupported(withComment));
-        Assert.True(CsvRowBatchScanner.IsSupported(Options(quotes: true, track: false)));
+        Assert.True(new CsvRowBatchScanner(withComment).IsSupportedForRow());
+        Assert.False(new CsvRowBatchScanner(withComment).IsSupported());
+        Assert.True(new CsvRowBatchScanner(Options(quotes: true, track: false)).IsSupported());
     }
 }

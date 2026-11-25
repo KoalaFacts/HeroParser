@@ -398,6 +398,8 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             binder = CsvRecordBinderFactory.GetCharBinder<T>(recordOptions, delimiter: '\x01');
         }
 
+        var rowAdapter = new XlsxRowAdapter();
+
         // Read header row if configured
         if (hasHeaderRow)
         {
@@ -407,9 +409,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
 
             if (binder.NeedsHeaderResolution)
             {
-                var headerBuffer = new char[XlsxRowAdapter.CalculateBufferSize(headerCells) + 1];
-                var headerColumnEnds = new int[headerCells.Length + 1];
-                var headerRow = XlsxRowAdapter.CreateRow(headerCells, 0, headerBuffer, headerColumnEnds);
+                var headerRow = rowAdapter.CreateRow(headerCells, 0);
                 binder.BindHeader(headerRow, 0);
             }
         }
@@ -420,8 +420,6 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
 
         var errors = new List<ValidationError>();
         int rowsRead = 0;
-        char[] buffer = [];
-        int[] columnEnds = [];
 
         while (true)
         {
@@ -432,8 +430,7 @@ public sealed class ExcelRecordReaderBuilder<T> where T : new()
             if (maxRows.HasValue && rowsRead >= maxRows.Value)
                 break;
 
-            XlsxRowAdapter.EnsureBuffers(cells, ref buffer, ref columnEnds);
-            var csvRow = XlsxRowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber, buffer, columnEnds);
+            var csvRow = rowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber);
 
             T record = default!;
             bool produced = false;

@@ -124,13 +124,13 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             cancellationToken.ThrowIfCancellationRequested();
 
             var span = buffer.AsSpan(offset, length - offset);
-            if (!endOfStream && !FixedWidthLineScanner.ContainsLineBreak(span))
+            if (!endOfStream && !new FixedWidthLineScanner().ContainsLineBreak(span))
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            var lineEnd = FixedWidthLineScanner.FindLineEnd(span);
+            var lineEnd = new FixedWidthLineScanner().FindLineEnd(span);
             // A split CRLF is one terminator, not a CR record followed by an empty LF record.
             if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
             {
@@ -186,7 +186,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
 
             if (trackLineNumbers)
             {
-                sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength), ref previousRecordEndedWithCr);
+                sourceLineNumber += new FixedWidthLineScanner().CountNewlines(buffer.AsSpan(offset, recordLength), ref previousRecordEndedWithCr);
             }
 
             offset += recordLength;
@@ -220,7 +220,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                 // Count newlines in the record for source line tracking
                 if (trackLineNumbers)
                 {
-                    sourceLineNumber += FixedWidthLineScanner.CountNewlines(buffer.AsSpan(offset, recordLength), ref previousRecordEndedWithCr);
+                    sourceLineNumber += new FixedWidthLineScanner().CountNewlines(buffer.AsSpan(offset, recordLength), ref previousRecordEndedWithCr);
                 }
 
                 offset += recordLength;
@@ -252,7 +252,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
             var span = buffer.AsSpan(offset, length - offset);
 
             // Ensure we have a complete line or reached end of stream
-            if (!endOfStream && !FixedWidthLineScanner.ContainsLineBreak(span))
+            if (!endOfStream && !new FixedWidthLineScanner().ContainsLineBreak(span))
             {
                 await FillBufferAsync(cancellationToken).ConfigureAwait(false);
                 continue;
@@ -263,7 +263,7 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
                 return false;
             }
 
-            var lineEnd = FixedWidthLineScanner.FindLineEnd(span);
+            var lineEnd = new FixedWidthLineScanner().FindLineEnd(span);
             // Look ahead when CR is the final buffered character, including when skipping is complete.
             if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
             {

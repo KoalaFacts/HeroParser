@@ -154,10 +154,12 @@ Options:
 
 ### 3.5 `convert`
 
-Stream-convert records between CSV, JSONL, Fixed-Width, and Excel (`.xlsx`) formats.
+Stream-convert records between CSV/TSV, JSONL, `.htb` (Hero Table Binary), and Excel (`.xlsx`) formats. CSV/TSV, JSONL, and `.htb` inputs and outputs ending in `.gz` (GZip), `.br` (Brotli), or `.zst`/`.zstd` (Zstandard on .NET 11+) are decompressed or compressed transparently.
 
 ```bash
 heroparser convert input.csv output.jsonl
+heroparser convert input.csv.gz output.xlsx --sheet Data
+heroparser convert input.csv output.htb
 ```
 
 Options:

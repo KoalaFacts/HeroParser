@@ -11,32 +11,32 @@ using TableBorder = HeroParser.Console.TableBorder;
 
 namespace HeroParser.Cli;
 
-internal static partial class CliCommands
+internal sealed partial class CliCommands
 {
-    public static async Task<bool> InspectAsync(string path, char? delimiter, int sampleRows, string? savePlanPath = null)
+    public async Task<bool> InspectAsync(string path, char? delimiter, int sampleRows, string? savePlanPath = null)
     {
         if (!File.Exists(path))
         {
-            ConsoleUtils.Error($"File not found: {path}");
+            console.Error($"File not found: {path}");
             return false;
         }
 
         if (sampleRows is < 1 or > 10000)
         {
-            ConsoleUtils.Error("--sample-rows must be an integer from 1 to 10000");
+            console.Error("--sample-rows must be an integer from 1 to 10000");
             return false;
         }
 
         if (savePlanPath is not null && Path.GetFullPath(path).Equals(Path.GetFullPath(savePlanPath),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
         {
-            ConsoleUtils.Error("Plan path must differ from the CSV input path.");
+            console.Error("Plan path must differ from the CSV input path.");
             return false;
         }
 
         if (!IsCsvInput(path))
         {
-            ConsoleUtils.Error("Quick inspect supports UTF-8 CSV/TSV only. Use profile for Excel or JSONL-specific tooling for JSONL.");
+            console.Error("Quick inspect supports UTF-8 CSV/TSV only. Use profile for Excel or JSONL-specific tooling for JSONL.");
             return false;
         }
 
@@ -45,7 +45,7 @@ internal static partial class CliCommands
             var (sample, sampleLength) = ReadCsvSample(path);
             if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
             {
-                ConsoleUtils.Error("Quick inspect supports UTF-8 only; this file has a UTF-16 BOM. Use profile or convert it to UTF-8 first.");
+                console.Error("Quick inspect supports UTF-8 only; this file has a UTF-16 BOM. Use profile or convert it to UTF-8 first.");
                 return false;
             }
 
@@ -56,11 +56,11 @@ internal static partial class CliCommands
             {
                 if (savePlanPath is not null)
                 {
-                    ConsoleUtils.Error("Cannot save a CSV import plan from an empty file.");
+                    console.Error("Cannot save a CSV import plan from an empty file.");
                     return false;
                 }
-                ConsoleUtils.Header($"CSV Inspection: {SanitizeTerminalText(Path.GetFileName(path))}");
-                ConsoleUtils.Info("File is empty; no header or data rows were found.");
+                console.Header($"CSV Inspection: {SanitizeTerminalText(Path.GetFileName(path))}");
+                console.Info("File is empty; no header or data rows were found.");
                 return true;
             }
 
@@ -75,7 +75,7 @@ internal static partial class CliCommands
                 }
                 catch (InvalidOperationException)
                 {
-                    ConsoleUtils.Error("Could not infer a delimiter from the first 64 KiB. Specify --delimiter explicitly (also for single-column files).");
+                    console.Error("Could not infer a delimiter from the first 64 KiB. Specify --delimiter explicitly (also for single-column files).");
                     return false;
                 }
             }
@@ -89,7 +89,7 @@ internal static partial class CliCommands
 
             if (!await reader.MoveNextAsync().ConfigureAwait(false))
             {
-                ConsoleUtils.Error("No CSV header row was found. Check the delimiter and file contents.");
+                console.Error("No CSV header row was found. Check the delimiter and file contents.");
                 return false;
             }
 
@@ -98,7 +98,7 @@ internal static partial class CliCommands
             for (int i = 0; i < headers.Length; i++)
                 headers[i] = header[i].UnquoteToString();
 
-            var stats = DynamicProfiler.CreateStats(headers);
+            var profiler = new DynamicProfiler(headers);
             var preview = new Table();
             preview.Border(TableBorder.Rounded);
             preview.AddColumn("[blue bold]Row[/]");
@@ -113,8 +113,8 @@ internal static partial class CliCommands
                 if (row.ColumnCount != headers.Length)
                     raggedRows++;
 
-                for (int i = 0; i < stats.Count; i++)
-                    DynamicProfiler.ObserveCell(stats[i], i < row.ColumnCount ? row[i].UnquoteToString() : null);
+                for (int i = 0; i < profiler.Columns.Count; i++)
+                    profiler.ObserveCell(i, i < row.ColumnCount ? row[i].UnquoteToString() : null);
 
                 if (rows <= 3)
                 {
@@ -126,7 +126,7 @@ internal static partial class CliCommands
                 }
             }
 
-            ConsoleUtils.Header($"CSV Inspection: {SanitizeTerminalText(Path.GetFileName(path))}");
+            console.Header($"CSV Inspection: {SanitizeTerminalText(Path.GetFileName(path))}");
             var summary = new Table();
             summary.Border(TableBorder.Rounded);
             summary.AddColumn("[blue bold]Property[/]");
@@ -143,25 +143,25 @@ internal static partial class CliCommands
             AnsiConsole.Write(summary);
 
             if (detection is { Confidence: < 80 })
-                ConsoleUtils.Warning("Delimiter confidence is low; verify with --delimiter before relying on column results.");
+                console.Warning("Delimiter confidence is low; verify with --delimiter before relying on column results.");
 
             var columns = new Table();
             columns.Border(TableBorder.Rounded);
             columns.AddColumn("[blue bold]Column[/]");
             columns.AddColumn("[blue bold]Sample type[/]");
             columns.AddColumn("[blue bold]Empty in sample[/]");
-            foreach (var stat in stats)
-                columns.AddRow(Markup.Escape(SanitizeTerminalText(stat.Name)), DynamicProfiler.InferTypeName(stat), stat.NullCount.ToString());
+            foreach (var stat in profiler.Columns)
+                columns.AddRow(Markup.Escape(SanitizeTerminalText(stat.Name)), stat.InferTypeName(), stat.NullCount.ToString());
 
             AnsiConsole.Write(columns);
             if (rows > 0)
             {
-                ConsoleUtils.Header("First data rows (at most 4 values each)");
+                console.Header("First data rows (at most 4 values each)");
                 AnsiConsole.Write(preview);
             }
 
-            ConsoleUtils.Info("Types and anomalies describe only inspected rows. Run 'heroparser validate <file>' to check the full file.");
-            ConsoleUtils.Info($"Re-use parser setting: --delimiter \"{SanitizeTerminalText(delimiter == '\t' ? "\\t" : delimiter.Value.ToString())}\"");
+            console.Info("Types and anomalies describe only inspected rows. Run 'heroparser validate <file>' to check the full file.");
+            console.Info($"Re-use parser setting: --delimiter \"{SanitizeTerminalText(delimiter == '\t' ? "\\t" : delimiter.Value.ToString())}\"");
             if (savePlanPath is not null)
             {
                 new CsvImportPlan
@@ -173,28 +173,28 @@ internal static partial class CliCommands
                     DelimiterConfidence = detection?.Confidence,
                     Utf8BomObserved = utf8Bom
                 }.Save(savePlanPath);
-                ConsoleUtils.Info($"Saved sampled CSV import plan: {SanitizeTerminalText(savePlanPath)}. Validate the full file before converting.");
+                console.Info($"Saved sampled CSV import plan: {SanitizeTerminalText(savePlanPath)}. Validate the full file before converting.");
             }
             return true;
         }
         catch (CsvException ex)
         {
-            ConsoleUtils.Error($"Inspection failed: {ex.Message}");
+            console.Error($"Inspection failed: {ex.Message}");
             return false;
         }
         catch (IOException ex)
         {
-            ConsoleUtils.Error($"Inspection failed: {ex.Message}");
+            console.Error($"Inspection failed: {ex.Message}");
             return false;
         }
         catch (InvalidOperationException ex)
         {
-            ConsoleUtils.Error($"Inspection failed: {ex.Message}");
+            console.Error($"Inspection failed: {ex.Message}");
             return false;
         }
         catch (UnauthorizedAccessException ex)
         {
-            ConsoleUtils.Error($"Inspection failed: {ex.Message}");
+            console.Error($"Inspection failed: {ex.Message}");
             return false;
         }
     }

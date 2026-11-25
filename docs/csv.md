@@ -328,7 +328,7 @@ using var stream = File.OpenRead("data.csv");
 using var streamReader = Csv.ReadFromStream(stream, out byte[] streamBytes);
 ```
 
-Both overloads buffer the whole input into the returned byte array, which must stay alive while you read, and reject inputs above the buffered-size limit. For large files use the async streaming reader in [1.3](#13-async-io). Rows remain valid until the next `MoveNext` call.
+Both overloads buffer the whole input into the returned byte array, which must stay alive while you read, and reject inputs above the buffered-size limit. File paths ending in `.gz`, `.br`, or `.zst`/`.zstd` (`.NET 11+` for Zstandard) are decompressed transparently. For large files use the async streaming reader in [1.3](#13-async-io). Rows remain valid until the next `MoveNext` call.
 
 **Row by row:**
 
@@ -742,6 +742,26 @@ using var reader = Csv.CreateDataReader(stream, readerOptions: readerOptions);
 
 Header names are unquoted the same way as field values, following the `CsvReadOptions` quote and escape characters: a header row `"Name","Unit ""cm"""` gives the column names `Name` and `Unit "cm"`. With `EnableQuotedFields = false` the header text is kept as written.
 
+**Exporting an `IDataReader` / `DbDataReader` back to CSV (no reflection, non-boxing):**
+
+`Csv.WriteFromDataReader*` inspects column types once on the first row and formats `ISpanFormattable` values (`int`, `long`, `decimal`, `double`, `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, `Half`, `Int128`, `UInt128`, `Guid`) through stack buffers directly to the writer:
+
+```csharp
+using System.Data;
+
+using var table = new DataTable();
+table.Columns.Add("Id", typeof(int));
+table.Columns.Add("Created", typeof(DateOnly));
+table.Rows.Add(1, new DateOnly(2026, 1, 15));
+
+using var tableReader = table.CreateDataReader();
+string exportedCsv = Csv.WriteFromDataReaderToText(tableReader);
+
+// Also supports files (including .gz/.br/.zst), streams, and async DbDataReader
+using var fileSourceReader = table.CreateDataReader();
+Csv.WriteFromDataReaderToFile("export.csv.gz", fileSourceReader);
+```
+
 ---
 
 ### 1.8 OnError callback
@@ -818,7 +838,7 @@ string csv = Csv.WriteToText(records);
 // Alice,30
 // Bob,25
 
-// Write to file
+// Write to file (`.gz`, `.br`, and `.zst`/`.zstd` extensions compress transparently)
 Csv.WriteToFile("output.csv", records);
 
 // Write to stream
@@ -1035,8 +1055,11 @@ Set `options.Validate()` to catch invalid configurations before processing untru
 | `QuoteStyle` | `QuoteStyle` | `WhenNeeded` | When to quote fields |
 | `NullValue` | `string` | `""` | String written for null values |
 | `Culture` | `CultureInfo` | `InvariantCulture` | Culture for formatting |
-| `DateTimeFormat` | `string` | `"O"` | ISO 8601 format for date/time values |
-| `NumberFormat` | `string` | `"G"` | General format for numbers |
+| `DateTimeFormat` | `string?` | `null` | Format string for `DateTime` / `DateTimeOffset` (defaults to culture format) |
+| `DateOnlyFormat` | `string?` | `null` | Format string for `DateOnly` (defaults to culture date format) |
+| `TimeOnlyFormat` | `string?` | `null` | Format string for `TimeOnly` (defaults to culture time format) |
+| `TimeSpanFormat` | `string?` | `null` | Format string for `TimeSpan` (defaults to `"c"`) |
+| `NumberFormat` | `string?` | `null` | Format string for numeric values (defaults to numeric formatting) |
 | `InjectionProtection` | `CsvInjectionProtection` | `EscapeWithQuote` | Formula injection protection mode |
 | `OnSerializeError` | `Func<...>?` | `null` | Callback invoked on serialization errors |
 
@@ -1228,7 +1251,7 @@ foreach (var col in schema.Columns)
 }
 ```
 
-**Inferred types:** `Boolean`, `Integer`, `Long`, `Decimal`, `Guid`, `DateTime`, `String`
+**Inferred types:** `Boolean`, `Integer`, `Long`, `Decimal`, `Guid`, `DateTime`, `String` by default; setting `DistinguishTemporalTypes = true` also infers `DateOnly`, `TimeOnly`, `DateTimeOffset`, and `TimeSpan`.
 
 The inference algorithm samples rows and tries to parse each value in order of specificity, falling back to the widest compatible type (for example, `int` + `decimal` = `decimal`, `int` + `string` = `string`).
 
@@ -1241,7 +1264,8 @@ var options = new CsvSchemaInferenceOptions
     SampleRows = 200,    // Default: 100
     MaxColumnCount = 100, // Default: 100
     MaxRowSize = 1024 * 1024, // Default: 1 MiB per row
-    MaxScannedInputSize = 128L * 1024 * 1024 // Default: 128 MiB total scan budget
+    MaxScannedInputSize = 128L * 1024 * 1024, // Default: 128 MiB total scan budget
+    DistinguishTemporalTypes = true // Default: false; distinguishes DateOnly, TimeOnly, DateTimeOffset, TimeSpan
 };
 
 var schema = Csv.InferSchema(csvData, options);
@@ -1416,14 +1440,15 @@ The read path processes UTF-8 input through a layered SIMD pipeline:
 ```
 Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extraction → Binding → Records
                                            │
-                                      ┌────┴─────┐
-                                      │ AVX-512  │  (64-byte chunks)
-                                      │ AVX2     │  (32-byte chunks)
-                                      │ Scalar   │  (everything else, incl. ARM64)
-                                      └──────────┘
+                                  ┌────────┴─────────┐
+                                  │ AVX-512          │  (64-byte chunks)
+                                  │ AVX2             │  (32-byte / 64-byte paired chunks)
+                                  │ AdvSimd/Vector128│  (16-byte chunks, incl. ARM64)
+                                  │ Scalar           │  (fallback when SIMD unavailable)
+                                  └──────────────────┘
 ```
 
-- **Row Scanner**: Uses SIMD to find delimiters and newlines in parallel. Uses the PCLMULQDQ instruction for branchless prefix-XOR quote tracking.
+- **Row Scanner**: Uses SIMD to find delimiters and newlines in parallel. Uses `PCLMULQDQ` on supported x64 CPUs or a branchless 6-step software prefix-XOR fallback for quote tracking.
 - **Column Extraction**: `AppendColumn` tracks column boundaries via a `columnEnds[]` array (stackalloc for ≤128 columns).
 - **Binding**: `ICsvSourceBinder<TElement, T>` maps columns to record properties. Source-generated binders inline type parsing.
 - **UTF-16 fallback**: `CsvCharToByteBinderAdapter` converts char data to UTF-8 via `ArrayPool` + `stackalloc`, then uses the byte path.
@@ -1446,20 +1471,12 @@ Records → PropertyAccessor (compiled expression trees) → CsvStreamWriter (bu
 | `CsvAsyncStreamWriter` | Async variant with dual `char[]` + `byte[]` buffers |
 | `ICsvSourceBinder<TElement, T>` | Interface for source-generated and reflection binders |
 
-**Performance characteristics (AMD Ryzen AI 9 HX PRO 370, .NET 10):**
+**SIMD acceleration and memory design:**
 
-| Rows | Columns | Quotes | Time | Throughput |
-|------|---------|--------|------|------------|
-| 10k | 25 | No | 552 µs | ~6.1 GB/s |
-| 10k | 25 | Yes | 1,344 µs | ~5.1 GB/s |
-| 10k | 100 | No | 1,451 µs | ~4.5 GB/s |
-| 10k | 100 | Yes | 3,617 µs | ~1.9 GB/s |
-| 100k | 100 | No | 14,568 µs | ~4.5 GB/s |
-| 100k | 100 | Yes | 35,396 µs | ~1.9 GB/s |
-
-- Fixed **4 KB allocation** regardless of column count or file size
-- Compared to Sep 0.12.1: HeroParser UTF-8 is **~21% faster** on quoted 25-column data, **25–45% faster** on wide CSVs
-- Always prefer the UTF-8 APIs (`byte[]` / `ReadOnlySpan<byte>`); the UTF-16 path is provided for compatibility but is not SIMD-optimized
+- Quoted CSV row/column scanning uses `AVX-512` (512-bit), `AVX2` (256-bit), or `SSE2` (128-bit) on x86-64, `AdvSimd` on ARM64, and portable `Vector128<T>` / scalar fallbacks elsewhere, computing quote parity via hardware PCLMULQDQ/PMULL or software prefix-XOR (`^= mask << k`)
+- Unquoted CSV scanning uses hardware-accelerated `SearchValues` / vectorized delimiter-and-newline scans on both UTF-8 (`byte`) and UTF-16 (`char`) inputs; prefer the UTF-8 (`byte[]` / `ReadOnlySpan<byte>`) APIs when reading files or UTF-8 streams to avoid transcoding and string allocation overhead
+- Column metadata and row buffers are reused across rows during span/stream enumeration, keeping row-iteration allocations near zero regardless of row count (subject to output string materialization when reading POCO string properties)
+- See the [Benchmarks Guide](benchmarks.md) to run `BenchmarkDotNet` on your target runtime and hardware rather than relying on static point-in-time numbers
 
 **Disable SIMD (debugging):**
 
@@ -1482,7 +1499,7 @@ while (charReader.MoveNext())
     var value = charReader.Current[0].Parse<int>();
 }
 
-// Parse from UTF-8 byte span (fastest path — no allocation for invariant primitives)
+// Parse from UTF-8 byte span (fastest path — no allocation for invariant primitives, including DateOnly, TimeOnly, DateTimeOffset, TimeSpan, Half, Int128, UInt128, BigInteger, char, Guid, Uri)
 ReadOnlySpan<byte> utf8Data = File.ReadAllBytes("data.csv");
 using var byteReader = Csv.ReadFromByteSpan(utf8Data);
 while (byteReader.MoveNext())
@@ -1555,8 +1572,9 @@ HeroParser selects the best available path automatically:
 | Instruction set | Chunk size |
 |---|---|
 | AVX-512 | 64 bytes |
-| AVX2 | 32 bytes (common on modern x64) |
-| Scalar | byte-by-byte; every other CPU, including ARM64 (Apple Silicon, AWS Graviton), and WebAssembly |
+| AVX2 | 32 bytes / 64-byte pair (common on modern x64) |
+| AdvSimd / Vector128 | 16 bytes; ARM64 (`AdvSimd`, e.g. Apple Silicon, AWS Graviton) and portable 128-bit hardware SIMD (uses software prefix-XOR when PCLMULQDQ is unavailable) |
+| Scalar | byte-by-byte; fallback when hardware SIMD is unavailable (including scalar WebAssembly) |
 
 ---
 

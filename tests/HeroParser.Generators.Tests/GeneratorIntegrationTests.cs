@@ -122,8 +122,6 @@ public class GeneratorIntegrationTests
         Assert.Throws<InvalidOperationException>(() => CsvRecordBinderFactory.GetCharBinder<UnsupportedProperty>(options));
     }
 
-    #region Generated Writer Tests
-
     [Fact]
     [Trait(CATEGORY, UNIT)]
     public void GeneratedWriter_IsRegistered_ForAnnotatedType()
@@ -212,10 +210,6 @@ public class GeneratorIntegrationTests
         Assert.Contains("\"required\": [\"Username\"]", schema);
     }
 
-    #endregion
-
-    #region Test Types
-
     private sealed class NonAnnotatedRecord
     {
         public string Name { get; set; } = string.Empty;
@@ -228,6 +222,4 @@ public class GeneratorIntegrationTests
         public string Name { get; set; } = string.Empty;
         public int[] Scores { get; set; } = [];
     }
-
-    #endregion
 }

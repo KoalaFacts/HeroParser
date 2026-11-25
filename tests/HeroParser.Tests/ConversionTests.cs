@@ -10,8 +10,6 @@ namespace HeroParser.Tests;
 /// </summary>
 public class ConversionTests
 {
-    #region CSV to FixedWidth
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvToFixedWidth_SimpleData_ConvertsCorrectly()
@@ -157,10 +155,6 @@ public class ConversionTests
         Assert.Equal("", result);
     }
 
-    #endregion
-
-    #region FixedWidth to CSV
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void FixedWidthToCsv_SimpleData_ConvertsCorrectly()
@@ -260,10 +254,6 @@ public class ConversionTests
         Assert.Equal("Name,Age\r\n", result);
     }
 
-    #endregion
-
-    #region Round-Trip
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void RoundTrip_CsvToFixedWidthAndBack_PreservesData()
@@ -281,10 +271,6 @@ public class ConversionTests
 
         Assert.Equal(originalCsv, roundTripCsv);
     }
-
-    #endregion
-
-    #region Argument Validation
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -314,6 +300,4 @@ public class ConversionTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new FixedWidthFieldDefinition("Name", 0));
     }
-
-    #endregion
 }

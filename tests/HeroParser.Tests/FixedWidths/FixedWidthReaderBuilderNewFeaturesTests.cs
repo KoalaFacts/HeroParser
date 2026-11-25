@@ -21,8 +21,6 @@ public class FixedWidthReaderBuilderNewFeaturesTests
         "Alice     030Chicago   \n" +
         "Bob       025New York  ";
 
-    #region Map<TProperty> — Start + Length
-
     [Fact]
     public void Map_StartAndLength_ParsesCorrectly()
     {
@@ -177,10 +175,6 @@ public class FixedWidthReaderBuilderNewFeaturesTests
         Assert.Contains("Start", ex.Message);
     }
 
-    #endregion
-
-    #region WithHeader skips header row
-
     [Fact]
     public void Map_WithHeader_SkipsHeaderRow()
     {
@@ -196,10 +190,6 @@ public class FixedWidthReaderBuilderNewFeaturesTests
         Assert.Equal(30, result.Records[0].Age);
         Assert.Equal("Bob", result.Records[1].Name);
     }
-
-    #endregion
-
-    #region CaseSensitiveHeaders — default is case-insensitive
 
     [Fact]
     public void WithHeaderName_DefaultCaseInsensitive_MatchesLowercase()
@@ -303,10 +293,6 @@ public class FixedWidthReaderBuilderNewFeaturesTests
         Assert.Equal("Alice", record.Name);
     }
 
-    #endregion
-
-    #region Test record types
-
     private sealed class PersonRecord
     {
         public string Name { get; set; } = string.Empty;
@@ -327,6 +313,4 @@ public class FixedWidthReaderBuilderNewFeaturesTests
         public HeroParser.FixedWidths.Records.Binding.FixedWidthRecordDescriptor<PersonRecord> BuildReadDescriptor()
             => throw new NotSupportedException("Not needed for this test.");
     }
-
-    #endregion
 }

@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using HeroParser.FixedWidths.Mapping;
+using HeroParser.Internal;
 using HeroParser.Validation;
 
 namespace HeroParser.FixedWidths.Writing;
@@ -20,6 +21,7 @@ public sealed class FixedWidthWriterBuilder<T>
     private string? dateTimeFormat;
     private string? dateOnlyFormat;
     private string? timeOnlyFormat;
+    private string? timeSpanFormat;
     private string? numberFormat;
     private Encoding encoding = Encoding.UTF8;
     private int? maxRowCount;
@@ -181,6 +183,18 @@ public sealed class FixedWidthWriterBuilder<T>
     }
 
     /// <summary>
+    /// Sets the format string for <see cref="TimeSpan"/> values.
+    /// </summary>
+    /// <param name="format">The format string (e.g., "c" or "g").</param>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthWriterBuilder<T> WithTimeSpanFormat(string format)
+    {
+        timeSpanFormat = format;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
     /// Sets the format string for numeric values.
     /// </summary>
     /// <param name="format">The format string (e.g., "N2").</param>
@@ -285,8 +299,6 @@ public sealed class FixedWidthWriterBuilder<T>
         return this;
     }
 
-    #region Terminal Methods
-
     /// <summary>
     /// Writes records to a string.
     /// </summary>
@@ -352,7 +364,7 @@ public sealed class FixedWidthWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var fileStream = new CompressedFile(path).OpenWrite();
         using var streamWriter = new StreamWriter(fileStream, encoding);
         using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
         var recordWriter = GetRecordWriter(options);
@@ -406,11 +418,7 @@ public sealed class FixedWidthWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        var fileStream = new FileStream(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
+        var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
         await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
@@ -458,11 +466,7 @@ public sealed class FixedWidthWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        var fileStream = new FileStream(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
+        var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
         await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
@@ -550,10 +554,6 @@ public sealed class FixedWidthWriterBuilder<T>
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    #endregion
-
-    #region Private Helpers
-
     private FixedWidthRecordWriter<T> GetRecordWriter(FixedWidthWriteOptions options)
     {
         return writeMapSource is not null
@@ -573,6 +573,7 @@ public sealed class FixedWidthWriterBuilder<T>
             DateTimeFormat = dateTimeFormat,
             DateOnlyFormat = dateOnlyFormat,
             TimeOnlyFormat = timeOnlyFormat,
+            TimeSpanFormat = timeSpanFormat,
             NumberFormat = numberFormat,
             MaxRowCount = maxRowCount,
             OverflowBehavior = overflowBehavior,
@@ -581,8 +582,6 @@ public sealed class FixedWidthWriterBuilder<T>
             ValidationMode = validationMode
         };
     }
-
-    #endregion
 }
 
 /// <summary>
@@ -598,6 +597,7 @@ public sealed class FixedWidthWriterBuilder
     private string? dateTimeFormat;
     private string? dateOnlyFormat;
     private string? timeOnlyFormat;
+    private string? timeSpanFormat;
     private string? numberFormat;
     private Encoding encoding = Encoding.UTF8;
     private OverflowBehavior overflowBehavior = OverflowBehavior.Truncate;
@@ -719,6 +719,18 @@ public sealed class FixedWidthWriterBuilder
     }
 
     /// <summary>
+    /// Sets the <see cref="TimeSpan"/> format string.
+    /// </summary>
+    /// <param name="format">The format string (e.g., "c" or "g").</param>
+    /// <returns>This builder for method chaining.</returns>
+    public FixedWidthWriterBuilder WithTimeSpanFormat(string format)
+    {
+        timeSpanFormat = format;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
     /// Sets the format string for numeric values.
     /// </summary>
     public FixedWidthWriterBuilder WithNumberFormat(string format)
@@ -797,9 +809,21 @@ public sealed class FixedWidthWriterBuilder
     public FixedWidthStreamWriter CreateFileWriter(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        var streamWriter = new StreamWriter(stream, encoding);
-        return new FixedWidthStreamWriter(streamWriter, GetOptions(), leaveOpen: false);
+        var stream = new CompressedFile(path).OpenWrite();
+        StreamWriter? streamWriter = null;
+        try
+        {
+            streamWriter = new StreamWriter(stream, encoding);
+            return new FixedWidthStreamWriter(streamWriter, GetOptions(), leaveOpen: false);
+        }
+        catch
+        {
+            if (streamWriter is not null)
+                streamWriter.Dispose();
+            else
+                stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -827,6 +851,7 @@ public sealed class FixedWidthWriterBuilder
             DateTimeFormat = dateTimeFormat,
             DateOnlyFormat = dateOnlyFormat,
             TimeOnlyFormat = timeOnlyFormat,
+            TimeSpanFormat = timeSpanFormat,
             NumberFormat = numberFormat,
             OverflowBehavior = overflowBehavior,
             MaxOutputSize = maxOutputSize

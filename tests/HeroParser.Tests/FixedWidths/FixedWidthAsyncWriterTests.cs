@@ -13,8 +13,6 @@ namespace HeroParser.Tests.FixedWidths;
 [Collection("AsyncWriterTests")]
 public class FixedWidthAsyncWriterTests
 {
-    #region Test Models
-
     public class TestRecord
     {
         [PositionalMap(Start = 0, Length = 20)]
@@ -26,10 +24,6 @@ public class FixedWidthAsyncWriterTests
         [PositionalMap(Start = 25, Length = 15)]
         public string? City { get; set; }
     }
-
-    #endregion
-
-    #region WriteToFileAsync Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -98,10 +92,6 @@ public class FixedWidthAsyncWriterTests
         }
     }
 
-    #endregion
-
-    #region WriteToStreamAsync Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task WriteToStreamAsync_IEnumerable_WritesRecordsToStream()
@@ -142,10 +132,6 @@ public class FixedWidthAsyncWriterTests
         Assert.Contains("00045", content);
         Assert.Contains("Denver", content);
     }
-
-    #endregion
-
-    #region Cancellation Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -189,10 +175,6 @@ public class FixedWidthAsyncWriterTests
         });
     }
 
-    #endregion
-
-    #region Large Dataset Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task WriteToStreamAsync_LargeDataset_StreamsEfficiently()
@@ -216,10 +198,6 @@ public class FixedWidthAsyncWriterTests
         var lineCount = content.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
         Assert.True(lineCount >= recordCount, $"Expected at least {recordCount} lines, got {lineCount}");
     }
-
-    #endregion
-
-    #region Options Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -285,10 +263,6 @@ public class FixedWidthAsyncWriterTests
         Assert.Contains("Carol", output);
     }
 
-    #endregion
-
-    #region Builder Pattern Async Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task Builder_ToFileAsync_WritesCorrectly()
@@ -341,10 +315,6 @@ public class FixedWidthAsyncWriterTests
         Assert.Contains("00029", content);
         Assert.Contains("Portland", content);
     }
-
-    #endregion
-
-    #region Edge Cases
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -416,10 +386,6 @@ public class FixedWidthAsyncWriterTests
         Assert.False(ms.CanWrite);
     }
 
-    #endregion
-
-    #region WriteToTextAsync Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task WriteToTextAsync_IAsyncEnumerable_ReturnsCorrectString()
@@ -462,10 +428,6 @@ public class FixedWidthAsyncWriterTests
         Assert.DoesNotContain("\r\n", result);
         Assert.Contains("Test", result);
     }
-
-    #endregion
-
-    #region ToStreamAsyncStreaming Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -550,10 +512,6 @@ public class FixedWidthAsyncWriterTests
         Assert.False(ms.CanWrite);
     }
 
-    #endregion
-
-    #region CreateWriter Tests (Alias for CreateStreamWriter)
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public void CreateWriter_TextWriter_ReturnsWriter()
@@ -606,10 +564,6 @@ public class FixedWidthAsyncWriterTests
         sw.Write("More");
         Assert.Contains("More", sw.ToString());
     }
-
-    #endregion
-
-    #region CreateStreamWriter(Stream) Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -699,10 +653,6 @@ public class FixedWidthAsyncWriterTests
 
         Assert.StartsWith("Test", result);
     }
-
-    #endregion
-
-    #region CreateAsyncStreamWriter Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -911,10 +861,6 @@ public class FixedWidthAsyncWriterTests
         Assert.StartsWith("  Hi  ", result);
     }
 
-    #endregion
-
-    #region Error Propagation Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task WriteToTextAsync_ErrorInAsyncSource_PropagatesException()
@@ -943,10 +889,6 @@ public class FixedWidthAsyncWriterTests
         );
         Assert.Contains("Simulated error", ex.Message);
     }
-
-    #endregion
-
-    #region Cancellation Mid-Stream Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -978,10 +920,6 @@ public class FixedWidthAsyncWriterTests
             async () => await FixedWidth.WriteToStreamAsync(ms, records, leaveOpen: true, cancellationToken: linkedCts.Token)
         );
     }
-
-    #endregion
-
-    #region Simulated Database Source Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -1017,10 +955,6 @@ public class FixedWidthAsyncWriterTests
         Assert.Contains("Product 1", content);
         Assert.Contains("Product 10", content);
     }
-
-    #endregion
-
-    #region Builder ToTextAsync Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -1065,10 +999,6 @@ public class FixedWidthAsyncWriterTests
         Assert.Contains("00028", result);
     }
 
-    #endregion
-
-    #region WriteToTextAsync Cancellation Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task WriteToTextAsync_WithCancellation_ThrowsWhenCancelled()
@@ -1087,10 +1017,6 @@ public class FixedWidthAsyncWriterTests
             async () => await FixedWidth.WriteToTextAsync(records, cancellationToken: cts.Token)
         );
     }
-
-    #endregion
-
-    #region WriteToFileAsync Encoding Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -1155,10 +1081,6 @@ public class FixedWidthAsyncWriterTests
         }
     }
 
-    #endregion
-
-    #region Additional Test Models
-
     public class ProductRecord
     {
         [PositionalMap(Start = 0, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
@@ -1170,10 +1092,6 @@ public class FixedWidthAsyncWriterTests
         [PositionalMap(Start = 40, Length = 15, Alignment = FieldAlignment.Right)]
         public decimal Price { get; set; }
     }
-
-    #endregion
-
-    #region Helper Methods
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
@@ -1253,10 +1171,6 @@ public class FixedWidthAsyncWriterTests
             };
         }
     }
-
-    #endregion
-
-    #region WriteFormat Tests
 
     public class WriteFormatFixedWidthRecord
     {
@@ -1343,7 +1257,5 @@ public class FixedWidthAsyncWriterTests
         [Format(WriteFormat = "MM/dd/yyyy")]
         public DateTime Date { get; set; }
     }
-
-    #endregion
 }
 

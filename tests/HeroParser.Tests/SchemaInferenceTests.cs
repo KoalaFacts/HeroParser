@@ -8,8 +8,6 @@ namespace HeroParser.Tests;
 /// </summary>
 public class SchemaInferenceTests
 {
-    #region Basic Type Detection
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void InferSchema_IntegerColumn_DetectsInt()
@@ -77,10 +75,6 @@ public class SchemaInferenceTests
         Assert.Equal(CsvInferredType.String, schema.Columns[0].InferredType);
     }
 
-    #endregion
-
-    #region Multiple Columns
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void InferSchema_MultipleColumns_DetectsEachType()
@@ -108,10 +102,6 @@ public class SchemaInferenceTests
         Assert.Equal("Last Name", schema.Columns[1].Name);
         Assert.Equal("Email", schema.Columns[2].Name);
     }
-
-    #endregion
-
-    #region Nullable Detection
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -162,10 +152,6 @@ public class SchemaInferenceTests
         Assert.True(schema.Columns[0].IsNullable);
     }
 
-    #endregion
-
-    #region Mixed Types Fall Back
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void InferSchema_MixedIntAndDecimal_FallsBackToDecimal()
@@ -196,10 +182,6 @@ public class SchemaInferenceTests
         Assert.Equal(CsvInferredType.String, schema.Columns[0].InferredType);
     }
 
-    #endregion
-
-    #region Custom Delimiter
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void InferSchema_SemicolonDelimited_DetectsTypes()
@@ -211,10 +193,6 @@ public class SchemaInferenceTests
         Assert.Equal(CsvInferredType.String, schema.Columns[0].InferredType);
         Assert.Equal(CsvInferredType.Integer, schema.Columns[1].InferredType);
     }
-
-    #endregion
-
-    #region Edge Cases
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -288,10 +266,6 @@ public class SchemaInferenceTests
         Assert.Equal(CsvInferredType.DateTime, schema.Columns[0].InferredType);
     }
 
-    #endregion
-
-    #region Column Statistics
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void InferSchema_ReportsRowCount()
@@ -311,6 +285,4 @@ public class SchemaInferenceTests
 
         Assert.Equal(7, schema.Columns[0].MaxLength);
     }
-
-    #endregion
 }

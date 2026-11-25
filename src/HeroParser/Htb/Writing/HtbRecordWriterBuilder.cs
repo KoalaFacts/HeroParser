@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using HeroParser.Htbs;
+using HeroParser.Internal;
 
 namespace HeroParser.Htbs.Writing;
 
@@ -88,8 +89,8 @@ public sealed class HtbRecordWriterBuilder<T> where T : new()
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(records);
 
-        using var stream = File.Create(path);
-        ToStream(stream, records, leaveOpen: false);
+        using var stream = new CompressedFile(path).OpenWrite();
+        ToStream(stream, records, leaveOpen: true);
     }
 
     /// <summary>
@@ -117,8 +118,11 @@ public sealed class HtbRecordWriterBuilder<T> where T : new()
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(records);
 
-        using var stream = File.Create(path);
-        await ToStreamAsync(stream, records, leaveOpen: false);
+        var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
+        await using (stream.ConfigureAwait(false))
+        {
+            await ToStreamAsync(stream, records, leaveOpen: true).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -146,7 +150,10 @@ public sealed class HtbRecordWriterBuilder<T> where T : new()
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(records);
 
-        using var stream = File.Create(path);
-        await ToStreamAsync(stream, records, leaveOpen: false);
+        var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
+        await using (stream.ConfigureAwait(false))
+        {
+            await ToStreamAsync(stream, records, leaveOpen: true).ConfigureAwait(false);
+        }
     }
 }

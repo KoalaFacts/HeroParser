@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using static HeroParser.Generators.GeneratorHelpers;
 
 namespace HeroParser.Generators;
 
@@ -44,7 +43,24 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         DateTime = 7,
         String = 8,
         Guid = 9,
-        FloatArray = 10
+        FloatArray = 10,
+        DateTimeOffset = 11,
+        DateOnly = 12,
+        TimeOnly = 13,
+        TimeSpan = 14,
+        Int16 = 15,
+        UInt16 = 16,
+        Byte = 17,
+        SByte = 18,
+        UInt32 = 19,
+        UInt64 = 20,
+        Char = 21,
+        Half = 22,
+        Int128 = 23,
+        UInt128 = 24,
+        ByteArray = 25,
+        BigInteger = 26,
+        Uri = 27
     }
 
 
@@ -77,10 +93,11 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         if (ctx.TargetSymbol is not INamedTypeSymbol symbol)
             return null;
 
-        if (symbol.IsAbstract || !IsTypeAccessible(symbol))
+        var target = new RecordTypeTarget(symbol);
+        if (symbol.IsAbstract || !target.IsAccessible)
             return null;
 
-        return BuildDescriptor(symbol, ct);
+        return BuildDescriptor(target, ct);
     }
 
     private static void EmitTypedBinder(SourceProductionContext context, TypeDescriptor descriptor)
@@ -118,10 +135,10 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         // Emit static Regex fields for Pattern validation
         foreach (var member in binderMembers)
         {
-            if (member.ValidationPattern != null)
+            if (member.Validation.Pattern != null)
             {
-                var escapedPattern = EscapeString(member.ValidationPattern);
-                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds({member.ValidationPatternTimeoutMs}));");
+                var escapedPattern = new CSharpStringLiteral(member.Validation.Pattern).Escaped;
+                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds({member.Validation.PatternTimeoutMs}));");
             }
         }
         builder.AppendLine();
@@ -189,13 +206,13 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine("if (isNull)");
             builder.AppendLine("{");
             builder.Indent();
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
             {
                 builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: value cannot be null.\");");
             }
             else
             {
-                if (member.IsNullable || member.BaseTypeName == "string" || member.BaseTypeName == "float[]")
+                if (member.IsNullable || member.IsReferenceType)
                     builder.AppendLine($"instance.{member.MemberName} = default!;");
                 else
                     builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.CorruptData, \"Column '{member.HeaderName}' is not nullable but null was read.\");");
@@ -229,13 +246,13 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine("if (isNull)");
             builder.AppendLine("{");
             builder.Indent();
-            if (member.ValidationNotNull)
+            if (member.Validation.NotNull)
             {
                 builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: value cannot be null.\");");
             }
             else
             {
-                if (member.IsNullable || member.BaseTypeName == "string" || member.BaseTypeName == "float[]")
+                if (member.IsNullable || member.IsReferenceType)
                     builder.AppendLine($"instance.{member.MemberName} = default!;");
                 else
                     builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.CorruptData, \"Column '{member.HeaderName}' is not nullable but null was read.\");");
@@ -270,7 +287,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         for (int i = 0; i < binderMembers.Count; i++)
         {
             var member = binderMembers[i];
-            if (member.IsNullable || member.BaseTypeName == "string" || member.BaseTypeName == "float[]")
+            if (member.IsNullable || member.IsReferenceType)
             {
                 builder.AppendLine($"if (record.{member.MemberName} == null)");
                 builder.AppendLine("{");
@@ -288,7 +305,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         for (int i = 0; i < binderMembers.Count; i++)
         {
             var member = binderMembers[i];
-            var isNullable = member.IsNullable || member.BaseTypeName == "string" || member.BaseTypeName == "float[]";
+            var isNullable = member.IsNullable || member.IsReferenceType;
             if (isNullable)
             {
                 builder.AppendLine($"if (record.{member.MemberName} != null)");
@@ -370,6 +387,65 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             case "System.Single[]":
                 builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadFloatArray{suffix};");
                 break;
+            case "System.DateTimeOffset":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadDateTimeOffset{suffix};");
+                break;
+            case "System.DateOnly":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadDateOnly{suffix};");
+                break;
+            case "System.TimeOnly":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadTimeOnly{suffix};");
+                break;
+            case "System.TimeSpan":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadTimeSpan{suffix};");
+                break;
+            case "short":
+            case "System.Int16":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadInt16{suffix};");
+                break;
+            case "ushort":
+            case "System.UInt16":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadUInt16{suffix};");
+                break;
+            case "byte":
+            case "System.Byte":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadByte{suffix};");
+                break;
+            case "sbyte":
+            case "System.SByte":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadSByte{suffix};");
+                break;
+            case "uint":
+            case "System.UInt32":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadUInt32{suffix};");
+                break;
+            case "ulong":
+            case "System.UInt64":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadUInt64{suffix};");
+                break;
+            case "char":
+            case "System.Char":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadChar{suffix};");
+                break;
+            case "System.Half":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadHalf{suffix};");
+                break;
+            case "System.Int128":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadInt128{suffix};");
+                break;
+            case "System.UInt128":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadUInt128{suffix};");
+                break;
+            case "byte[]":
+            case "System.Byte[]":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadByteArray{suffix};");
+                break;
+            case "System.Numerics.BigInteger":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadBigInteger{suffix};");
+                break;
+            case "System.Uri":
+                builder.AppendLine($"instance.{propertyName} = {awaitPrefix}reader.ReadUri{suffix};");
+                break;
             default:
                 break;
         }
@@ -380,7 +456,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
     {
         var baseType = member.BaseTypeName;
         var propertyName = member.MemberName;
-        var accessValue = (member.IsNullable && baseType != "string" && baseType != "float[]") ? $"record.{propertyName}.Value" : $"record.{propertyName}";
+        var accessValue = (member.IsNullable && !member.IsReferenceType) ? $"record.{propertyName}.Value" : $"record.{propertyName}";
 
 #pragma warning disable IDE0010
         switch (baseType)
@@ -423,6 +499,65 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             case "System.Single[]":
                 builder.AppendLine($"writer.WriteFloatArray({accessValue});");
                 break;
+            case "System.DateTimeOffset":
+                builder.AppendLine($"writer.WriteDateTimeOffset({accessValue});");
+                break;
+            case "System.DateOnly":
+                builder.AppendLine($"writer.WriteDateOnly({accessValue});");
+                break;
+            case "System.TimeOnly":
+                builder.AppendLine($"writer.WriteTimeOnly({accessValue});");
+                break;
+            case "System.TimeSpan":
+                builder.AppendLine($"writer.WriteTimeSpan({accessValue});");
+                break;
+            case "short":
+            case "System.Int16":
+                builder.AppendLine($"writer.WriteInt16({accessValue});");
+                break;
+            case "ushort":
+            case "System.UInt16":
+                builder.AppendLine($"writer.WriteUInt16({accessValue});");
+                break;
+            case "byte":
+            case "System.Byte":
+                builder.AppendLine($"writer.WriteByte({accessValue});");
+                break;
+            case "sbyte":
+            case "System.SByte":
+                builder.AppendLine($"writer.WriteSByte({accessValue});");
+                break;
+            case "uint":
+            case "System.UInt32":
+                builder.AppendLine($"writer.WriteUInt32({accessValue});");
+                break;
+            case "ulong":
+            case "System.UInt64":
+                builder.AppendLine($"writer.WriteUInt64({accessValue});");
+                break;
+            case "char":
+            case "System.Char":
+                builder.AppendLine($"writer.WriteChar({accessValue});");
+                break;
+            case "System.Half":
+                builder.AppendLine($"writer.WriteHalf({accessValue});");
+                break;
+            case "System.Int128":
+                builder.AppendLine($"writer.WriteInt128({accessValue});");
+                break;
+            case "System.UInt128":
+                builder.AppendLine($"writer.WriteUInt128({accessValue});");
+                break;
+            case "byte[]":
+            case "System.Byte[]":
+                builder.AppendLine($"writer.WriteByteArray({accessValue});");
+                break;
+            case "System.Numerics.BigInteger":
+                builder.AppendLine($"writer.WriteBigInteger({accessValue});");
+                break;
+            case "System.Uri":
+                builder.AppendLine($"writer.WriteUri({accessValue});");
+                break;
             default:
                 break;
         }
@@ -459,7 +594,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             for (int i = 0; i < descriptor.Members.Count; i++)
             {
                 var member = descriptor.Members[i];
-                var isNullable = member.IsNullable || member.BaseTypeName == "string" || member.BaseTypeName == "float[]";
+                var isNullable = member.IsNullable || member.IsReferenceType;
                 var isNullableStr = isNullable ? "true" : "false";
                 var typeNameStr = GetHtbDataTypeName(member.BaseTypeName);
                 var comma = i == descriptor.Members.Count - 1 ? "" : ",";
@@ -491,12 +626,30 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             "string" or "System.String" => "String",
             "System.Guid" => "Guid",
             "float[]" or "System.Single[]" => "FloatArray",
+            "System.DateTimeOffset" => "DateTimeOffset",
+            "System.DateOnly" => "DateOnly",
+            "System.TimeOnly" => "TimeOnly",
+            "System.TimeSpan" => "TimeSpan",
+            "short" or "System.Int16" => "Int16",
+            "ushort" or "System.UInt16" => "UInt16",
+            "byte" or "System.Byte" => "Byte",
+            "sbyte" or "System.SByte" => "SByte",
+            "uint" or "System.UInt32" => "UInt32",
+            "ulong" or "System.UInt64" => "UInt64",
+            "char" or "System.Char" => "Char",
+            "System.Half" => "Half",
+            "System.Int128" => "Int128",
+            "System.UInt128" => "UInt128",
+            "byte[]" or "System.Byte[]" => "ByteArray",
+            "System.Numerics.BigInteger" => "BigInteger",
+            "System.Uri" => "Uri",
             _ => "Unknown"
         };
     }
 
-    private static TypeDescriptor? BuildDescriptor(INamedTypeSymbol type, CancellationToken ct)
+    private static TypeDescriptor? BuildDescriptor(RecordTypeTarget target, CancellationToken ct)
     {
+        var type = target.Symbol;
         var members = new List<MemberDescriptor>();
         var diagnostics = new List<Diagnostic>();
 
@@ -514,7 +667,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
                 continue;
 
             // [TabularMap]
-            var mapAttribute = GetFirstMatchingAttribute(property, columnAttributeNames);
+            var mapAttribute = new SymbolAttributes(property).FindFirst(columnAttributeNames);
             string headerName = property.Name;
             int? attributeIndex = null;
             if (mapAttribute is not null)
@@ -532,7 +685,10 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
                 }
             }
 
-            var (baseTypeName, isNullable, isEnum) = GetBaseTypeInfo(property.Type);
+            var typeMeta = new TypeMetadata(property.Type);
+            var baseTypeName = typeMeta.BaseTypeName;
+            bool isNullable = typeMeta.IsNullableValueType;
+            bool isReferenceType = typeMeta.IsReferenceType;
 
 #pragma warning disable IDE0010
             HtbDataType dataType = baseTypeName switch
@@ -547,6 +703,23 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
                 "string" or "System.String" => HtbDataType.String,
                 "System.Guid" => HtbDataType.Guid,
                 "float[]" or "System.Single[]" => HtbDataType.FloatArray,
+                "System.DateTimeOffset" => HtbDataType.DateTimeOffset,
+                "System.DateOnly" => HtbDataType.DateOnly,
+                "System.TimeOnly" => HtbDataType.TimeOnly,
+                "System.TimeSpan" => HtbDataType.TimeSpan,
+                "short" or "System.Int16" => HtbDataType.Int16,
+                "ushort" or "System.UInt16" => HtbDataType.UInt16,
+                "byte" or "System.Byte" => HtbDataType.Byte,
+                "sbyte" or "System.SByte" => HtbDataType.SByte,
+                "uint" or "System.UInt32" => HtbDataType.UInt32,
+                "ulong" or "System.UInt64" => HtbDataType.UInt64,
+                "char" or "System.Char" => HtbDataType.Char,
+                "System.Half" => HtbDataType.Half,
+                "System.Int128" => HtbDataType.Int128,
+                "System.UInt128" => HtbDataType.UInt128,
+                "byte[]" or "System.Byte[]" => HtbDataType.ByteArray,
+                "System.Numerics.BigInteger" => HtbDataType.BigInteger,
+                "System.Uri" => HtbDataType.Uri,
                 _ => HtbDataType.Unknown
             };
 #pragma warning restore IDE0010
@@ -557,7 +730,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
                 continue;
             }
 
-            var typeName = property.Type.ToDisplayString(FullyQualifiedFormatWithNullable);
+            var typeName = typeMeta.FullyQualifiedName;
             var typeofTypeName = property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var validation = ParsedValidationRules.ExtractWithoutDiagnostics(property);
 
@@ -569,14 +742,8 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
                 typeofTypeName,
                 baseTypeName,
                 isNullable,
-                validation.NotNull,
-                validation.NotEmpty,
-                validation.MaxLength,
-                validation.MinLength,
-                validation.RangeMin,
-                validation.RangeMax,
-                validation.Pattern,
-                validation.PatternTimeoutMs));
+                isReferenceType,
+                validation));
         }
 
         if (members.Count == 0 && diagnostics.Count == 0)
@@ -588,27 +755,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             .ThenBy(m => m.MemberName, StringComparer.Ordinal)
             .ToList();
 
-        var fqName = type.ToDisplayString(FullyQualifiedFormatWithNullable);
-        var safeClassName = CreateSafeClassName(type);
-        return new TypeDescriptor(fqName, safeClassName, sortedMembers, diagnostics);
-    }
-
-    private static (string baseTypeName, bool isNullable, bool isEnum) GetBaseTypeInfo(ITypeSymbol type)
-    {
-        var underlying = type is INamedTypeSymbol named && named.IsGenericType && named.Name == "Nullable"
-            ? named.TypeArguments[0]
-            : type;
-
-        var baseTypeName = underlying.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-            .Replace("global::", "");
-
-        if (baseTypeName == "System.String") baseTypeName = "string";
-        else if (baseTypeName == "System.Single[]") baseTypeName = "float[]";
-
-        bool isNullable = type is INamedTypeSymbol n && n.IsGenericType && n.Name == "Nullable";
-        bool isEnum = underlying.TypeKind == TypeKind.Enum;
-
-        return (baseTypeName, isNullable, isEnum);
+        return new TypeDescriptor(target.FullyQualifiedName, target.SafeClassName, sortedMembers, diagnostics);
     }
 
     private static void EmitHtbValidationChecks(SourceBuilder builder, MemberDescriptor member)
@@ -616,7 +763,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         // 1. NotNull validation (already handled for null reads in BindField/BindFieldAsync before calling this helper)
 
         // 2. NotEmpty validation
-        if (member.ValidationNotEmpty)
+        if (member.Validation.NotEmpty)
         {
             builder.AppendLine($"if (instance.{member.MemberName} is string s && string.IsNullOrWhiteSpace(s))");
             builder.AppendLine("{");
@@ -627,59 +774,61 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         }
 
         // 3. MinLength validation
-        if (member.ValidationMinLength > 0)
+        if (member.Validation.MinLength > 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} is string sMin && sMin.Length < {member.ValidationMinLength})");
+            builder.AppendLine($"if (instance.{member.MemberName} is string sMin && sMin.Length < {member.Validation.MinLength})");
             builder.AppendLine("{");
             builder.Indent();
-            builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: length must be at least {member.ValidationMinLength}.\");");
+            builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: length must be at least {member.Validation.MinLength}.\");");
             builder.Unindent();
             builder.AppendLine("}");
         }
 
         // 4. MaxLength validation
-        if (member.ValidationMaxLength > 0)
+        if (member.Validation.MaxLength > 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} is string sMax && sMax.Length > {member.ValidationMaxLength})");
+            builder.AppendLine($"if (instance.{member.MemberName} is string sMax && sMax.Length > {member.Validation.MaxLength})");
             builder.AppendLine("{");
             builder.Indent();
-            builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: length cannot exceed {member.ValidationMaxLength}.\");");
+            builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: length cannot exceed {member.Validation.MaxLength}.\");");
             builder.Unindent();
             builder.AppendLine("}");
         }
 
         // 5 & 6. Range validation
-        if (!double.IsNaN(member.ValidationRangeMin) || !double.IsNaN(member.ValidationRangeMax))
+        if (member.Validation.HasRange)
         {
-            var valueExpr = $"instance.{member.MemberName}";
-            builder.AppendLine($"double numericVal = global::System.Convert.ToDouble({valueExpr}, global::System.Globalization.CultureInfo.InvariantCulture);");
-            if (!double.IsNaN(member.ValidationRangeMin))
+            var valueExpr = member.IsNullable && !member.IsReferenceType
+                ? $"instance.{member.MemberName}!.Value"
+                : $"instance.{member.MemberName}";
+            builder.AppendLine($"double numericVal = (double)({valueExpr});");
+            if (member.Validation.HasRangeMin)
             {
-                builder.AppendLine($"if (numericVal < {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMin, "double")})");
+                builder.AppendLine($"if (numericVal < {member.Validation.FormatRangeMinLiteral("double")})");
                 builder.AppendLine("{");
                 builder.Indent();
-                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} must be at least {GeneratorHelpers.FormatInvariant(member.ValidationRangeMin)}.\");");
+                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} must be at least {member.Validation.FormatRangeMinInvariant()}.\");");
                 builder.Unindent();
                 builder.AppendLine("}");
             }
-            if (!double.IsNaN(member.ValidationRangeMax))
+            if (member.Validation.HasRangeMax)
             {
-                builder.AppendLine($"if (numericVal > {GeneratorHelpers.FormatRangeLiteral(member.ValidationRangeMax, "double")})");
+                builder.AppendLine($"if (numericVal > {member.Validation.FormatRangeMaxLiteral("double")})");
                 builder.AppendLine("{");
                 builder.Indent();
-                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} cannot exceed {GeneratorHelpers.FormatInvariant(member.ValidationRangeMax)}.\");");
+                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} cannot exceed {member.Validation.FormatRangeMaxInvariant()}.\");");
                 builder.Unindent();
                 builder.AppendLine("}");
             }
         }
 
         // 7. Pattern validation
-        if (member.ValidationPattern != null)
+        if (member.Validation.Pattern != null)
         {
             builder.AppendLine($"if (instance.{member.MemberName} is string sPat && !_pattern_{member.MemberName}.IsMatch(sPat))");
             builder.AppendLine("{");
             builder.Indent();
-            builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: value must match pattern '{EscapeString(member.ValidationPattern)}'.\");");
+            builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: value must match pattern '{new CSharpStringLiteral(member.Validation.Pattern).Escaped}'.\");");
             builder.Unindent();
             builder.AppendLine("}");
         }
@@ -699,12 +848,6 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         string TypeOfTypeName,
         string BaseTypeName,
         bool IsNullable,
-        bool ValidationNotNull,
-        bool ValidationNotEmpty,
-        int ValidationMaxLength,
-        int ValidationMinLength,
-        double ValidationRangeMin,
-        double ValidationRangeMax,
-        string? ValidationPattern,
-        int ValidationPatternTimeoutMs);
+        bool IsReferenceType,
+        ParsedValidationRules Validation);
 }

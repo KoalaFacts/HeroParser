@@ -277,7 +277,7 @@ public class CsvStreamingScanAheadTests
     public async Task CommentCharacter_KeepsPerRowPath_OnStream()
     {
         var options = new CsvReadOptions { CommentCharacter = '#', TrackSourceLineNumbers = true, MaxColumnCount = 16 };
-        Assert.False(CsvRowBatchScanner.IsSupported(options));
+        Assert.False(new CsvRowBatchScanner(options).IsSupported());
         var utf8 = Encoding.UTF8.GetBytes("# c\na,b\n  # c2\nc,d\n");
         var outcome = await ReadStreamAsync(utf8, options, chunk: 5, bufferSize: 4096);
         Assert.Null(outcome.Error);
@@ -287,15 +287,15 @@ public class CsvStreamingScanAheadTests
     }
 
     /// <summary>
-    /// Without AVX2/AVX-512 (Apple Silicon, or SIMD disabled) both readers take the per-row parser; the
+    /// Without hardware SIMD (or with SIMD disabled) both readers take the per-row parser; the
     /// streaming reader must still agree with the span reader across refills, including CRLF pairs split
     /// by a read boundary.
     /// </summary>
     [Fact]
     public async Task PerRowFallback_NoSimd_MatchesSpanReader()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
-        Assert.False(CsvRowBatchScanner.IsSupported(Options(quotes: true, track: true)));
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
+        Assert.False(new CsvRowBatchScanner(Options(quotes: true, track: true)).IsSupported());
         await AssertStreamMatchesSpan(VaryingRows("\r\n", 600), Options(quotes: false, track: true));
         await AssertStreamMatchesSpan(QuotedMix("\r\n", 300), Options(quotes: true, track: true));
         await AssertStreamMatchesSpan("\n\n" + VaryingRows("\r\n", 200) + "\r\n\r\n" + VaryingRows("\n", 100) + "\n\n\n", Options(quotes: true, track: true));

@@ -1,3 +1,4 @@
+using HeroParser.Internal;
 using HeroParser.JsonLines.Reading;
 using HeroParser.JsonLines.Reading.Data;
 
@@ -16,15 +17,23 @@ public static partial class Jsonl
         => new(stream, options, readerOptions, leaveOpen);
 
     /// <summary>
-    /// Creates a <see cref="JsonlDataReader"/> from a JSONL file path.
+    /// Creates a <see cref="JsonlDataReader"/> from a JSONL file path (supports transparent <c>.gz</c> decompression).
     /// </summary>
     public static JsonlDataReader CreateDataReader(
         string path,
         JsonlReadOptions? options = null,
         JsonlDataReaderOptions? readerOptions = null)
     {
-        ArgumentNullException.ThrowIfNull(path);
-        FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return new JsonlDataReader(stream, options, readerOptions, leaveOpen: false);
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        Stream stream = new CompressedFile(path).OpenRead(bufferSize: 4096, FileOptions.SequentialScan);
+        try
+        {
+            return new JsonlDataReader(stream, options, readerOptions, leaveOpen: false);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
     }
 }

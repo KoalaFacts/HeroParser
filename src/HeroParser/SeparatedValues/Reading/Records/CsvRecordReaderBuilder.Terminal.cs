@@ -1,5 +1,6 @@
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Reading.Binders;
 using System.Text;
 
@@ -69,7 +70,8 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(path);
         ThrowIfMapNotConfigured();
         var (parserOptions, _) = GetOptions();
-        parserOptions.ValidateInputSize(new FileInfo(path).Length);
+        if (!new CompressedFile(path).IsCompressed)
+            parserOptions.ValidateInputSize(new FileInfo(path).Length);
         _ = Csv.ReadFromFile(path, out var fileBytes, parserOptions);
         return FromTextWithMap(DecodeBufferedCsvBytes(fileBytes));
     }
@@ -95,7 +97,8 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ArgumentNullException.ThrowIfNull(path);
         ThrowIfMapConfigured();
         var (parserOptions, recordOptions) = GetOptions();
-        parserOptions.ValidateInputSize(new FileInfo(path).Length);
+        if (!new CompressedFile(path).IsCompressed)
+            parserOptions.ValidateInputSize(new FileInfo(path).Length);
         var rowReader = Csv.ReadFromFile(path, out fileBytes, parserOptions);
         var binder = CsvRecordBinderFactory.GetByteBinder<T>(recordOptions);
         return new CsvRecordReader<byte, T>(rowReader, binder, recordOptions.SkipRows,
@@ -172,15 +175,12 @@ public sealed partial class CsvRecordReaderBuilder<T>
         ThrowIfMapConfigured();
         ThrowIfOnErrorConfiguredForAsync();
         var (parserOptions, recordOptions) = GetOptions();
-        parserOptions.ValidateInputSize(new FileInfo(path).Length);
-        // Declare the FileStream with await using here (not in a finally) so CodeQL can prove
+        if (!new CompressedFile(path).IsCompressed)
+            parserOptions.ValidateInputSize(new FileInfo(path).Length);
+        // Declare the Stream with await using here (not in a finally) so CodeQL can prove
         // disposal across the iterator state machine and so it's released if a later
         // construction (e.g. PipeReader.Create) throws.
-        var fileStream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
+        var fileStream = new CompressedFile(path).OpenRead(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         await using var fileStreamDisposal = fileStream.ConfigureAwait(false);

@@ -7,6 +7,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
 
@@ -36,8 +37,8 @@ public static class CsvToJsonlConverter
         ArgumentNullException.ThrowIfNull(jsonlPath);
         ArgumentNullException.ThrowIfNull(shape);
         CsvToJsonlOptions opt = options ?? CsvToJsonlOptions.Default;
-        using var csvStream = new FileStream(csvPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
-        using var jsonlStream = new FileStream(jsonlPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096);
+        using Stream csvStream = new CompressedFile(csvPath).OpenRead(4096, FileOptions.SequentialScan);
+        using Stream jsonlStream = new CompressedFile(jsonlPath).OpenWrite(4096);
         ConvertAsync(csvStream, jsonlStream, shape, opt).AsTask().GetAwaiter().GetResult();
     }
 

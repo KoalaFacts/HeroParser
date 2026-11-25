@@ -80,7 +80,7 @@ public static partial class Jsonl
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reader);
-        return JsonlPipeLineReader.ReadLinesAsync(reader, options ?? JsonlReadOptions.Default, cancellationToken);
+        return new JsonlPipeLineReader(reader, options ?? JsonlReadOptions.Default).ReadLinesAsync(cancellationToken);
     }
 
     [RequiresUnreferencedCode("JSONL deserialization without a JsonTypeInfo<T> uses reflection. Use the JsonTypeInfo<T> overload for AOT.")]
@@ -99,7 +99,7 @@ public static partial class Jsonl
 
         try
         {
-            await foreach (JsonlLine line in JsonlPipeLineReader.ReadLinesAsync(reader, effective, cancellationToken).ConfigureAwait(false))
+            await foreach (JsonlLine line in new JsonlPipeLineReader(reader, effective).ReadLinesAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (!TryAdvance(in line, effective, ref skipped, ref recordsRead, out bool yieldNow))
                     continue;
@@ -151,7 +151,7 @@ public static partial class Jsonl
 
         try
         {
-            await foreach (JsonlLine line in JsonlPipeLineReader.ReadLinesAsync(reader, effective, cancellationToken).ConfigureAwait(false))
+            await foreach (JsonlLine line in new JsonlPipeLineReader(reader, effective).ReadLinesAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (!TryAdvance(in line, effective, ref skipped, ref recordsRead, out bool yieldNow))
                     continue;

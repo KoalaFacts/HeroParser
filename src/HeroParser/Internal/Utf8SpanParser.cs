@@ -2,8 +2,10 @@ using System.Buffers;
 using System.Buffers.Text;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Unicode;
 
 namespace HeroParser.Internal;
 
@@ -11,9 +13,10 @@ namespace HeroParser.Internal;
 /// Shared zero-allocation UTF-8 span parsing primitives for columns and internal binders.
 /// Uses <see cref="Utf8Parser"/> on invariant fast paths and stackalloc/pooled char buffers otherwise.
 /// </summary>
-internal static class Utf8SpanParser
+internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
 {
     private const int STACK_ALLOC_CHAR_LIMIT = 256;
+    private readonly ReadOnlySpan<byte> utf8 = utf8;
 
     private delegate bool DecodedCharParser<TState, TResult>(ReadOnlySpan<char> chars, TState state, out TResult result);
 
@@ -31,14 +34,14 @@ internal static class Utf8SpanParser
         return encoding.CodePage == Encoding.UTF8.CodePage;
     }
 
-    /// <summary>Decodes a UTF-8 span to a managed string.</summary>
+    /// <summary>Decodes the UTF-8 span to a managed string.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static string Decode(ReadOnlySpan<byte> utf8) => Encoding.UTF8.GetString(utf8);
+    internal string Decode() => Encoding.UTF8.GetString(utf8);
 
     /// <summary>
-    /// Parses a UTF-8 span using <see cref="ISpanParsable{T}"/> without allocating on typical field sizes.
+    /// Parses the UTF-8 span using <see cref="ISpanParsable{T}"/> without allocating on typical field sizes.
     /// </summary>
-    internal static T ParseIsomorphic<T>(ReadOnlySpan<byte> utf8, IFormatProvider? provider)
+    internal T ParseIsomorphic<T>(IFormatProvider? provider)
         where T : ISpanParsable<T>
     {
         if (utf8.IsEmpty)
@@ -65,10 +68,9 @@ internal static class Utf8SpanParser
     }
 
     /// <summary>
-    /// Attempts to parse a UTF-8 span using <see cref="ISpanParsable{T}"/> without allocating on typical field sizes.
+    /// Attempts to parse the UTF-8 span using <see cref="ISpanParsable{T}"/> without allocating on typical field sizes.
     /// </summary>
-    internal static bool TryParseIsomorphic<T>(
-        ReadOnlySpan<byte> utf8,
+    internal bool TryParseIsomorphic<T>(
         IFormatProvider? provider,
         [MaybeNullWhen(false)] out T result)
         where T : ISpanParsable<T>
@@ -97,9 +99,9 @@ internal static class Utf8SpanParser
     }
 
     /// <summary>
-    /// Checks whether a UTF-8 byte span is empty or contains only whitespace characters without heap allocation.
+    /// Checks whether the UTF-8 byte span is empty or contains only whitespace characters without heap allocation.
     /// </summary>
-    internal static bool IsNullOrWhiteSpace(ReadOnlySpan<byte> utf8)
+    internal bool IsNullOrWhiteSpace()
     {
         if (utf8.IsEmpty)
             return true;
@@ -116,9 +118,9 @@ internal static class Utf8SpanParser
         return true;
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as an <see cref="int"/> using the specified culture.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as an <see cref="int"/> using the specified culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseInt32(ReadOnlySpan<byte> utf8, IFormatProvider? provider, out int result)
+    internal bool TryParseInt32(IFormatProvider? provider, out int result)
     {
         if (IsInvariant(provider) &&
             Utf8Parser.TryParse(utf8, out result, out int consumed) &&
@@ -130,13 +132,13 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => CultureNumberParser.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="long"/> using the specified culture.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="long"/> using the specified culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseInt64(ReadOnlySpan<byte> utf8, IFormatProvider? provider, out long result)
+    internal bool TryParseInt64(IFormatProvider? provider, out long result)
     {
         if (IsInvariant(provider) &&
             Utf8Parser.TryParse(utf8, out result, out int consumed) &&
@@ -148,13 +150,13 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => CultureNumberParser.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="short"/> using the specified culture.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="short"/> using the specified culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseInt16(ReadOnlySpan<byte> utf8, IFormatProvider? provider, out short result)
+    internal bool TryParseInt16(IFormatProvider? provider, out short result)
     {
         if (IsInvariant(provider) &&
             Utf8Parser.TryParse(utf8, out result, out int consumed) &&
@@ -166,13 +168,13 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => CultureNumberParser.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="byte"/> using the specified culture.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="byte"/> using the specified culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseByte(ReadOnlySpan<byte> utf8, IFormatProvider? provider, out byte result)
+    internal bool TryParseByte(IFormatProvider? provider, out byte result)
     {
         if (IsInvariant(provider) &&
             Utf8Parser.TryParse(utf8, out result, out int consumed) &&
@@ -184,13 +186,85 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => CultureNumberParser.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="decimal"/> using the specified culture and styles.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="uint"/> using the specified culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseDecimal(ReadOnlySpan<byte> utf8, IFormatProvider? provider, NumberStyles styles, out decimal result)
+    internal bool TryParseUInt32(IFormatProvider? provider, out uint result)
+    {
+        if (IsInvariant(provider) &&
+            Utf8Parser.TryParse(utf8, out result, out int consumed) &&
+            consumed == utf8.Length)
+        {
+            return true;
+        }
+
+        return TryParseDecoded(
+            utf8,
+            provider,
+            static (chars, p, out parsed) => uint.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            out result);
+    }
+
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="ulong"/> using the specified culture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseUInt64(IFormatProvider? provider, out ulong result)
+    {
+        if (IsInvariant(provider) &&
+            Utf8Parser.TryParse(utf8, out result, out int consumed) &&
+            consumed == utf8.Length)
+        {
+            return true;
+        }
+
+        return TryParseDecoded(
+            utf8,
+            provider,
+            static (chars, p, out parsed) => ulong.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            out result);
+    }
+
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="ushort"/> using the specified culture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseUInt16(IFormatProvider? provider, out ushort result)
+    {
+        if (IsInvariant(provider) &&
+            Utf8Parser.TryParse(utf8, out result, out int consumed) &&
+            consumed == utf8.Length)
+        {
+            return true;
+        }
+
+        return TryParseDecoded(
+            utf8,
+            provider,
+            static (chars, p, out parsed) => ushort.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            out result);
+    }
+
+    /// <summary>Attempts to parse the UTF-8 span as an <see cref="sbyte"/> using the specified culture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseSByte(IFormatProvider? provider, out sbyte result)
+    {
+        if (IsInvariant(provider) &&
+            Utf8Parser.TryParse(utf8, out result, out int consumed) &&
+            consumed == utf8.Length)
+        {
+            return true;
+        }
+
+        return TryParseDecoded(
+            utf8,
+            provider,
+            static (chars, p, out parsed) => sbyte.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            out result);
+    }
+
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="decimal"/> using the specified culture and styles.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseDecimal(IFormatProvider? provider, NumberStyles styles, out decimal result)
     {
         if (IsInvariant(provider) &&
             styles == NumberStyles.Number &&
@@ -203,13 +277,13 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => CultureNumberParser.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => new CultureNumberParser(state.Provider).TryParse(chars, state.Styles, out parsed),
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="double"/> using the specified culture and styles.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="double"/> using the specified culture and styles.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseDouble(ReadOnlySpan<byte> utf8, IFormatProvider? provider, NumberStyles styles, out double result)
+    internal bool TryParseDouble(IFormatProvider? provider, NumberStyles styles, out double result)
     {
         if (IsInvariant(provider) &&
             styles == (NumberStyles.Float | NumberStyles.AllowThousands) &&
@@ -222,13 +296,13 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => CultureNumberParser.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => new CultureNumberParser(state.Provider).TryParse(chars, state.Styles, out parsed),
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="float"/> using the specified culture and styles.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="float"/> using the specified culture and styles.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseSingle(ReadOnlySpan<byte> utf8, IFormatProvider? provider, NumberStyles styles, out float result)
+    internal bool TryParseSingle(IFormatProvider? provider, NumberStyles styles, out float result)
     {
         if (IsInvariant(provider) &&
             styles == (NumberStyles.Float | NumberStyles.AllowThousands) &&
@@ -241,13 +315,13 @@ internal static class Utf8SpanParser
         return TryParseDecoded(
             utf8,
             (Styles: styles, Provider: provider),
-            static (chars, state, out parsed) => CultureNumberParser.TryParse(chars, state.Styles, state.Provider, out parsed),
+            static (chars, state, out parsed) => new CultureNumberParser(state.Provider).TryParse(chars, state.Styles, out parsed),
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="bool"/> supporting 1/0, Y/N, T/F, and standard boolean literals.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="bool"/> supporting 1/0, Y/N, T/F, and standard boolean literals.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseBoolean(ReadOnlySpan<byte> utf8, out bool result)
+    internal bool TryParseBoolean(out bool result)
     {
         if (utf8.Length == 1)
         {
@@ -284,13 +358,13 @@ internal static class Utf8SpanParser
         return false;
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="Guid"/>.</summary>
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="Guid"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static bool TryParseGuid(ReadOnlySpan<byte> utf8, out Guid result)
+    internal bool TryParseGuid(out Guid result)
         => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="DateTime"/>.</summary>
-    internal static bool TryParseDateTime(ReadOnlySpan<byte> utf8, IFormatProvider? provider, DateTimeStyles styles, out DateTime result)
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="DateTime"/>.</summary>
+    internal bool TryParseDateTime(IFormatProvider? provider, DateTimeStyles styles, out DateTime result)
     {
         if (IsInvariant(provider) &&
             styles == DateTimeStyles.None &&
@@ -307,9 +381,8 @@ internal static class Utf8SpanParser
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="DateTime"/> using an exact format.</summary>
-    internal static bool TryParseDateTimeExact(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="DateTime"/> using an exact format.</summary>
+    internal bool TryParseDateTimeExact(
         ReadOnlySpan<char> format,
         IFormatProvider? provider,
         DateTimeStyles styles,
@@ -322,9 +395,8 @@ internal static class Utf8SpanParser
             static (chars, fmt, p, st, out parsed) => DateTime.TryParseExact(chars, fmt, p, st, out parsed),
             out result);
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="DateTimeOffset"/>.</summary>
-    internal static bool TryParseDateTimeOffset(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="DateTimeOffset"/>.</summary>
+    internal bool TryParseDateTimeOffset(
         IFormatProvider? provider,
         DateTimeStyles styles,
         out DateTimeOffset result)
@@ -334,9 +406,8 @@ internal static class Utf8SpanParser
             static (chars, state, out parsed) => DateTimeOffset.TryParse(chars, state.Provider, state.Styles, out parsed),
             out result);
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="DateTimeOffset"/> using an exact format.</summary>
-    internal static bool TryParseDateTimeOffsetExact(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="DateTimeOffset"/> using an exact format.</summary>
+    internal bool TryParseDateTimeOffsetExact(
         ReadOnlySpan<char> format,
         IFormatProvider? provider,
         DateTimeStyles styles,
@@ -349,9 +420,8 @@ internal static class Utf8SpanParser
             static (chars, fmt, p, st, out parsed) => DateTimeOffset.TryParseExact(chars, fmt, p, st, out parsed),
             out result);
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="DateOnly"/>.</summary>
-    internal static bool TryParseDateOnly(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="DateOnly"/>.</summary>
+    internal bool TryParseDateOnly(
         IFormatProvider? provider,
         DateTimeStyles styles,
         out DateOnly result)
@@ -361,9 +431,8 @@ internal static class Utf8SpanParser
             static (chars, state, out parsed) => DateOnly.TryParse(chars, state.Provider, state.Styles, out parsed),
             out result);
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="DateOnly"/> using an exact format.</summary>
-    internal static bool TryParseDateOnlyExact(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="DateOnly"/> using an exact format.</summary>
+    internal bool TryParseDateOnlyExact(
         ReadOnlySpan<char> format,
         IFormatProvider? provider,
         DateTimeStyles styles,
@@ -376,9 +445,8 @@ internal static class Utf8SpanParser
             static (chars, fmt, p, st, out parsed) => DateOnly.TryParseExact(chars, fmt, p, st, out parsed),
             out result);
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="TimeOnly"/>.</summary>
-    internal static bool TryParseTimeOnly(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="TimeOnly"/>.</summary>
+    internal bool TryParseTimeOnly(
         IFormatProvider? provider,
         DateTimeStyles styles,
         out TimeOnly result)
@@ -388,9 +456,8 @@ internal static class Utf8SpanParser
             static (chars, state, out parsed) => TimeOnly.TryParse(chars, state.Provider, state.Styles, out parsed),
             out result);
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="TimeOnly"/> using an exact format.</summary>
-    internal static bool TryParseTimeOnlyExact(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="TimeOnly"/> using an exact format.</summary>
+    internal bool TryParseTimeOnlyExact(
         ReadOnlySpan<char> format,
         IFormatProvider? provider,
         DateTimeStyles styles,
@@ -403,8 +470,8 @@ internal static class Utf8SpanParser
             static (chars, fmt, p, st, out parsed) => TimeOnly.TryParseExact(chars, fmt, p, st, out parsed),
             out result);
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="TimeSpan"/>.</summary>
-    internal static bool TryParseTimeSpan(ReadOnlySpan<byte> utf8, IFormatProvider? provider, out TimeSpan result)
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="TimeSpan"/>.</summary>
+    internal bool TryParseTimeSpan(IFormatProvider? provider, out TimeSpan result)
     {
         if (IsInvariant(provider) &&
             Utf8Parser.TryParse(utf8, out result, out int consumed) &&
@@ -420,9 +487,8 @@ internal static class Utf8SpanParser
             out result);
     }
 
-    /// <summary>Attempts to parse a UTF-8 span as a <see cref="TimeSpan"/> using an exact format.</summary>
-    internal static bool TryParseTimeSpanExact(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="TimeSpan"/> using an exact format.</summary>
+    internal bool TryParseTimeSpanExact(
         ReadOnlySpan<char> format,
         IFormatProvider? provider,
         out TimeSpan result)
@@ -434,8 +500,179 @@ internal static class Utf8SpanParser
             static (chars, fmt, p, _, out parsed) => TimeSpan.TryParseExact(chars, fmt, p, out parsed),
             out result);
 
-    /// <summary>Attempts to parse a UTF-8 span as an enum of type <typeparamref name="TEnum"/>.</summary>
-    internal static bool TryParseEnum<TEnum>(ReadOnlySpan<byte> utf8, bool ignoreCase, out TEnum result)
+    /// <summary>Attempts to parse the UTF-8 span representing a single UTF-16 character.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseChar(out char result)
+    {
+        if (utf8.IsEmpty)
+        {
+            result = default;
+            return false;
+        }
+
+        if (utf8.Length == 1 && utf8[0] < 0x80)
+        {
+            result = (char)utf8[0];
+            return true;
+        }
+
+        if (utf8.Length <= 4)
+        {
+            Span<char> chars = stackalloc char[4];
+            if (Utf8.ToUtf16(utf8, chars, out _, out int charsWritten, replaceInvalidSequences: false) == OperationStatus.Done &&
+                charsWritten == 1)
+            {
+                result = chars[0];
+                return true;
+            }
+        }
+
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="Half"/> using the specified culture and styles.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseHalf(IFormatProvider? provider, NumberStyles styles, out Half result)
+        => Half.TryParse(utf8, styles, provider, out result);
+
+    /// <summary>Attempts to parse the UTF-8 span as an <see cref="Int128"/> using the specified culture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseInt128(IFormatProvider? provider, out Int128 result)
+        => Int128.TryParse(utf8, NumberStyles.Integer, provider, out result);
+
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="UInt128"/> using the specified culture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseUInt128(IFormatProvider? provider, out UInt128 result)
+        => UInt128.TryParse(utf8, NumberStyles.Integer, provider, out result);
+
+    /// <summary>Attempts to parse the UTF-8 span as a <see cref="BigInteger"/> using the specified culture.</summary>
+    internal bool TryParseBigInteger(IFormatProvider? provider, out BigInteger result)
+        => TryParseDecoded(
+            utf8,
+            provider,
+            static (chars, p, out parsed) => BigInteger.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            out result);
+
+    /// <summary>Attempts to parse a non-empty UTF-8 span as a <see cref="Uri"/>.</summary>
+    internal bool TryParseUri([NotNullWhen(true)] out Uri? result)
+    {
+        if (IsNullOrWhiteSpace())
+        {
+            result = null;
+            return false;
+        }
+
+        string decoded = Decode().Trim();
+        return Uri.TryCreate(decoded, UriKind.RelativeOrAbsolute, out result);
+    }
+
+    /// <summary>Attempts to parse the UTF-8 Base64-encoded span into a byte array.</summary>
+    internal bool TryParseBase64Bytes([NotNullWhen(true)] out byte[]? result)
+    {
+        ReadOnlySpan<byte> trimmed = TrimAsciiWhiteSpace(utf8);
+        if (trimmed.IsEmpty)
+        {
+            result = [];
+            return true;
+        }
+
+        int maxDecoded = Base64.GetMaxDecodedFromUtf8Length(trimmed.Length);
+        byte[]? rented = maxDecoded > 1024 ? ArrayPool<byte>.Shared.Rent(maxDecoded) : null;
+        Span<byte> buffer = rented is not null ? rented : stackalloc byte[maxDecoded];
+        try
+        {
+            if (Base64.DecodeFromUtf8(trimmed, buffer, out _, out int bytesWritten) == OperationStatus.Done)
+            {
+                result = buffer[..bytesWritten].ToArray();
+                return true;
+            }
+
+            result = null;
+            return false;
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    /// <summary>Attempts to parse a char Base64-encoded span into a byte array.</summary>
+    internal static bool TryParseBase64Chars(ReadOnlySpan<char> chars, [NotNullWhen(true)] out byte[]? result)
+    {
+        ReadOnlySpan<char> trimmed = chars.Trim();
+        if (trimmed.IsEmpty)
+        {
+            result = [];
+            return true;
+        }
+
+        int maxDecoded = (trimmed.Length * 3 + 3) / 4;
+        byte[]? rented = maxDecoded > 1024 ? ArrayPool<byte>.Shared.Rent(maxDecoded) : null;
+        Span<byte> buffer = rented is not null ? rented : stackalloc byte[maxDecoded];
+        try
+        {
+            if (Convert.TryFromBase64Chars(trimmed, buffer, out int bytesWritten))
+            {
+                result = buffer[..bytesWritten].ToArray();
+                return true;
+            }
+
+            result = null;
+            return false;
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    /// <summary>
+    /// Attempts to parse the UTF-8 span directly using <see cref="IUtf8SpanParsable{T}"/> without intermediate UTF-16 conversion.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryParseUtf8Isomorphic<T>(
+        IFormatProvider? provider,
+        [MaybeNullWhen(false)] out T result)
+        where T : IUtf8SpanParsable<T>
+        => T.TryParse(utf8, provider, out result);
+
+    /// <summary>
+    /// Attempts to parse a UTF-16 char span using <see cref="IUtf8SpanParsable{T}"/> without allocating on typical field sizes.
+    /// </summary>
+    internal static bool TryParseUtf8FromChars<T>(
+        ReadOnlySpan<char> chars,
+        IFormatProvider? provider,
+        [MaybeNullWhen(false)] out T result)
+        where T : IUtf8SpanParsable<T>
+    {
+        if (chars.IsEmpty)
+            return T.TryParse([], provider, out result);
+
+        int maxBytes = Encoding.UTF8.GetMaxByteCount(chars.Length);
+        if (maxBytes <= STACK_ALLOC_CHAR_LIMIT * 2)
+        {
+            Span<byte> stackBytes = stackalloc byte[maxBytes];
+            int written = Encoding.UTF8.GetBytes(chars, stackBytes);
+            return T.TryParse(stackBytes[..written], provider, out result);
+        }
+
+        byte[] rented = ArrayPool<byte>.Shared.Rent(maxBytes);
+        try
+        {
+            int written = Encoding.UTF8.GetBytes(chars, rented);
+            return T.TryParse(rented.AsSpan(0, written), provider, out result);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    /// <summary>Attempts to parse the UTF-8 span as an enum of type <typeparamref name="TEnum"/>.</summary>
+    internal bool TryParseEnum<TEnum>(bool ignoreCase, out TEnum result)
         where TEnum : struct, Enum
         => TryParseDecoded(
             utf8,
@@ -443,9 +680,8 @@ internal static class Utf8SpanParser
             static (chars, ic, out parsed) => Enum.TryParse(chars, ic, out parsed),
             out result);
 
-    /// <summary>Compares a UTF-8 byte span with a UTF-16 string without heap allocation on typical field sizes.</summary>
-    internal static bool EqualsString(
-        ReadOnlySpan<byte> utf8,
+    /// <summary>Compares the UTF-8 byte span with a UTF-16 string without heap allocation on typical field sizes.</summary>
+    internal bool EqualsString(
         string? other,
         StringComparison comparison = StringComparison.Ordinal)
     {
@@ -481,27 +717,42 @@ internal static class Utf8SpanParser
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ReadOnlySpan<byte> TrimAsciiWhiteSpace(ReadOnlySpan<byte> span)
+    {
+        int start = 0;
+        while (start < span.Length && IsAsciiWhiteSpace(span[start]))
+            start++;
+        int end = span.Length - 1;
+        while (end >= start && IsAsciiWhiteSpace(span[end]))
+            end--;
+        return span[start..(end + 1)];
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool IsAsciiWhiteSpace(byte b) => b is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n' or (byte)'\v' or (byte)'\f';
+
     private static bool TryParseDecoded<TState, TResult>(
-        ReadOnlySpan<byte> utf8,
+        ReadOnlySpan<byte> span,
         TState state,
         DecodedCharParser<TState, TResult> parser,
         out TResult result)
     {
-        if (utf8.IsEmpty)
+        if (span.IsEmpty)
             return parser([], state, out result);
 
-        int maxChars = Encoding.UTF8.GetMaxCharCount(utf8.Length);
+        int maxChars = Encoding.UTF8.GetMaxCharCount(span.Length);
         if (maxChars <= STACK_ALLOC_CHAR_LIMIT)
         {
             Span<char> chars = stackalloc char[maxChars];
-            int written = Encoding.UTF8.GetChars(utf8, chars);
+            int written = Encoding.UTF8.GetChars(span, chars);
             return parser(chars[..written], state, out result);
         }
 
         char[] rented = ArrayPool<char>.Shared.Rent(maxChars);
         try
         {
-            int written = Encoding.UTF8.GetChars(utf8, rented);
+            int written = Encoding.UTF8.GetChars(span, rented);
             return parser(rented.AsSpan(0, written), state, out result);
         }
         finally
@@ -511,28 +762,28 @@ internal static class Utf8SpanParser
     }
 
     private static bool TryParseDecodedExact<TStyle, TResult>(
-        ReadOnlySpan<byte> utf8,
+        ReadOnlySpan<byte> span,
         ReadOnlySpan<char> format,
         IFormatProvider? provider,
         TStyle styles,
         DecodedFormattedCharParser<TStyle, TResult> parser,
         out TResult result)
     {
-        if (utf8.IsEmpty)
+        if (span.IsEmpty)
             return parser([], format, provider, styles, out result);
 
-        int maxChars = Encoding.UTF8.GetMaxCharCount(utf8.Length);
+        int maxChars = Encoding.UTF8.GetMaxCharCount(span.Length);
         if (maxChars <= STACK_ALLOC_CHAR_LIMIT)
         {
             Span<char> chars = stackalloc char[maxChars];
-            int written = Encoding.UTF8.GetChars(utf8, chars);
+            int written = Encoding.UTF8.GetChars(span, chars);
             return parser(chars[..written], format, provider, styles, out result);
         }
 
         char[] rented = ArrayPool<char>.Shared.Rent(maxChars);
         try
         {
-            int written = Encoding.UTF8.GetChars(utf8, rented);
+            int written = Encoding.UTF8.GetChars(span, rented);
             return parser(rented.AsSpan(0, written), format, provider, styles, out result);
         }
         finally
@@ -541,20 +792,20 @@ internal static class Utf8SpanParser
         }
     }
 
-    private static bool IsNonAsciiWhiteSpace(ReadOnlySpan<byte> utf8)
+    private static bool IsNonAsciiWhiteSpace(ReadOnlySpan<byte> span)
     {
-        int maxChars = Encoding.UTF8.GetMaxCharCount(utf8.Length);
+        int maxChars = Encoding.UTF8.GetMaxCharCount(span.Length);
         if (maxChars <= STACK_ALLOC_CHAR_LIMIT)
         {
             Span<char> chars = stackalloc char[maxChars];
-            int written = Encoding.UTF8.GetChars(utf8, chars);
+            int written = Encoding.UTF8.GetChars(span, chars);
             return chars[..written].IsWhiteSpace();
         }
 
         char[] rented = ArrayPool<char>.Shared.Rent(maxChars);
         try
         {
-            int written = Encoding.UTF8.GetChars(utf8, rented);
+            int written = Encoding.UTF8.GetChars(span, rented);
             return rented.AsSpan(0, written).IsWhiteSpace();
         }
         finally

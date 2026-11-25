@@ -75,7 +75,7 @@ internal sealed class InlineCsvMapWrapper<T> : ICsvReadMapSource<T> where T : ne
         var assign = Expression.Assign(propertyAccess, valueParam);
         var compiled = Expression.Lambda<Action<T, TProperty>>(assign, instanceParam, valueParam).Compile();
 
-        var parse = SpanParserFactory.GetParser<TProperty>();
+        var parse = new SpanParserFactory().GetParser<TProperty>();
 
         void Setter(ref T instance, ReadOnlySpan<char> value, CultureInfo culture)
         {

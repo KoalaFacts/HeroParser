@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Mapping;
 using HeroParser.Validation;
 
@@ -23,6 +24,7 @@ public sealed class CsvWriterBuilder<T>
     private string? dateTimeFormat;
     private string? dateOnlyFormat;
     private string? timeOnlyFormat;
+    private string? timeSpanFormat;
     private string? numberFormat;
     private Encoding encoding = Encoding.UTF8;
     private int? maxRowCount;
@@ -230,6 +232,18 @@ public sealed class CsvWriterBuilder<T>
     }
 
     /// <summary>
+    /// Sets the format string for <see cref="TimeSpan"/> values.
+    /// </summary>
+    /// <param name="format">The format string (e.g., "c" or "g").</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder<T> WithTimeSpanFormat(string format)
+    {
+        timeSpanFormat = format;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
     /// Sets the format string for numeric values.
     /// </summary>
     /// <param name="format">The format string (e.g., "N2", "F4", "C").</param>
@@ -394,8 +408,6 @@ public sealed class CsvWriterBuilder<T>
         return this;
     }
 
-    #region Terminal Methods
-
     /// <summary>
     /// Writes records to a string.
     /// </summary>
@@ -461,7 +473,7 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var fileStream = new CompressedFile(path).OpenWrite();
         using var streamWriter = new StreamWriter(fileStream, encoding);
         using var writer = new CsvStreamWriter(streamWriter, options, leaveOpen: true);
         var recordWriter = GetRecordWriter(options);
@@ -515,11 +527,7 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
-        var fileStream = new FileStream(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
+        var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
         await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
@@ -606,10 +614,6 @@ public sealed class CsvWriterBuilder<T>
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    #endregion
-
-    #region Private Helpers
-
     [RequiresUnreferencedCode("Fluent mapping uses reflection. Use [GenerateBinder] attribute for AOT/trimming support.")]
     [RequiresDynamicCode("Fluent mapping uses expression compilation. Use [GenerateBinder] attribute for AOT/trimming support.")]
     private CsvRecordWriter<T> GetRecordWriter(CsvWriteOptions options)
@@ -634,6 +638,7 @@ public sealed class CsvWriterBuilder<T>
             DateTimeFormat = dateTimeFormat,
             DateOnlyFormat = dateOnlyFormat,
             TimeOnlyFormat = timeOnlyFormat,
+            TimeSpanFormat = timeSpanFormat,
             NumberFormat = numberFormat,
             MaxRowCount = maxRowCount,
             OnSerializeError = onSerializeError,
@@ -647,8 +652,6 @@ public sealed class CsvWriterBuilder<T>
             ValidationMode = validationMode
         };
     }
-
-    #endregion
 }
 
 /// <summary>
@@ -665,6 +668,7 @@ public sealed class CsvWriterBuilder
     private string? dateTimeFormat;
     private string? dateOnlyFormat;
     private string? timeOnlyFormat;
+    private string? timeSpanFormat;
     private string? numberFormat;
     private Encoding encoding = Encoding.UTF8;
 
@@ -808,6 +812,18 @@ public sealed class CsvWriterBuilder
     }
 
     /// <summary>
+    /// Sets the <see cref="TimeSpan"/> format string.
+    /// </summary>
+    /// <param name="format">The format string (e.g., "c" or "g").</param>
+    /// <returns>This builder for method chaining.</returns>
+    public CsvWriterBuilder WithTimeSpanFormat(string format)
+    {
+        timeSpanFormat = format;
+        cachedOptions = null;
+        return this;
+    }
+
+    /// <summary>
     /// Sets the format string for numeric values.
     /// </summary>
     /// <param name="format">The format string (e.g., "N2", "F4", "C").</param>
@@ -912,9 +928,17 @@ public sealed class CsvWriterBuilder
     public CsvStreamWriter CreateFileWriter(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        var streamWriter = new StreamWriter(stream, encoding);
-        return new CsvStreamWriter(streamWriter, GetOptions(), leaveOpen: false);
+        var stream = new CompressedFile(path).OpenWrite();
+        try
+        {
+            var streamWriter = new StreamWriter(stream, encoding);
+            return new CsvStreamWriter(streamWriter, GetOptions(), leaveOpen: false);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -946,6 +970,7 @@ public sealed class CsvWriterBuilder
             DateTimeFormat = dateTimeFormat,
             DateOnlyFormat = dateOnlyFormat,
             TimeOnlyFormat = timeOnlyFormat,
+            TimeSpanFormat = timeSpanFormat,
             NumberFormat = numberFormat,
             InjectionProtection = injectionProtection,
             AdditionalDangerousChars = additionalDangerousChars,

@@ -199,6 +199,32 @@ await bulkCopy.WriteToServerAsync(reader);
 
 `FixedWidthDataReaderOptions` accepts explicit `ColumnNames` to override header values and supports `CaseSensitiveHeaders` for header-name lookup.
 
+**Exporting an `IDataReader` / `DbDataReader` back to fixed-width (no reflection, non-boxing):**
+
+`FixedWidth.WriteFromDataReader*` inspects column types once on the first row and formats `ISpanFormattable` values (`int`, `decimal`, `DateTime`, `DateTimeOffset`, `DateOnly`, `TimeOnly`, `TimeSpan`, `Half`, `Int128`, `UInt128`, `Guid`) directly onto stack buffers:
+
+```csharp
+using System.Data;
+
+using var table = new DataTable();
+table.Columns.Add("Id", typeof(int));
+table.Columns.Add("HiredOn", typeof(DateOnly));
+table.Rows.Add(42, new DateOnly(2026, 3, 1));
+
+FixedWidthFieldDefinition[] columns =
+[
+    new("Id", 6, FieldAlignment.Right, '0'),
+    new("HiredOn", 10)
+];
+
+using var reader = table.CreateDataReader();
+string output = FixedWidth.WriteFromDataReaderToText(
+    reader,
+    columns,
+    new FixedWidthWriteOptions { DateOnlyFormat = "yyyy-MM-dd" },
+    writeHeader: true);
+```
+
 ### ForEach (Object Reuse)
 
 For maximum throughput with large files, `ForEach` methods reuse a single record instance per iteration, eliminating per-row allocations. **Do not store the instance** — copy needed values inside the callback.
@@ -666,6 +692,7 @@ public class ValidatedRecord
 | `DateTimeFormat` | `string?` | `null` | DateTime format string |
 | `DateOnlyFormat` | `string?` | `null` | DateOnly format string |
 | `TimeOnlyFormat` | `string?` | `null` | TimeOnly format string |
+| `TimeSpanFormat` | `string?` | `null` | TimeSpan format string (defaults to `"c"`) |
 | `NumberFormat` | `string?` | `null` | Numeric format string |
 | `OverflowBehavior` | `OverflowBehavior` | `Truncate` | `Truncate` or `Throw` on field overflow |
 | `OnSerializeError` | `FixedWidthSerializeErrorHandler?` | `null` | Error callback; return `Throw`, `SkipRow`, or `WriteEmpty` |
@@ -748,8 +775,11 @@ public class Employee
 The generated binder provides:
 
 - **AOT compatibility** — no runtime reflection
+- **Low / zero allocation** — direct span parsing and stackalloc formatting across primitive and extended CLR types (`DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan`, `Half`, `Int128`, `UInt128`, `BigInteger`, `char`, `Uri`, enums)
 - **Faster startup** — binders are pre-compiled at build time
 - **Trimming-safe** — works with `dotnet publish --self-contained`
+
+File helpers (`FromFile`, `ToFile`, `WriteFromDataReaderToFile`) also decompress and compress `.gz`, `.br`, and `.zst`/`.zstd` (`.NET 11+` for Zstandard) transparently by file extension.
 
 The source generator ships inside the main `HeroParser` package; no separate `HeroParser.Generators` NuGet reference is needed.
 

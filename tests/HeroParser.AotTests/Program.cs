@@ -15,5 +15,6 @@ ExcelAotTests.Run(runner);
 JsonlAotTests.Run(runner);
 HtbAotTests.Run(runner);
 HeroParserConsoleAotTests.Run(runner);
+ExtendedTypesAotTests.Run(runner);
 
 return runner.PrintSummary();

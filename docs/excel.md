@@ -137,6 +137,12 @@ List<SalesRecord> sales = Excel.Read<SalesRecord>()
     .FromFile("report.xlsx");
 ```
 
+You can also inspect worksheet names in workbook order before selecting a sheet:
+
+```csharp
+IReadOnlyList<string> sheetNames = Excel.GetSheetNames("report.xlsx");
+```
+
 ### Row-Level Reading
 
 Read rows as `string[]` without any type binding when you need raw cell values.
@@ -352,6 +358,22 @@ using var reader = Excel.CreateDataReader("data.xlsx", options, sheetName: "Shee
 ```
 
 Always dispose the `ExcelDataReader`; it holds open the underlying file or stream.
+
+**Exporting an `IDataReader` / `DbDataReader` to Excel (no reflection, non-boxing):**
+
+`Excel.WriteFromDataReader*` inspects column types once on the first row and formats `ISpanFormattable` values (`int`, `long`, `decimal`, `DateOnly`, `TimeOnly`, `TimeSpan`, `Half`, `Int128`, `UInt128`, `Guid`) onto stack buffers without boxing:
+
+```csharp
+using System.Data;
+
+using var table = new DataTable();
+table.Columns.Add("OrderId", typeof(int));
+table.Columns.Add("OrderDate", typeof(DateOnly));
+table.Rows.Add(1001, new DateOnly(2026, 2, 10));
+
+using var reader = table.CreateDataReader();
+byte[] xlsxBytes = Excel.WriteFromDataReaderToBytes(reader, sheetName: "Orders");
+```
 
 ---
 
@@ -650,6 +672,7 @@ Use `ExcelReadOptions.Default` for the zero-allocation default instance.
 | `DateTimeFormat` | `string?` | `null` | Format string for `DateTime` (null = OA date serial) |
 | `DateOnlyFormat` | `string?` | `null` | Format string for `DateOnly` (null = OA date serial) |
 | `TimeOnlyFormat` | `string?` | `null` | Format string for `TimeOnly` (null = culture default) |
+| `TimeSpanFormat` | `string?` | `null` | Format string for `TimeSpan` (defaults to `"c"`) |
 | `NumberFormat` | `string?` | `null` | Format string for numeric values |
 | `MaxRowCount` | `int?` | `null` | Maximum data rows to write (unlimited when null) |
 | `ValidationMode` | `ValidationMode` | `Strict` | Whether `[Validate]` rules are enforced on write |
@@ -721,7 +744,7 @@ No third-party library (EPPlus, ClosedXML, NPOI, etc.) is referenced.
 
 ### Shared String Table
 
-Excel stores repeated strings in a shared string table to reduce file size. HeroParser's writer automatically deduplicates string cells into the shared string table. Numeric and date serial values are written as inline numeric cells, not as strings, which preserves native Excel sorting and filtering behaviour.
+Excel stores repeated strings in a shared string table to reduce file size. HeroParser's writer automatically deduplicates string cells (including `ReadOnlySpan<char>` lookups without allocating intermediate strings) into the shared string table. Numeric and date serial values are written as inline numeric cells, not as strings, which preserves native Excel sorting and filtering behaviour; `long`/`ulong` integers exceeding IEEE-754 double exact integer precision (`±9,007,199,254,740,992`) are automatically preserved as text cells so high-order digits are never silently rounded.
 
 ### OA Date Format Handling
 

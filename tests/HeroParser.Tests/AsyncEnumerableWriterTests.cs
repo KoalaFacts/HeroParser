@@ -10,15 +10,9 @@ namespace HeroParser.Tests;
 [Collection("AsyncWriterTests")]
 public class AsyncEnumerableWriterTests
 {
-    #region Test Models
-
     private record Person(string Name, int Age, string City);
 
     private record Product(int Id, string Name, decimal Price);
-
-    #endregion
-
-    #region WriteToTextAsync Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -118,10 +112,6 @@ public class AsyncEnumerableWriterTests
         Assert.Equal(expected, csv);
     }
 
-    #endregion
-
-    #region WriteToFileAsync Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task WriteToFileAsync_SimpleRecords_WritesCorrectly()
@@ -209,10 +199,6 @@ public class AsyncEnumerableWriterTests
         }
     }
 
-    #endregion
-
-    #region WriteToStreamAsync Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task WriteToStreamAsync_SimpleRecords_WritesCorrectly()
@@ -271,10 +257,6 @@ public class AsyncEnumerableWriterTests
         stream.Position = 0; // Should not throw
         Assert.True(stream.CanRead);
     }
-
-    #endregion
-
-    #region CsvWriterBuilder Async Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -353,10 +335,6 @@ public class AsyncEnumerableWriterTests
         Assert.Contains("Alice|30|New York", content);
     }
 
-    #endregion
-
-    #region Simulated Database-Like Async Source Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task WriteToTextAsync_SimulatedDatabaseSource_WritesCorrectly()
@@ -388,10 +366,6 @@ public class AsyncEnumerableWriterTests
         Assert.Equal(10001, lineCount); // 10000 records + 1 header
     }
 
-    #endregion
-
-    #region Cancellation Mid-Stream Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task WriteToTextAsync_CancellationMidStream_ThrowsOperationCanceledException()
@@ -408,10 +382,6 @@ public class AsyncEnumerableWriterTests
         );
     }
 
-    #endregion
-
-    #region Error Propagation Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task WriteToTextAsync_ErrorInAsyncSource_PropagatesException()
@@ -425,10 +395,6 @@ public class AsyncEnumerableWriterTests
         );
         Assert.Contains("Simulated error", ex.Message);
     }
-
-    #endregion
-
-    #region Special Characters and Quoting Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -481,10 +447,6 @@ public class AsyncEnumerableWriterTests
         // Assert
         Assert.Contains("\"Alice\nSmith\"", csv);
     }
-
-    #endregion
-
-    #region Helper Methods
 
     private static async IAsyncEnumerable<T> CreateAsyncEnumerable<T>(params T[] items)
     {
@@ -550,7 +512,5 @@ public class AsyncEnumerableWriterTests
             yield return new Product(i, $"Product {i}", i * 10.5m);
         }
     }
-
-    #endregion
 }
 

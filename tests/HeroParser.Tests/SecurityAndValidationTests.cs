@@ -14,8 +14,6 @@ namespace HeroParser.Tests;
 /// </summary>
 public class SecurityAndValidationTests
 {
-    #region Test Record Types
-
     [GenerateBinder]
     internal class Person
     {
@@ -23,10 +21,6 @@ public class SecurityAndValidationTests
         public int Age { get; set; }
         public string? Email { get; set; }
     }
-
-    #endregion
-
-    #region CSV Injection Protection Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -368,8 +362,6 @@ public class SecurityAndValidationTests
         Assert.False(row.IsDangerousColumn(1)); // "\"@test\""
     }
 
-    #region CsvByteSpanRow HasDangerousFields Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvByteSpanRow_HasDangerousFields_ReturnsFalse_ForSafeData()
@@ -444,12 +436,6 @@ public class SecurityAndValidationTests
         Assert.True(row.IsDangerousColumn(3)); // "+CMD|'"
     }
 
-    #endregion
-
-    #endregion
-
-    #region Output Size Limits Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void MaxOutputSize_ThrowsWhenExceeded()
@@ -519,10 +505,6 @@ public class SecurityAndValidationTests
         Assert.Contains("A,B,C", csv);
         Assert.Contains("D,E,F", csv);
     }
-
-    #endregion
-
-    #region Named Field Access (CsvHeaderIndex) Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -666,7 +648,4 @@ public class SecurityAndValidationTests
 
         Assert.Equal(0, headers["Name"]); // First occurrence wins
     }
-
-    #endregion
-
 }

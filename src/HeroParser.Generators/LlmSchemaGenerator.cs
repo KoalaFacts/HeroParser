@@ -36,7 +36,8 @@ public sealed class LlmSchemaGenerator : IIncrementalGenerator
         if (ctx.TargetSymbol is not INamedTypeSymbol symbol)
             return null;
 
-        if (symbol.IsAbstract || !GeneratorHelpers.IsTypeAccessible(symbol))
+        var target = new RecordTypeTarget(symbol);
+        if (symbol.IsAbstract || !target.IsAccessible)
             return null;
 
         var fullyQualifiedName = symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -49,43 +50,35 @@ public sealed class LlmSchemaGenerator : IIncrementalGenerator
                 continue;
 
             var headerName = member.Name;
-            var tabularAttr = member.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "HeroParser.TabularMapAttribute");
+            var tabularAttr = new SymbolAttributes(member).FindFirst("HeroParser.TabularMapAttribute");
             if (tabularAttr != null)
             {
-                var nameVal = tabularAttr.NamedArguments.FirstOrDefault(kv => kv.Key == "Name").Value.Value as string;
-                if (!string.IsNullOrWhiteSpace(nameVal))
+                foreach (var arg in tabularAttr.NamedArguments)
                 {
-                    headerName = nameVal!;
+                    if (arg.Key == "Name" && arg.Value.Value is string nameVal && !string.IsNullOrWhiteSpace(nameVal))
+                    {
+                        headerName = nameVal;
+                        break;
+                    }
                 }
             }
 
-            var jsonType = member.Type.SpecialType switch
+            var unwrappedType = new TypeMetadata(member.Type).UnderlyingSymbol;
+            var jsonType = unwrappedType.SpecialType switch
             {
                 SpecialType.System_Int32 or SpecialType.System_Int64 or SpecialType.System_Int16 or SpecialType.System_Byte or SpecialType.System_UInt32 or SpecialType.System_UInt64 or SpecialType.System_UInt16 or SpecialType.System_SByte => "integer",
                 SpecialType.System_Double or SpecialType.System_Single or SpecialType.System_Decimal => "number",
                 SpecialType.System_Boolean => "boolean",
-                _ => "string"
+                _ => unwrappedType.ToDisplayString() switch
+                {
+                    "System.Half" => "number",
+                    "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger" => "integer",
+                    _ => "string"
+                }
             };
 
-            double? rangeMin = null;
-            double? rangeMax = null;
-            string? pattern = null;
-            bool isRequired = false;
-
-            var validateAttr = member.GetAttributes().FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == "HeroParser.ValidateAttribute");
-            if (validateAttr != null)
-            {
-                foreach (var arg in validateAttr.NamedArguments)
-                {
-                    if (arg.Key == "NotNull" && arg.Value.Value is bool bn && bn) isRequired = true;
-                    if (arg.Key == "NotEmpty" && arg.Value.Value is bool bne && bne) isRequired = true;
-                    if (arg.Key == "RangeMin" && arg.Value.Value is double rm && !double.IsNaN(rm)) rangeMin = rm;
-                    if (arg.Key == "RangeMax" && arg.Value.Value is double rx && !double.IsNaN(rx)) rangeMax = rx;
-                    if (arg.Key == "Pattern" && arg.Value.Value is string p) pattern = p;
-                }
-            }
-
-            if (isRequired)
+            var validation = ParsedValidationRules.ExtractWithoutDiagnostics(member);
+            if (validation.NotNull || validation.NotEmpty)
             {
                 requiredProperties.Add(member.Name);
             }
@@ -94,14 +87,11 @@ public sealed class LlmSchemaGenerator : IIncrementalGenerator
                 member.Name,
                 headerName,
                 jsonType,
-                rangeMin,
-                rangeMax,
-                pattern
-            ));
+                validation));
         }
 
         return new SchemaDescriptor(
-            symbol,
+            target.SafeClassName,
             fullyQualifiedName,
             properties,
             requiredProperties
@@ -120,19 +110,19 @@ public sealed class LlmSchemaGenerator : IIncrementalGenerator
             var prop = descriptor.Properties[i];
             jsonSb.Append($"\\\"{prop.PropertyName}\\\": {{");
             jsonSb.Append($"\\\"type\\\": \\\"{prop.JsonType}\\\",");
-            jsonSb.Append($"\\\"description\\\": \\\"Mapped from column '{GeneratorHelpers.EscapeString(prop.HeaderName)}'\\\"");
+            jsonSb.Append($"\\\"description\\\": \\\"Mapped from column '{new CSharpStringLiteral(prop.HeaderName).Escaped}'\\\"");
 
-            if (prop.RangeMin.HasValue)
+            if (prop.Validation.HasRangeMin)
             {
-                jsonSb.Append($",\\\"minimum\\\": {GeneratorHelpers.FormatInvariant(prop.RangeMin.Value)}");
+                jsonSb.Append($",\\\"minimum\\\": {prop.Validation.FormatRangeMinInvariant()}");
             }
-            if (prop.RangeMax.HasValue)
+            if (prop.Validation.HasRangeMax)
             {
-                jsonSb.Append($",\\\"maximum\\\": {GeneratorHelpers.FormatInvariant(prop.RangeMax.Value)}");
+                jsonSb.Append($",\\\"maximum\\\": {prop.Validation.FormatRangeMaxInvariant()}");
             }
-            if (prop.Pattern != null)
+            if (prop.Validation.Pattern != null)
             {
-                jsonSb.Append($",\\\"pattern\\\": \\\"{GeneratorHelpers.EscapeString(prop.Pattern)}\\\"");
+                jsonSb.Append($",\\\"pattern\\\": \\\"{new CSharpStringLiteral(prop.Validation.Pattern).Escaped}\\\"");
             }
 
             jsonSb.Append("}");
@@ -162,7 +152,7 @@ public sealed class LlmSchemaGenerator : IIncrementalGenerator
 
         var preRenderedJson = jsonSb.ToString();
 
-        var safeClassName = GeneratorHelpers.CreateSafeClassName(descriptor.Symbol);
+        var safeClassName = descriptor.SafeClassName;
 
         var code = new StringBuilder();
         code.AppendLine("// <auto-generated/>");
@@ -187,18 +177,18 @@ public sealed class LlmSchemaGenerator : IIncrementalGenerator
 
     private sealed class SchemaDescriptor
     {
-        public INamedTypeSymbol Symbol { get; }
+        public string SafeClassName { get; }
         public string FullyQualifiedName { get; }
         public List<PropertySchemaDescriptor> Properties { get; }
         public List<string> RequiredProperties { get; }
 
         public SchemaDescriptor(
-            INamedTypeSymbol symbol,
+            string safeClassName,
             string fullyQualifiedName,
             List<PropertySchemaDescriptor> properties,
             List<string> requiredProperties)
         {
-            Symbol = symbol;
+            SafeClassName = safeClassName;
             FullyQualifiedName = fullyQualifiedName;
             Properties = properties;
             RequiredProperties = requiredProperties;
@@ -210,24 +200,18 @@ public sealed class LlmSchemaGenerator : IIncrementalGenerator
         public string PropertyName { get; }
         public string HeaderName { get; }
         public string JsonType { get; }
-        public double? RangeMin { get; }
-        public double? RangeMax { get; }
-        public string? Pattern { get; }
+        public ParsedValidationRules Validation { get; }
 
         public PropertySchemaDescriptor(
             string propertyName,
             string headerName,
             string jsonType,
-            double? rangeMin,
-            double? rangeMax,
-            string? pattern)
+            ParsedValidationRules validation)
         {
             PropertyName = propertyName;
             HeaderName = headerName;
             JsonType = jsonType;
-            RangeMin = rangeMin;
-            RangeMax = rangeMax;
-            Pattern = pattern;
+            Validation = validation;
         }
     }
 }

@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths.Writing;
@@ -33,6 +34,7 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
     private readonly CultureInfo culture;
     private readonly string nullValue;
     private readonly string? dateTimeFormat;
+    private readonly string? timeSpanFormat;
     private readonly string? numberFormat;
     private readonly OverflowBehavior overflowBehavior;
 #if NET6_0_OR_GREATER
@@ -80,6 +82,7 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         culture = this.options.Culture;
         nullValue = this.options.NullValue;
         dateTimeFormat = this.options.DateTimeFormat;
+        timeSpanFormat = this.options.TimeSpanFormat;
         numberFormat = this.options.NumberFormat;
         overflowBehavior = this.options.OverflowBehavior;
 #if NET6_0_OR_GREATER
@@ -209,8 +212,6 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         await FlushCharBufferAsync(cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
-
-    #region Internal Writing Methods
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ValueTask WriteNewLineAsync(CancellationToken cancellationToken)
@@ -443,6 +444,46 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
                 await WriteSpanFormattableAsync(ul, width, alignment, padChar, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
                 return;
 
+            case ushort ush:
+                await WriteSpanFormattableAsync(ush, width, alignment, padChar, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case sbyte sb:
+                await WriteSpanFormattableAsync(sb, width, alignment, padChar, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case TimeSpan ts:
+                await WriteSpanFormattableAsync(ts, width, alignment, padChar, format ?? timeSpanFormat, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case char ch:
+                await WriteCharAsync(ch, width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case Half half:
+                await WriteSpanFormattableAsync(half, width, alignment, padChar, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case Int128 i128:
+                await WriteSpanFormattableAsync(i128, width, alignment, padChar, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case UInt128 u128:
+                await WriteSpanFormattableAsync(u128, width, alignment, padChar, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case BigInteger bi:
+                await WriteSpanFormattableAsync(bi, width, alignment, padChar, format ?? numberFormat, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case Uri uri:
+                await WriteFieldValueAsync(uri.OriginalString.AsMemory(), width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+                return;
+
+            case byte[] bytes:
+                await WriteFieldValueAsync(Convert.ToBase64String(bytes).AsMemory(), width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+                return;
+
             case Guid g:
                 await WriteSpanFormattableAsync(g, width, alignment, padChar, format, cancellationToken).ConfigureAwait(false);
                 return;
@@ -467,6 +508,69 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
 
         // Last resort: ToString()
         await WriteFieldValueAsync((value.ToString() ?? string.Empty).AsMemory(), width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal string NullValue => options.NullValue;
+
+    internal string? NumberFormat => options.NumberFormat;
+
+    internal string? DateTimeFormat => options.DateTimeFormat;
+
+    internal ValueTask WriteSpanFormattableFieldAsync<T>(
+        T value,
+        int width,
+        FieldAlignment alignment,
+        char padChar,
+        string? format,
+        CancellationToken cancellationToken)
+        where T : ISpanFormattable
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        return WriteSpanFormattableAsync(value, width, alignment, padChar, format, cancellationToken);
+    }
+
+    internal ValueTask WriteBoolFieldAsync(
+        bool value,
+        int width,
+        FieldAlignment alignment,
+        char padChar,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        return WriteFieldValueAsync((value ? "True" : "False").AsMemory(), width, alignment, padChar, cancellationToken);
+    }
+
+    internal ValueTask WriteCharFieldAsync(
+        char value,
+        int width,
+        FieldAlignment alignment,
+        char padChar,
+        CancellationToken cancellationToken)
+        => WriteCharAsync(value, width, alignment, padChar, cancellationToken);
+
+#if NET6_0_OR_GREATER
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+#endif
+    private async ValueTask WriteCharAsync(
+        char value,
+        int width,
+        FieldAlignment alignment,
+        char padChar,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        await EnsureCapacityAsync(width, cancellationToken).ConfigureAwait(false);
+        Span<char> chBuf = [value];
+        WriteFieldValue(chBuf, width, alignment, padChar);
     }
 
 #if NET6_0_OR_GREATER
@@ -505,10 +609,6 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
             WriteFieldValue(value.ToString(format, culture), width, alignment, padChar);
         }
     }
-
-    #endregion
-
-    #region Buffer Management
 
 #if NET6_0_OR_GREATER
     [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
@@ -572,10 +672,6 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         ReturnCharBuffer(oldBuffer);
     }
 
-    #endregion
-
-    #region Disposal
-
     private void ThrowIfDisposed()
     {
         if (disposed)
@@ -614,10 +710,6 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
         }
     }
 
-    #endregion
-
-    #region Pool Helpers
-
     private char[] RentCharBuffer(int minimumLength)
     {
         return charPool.Rent(minimumLength);
@@ -639,7 +731,5 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
     {
         bytePool.Return(toReturn, clearArray: true);
     }
-
-    #endregion
 }
 

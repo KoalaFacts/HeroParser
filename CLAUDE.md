@@ -171,6 +171,16 @@ CSV, Fixed-Width, and Excel support `DbDataReader` for streaming large files int
 
 ## Code Quality Rules
 
+### Avoid Static Helper / Utility Classes
+- Avoid introducing new `static class` helpers or `*Helper` / `*Utilities` classes (both `public` and `internal`)
+- Prefer cohesive domain/value types (`readonly struct` or `sealed class`) that own their state and operations (e.g., `CompressedFile` wrapping a file path instead of `FileCompressionHelper`), or private methods directly on the owning type
+- Existing top-level API entry-point facades (`Csv`, `Excel`, `FixedWidth`, `Jsonl`, `Htb`, `Hardware`) remain static by public API design; do not add new static helper/utility classes
+
+### Never Use `#region` / `#endregion` Directives
+- Do not use `#region` or `#endregion` preprocessor directives anywhere in `src/`, `tests/`, `benchmarks/`, or `examples/`
+- `#region` hides oversized classes and masks missing decomposition; split cohesive responsibilities into smaller types or `partial` files instead
+- Enforced automatically by `tests/HeroParser.Tests/CodeHygieneTests.cs`
+
 ### Never Suppress Warnings to Bypass Issues
 - **NEVER use `#pragma warning disable` to suppress warnings that indicate real issues**
 - Fix the underlying problem instead of hiding it
@@ -278,11 +288,12 @@ UTF-8 and UTF-16 span APIs are both supported directly; UTF-16 is not deprecated
 ```
 Input (UTF-8 bytes) → BOM detection → Row Scanner (SIMD) → Column Extraction → Binding → Records
                                          │
-                                    ┌────┴─────┐
-                                    │ AVX-512  │  (64-byte chunks)
-                                    │ AVX2     │  (32-byte chunks)
-                                    │ Scalar   │  (everything else, incl. ARM64)
-                                    └──────────┘
+                                ┌────────┴─────────┐
+                                │ AVX-512          │  (64-byte chunks)
+                                │ AVX2             │  (32-byte / 64-byte paired chunks)
+                                │ AdvSimd/Vector128│  (16-byte chunks, incl. ARM64)
+                                │ Scalar           │  (fallback when SIMD unavailable)
+                                └──────────────────┘
 ```
 - **Scan-ahead scanner** (`CsvRowBatchScanner` + `CsvRowBatchCursor`): one SIMD pass records a batch of rows' column ends into a pooled buffer; the cursor drives the batch / refill / fallback protocol for the span readers, the streaming readers (`CsvAsyncStreamReader`, `CsvMultiSchemaStreamingRecordReader`) and the pipe reader (`CsvPipeSequenceReader`, which `ReadFromPipeReaderAsync` wraps), which scan their buffered window and never emit a partial row mid-stream. The pipe reader batches over a single-segment buffer and falls back to its per-row `ReadOnlySequence` path only for rows that straddle segments. UTF-16 chunks are packed to bytes with saturation and share the byte dispatch. Errors are delegated to `ParseRow` for identical diagnostics. Used when the delimiter and quote are ASCII and no comment/escape character is set.
 - **Per-row parser** (`CsvRowParser.ParseRow`): the one-row contract used by every reader for configurations the batch scanner declines, by the pipe reader for rows that straddle segments, and by the batched readers to re-parse a flagged row so its exception is the same. Its SIMD work is one `CsvRowBatchScanner.Scan` call in single-row mode (`IsSupportedForRow`: ASCII specials, no escape character; a comment character is fine because the parser handles comment lines first). The scalar loop is the oracle for diagnostics and the path for escape characters, non-ASCII specials and SIMD off. Callers size `columnEnds` with `CsvRowBatchScanner.MinEndsCapacity` or the SIMD path is skipped.
@@ -314,10 +325,9 @@ If `dotnet publish -r linux-x64 --self-contained` produces trim warnings:
 ### SIMD fallback behavior
 HeroParser auto-detects CPU capabilities at runtime:
 - AVX-512 → 64-byte chunk processing (best throughput)
-- AVX2 → 32-byte chunks (common on modern x64)
-- Scalar → byte-by-byte (always works; the path on ARM64, e.g. Apple Silicon and AWS Graviton, and in WebAssembly)
-
-No HeroParser intrinsics path uses ARM `AdvSimd` (NEON) today; `Hardware.GetHardwareInfo()` only reports it. .NET's own `IndexOfAny`/`SearchValues` calls (Fixed-Width line scanning, the CSV injection check) are vectorized by the runtime on every platform.
+- AVX2 → 32-byte / 64-byte paired chunks (common on modern x64)
+- AdvSimd / Vector128 → 16-byte chunks on ARM64 (`AdvSimd`, e.g., Apple Silicon and AWS Graviton) and portable 128-bit hardware SIMD, with branchless 6-step software prefix-XOR quote tracking when `PCLMULQDQ` is unavailable
+- Scalar → byte-by-byte fallback when hardware SIMD is unavailable (including scalar WebAssembly)
 
 Set `CsvReadOptions.UseSimdIfAvailable = false` to force scalar mode for debugging.
 

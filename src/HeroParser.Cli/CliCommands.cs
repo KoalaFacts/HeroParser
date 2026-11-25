@@ -1,7 +1,9 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -9,12 +11,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using HeroParser.AI;
 using HeroParser.Conversion;
+using HeroParser.Excels.Reading.Data;
+using HeroParser.Excels.Xlsx;
+using HeroParser.Htbs.Records;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Validation;
 using HeroParser.SeparatedValues.Writing;
 using HeroParser.Cli.AI;
-using HeroParser.Excels.Reading.Data;
 using AnsiConsole = HeroParser.Console.AnsiConsole;
 using Color = HeroParser.Console.Color;
 using Markup = HeroParser.Console.Markup;
@@ -35,17 +39,19 @@ using SysConsole = System.Console;
 
 namespace HeroParser.Cli;
 
-internal static partial class CliCommands
+internal sealed partial class CliCommands
 {
-    public static bool Detect(string path)
+    private readonly CliConsole console = new();
+
+    public bool Detect(string path)
     {
         if (!File.Exists(path))
         {
-            ConsoleUtils.Error($"File not found: {path}");
+            console.Error($"File not found: {path}");
             return false;
         }
 
-        ConsoleUtils.Info($"Analyzing delimiter and encoding for: {path}");
+        console.Info($"Analyzing delimiter and encoding for: {path}");
 
         try
         {
@@ -88,7 +94,7 @@ internal static partial class CliCommands
             table.AddRow("Avg Columns/Row", detection.AverageDelimiterCount.ToString("F2"));
 
             SysConsole.WriteLine();
-            ConsoleUtils.Header("Detection Results");
+            console.Header("Detection Results");
             AnsiConsole.Write(table);
 
             var candTable = new Table();
@@ -110,49 +116,49 @@ internal static partial class CliCommands
             }
 
             SysConsole.WriteLine();
-            ConsoleUtils.Header("Delimiter Occurrence Counts");
+            console.Header("Delimiter Occurrence Counts");
             AnsiConsole.Write(candTable);
             SysConsole.WriteLine();
 
             if (detection.Confidence >= 80)
             {
-                ConsoleUtils.Success("Delimiter detected with high confidence.");
+                console.Success("Delimiter detected with high confidence.");
             }
             else
             {
-                ConsoleUtils.Warning("Low delimiter confidence. Please manually verify using --delimiter option.");
+                console.Warning("Low delimiter confidence. Please manually verify using --delimiter option.");
             }
             return true;
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Detection failed: {ex.Message}");
+            console.Error($"Detection failed: {ex.Message}");
             return false;
         }
     }
 
-    public static async Task<bool> ValidateAsync(string path, char? delimiter, CsvImportPlan? plan = null, string? reportPath = null)
+    public async Task<bool> ValidateAsync(string path, char? delimiter, CsvImportPlan? plan = null, string? reportPath = null)
     {
         if (!File.Exists(path))
         {
-            ConsoleUtils.Error($"File not found: {path}");
+            console.Error($"File not found: {path}");
             return false;
         }
 
-        ConsoleUtils.Info($"Running structural validation on: {path}");
+        console.Info($"Running structural validation on: {path}");
 
         try
         {
             if (reportPath is not null && Path.GetFullPath(path).Equals(Path.GetFullPath(reportPath),
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             {
-                ConsoleUtils.Error("Validation report path must differ from the CSV input path.");
+                console.Error("Validation report path must differ from the CSV input path.");
                 return false;
             }
 
             if (plan is not null && !IsCsvInput(path))
             {
-                ConsoleUtils.Error("CSV import plans support .csv and .tsv UTF-8 input only.");
+                console.Error("CSV import plans support .csv and .tsv UTF-8 input only.");
                 return false;
             }
 
@@ -166,17 +172,17 @@ internal static partial class CliCommands
             var (sample, sampleLength) = ReadCsvSample(path);
             if (plan is not null && (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength)))
             {
-                ConsoleUtils.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
+                console.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
                 return false;
             }
             var result = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength)
-                ? Csv.Validate(File.ReadAllText(path), options)
+                ? Csv.Validate(ReadAllTextDecompressed(path), options)
                 : await Csv.ValidateFileAsync(path, options).ConfigureAwait(false);
 
             if (reportPath is not null)
             {
-                CsvValidationReport.Save(reportPath, result);
-                ConsoleUtils.Info($"Saved validation report: {reportPath}");
+                new CsvValidationReport(result).Save(reportPath);
+                console.Info($"Saved validation report: {reportPath}");
             }
 
             if (result.IsValid)
@@ -213,29 +219,29 @@ internal static partial class CliCommands
 
                 if (result.Errors.Count > displayLimit)
                 {
-                    ConsoleUtils.Info($"... and {result.Errors.Count - displayLimit} more errors.");
+                    console.Info($"... and {result.Errors.Count - displayLimit} more errors.");
                 }
                 if (result.StoppedEarly)
-                    ConsoleUtils.Warning("Validation stopped after reaching the error limit; later rows were not checked.");
+                    console.Warning("Validation stopped after reaching the error limit; later rows were not checked.");
             }
             return result.IsValid;
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Validation failed: {ex.Message}");
+            console.Error($"Validation failed: {ex.Message}");
             return false;
         }
     }
 
-    public static async Task<bool> ProfileAsync(string path, char? delimiter, string? sheet)
+    public async Task<bool> ProfileAsync(string path, char? delimiter, string? sheet)
     {
         if (!File.Exists(path))
         {
-            ConsoleUtils.Error($"File not found: {path}");
+            console.Error($"File not found: {path}");
             return false;
         }
 
-        ConsoleUtils.Info($"Profiling dataset: {path}");
+        console.Info($"Profiling dataset: {path}");
 
         try
         {
@@ -262,7 +268,7 @@ internal static partial class CliCommands
             {
                 double nullPct = totalRows > 0 ? (double)stats.NullCount / totalRows * 100 : 0;
                 string nullStr = stats.NullCount > 0 ? $"[yellow]{stats.NullCount} ({nullPct:F1}%)[/]" : "[green]0 (0%)[/]";
-                string typeName = DynamicProfiler.InferTypeName(stats);
+                string typeName = stats.InferTypeName();
 
                 string detail = "";
                 if (totalRows == 0)
@@ -302,44 +308,44 @@ internal static partial class CliCommands
             }
 
             SysConsole.WriteLine();
-            ConsoleUtils.Header($"Dataset Profile: {filename} ({totalRows:N0} rows)");
+            console.Header($"Dataset Profile: {filename} ({totalRows:N0} rows)");
             AnsiConsole.Write(table);
             SysConsole.WriteLine();
             return true;
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Profiling failed: {ex.Message}");
+            console.Error($"Profiling failed: {ex.Message}");
             return false;
         }
     }
 
-    public static bool Convert(string inputPath, string outputPath, char? delimiter, string? shapeName, string? sheet, CsvImportPlan? plan = null)
+    public bool Convert(string inputPath, string outputPath, char? delimiter, string? shapeName, string? sheet, CsvImportPlan? plan = null)
     {
         if (!File.Exists(inputPath))
         {
-            ConsoleUtils.Error($"Input file not found: {inputPath}");
+            console.Error($"Input file not found: {inputPath}");
             return false;
         }
 
-        ConsoleUtils.Info($"Converting: {inputPath} -> {outputPath}");
+        console.Info($"Converting: {inputPath} -> {outputPath}");
 
         try
         {
-            var inExt = Path.GetExtension(inputPath).ToLowerInvariant();
-            var outExt = Path.GetExtension(outputPath).ToLowerInvariant();
+            var inExt = GetFormatExtension(inputPath);
+            var outExt = GetFormatExtension(outputPath);
             if (plan is not null)
             {
                 if (!IsCsvInput(inputPath) || outExt != ".jsonl")
                 {
-                    ConsoleUtils.Error("CSV import plans currently support CSV/TSV to JSONL conversion only.");
+                    console.Error("CSV import plans currently support CSV/TSV to JSONL conversion only.");
                     return false;
                 }
 
                 var (sample, sampleLength) = ReadCsvSample(inputPath);
                 if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
                 {
-                    ConsoleUtils.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
+                    console.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
                     return false;
                 }
 
@@ -347,7 +353,7 @@ internal static partial class CliCommands
                     .ConfigureAwait(false).GetAwaiter().GetResult();
                 if (!validation.IsValid)
                 {
-                    ConsoleUtils.Error($"Conversion stopped: CSV does not match the import plan ({validation.Errors[0].Message}). Run validate --plan for details.");
+                    console.Error($"Conversion stopped: CSV does not match the import plan ({validation.Errors[0].Message}). Run validate --plan for details.");
                     return false;
                 }
             }
@@ -373,21 +379,44 @@ internal static partial class CliCommands
                     MaxRowCount = plan is null ? 100_000 : int.MaxValue
                 };
                 CsvToJsonlConverter.Convert(inputPath, outputPath, shape, options);
-                ConsoleUtils.Success($"Converted CSV to JSONL successfully.");
+                console.Success($"Converted CSV to JSONL successfully.");
             }
-            else if (inExt == ".jsonl" && outExt == ".csv")
+            else if (inExt == ".jsonl" && outExt is ".csv" or ".tsv")
             {
-                var options = new JsonlToCsvOptions();
-                if (delimiter.HasValue)
+                var options = new JsonlToCsvOptions
                 {
-                    options = options with { Delimiter = delimiter.Value };
-                }
+                    Delimiter = delimiter ?? (outExt == ".tsv" ? '\t' : ',')
+                };
                 JsonlToCsvConverter.Convert(inputPath, outputPath, options);
-                ConsoleUtils.Success($"Converted JSONL to CSV successfully.");
+                console.Success($"Converted JSONL to CSV successfully.");
+            }
+            else if (IsCsvInput(inputPath) && outExt == ".xlsx")
+            {
+                ConvertCsvToExcel(inputPath, outputPath, inputDelimiter, sheet ?? "Sheet1");
+                console.Success("Converted CSV to Excel successfully.");
+            }
+            else if (inExt == ".jsonl" && outExt == ".xlsx")
+            {
+                ConvertJsonlToExcel(inputPath, outputPath, sheet ?? "Sheet1");
+                console.Success("Converted JSONL to Excel successfully.");
+            }
+            else if (IsCsvInput(inputPath) && outExt == ".htb")
+            {
+                ConvertCsvToHtb(inputPath, outputPath, inputDelimiter);
+                console.Success("Converted CSV to HTB successfully.");
+            }
+            else if (inExt == ".htb" && outExt is ".csv" or ".tsv")
+            {
+                var options = new HtbToCsvOptions
+                {
+                    Delimiter = delimiter ?? (outExt == ".tsv" ? '\t' : ',')
+                };
+                HtbToCsvConverter.ConvertFile(inputPath, outputPath, options);
+                console.Success("Converted HTB to CSV successfully.");
             }
             else if (IsCsvInput(inputPath) && outExt == ".txt") // CSV -> FixedWidth
             {
-                var csvData = File.ReadAllText(inputPath);
+                var csvData = ReadAllTextDecompressed(inputPath);
                 var schema = Csv.InferSchema(csvData, new CsvSchemaInferenceOptions { Delimiter = inputDelimiter });
 
                 // Map columns to widths matching their observed max lengths
@@ -396,26 +425,30 @@ internal static partial class CliCommands
                 var options = new CsvToFixedWidthOptions { Delimiter = inputDelimiter, IncludeHeader = true };
                 var fixedWidthData = CsvToFixedWidthConverter.Convert(csvData, fields, options);
 
-                File.WriteAllText(outputPath, fixedWidthData);
-                ConsoleUtils.Success($"Converted CSV to Fixed-Width successfully.");
+                using (var outStream = OpenWriteStream(outputPath))
+                using (var sw = new StreamWriter(outStream, Encoding.UTF8))
+                {
+                    sw.Write(fixedWidthData);
+                }
+                console.Success($"Converted CSV to Fixed-Width successfully.");
             }
             else if (inExt == ".txt" && outExt == ".csv") // FixedWidth -> CSV
             {
-                ConsoleUtils.Error("Conversion from Fixed-Width requires column widths. This CLI uses CSV/Excel as first class. Use the core API directly for manual layouts.");
+                console.Error("Conversion from Fixed-Width requires column widths. This CLI uses CSV/Excel as first class. Use the core API directly for manual layouts.");
                 return false;
             }
             else if (inExt == ".xlsx") // Excel -> CSV or JSONL
             {
                 if (outExt is not (".csv" or ".jsonl"))
                 {
-                    ConsoleUtils.Error($"Unsupported output extension from Excel: {outExt}");
+                    console.Error($"Unsupported output extension from Excel: {outExt}");
                     return false;
                 }
                 var allRows = Excel.Read().WithoutHeader().FromSheet(sheet ?? "Sheet1").FromFile(inputPath);
                 if (allRows.Count == 0)
                 {
-                    File.WriteAllText(outputPath, "");
-                    ConsoleUtils.Warning("Excel sheet was empty.");
+                    using (OpenWriteStream(outputPath)) { }
+                    console.Warning("Excel sheet was empty.");
                     return true;
                 }
 
@@ -429,11 +462,11 @@ internal static partial class CliCommands
                     {
                         csvWriter.WriteRow(row);
                     }
-                    ConsoleUtils.Success("Converted Excel sheet to CSV successfully.");
+                    console.Success("Converted Excel sheet to CSV successfully.");
                 }
                 else if (outExt == ".jsonl")
                 {
-                    using var fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                    using var fileStream = OpenWriteStream(outputPath);
                     using var writer = new System.Text.Json.Utf8JsonWriter(fileStream);
                     foreach (var row in dataRows)
                     {
@@ -447,69 +480,69 @@ internal static partial class CliCommands
                         writer.Reset();
                         fileStream.WriteByte((byte)'\n');
                     }
-                    ConsoleUtils.Success("Converted Excel sheet to JSONL successfully.");
+                    console.Success("Converted Excel sheet to JSONL successfully.");
                 }
                 else
                 {
-                    ConsoleUtils.Error($"Unsupported output extension from Excel: {outExt}");
+                    console.Error($"Unsupported output extension from Excel: {outExt}");
                     return false;
                 }
             }
             else
             {
-                ConsoleUtils.Error($"Unsupported conversion direction from {inExt} to {outExt}");
+                console.Error($"Unsupported conversion direction from {inExt} to {outExt}");
                 return false;
             }
             return true;
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Conversion failed: {ex.Message}");
+            console.Error($"Conversion failed: {ex.Message}");
             return false;
         }
     }
 
-    public static bool Repair(string inputPath, string outputPath)
+    public bool Repair(string inputPath, string outputPath)
     {
         if (!File.Exists(inputPath))
         {
-            ConsoleUtils.Error($"Input file not found: {inputPath}");
+            console.Error($"Input file not found: {inputPath}");
             return false;
         }
 
-        ConsoleUtils.Info($"Repairing: {inputPath} -> {outputPath}");
+        console.Info($"Repairing: {inputPath} -> {outputPath}");
 
         try
         {
             var text = File.ReadAllText(inputPath);
             var repaired = LlmRepair.RepairText(text);
             File.WriteAllText(outputPath, repaired);
-            ConsoleUtils.Success("Text repaired successfully (stripped markdown blocks & resolved unbalanced quotes).");
+            console.Success("Text repaired successfully (stripped markdown blocks & resolved unbalanced quotes).");
             return true;
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Repair failed: {ex.Message}");
+            console.Error($"Repair failed: {ex.Message}");
             return false;
         }
     }
 
-    public static async Task<bool> SchemaAsync(string path, char? delimiter, bool useAi, string? providerName, string? apiKey, string? model,
+    public async Task<bool> SchemaAsync(string path, char? delimiter, bool useAi, string? providerName, string? apiKey, string? model,
         LlmClient? aiClientOverride = null, CsvImportPlan? plan = null)
     {
         if (!File.Exists(path))
         {
-            ConsoleUtils.Error($"File not found: {path}");
+            console.Error($"File not found: {path}");
             return false;
         }
 
-        ConsoleUtils.Info($"Generating schema for: {path}");
+        console.Info($"Generating schema for: {path}");
 
         try
         {
             if (plan is not null && !IsCsvInput(path))
             {
-                ConsoleUtils.Error("CSV import plans support .csv and .tsv UTF-8 input only.");
+                console.Error("CSV import plans support .csv and .tsv UTF-8 input only.");
                 return false;
             }
 
@@ -517,7 +550,7 @@ internal static partial class CliCommands
             bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
             if (plan is not null && utf16)
             {
-                ConsoleUtils.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
+                console.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
                 return false;
             }
 
@@ -529,11 +562,11 @@ internal static partial class CliCommands
             }).ConfigureAwait(false);
             if (plan is not null && schemaResult.Columns.Count != plan.ExpectedColumnCount)
             {
-                ConsoleUtils.Error($"CSV header has {schemaResult.Columns.Count} columns, but the import plan expects {plan.ExpectedColumnCount}.");
+                console.Error($"CSV header has {schemaResult.Columns.Count} columns, but the import plan expects {plan.ExpectedColumnCount}.");
                 return false;
             }
 
-            ConsoleUtils.Info($"Types inferred from {schemaResult.SampledRowCount} data rows (limit 100); this is not full-file validation.");
+            console.Info($"Types inferred from {schemaResult.SampledRowCount} data rows (limit 100); this is not full-file validation.");
 
             var className = Path.GetFileNameWithoutExtension(path);
             // Replace non-alphanumeric for class name
@@ -574,6 +607,10 @@ internal static partial class CliCommands
                     CsvInferredType.Decimal => "double",
                     CsvInferredType.Boolean => "bool",
                     CsvInferredType.DateTime => "DateTime",
+                    CsvInferredType.DateOnly => "DateOnly",
+                    CsvInferredType.TimeOnly => "TimeOnly",
+                    CsvInferredType.DateTimeOffset => "DateTimeOffset",
+                    CsvInferredType.TimeSpan => "TimeSpan",
                     CsvInferredType.Guid => "Guid",
                     _ => "string"
                 };
@@ -595,22 +632,24 @@ internal static partial class CliCommands
             var localSchema = codeBuilder.ToString();
 
             SysConsole.WriteLine();
-            ConsoleUtils.Header("Schema Preview");
+            console.Header("Schema Preview");
             AnsiConsole.Write(schemaTable);
             SysConsole.WriteLine();
 
             if (!useAi)
             {
-                ConsoleUtils.Header("Generated C# Class (Local Inference)");
+                console.Header("Generated C# Class (Local Inference)");
                 SysConsole.WriteLine(localSchema);
-                ConsoleUtils.Header("End of Class");
+                console.Header("End of Class");
                 return true;
             }
 
             // AI Schema Generation
             var filename = Path.GetFileName(path);
             var (headers, rows) = await ReadSchemaContextAsync(path, effectiveDelimiter, plan is null ? 100 : 1000).ConfigureAwait(false);
-            var contextCard = DynamicProfiler.GenerateContextCard(filename, headers, [.. rows.Take(10)]);
+            var contextProfiler = new DynamicProfiler(headers);
+            contextProfiler.ObserveRows(rows.Take(10));
+            var contextCard = contextProfiler.GenerateContextCard(filename);
 
             var aiClient = aiClientOverride ?? LlmClient.CreateFromEnvironment(providerName, apiKey, model);
 
@@ -641,34 +680,34 @@ Task: Rewrite the C# record class to make it semantically rich and ready for pro
 Output ONLY the complete C# code, wrapped inside a single C# markdown code block. Do not provide conversational text.
 """;
 
-            var response = await ConsoleUtils.RunWithSpinnerAsync(
+            var response = await console.RunWithSpinnerAsync(
                 "Querying LLM for schema optimizations",
                 token => aiClient.AskAsync(prompt, token)
             );
 
             var repairedCode = LlmRepair.RepairText(response);
             SysConsole.WriteLine();
-            ConsoleUtils.Header("Generated AI-Optimized C# Class");
+            console.Header("Generated AI-Optimized C# Class");
             SysConsole.WriteLine(repairedCode);
-            ConsoleUtils.Header("End of Class");
+            console.Header("End of Class");
             return true;
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Schema generation failed: {ex.Message}");
+            console.Error($"Schema generation failed: {ex.Message}");
             return false;
         }
     }
 
-    public static async Task<bool> QueryAsync(string path, char? delimiter, string? sheet, string userQuery, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
+    public async Task<bool> QueryAsync(string path, char? delimiter, string? sheet, string userQuery, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
     {
         if (!File.Exists(path))
         {
-            ConsoleUtils.Error($"File not found: {path}");
+            console.Error($"File not found: {path}");
             return false;
         }
 
-        ConsoleUtils.Info($"Loading dataset for AI Q&A...");
+        console.Info($"Loading dataset for AI Q&A...");
 
         try
         {
@@ -684,12 +723,12 @@ Output ONLY the complete C# code, wrapped inside a single C# markdown code block
                 var (streamHeaders, stats, totalRows) = await ProfileCsvAsync(path, effectiveDelimiter).ConfigureAwait(false);
                 headers = streamHeaders;
                 (_, sampleRows) = await ReadSchemaContextAsync(path, effectiveDelimiter, 100).ConfigureAwait(false);
-                card = DynamicProfiler.GenerateContextCard(filename, totalRows, stats);
+                card = new DynamicProfiler(stats, totalRows).GenerateContextCard(filename);
             }
             else
             {
                 (headers, var stats, var totalRows, sampleRows) = ProfileExcel(path, sheet);
-                card = DynamicProfiler.GenerateContextCard(filename, totalRows, stats);
+                card = new DynamicProfiler(stats, totalRows).GenerateContextCard(filename);
             }
 
             // Format sample rows
@@ -716,7 +755,7 @@ User Query: {userQuery}
 Answer the query clearly and concisely based on the schema, stats, and sample rows. If you need to make numeric inferences or math calculations, show your step-by-step logic.
 """;
 
-            var response = await ConsoleUtils.RunWithSpinnerAsync(
+            var response = await console.RunWithSpinnerAsync(
                 "Analyzing dataset and generating answer",
                 token => aiClient.AskAsync(prompt, token)
             );
@@ -734,33 +773,33 @@ Answer the query clearly and concisely based on the schema, stats, and sample ro
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Query failed: {ex.Message}");
+            console.Error($"Query failed: {ex.Message}");
             return false;
         }
     }
 
-    public static async Task<bool> TranslateAsync(string path, char? delimiter, string? sheet, string transformPrompt, string outputPath, int batchSize, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
+    public async Task<bool> TranslateAsync(string path, char? delimiter, string? sheet, string transformPrompt, string outputPath, int batchSize, string? providerName, string? apiKey, string? model, LlmClient? aiClientOverride = null)
     {
         if (!File.Exists(path))
         {
-            ConsoleUtils.Error($"File not found: {path}");
+            console.Error($"File not found: {path}");
             return false;
         }
 
         if (batchSize <= 0)
         {
-            ConsoleUtils.Error("Batch size must be positive.");
+            console.Error("Batch size must be positive.");
             return false;
         }
         if (Path.GetFullPath(path).Equals(Path.GetFullPath(outputPath),
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
         {
-            ConsoleUtils.Error("Translation output path must differ from the input path.");
+            console.Error("Translation output path must differ from the input path.");
             return false;
         }
 
-        ConsoleUtils.Info($"Starting batch translation / transformation pipeline...");
-        ConsoleUtils.Info($"Output will be written to: {outputPath}");
+        console.Info($"Starting batch translation / transformation pipeline...");
+        console.Info($"Output will be written to: {outputPath}");
 
         string? stagingPath = null;
         try
@@ -978,12 +1017,12 @@ Instructions:
             else
                 File.Move(stagingPath, outputPath);
             stagingPath = null;
-            ConsoleUtils.Success($"Translation/transformation completed successfully. Saved to: {outputPath}");
+            console.Success($"Translation/transformation completed successfully. Saved to: {outputPath}");
             return true;
         }
         catch (Exception ex)
         {
-            ConsoleUtils.Error($"Translation pipeline failed: {ex.Message}");
+            console.Error($"Translation pipeline failed: {ex.Message}");
             return false;
         }
         finally
@@ -1031,24 +1070,24 @@ Instructions:
         for (int i = 0; i < headers.Length; i++)
             headers[i] = reader.GetName(i);
 
-        var stats = DynamicProfiler.CreateStats(headers);
+        var profiler = new DynamicProfiler(headers);
         var sampleRows = new List<string[]>(10);
         int rowCount = 0;
         while (reader.Read())
         {
             rowCount++;
             string[]? sample = sampleRows.Count < 10 ? new string[headers.Length] : null;
-            for (int i = 0; i < stats.Count; i++)
+            for (int i = 0; i < profiler.Columns.Count; i++)
             {
                 string? value = reader.GetValue(i) as string;
-                DynamicProfiler.ObserveCell(stats[i], value);
+                profiler.ObserveCell(i, value);
                 sample?[i] = value ?? "";
             }
             if (sample is not null)
                 sampleRows.Add(sample);
         }
 
-        return (headers, stats, rowCount, sampleRows);
+        return (headers, profiler.Columns, rowCount, sampleRows);
     }
 
     private static async Task<(string[] Headers, List<DynamicColumnStats> Stats, int RowCount)> ProfileCsvAsync(
@@ -1071,13 +1110,13 @@ Instructions:
         for (int i = 0; i < columnNames.Length; i++)
             columnNames[i] = header[i].UnquoteToString();
 
-        var stats = DynamicProfiler.CreateStats(columnNames);
+        var profiler = new DynamicProfiler(columnNames);
         int rowCount = 0;
         while (await reader.MoveNextAsync().ConfigureAwait(false))
         {
             rowCount++;
             var row = reader.Current;
-            for (int i = 0; i < stats.Count; i++)
+            for (int i = 0; i < profiler.Columns.Count; i++)
             {
                 if (i < row.ColumnCount)
                 {
@@ -1085,33 +1124,217 @@ Instructions:
                     // A quoted field carries its quotes and doubled quotes in the raw span;
                     // profile the field's value, not its CSV encoding.
                     if (cell.Span is [(byte)'"', ..])
-                        DynamicProfiler.ObserveCell(stats[i], cell.UnquoteToString());
+                        profiler.ObserveCell(i, cell.UnquoteToString());
                     else
-                        DynamicProfiler.ObserveCellUtf8(stats[i], cell.Span);
+                        profiler.ObserveCellUtf8(i, cell.Span);
                 }
                 else
-                    DynamicProfiler.ObserveCell(stats[i], null);
+                    profiler.ObserveCell(i, null);
             }
         }
 
-        return (columnNames, stats, rowCount);
+        return (columnNames, profiler.Columns, rowCount);
+    }
+
+    private static void ConvertCsvToExcel(string inputPath, string outputPath, char delimiter, string sheetName)
+    {
+        using var outStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var xlsxWriter = new XlsxWriter(outStream, leaveOpen: false);
+        using var sheetWriter = xlsxWriter.StartSheet(sheetName);
+
+        var reader = Csv.CreateAsyncStreamReader(inputPath, new CsvReadOptions { Delimiter = delimiter });
+        try
+        {
+            int rowNum = 0;
+            while (reader.MoveNextAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult())
+            {
+                rowNum++;
+                var row = reader.Current;
+                if (rowNum == 1)
+                {
+                    var headers = new string[row.ColumnCount];
+                    for (int i = 0; i < headers.Length; i++)
+                        headers[i] = row[i].UnquoteToString();
+                    sheetWriter.WriteHeaderRow(headers);
+                }
+                else
+                {
+                    sheetWriter.StartRow(rowNum);
+                    for (int i = 0; i < row.ColumnCount; i++)
+                        sheetWriter.WriteCellString(i + 1, row[i].UnquoteToString());
+                    sheetWriter.EndRow();
+                }
+            }
+        }
+        finally
+        {
+            reader.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+        }
+
+        sheetWriter.Close();
+    }
+
+    private static void ConvertJsonlToExcel(string inputPath, string outputPath, string sheetName)
+    {
+        using var dataReader = Jsonl.CreateDataReader(inputPath);
+        Excel.WriteFromDataReaderToFile(outputPath, dataReader, sheetName: sheetName);
+    }
+
+    private static void ConvertCsvToHtb(string inputPath, string outputPath, char delimiter)
+    {
+        var inferred = Csv.InferSchemaFileAsync(inputPath, new CsvSchemaInferenceOptions { Delimiter = delimiter })
+            .ConfigureAwait(false).GetAwaiter().GetResult();
+
+        var columns = inferred.Columns.Select(c => new HtbColumn(
+            c.Name,
+            c.InferredType switch
+            {
+                CsvInferredType.Integer => HtbDataType.Int32,
+                CsvInferredType.Long => HtbDataType.Int64,
+                CsvInferredType.Decimal => HtbDataType.Decimal,
+                CsvInferredType.Boolean => HtbDataType.Boolean,
+                CsvInferredType.DateTime => HtbDataType.DateTime,
+                CsvInferredType.DateOnly => HtbDataType.DateOnly,
+                CsvInferredType.TimeOnly => HtbDataType.TimeOnly,
+                CsvInferredType.DateTimeOffset => HtbDataType.DateTimeOffset,
+                CsvInferredType.TimeSpan => HtbDataType.TimeSpan,
+                CsvInferredType.Guid => HtbDataType.Guid,
+                _ => HtbDataType.String
+            },
+            isNullable: true)).ToList();
+
+        var schema = new HtbSchema(columns);
+        using var inStream = OpenReadStream(inputPath, bufferSize: 4096,
+            FileOptions.SequentialScan | FileOptions.Asynchronous);
+        using var outStream = OpenWriteStream(outputPath, bufferSize: 4096, FileOptions.Asynchronous);
+
+        CsvToHtbConverter.ConvertAsync(inStream, outStream, schema, new CsvToHtbOptions { Delimiter = delimiter })
+            .ConfigureAwait(false).GetAwaiter().GetResult();
+    }
+
+    private enum CliCompressionFormat
+    {
+        None,
+        GZip,
+        Brotli,
+        Zstandard
+    }
+
+    private static string GetFormatExtension(string path)
+    {
+        string ext = Path.GetExtension(path);
+        if (ext.Equals(".gz", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".br", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".zst", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".zstd", StringComparison.OrdinalIgnoreCase))
+        {
+            ext = Path.GetExtension(path[..^ext.Length]);
+        }
+        return ext.ToLowerInvariant();
     }
 
     private static bool IsCsvInput(string path)
-    {
-        string extension = Path.GetExtension(path);
-        return extension.Equals(".csv", StringComparison.OrdinalIgnoreCase) ||
-            extension.Equals(".tsv", StringComparison.OrdinalIgnoreCase);
-    }
+        => GetFormatExtension(path) is ".csv" or ".tsv";
 
     private static bool IsExcelInput(string path)
         => Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase);
 
+    private static CliCompressionFormat DetectCompressionFormat(string path)
+    {
+        if (path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+            return CliCompressionFormat.GZip;
+        if (path.EndsWith(".br", StringComparison.OrdinalIgnoreCase))
+            return CliCompressionFormat.Brotli;
+        if (path.EndsWith(".zst", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".zstd", StringComparison.OrdinalIgnoreCase))
+            return CliCompressionFormat.Zstandard;
+        return CliCompressionFormat.None;
+    }
+
+    private static void EnsureCompressionSupported(CliCompressionFormat format)
+    {
+        if (format != CliCompressionFormat.Zstandard)
+            return;
+
+#if NET11_0_OR_GREATER
+        if (OperatingSystem.IsBrowser() || OperatingSystem.IsWasi())
+            throw new PlatformNotSupportedException("Transparent Zstandard (.zst) compression is not supported on browser or WASI platforms.");
+#else
+        throw new PlatformNotSupportedException("Transparent Zstandard (.zst) compression requires .NET 11 or later.");
+#endif
+    }
+
+    private static Stream OpenReadStream(string path, int bufferSize = 4096, FileOptions options = FileOptions.SequentialScan)
+    {
+        CliCompressionFormat format = DetectCompressionFormat(path);
+        EnsureCompressionSupported(format);
+
+        var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, options);
+        if (format == CliCompressionFormat.None)
+            return fileStream;
+
+        try
+        {
+            return format switch
+            {
+                CliCompressionFormat.GZip => new GZipStream(fileStream, CompressionMode.Decompress, leaveOpen: false),
+                CliCompressionFormat.Brotli => new BrotliStream(fileStream, CompressionMode.Decompress, leaveOpen: false),
+#if NET11_0_OR_GREATER
+                CliCompressionFormat.Zstandard => (OperatingSystem.IsBrowser() || OperatingSystem.IsWasi())
+                    ? throw new PlatformNotSupportedException("Transparent Zstandard (.zst) compression is not supported on browser or WASI platforms.")
+                    : new ZstandardStream(fileStream, CompressionMode.Decompress, leaveOpen: false),
+#endif
+                _ => throw new NotSupportedException($"Compression format '{format}' is not supported.")
+            };
+        }
+        catch
+        {
+            fileStream.Dispose();
+            throw;
+        }
+    }
+
+    private static Stream OpenWriteStream(string path, int bufferSize = 4096, FileOptions options = FileOptions.None)
+    {
+        CliCompressionFormat format = DetectCompressionFormat(path);
+        EnsureCompressionSupported(format);
+
+        var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, options);
+        if (format == CliCompressionFormat.None)
+            return fileStream;
+
+        try
+        {
+            return format switch
+            {
+                CliCompressionFormat.GZip => new GZipStream(fileStream, CompressionLevel.Fastest, leaveOpen: false),
+                CliCompressionFormat.Brotli => new BrotliStream(fileStream, CompressionLevel.Fastest, leaveOpen: false),
+#if NET11_0_OR_GREATER
+                CliCompressionFormat.Zstandard => (OperatingSystem.IsBrowser() || OperatingSystem.IsWasi())
+                    ? throw new PlatformNotSupportedException("Transparent Zstandard (.zst) compression is not supported on browser or WASI platforms.")
+                    : new ZstandardStream(fileStream, CompressionLevel.Fastest, leaveOpen: false),
+#endif
+                _ => throw new NotSupportedException($"Compression format '{format}' is not supported.")
+            };
+        }
+        catch
+        {
+            fileStream.Dispose();
+            throw;
+        }
+    }
+
+    private static string ReadAllTextDecompressed(string path)
+    {
+        using var stream = OpenReadStream(path);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
+    }
+
     private static (byte[] Bytes, int Length) ReadCsvSample(string path)
     {
         var sample = new byte[64 * 1024];
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
-            bufferSize: 4096, FileOptions.SequentialScan);
+        using var stream = OpenReadStream(path, bufferSize: 4096, FileOptions.SequentialScan);
         int length = 0;
         while (length < sample.Length)
         {

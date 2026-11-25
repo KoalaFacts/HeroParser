@@ -133,7 +133,7 @@ public class CoveragePushTests33
             new global::HeroParser.FixedWidths.FixedWidthFieldLayout("A", 0, 5),
             new global::HeroParser.FixedWidths.FixedWidthFieldLayout("B", 5, 3),
         };
-        global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator.Validate(layouts);
+        new global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator(layouts).Validate();
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class CoveragePushTests33
             new global::HeroParser.FixedWidths.FixedWidthFieldLayout("A", -1, 5),
         };
         Assert.Throws<global::HeroParser.FixedWidths.FixedWidthException>(() =>
-            global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator.Validate(layouts));
+            new global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator(layouts).Validate());
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public class CoveragePushTests33
             new global::HeroParser.FixedWidths.FixedWidthFieldLayout("A", 0, -1),
         };
         Assert.Throws<global::HeroParser.FixedWidths.FixedWidthException>(() =>
-            global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator.Validate(layouts));
+            new global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator(layouts).Validate());
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public class CoveragePushTests33
             new global::HeroParser.FixedWidths.FixedWidthFieldLayout("B", 3, 5),
         };
         Assert.Throws<global::HeroParser.FixedWidths.FixedWidthException>(() =>
-            global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator.Validate(layouts));
+            new global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator(layouts).Validate());
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public class CoveragePushTests33
             new global::HeroParser.FixedWidths.FixedWidthFieldLayout("A", 3, 3),
         };
         // Non-overlapping, valid ranges — must not throw.
-        global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator.Validate(layouts);
+        new global::HeroParser.FixedWidths.FixedWidthFieldLayoutValidator(layouts).Validate();
     }
 
     // ---------- FixedWidthDataReaderColumns ----------

@@ -19,7 +19,7 @@ public sealed record JsonlWriteOptions
     public string NewLine { get; init; } = "\n";
 
     /// <summary>
-    /// Gets or sets the encoding used for the output stream (default UTF-8 without BOM).
+    /// Gets or sets the UTF-8 encoding used for the output stream (default UTF-8 without BOM). Only UTF-8 encodings are supported.
     /// </summary>
     public Encoding? Encoding { get; init; }
 
@@ -72,6 +72,13 @@ public sealed record JsonlWriteOptions
             throw new JsonlException(
                 JsonlErrorCode.InvalidOptions,
                 $"MaxOutputSize must be positive when specified, got {MaxOutputSize}.");
+        }
+
+        if (Encoding is not null && Encoding.CodePage != Encoding.UTF8.CodePage)
+        {
+            throw new JsonlException(
+                JsonlErrorCode.InvalidOptions,
+                $"Only UTF-8 encoding is supported for JSONL output, got '{Encoding.WebName}'.");
         }
     }
 }

@@ -197,14 +197,17 @@ internal static class Program
     }
 
     private static Task<bool> RunScenarioAsync(string scenario, string inputPath, string outputPath, LlmClient client)
-        => scenario switch
+    {
+        var commands = new CliCommands();
+        return scenario switch
         {
-            "schema" => CliCommands.SchemaAsync(inputPath, ',', false, null, null, null),
-            "profile" => CliCommands.ProfileAsync(inputPath, ',', null),
-            "query" => CliCommands.QueryAsync(inputPath, ',', null, "Summarize the data", null, null, null, client),
-            _ => CliCommands.TranslateAsync(inputPath, ',', null, "Return unchanged rows", outputPath,
+            "schema" => commands.SchemaAsync(inputPath, ',', false, null, null, null),
+            "profile" => commands.ProfileAsync(inputPath, ',', null),
+            "query" => commands.QueryAsync(inputPath, ',', null, "Summarize the data", null, null, null, client),
+            _ => commands.TranslateAsync(inputPath, ',', null, "Return unchanged rows", outputPath,
                 batchSize: 100, null, null, null, client)
         };
+    }
 
     private static async Task RunInFreshProcessAsync(string[] args, string fixturePath)
     {

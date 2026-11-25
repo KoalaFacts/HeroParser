@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
@@ -28,6 +29,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     private readonly CultureInfo culture;
     private readonly string nullValue;
     private readonly string? dateTimeFormat;
+    private readonly string? timeSpanFormat;
     private readonly string? numberFormat;
 #if NET6_0_OR_GREATER
     private readonly string? dateOnlyFormat;
@@ -36,7 +38,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
     // Security and DoS protection
     private readonly CsvInjectionProtection injectionProtection;
-    private readonly IReadOnlySet<char>? additionalDangerousChars;
+    private readonly CsvWriterQuoting quoting;
     private readonly long? maxOutputSize;
     private readonly int? maxFieldSize;
     private readonly int? maxColumnCount;
@@ -58,6 +60,10 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// Gets the CultureInfo used by the writer.
     /// </summary>
     public CultureInfo Culture => options.Culture;
+
+    internal string NullValue => options.NullValue;
+
+    internal string? NumberFormat => options.NumberFormat;
 
     private const int DEFAULT_BUFFER_SIZE = 16 * 1024; // 16KB
     private const int MAX_STACK_ALLOC_SIZE = 256;
@@ -85,6 +91,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         culture = this.options.Culture;
         nullValue = this.options.NullValue;
         dateTimeFormat = this.options.DateTimeFormat;
+        timeSpanFormat = this.options.TimeSpanFormat;
         numberFormat = this.options.NumberFormat;
 #if NET6_0_OR_GREATER
         dateOnlyFormat = this.options.DateOnlyFormat;
@@ -93,7 +100,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
         // Security and DoS protection options
         injectionProtection = this.options.InjectionProtection;
-        additionalDangerousChars = this.options.AdditionalDangerousChars;
+        quoting = new(delimiter, quote, this.options.AdditionalDangerousChars);
         maxOutputSize = this.options.MaxOutputSize;
         maxFieldSize = this.options.MaxFieldSize;
         maxColumnCount = this.options.MaxColumnCount;
@@ -155,6 +162,24 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// <summary>Writes an Int64 field directly to the CSV output without boxing.</summary>
     public void WriteField(long value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 32);
 
+    /// <summary>Writes an Int16 field directly to the CSV output without boxing.</summary>
+    public void WriteField(short value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 16);
+
+    /// <summary>Writes a UInt16 field directly to the CSV output without boxing.</summary>
+    public void WriteField(ushort value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 16);
+
+    /// <summary>Writes a Byte field directly to the CSV output without boxing.</summary>
+    public void WriteField(byte value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 16);
+
+    /// <summary>Writes an SByte field directly to the CSV output without boxing.</summary>
+    public void WriteField(sbyte value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 16);
+
+    /// <summary>Writes a UInt32 field directly to the CSV output without boxing.</summary>
+    public void WriteField(uint value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 32);
+
+    /// <summary>Writes a UInt64 field directly to the CSV output without boxing.</summary>
+    public void WriteField(ulong value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 32);
+
     /// <summary>Writes a Double field directly to the CSV output without boxing.</summary>
     public void WriteField(double value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 64);
 
@@ -183,8 +208,65 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// <summary>Writes a DateTime field directly to the CSV output without boxing.</summary>
     public void WriteField(DateTime value) => WriteSpanFormattableField(value, format: dateTimeFormat, stackAllocSize: 64);
 
+    /// <summary>Writes a DateTimeOffset field directly to the CSV output without boxing.</summary>
+    public void WriteField(DateTimeOffset value) => WriteSpanFormattableField(value, format: dateTimeFormat, stackAllocSize: 64);
+
+    /// <summary>Writes a DateOnly field directly to the CSV output without boxing.</summary>
+    public void WriteField(DateOnly value) => WriteSpanFormattableField(value, format: dateOnlyFormat, stackAllocSize: 32);
+
+    /// <summary>Writes a TimeOnly field directly to the CSV output without boxing.</summary>
+    public void WriteField(TimeOnly value) => WriteSpanFormattableField(value, format: timeOnlyFormat, stackAllocSize: 32);
+
+    /// <summary>Writes a TimeSpan field directly to the CSV output without boxing.</summary>
+    public void WriteField(TimeSpan value) => WriteSpanFormattableField(value, format: timeSpanFormat, stackAllocSize: 64);
+
+    /// <summary>Writes a Char field directly to the CSV output without boxing.</summary>
+    public void WriteField(char value)
+    {
+        Span<char> chars = [value];
+        WriteField(chars);
+    }
+
+    /// <summary>Writes a Half field directly to the CSV output without boxing.</summary>
+    public void WriteField(Half value) => WriteSpanFormattableField(value, format: numberFormat, stackAllocSize: 32);
+
+    /// <summary>Writes an Int128 field directly to the CSV output without boxing.</summary>
+    public void WriteField(Int128 value) => WriteSpanFormattableField(value, format: numberFormat, stackAllocSize: 64);
+
+    /// <summary>Writes a UInt128 field directly to the CSV output without boxing.</summary>
+    public void WriteField(UInt128 value) => WriteSpanFormattableField(value, format: numberFormat, stackAllocSize: 64);
+
     /// <summary>Writes a Guid field directly to the CSV output without boxing.</summary>
     public void WriteField(Guid value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 40);
+
+    /// <summary>
+    /// Writes an <see cref="ISpanFormattable"/> field directly to the CSV output with an explicit format string without boxing.
+    /// </summary>
+    /// <typeparam name="T">The span-formattable value type.</typeparam>
+    /// <param name="value">The value to write.</param>
+    /// <param name="format">Optional format string; when <see langword="null"/>, default formatting is used.</param>
+    public void WriteField<T>(T value, string? format) where T : ISpanFormattable
+        => WriteSpanFormattableField(value, format, stackAllocSize: 128);
+
+    internal void WriteFormattedField(object? value)
+    {
+        ThrowIfDisposed();
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            WriteDelimiter();
+        }
+        isFirstFieldInRow = false;
+
+        WriteFormattedValue(value);
+    }
 
     /// <summary>
     /// Writes a row with multiple string values.
@@ -212,7 +294,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
                 var value = values[i].AsSpan();
                 if (!value.IsEmpty)
                 {
-                    var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(value, delimiter, quote);
+                    var (needsQuoting, quoteCount) = quoting.AnalyzeFieldForQuoting(value);
                     if (needsQuoting)
                     {
                         WriteQuotedFieldWithKnownQuoteCount(value, quoteCount);
@@ -348,8 +430,6 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    #region Internal Writing Methods
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteDelimiter()
     {
@@ -404,7 +484,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
         // Check for injection and apply protection if needed
         if (injectionProtection != CsvInjectionProtection.None &&
-            CsvWriterQuoting.IsDangerousField(value, additionalDangerousChars))
+            quoting.IsDangerousField(value))
         {
             WriteFieldWithInjectionProtection(value);
             return;
@@ -414,7 +494,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         switch (quoteStyle)
         {
             case QuoteStyle.Always:
-                WriteQuotedFieldWithKnownQuoteCount(value, CsvWriterQuoting.CountQuotes(value, quote));
+                WriteQuotedFieldWithKnownQuoteCount(value, quoting.CountQuotes(value));
                 break;
             case QuoteStyle.Never:
                 WriteUnquotedField(value);
@@ -422,7 +502,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
             case QuoteStyle.WhenNeeded:
             default:
                 // Single pass to check if quoting needed AND count quotes
-                var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(value, delimiter, quote);
+                var (needsQuoting, quoteCount) = quoting.AnalyzeFieldForQuoting(value);
                 if (needsQuoting)
                 {
                     WriteQuotedFieldWithKnownQuoteCount(value, quoteCount);
@@ -459,7 +539,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
 
             case CsvInjectionProtection.Sanitize:
                 // Strip dangerous leading characters
-                var sanitized = CsvWriterQuoting.StripDangerousPrefix(value, additionalDangerousChars);
+                var sanitized = quoting.StripDangerousPrefix(value);
                 WriteFieldValueWithoutInjectionCheck(sanitized);
                 break;
 
@@ -494,14 +574,14 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         switch (quoteStyle)
         {
             case QuoteStyle.Always:
-                WriteQuotedFieldWithKnownQuoteCount(value, CsvWriterQuoting.CountQuotes(value, quote));
+                WriteQuotedFieldWithKnownQuoteCount(value, quoting.CountQuotes(value));
                 break;
             case QuoteStyle.Never:
                 WriteUnquotedField(value);
                 break;
             case QuoteStyle.WhenNeeded:
             default:
-                var (needsQuoting, quoteCount) = CsvWriterQuoting.AnalyzeFieldForQuoting(value, delimiter, quote);
+                var (needsQuoting, quoteCount) = quoting.AnalyzeFieldForQuoting(value);
                 if (needsQuoting)
                 {
                     WriteQuotedFieldWithKnownQuoteCount(value, quoteCount);
@@ -519,7 +599,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// </summary>
     private void WriteQuotedFieldWithPrefix(char prefix, ReadOnlySpan<char> value)
     {
-        int quoteCount = CsvWriterQuoting.CountQuotes(value, quote);
+        int quoteCount = quoting.CountQuotes(value);
         // Total size: opening quote + prefix + value + escaped quotes + closing quote
         int requiredSize = 3 + value.Length + quoteCount;
         EnsureCapacity(requiredSize);
@@ -698,6 +778,49 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
                 WriteSpanFormattableDirectly(ul, format ?? numberFormat);
                 return;
 
+            case ushort ush:
+                WriteSpanFormattableDirectly(ush, format ?? numberFormat);
+                return;
+
+            case sbyte sb:
+                WriteSpanFormattableDirectly(sb, format ?? numberFormat);
+                return;
+
+            case TimeSpan ts:
+                WriteSpanFormattableDirectly(ts, format ?? timeSpanFormat);
+                return;
+
+            case char ch:
+                {
+                    Span<char> chBuf = [ch];
+                    WriteFieldValue(chBuf);
+                }
+                return;
+
+            case Half half:
+                WriteSpanFormattableDirectly(half, format ?? numberFormat);
+                return;
+
+            case Int128 i128:
+                WriteSpanFormattableDirectly(i128, format ?? numberFormat);
+                return;
+
+            case UInt128 u128:
+                WriteSpanFormattableDirectly(u128, format ?? numberFormat);
+                return;
+
+            case BigInteger bi:
+                WriteSpanFormattableDirectly(bi, format ?? numberFormat);
+                return;
+
+            case Uri uri:
+                WriteFieldValue(uri.OriginalString.AsSpan());
+                return;
+
+            case byte[] bytes:
+                WriteFieldValue(Convert.ToBase64String(bytes).AsSpan());
+                return;
+
             case Guid g:
                 WriteSpanFormattableDirectly(g, format);
                 return;
@@ -760,10 +883,6 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
             WriteFieldValue(value.ToString(format, culture).AsSpan());
         }
     }
-
-    #endregion
-
-    #region Buffer Management
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void EnsureCapacity(int required)
@@ -828,10 +947,6 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         ReturnBuffer(oldBuffer);
     }
 
-    #endregion
-
-    #region Disposal
-
     private void ThrowIfDisposed()
     {
         if (disposed)
@@ -895,10 +1010,6 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         }
     }
 
-    #endregion
-
-    #region Pool Helpers
-
     private char[] RentBuffer(int minimumLength)
     {
         return charPool.Rent(minimumLength);
@@ -908,7 +1019,5 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     {
         charPool.Return(toReturn, clearArray: false);
     }
-
-    #endregion
 }
 

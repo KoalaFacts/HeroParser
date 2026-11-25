@@ -20,8 +20,6 @@ public class WriterProgressTests
         public void Report(T value) => handler(value);
     }
 
-    #region CSV Writer Progress
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvWriteToText_WithProgress_ReportsProgress()
@@ -119,10 +117,6 @@ public class WriterProgressTests
         Assert.True(reports.Count >= 5);
     }
 
-    #endregion
-
-    #region Async CSV Writer Progress
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CsvWriteToStreamAsync_WithProgress_ReportsProgress()
@@ -185,10 +179,6 @@ public class WriterProgressTests
         Assert.Equal(100, reports[^1].RowsWritten);
     }
 
-    #endregion
-
-    #region Progress Struct
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvWriteProgress_Properties_SetCorrectly()
@@ -202,10 +192,6 @@ public class WriterProgressTests
         Assert.Equal(100, progress.RowsWritten);
         Assert.Equal(5000, progress.BytesWritten);
     }
-
-    #endregion
-
-    #region Builder API
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -222,8 +208,6 @@ public class WriterProgressTests
         Assert.Contains("Alice", result);
         Assert.True(reports.Count >= 1);
     }
-
-    #endregion
 
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> records)
     {

@@ -15,30 +15,30 @@ namespace HeroParser.Internal;
 /// the cultures above while <c>-1</c> parsed, and .xlsx numeric cells (stored as <c>-1.5</c>) could not be read with them.
 /// The fallback runs only after the culture parse fails, so the common path is unchanged.
 /// </remarks>
-internal static class CultureNumberParser
+internal readonly struct CultureNumberParser(IFormatProvider? provider)
 {
     private const int STACK_ALLOC_CHAR_LIMIT = 256;
 
-    /// <summary>Parses <paramref name="chars"/> with <paramref name="provider"/>, then retries with the culture's negative sign in place of <c>-</c>.</summary>
+    /// <summary>Parses <paramref name="chars"/> with the configured provider, then retries with the culture's negative sign in place of <c>-</c>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool TryParse<TNumber>(ReadOnlySpan<char> chars, NumberStyles styles, IFormatProvider? provider, out TNumber result)
+    public bool TryParse<TNumber>(ReadOnlySpan<char> chars, NumberStyles styles, out TNumber result)
         where TNumber : INumberBase<TNumber>
     {
         if (TNumber.TryParse(chars, styles, provider, out result!))
             return true;
 
-        return TryParseWithAsciiMinus(chars, styles, provider, out result);
+        return TryParseWithAsciiMinus(chars, styles, out result);
     }
 
     /// <summary>
     /// Parses like <see cref="TryParse{TNumber}"/>; when neither form parses, throws the exception the culture parse throws.
     /// </summary>
-    public static TNumber Parse<TNumber>(ReadOnlySpan<char> chars, NumberStyles styles, IFormatProvider? provider)
+    public TNumber Parse<TNumber>(ReadOnlySpan<char> chars, NumberStyles styles)
         where TNumber : INumberBase<TNumber>
-        => TryParse(chars, styles, provider, out TNumber result) ? result : TNumber.Parse(chars, styles, provider);
+        => TryParse(chars, styles, out TNumber result) ? result : TNumber.Parse(chars, styles, provider);
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static bool TryParseWithAsciiMinus<TNumber>(ReadOnlySpan<char> chars, NumberStyles styles, IFormatProvider? provider, out TNumber result)
+    private bool TryParseWithAsciiMinus<TNumber>(ReadOnlySpan<char> chars, NumberStyles styles, out TNumber result)
         where TNumber : INumberBase<TNumber>
     {
         result = TNumber.Zero;

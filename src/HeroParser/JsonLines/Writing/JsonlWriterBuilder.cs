@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using HeroParser.Internal;
 
 namespace HeroParser.JsonLines.Writing;
 
@@ -124,7 +125,7 @@ public sealed class JsonlWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(typeInfo);
         this.typeInfo = typeInfo;
-        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var stream = new CompressedFile(path).OpenWrite();
         WriteToStreamInternal(stream, records, leaveOpen: false);
     }
 
@@ -139,15 +140,37 @@ public sealed class JsonlWriterBuilder<T>
     }
 
     /// <summary>Asynchronously serializes records to a file using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public async ValueTask ToFileAsync(string path, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
+        await using var streamDisposal = stream.ConfigureAwait(false);
+        await WriteToStreamInternalAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Asynchronously serializes records to a file using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
     public async ValueTask ToFileAsync(string path, IAsyncEnumerable<T> records, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(typeInfo);
         this.typeInfo = typeInfo;
-        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, FileOptions.Asynchronous);
+        var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
-        await WriteToStreamInternalAsync(stream, records, leaveOpen: false, cancellationToken).ConfigureAwait(false);
+        await WriteToStreamInternalAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Asynchronously serializes records to an existing stream using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public ValueTask ToStreamAsync(Stream stream, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        this.typeInfo = typeInfo;
+        return WriteToStreamInternalAsync(stream, records, leaveOpen, cancellationToken);
     }
 
     /// <summary>Asynchronously serializes records to an existing stream using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
@@ -189,7 +212,7 @@ public sealed class JsonlWriterBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
-        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var stream = new CompressedFile(path).OpenWrite();
         WriteToStreamInternal(stream, records, leaveOpen: false);
     }
 
@@ -206,13 +229,35 @@ public sealed class JsonlWriterBuilder<T>
     /// <summary>Asynchronously serializes records to a file.</summary>
     [RequiresUnreferencedCode("JSONL serialization without WithTypeInfo uses reflection. Call WithTypeInfo for AOT/trimming support.")]
     [RequiresDynamicCode("JSONL serialization without WithTypeInfo uses runtime code generation.")]
+    public async ValueTask ToFileAsync(string path, IEnumerable<T> records, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(records);
+        var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
+        await using var streamDisposal = stream.ConfigureAwait(false);
+        await WriteToStreamInternalAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Asynchronously serializes records to a file.</summary>
+    [RequiresUnreferencedCode("JSONL serialization without WithTypeInfo uses reflection. Call WithTypeInfo for AOT/trimming support.")]
+    [RequiresDynamicCode("JSONL serialization without WithTypeInfo uses runtime code generation.")]
     public async ValueTask ToFileAsync(string path, IAsyncEnumerable<T> records, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
-        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, FileOptions.Asynchronous);
+        var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
-        await WriteToStreamInternalAsync(stream, records, leaveOpen: false, cancellationToken).ConfigureAwait(false);
+        await WriteToStreamInternalAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Asynchronously serializes records to an existing stream.</summary>
+    [RequiresUnreferencedCode("JSONL serialization without WithTypeInfo uses reflection. Call WithTypeInfo for AOT/trimming support.")]
+    [RequiresDynamicCode("JSONL serialization without WithTypeInfo uses runtime code generation.")]
+    public ValueTask ToStreamAsync(Stream stream, IEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(records);
+        return WriteToStreamInternalAsync(stream, records, leaveOpen, cancellationToken);
     }
 
     /// <summary>Asynchronously serializes records to an existing stream.</summary>
@@ -238,6 +283,23 @@ public sealed class JsonlWriterBuilder<T>
                 writer.WriteRecord(record);
         }
         writer.Flush();
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Reflection path is gated by [RequiresUnreferencedCode] on the public terminals; callers using WithTypeInfo never reach this branch.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Reflection path is gated by [RequiresDynamicCode] on the public terminals; callers using WithTypeInfo never reach this branch.")]
+    private async ValueTask WriteToStreamInternalAsync(Stream stream, IEnumerable<T> records, bool leaveOpen, CancellationToken cancellationToken)
+    {
+        var writer = new JsonlStreamWriter(stream, BuildOptions(), leaveOpen);
+        await using var writerDisposal = writer.ConfigureAwait(false);
+        foreach (T record in records)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (typeInfo is not null)
+                await writer.WriteRecordAsync(record, typeInfo, cancellationToken).ConfigureAwait(false);
+            else
+                await writer.WriteRecordAsync(record, cancellationToken).ConfigureAwait(false);
+        }
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Reflection path is gated by [RequiresUnreferencedCode] on the public terminals; callers using WithTypeInfo never reach this branch.")]

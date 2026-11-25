@@ -21,6 +21,7 @@ namespace HeroParser.Tests.Cli;
 public sealed class CliCommandCoverageTests : IDisposable
 {
     private readonly HeroParser.Console.IAnsiConsole previousConsole = AnsiConsoleApi.Current;
+    private readonly CliCommands cliCommands = new();
     private readonly StringWriter output = new(CultureInfo.InvariantCulture);
     private readonly List<string> tempFiles = [];
 
@@ -62,7 +63,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("Name;Age\nAlice;30\nBob;\nCharlie\n");
 
-        Assert.True(await CliCommands.InspectAsync(path, ';', 3));
+        Assert.True(await cliCommands.InspectAsync(path, ';', 3));
 
         Assert.Contains("Delimiter evidence", Output, StringComparison.Ordinal);
         Assert.Contains("Sample type", Output, StringComparison.Ordinal);
@@ -76,7 +77,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("Name;Age\nAlice;30\nBob;25\n");
 
-        Assert.True(await CliCommands.InspectAsync(path, null, 2));
+        Assert.True(await cliCommands.InspectAsync(path, null, 2));
 
         Assert.Contains("confidence from", Output, StringComparison.Ordinal);
         Assert.Contains("Re-use parser setting: --delimiter \";\"", Output, StringComparison.Ordinal);
@@ -87,7 +88,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("\"Name\",\"Age\",\"Active\"\n\"Alice \"\"A\"\"\",\"30\",\"true\"\n");
 
-        Assert.True(await CliCommands.InspectAsync(path, ',', 1));
+        Assert.True(await cliCommands.InspectAsync(path, ',', 1));
 
         Assert.Contains("Alice \"A\"", Output, StringComparison.Ordinal);
         Assert.Contains("Integer", Output, StringComparison.Ordinal);
@@ -101,7 +102,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         string path = TempFile(string.Join(',', Enumerable.Range(0, 101).Select(i => $"C{i}")) + "\n" +
             string.Join(',', Enumerable.Repeat("1", 101)) + "\n");
 
-        Assert.True(await CliCommands.InspectAsync(path, ',', 1));
+        Assert.True(await cliCommands.InspectAsync(path, ',', 1));
         Assert.Contains("C100", Output, StringComparison.Ordinal);
     }
 
@@ -110,7 +111,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile(string.Join(',', Enumerable.Range(0, 1001).Select(i => $"C{i}")) + "\n");
 
-        Assert.False(await CliCommands.InspectAsync(path, ',', 1));
+        Assert.False(await cliCommands.InspectAsync(path, ',', 1));
         Assert.Contains("more than 1000 columns", Output, StringComparison.Ordinal);
     }
 
@@ -119,7 +120,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("Name,Note\nAlice,\"x;y;z\"\nBob,\"p;q;r\"\n");
 
-        Assert.True(await CliCommands.InspectAsync(path, null, 2));
+        Assert.True(await cliCommands.InspectAsync(path, null, 2));
         Assert.Contains("Re-use parser setting: --delimiter \",\"", Output, StringComparison.Ordinal);
     }
 
@@ -128,7 +129,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("Name,Note\nAlice,\"x;y\nz\"\nBob,\"p;q\nr\"\n");
 
-        Assert.True(await CliCommands.InspectAsync(path, null, 2));
+        Assert.True(await cliCommands.InspectAsync(path, null, 2));
         Assert.Contains("Re-use parser setting: --delimiter \",\"", Output, StringComparison.Ordinal);
     }
 
@@ -137,7 +138,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("Name,Value\n\u001b]52;c;AAAA\u0007,30\n");
 
-        Assert.True(await CliCommands.InspectAsync(path, ',', 1));
+        Assert.True(await cliCommands.InspectAsync(path, ',', 1));
         Assert.DoesNotContain("\u001b]52;c;AAAA\u0007", Output, StringComparison.Ordinal);
         Assert.Contains("\\u001B", Output, StringComparison.Ordinal);
     }
@@ -147,7 +148,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("Name,Age\nAlice,30\nBob,25\nCharlie,invalid\n");
 
-        Assert.True(await CliCommands.InspectAsync(path, ',', 2));
+        Assert.True(await cliCommands.InspectAsync(path, ',', 2));
 
         Assert.DoesNotContain("Charlie", Output, StringComparison.Ordinal);
         Assert.Contains("Explicit --delimiter override", Output, StringComparison.Ordinal);
@@ -158,14 +159,14 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("Name\nAlice\nBob\n");
 
-        Assert.False(await CliCommands.InspectAsync(path, null, 2));
+        Assert.False(await cliCommands.InspectAsync(path, null, 2));
         Assert.Contains("Specify --delimiter", Output, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Inspect_EmptyFileDoesNotClaimAHeader()
     {
-        Assert.True(await CliCommands.InspectAsync(TempFile(""), null, 10));
+        Assert.True(await cliCommands.InspectAsync(TempFile(""), null, 10));
         Assert.Contains("File is empty", Output, StringComparison.Ordinal);
     }
 
@@ -175,9 +176,9 @@ public sealed class CliCommandCoverageTests : IDisposable
         string utf16 = TempPath();
         File.WriteAllText(utf16, "Name,Age\nAlice,30\n", Encoding.Unicode);
 
-        Assert.False(await CliCommands.InspectAsync(utf16, null, 10));
+        Assert.False(await cliCommands.InspectAsync(utf16, null, 10));
         Assert.Contains("UTF-16 BOM", Output, StringComparison.Ordinal);
-        Assert.False(await CliCommands.InspectAsync(TempFile("", ".xlsx"), null, 10));
+        Assert.False(await cliCommands.InspectAsync(TempFile("", ".xlsx"), null, 10));
         Assert.Contains("CSV/TSV only", Output, StringComparison.Ordinal);
     }
 
@@ -186,7 +187,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string plan = TempPath(".json");
 
-        Assert.False(await CliCommands.InspectAsync(TempFile("Name,Age\nAlice,30\n", ".txt"), null, 1, plan));
+        Assert.False(await cliCommands.InspectAsync(TempFile("Name,Age\nAlice,30\n", ".txt"), null, 1, plan));
         Assert.False(File.Exists(plan));
     }
 
@@ -195,7 +196,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string path = TempFile("Name\tAge\n[red]\t30\n", ".tsv");
 
-        Assert.True(await CliCommands.InspectAsync(path, null, 1));
+        Assert.True(await cliCommands.InspectAsync(path, null, 1));
         Assert.Contains("Tab", Output, StringComparison.Ordinal);
         Assert.Contains("[red]", Output, StringComparison.Ordinal);
     }
@@ -208,7 +209,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     [InlineData("a\tb\tc\n1\t2\t3\n", "Tab")]
     public void Detect_NamesEachDelimiterItRecognises(string csv, string expected)
     {
-        CliCommands.Detect(TempFile(csv));
+        cliCommands.Detect(TempFile(csv));
         Assert.Contains(expected, Output, StringComparison.Ordinal);
     }
 
@@ -217,7 +218,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         // Wildly inconsistent column counts leave the detector unsure, and the user needs
         // to be told rather than handed a guess.
-        CliCommands.Detect(TempFile("a,b,c\n1,2\n3,4,5,6\n7,8,9\n"));
+        cliCommands.Detect(TempFile("a,b,c\n1,2\n3,4,5,6\n7,8,9\n"));
         Assert.Contains("Low delimiter confidence", Output, StringComparison.Ordinal);
     }
 
@@ -226,14 +227,14 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         // With no consistent delimiter the detector refuses rather than guessing, and the
         // command has to turn that into a message instead of a stack trace.
-        CliCommands.Detect(TempFile("one two three\nfour five\nsix\n"));
+        cliCommands.Detect(TempFile("one two three\nfour five\nsix\n"));
         Assert.Contains("Detection failed", Output, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Detect_MissingFile_IsReported()
     {
-        CliCommands.Detect("no-such-file.csv");
+        cliCommands.Detect("no-such-file.csv");
         Assert.Contains("File not found", Output, StringComparison.Ordinal);
     }
 
@@ -242,7 +243,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     [Fact]
     public async Task Validate_MissingFile_IsReported()
     {
-        Assert.False(await CliCommands.ValidateAsync("no-such-file.csv", null));
+        Assert.False(await cliCommands.ValidateAsync("no-such-file.csv", null));
         Assert.Contains("File not found", Output, StringComparison.Ordinal);
     }
 
@@ -253,7 +254,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         var rows = new List<string> { "a,b,c" };
         rows.AddRange(Enumerable.Range(0, 40).Select(i => $"{i},{i}"));
 
-        Assert.False(await CliCommands.ValidateAsync(TempFile(string.Join('\n', rows) + "\n"), null));
+        Assert.False(await cliCommands.ValidateAsync(TempFile(string.Join('\n', rows) + "\n"), null));
 
         Assert.Contains("and ", Output, StringComparison.Ordinal);
         Assert.Contains("Validation Failed", Output, StringComparison.Ordinal);
@@ -264,14 +265,14 @@ public sealed class CliCommandCoverageTests : IDisposable
     [Fact]
     public async Task Profile_MissingFile_IsReported()
     {
-        Assert.False(await CliCommands.ProfileAsync("no-such-file.csv", null, null));
+        Assert.False(await cliCommands.ProfileAsync("no-such-file.csv", null, null));
         Assert.Contains("File not found", Output, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Profile_HeaderOnlyFile_ReportsNoData()
     {
-        Assert.True(await CliCommands.ProfileAsync(TempFile("a,b,c\n"), null, null));
+        Assert.True(await cliCommands.ProfileAsync(TempFile("a,b,c\n"), null, null));
         Assert.Contains("No data", Output, StringComparison.Ordinal);
     }
 
@@ -280,7 +281,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string csv = "Category,Value\n" + string.Join('\n', Enumerable.Range(0, 110).Select(i => $"value{i},1"));
 
-        Assert.True(await CliCommands.ProfileAsync(TempFile(csv), null, null));
+        Assert.True(await cliCommands.ProfileAsync(TempFile(csv), null, null));
 
         Assert.Contains("At least 100 distinct categories tracked", Output, StringComparison.Ordinal);
     }
@@ -290,7 +291,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string csv = "Amount,Label\n1,North\n2,North\n3.5,South\n,South\n";
 
-        Assert.True(await CliCommands.ProfileAsync(TempFile(csv), ',', null));
+        Assert.True(await cliCommands.ProfileAsync(TempFile(csv), ',', null));
 
         Assert.Contains("Decimal", Output, StringComparison.Ordinal);
         Assert.Contains("25.0%", Output, StringComparison.Ordinal);
@@ -303,7 +304,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string csv = "\"Item\",Qty\n\"Gadget, large\",1\n\"Gadget, large\",2\n\"Say \"\"hi\"\"\",3\n";
 
-        Assert.True(await CliCommands.ProfileAsync(TempFile(csv), ',', null));
+        Assert.True(await cliCommands.ProfileAsync(TempFile(csv), ',', null));
 
         // The profile wraps each category in one pair of quotes for display; the CSV
         // encoding (outer quotes, doubled inner quotes) must not leak into the value.
@@ -321,7 +322,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     [Fact]
     public void Convert_MissingInput_IsReported()
     {
-        CliCommands.Convert("no-such-file.csv", TempPath(".jsonl"), null, null, null);
+        cliCommands.Convert("no-such-file.csv", TempPath(".jsonl"), null, null, null);
         Assert.Contains("Input file not found", Output, StringComparison.Ordinal);
     }
 
@@ -331,7 +332,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         string input = TempFile("Question,Answer\nwhy?,because\n");
         string outputPath = TempPath(".jsonl");
 
-        CliCommands.Convert(input, outputPath, null, "anthropic", null);
+        cliCommands.Convert(input, outputPath, null, "anthropic", null);
 
         Assert.Contains("messages", File.ReadAllText(outputPath), StringComparison.Ordinal);
     }
@@ -342,7 +343,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         string input = TempFile("Name,Age\nAlice,30\nBob,25\n");
         string outputPath = TempPath(".txt");
 
-        CliCommands.Convert(input, outputPath, null, null, null);
+        cliCommands.Convert(input, outputPath, null, null, null);
 
         string written = File.ReadAllText(outputPath);
         Assert.Contains("Alice", written, StringComparison.Ordinal);
@@ -355,7 +356,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         string input = TempFile("Name,Note\n\"Gadget, large\",\"Say \"\"hi\"\"\"\n");
         string outputPath = TempPath(".txt");
 
-        CliCommands.Convert(input, outputPath, null, null, null);
+        cliCommands.Convert(input, outputPath, null, null, null);
 
         string written = File.ReadAllText(outputPath);
         Assert.Contains("Gadget, large", written, StringComparison.Ordinal);
@@ -367,7 +368,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     public void Convert_FixedWidthToCsv_ExplainsWhyItCannot()
     {
         // Widths cannot be inferred from the text alone, so the CLI declines rather than guessing.
-        CliCommands.Convert(TempFile("Alice 30\n", ".txt"), TempPath(".csv"), null, null, null);
+        cliCommands.Convert(TempFile("Alice 30\n", ".txt"), TempPath(".csv"), null, null, null);
 
         Assert.Contains("requires column widths", Output, StringComparison.Ordinal);
     }
@@ -375,7 +376,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     [Fact]
     public void Convert_UnsupportedDirection_IsReported()
     {
-        CliCommands.Convert(TempFile("a,b\n", ".csv"), TempPath(".xyz"), null, null, null);
+        cliCommands.Convert(TempFile("a,b\n", ".csv"), TempPath(".xyz"), null, null, null);
         Assert.Contains("Unsupported conversion direction", Output, StringComparison.Ordinal);
     }
 
@@ -385,7 +386,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         string input = ExcelFile(new Person { Name = "Alice", Age = "30" });
         string outputPath = TempPath(".csv");
 
-        CliCommands.Convert(input, outputPath, null, null, null);
+        cliCommands.Convert(input, outputPath, null, null, null);
 
         string written = File.ReadAllText(outputPath);
         Assert.Contains("Name,Age", written, StringComparison.Ordinal);
@@ -398,7 +399,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         string input = ExcelFile(new Person { Name = "Alice", Age = "30" });
         string outputPath = TempPath(".jsonl");
 
-        CliCommands.Convert(input, outputPath, null, null, null);
+        cliCommands.Convert(input, outputPath, null, null, null);
 
         string written = File.ReadAllText(outputPath);
         Assert.Contains("\"Name\":\"Alice\"", written, StringComparison.Ordinal);
@@ -411,7 +412,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         string input = EmptyExcelFile();
         string outputPath = TempPath(".csv");
 
-        CliCommands.Convert(input, outputPath, null, null, null);
+        cliCommands.Convert(input, outputPath, null, null, null);
 
         Assert.Contains("empty", Output, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(string.Empty, File.ReadAllText(outputPath));
@@ -420,7 +421,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     [Fact]
     public void Convert_ExcelToAnUnsupportedFormat_IsReported()
     {
-        CliCommands.Convert(ExcelFile(new Person { Name = "a", Age = "1" }), TempPath(".xyz"), null, null, null);
+        cliCommands.Convert(ExcelFile(new Person { Name = "a", Age = "1" }), TempPath(".xyz"), null, null, null);
         Assert.Contains("Unsupported output extension", Output, StringComparison.Ordinal);
     }
 
@@ -429,7 +430,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     {
         string outputPath = TempPath(".xyz");
 
-        Assert.False(CliCommands.Convert(EmptyExcelFile(), outputPath, null, null, null));
+        Assert.False(cliCommands.Convert(EmptyExcelFile(), outputPath, null, null, null));
         Assert.False(File.Exists(outputPath));
     }
 
@@ -438,7 +439,7 @@ public sealed class CliCommandCoverageTests : IDisposable
     [Fact]
     public void Repair_MissingInput_IsReported()
     {
-        CliCommands.Repair("no-such-file.csv", TempPath());
+        cliCommands.Repair("no-such-file.csv", TempPath());
         Assert.Contains("not found", Output, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -448,7 +449,7 @@ public sealed class CliCommandCoverageTests : IDisposable
         string input = TempFile("```csv\nName,Age\nAlice,30\n```\n");
         string outputPath = TempPath();
 
-        CliCommands.Repair(input, outputPath);
+        cliCommands.Repair(input, outputPath);
 
         string written = File.ReadAllText(outputPath);
         Assert.DoesNotContain("```", written, StringComparison.Ordinal);

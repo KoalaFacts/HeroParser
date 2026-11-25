@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Reflection;
 using HeroParser;
 
@@ -30,7 +31,41 @@ public enum HtbDataType : byte
     /// <inheritdoc/>
     Guid = 9,
     /// <inheritdoc/>
-    FloatArray = 10
+    FloatArray = 10,
+    /// <inheritdoc/>
+    DateTimeOffset = 11,
+    /// <inheritdoc/>
+    DateOnly = 12,
+    /// <inheritdoc/>
+    TimeOnly = 13,
+    /// <inheritdoc/>
+    TimeSpan = 14,
+    /// <inheritdoc/>
+    Int16 = 15,
+    /// <inheritdoc/>
+    UInt16 = 16,
+    /// <inheritdoc/>
+    Byte = 17,
+    /// <inheritdoc/>
+    SByte = 18,
+    /// <inheritdoc/>
+    UInt32 = 19,
+    /// <inheritdoc/>
+    UInt64 = 20,
+    /// <inheritdoc/>
+    Char = 21,
+    /// <inheritdoc/>
+    Half = 22,
+    /// <inheritdoc/>
+    Int128 = 23,
+    /// <inheritdoc/>
+    UInt128 = 24,
+    /// <inheritdoc/>
+    ByteArray = 25,
+    /// <inheritdoc/>
+    BigInteger = 26,
+    /// <inheritdoc/>
+    Uri = 27
 }
 
 /// <summary>
@@ -167,6 +202,23 @@ public sealed class HtbSchema
                 _ when propType == typeof(string) => HtbDataType.String,
                 _ when propType == typeof(Guid) => HtbDataType.Guid,
                 _ when propType == typeof(float[]) => HtbDataType.FloatArray,
+                _ when propType == typeof(DateTimeOffset) => HtbDataType.DateTimeOffset,
+                _ when propType == typeof(DateOnly) => HtbDataType.DateOnly,
+                _ when propType == typeof(TimeOnly) => HtbDataType.TimeOnly,
+                _ when propType == typeof(TimeSpan) => HtbDataType.TimeSpan,
+                _ when propType == typeof(short) => HtbDataType.Int16,
+                _ when propType == typeof(ushort) => HtbDataType.UInt16,
+                _ when propType == typeof(byte) => HtbDataType.Byte,
+                _ when propType == typeof(sbyte) => HtbDataType.SByte,
+                _ when propType == typeof(uint) => HtbDataType.UInt32,
+                _ when propType == typeof(ulong) => HtbDataType.UInt64,
+                _ when propType == typeof(char) => HtbDataType.Char,
+                _ when propType == typeof(Half) => HtbDataType.Half,
+                _ when propType == typeof(Int128) => HtbDataType.Int128,
+                _ when propType == typeof(UInt128) => HtbDataType.UInt128,
+                _ when propType == typeof(byte[]) => HtbDataType.ByteArray,
+                _ when propType == typeof(BigInteger) => HtbDataType.BigInteger,
+                _ when propType == typeof(Uri) => HtbDataType.Uri,
                 _ => HtbDataType.Unknown
             };
 

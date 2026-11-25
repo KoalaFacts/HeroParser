@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Binders;
 using HeroParser.SeparatedValues.Reading.Rows;
@@ -120,8 +121,6 @@ public sealed class CsvMultiSchemaReaderBuilder
         trackSourceLineNumbers = parserOptions.TrackSourceLineNumbers;
     }
 
-    #region Parser Options
-
     /// <summary>Sets the field delimiter character (default is comma).</summary>
     public CsvMultiSchemaReaderBuilder WithDelimiter(char newDelimiter)
     {
@@ -213,10 +212,6 @@ public sealed class CsvMultiSchemaReaderBuilder
         return this;
     }
 
-    #endregion
-
-    #region Record Options
-
     /// <summary>Specifies whether the CSV has a header row (default is true).</summary>
     public CsvMultiSchemaReaderBuilder HasHeaderRow(bool hasHeader = true)
     {
@@ -273,10 +268,6 @@ public sealed class CsvMultiSchemaReaderBuilder
         progressIntervalRows = intervalRows;
         return this;
     }
-
-    #endregion
-
-    #region Multi-Schema Configuration
 
     /// <summary>
     /// Specifies the discriminator column by zero-based index.
@@ -418,10 +409,6 @@ public sealed class CsvMultiSchemaReaderBuilder
         return this;
     }
 
-    #endregion
-
-    #region Terminal Methods - Span-based
-
     /// <summary>
     /// Reads records from a CSV string.
     /// </summary>
@@ -466,10 +453,6 @@ public sealed class CsvMultiSchemaReaderBuilder
         return new CsvMultiSchemaRecordReader<byte>(rowReader, binder, skipRows, progress, progressIntervalRows);
     }
 
-    #endregion
-
-    #region Terminal Methods - Streaming
-
     /// <summary>
     /// Reads records from a CSV file.
     /// </summary>
@@ -479,7 +462,7 @@ public sealed class CsvMultiSchemaReaderBuilder
     public CsvMultiSchemaStreamingRecordReader FromFile(string filePath, Encoding? encoding = null)
     {
         ArgumentNullException.ThrowIfNull(filePath);
-        var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+        var stream = new CompressedFile(filePath).OpenRead(4096, FileOptions.SequentialScan);
         try
         {
             return FromStream(stream, encoding, leaveOpen: false);
@@ -567,10 +550,6 @@ public sealed class CsvMultiSchemaReaderBuilder
             yield return reader.Current!;
         }
     }
-
-    #endregion
-
-    #region Private Helpers
 
     private void ValidateConfiguration()
     {
@@ -712,7 +691,5 @@ public sealed class CsvMultiSchemaReaderBuilder
         var genericMethod = method!.MakeGenericMethod(recordType);
         return (CsvMultiSchemaBinder<byte>.BinderEntry)genericMethod.Invoke(null, [binder])!;
     }
-
-    #endregion
 }
 

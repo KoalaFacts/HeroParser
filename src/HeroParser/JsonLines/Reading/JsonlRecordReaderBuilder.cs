@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using HeroParser.Internal;
 using HeroParser.Validation;
 
 namespace HeroParser.JsonLines.Reading;
@@ -39,7 +40,7 @@ public sealed partial class JsonlRecordReaderBuilder<T>
 
     private JsonlRecordReader<T> CreateFileReader(string path)
     {
-        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Stream stream = new CompressedFile(path).OpenRead();
         try
         {
             return CreateReader(stream, leaveOpen: false);

@@ -51,7 +51,7 @@ internal sealed class XlsxStylesheet
         if (stream is null)
             return new XlsxStylesheet([]);
 
-        using var reader = XmlReader.Create(stream, XlsxXml.CreateReaderSettings());
+        using var reader = XmlReader.Create(stream, new XlsxXml().CreateReaderSettings());
 
         // Step 1: Parse custom number formats from <numFmts>
         var customFormats = new Dictionary<int, string>();

@@ -151,9 +151,10 @@ public sealed class CsvMultiSchemaStreamingRecordReader : IAsyncDisposable
             CsvRowParseResult result;
             try
             {
+                var rowParser = new CsvRowParser(parserOptions);
                 result = trackLineNumbers
-                    ? CsvRowParser.ParseRow<char, TrackLineNumbers>(span, parserOptions, columnEndsBuffer.Span)
-                    : CsvRowParser.ParseRow<char, NoTrackLineNumbers>(span, parserOptions, columnEndsBuffer.Span);
+                    ? rowParser.ParseRow<char, TrackLineNumbers>(span, columnEndsBuffer.Span)
+                    : rowParser.ParseRow<char, NoTrackLineNumbers>(span, columnEndsBuffer.Span);
             }
             catch (CsvException ex) when (!endOfStream && (ex.QuoteStartPosition.HasValue || span.IndexOfAny('\n', '\r') < 0))
             {

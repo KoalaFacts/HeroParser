@@ -2,6 +2,7 @@ using System.Text;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Streaming;
 using HeroParser.FixedWidths.Writing;
+using HeroParser.Internal;
 
 namespace HeroParser;
 
@@ -96,7 +97,7 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var fileStream = new CompressedFile(path).OpenWrite();
         using var streamWriter = new StreamWriter(fileStream, encoding);
         using var writer = new FixedWidthStreamWriter(streamWriter, options, leaveOpen: true);
         var recordWriter = FixedWidthRecordWriterFactory.GetWriter<T>(options);
@@ -155,11 +156,7 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        var fileStream = new FileStream(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
+        var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
         await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
@@ -196,11 +193,7 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        var fileStream = new FileStream(
-            path,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
+        var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
         await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
@@ -395,9 +388,21 @@ public static partial class FixedWidth
 
         options.Validate();
 
-        var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
-        var streamWriter = new StreamWriter(stream, encoding);
-        return new FixedWidthStreamWriter(streamWriter, options, leaveOpen: false);
+        var stream = new CompressedFile(path).OpenWrite();
+        StreamWriter? streamWriter = null;
+        try
+        {
+            streamWriter = new StreamWriter(stream, encoding);
+            return new FixedWidthStreamWriter(streamWriter, options, leaveOpen: false);
+        }
+        catch
+        {
+            if (streamWriter is not null)
+                streamWriter.Dispose();
+            else
+                stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>

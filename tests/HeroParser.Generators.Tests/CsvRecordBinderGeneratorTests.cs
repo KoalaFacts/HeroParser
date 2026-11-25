@@ -851,8 +851,6 @@ public class CsvRecordBinderGeneratorTests
         Assert.Empty(errors);
     }
 
-    #region Test Infrastructure
-
     private static GeneratorRunResult RunGenerator(string source)
     {
         var (result, _) = RunGeneratorWithCompilation(source);
@@ -897,6 +895,4 @@ public class CsvRecordBinderGeneratorTests
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
-
-    #endregion
 }

@@ -12,8 +12,6 @@ namespace HeroParser.Tests;
 /// </summary>
 public class CsvBuilderApiParityTests
 {
-    #region Test Record Types
-
     [GenerateBinder]
     public class PersonRecord
     {
@@ -21,15 +19,9 @@ public class CsvBuilderApiParityTests
         public int Age { get; set; }
     }
 
-    #endregion
-
-    #region CSV Test Data
-
     private const string VALID_CSV = "Name,Age\r\nAlice,30\r\nBob,25\r\n";
     private const string INVALID_AGE_CSV = "Name,Age\r\nAlice,30\r\nBob,not_a_number\r\nCarol,40\r\n";
     private const string ALL_INVALID_CSV = "Name,Age\r\nAlice,bad\r\nBob,also_bad\r\n";
-
-    #endregion
 
     // ─────────────────────────────────────────────────────────────
     // Task 1: OnError callback

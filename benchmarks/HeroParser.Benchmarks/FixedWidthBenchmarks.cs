@@ -133,8 +133,6 @@ public class FixedWidthBenchmarks
         }
     }
 
-    #region Raw Parsing Benchmarks
-
     [Benchmark(Baseline = true)]
     public int ParseLineDelimited()
     {
@@ -178,10 +176,6 @@ public class FixedWidthBenchmarks
         return total;
     }
 
-    #endregion
-
-    #region Record Binding Benchmarks
-
     [GenerateBinder]
     public class BenchmarkRecord
     {
@@ -220,8 +214,6 @@ public class FixedWidthBenchmarks
         });
         return total;
     }
-
-    #endregion
 }
 
 /// <summary>

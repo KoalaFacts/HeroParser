@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace HeroParser.FixedWidths.Writing;
@@ -25,6 +26,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
     private readonly CultureInfo culture;
     private readonly string nullValue;
     private readonly string? dateTimeFormat;
+    private readonly string? timeSpanFormat;
     private readonly string? numberFormat;
     private readonly OverflowBehavior overflowBehavior;
 #if NET6_0_OR_GREATER
@@ -66,6 +68,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         culture = this.options.Culture;
         nullValue = this.options.NullValue;
         dateTimeFormat = this.options.DateTimeFormat;
+        timeSpanFormat = this.options.TimeSpanFormat;
         numberFormat = this.options.NumberFormat;
         overflowBehavior = this.options.OverflowBehavior;
 #if NET6_0_OR_GREATER
@@ -93,6 +96,18 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
     public void WriteField(string? value, int width, FieldAlignment? alignment = null, char? padChar = null)
     {
         WriteField(value.AsSpan(), width, alignment, padChar);
+    }
+
+    internal string NullValue => options.NullValue;
+
+    internal string? NumberFormat => options.NumberFormat;
+
+    internal void WriteFloatField(float value, int width, FieldAlignment alignment, char padChar)
+    {
+        ThrowIfDisposed();
+        if (width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        WriteSpanFormattableDirectly(value, width, alignment, padChar, numberFormat);
     }
 
     /// <summary>
@@ -253,8 +268,6 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    #region Internal Writing Methods
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteNewLine()
     {
@@ -404,6 +417,49 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
                 WriteSpanFormattableDirectly(ul, width, alignment, padChar, format ?? numberFormat);
                 return;
 
+            case ushort ush:
+                WriteSpanFormattableDirectly(ush, width, alignment, padChar, format ?? numberFormat);
+                return;
+
+            case sbyte sb:
+                WriteSpanFormattableDirectly(sb, width, alignment, padChar, format ?? numberFormat);
+                return;
+
+            case TimeSpan ts:
+                WriteSpanFormattableDirectly(ts, width, alignment, padChar, format ?? timeSpanFormat);
+                return;
+
+            case char ch:
+                {
+                    Span<char> chBuf = [ch];
+                    WriteFieldValue(chBuf, width, alignment, padChar);
+                }
+                return;
+
+            case Half half:
+                WriteSpanFormattableDirectly(half, width, alignment, padChar, format ?? numberFormat);
+                return;
+
+            case Int128 i128:
+                WriteSpanFormattableDirectly(i128, width, alignment, padChar, format ?? numberFormat);
+                return;
+
+            case UInt128 u128:
+                WriteSpanFormattableDirectly(u128, width, alignment, padChar, format ?? numberFormat);
+                return;
+
+            case BigInteger bi:
+                WriteSpanFormattableDirectly(bi, width, alignment, padChar, format ?? numberFormat);
+                return;
+
+            case Uri uri:
+                WriteFieldValue(uri.OriginalString.AsSpan(), width, alignment, padChar);
+                return;
+
+            case byte[] bytes:
+                WriteFieldValue(Convert.ToBase64String(bytes).AsSpan(), width, alignment, padChar);
+                return;
+
             case Guid g:
                 WriteSpanFormattableDirectly(g, width, alignment, padChar, format);
                 return;
@@ -459,10 +515,6 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
             WriteFieldValue(value.ToString(format, culture).AsSpan(), width, alignment, padChar);
         }
     }
-
-    #endregion
-
-    #region Buffer Management
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void EnsureCapacity(int required)
@@ -523,10 +575,6 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         buffer = RentBuffer(newSize);
         ReturnBuffer(oldBuffer);
     }
-
-    #endregion
-
-    #region Disposal
 
     private void ThrowIfDisposed()
     {
@@ -591,10 +639,6 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
         }
     }
 
-    #endregion
-
-    #region Pool Helpers
-
     private char[] RentBuffer(int minimumLength)
     {
         return charPool.Rent(minimumLength);
@@ -604,7 +648,5 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
     {
         charPool.Return(toReturn, clearArray: true);
     }
-
-    #endregion
 }
 

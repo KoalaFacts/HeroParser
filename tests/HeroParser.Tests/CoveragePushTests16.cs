@@ -18,7 +18,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_BytePath_ScalarFallback_BasicRead()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         var sb = new StringBuilder("a,b,c\n");
         for (int i = 0; i < 200; i++) sb.Append(i).Append(",x,y\n");
 
@@ -33,7 +33,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_CharPath_ScalarFallback_BasicRead()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         var sb = new StringBuilder("a,b,c\n");
         for (int i = 0; i < 200; i++) sb.Append(i).Append(",x,y\n");
 
@@ -47,7 +47,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_BytePath_Scalar_QuotedFields()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "a,b\n\"hello, world\",1\n\"with \"\"quotes\"\"\",2\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var reader = Csv.Read().FromStream(stream, out _);
@@ -60,7 +60,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_CharPath_Scalar_QuotedFields()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "a,b\n\"hello, world\",1\n\"with \"\"quotes\"\"\",2\n";
         using var reader = Csv.Read().FromText(csv);
         int n = 0;
@@ -72,7 +72,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_Scalar_MultilineQuoted()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "a,b\n\"line1\nline2\",1\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var reader = Csv.Read().AllowNewlinesInQuotes().FromStream(stream, out _);
@@ -85,7 +85,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_Scalar_CrLf()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "a,b\r\n1,2\r\n3,4\r\n5,6\r\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var reader = Csv.Read().FromStream(stream, out _);
@@ -98,7 +98,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_Scalar_Comment()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "# c1\na,b\n# c2\n1,2\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var reader = Csv.Read().WithCommentCharacter('#').FromStream(stream, out _);
@@ -111,7 +111,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_Scalar_Escape()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "a,b\nhi\\,there,2\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var reader = Csv.Read().WithEscapeCharacter('\\').FromStream(stream, out _);
@@ -124,7 +124,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_Scalar_TrimFields()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "a,b\n  Alice  ,  30  \n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var reader = Csv.Read().TrimFields().FromStream(stream, out _);
@@ -137,7 +137,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_Scalar_DisableQuotes()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "a,b\n\"value\",2\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         using var reader = Csv.Read().DisableQuotedFields().FromStream(stream, out _);
@@ -150,7 +150,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_Scalar_TooManyColumns_Throws()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         var sb = new StringBuilder();
         for (int i = 0; i < 200; i++)
         {
@@ -170,7 +170,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRowParser_Scalar_MaxFieldSize_Throws()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         string csv = "verylongfield,2\n";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
         Assert.Throws<CsvException>(() =>
@@ -390,7 +390,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task PipeReader_Scalar_LargeData()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         var sb = new StringBuilder("a,b\n");
         for (int i = 0; i < 500; i++) sb.Append("val").Append(i).Append(",x\n");
 
@@ -409,7 +409,7 @@ public class CoveragePushTests16
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task PipeSequenceReader_Scalar_LargeData()
     {
-        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false);
+        using var _scope = HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false);
         var sb = new StringBuilder("a,b\n");
         for (int i = 0; i < 500; i++) sb.Append("val").Append(i).Append(",x\n");
 

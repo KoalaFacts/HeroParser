@@ -4,6 +4,8 @@ import { init } from "heroparser";
 import { useCsv } from "./composables/useCsv";
 import { useFixedWidth } from "./composables/useFixedWidth";
 import { useExcel } from "./composables/useExcel";
+import { useJsonl } from "./composables/useJsonl";
+import { useHtb } from "./composables/useHtb";
 import { useAiCopilot } from "./composables/useAiCopilot";
 import heroParserPackage from "heroparser/package.json";
 
@@ -22,27 +24,107 @@ const {
   csvInput,
   csvDelimiter,
   csvHasHeader,
+  csvDistinguishTemporal,
+  csvOutputTitle,
   csvOutput,
   csvTime,
   csvCount,
+  csvOutputKind,
   runCsvParse,
+  runCsvWrite,
   runCsvDelimiterDetect,
+  runCsvValidate,
+  runCsvInferSchema,
+  runCsvRepairLlm,
+  runCsvToJsonl,
+  loadCsvSample,
+  loadLlmSample,
+  downloadCsvOutput,
 } = useCsv();
 
-const { fwInput, fwSpecs, fwOutput, fwTime, fwCount, runFixedWidthParse } = useFixedWidth();
+const {
+  fwInput,
+  fwSpecs,
+  fwDelimiter,
+  fwIncludeHeader,
+  fwOutputTitle,
+  fwOutput,
+  fwTime,
+  fwCount,
+  fwOutputKind,
+  runFixedWidthParse,
+  runFixedWidthWrite,
+  runFixedWidthToCsv,
+  runCsvToFixedWidth,
+  loadFixedWidthSample,
+  loadFixedWidthJsonSample,
+  loadFixedWidthCsvSample,
+  downloadFixedWidthOutput,
+} = useFixedWidth();
 
 const {
   excelSheetName,
+  excelSheetNames,
   excelHasHeader,
+  excelJsonInput,
   excelFileInfo,
   excelError,
+  excelOutputTitle,
   excelOutput,
   excelTime,
   excelCount,
+  excelOutputKind,
   handleExcelSelect,
   handleExcelDrop,
   runExcelParse,
+  selectExcelSheet,
+  buildExcelFromJson,
+  loadSampleExcel,
+  loadMultiSheetSample,
+  exportExcelToCsv,
+  downloadSampleExcel,
+  downloadExcelCsv,
 } = useExcel();
+
+const {
+  jsonlInput,
+  jsonlDelimiter,
+  jsonlOutputTitle,
+  jsonlOutput,
+  jsonlTime,
+  jsonlCount,
+  jsonlOutputKind,
+  runJsonlParse,
+  runJsonlToCsv,
+  runJsonlWrite,
+  loadJsonlSample,
+  loadJsonArrayPreset,
+  downloadJsonlOutput,
+} = useJsonl();
+
+const {
+  htbCsvInput,
+  htbDelimiter,
+  htbHasHeader,
+  htbDistinguishTemporal,
+  htbFileInfo,
+  htbError,
+  htbOutputTitle,
+  htbOutput,
+  htbTime,
+  htbCount,
+  htbSizeSummary,
+  hasHtbBytes,
+  htbOutputKind,
+  runCsvToHtb,
+  runHtbToCsv,
+  runHtbInspect,
+  handleHtbSelect,
+  handleHtbDrop,
+  loadHtbSample,
+  downloadHtb,
+  downloadHtbCsv,
+} = useHtb();
 
 const {
   aiModelLoaded,
@@ -66,6 +148,8 @@ const {
 const heroParserVersion = heroParserPackage.version;
 const excelFileInput = ref<HTMLInputElement | null>(null);
 const openExcelPicker = () => excelFileInput.value?.click();
+const htbFileInput = ref<HTMLInputElement | null>(null);
+const openHtbPicker = () => htbFileInput.value?.click();
 
 const faviconUrl = "./favicon.svg";
 const iconsUrl = "./icons.svg";
@@ -115,8 +199,8 @@ onMounted(async () => {
           text-decoration: none;
           transition: color 0.2s;
         "
-        onmouseover="this.style.color = &quot;var(--text)&quot;;"
-        onmouseout="this.style.color = &quot;var(--text-muted)&quot;;"
+        onmouseover="this.style.color = 'var(--text)'"
+        onmouseout="this.style.color = 'var(--text-muted)'"
       >
         <svg style="width: 18px; height: 18px; fill: currentColor">
           <use :href="`${iconsUrl}#github-icon`"></use>
@@ -134,8 +218,8 @@ onMounted(async () => {
           text-decoration: none;
           transition: color 0.2s;
         "
-        onmouseover="this.style.color = &quot;var(--text)&quot;;"
-        onmouseout="this.style.color = &quot;var(--text-muted)&quot;;"
+        onmouseover="this.style.color = 'var(--text)'"
+        onmouseout="this.style.color = 'var(--text-muted)'"
       >
         <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor">
           <use :href="`${iconsUrl}#documentation-icon`"></use>
@@ -162,26 +246,54 @@ onMounted(async () => {
         >
       </div>
       <p class="tagline">
-        HeroParser's low-allocation C# tabular parser, compiled to WebAssembly and running directly
-        in your browser. Parse times shown here are single in-browser runs, not benchmarks.
+        HeroParser's low-allocation C# engine for CSV, Fixed-Width, Excel (.xlsx), JSONL, and HTB
+        binary formats — with schema analysis, LLM repair, and format converters compiled to
+        WebAssembly in your browser. Timings shown here are single in-browser runs, not benchmarks.
       </p>
     </header>
 
     <!-- Tabs Nav -->
     <div class="tabs-nav">
-      <button :class="['tab-btn', { active: activeTab === 'csv' }]" @click="switchTab('csv')">
+      <button
+        id="nav-tab-csv"
+        :class="['tab-btn', { active: activeTab === 'csv' }]"
+        @click="switchTab('csv')"
+      >
         CSV Parser
       </button>
       <button
+        id="nav-tab-fixedwidth"
         :class="['tab-btn', { active: activeTab === 'fixedwidth' }]"
         @click="switchTab('fixedwidth')"
       >
         Fixed-Width
       </button>
-      <button :class="['tab-btn', { active: activeTab === 'excel' }]" @click="switchTab('excel')">
+      <button
+        id="nav-tab-excel"
+        :class="['tab-btn', { active: activeTab === 'excel' }]"
+        @click="switchTab('excel')"
+      >
         Excel (.xlsx)
       </button>
-      <button :class="['tab-btn', { active: activeTab === 'ai' }]" @click="switchTab('ai')">
+      <button
+        id="nav-tab-jsonl"
+        :class="['tab-btn', { active: activeTab === 'jsonl' }]"
+        @click="switchTab('jsonl')"
+      >
+        JSONL
+      </button>
+      <button
+        id="nav-tab-htb"
+        :class="['tab-btn', { active: activeTab === 'htb' }]"
+        @click="switchTab('htb')"
+      >
+        HTB Binary
+      </button>
+      <button
+        id="nav-tab-ai"
+        :class="['tab-btn', { active: activeTab === 'ai' }]"
+        @click="switchTab('ai')"
+      >
         AI Copilot (WebGPU)
       </button>
     </div>
@@ -191,7 +303,17 @@ onMounted(async () => {
       <div class="panel">
         <div class="panel-title">CSV Input</div>
         <div class="form-group">
-          <label for="csv-input">CSV Text Data</label>
+          <div class="preset-bar">
+            <label for="csv-input">CSV Text or JSON Array Input</label>
+            <div class="preset-actions">
+              <button class="btn-ghost" type="button" @click="loadCsvSample">
+                Load Sample CSV
+              </button>
+              <button class="btn-ghost" type="button" @click="loadLlmSample">
+                Load Messy LLM CSV
+              </button>
+            </div>
+          </div>
           <textarea id="csv-input" v-model="csvInput" placeholder="Name,Age,Role"></textarea>
         </div>
         <div class="options-grid">
@@ -199,28 +321,67 @@ onMounted(async () => {
             <label for="csv-delimiter">Delimiter</label>
             <input type="text" id="csv-delimiter" v-model="csvDelimiter" maxlength="1" />
           </div>
-          <div class="flex-center-gap margin-top-large">
-            <input type="checkbox" id="csv-header" v-model="csvHasHeader" class="checkbox-custom" />
-            <label for="csv-header" class="cursor-pointer">Has Header Row</label>
+          <div class="flex-column-gap" style="justify-content: flex-end">
+            <div class="flex-center-gap">
+              <input
+                type="checkbox"
+                id="csv-header"
+                v-model="csvHasHeader"
+                class="checkbox-custom"
+              />
+              <label for="csv-header" class="cursor-pointer">Has Header Row</label>
+            </div>
+            <div class="flex-center-gap">
+              <input
+                type="checkbox"
+                id="csv-temporal"
+                v-model="csvDistinguishTemporal"
+                class="checkbox-custom"
+              />
+              <label for="csv-temporal" class="cursor-pointer">Distinguish Temporal Types</label>
+            </div>
           </div>
         </div>
         <div class="options-grid">
-          <button class="btn" @click="runCsvParse">Parse CSV</button>
-          <button class="btn btn-secondary" @click="runCsvDelimiterDetect">Detect Delimiter</button>
+          <button id="btn-csv-parse" class="btn" @click="runCsvParse">Parse CSV</button>
+          <button id="btn-csv-write" class="btn btn-secondary" @click="runCsvWrite">
+            Write / Format CSV
+          </button>
+          <button id="btn-csv-detect" class="btn btn-secondary" @click="runCsvDelimiterDetect">
+            Detect Delimiter
+          </button>
+          <button id="btn-csv-validate" class="btn btn-secondary" @click="runCsvValidate">
+            Validate CSV
+          </button>
+          <button id="btn-csv-schema" class="btn btn-secondary" @click="runCsvInferSchema">
+            Infer Schema
+          </button>
+          <button id="btn-csv-repair" class="btn btn-secondary" @click="runCsvRepairLlm">
+            Repair LLM CSV
+          </button>
+          <button id="btn-csv-to-jsonl" class="btn btn-secondary" @click="runCsvToJsonl">
+            CSV &rarr; JSONL
+          </button>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-title">JSON Output</div>
+        <div class="panel-header-row">
+          <div class="panel-title">{{ csvOutputTitle }}</div>
+          <button
+            v-if="csvOutputKind === 'csv' || csvOutputKind === 'jsonl'"
+            id="btn-csv-download"
+            class="btn btn-secondary btn-small"
+            @click="downloadCsvOutput"
+          >
+            Download {{ csvOutputKind === "jsonl" ? ".jsonl" : ".csv" }}
+          </button>
+        </div>
         <div class="output-container">
           <pre id="csv-output" class="output-pre">{{ csvOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>
-            Parse Time: <span id="csv-metric-time" class="metric-value">{{ csvTime }}</span>
-          </div>
-          <div>
-            Records: <span id="csv-metric-count" class="metric-value">{{ csvCount }}</span>
-          </div>
+          <div>Elapsed: <span id="csv-metric-time" class="metric-value">{{ csvTime }}</span></div>
+          <div>Records: <span id="csv-metric-count" class="metric-value">{{ csvCount }}</span></div>
         </div>
       </div>
     </div>
@@ -228,33 +389,86 @@ onMounted(async () => {
     <!-- Fixed-Width Content -->
     <div v-if="activeTab === 'fixedwidth'" id="tab-fixedwidth" class="tab-content active">
       <div class="panel">
-        <div class="panel-title">Fixed-Width Input</div>
+        <div class="panel-title">Fixed-Width Input &amp; Converter</div>
         <div class="form-group">
-          <label for="fw-input">Fixed-Width Text Data</label>
+          <div class="preset-bar">
+            <label for="fw-input">Fixed-Width, CSV, or JSON Input</label>
+            <div class="preset-actions">
+              <button class="btn-ghost" type="button" @click="loadFixedWidthSample">
+                Fixed-Width Sample
+              </button>
+              <button class="btn-ghost" type="button" @click="loadFixedWidthJsonSample">
+                JSON Sample
+              </button>
+              <button class="btn-ghost" type="button" @click="loadFixedWidthCsvSample">
+                CSV Sample
+              </button>
+            </div>
+          </div>
           <textarea
             id="fw-input"
             v-model="fwInput"
-            placeholder="Alice     30        Developer"
+            placeholder="Alice     00030  95000.50Developer"
           ></textarea>
         </div>
         <div class="form-group">
-          <label for="fw-specs">Column Ranges (JSON Specification)</label>
-          <textarea id="fw-specs" v-model="fwSpecs" style="min-height: 120px"></textarea>
+          <label for="fw-specs">Column Ranges (JSON Spec: start, length, alignment, padChar)</label>
+          <textarea id="fw-specs" v-model="fwSpecs" style="min-height: 130px"></textarea>
         </div>
-        <button class="btn" @click="runFixedWidthParse">Parse Fixed-Width</button>
+        <div class="options-grid">
+          <div class="form-group">
+            <label for="fw-delimiter">CSV Delimiter (for Conversion)</label>
+            <input type="text" id="fw-delimiter" v-model="fwDelimiter" maxlength="1" />
+          </div>
+          <div class="flex-center-gap margin-top-large">
+            <input
+              type="checkbox"
+              id="fw-include-header"
+              v-model="fwIncludeHeader"
+              class="checkbox-custom"
+            />
+            <label for="fw-include-header" class="cursor-pointer">Include Header on Convert</label>
+          </div>
+        </div>
+        <div class="options-grid">
+          <button id="btn-fw-parse" class="btn" @click="runFixedWidthParse">
+            Parse Fixed-Width
+          </button>
+          <button id="btn-fw-write" class="btn btn-secondary" @click="runFixedWidthWrite">
+            Write Fixed-Width
+          </button>
+          <button id="btn-fw-to-csv" class="btn btn-secondary" @click="runFixedWidthToCsv">
+            Fixed-Width &rarr; CSV
+          </button>
+          <button id="btn-csv-to-fw" class="btn btn-secondary" @click="runCsvToFixedWidth">
+            CSV &rarr; Fixed-Width
+          </button>
+        </div>
       </div>
       <div class="panel">
-        <div class="panel-title">JSON Output</div>
+        <div class="panel-header-row">
+          <div class="panel-title">{{ fwOutputTitle }}</div>
+          <button
+            v-if="fwOutputKind === 'text' || fwOutputKind === 'csv'"
+            id="btn-fw-download"
+            class="btn btn-secondary btn-small"
+            @click="downloadFixedWidthOutput"
+          >
+            Download {{ fwOutputKind === "csv" ? ".csv" : ".txt" }}
+          </button>
+        </div>
         <div class="output-container">
-          <pre id="fw-output" class="output-pre">{{ fwOutput }}</pre>
+          <pre
+            id="fw-output"
+            :class="[
+              'output-pre',
+              { 'output-pre-nowrap': fwOutputKind === 'text' || fwOutputKind === 'csv' },
+            ]"
+            >{{ fwOutput }}</pre>
         </div>
         <div class="metrics-bar">
-          <div>
-            Parse Time: <span id="fw-metric-time" class="metric-value">{{ fwTime }}</span>
-          </div>
-          <div>
-            Records: <span id="fw-metric-count" class="metric-value">{{ fwCount }}</span>
-          </div>
+          <div>Elapsed: <span id="fw-metric-time" class="metric-value">{{ fwTime }}</span></div>
+          <div>Records: <span id="fw-metric-count" class="metric-value">{{ fwCount }}</span></div>
         </div>
       </div>
     </div>
@@ -262,10 +476,10 @@ onMounted(async () => {
     <!-- Excel Content -->
     <div v-if="activeTab === 'excel'" id="tab-excel" class="tab-content active">
       <div class="panel">
-        <div class="panel-title">Excel (.xlsx) Upload</div>
+        <div class="panel-title">Excel (.xlsx) Read, Write &amp; Multi-Sheet</div>
         <div
           id="excel-dropzone"
-          class="dropzone"
+          class="dropzone dropzone-compact"
           @click="openExcelPicker"
           @dragover.prevent
           @drop.prevent="handleExcelDrop"
@@ -290,9 +504,25 @@ onMounted(async () => {
             @change="handleExcelSelect"
           />
         </div>
+
+        <div v-if="excelSheetNames.length > 0" class="form-group">
+          <label>Detected Sheets (click to inspect)</label>
+          <div class="sheet-pills">
+            <button
+              v-for="name in excelSheetNames"
+              :key="name"
+              type="button"
+              :class="['sheet-pill', { active: excelSheetName === name }]"
+              @click="selectExcelSheet(name)"
+            >
+              {{ name }}
+            </button>
+          </div>
+        </div>
+
         <div class="options-grid">
           <div class="form-group">
-            <label for="excel-sheet">Sheet Name (leave empty for first sheet)</label>
+            <label for="excel-sheet">Sheet Name (empty = first sheet)</label>
             <input type="text" id="excel-sheet" v-model="excelSheetName" placeholder="Sheet1" />
           </div>
           <div class="flex-center-gap margin-top-large">
@@ -305,24 +535,266 @@ onMounted(async () => {
             <label for="excel-header" class="cursor-pointer">Has Header Row</label>
           </div>
         </div>
-        <button class="btn" id="btn-parse-excel" @click="runExcelParse" :disabled="!excelFileInfo">
-          Parse Excel Sheet
-        </button>
+
+        <div class="form-group">
+          <label for="excel-json-input">Editable JSON Records (for Building Custom .xlsx)</label>
+          <textarea
+            id="excel-json-input"
+            v-model="excelJsonInput"
+            style="min-height: 120px"
+          ></textarea>
+        </div>
+
+        <div class="options-grid">
+          <button
+            class="btn"
+            id="btn-parse-excel"
+            @click="runExcelParse"
+            :disabled="!excelFileInfo"
+          >
+            Parse Excel Sheet
+          </button>
+          <button class="btn btn-secondary" id="btn-excel-build" @click="buildExcelFromJson">
+            Build .xlsx from JSON
+          </button>
+          <button class="btn btn-secondary" id="btn-sample-excel" @click="loadSampleExcel">
+            Generate Sample (.xlsx)
+          </button>
+          <button class="btn btn-secondary" id="btn-excel-multisheet" @click="loadMultiSheetSample">
+            Generate Multi-Sheet
+          </button>
+          <button
+            class="btn btn-secondary"
+            id="btn-excel-to-csv"
+            @click="exportExcelToCsv"
+            :disabled="!excelFileInfo"
+          >
+            Excel &rarr; CSV
+          </button>
+          <button
+            class="btn btn-secondary"
+            id="btn-download-excel"
+            @click="downloadSampleExcel"
+            :disabled="!excelFileInfo"
+          >
+            Download .xlsx
+          </button>
+        </div>
         <div v-if="excelError" id="excel-error" class="alert-error" style="display: block">
           {{ excelError }}
         </div>
       </div>
       <div class="panel">
-        <div class="panel-title">JSON Output</div>
+        <div class="panel-header-row">
+          <div class="panel-title">{{ excelOutputTitle }}</div>
+          <button
+            v-if="excelOutputKind === 'csv'"
+            id="btn-excel-csv-download"
+            class="btn btn-secondary btn-small"
+            @click="downloadExcelCsv"
+          >
+            Download .csv
+          </button>
+        </div>
         <div class="output-container">
           <pre id="excel-output" class="output-pre">{{ excelOutput }}</pre>
         </div>
         <div class="metrics-bar">
           <div>
-            Parse Time: <span id="excel-metric-time" class="metric-value">{{ excelTime }}</span>
+            Elapsed: <span id="excel-metric-time" class="metric-value">{{ excelTime }}</span>
           </div>
           <div>
             Records: <span id="excel-metric-count" class="metric-value">{{ excelCount }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- JSONL Content -->
+    <div v-if="activeTab === 'jsonl'" id="tab-jsonl" class="tab-content active">
+      <div class="panel">
+        <div class="panel-title">JSONL (JSON Lines) Input &amp; Converter</div>
+        <div class="form-group">
+          <div class="preset-bar">
+            <label for="jsonl-input">JSONL Text or JSON Array Input</label>
+            <div class="preset-actions">
+              <button class="btn-ghost" type="button" @click="loadJsonlSample">JSONL Sample</button>
+              <button class="btn-ghost" type="button" @click="loadJsonArrayPreset">
+                JSON Array Preset
+              </button>
+            </div>
+          </div>
+          <textarea
+            id="jsonl-input"
+            v-model="jsonlInput"
+            placeholder='{"id":1,"name":"Alice"}'
+          ></textarea>
+        </div>
+        <div class="options-grid">
+          <div class="form-group">
+            <label for="jsonl-delimiter">CSV Delimiter (for JSONL &rarr; CSV)</label>
+            <input type="text" id="jsonl-delimiter" v-model="jsonlDelimiter" maxlength="1" />
+          </div>
+        </div>
+        <div class="options-grid">
+          <button id="btn-jsonl-parse" class="btn" @click="runJsonlParse">Parse JSONL</button>
+          <button id="btn-jsonl-to-csv" class="btn btn-secondary" @click="runJsonlToCsv">
+            JSONL &rarr; CSV
+          </button>
+          <button id="btn-jsonl-write" class="btn btn-secondary" @click="runJsonlWrite">
+            Write JSONL
+          </button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header-row">
+          <div class="panel-title">{{ jsonlOutputTitle }}</div>
+          <button
+            v-if="jsonlOutputKind === 'csv' || jsonlOutputKind === 'jsonl'"
+            id="btn-jsonl-download"
+            class="btn btn-secondary btn-small"
+            @click="downloadJsonlOutput"
+          >
+            Download {{ jsonlOutputKind === "csv" ? ".csv" : ".jsonl" }}
+          </button>
+        </div>
+        <div class="output-container">
+          <pre id="jsonl-output" class="output-pre">{{ jsonlOutput }}</pre>
+        </div>
+        <div class="metrics-bar">
+          <div>
+            Elapsed: <span id="jsonl-metric-time" class="metric-value">{{ jsonlTime }}</span>
+          </div>
+          <div>
+            Records: <span id="jsonl-metric-count" class="metric-value">{{ jsonlCount }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HTB Binary Content -->
+    <div v-if="activeTab === 'htb'" id="tab-htb" class="tab-content active">
+      <div class="panel">
+        <div class="panel-title">HTB Binary Format (High-Throughput Tabular Binary)</div>
+        <div class="form-group">
+          <div class="preset-bar">
+            <label for="htb-csv-input">Source CSV (Encoded Using Inferred Schema)</label>
+            <div class="preset-actions">
+              <button class="btn-ghost" type="button" @click="loadHtbSample">Reset Sample</button>
+            </div>
+          </div>
+          <textarea id="htb-csv-input" v-model="htbCsvInput" style="min-height: 140px"></textarea>
+        </div>
+
+        <div class="options-grid">
+          <div class="form-group">
+            <label for="htb-delimiter">CSV Delimiter</label>
+            <input type="text" id="htb-delimiter" v-model="htbDelimiter" maxlength="1" />
+          </div>
+          <div class="flex-column-gap" style="justify-content: flex-end">
+            <div class="flex-center-gap">
+              <input
+                type="checkbox"
+                id="htb-header"
+                v-model="htbHasHeader"
+                class="checkbox-custom"
+              />
+              <label for="htb-header" class="cursor-pointer">Has Header Row</label>
+            </div>
+            <div class="flex-center-gap">
+              <input
+                type="checkbox"
+                id="htb-temporal"
+                v-model="htbDistinguishTemporal"
+                class="checkbox-custom"
+              />
+              <label for="htb-temporal" class="cursor-pointer">Distinguish Temporal Types</label>
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="htb-dropzone"
+          class="dropzone dropzone-compact"
+          @click="openHtbPicker"
+          @dragover.prevent
+          @drop.prevent="handleHtbDrop"
+        >
+          <span class="dropzone-icon">📦</span>
+          <span class="dropzone-text"
+            >Or upload an existing .htb binary file to inspect/decode</span
+          >
+          <span
+            v-if="htbFileInfo"
+            id="htb-file-info"
+            class="dropzone-file-info"
+            style="display: block"
+            >{{ htbFileInfo }}</span
+          >
+          <input
+            ref="htbFileInput"
+            type="file"
+            id="htb-file"
+            accept=".htb"
+            style="display: none"
+            @change="handleHtbSelect"
+          />
+        </div>
+
+        <div class="options-grid">
+          <button id="btn-htb-encode" class="btn" @click="runCsvToHtb">
+            Encode CSV &rarr; HTB
+          </button>
+          <button
+            id="btn-htb-to-csv"
+            class="btn btn-secondary"
+            @click="runHtbToCsv"
+            :disabled="!hasHtbBytes"
+          >
+            Decode HTB &rarr; CSV
+          </button>
+          <button
+            id="btn-htb-inspect"
+            class="btn btn-secondary"
+            @click="runHtbInspect"
+            :disabled="!hasHtbBytes"
+          >
+            Inspect HTB Schema
+          </button>
+          <button
+            id="btn-htb-download"
+            class="btn btn-secondary"
+            @click="downloadHtb"
+            :disabled="!hasHtbBytes"
+          >
+            Download .htb
+          </button>
+        </div>
+
+        <div v-if="htbError" id="htb-error" class="alert-error" style="display: block">
+          {{ htbError }}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header-row">
+          <div class="panel-title">{{ htbOutputTitle }}</div>
+          <button
+            v-if="htbOutputKind === 'csv'"
+            id="btn-htb-csv-download"
+            class="btn btn-secondary btn-small"
+            @click="downloadHtbCsv"
+          >
+            Download .csv
+          </button>
+        </div>
+        <div class="output-container">
+          <pre id="htb-output" class="output-pre">{{ htbOutput }}</pre>
+        </div>
+        <div class="metrics-bar">
+          <div>Elapsed: <span id="htb-metric-time" class="metric-value">{{ htbTime }}</span></div>
+          <div>Records: <span id="htb-metric-count" class="metric-value">{{ htbCount }}</span></div>
+          <div>
+            Payload: <span id="htb-metric-size" class="metric-value">{{ htbSizeSummary }}</span>
           </div>
         </div>
       </div>

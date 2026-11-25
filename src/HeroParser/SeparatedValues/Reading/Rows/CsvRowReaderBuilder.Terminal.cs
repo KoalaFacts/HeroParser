@@ -1,5 +1,6 @@
 using System.IO.Pipelines;
 using System.Text;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Reading.Streaming;
 
 namespace HeroParser.SeparatedValues.Reading.Rows;
@@ -101,14 +102,18 @@ public sealed partial class CsvRowReaderBuilder
         ArgumentException.ThrowIfNullOrEmpty(path);
         var options = GetOptions();
         options.Validate();
-        var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
+        var stream = new CompressedFile(path).OpenRead(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return new CsvAsyncStreamReader(stream, options, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
+        try
+        {
+            return new CsvAsyncStreamReader(stream, options, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -123,23 +128,33 @@ public sealed partial class CsvRowReaderBuilder
         ArgumentException.ThrowIfNullOrEmpty(path);
         var options = GetOptions();
         options.Validate();
-        var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
-            bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        Stream input = file;
+        var stream = new CompressedFile(path).OpenRead(
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        Stream input = stream;
         try
         {
-            int first = file.ReadByte();
-            int second = file.ReadByte();
+            int first = stream.ReadByte();
+            int second = first >= 0 ? stream.ReadByte() : -1;
             Encoding? encoding = (first, second) switch
             {
                 (0xFF, 0xFE) => Encoding.Unicode,
                 (0xFE, 0xFF) => Encoding.BigEndianUnicode,
                 _ => null
             };
-            if (encoding is null)
-                file.Position = 0;
-            else
-                input = new Utf16ToUtf8ReadStream(file, encoding);
+            if (encoding is not null)
+            {
+                input = new Utf16ToUtf8ReadStream(stream, encoding);
+            }
+            else if (stream.CanSeek)
+            {
+                stream.Position = 0;
+            }
+            else if (first >= 0)
+            {
+                byte[] prefix = second >= 0 ? [(byte)first, (byte)second] : [(byte)first];
+                input = new PrefixReadStream(stream, prefix, leaveOpen: false);
+            }
 
             return new CsvAsyncStreamReader(input, options, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
         }

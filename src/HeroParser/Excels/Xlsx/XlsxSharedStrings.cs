@@ -30,7 +30,7 @@ internal sealed class XlsxSharedStrings
     /// </summary>
     public static XlsxSharedStrings Parse(Stream stream)
     {
-        using var reader = XmlReader.Create(stream, XlsxXml.CreateReaderSettings());
+        using var reader = XmlReader.Create(stream, new XlsxXml().CreateReaderSettings());
 
         // Pre-size from <sst uniqueCount="..."> if available
         List<string>? result = null;

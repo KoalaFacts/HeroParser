@@ -7,8 +7,8 @@ using System.Text;
 namespace HeroParser.Benchmarks;
 
 /// <summary>
-/// Throughput benchmarks to validate 30+ GB/s claim.
-/// Measures raw parsing speed in GB/s.
+/// Raw span-scanning throughput and memory-footprint benchmarks for UTF-8 and UTF-16 CSV inputs.
+/// Measures raw parsing speed and allocation profile.
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
@@ -66,7 +66,7 @@ public class ThroughputBenchmarks
     }
 
     [Benchmark]
-    public int ParseCsvUtf16Scalar()
+    public int ParseCsvUtf16()
     {
         using var reader = Csv.ReadFromText(csv, options);
         int total = 0;

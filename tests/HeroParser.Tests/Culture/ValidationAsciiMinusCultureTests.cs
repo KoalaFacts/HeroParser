@@ -23,11 +23,11 @@ public class ValidationAsciiMinusCultureTests
     public void PropertyValidationRunner_Span_AsciiMinusBelowMinimum_ReportsRange(string cultureName)
     {
         var errors = new List<ValidationError>();
-        PropertyValidationRunner.Validate(
+        new PropertyValidationRunner(CultureInfo.GetCultureInfo(cultureName)).Validate(
             "-5".AsSpan(), "Quantity", 1, 0, null,
             notEmpty: false, minLength: null, maxLength: null,
             rangeMin: 0, rangeMax: 100, pattern: null,
-            errors, CultureInfo.GetCultureInfo(cultureName));
+            errors);
 
         var error = Assert.Single(errors);
         Assert.Equal("Range", error.Rule);
@@ -39,11 +39,11 @@ public class ValidationAsciiMinusCultureTests
     public void PropertyValidationRunner_String_AsciiMinusBelowMinimum_ReportsRange(string cultureName)
     {
         var errors = new List<ValidationError>();
-        PropertyValidationRunner.Validate(
+        new PropertyValidationRunner(CultureInfo.GetCultureInfo(cultureName)).Validate(
             "-5", "Quantity", 1, 0, null,
             notEmpty: false, minLength: null, maxLength: null,
             rangeMin: 0, rangeMax: 100, pattern: null,
-            errors, CultureInfo.GetCultureInfo(cultureName));
+            errors);
 
         Assert.Equal("Range", Assert.Single(errors).Rule);
     }
@@ -54,11 +54,11 @@ public class ValidationAsciiMinusCultureTests
     {
         var culture = CultureInfo.GetCultureInfo(cultureName);
         var errors = new List<ValidationError>();
-        PropertyValidationRunner.Validate(
+        new PropertyValidationRunner(culture).Validate(
             (culture.NumberFormat.NegativeSign + "5").AsSpan(), "Quantity", 1, 0, null,
             notEmpty: false, minLength: null, maxLength: null,
             rangeMin: 0, rangeMax: 100, pattern: null,
-            errors, culture);
+            errors);
 
         Assert.Equal("Range", Assert.Single(errors).Rule);
     }
@@ -68,11 +68,11 @@ public class ValidationAsciiMinusCultureTests
     public void PropertyValidationRunner_AsciiMinusInRange_NoError(string cultureName)
     {
         var errors = new List<ValidationError>();
-        PropertyValidationRunner.Validate(
+        new PropertyValidationRunner(CultureInfo.GetCultureInfo(cultureName)).Validate(
             "-5".AsSpan(), "Quantity", 1, 0, null,
             notEmpty: false, minLength: null, maxLength: null,
             rangeMin: -10, rangeMax: 100, pattern: null,
-            errors, CultureInfo.GetCultureInfo(cultureName));
+            errors);
 
         Assert.Empty(errors);
     }
@@ -128,7 +128,7 @@ public class ValidationAsciiMinusCultureTests
             RangeMin: 0, RangeMax: 100, Pattern: null);
         var errors = new List<ValidationError>();
 
-        WriteValidationRunner.Validate("-5", "Quantity", 1, 0, rules, errors, CultureInfo.GetCultureInfo(cultureName));
+        rules.Validate("-5", "Quantity", 1, 0, errors, CultureInfo.GetCultureInfo(cultureName));
 
         Assert.Equal("Range", Assert.Single(errors).Rule);
     }

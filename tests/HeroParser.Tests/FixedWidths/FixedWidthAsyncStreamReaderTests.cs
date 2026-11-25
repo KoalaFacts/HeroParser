@@ -10,8 +10,6 @@ namespace HeroParser.Tests.FixedWidths;
 /// </summary>
 public class FixedWidthAsyncStreamReaderTests
 {
-    #region Basic Line-Based Reading Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_SingleLine_ReadsCorrectly()
@@ -101,10 +99,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal("NYC", city.ToString());
     }
 
-    #endregion
-
-    #region Fixed-Length Record Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_FixedLength_ReadsRecordsWithoutNewlines()
@@ -178,10 +172,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal(FixedWidthErrorCode.InvalidRecordLength, ex.ErrorCode);
     }
 
-    #endregion
-
-    #region Empty Line Handling Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_SkipEmptyLines_SkipsEmptyLines()
@@ -228,10 +218,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal(3, recordCount); // LINE1, empty, LINE2
     }
 
-    #endregion
-
-    #region Comment Character Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_CommentCharacter_SkipsCommentLines()
@@ -255,10 +241,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.StartsWith("DATA LINE 1", records[0]);
         Assert.StartsWith("DATA LINE 2", records[1]);
     }
-
-    #endregion
-
-    #region SkipRows Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -368,10 +350,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal("RECORD2", records[1]);
     }
 
-    #endregion
-
-    #region MaxRecordCount Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_MaxRecordCount_ThrowsWhenExceeded()
@@ -394,10 +372,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal(FixedWidthErrorCode.TooManyRecords, ex.ErrorCode);
     }
 
-    #endregion
-
-    #region BytesRead Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task BytesRead_TracksApproximateBytesRead()
@@ -415,10 +389,6 @@ public class FixedWidthAsyncStreamReaderTests
 
         Assert.True(reader.BytesRead > 0, "BytesRead should be greater than 0 after reading");
     }
-
-    #endregion
-
-    #region Source Line Number Tracking Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -458,10 +428,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal(2, reader.Current.SourceLineNumber); // Line 2 (after header)
     }
 
-    #endregion
-
-    #region Cancellation Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_CancellationToken_ThrowsWhenCancelled()
@@ -476,10 +442,6 @@ public class FixedWidthAsyncStreamReaderTests
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => reader.MoveNextAsync(cts.Token).AsTask());
     }
-
-    #endregion
-
-    #region Dispose Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -519,10 +481,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.True(stream.CanRead, "Stream should still be readable");
     }
 
-    #endregion
-
-    #region Unicode and Encoding Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_UnicodeContent_ReadsCorrectly()
@@ -559,10 +517,6 @@ public class FixedWidthAsyncStreamReaderTests
         var rawRecord = new string(reader.Current.RawRecord);
         Assert.Equal("TEST DATA", rawRecord);
     }
-
-    #endregion
-
-    #region Large File Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -602,10 +556,6 @@ public class FixedWidthAsyncStreamReaderTests
 
         Assert.Equal(2, count);
     }
-
-    #endregion
-
-    #region Builder Integration Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -690,10 +640,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal("DATA2", records[1].Data);
     }
 
-    #endregion
-
-    #region Edge Cases
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task MoveNextAsync_EmptyFile_ReturnsFalse()
@@ -753,10 +699,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal("LINE3", lastRecord);
     }
 
-    #endregion
-
-    #region API Parity Tests (matching CSV async reader patterns)
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task CreateAsyncStreamReader_FromFile_OpensFileCorrectly()
@@ -794,10 +736,6 @@ public class FixedWidthAsyncStreamReaderTests
         Assert.Equal("TEST DATA", new string(reader.Current.RawRecord));
     }
 
-    #endregion
-
-    #region Helper Methods
-
     private static MemoryStream CreateStream(string content, Encoding? encoding = null)
     {
         encoding ??= Encoding.UTF8;
@@ -813,7 +751,5 @@ public class FixedWidthAsyncStreamReaderTests
         }
         return sb.ToString();
     }
-
-    #endregion
 }
 

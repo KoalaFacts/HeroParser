@@ -1,10 +1,12 @@
 using System;
 using System.IO;
+using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using HeroParser.Htbs;
 using HeroParser.Htbs.Records;
 using HeroParser.Htbs.Writing;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Rows;
 
@@ -75,8 +77,8 @@ public static class CsvToHtbConverter
         ArgumentException.ThrowIfNullOrWhiteSpace(csvPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(htbPath);
 
-        string csvData = File.ReadAllText(csvPath);
-        using var outputStream = File.Create(htbPath);
+        string csvData = new CompressedFile(csvPath).ReadAllText();
+        using var outputStream = new CompressedFile(htbPath).OpenWrite();
         Convert(csvData, outputStream, schema, options);
     }
 
@@ -277,6 +279,91 @@ public static class CsvToHtbConverter
                         break;
                     case HtbDataType.FloatArray:
                         writer.WriteFloatArray(Vectors.VectorParser.ParseFloats(UnquoteToString(rawCol, options)));
+                        break;
+                    case HtbDataType.DateTimeOffset:
+                        if (!csvCol.TryParseDateTimeOffset(out DateTimeOffset dto))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as DateTimeOffset.");
+                        writer.WriteDateTimeOffset(dto);
+                        break;
+                    case HtbDataType.DateOnly:
+                        if (!csvCol.TryParseDateOnly(out DateOnly dOnly))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as DateOnly.");
+                        writer.WriteDateOnly(dOnly);
+                        break;
+                    case HtbDataType.TimeOnly:
+                        if (!csvCol.TryParseTimeOnly(out TimeOnly tOnly))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as TimeOnly.");
+                        writer.WriteTimeOnly(tOnly);
+                        break;
+                    case HtbDataType.TimeSpan:
+                        if (!csvCol.TryParseTimeSpan(out TimeSpan ts))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as TimeSpan.");
+                        writer.WriteTimeSpan(ts);
+                        break;
+                    case HtbDataType.Int16:
+                        if (!csvCol.TryParseInt16(out short i16))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as Int16.");
+                        writer.WriteInt16(i16);
+                        break;
+                    case HtbDataType.UInt16:
+                        if (!csvCol.TryParseUInt16(out ushort u16))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as UInt16.");
+                        writer.WriteUInt16(u16);
+                        break;
+                    case HtbDataType.Byte:
+                        if (!csvCol.TryParseByte(out byte u8))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as Byte.");
+                        writer.WriteByte(u8);
+                        break;
+                    case HtbDataType.SByte:
+                        if (!csvCol.TryParseSByte(out sbyte i8))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as SByte.");
+                        writer.WriteSByte(i8);
+                        break;
+                    case HtbDataType.UInt32:
+                        if (!csvCol.TryParseUInt32(out uint u32))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as UInt32.");
+                        writer.WriteUInt32(u32);
+                        break;
+                    case HtbDataType.UInt64:
+                        if (!csvCol.TryParseUInt64(out ulong u64))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as UInt64.");
+                        writer.WriteUInt64(u64);
+                        break;
+                    case HtbDataType.Char:
+                        if (!csvCol.TryParseChar(out char ch))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as Char.");
+                        writer.WriteChar(ch);
+                        break;
+                    case HtbDataType.Half:
+                        if (!csvCol.TryParseHalf(out Half h))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as Half.");
+                        writer.WriteHalf(h);
+                        break;
+                    case HtbDataType.Int128:
+                        if (!csvCol.TryParseInt128(out Int128 i128))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as Int128.");
+                        writer.WriteInt128(i128);
+                        break;
+                    case HtbDataType.UInt128:
+                        if (!csvCol.TryParseUInt128(out UInt128 u128))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as UInt128.");
+                        writer.WriteUInt128(u128);
+                        break;
+                    case HtbDataType.ByteArray:
+                        if (!csvCol.TryParseBase64Bytes(out byte[]? bytes))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as ByteArray.");
+                        writer.WriteByteArray(bytes);
+                        break;
+                    case HtbDataType.BigInteger:
+                        if (!csvCol.TryParseBigInteger(out BigInteger bi))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as BigInteger.");
+                        writer.WriteBigInteger(bi);
+                        break;
+                    case HtbDataType.Uri:
+                        if (!csvCol.TryParseUri(out Uri? uri))
+                            throw new HtbException(HtbErrorCode.SerializationError, $"Failed to parse column '{col.Name}' value as Uri.");
+                        writer.WriteUri(uri);
                         break;
                     case HtbDataType.Unknown:
                     default:

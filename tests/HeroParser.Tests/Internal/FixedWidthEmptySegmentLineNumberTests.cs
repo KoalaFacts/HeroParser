@@ -16,7 +16,7 @@ public sealed class FixedWidthEmptySegmentLineNumberTests
             ReadOnlyMemory<byte>.Empty,
             "\nXYZ"u8.ToArray());
 
-        Assert.Equal(1, FixedWidthLineScanner.CountNewlines(sequence));
+        Assert.Equal(1, new FixedWidthLineScanner().CountNewlines(sequence));
     }
 
     [Fact]

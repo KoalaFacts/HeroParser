@@ -24,6 +24,8 @@ namespace HeroParser.Cli;
 internal sealed class InteractiveWizard
 {
     private readonly IAnsiConsole console;
+    private readonly CliConsole cliConsole = new();
+    private readonly CliCommands commands = new();
     private readonly string? searchDirectory;
 
     /// <summary>
@@ -128,29 +130,29 @@ internal sealed class InteractiveWizard
                 switch (action)
                 {
                     case "1. Detect delimiter & encoding":
-                        CliCommands.Detect(file);
+                        commands.Detect(file);
                         break;
 
                     case "2. Validate structure & health":
-                        await CliCommands.ValidateAsync(file, null);
+                        await commands.ValidateAsync(file, null);
                         break;
 
                     case "3. Profile statistics & values":
-                        await CliCommands.ProfileAsync(file, null, null);
+                        await commands.ProfileAsync(file, null, null);
                         break;
 
                     case "4. Generate C# record schema (Local)":
-                        await CliCommands.SchemaAsync(file, null, useAi: false, null, null, null);
+                        await commands.SchemaAsync(file, null, useAi: false, null, null, null);
                         break;
 
                     case "5. Generate C# record schema (AI)":
-                        await CliCommands.SchemaAsync(file, null, useAi: true, null, null, null);
+                        await commands.SchemaAsync(file, null, useAi: true, null, null, null);
                         break;
 
                     case "6. Ask AI a question about dataset (Query)":
                         var query = Prompt(
                             new TextPrompt<string>("Enter your question for the dataset:"));
-                        await CliCommands.QueryAsync(file, null, null, query, null, null, null);
+                        await commands.QueryAsync(file, null, null, query, null, null, null);
                         break;
 
                     case "7. Translate or transform columns (AI)":
@@ -165,7 +167,7 @@ internal sealed class InteractiveWizard
                         var batch = Prompt(
                             new TextPrompt<int>("Enter batch size:")
                                 .DefaultValue(50));
-                        await CliCommands.TranslateAsync(file, null, null, prompt, outPath, batch, null, null, null);
+                        await commands.TranslateAsync(file, null, null, prompt, outPath, batch, null, null, null);
                         break;
 
                     case "8. Convert file format":
@@ -197,7 +199,7 @@ internal sealed class InteractiveWizard
                             };
                         }
 
-                        CliCommands.Convert(file, finalOut, null, shape, null);
+                        commands.Convert(file, finalOut, null, shape, null);
                         break;
 
                     case "9. Change active file":
@@ -207,7 +209,7 @@ internal sealed class InteractiveWizard
                         return;
 
                     case "10. Quick inspect CSV/TSV sample":
-                        await CliCommands.InspectAsync(file, null, 1000);
+                        await commands.InspectAsync(file, null, 1000);
                         break;
 
                     case "11. Exit":
@@ -223,7 +225,7 @@ internal sealed class InteractiveWizard
                 // can fail for any reason (unreadable file, malformed data, no disk space),
                 // and none of those should drop the user out of an interactive session —
                 // report it and offer the menu again.
-                ConsoleUtils.Error($"Operation failed: {ex.Message}");
+                cliConsole.Error($"Operation failed: {ex.Message}");
             }
 
             if (running)

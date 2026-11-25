@@ -2,6 +2,7 @@ using System.Text;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Reading.Data;
 using HeroParser.FixedWidths.Streaming;
+using HeroParser.Internal;
 
 namespace HeroParser;
 
@@ -77,11 +78,7 @@ public static partial class FixedWidth
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
 
-        var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
+        var stream = new CompressedFile(path).OpenRead(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 

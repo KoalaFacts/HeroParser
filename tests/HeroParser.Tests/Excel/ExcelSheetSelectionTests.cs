@@ -103,6 +103,22 @@ public class ExcelSheetSelectionTests
 
         Assert.Contains("99", ex.Message);
     }
+
+    [Fact]
+    public void GetSheetNames_MultiSheetWorkbook_ReturnsNamesInOrder()
+    {
+        var sheets = new Dictionary<string, string[][]>
+        {
+            ["Sales"] = [["Name", "Value"], ["North", "100"]],
+            ["Team"] = [["Name", "Value"], ["Alice", "Lead"]],
+            ["Summary"] = [["Name", "Value"], ["Total", "100"]],
+        };
+        using var xlsx = ExcelTestHelper.CreateXlsx(sheets);
+
+        var names = HeroParser.Excel.GetSheetNames(xlsx);
+
+        Assert.Equal(["Sales", "Team", "Summary"], names);
+    }
 }
 
 [GenerateBinder]

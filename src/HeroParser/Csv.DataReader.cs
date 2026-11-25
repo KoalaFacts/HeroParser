@@ -1,3 +1,4 @@
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Data;
 using HeroParser.SeparatedValues.Reading.Streaming;
@@ -56,11 +57,7 @@ public static partial class Csv
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
-        var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
+        var stream = new CompressedFile(path).OpenRead(
             bufferSize: 4096,
             FileOptions.SequentialScan);
 

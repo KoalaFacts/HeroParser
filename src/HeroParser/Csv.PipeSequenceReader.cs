@@ -147,9 +147,8 @@ public static partial class Csv
 
         if (rowData.IsSingleSegment)
         {
-            var parseResult = CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(
+            var parseResult = new CsvRowParser(options).ParseRow<byte, NoTrackLineNumbers>(
                 rowData.FirstSpan,
-                options,
                 columnEnds);
 
             return parseResult.ColumnCount;
@@ -526,9 +525,10 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 CsvRowParseResult parseResult;
                 try
                 {
+                    var rowParser = new CsvRowParser(options);
                     parseResult = trackLineNumbers
-                        ? CsvRowParser.ParseRow<byte, TrackLineNumbers>(span, options, columnEndsBuffer)
-                        : CsvRowParser.ParseRow<byte, NoTrackLineNumbers>(span, options, columnEndsBuffer);
+                        ? rowParser.ParseRow<byte, TrackLineNumbers>(span, columnEndsBuffer)
+                        : rowParser.ParseRow<byte, NoTrackLineNumbers>(span, columnEndsBuffer);
                 }
                 catch (CsvException ex) when (!bufferedIsCompleted && ex.QuoteStartPosition.HasValue)
                 {
@@ -1052,7 +1052,7 @@ public readonly ref struct CsvPipeSequenceColumn
     /// Decodes the column as UTF-8 text and removes CSV quoting/escaping.
     /// </summary>
     public string ToUnquotedString()
-        => CsvPipeColumnText.Decode(data, quote, escape, enableQuotedFields);
+        => new CsvPipeColumnText(quote, escape, enableQuotedFields).Decode(data);
 
     /// <summary>Returns the decoded, unquoted column text.</summary>
     public override string ToString() => ToUnquotedString();

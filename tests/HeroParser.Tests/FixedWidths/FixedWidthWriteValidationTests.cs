@@ -7,8 +7,6 @@ namespace HeroParser.Tests.FixedWidths;
 
 public class FixedWidthWriteValidationTests
 {
-    #region Test Models
-
     private class ValidatedRecord
     {
         [PositionalMap(Start = 0, Length = 10)]
@@ -32,8 +30,6 @@ public class FixedWidthWriteValidationTests
         [PositionalMap(Start = 0, Length = 10)]
         public string? Name { get; set; }
     }
-
-    #endregion
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]

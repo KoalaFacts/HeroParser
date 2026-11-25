@@ -468,7 +468,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                 if (accessor.Validation is { HasAnyRule: true } rules)
                 {
                     validationErrors ??= [];
-                    WriteValidationRunner.Validate(valuesBuffer[i], accessor.MemberName, rowNumber, i, rules, validationErrors, writerOptions.Culture);
+                    rules.Validate(valuesBuffer[i], accessor.MemberName, rowNumber, i, validationErrors, writerOptions.Culture);
                 }
             }
 
@@ -548,7 +548,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                 if (accessor.Validation is { HasAnyRule: true } rules)
                 {
                     validationErrors ??= [];
-                    WriteValidationRunner.Validate(valuesBuffer[i], accessor.MemberName, rowNumber, i, rules, validationErrors, writerOptions.Culture);
+                    rules.Validate(valuesBuffer[i], accessor.MemberName, rowNumber, i, validationErrors, writerOptions.Culture);
                 }
             }
 
@@ -1061,7 +1061,7 @@ public sealed class CsvRecordWriter<T> : ICsvRecordWriter<T>
                 headerName,
                 format,
                 formatAttr?.ExcludeIfAllEmpty ?? false,
-                PropertyAccessorCompiler.CompileBoxedGetter(property),
+                new PropertyAccessorCompiler(property).CompileBoxedGetter(),
                 validation);
         }
 

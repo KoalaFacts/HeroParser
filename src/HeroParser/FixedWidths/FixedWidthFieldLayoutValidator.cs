@@ -7,9 +7,9 @@ internal readonly struct FixedWidthFieldLayout(string name, int start, int lengt
     public int Length { get; } = length;
 }
 
-internal static class FixedWidthFieldLayoutValidator
+internal readonly struct FixedWidthFieldLayoutValidator(IReadOnlyList<FixedWidthFieldLayout> fields)
 {
-    public static void Validate(IReadOnlyList<FixedWidthFieldLayout> fields)
+    public void Validate()
     {
         if (fields.Count == 0)
             return;

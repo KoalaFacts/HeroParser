@@ -115,14 +115,13 @@ public class ExcelRecordWriterValueTypeTests
     }
 
     [Fact]
-    public void Int64BeyondDoublePrecision_LosesItsLastDigit()
+    public void Int64BeyondDoublePrecision_PreservesFullPrecisionAsString()
     {
-        // Excel stores numbers as IEEE-754 doubles, so an Int64 past 2^53 cannot survive
-        // as a numeric cell. Pinning it here so the limit is a known property of the
-        // format rather than a surprise in someone's data.
+        // Values beyond IEEE-754 double's 53-bit integer range (+/- 2^53) are written as string cells
+        // to preserve full 64-bit integer precision, matching decimal.
         string[] data = Assert.Single(RoundTrip(Records));
 
-        Assert.Equal(9_007_199_254_740_992L, long.Parse(data[IndexOf("Int64")], CultureInfo.InvariantCulture));
+        Assert.Equal(9_007_199_254_740_993L, long.Parse(data[IndexOf("Int64")], CultureInfo.InvariantCulture));
     }
 
     [Fact]

@@ -8,8 +8,6 @@ namespace HeroParser.Tests;
 /// </summary>
 public class CsvReaderBuilderTests
 {
-    #region Test Record Types
-
     [GenerateBinder]
     public class TestPerson
     {
@@ -36,10 +34,6 @@ public class CsvReaderBuilderTests
     {
         public int? Value { get; set; }
     }
-
-    #endregion
-
-    #region Basic Reading Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -110,10 +104,6 @@ public class CsvReaderBuilderTests
         Assert.Equal("NYC", records[0].City);  // City correctly parsed
     }
 
-    #endregion
-
-    #region Header Handling Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Builder_CaseInsensitiveHeaders_Works()
@@ -145,10 +135,6 @@ public class CsvReaderBuilderTests
         Assert.Null(records[0].City);  // Missing column should be null/default
     }
 
-    #endregion
-
-    #region Skip Rows Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Builder_SkipRows_SkipsInitialRows()
@@ -164,10 +150,6 @@ public class CsvReaderBuilderTests
         Assert.Single(records);
         Assert.Equal("Alice", records[0].Name);
     }
-
-    #endregion
-
-    #region Method Chaining Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -209,10 +191,6 @@ public class CsvReaderBuilderTests
         Assert.Equal("NYC", records[0].City);
     }
 
-    #endregion
-
-    #region Parser Options Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Builder_WithMaxColumns_SetsLimit()
@@ -228,10 +206,6 @@ public class CsvReaderBuilderTests
         // Just verify it doesn't throw
         foreach (var _ in reader) { }
     }
-
-    #endregion
-
-    #region Non-Generic Builder Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -322,10 +296,6 @@ public class CsvReaderBuilderTests
         Assert.Equal(2, rowCount);
     }
 
-    #endregion
-
-    #region Csv.Read() Entry Point Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvRead_GenericEntryPoint_Works()
@@ -358,10 +328,6 @@ public class CsvReaderBuilderTests
         Assert.Equal("A,B,C", rows[0]);
         Assert.Equal("1,2,3", rows[1]);
     }
-
-    #endregion
-
-    #region Non-Generic Builder Additional Options Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -483,10 +449,6 @@ public class CsvReaderBuilderTests
 
         Assert.Equal(2, rowCount);
     }
-
-    #endregion
-
-    #region Generic Builder Additional Options Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -617,10 +579,6 @@ public class CsvReaderBuilderTests
         Assert.Equal(30, records[0].Age);
         Assert.Equal("NYC", records[0].City);
     }
-
-    #endregion
-
-    #region UTF-8 File Reading Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -828,6 +786,4 @@ public class CsvReaderBuilderTests
         // Stream should be closed
         Assert.False(stream.CanRead);
     }
-
-    #endregion
 }

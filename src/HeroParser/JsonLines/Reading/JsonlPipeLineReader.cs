@@ -10,14 +10,12 @@ namespace HeroParser.JsonLines.Reading;
 /// holding owned UTF-8 byte arrays (one allocation per produced line). Strips a leading UTF-8 BOM
 /// from the first line, trims trailing <c>\r</c>, and enforces <see cref="JsonlReadOptions.MaxLineSizeBytes"/>.
 /// </summary>
-internal static class JsonlPipeLineReader
+internal readonly struct JsonlPipeLineReader(PipeReader reader, JsonlReadOptions options)
 {
     private const byte LF = (byte)'\n';
     private const byte CR = (byte)'\r';
 
-    public static async IAsyncEnumerable<JsonlLine> ReadLinesAsync(
-        PipeReader reader,
-        JsonlReadOptions options,
+    public async IAsyncEnumerable<JsonlLine> ReadLinesAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reader);

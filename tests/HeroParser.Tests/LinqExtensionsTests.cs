@@ -7,8 +7,6 @@ public class LinqExtensionsTests
 {
     private const string TEST_CSV = "Name,Age,Score\nAlice,25,100\nBob,30,85\nCharlie,25,95\nDiana,35,90";
 
-    #region ToList / ToArray Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ToList_ReturnsAllRecords()
@@ -31,10 +29,6 @@ public class LinqExtensionsTests
         Assert.Equal(4, array.Length);
         Assert.Equal("Bob", array[1].Name);
     }
-
-    #endregion
-
-    #region First / FirstOrDefault Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -135,10 +129,6 @@ public class LinqExtensionsTests
         Assert.Null(first);
     }
 
-    #endregion
-
-    #region Single / SingleOrDefault Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Single_ReturnsSingleRecord()
@@ -224,10 +214,6 @@ public class LinqExtensionsTests
         Assert.NotNull(ex);
     }
 
-    #endregion
-
-    #region Count Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Count_ReturnsCorrectCount()
@@ -247,10 +233,6 @@ public class LinqExtensionsTests
 
         Assert.Equal(2, count);
     }
-
-    #endregion
-
-    #region Any / All Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -308,10 +290,6 @@ public class LinqExtensionsTests
         Assert.True(reader.All(p => p.Age > 100)); // Vacuous truth
     }
 
-    #endregion
-
-    #region Where / Select Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void Where_FiltersRecords()
@@ -334,10 +312,6 @@ public class LinqExtensionsTests
         Assert.Contains("Alice", names);
         Assert.Contains("Diana", names);
     }
-
-    #endregion
-
-    #region Skip / Take Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -373,10 +347,6 @@ public class LinqExtensionsTests
         Assert.Equal(4, taken.Count);
     }
 
-    #endregion
-
-    #region ForEach Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void ForEach_ExecutesActionOnEachRecord()
@@ -389,10 +359,6 @@ public class LinqExtensionsTests
         Assert.Equal(4, names.Count);
         Assert.Equal(["Alice", "Bob", "Charlie", "Diana"], names);
     }
-
-    #endregion
-
-    #region ToDictionary / GroupBy Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -430,8 +396,6 @@ public class LinqExtensionsTests
         Assert.Single(groups[30]); // Bob
         Assert.Single(groups[35]); // Diana
     }
-
-    #endregion
 
     [GenerateBinder]
     internal sealed class Person

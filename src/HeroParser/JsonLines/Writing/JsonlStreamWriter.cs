@@ -41,8 +41,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         this.options = options ?? JsonlWriteOptions.Default;
         this.options.Validate();
 
-        Encoding encoding = this.options.Encoding ?? new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        newlineBytes = encoding.GetBytes(this.options.NewLine);
+        newlineBytes = Encoding.UTF8.GetBytes(this.options.NewLine);
 
         writer = new Utf8JsonWriter(bufferWriter, new JsonWriterOptions
         {

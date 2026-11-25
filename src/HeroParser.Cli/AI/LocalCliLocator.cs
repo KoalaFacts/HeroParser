@@ -16,43 +16,44 @@ namespace HeroParser.Cli.AI;
 /// rooted segment, so a command name that happened to be absolute would silently escape
 /// the directory being probed.
 /// </remarks>
-internal static class LocalCliLocator
+internal readonly struct LocalCliLocator(string command)
 {
     /// <summary>Extensions a command may carry on disk, in probe order.</summary>
     private static readonly string[] executableExtensions = ["", ".exe", ".cmd", ".bat", ".lnk"];
 
     /// <summary>
-    /// Returns whether <paramref name="command"/> is resolvable through PATH.
+    /// Returns whether the command is resolvable through PATH.
     /// </summary>
-    public static bool IsCommandAvailable(string command)
+    public bool IsAvailable()
     {
         var pathEnv = Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrEmpty(pathEnv)) return false;
 
+        string target = command;
         return pathEnv.Split(Path.PathSeparator)
-            .SelectMany(directory => executableExtensions.Select(ext => Path.Join(directory.Trim(), command + ext)))
+            .SelectMany(directory => executableExtensions.Select(ext => Path.Join(directory.Trim(), target + ext)))
             .Any(File.Exists);
     }
 
     /// <summary>
-    /// Returns a full path to <paramref name="command"/>, or the command name itself when
+    /// Returns a full path to the command, or the command name itself when
     /// it is on PATH or cannot be located in a known install directory.
     /// </summary>
-    public static string ResolveCommandPath(string command)
+    public string ResolvePath()
     {
-        if (IsCommandAvailable(command))
+        if (IsAvailable())
         {
             return command;
         }
 
-        return KnownInstallPaths(command).FirstOrDefault(File.Exists) ?? command;
+        return KnownInstallPaths().FirstOrDefault(File.Exists) ?? command;
     }
 
     /// <summary>
-    /// Returns the well-known install locations for a command, for the case where its
+    /// Returns the well-known install locations for the command, for the case where its
     /// installer did not put it on PATH.
     /// </summary>
-    private static IEnumerable<string> KnownInstallPaths(string command)
+    private IEnumerable<string> KnownInstallPaths()
     {
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

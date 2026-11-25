@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Numerics;
 using System.Runtime.CompilerServices;
+using HeroParser.Internal;
 
 namespace HeroParser.FixedWidths;
 
@@ -36,8 +39,18 @@ public readonly ref struct FixedWidthCharSpanColumn
 
     /// <summary>Attempts to parse the field using <see cref="ISpanParsable{T}"/> and invariant culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryParse<T>(out T? result) where T : ISpanParsable<T>
+    public bool TryParse<T>([MaybeNullWhen(false)] out T result) where T : ISpanParsable<T>
         => T.TryParse(chars, CultureInfo.InvariantCulture, out result);
+
+    /// <summary>Attempts to parse the field using <see cref="ISpanParsable{T}"/> and the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParse<T>([MaybeNullWhen(false)] out T result, IFormatProvider? provider) where T : ISpanParsable<T>
+        => T.TryParse(chars, provider, out result);
+
+    /// <summary>Attempts to parse the field using <see cref="IUtf8SpanParsable{T}"/> and the specified format provider.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool TryParseUtf8<T>([MaybeNullWhen(false)] out T result, IFormatProvider? provider = null) where T : IUtf8SpanParsable<T>
+        => Utf8SpanParser.TryParseUtf8FromChars(chars, provider ?? CultureInfo.InvariantCulture, out result);
 
     /// <summary>Attempts to parse the field as an <see cref="int"/> using invariant culture.</summary>
     public bool TryParseInt32(out int result)
@@ -162,6 +175,81 @@ public readonly ref struct FixedWidthCharSpanColumn
     /// <summary>Attempts to parse the field as a <see cref="TimeOnly"/> using the provided culture and styles.</summary>
     public bool TryParseTimeOnly(out TimeOnly result, IFormatProvider? provider, DateTimeStyles styles = DateTimeStyles.None)
         => TimeOnly.TryParse(chars, provider, styles, out result);
+
+    /// <summary>Attempts to parse the field as a <see cref="TimeSpan"/> using invariant culture.</summary>
+    public bool TryParseTimeSpan(out TimeSpan result)
+        => TimeSpan.TryParse(chars, CultureInfo.InvariantCulture, out result);
+
+    /// <summary>Attempts to parse the field as a <see cref="TimeSpan"/> using the provided culture.</summary>
+    public bool TryParseTimeSpan(out TimeSpan result, IFormatProvider? provider)
+        => TimeSpan.TryParse(chars, provider, out result);
+
+    /// <summary>Attempts to parse the field as a <see cref="TimeSpan"/> using an exact format string and culture.</summary>
+    public bool TryParseTimeSpan(out TimeSpan result, string format, IFormatProvider? provider)
+        => TimeSpan.TryParseExact(chars, format, provider, out result);
+
+    /// <summary>Attempts to parse the field as a <see cref="TimeSpan"/> using an exact format string with invariant culture.</summary>
+    public bool TryParseTimeSpan(out TimeSpan result, string format)
+        => TimeSpan.TryParseExact(chars, format, CultureInfo.InvariantCulture, out result);
+
+    /// <summary>Attempts to parse the field as a single <see cref="char"/>.</summary>
+    public bool TryParseChar(out char result)
+    {
+        if (chars.Length == 1)
+        {
+            result = chars[0];
+            return true;
+        }
+        result = default;
+        return false;
+    }
+
+    /// <summary>Attempts to parse the field as a <see cref="Half"/> using invariant culture.</summary>
+    public bool TryParseHalf(out Half result)
+        => TryParseHalf(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the field as a <see cref="Half"/> using the provided format provider.</summary>
+    public bool TryParseHalf(out Half result, IFormatProvider? provider)
+        => Half.TryParse(chars, NumberStyles.Float | NumberStyles.AllowThousands, provider, out result);
+
+    /// <summary>Attempts to parse the field as an <see cref="Int128"/> using invariant culture.</summary>
+    public bool TryParseInt128(out Int128 result)
+        => TryParseInt128(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the field as an <see cref="Int128"/> using the provided format provider.</summary>
+    public bool TryParseInt128(out Int128 result, IFormatProvider? provider)
+        => Int128.TryParse(chars, NumberStyles.Integer, provider, out result);
+
+    /// <summary>Attempts to parse the field as a <see cref="UInt128"/> using invariant culture.</summary>
+    public bool TryParseUInt128(out UInt128 result)
+        => TryParseUInt128(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the field as a <see cref="UInt128"/> using the provided format provider.</summary>
+    public bool TryParseUInt128(out UInt128 result, IFormatProvider? provider)
+        => UInt128.TryParse(chars, NumberStyles.Integer, provider, out result);
+
+    /// <summary>Attempts to parse the field as a <see cref="BigInteger"/> using invariant culture.</summary>
+    public bool TryParseBigInteger(out BigInteger result)
+        => TryParseBigInteger(out result, CultureInfo.InvariantCulture);
+
+    /// <summary>Attempts to parse the field as a <see cref="BigInteger"/> using the provided format provider.</summary>
+    public bool TryParseBigInteger(out BigInteger result, IFormatProvider? provider)
+        => BigInteger.TryParse(chars, NumberStyles.Integer, provider, out result);
+
+    /// <summary>Attempts to parse a non-empty field as a <see cref="Uri"/>.</summary>
+    public bool TryParseUri([NotNullWhen(true)] out Uri? result)
+    {
+        if (chars.IsEmpty || chars.IsWhiteSpace())
+        {
+            result = null;
+            return false;
+        }
+        return Uri.TryCreate(new string(chars.Trim()), UriKind.RelativeOrAbsolute, out result);
+    }
+
+    /// <summary>Attempts to parse a Base64-encoded field into a byte array.</summary>
+    public bool TryParseBase64Bytes([NotNullWhen(true)] out byte[]? result)
+        => Utf8SpanParser.TryParseBase64Chars(chars, out result);
 
     /// <summary>Attempts to parse the field as a <see cref="TimeZoneInfo"/> from its identifier.</summary>
     public bool TryParseTimeZoneInfo(out TimeZoneInfo result)

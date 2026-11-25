@@ -3,9 +3,9 @@ using HeroParser.SeparatedValues.Validation;
 
 namespace HeroParser.Cli;
 
-internal static class CsvValidationReport
+internal readonly struct CsvValidationReport(CsvValidationResult result)
 {
-    public static void Save(string path, CsvValidationResult result)
+    public void Save(string path)
     {
         using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });

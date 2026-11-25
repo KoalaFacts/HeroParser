@@ -49,7 +49,7 @@ internal sealed class XlsxReader : IDisposable
         var entry = archive.GetEntry(sheet.Path)
             ?? throw new ExcelException($"Sheet file '{sheet.Path}' not found in .xlsx archive.");
 
-        XlsxXml.ValidateEntrySize(entry);
+        new XlsxXml().ValidateEntrySize(entry);
         var stream = entry.Open();
         return new XlsxSheetReader(stream, sharedStrings, stylesheet);
     }
@@ -67,7 +67,7 @@ internal sealed class XlsxReader : IDisposable
         if (entry is null)
             return XlsxSharedStrings.Empty;
 
-        XlsxXml.ValidateEntrySize(entry);
+        new XlsxXml().ValidateEntrySize(entry);
         using var stream = entry.Open();
         return XlsxSharedStrings.Parse(stream);
     }
@@ -78,7 +78,7 @@ internal sealed class XlsxReader : IDisposable
         if (entry is null)
             return XlsxStylesheet.Parse(null);
 
-        XlsxXml.ValidateEntrySize(entry);
+        new XlsxXml().ValidateEntrySize(entry);
         using var stream = entry.Open();
         return XlsxStylesheet.Parse(stream);
     }

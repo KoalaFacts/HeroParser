@@ -1,3 +1,4 @@
+using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using System.Text;
 using HeroParser.SeparatedValues.Core;
@@ -89,12 +90,112 @@ public class CsvSimdLevelCoverageTests
     [Fact]
     public void Avx512Forced_Off_Avx2_Off_FallsBackToScalar()
     {
-        // Disable both SIMD levels: parser must fall back to scalar.
-        using (HardwareCapabilities.Override(avx512BW: false, avx2: false))
+        // Disable all SIMD levels: parser must fall back to scalar.
+        using (HardwareCapabilities.Override(avx512BW: false, avx2: false, advSimd: false, vector128: false))
         {
             var records = Parse(Sample(20));
             Assert.Equal(20, records.Count);
         }
+    }
+
+    [Fact]
+    public void Vector128_SoftwarePrefixXor_MatchesScalarAndAvx_ForBytesAndChars()
+    {
+        var opts = new CsvReadOptions
+        {
+            AllowNewlinesInsideQuotes = true,
+            TrackSourceLineNumbers = true
+        };
+
+        // Crafted so delimiter, quotes, escaped quotes (""), CRLF, LF, non-ASCII chars (\u8000, €),
+        // and multiline quoted values cross 16-byte / 16-char boundaries cleanly.
+        string csv =
+            "A,B,C\r\n" +
+            "0123456789abcde,\"val,1\",ok\r\n" +
+            "\"line1\r\nline2\",\"she \"\"said\"\"\",€\u8000\n" +
+            "plain01234567890,plain12345678901,plain23456789012\r\n" +
+            "a1,b1,c1\r\na2,b2,c2\r\na3,b3,c3\r\na4,b4,c4\r\na5,b5,c5\n" +
+            "last,row,\"end\"";
+
+        static List<(string[] Fields, int SourceLine)> ReadAllBytes(string input, CsvReadOptions o)
+        {
+            var reader = Csv.ReadFromByteSpan(Encoding.UTF8.GetBytes(input), o);
+            var list = new List<(string[], int)>();
+            while (reader.MoveNext())
+            {
+                var row = reader.Current;
+                var fields = new string[row.ColumnCount];
+                for (int i = 0; i < fields.Length; i++)
+                    fields[i] = row[i].UnquoteToString();
+                list.Add((fields, row.SourceLineNumber));
+            }
+            return list;
+        }
+
+        static List<(string[] Fields, int SourceLine)> ReadAllChars(string input, CsvReadOptions o)
+        {
+            var reader = Csv.ReadFromCharSpan(input.AsSpan(), o);
+            var list = new List<(string[], int)>();
+            while (reader.MoveNext())
+            {
+                var row = reader.Current;
+                var fields = new string[row.ColumnCount];
+                for (int i = 0; i < fields.Length; i++)
+                    fields[i] = row[i].UnquoteToString();
+                list.Add((fields, row.SourceLineNumber));
+            }
+            return list;
+        }
+
+        List<(string[] Fields, int SourceLine)> scalarBytes;
+        List<(string[] Fields, int SourceLine)> scalarChars;
+        using (HardwareCapabilities.Override(avx512BW: false, avx2: false, pclmulqdq: false, advSimd: false, vector128: false))
+        {
+            scalarBytes = ReadAllBytes(csv, opts);
+            scalarChars = ReadAllChars(csv, opts);
+        }
+
+        using (HardwareCapabilities.Override(avx512BW: false, avx2: false, pclmulqdq: false, advSimd: false, vector128: true))
+        {
+            var vecBytes = ReadAllBytes(csv, opts);
+            var vecChars = ReadAllChars(csv, opts);
+
+            Assert.Equal(scalarBytes.Count, vecBytes.Count);
+            Assert.Equal(scalarChars.Count, vecChars.Count);
+            for (int i = 0; i < scalarBytes.Count; i++)
+            {
+                Assert.Equal(scalarBytes[i].SourceLine, vecBytes[i].SourceLine);
+                Assert.Equal(scalarBytes[i].Fields, vecBytes[i].Fields);
+                Assert.Equal(scalarChars[i].SourceLine, vecChars[i].SourceLine);
+                Assert.Equal(scalarChars[i].Fields, vecChars[i].Fields);
+            }
+        }
+    }
+
+    [Fact]
+    public void Vector128_UnquotedFastPath_MatchesScalar()
+    {
+        var sb = new StringBuilder("A,B,C\n");
+        for (int i = 0; i < 40; i++)
+            sb.Append($"colA_{i},colB_{i},colC_{i}\n");
+        string csv = sb.ToString();
+
+        int scalarByteRows;
+        int scalarCharRows;
+        using (HardwareCapabilities.Override(avx512BW: false, avx2: false, pclmulqdq: false, advSimd: false, vector128: false))
+        {
+            scalarByteRows = CountRowsBytePath(csv);
+            scalarCharRows = CountRowsCharPath(csv);
+        }
+
+        using (HardwareCapabilities.Override(avx512BW: false, avx2: false, pclmulqdq: false, advSimd: false, vector128: true))
+        {
+            Assert.Equal(scalarByteRows, CountRowsBytePath(csv));
+            Assert.Equal(scalarCharRows, CountRowsCharPath(csv));
+        }
+
+        Assert.Equal(40, scalarByteRows);
+        Assert.Equal(40, scalarCharRows);
     }
 
     private static int CountRowsBytePath(string csv)
@@ -241,41 +342,50 @@ public class CsvSimdLevelCoverageTests
     [Fact]
     public void OverrideScope_RestoresPreviousValuesOnDispose()
     {
-        var beforeAvx2 = HardwareCapabilities.Avx2IsSupported;
-        var beforeAvx512 = HardwareCapabilities.Avx512BWIsSupported;
+        var capabilities = HardwareCapabilities.Current;
+        var beforeAvx2 = capabilities.Avx2IsSupported;
+        var beforeAvx512 = capabilities.Avx512BWIsSupported;
+        var beforeAdvSimd = capabilities.AdvSimdIsSupported;
+        var beforeVector128 = capabilities.Vector128IsSupported;
 
-        using (HardwareCapabilities.Override(avx2: false, avx512BW: false))
+        using (HardwareCapabilities.Override(avx2: false, avx512BW: false, advSimd: false, vector128: false))
         {
-            Assert.False(HardwareCapabilities.Avx2IsSupported);
-            Assert.False(HardwareCapabilities.Avx512BWIsSupported);
+            Assert.False(capabilities.Avx2IsSupported);
+            Assert.False(capabilities.Avx512BWIsSupported);
+            Assert.False(capabilities.AdvSimdIsSupported);
+            Assert.False(capabilities.Vector128IsSupported);
         }
 
-        Assert.Equal(beforeAvx2, HardwareCapabilities.Avx2IsSupported);
-        Assert.Equal(beforeAvx512, HardwareCapabilities.Avx512BWIsSupported);
+        Assert.Equal(beforeAvx2, capabilities.Avx2IsSupported);
+        Assert.Equal(beforeAvx512, capabilities.Avx512BWIsSupported);
+        Assert.Equal(beforeAdvSimd, capabilities.AdvSimdIsSupported);
+        Assert.Equal(beforeVector128, capabilities.Vector128IsSupported);
     }
 
     [Fact]
     public void NestedOverrides_RestoreCorrectly()
     {
+        var capabilities = HardwareCapabilities.Current;
         using (HardwareCapabilities.Override(avx2: false))
         {
-            Assert.False(HardwareCapabilities.Avx2IsSupported);
+            Assert.False(capabilities.Avx2IsSupported);
             using (HardwareCapabilities.Override(avx512BW: false))
             {
-                Assert.False(HardwareCapabilities.Avx512BWIsSupported);
-                Assert.False(HardwareCapabilities.Avx2IsSupported); // outer override still in effect
+                Assert.False(capabilities.Avx512BWIsSupported);
+                Assert.False(capabilities.Avx2IsSupported); // outer override still in effect
             }
-            Assert.False(HardwareCapabilities.Avx2IsSupported); // outer override still in effect after inner disposed
+            Assert.False(capabilities.Avx2IsSupported); // outer override still in effect after inner disposed
         }
     }
 
     [Fact]
     public void Override_AllNullArgs_ChangesNothing()
     {
-        var beforeAvx2 = HardwareCapabilities.Avx2IsSupported;
+        var capabilities = HardwareCapabilities.Current;
+        var beforeAvx2 = capabilities.Avx2IsSupported;
         using (HardwareCapabilities.Override())
         {
-            Assert.Equal(beforeAvx2, HardwareCapabilities.Avx2IsSupported);
+            Assert.Equal(beforeAvx2, capabilities.Avx2IsSupported);
         }
     }
 

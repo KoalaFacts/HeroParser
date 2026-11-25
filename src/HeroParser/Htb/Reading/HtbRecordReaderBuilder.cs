@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using HeroParser.Internal;
 using HeroParser.Validation;
 using HeroParser.Htbs;
 
@@ -102,7 +103,7 @@ public sealed class HtbRecordReaderBuilder<T> where T : new()
     public IEnumerable<T> FromFile(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        var stream = File.OpenRead(path);
+        var stream = new CompressedFile(path).OpenRead();
         return FromStream(stream, leaveOpen: false);
     }
 
@@ -135,13 +136,16 @@ public sealed class HtbRecordReaderBuilder<T> where T : new()
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var options = BuildOptions();
 
-        // The reader owns the file stream from here on, so it is closed when validation fails.
-        using var reader = new HtbRecordReader<T>(File.OpenRead(path), options, leaveOpen: false);
-        options.Validate();
-        while (await reader.ReadNextAsync())
+        var stream = new CompressedFile(path).OpenRead(bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using (stream.ConfigureAwait(false))
         {
-            if (reader.CurrentRecord != null)
-                yield return reader.CurrentRecord;
+            using var reader = new HtbRecordReader<T>(stream, options, leaveOpen: true);
+            options.Validate();
+            while (await reader.ReadNextAsync())
+            {
+                if (reader.CurrentRecord != null)
+                    yield return reader.CurrentRecord;
+            }
         }
     }
 }

@@ -95,7 +95,7 @@ public sealed class FixedWidthRecordDescriptor<T>(FixedWidthPropertyDescriptor<T
             var prop = properties[i];
             layouts[i] = new FixedWidthFieldLayout(prop.Name, prop.Start, prop.Length);
         }
-        FixedWidthFieldLayoutValidator.Validate(layouts);
+        new FixedWidthFieldLayoutValidator(layouts).Validate();
 
         return properties;
     }

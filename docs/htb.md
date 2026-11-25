@@ -18,6 +18,7 @@ The primary entry point is the `Htb` static class.
    - [Async Streaming](#13-async-streaming)
    - [OnError Callback](#14-onerror-callback)
    - [Progress Reporting](#15-progress-reporting)
+   - [DataReader Import & Export](#16-datareader-import--export)
 2. [HTB Writing](#2-htb-writing)
    - [Quick Start](#21-quick-start)
    - [Fluent Builder Options](#22-fluent-builder-options)
@@ -143,6 +144,33 @@ var records = Htb.Read<Product>()
     .WithProgress(progress, intervalRows: 5000)
     .FromFile("data.htb");
 ```
+
+### 1.6 DataReader Import & Export
+
+Read binary HTB streams directly via `DbDataReader`, or stream any `IDataReader` / `DbDataReader` into an HTB file or stream without reflection or primitive boxing:
+
+```csharp
+using System.Data;
+
+using var table = new DataTable();
+table.Columns.Add("Id", typeof(int));
+table.Columns.Add("Price", typeof(decimal));
+table.Rows.Add(1, 19.95m);
+
+using var sourceReader = table.CreateDataReader();
+using var ms = new MemoryStream();
+Htb.WriteFromDataReader(sourceReader, ms, leaveOpen: true);
+
+ms.Position = 0;
+using var htbReader = Htb.CreateDataReader(ms);
+while (htbReader.Read())
+{
+    int id = htbReader.GetInt32(0);
+    decimal price = htbReader.GetDecimal(1);
+}
+```
+
+`Htb.WriteFromDataReaderToFile("data.htb.zst", reader)` and `Htb.CreateDataReader("data.htb.gz")` also support transparent `.gz`, `.br`, and `.zst`/`.zstd` compression (`.NET 11+` for Zstandard) by file extension.
 
 ---
 
@@ -309,7 +337,7 @@ public class Product
 }
 ```
 
-The generator automatically hooks into HTB's deserializer and writer factory, allowing the JIT (or AOT compiler) to use direct, non-reflection assignments. 
+The generator automatically hooks into HTB's deserializer and writer factory, allowing the JIT (or AOT compiler) to use direct, non-reflection binary column assignments across both core primitives and extended `HtbDataType` tags (`DateOnly`, `TimeOnly`, `DateTimeOffset`, `TimeSpan`, `Half`, `Int128`, `UInt128`, `BigInteger`, `char`, `Uri`, `byte[]`). File-based APIs (`FromFile`, `ToFile`, `CreateDataReader`, `WriteFromDataReaderToFile`) also decompress and compress `.gz`, `.br`, and `.zst`/`.zstd` transparently by extension.
 
 > [!IMPORTANT]
 > To compile with Native AOT and run warning-free, always ensure your record classes have `[GenerateBinder]` applied. If a type does not have `[GenerateBinder]`, HeroParser will fall back to reflection-based deserialization, which will generate warnings under trimming.

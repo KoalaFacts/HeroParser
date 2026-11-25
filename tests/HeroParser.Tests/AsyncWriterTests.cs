@@ -13,8 +13,6 @@ namespace HeroParser.Tests;
 [Collection("AsyncWriterTests")]
 public class AsyncWriterTests
 {
-    #region Test Models
-
     public class TestRecord
     {
         public string? Name { get; set; }
@@ -29,10 +27,6 @@ public class AsyncWriterTests
         [Parse(Format = "yyyy-MM-dd")]
         public DateTime CreatedOn { get; set; }
     }
-
-    #endregion
-
-    #region Basic Async Writing Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -155,10 +149,6 @@ public class AsyncWriterTests
         Assert.DoesNotContain("14:30", csv);
     }
 
-    #endregion
-
-    #region Cancellation Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task CsvAsyncStreamWriter_CancellationToken_ThrowsWhenCancelled()
@@ -201,10 +191,6 @@ public class AsyncWriterTests
             }
         }
     }
-
-    #endregion
-
-    #region Large Dataset Streaming Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -255,10 +241,6 @@ public class AsyncWriterTests
         Assert.Contains(largeField, csv);
     }
 
-    #endregion
-
-    #region Disposal Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task CsvAsyncStreamWriter_DisposeAsync_FlushesAndReleases()
@@ -295,10 +277,6 @@ public class AsyncWriterTests
         Assert.False(ms.CanRead);
         Assert.False(ms.CanWrite);
     }
-
-    #endregion
-
-    #region Format and Options Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -423,10 +401,6 @@ public class AsyncWriterTests
         });
     }
 
-    #endregion
-
-    #region Builder Pattern Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task Builder_ToFileAsync_WritesCorrectly()
@@ -478,10 +452,6 @@ public class AsyncWriterTests
         Assert.Contains("Header1,Header2", csv);
         Assert.Contains("Value1,Value2", csv);
     }
-
-    #endregion
-
-    #region Edge Cases
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -538,10 +508,6 @@ public class AsyncWriterTests
         Assert.Contains("\"c\"\"d\"", csv);
         Assert.Contains("\"e\r\nf\"", csv);
     }
-
-    #endregion
-
-    #region CreateStreamWriter(Stream) Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -623,10 +589,6 @@ public class AsyncWriterTests
 
         Assert.Contains("Test", result);
     }
-
-    #endregion
-
-    #region CreateAsyncStreamWriter Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
@@ -749,10 +711,6 @@ public class AsyncWriterTests
         Assert.Contains("\"simple\",\"text\"", result);
     }
 
-    #endregion
-
-    #region ToStreamAsyncStreaming Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.INTEGRATION)]
     public async Task Builder_ToStreamAsyncStreaming_IAsyncEnumerable_WritesCorrectly()
@@ -819,10 +777,6 @@ public class AsyncWriterTests
         Assert.False(ms.CanWrite);
     }
 
-    #endregion
-
-    #region Helper Methods
-
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
         foreach (var item in source)
@@ -857,7 +811,5 @@ public class AsyncWriterTests
             };
         }
     }
-
-    #endregion
 }
 

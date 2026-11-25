@@ -9,7 +9,7 @@ namespace HeroParser.Validation;
 /// Shared validation runner that checks field values against configured rules.
 /// Used by both CSV and FixedWidth descriptor binders.
 /// </summary>
-internal static class PropertyValidationRunner
+internal readonly struct PropertyValidationRunner(CultureInfo culture)
 {
     private static readonly ConcurrentDictionary<Regex, Regex> safeRegexCache = new();
 
@@ -28,7 +28,7 @@ internal static class PropertyValidationRunner
     /// Validates a field value against the given rules and appends any errors.
     /// Returns true if any validation errors were added (caller should exclude the row).
     /// </summary>
-    public static bool Validate(
+    public bool Validate(
         ReadOnlySpan<char> value,
         string propertyName,
         int rowNumber,
@@ -40,8 +40,7 @@ internal static class PropertyValidationRunner
         double? rangeMin,
         double? rangeMax,
         Regex? pattern,
-        List<ValidationError>? errors,
-        CultureInfo culture)
+        List<ValidationError>? errors)
     {
         bool hasErrors = false;
         string? rawValue = null;
@@ -92,7 +91,7 @@ internal static class PropertyValidationRunner
         }
 
         if ((rangeMin.HasValue || rangeMax.HasValue) &&
-            CultureNumberParser.TryParse(value, NumberStyles.Any, culture, out double numericValue))
+            new CultureNumberParser(culture).TryParse(value, NumberStyles.Any, out double numericValue))
         {
             if (rangeMin.HasValue && numericValue < rangeMin.Value)
             {
@@ -175,7 +174,7 @@ internal static class PropertyValidationRunner
     /// <summary>
     /// Validates a materialized string value.
     /// </summary>
-    public static bool Validate(
+    public bool Validate(
         string value,
         string propertyName,
         int rowNumber,
@@ -187,8 +186,7 @@ internal static class PropertyValidationRunner
         double? rangeMin,
         double? rangeMax,
         Regex? pattern,
-        List<ValidationError>? errors,
-        CultureInfo culture)
+        List<ValidationError>? errors)
     {
         bool hasErrors = false;
 
@@ -224,7 +222,7 @@ internal static class PropertyValidationRunner
 
         if (rangeMin.HasValue || rangeMax.HasValue)
         {
-            if (CultureNumberParser.TryParse(value, NumberStyles.Any, culture, out double numericValue))
+            if (new CultureNumberParser(culture).TryParse(value, NumberStyles.Any, out double numericValue))
             {
                 if (rangeMin.HasValue && numericValue < rangeMin.Value)
                 {

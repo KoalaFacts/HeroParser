@@ -4,16 +4,40 @@ using System.Text;
 
 namespace HeroParser.SeparatedValues.Reading.Shared;
 
-internal static class CsvPipeColumnText
+internal readonly struct CsvPipeColumnText
 {
     private const int STACK_BYTE_LIMIT = 512;
     private const int STACK_CHAR_LIMIT = 256;
 
-    public static string Decode(ReadOnlySequence<byte> value, byte quote, byte? escape, bool enableQuotedFields = true)
+    private readonly byte quoteByte;
+    private readonly byte? escapeByte;
+    private readonly char quoteChar;
+    private readonly char? escapeChar;
+    private readonly bool enableQuotedFields;
+
+    public CsvPipeColumnText(byte quote, byte? escape, bool enableQuotedFields = true)
+    {
+        quoteByte = quote;
+        escapeByte = escape;
+        quoteChar = (char)quote;
+        escapeChar = escape.HasValue ? (char)escape.Value : null;
+        this.enableQuotedFields = enableQuotedFields;
+    }
+
+    public CsvPipeColumnText(char quote, char? escape, bool enableQuotedFields = true)
+    {
+        quoteByte = (byte)quote;
+        escapeByte = escape.HasValue ? (byte)escape.Value : null;
+        quoteChar = quote;
+        escapeChar = escape;
+        this.enableQuotedFields = enableQuotedFields;
+    }
+
+    public string Decode(ReadOnlySequence<byte> value)
     {
         if (value.IsSingleSegment)
         {
-            return Decode(value.FirstSpan, quote, escape, enableQuotedFields);
+            return Decode(value.FirstSpan);
         }
 
         int length = checked((int)value.Length);
@@ -24,7 +48,7 @@ internal static class CsvPipeColumnText
         try
         {
             value.CopyTo(bytes);
-            return Decode(bytes[..length], quote, escape, enableQuotedFields);
+            return Decode(bytes[..length]);
         }
         finally
         {
@@ -36,9 +60,9 @@ internal static class CsvPipeColumnText
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string Decode(ReadOnlySpan<byte> value, byte quote, byte? escape, bool enableQuotedFields = true)
+    public string Decode(ReadOnlySpan<byte> value)
     {
-        if (enableQuotedFields && value.Length >= 2 && value[0] == quote && value[^1] == quote)
+        if (enableQuotedFields && value.Length >= 2 && value[0] == quoteByte && value[^1] == quoteByte)
         {
             value = value[1..^1];
         }
@@ -48,17 +72,17 @@ internal static class CsvPipeColumnText
             return string.Empty;
         }
 
-        bool hasSpecialCharacters = (escape is byte escapeByte && value.Contains(escapeByte)) ||
-            (enableQuotedFields && value.Contains(quote));
+        bool hasSpecialCharacters = (escapeByte is byte esc && value.Contains(esc)) ||
+            (enableQuotedFields && value.Contains(quoteByte));
         if (!hasSpecialCharacters)
         {
             return Encoding.UTF8.GetString(value);
         }
 
-        return DecodeEscaped(value, quote, escape, enableQuotedFields);
+        return DecodeEscaped(value);
     }
 
-    private static string DecodeEscaped(ReadOnlySpan<byte> value, byte quote, byte? escape, bool enableQuotedFields)
+    private string DecodeEscaped(ReadOnlySpan<byte> value)
     {
         char[]? rented = null;
         // UTF-8 decoding with the default replacement fallback produces at most one char per byte.
@@ -69,8 +93,6 @@ internal static class CsvPipeColumnText
         {
             int count = Encoding.UTF8.GetChars(value, chars);
             int written = 0;
-            char quoteChar = (char)quote;
-            char? escapeChar = escape.HasValue ? (char)escape.Value : null;
             // Decode first so escape removal cannot join invalid UTF-8 bytes into a different character.
             for (int i = 0; i < count; i++)
             {
@@ -99,20 +121,20 @@ internal static class CsvPipeColumnText
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string Decode(ReadOnlySpan<char> value, char quote, char? escape, bool enableQuotedFields)
+    public string Decode(ReadOnlySpan<char> value)
     {
-        if (enableQuotedFields && value.Length >= 2 && value[0] == quote && value[^1] == quote)
+        if (enableQuotedFields && value.Length >= 2 && value[0] == quoteChar && value[^1] == quoteChar)
             value = value[1..^1];
 
-        bool hasSpecialCharacters = (escape is char escapeChar && value.Contains(escapeChar)) ||
-            (enableQuotedFields && value.Contains(quote));
+        bool hasSpecialCharacters = (escapeChar is char esc && value.Contains(esc)) ||
+            (enableQuotedFields && value.Contains(quoteChar));
         if (!hasSpecialCharacters)
             return new string(value);
 
-        return DecodeEscaped(value, quote, escape, enableQuotedFields);
+        return DecodeEscaped(value);
     }
 
-    private static string DecodeEscaped(ReadOnlySpan<char> value, char quote, char? escape, bool enableQuotedFields)
+    private string DecodeEscaped(ReadOnlySpan<char> value)
     {
         char[]? rented = null;
         Span<char> chars = value.Length <= STACK_CHAR_LIMIT
@@ -124,9 +146,9 @@ internal static class CsvPipeColumnText
             for (int i = 0; i < value.Length; i++)
             {
                 char current = value[i];
-                if (current == escape && i + 1 < value.Length)
+                if (current == escapeChar && i + 1 < value.Length)
                     current = value[++i];
-                else if (enableQuotedFields && current == quote && i + 1 < value.Length && value[i + 1] == quote)
+                else if (enableQuotedFields && current == quoteChar && i + 1 < value.Length && value[i + 1] == quoteChar)
                     i++;
                 chars[written++] = current;
             }

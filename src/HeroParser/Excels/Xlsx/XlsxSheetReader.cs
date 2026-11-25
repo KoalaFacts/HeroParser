@@ -21,7 +21,7 @@ internal sealed class XlsxSheetReader : IDisposable
     /// </summary>
     public XlsxSheetReader(Stream sheetStream, XlsxSharedStrings sharedStrings, XlsxStylesheet stylesheet)
     {
-        reader = XmlReader.Create(sheetStream, XlsxXml.CreateWorksheetReaderSettings());
+        reader = XmlReader.Create(sheetStream, new XlsxXml().CreateWorksheetReaderSettings());
         this.sharedStrings = sharedStrings;
         this.stylesheet = stylesheet;
     }

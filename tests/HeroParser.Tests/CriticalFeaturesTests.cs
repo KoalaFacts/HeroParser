@@ -6,8 +6,6 @@ namespace HeroParser.Tests;
 
 public class CriticalFeaturesTests
 {
-    #region Comment Line Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CommentLines_SkippedCorrectly()
@@ -100,10 +98,6 @@ public class CriticalFeaturesTests
         Assert.Equal(CsvErrorCode.InvalidOptions, ex.ErrorCode);
     }
 
-    #endregion
-
-    #region Trim Fields Tests
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void TrimFields_RemovesWhitespace()
@@ -166,10 +160,6 @@ public class CriticalFeaturesTests
 
         Assert.False(reader.MoveNext());
     }
-
-    #endregion
-
-    #region Null Values Tests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -250,10 +240,6 @@ public class CriticalFeaturesTests
         public int? Age { get; set; }
     }
 
-    #endregion
-
-    #region CsvException Field Value Context Tests (#3)
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void CsvException_IncludesFieldValue()
@@ -308,11 +294,6 @@ public class CriticalFeaturesTests
         public int Age { get; set; }
     }
 
-    #endregion
-
-
-    #region Unterminated Quote Position Tests (#6)
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public void UnterminatedQuote_IncludesPosition()
@@ -358,11 +339,6 @@ public class CriticalFeaturesTests
         Assert.NotNull(ex.QuoteStartPosition);
         Assert.Equal(5, ex.QuoteStartPosition.Value); // 0-based position of the quote
     }
-
-    #endregion
-
-
-    #region Escape Character Configuration Tests (#7)
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -436,11 +412,6 @@ public class CriticalFeaturesTests
         var unquoted = row[1].UnquoteToString('"', '\\');
         Assert.Equal("Hello \"World\"", unquoted);
     }
-
-    #endregion
-
-
-    #region Progress Reporting Tests (#12)
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
@@ -538,7 +509,5 @@ public class CriticalFeaturesTests
     {
         public void Report(T value) => handler(value);
     }
-
-    #endregion
 }
 

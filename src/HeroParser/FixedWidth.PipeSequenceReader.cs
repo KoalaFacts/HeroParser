@@ -109,7 +109,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     {
                         if (trackSourceLineNumbers)
                         {
-                            sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData, ref previousRecordEndedWithCr);
+                            sourceLineNumber += new FixedWidthLineScanner().CountNewlines(rowData, ref previousRecordEndedWithCr);
                         }
 
                         remainingRowsToSkip--;
@@ -122,7 +122,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     int rowStartLine = trackSourceLineNumbers ? sourceLineNumber : 0;
                     if (trackSourceLineNumbers)
                     {
-                        sourceLineNumber += FixedWidthLineScanner.CountNewlines(rowData, ref previousRecordEndedWithCr);
+                        sourceLineNumber += new FixedWidthLineScanner().CountNewlines(rowData, ref previousRecordEndedWithCr);
                     }
 
                     currentRowData = rowData;
@@ -172,7 +172,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     }
 
                     if (options.CommentCharacter is { } commentChar &&
-                        FixedWidthLineScanner.StartsWithComment(rowData, commentChar))
+                        new FixedWidthLineScanner().StartsWithComment(rowData, commentChar))
                     {
                         if (trackSourceLineNumbers)
                         {

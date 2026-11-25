@@ -39,7 +39,7 @@ public class XlsxSharedStringsSecurityTests
     [Fact]
     public void CreateReaderSettings_HasSecurityCaps()
     {
-        var settings = XlsxXml.CreateReaderSettings();
+        var settings = new XlsxXml().CreateReaderSettings();
 
         Assert.Equal(DtdProcessing.Prohibit, settings.DtdProcessing);
         Assert.True(settings.MaxCharactersInDocument > 0,
@@ -51,8 +51,9 @@ public class XlsxSharedStringsSecurityTests
     [Fact]
     public void WorksheetReaderSettings_RaisesOnlyTheStreamingDocumentCap()
     {
-        var metadata = XlsxXml.CreateReaderSettings();
-        var worksheet = XlsxXml.CreateWorksheetReaderSettings();
+        var xml = new XlsxXml();
+        var metadata = xml.CreateReaderSettings();
+        var worksheet = xml.CreateWorksheetReaderSettings();
 
         Assert.Equal(100_000_000, metadata.MaxCharactersInDocument);
         Assert.Equal(256_000_000, worksheet.MaxCharactersInDocument);

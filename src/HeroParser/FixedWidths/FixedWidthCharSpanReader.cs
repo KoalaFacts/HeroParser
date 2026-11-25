@@ -63,7 +63,7 @@ public ref struct FixedWidthCharSpanReader
         while (skipped < rowsToSkip && position < chars.Length)
         {
             var remaining = chars[position..];
-            var lineEnd = FixedWidthLineScanner.FindLineEnd(remaining);
+            var lineEnd = new FixedWidthLineScanner().FindLineEnd(remaining);
 
             if (lineEnd == -1)
             {
@@ -100,7 +100,7 @@ public ref struct FixedWidthCharSpanReader
 
             if (options.TrackSourceLineNumbers)
             {
-                sourceLineNumber += FixedWidthLineScanner.CountNewlines(chars.Slice(position, recordLength), ref previousRecordEndedWithCr);
+                sourceLineNumber += new FixedWidthLineScanner().CountNewlines(chars.Slice(position, recordLength), ref previousRecordEndedWithCr);
             }
 
             position += recordLength;
@@ -186,7 +186,7 @@ public ref struct FixedWidthCharSpanReader
         // Track newlines within the record for source line tracking
         if (options.TrackSourceLineNumbers)
         {
-            sourceLineNumber += FixedWidthLineScanner.CountNewlines(recordSpan, ref previousRecordEndedWithCr);
+            sourceLineNumber += new FixedWidthLineScanner().CountNewlines(recordSpan, ref previousRecordEndedWithCr);
         }
 
         return true;
@@ -197,7 +197,7 @@ public ref struct FixedWidthCharSpanReader
         while (position < chars.Length)
         {
             var remaining = chars[position..];
-            var lineEnd = FixedWidthLineScanner.FindLineEnd(remaining);
+            var lineEnd = new FixedWidthLineScanner().FindLineEnd(remaining);
 
             ReadOnlySpan<char> line;
             int consumed;

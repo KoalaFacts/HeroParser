@@ -96,21 +96,17 @@ public class ExcelReadBenchmarks
             var header = sheetReader.ReadNextRow();
             if (header is not null)
             {
-                var headerBuffer = new char[XlsxRowAdapter.CalculateBufferSize(header) + 1];
-                var headerColumnEnds = new int[header.Length + 1];
-                var headerRow = XlsxRowAdapter.CreateRow(header, 0, headerBuffer, headerColumnEnds);
+                var rowAdapter = new XlsxRowAdapter();
+                var headerRow = rowAdapter.CreateRow(header, 0);
                 fallbackAdapter.BindHeader(headerRow, 0);
 
-                char[] buffer = [];
-                int[] columnEnds = [];
                 while (true)
                 {
                     var cells = sheetReader.ReadNextRow();
                     if (cells is null)
                         break;
 
-                    XlsxRowAdapter.EnsureBuffers(cells, ref buffer, ref columnEnds);
-                    var csvRow = XlsxRowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber, buffer, columnEnds);
+                    var csvRow = rowAdapter.CreateRow(cells, sheetReader.CurrentRowNumber);
 
                     if (fallbackAdapter.TryBind(csvRow, sheetReader.CurrentRowNumber, out var record))
                     {

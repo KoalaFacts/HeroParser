@@ -87,11 +87,11 @@ internal sealed class XlsxWorkbook
         if (relsEntry is null)
             return [];
 
-        XlsxXml.ValidateEntrySize(relsEntry);
+        new XlsxXml().ValidateEntrySize(relsEntry);
         var relationships = new Dictionary<string, string>(StringComparer.Ordinal);
 
         using var stream = relsEntry.Open();
-        using var reader = XmlReader.Create(stream, XlsxXml.CreateReaderSettings());
+        using var reader = XmlReader.Create(stream, new XlsxXml().CreateReaderSettings());
 
         while (reader.Read())
         {
@@ -112,11 +112,11 @@ internal sealed class XlsxWorkbook
         var workbookEntry = archive.GetEntry("xl/workbook.xml")
             ?? throw new ExcelException("Missing xl/workbook.xml in .xlsx archive.");
 
-        XlsxXml.ValidateEntrySize(workbookEntry);
+        new XlsxXml().ValidateEntrySize(workbookEntry);
         var sheets = new List<(string Name, string RId)>();
 
         using var stream = workbookEntry.Open();
-        using var reader = XmlReader.Create(stream, XlsxXml.CreateReaderSettings());
+        using var reader = XmlReader.Create(stream, new XlsxXml().CreateReaderSettings());
 
         while (reader.Read())
         {

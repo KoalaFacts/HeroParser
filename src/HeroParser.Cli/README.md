@@ -1,6 +1,6 @@
 # HeroParser CLI
 
-The `heroparser` command-line tool validates, profiles, converts, repairs, and transforms tabular files including CSV, JSONL, fixed-width, and Excel `.xlsx` data.
+The `heroparser` command-line tool validates, profiles, converts, repairs, and transforms tabular files including CSV, JSONL, fixed-width, Excel `.xlsx`, and HTB binary data.
 
 ## Install
 

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 
@@ -22,8 +23,10 @@ public sealed class JsonlDataReader : DbDataReader
     private readonly JsonlDataReaderOptions readerOptions;
     private List<JsonlColumnDefinition> columns;
     private JsonDocument? currentDoc;
+    private JsonDocument? peekedDoc;
     private object?[] currentValues;
     private bool initialized;
+    private bool hasRows;
     private bool isClosed;
     private int skipped;
     private long lineNumber;
@@ -45,11 +48,31 @@ public sealed class JsonlDataReader : DbDataReader
     }
 
     /// <inheritdoc/>
-    public override int FieldCount => columns.Count;
+    public override int FieldCount
+    {
+        get
+        {
+            EnsureNotClosed();
+            if (!initialized && columns.Count == 0 && readerOptions.InferSchemaFromFirstLine)
+                EnsureInitialized();
+            return columns.Count;
+        }
+    }
+
     /// <inheritdoc/>
     public override int Depth => 0;
+
     /// <inheritdoc/>
-    public override bool HasRows => true;
+    public override bool HasRows
+    {
+        get
+        {
+            EnsureNotClosed();
+            EnsureInitialized();
+            return hasRows;
+        }
+    }
+
     /// <inheritdoc/>
     public override bool IsClosed => isClosed;
     /// <inheritdoc/>
@@ -58,49 +81,158 @@ public sealed class JsonlDataReader : DbDataReader
     /// <inheritdoc/>
     public override bool Read()
     {
-        if (isClosed) return false;
+        EnsureNotClosed();
 
         currentDoc?.Dispose();
         currentDoc = null;
 
-        while (lineReader.TryReadLine(out ReadOnlyMemory<byte> lineMemory, out long ln))
+        if (!initialized)
+            EnsureInitialized();
+
+        if (peekedDoc is not null)
         {
-            var line = lineMemory.Span;
-            lineNumber = ln;
-
-            if (readOptions.SkipEmptyLines && IsAllWhitespace(line))
-                continue;
-
-            if (skipped < readerOptions.SkipRows + readOptions.SkipRows)
-            {
-                skipped++;
-                continue;
-            }
-
-            JsonDocument doc;
-            try
-            {
-                doc = JsonDocument.Parse(lineMemory);
-            }
-            catch (JsonException ex)
-            {
-                throw new JsonlException(JsonlErrorCode.DeserializeError, $"Failed to parse JSON: {ex.Message}", ln, ex);
-            }
-
-            if (!initialized)
-            {
-                if (columns.Count == 0 && readerOptions.InferSchemaFromFirstLine)
-                    InferSchemaFrom(doc.RootElement);
-                currentValues = new object?[columns.Count];
-                initialized = true;
-            }
-
+            JsonDocument doc = peekedDoc;
+            peekedDoc = null;
             ExtractValues(doc.RootElement);
             currentDoc = doc;
             return true;
         }
 
+        while (lineReader.TryReadLine(out ReadOnlyMemory<byte> lineMemory, out long ln))
+        {
+            if (TryConsumeLineToDocument(lineMemory, ln, out JsonDocument? doc))
+            {
+                ExtractValues(doc!.RootElement);
+                currentDoc = doc;
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
+    {
+        EnsureNotClosed();
+
+        currentDoc?.Dispose();
+        currentDoc = null;
+
+        if (!initialized)
+            await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+
+        if (peekedDoc is not null)
+        {
+            JsonDocument doc = peekedDoc;
+            peekedDoc = null;
+            ExtractValues(doc.RootElement);
+            currentDoc = doc;
+            return true;
+        }
+
+        while (true)
+        {
+            var (hasLine, lineMemory, ln) = await lineReader.TryReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (!hasLine)
+                return false;
+
+            if (TryConsumeLineToDocument(lineMemory, ln, out JsonDocument? doc))
+            {
+                ExtractValues(doc!.RootElement);
+                currentDoc = doc;
+                return true;
+            }
+        }
+    }
+
+    private void EnsureInitialized()
+    {
+        if (initialized)
+            return;
+
+        while (lineReader.TryReadLine(out ReadOnlyMemory<byte> lineMemory, out long ln))
+        {
+            if (TryConsumeLineToDocument(lineMemory, ln, out JsonDocument? doc))
+            {
+                InitializeFromFirstDocument(doc!);
+                return;
+            }
+        }
+
+        currentValues = new object?[columns.Count];
+        hasRows = false;
+        initialized = true;
+    }
+
+    private async ValueTask EnsureInitializedAsync(CancellationToken cancellationToken)
+    {
+        if (initialized)
+            return;
+
+        while (true)
+        {
+            var (hasLine, lineMemory, ln) = await lineReader.TryReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (!hasLine)
+                break;
+
+            if (TryConsumeLineToDocument(lineMemory, ln, out JsonDocument? doc))
+            {
+                InitializeFromFirstDocument(doc!);
+                return;
+            }
+        }
+
+        currentValues = new object?[columns.Count];
+        hasRows = false;
+        initialized = true;
+    }
+
+    private bool TryConsumeLineToDocument(ReadOnlyMemory<byte> lineMemory, long ln, out JsonDocument? doc)
+    {
+        var line = lineMemory.Span;
+        lineNumber = ln;
+
+        if (readOptions.SkipEmptyLines && IsAllWhitespace(line))
+        {
+            doc = null;
+            return false;
+        }
+
+        if (skipped < readerOptions.SkipRows + readOptions.SkipRows)
+        {
+            skipped++;
+            doc = null;
+            return false;
+        }
+
+        try
+        {
+            doc = JsonDocument.Parse(lineMemory);
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            throw new JsonlException(JsonlErrorCode.DeserializeError, $"Failed to parse JSON: {ex.Message}", ln, ex);
+        }
+    }
+
+    private void InitializeFromFirstDocument(JsonDocument doc)
+    {
+        try
+        {
+            if (columns.Count == 0 && readerOptions.InferSchemaFromFirstLine)
+                InferSchemaFrom(doc.RootElement);
+            currentValues = new object?[columns.Count];
+            peekedDoc = doc;
+            hasRows = true;
+            initialized = true;
+        }
+        catch
+        {
+            doc.Dispose();
+            throw;
+        }
     }
 
     private void InferSchemaFrom(JsonElement root)
@@ -215,24 +347,61 @@ public sealed class JsonlDataReader : DbDataReader
         return true;
     }
 
+    private void EnsureNotClosed()
+    {
+        if (isClosed)
+            throw new InvalidOperationException("The data reader is closed.");
+    }
+
+    private void ValidateOrdinal(int ordinal)
+    {
+        if ((uint)ordinal >= (uint)columns.Count)
+        {
+            throw new IndexOutOfRangeException(
+                $"Column index {ordinal} is out of range. Column count is {columns.Count}.");
+        }
+    }
+
     private void ThrowIfBeforeRead()
     {
+        EnsureNotClosed();
         if (currentDoc is null)
             throw new InvalidOperationException("Call Read() before accessing fields.");
     }
 
     /// <inheritdoc/>
-    public override string GetName(int ordinal) => columns[ordinal].Name;
+    public override string GetName(int ordinal)
+    {
+        EnsureNotClosed();
+        if (!initialized && columns.Count == 0 && readerOptions.InferSchemaFromFirstLine)
+            EnsureInitialized();
+        ValidateOrdinal(ordinal);
+        return columns[ordinal].Name;
+    }
+
     /// <inheritdoc/>
     public override int GetOrdinal(string name)
     {
+        EnsureNotClosed();
+        if (!initialized && columns.Count == 0 && readerOptions.InferSchemaFromFirstLine)
+            EnsureInitialized();
         for (int i = 0; i < columns.Count; i++)
             if (string.Equals(columns[i].Name, name, StringComparison.OrdinalIgnoreCase))
                 return i;
         throw new IndexOutOfRangeException(name);
     }
+
     /// <inheritdoc/>
-    public override Type GetFieldType(int ordinal) => columns[ordinal].DataType;
+    [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)]
+    public override Type GetFieldType(int ordinal)
+    {
+        EnsureNotClosed();
+        if (!initialized && columns.Count == 0 && readerOptions.InferSchemaFromFirstLine)
+            EnsureInitialized();
+        ValidateOrdinal(ordinal);
+        return columns[ordinal].DataType;
+    }
+
     /// <inheritdoc/>
     public override string GetDataTypeName(int ordinal) => GetFieldType(ordinal).Name;
 
@@ -240,6 +409,7 @@ public sealed class JsonlDataReader : DbDataReader
     public override object GetValue(int ordinal)
     {
         ThrowIfBeforeRead();
+        ValidateOrdinal(ordinal);
         return currentValues[ordinal] ?? DBNull.Value;
     }
 
@@ -247,7 +417,8 @@ public sealed class JsonlDataReader : DbDataReader
     public override int GetValues(object[] values)
     {
         ThrowIfBeforeRead();
-        int count = Math.Min(values.Length, FieldCount);
+        ArgumentNullException.ThrowIfNull(values);
+        int count = Math.Min(values.Length, columns.Count);
         for (int i = 0; i < count; i++)
             values[i] = currentValues[i] ?? DBNull.Value;
         return count;
@@ -257,6 +428,7 @@ public sealed class JsonlDataReader : DbDataReader
     public override bool IsDBNull(int ordinal)
     {
         ThrowIfBeforeRead();
+        ValidateOrdinal(ordinal);
         return currentValues[ordinal] is null or DBNull;
     }
 
@@ -271,12 +443,20 @@ public sealed class JsonlDataReader : DbDataReader
     public override byte GetByte(int ordinal) => Convert.ToByte(GetValue(ordinal), CultureInfo.InvariantCulture);
     /// <inheritdoc/>
     public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length)
-        => throw new NotSupportedException("Binary fields are not supported by JsonlDataReader.");
+    {
+        ThrowIfBeforeRead();
+        ValidateOrdinal(ordinal);
+        throw new NotSupportedException("Binary fields are not supported by JsonlDataReader.");
+    }
     /// <inheritdoc/>
     public override char GetChar(int ordinal) => Convert.ToChar(GetValue(ordinal), CultureInfo.InvariantCulture);
     /// <inheritdoc/>
     public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length)
-        => throw new NotSupportedException("Char arrays are not supported by JsonlDataReader.");
+    {
+        ThrowIfBeforeRead();
+        ValidateOrdinal(ordinal);
+        throw new NotSupportedException("Char arrays are not supported by JsonlDataReader.");
+    }
     /// <inheritdoc/>
     public override DateTime GetDateTime(int ordinal) => Convert.ToDateTime(GetValue(ordinal), CultureInfo.InvariantCulture);
     /// <inheritdoc/>
@@ -309,6 +489,10 @@ public sealed class JsonlDataReader : DbDataReader
     /// <inheritdoc/>
     public override DataTable GetSchemaTable()
     {
+        EnsureNotClosed();
+        if (!initialized && columns.Count == 0 && readerOptions.InferSchemaFromFirstLine)
+            EnsureInitialized();
+
         var table = new DataTable("SchemaTable");
         table.Columns.Add("ColumnName", typeof(string));
         table.Columns.Add("ColumnOrdinal", typeof(int));
@@ -332,7 +516,10 @@ public sealed class JsonlDataReader : DbDataReader
     {
         if (isClosed) return;
         isClosed = true;
+        peekedDoc?.Dispose();
+        peekedDoc = null;
         currentDoc?.Dispose();
+        currentDoc = null;
         lineReader.Dispose();
     }
 

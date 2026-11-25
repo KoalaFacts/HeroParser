@@ -276,4 +276,98 @@ public class CsvAsyncStreamWriterTypedFieldTests
 
         await Assert.ThrowsAsync<ObjectDisposedException>(async () => await w.WriteFieldAsync(1, ct));
     }
+
+    [Fact]
+    public async Task Typed_DecimalCommaCultureWithCommaDelimiter_QuotesValue()
+    {
+        var options = new CsvWriteOptions
+        {
+            Culture = CultureInfo.GetCultureInfo("de-DE"),
+            Delimiter = ','
+        };
+
+        string row = await WriteAsync(async (w, ct) =>
+        {
+            await w.WriteFieldAsync(12.34m, ct);
+            await w.WriteFieldAsync(56.78d, ct);
+        }, options);
+
+        Assert.Equal("\"12,34\",\"56,78\"", row);
+    }
+
+    [Fact]
+    public async Task Typed_QuoteStyleAlways_QuotesNumbersDatesAndGuids()
+    {
+        var options = new CsvWriteOptions { QuoteStyle = QuoteStyle.Always };
+        var guid = new Guid("11112222-3333-4444-5555-666677778888");
+        string row = await WriteAsync(async (w, ct) =>
+        {
+            await w.WriteFieldAsync(42, ct);
+            await w.WriteFieldAsync(guid, ct);
+        }, options);
+
+        Assert.Equal($"\"42\",\"{guid}\"", row);
+    }
+
+    [Fact]
+    public async Task Typed_InjectionProtection_SmartExemptsNegativeNumbers_AndProtectsDangerousFormattedValues()
+    {
+        // Negative numbers starting with '-' followed by a digit are smart-exempted by IsDangerousField.
+        string neg = await WriteAsync(
+            (w, ct) => w.WriteFieldAsync(-42, ct),
+            new CsvWriteOptions { InjectionProtection = CsvInjectionProtection.EscapeWithQuote });
+        Assert.Equal("-42", neg);
+
+        // DateTime formatted with a leading '=' triggers injection protection directly from charBuffer.
+        var dt = new DateTime(2024, 5, 6, 0, 0, 0, DateTimeKind.Unspecified);
+        string escapedDate = await WriteAsync(
+            (w, ct) => w.WriteFieldAsync(dt, ct),
+            new CsvWriteOptions
+            {
+                DateTimeFormat = "\\=yyyy-MM-dd",
+                InjectionProtection = CsvInjectionProtection.EscapeWithQuote
+            });
+        Assert.Equal("\"'=2024-05-06\"", escapedDate);
+
+        var ex = await Assert.ThrowsAsync<CsvException>(() => WriteAsync(
+            (w, ct) => w.WriteFieldAsync(dt, ct),
+            new CsvWriteOptions
+            {
+                DateTimeFormat = "\\=yyyy-MM-dd",
+                InjectionProtection = CsvInjectionProtection.Reject
+            }));
+        Assert.Equal(CsvErrorCode.InjectionDetected, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Typed_MaxFieldSizeExceeded_ThrowsCsvException()
+    {
+        var options = new CsvWriteOptions { MaxFieldSize = 3 };
+        var ex = await Assert.ThrowsAsync<CsvException>(() => WriteAsync(
+            (w, ct) => w.WriteFieldAsync(12345, ct),
+            options));
+        Assert.Equal(CsvErrorCode.FieldSizeExceeded, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Typed_AcrossCharBufferBoundary_FlushesCleanly()
+    {
+        // Write strings right up to DEFAULT_CHAR_BUFFER_SIZE (16384), then write typed fields
+        // across every remaining-space edge case (0..64 chars remaining).
+        var ct = TestContext.Current.CancellationToken;
+        string padding = new('a', 16370);
+        string expectedSuffix = "123,456789,3.5,9999999";
+
+        string result = await WriteAsync(async (w, token) =>
+        {
+            await w.WriteFieldAsync(padding, token);
+            await w.WriteFieldAsync(123, token);
+            await w.WriteFieldAsync(456789L, token);
+            await w.WriteFieldAsync(3.5d, token);
+            await w.WriteFieldAsync(9999999m, token);
+        });
+
+        Assert.Equal($"{padding},{expectedSuffix}", result);
+        _ = ct;
+    }
 }

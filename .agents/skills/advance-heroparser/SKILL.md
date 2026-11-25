@@ -1,6 +1,7 @@
 ---
 name: advance-heroparser
 description: How the scheduled task advances HeroParser — goal, gate, work order, scope and project rules. Read with agent-harness/skills/autonomous-dev at the start of every run.
+ledger: CLAUDE.md#maintenance-ledger
 ---
 
 # Advance HeroParser

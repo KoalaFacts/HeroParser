@@ -46,6 +46,33 @@ public sealed partial class CodeHygieneTests
             $"Found forbidden #region/#endregion directives:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
     }
 
+    private static readonly string[] consoleWritingEntryPoints = ["new CliCommands(", "Program.Main(", "new InteractiveWizard("];
+
+    /// <summary>
+    /// CLI commands write through the process-wide <c>AnsiConsole.Current</c>, which console tests swap.
+    /// A test class that runs them outside <c>AnsiConsoleCurrentCollection</c> races with those tests
+    /// (it failed <c>Build and Test (windows-latest, net10.0)</c> on #215 through <c>FileCompressionTests</c>).
+    /// </summary>
+    [Fact]
+    public void TestsThatRunCliCommands_AreInTheAnsiConsoleCurrentCollection()
+    {
+        string? repoRoot = FindRepoRoot();
+        Assert.NotNull(repoRoot);
+
+        List<string> violations = [];
+        foreach (string file in EnumerateCSharpFiles(Path.Combine(repoRoot, "tests")))
+        {
+            string text = File.ReadAllText(file);
+            bool runsCli = consoleWritingEntryPoints.Any(entry => text.Contains(entry, StringComparison.Ordinal));
+            if (runsCli && !text.Contains("[Collection(AnsiConsoleCurrentCollection.NAME)]", StringComparison.Ordinal))
+                violations.Add(Path.GetRelativePath(repoRoot, file).Replace('\\', '/'));
+        }
+
+        Assert.True(
+            violations.Count == 0,
+            $"These test files run CLI commands but are not in AnsiConsoleCurrentCollection:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
+    }
+
     private static string? FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

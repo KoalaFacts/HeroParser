@@ -13,7 +13,10 @@ using HeroParser.AI;
 using HeroParser.Conversion;
 using HeroParser.Excels.Reading.Data;
 using HeroParser.Excels.Xlsx;
+using HeroParser.FixedWidths;
+using HeroParser.FixedWidths.Writing;
 using HeroParser.Htbs.Records;
+using HeroParser.JsonLines.Reading;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Validation;
@@ -41,6 +44,9 @@ namespace HeroParser.Cli;
 
 internal sealed partial class CliCommands
 {
+    private const int EXCEL_MAX_COLUMNS = 16_384;
+    private static readonly UTF8Encoding utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
     private readonly CliConsole console = new();
 
     public bool Detect(string path)
@@ -56,14 +62,33 @@ internal sealed partial class CliCommands
         try
         {
             var (bytes, length) = ReadCsvSample(path);
+            bool utf32LittleEndian = IsUtf32LittleEndian(bytes, length);
+            bool utf32BigEndian = IsUtf32BigEndian(bytes, length);
             bool utf16LittleEndian = IsUtf16LittleEndian(bytes, length);
             bool utf16BigEndian = IsUtf16BigEndian(bytes, length);
             bool hasBom = length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-            string content = utf16LittleEndian
-                ? Encoding.Unicode.GetString(bytes, 2, length - 2)
-                : utf16BigEndian
-                    ? Encoding.BigEndianUnicode.GetString(bytes, 2, length - 2)
-                    : Encoding.UTF8.GetString(bytes, hasBom ? 3 : 0, length - (hasBom ? 3 : 0));
+            string content;
+            if (utf32LittleEndian || utf32BigEndian)
+            {
+                int payloadBytes = length - 4;
+                int alignedBytes = payloadBytes - (payloadBytes % 4);
+                Encoding utf32 = utf32LittleEndian
+                    ? Encoding.UTF32
+                    : new UTF32Encoding(bigEndian: true, byteOrderMark: true);
+                content = utf32.GetString(bytes, 4, alignedBytes);
+            }
+            else if (utf16LittleEndian || utf16BigEndian)
+            {
+                int payloadBytes = length - 2;
+                int alignedBytes = payloadBytes - (payloadBytes % 2);
+                content = utf16LittleEndian
+                    ? Encoding.Unicode.GetString(bytes, 2, alignedBytes)
+                    : Encoding.BigEndianUnicode.GetString(bytes, 2, alignedBytes);
+            }
+            else
+            {
+                content = Encoding.UTF8.GetString(bytes, hasBom ? 3 : 0, length - (hasBom ? 3 : 0));
+            }
 
             // Delimiter detection
             var detection = CsvDelimiterDetector.Detect(content);
@@ -83,7 +108,9 @@ internal sealed partial class CliCommands
             table.AddColumn("[blue bold]Value[/]");
 
             table.AddRow("File Path", path);
-            table.AddRow("Encoding", utf16LittleEndian ? "UTF-16 LE with BOM"
+            table.AddRow("Encoding", utf32LittleEndian ? "UTF-32 LE with BOM"
+                : utf32BigEndian ? "UTF-32 BE with BOM"
+                : utf16LittleEndian ? "UTF-16 LE with BOM"
                 : utf16BigEndian ? "UTF-16 BE with BOM"
                 : hasBom ? "UTF-8 with BOM" : "UTF-8 or ASCII (assumed)");
             table.AddRow("Detected Delimiter", readableDelimiter);
@@ -167,17 +194,22 @@ internal sealed partial class CliCommands
             {
                 options = options with { Delimiter = delimiter.Value };
             }
-            if (plan is not null) options = plan.ToValidationOptions();
-
-            var (sample, sampleLength) = ReadCsvSample(path);
-            if (plan is not null && (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength)))
+            if (plan is not null)
             {
-                console.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
-                return false;
+                options = plan.ToValidationOptions();
+                var (sample, sampleLength) = ReadCsvSample(path);
+                if (IsUtf32LittleEndian(sample, sampleLength) || IsUtf32BigEndian(sample, sampleLength))
+                {
+                    console.Error("CSV import plans support UTF-8 only; this file has a UTF-32 BOM.");
+                    return false;
+                }
+                if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
+                {
+                    console.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
+                    return false;
+                }
             }
-            var result = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength)
-                ? Csv.Validate(ReadAllTextDecompressed(path), options)
-                : await Csv.ValidateFileAsync(path, options).ConfigureAwait(false);
+            var result = await Csv.ValidateFileAsync(path, options).ConfigureAwait(false);
 
             if (reportPath is not null)
             {
@@ -334,6 +366,12 @@ internal sealed partial class CliCommands
         {
             var inExt = GetFormatExtension(inputPath);
             var outExt = GetFormatExtension(outputPath);
+            if ((inExt == ".xlsx" && DetectCompressionFormat(inputPath) != CliCompressionFormat.None)
+                || (outExt == ".xlsx" && DetectCompressionFormat(outputPath) != CliCompressionFormat.None))
+            {
+                console.Error("Compressed Excel (.xlsx.gz/.br/.zst) paths are not supported; .xlsx files are already ZIP-compressed.");
+                return false;
+            }
             if (plan is not null)
             {
                 if (!IsCsvInput(inputPath) || outExt != ".jsonl")
@@ -343,6 +381,11 @@ internal sealed partial class CliCommands
                 }
 
                 var (sample, sampleLength) = ReadCsvSample(inputPath);
+                if (IsUtf32LittleEndian(sample, sampleLength) || IsUtf32BigEndian(sample, sampleLength))
+                {
+                    console.Error("CSV import plans support UTF-8 only; this file has a UTF-32 BOM.");
+                    return false;
+                }
                 if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
                 {
                     console.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
@@ -409,27 +452,15 @@ internal sealed partial class CliCommands
             {
                 var options = new HtbToCsvOptions
                 {
-                    Delimiter = delimiter ?? (outExt == ".tsv" ? '\t' : ',')
+                    Delimiter = delimiter ?? (outExt == ".tsv" ? '\t' : ','),
+                    MaxRowCount = int.MaxValue
                 };
-                HtbToCsvConverter.ConvertFile(inputPath, outputPath, options);
+                ConvertHtbToCsv(inputPath, outputPath, options);
                 console.Success("Converted HTB to CSV successfully.");
             }
             else if (IsCsvInput(inputPath) && outExt == ".txt") // CSV -> FixedWidth
             {
-                var csvData = ReadAllTextDecompressed(inputPath);
-                var schema = Csv.InferSchema(csvData, new CsvSchemaInferenceOptions { Delimiter = inputDelimiter });
-
-                // Map columns to widths matching their observed max lengths
-                var fields = schema.Columns.Select(c => new FixedWidthFieldDefinition(c.Name, Math.Max(5, c.MaxLength + 2))).ToList();
-
-                var options = new CsvToFixedWidthOptions { Delimiter = inputDelimiter, IncludeHeader = true };
-                var fixedWidthData = CsvToFixedWidthConverter.Convert(csvData, fields, options);
-
-                using (var outStream = OpenWriteStream(outputPath))
-                using (var sw = new StreamWriter(outStream, Encoding.UTF8))
-                {
-                    sw.Write(fixedWidthData);
-                }
+                ConvertCsvToFixedWidth(inputPath, outputPath, inputDelimiter);
                 console.Success($"Converted CSV to Fixed-Width successfully.");
             }
             else if (inExt == ".txt" && outExt == ".csv") // FixedWidth -> CSV
@@ -447,7 +478,7 @@ internal sealed partial class CliCommands
                 var allRows = Excel.Read().WithoutHeader().FromSheet(sheet ?? "Sheet1").FromFile(inputPath);
                 if (allRows.Count == 0)
                 {
-                    using (OpenWriteStream(outputPath)) { }
+                    WriteEmptyOutputFile(outputPath);
                     console.Warning("Excel sheet was empty.");
                     return true;
                 }
@@ -466,19 +497,26 @@ internal sealed partial class CliCommands
                 }
                 else if (outExt == ".jsonl")
                 {
-                    using var fileStream = OpenWriteStream(outputPath);
-                    using var writer = new System.Text.Json.Utf8JsonWriter(fileStream);
-                    foreach (var row in dataRows)
+                    if (dataRows.Count == 0)
                     {
-                        writer.WriteStartObject();
-                        for (int i = 0; i < Math.Min(headers.Length, row.Length); i++)
+                        WriteEmptyOutputFile(outputPath);
+                    }
+                    else
+                    {
+                        using var fileStream = OpenWriteStream(outputPath);
+                        using var writer = new System.Text.Json.Utf8JsonWriter(fileStream);
+                        foreach (var row in dataRows)
                         {
-                            writer.WriteString(headers[i], row[i]);
+                            writer.WriteStartObject();
+                            for (int i = 0; i < Math.Min(headers.Length, row.Length); i++)
+                            {
+                                writer.WriteString(headers[i], row[i]);
+                            }
+                            writer.WriteEndObject();
+                            writer.Flush();
+                            writer.Reset();
+                            fileStream.WriteByte((byte)'\n');
                         }
-                        writer.WriteEndObject();
-                        writer.Flush();
-                        writer.Reset();
-                        fileStream.WriteByte((byte)'\n');
                     }
                     console.Success("Converted Excel sheet to JSONL successfully.");
                 }
@@ -547,7 +585,13 @@ internal sealed partial class CliCommands
             }
 
             var (sample, sampleLength) = ReadCsvSample(path);
+            bool utf32 = IsUtf32LittleEndian(sample, sampleLength) || IsUtf32BigEndian(sample, sampleLength);
             bool utf16 = IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength);
+            if (plan is not null && utf32)
+            {
+                console.Error("CSV import plans support UTF-8 only; this file has a UTF-32 BOM.");
+                return false;
+            }
             if (plan is not null && utf16)
             {
                 console.Error("CSV import plans support UTF-8 only; this file has a UTF-16 BOM.");
@@ -1036,11 +1080,22 @@ Instructions:
     {
         try
         {
+            if (IsUtf32LittleEndian(sample, length) || IsUtf32BigEndian(sample, length))
+            {
+                int payloadBytes = length - 4;
+                int alignedBytes = payloadBytes - (payloadBytes % 4);
+                Encoding utf32 = IsUtf32LittleEndian(sample, length)
+                    ? Encoding.UTF32
+                    : new UTF32Encoding(bigEndian: true, byteOrderMark: true);
+                return CsvDelimiterDetector.DetectDelimiter(utf32.GetString(sample, 4, alignedBytes));
+            }
             if (utf16)
             {
+                int payloadBytes = length - 2;
+                int alignedBytes = payloadBytes - (payloadBytes % 2);
                 string text = IsUtf16LittleEndian(sample, length)
-                    ? Encoding.Unicode.GetString(sample, 2, length - 2)
-                    : Encoding.BigEndianUnicode.GetString(sample, 2, length - 2);
+                    ? Encoding.Unicode.GetString(sample, 2, alignedBytes)
+                    : Encoding.BigEndianUnicode.GetString(sample, 2, alignedBytes);
                 return CsvDelimiterDetector.DetectDelimiter(text);
             }
             return CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, length));
@@ -1138,55 +1193,522 @@ Instructions:
 
     private static void ConvertCsvToExcel(string inputPath, string outputPath, char delimiter, string sheetName)
     {
-        using var outStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var xlsxWriter = new XlsxWriter(outStream, leaveOpen: false);
-        using var sheetWriter = xlsxWriter.StartSheet(sheetName);
+        WriteAtomically(outputPath, stagingPath =>
+        {
+            using var outStream = new FileStream(stagingPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            using var xlsxWriter = XlsxWriter.CreateStreaming(outStream, leaveOpen: false);
+            using var sheetWriter = xlsxWriter.StartSheet(sheetName);
 
-        var reader = Csv.CreateAsyncStreamReader(inputPath, new CsvReadOptions { Delimiter = delimiter });
+            var reader = Csv.Read()
+                .WithDelimiter(delimiter)
+                .WithMaxColumns(EXCEL_MAX_COLUMNS)
+                .WithMaxRows(int.MaxValue)
+                .WithMaxRowSize(null)
+                .AllowNewlinesInQuotes()
+                .FromTextFileAsync(inputPath);
+            try
+            {
+                int rowNum = 0;
+                while (reader.MoveNextAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult())
+                {
+                    rowNum++;
+                    var row = reader.Current;
+                    if (rowNum == 1)
+                    {
+                        var headers = new string[row.ColumnCount];
+                        for (int i = 0; i < headers.Length; i++)
+                            headers[i] = row[i].UnquoteToString();
+                        sheetWriter.WriteHeaderRow(headers);
+                    }
+                    else
+                    {
+                        sheetWriter.StartRow(rowNum);
+                        for (int i = 0; i < row.ColumnCount; i++)
+                            sheetWriter.WriteCellString(i + 1, row[i].UnquoteToString());
+                        sheetWriter.EndRow();
+                    }
+                }
+            }
+            finally
+            {
+                reader.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+            }
+
+            sheetWriter.Close();
+        });
+    }
+
+    private static void ConvertCsvToFixedWidth(string inputPath, string outputPath, char delimiter)
+    {
+        string[] headers = [];
+        int[] widths = [];
+
+        var measureReader = Csv.Read()
+            .WithDelimiter(delimiter)
+            .WithMaxColumns(EXCEL_MAX_COLUMNS)
+            .WithMaxRows(int.MaxValue)
+            .WithMaxRowSize(null)
+            .AllowNewlinesInQuotes()
+            .FromTextFileAsync(inputPath);
         try
         {
-            int rowNum = 0;
-            while (reader.MoveNextAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult())
+            if (measureReader.MoveNextAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult())
             {
-                rowNum++;
-                var row = reader.Current;
-                if (rowNum == 1)
+                var headerRow = measureReader.Current;
+                headers = new string[headerRow.ColumnCount];
+                int[] maxLengths = new int[headerRow.ColumnCount];
+                for (int i = 0; i < headers.Length; i++)
                 {
-                    var headers = new string[row.ColumnCount];
+                    string headerName = headerRow[i].UnquoteToString();
+                    if (headerName.AsSpan().IndexOfAny('\r', '\n') >= 0)
+                    {
+                        throw new InvalidDataException(
+                            $"Header column {i + 1} ('{headerName}') contains an embedded newline, which cannot be represented in line-delimited fixed-width output.");
+                    }
+                    headers[i] = headerName;
+                    maxLengths[i] = headerName.Length;
+                }
+
+                long dataRowNumber = 0;
+                while (measureReader.MoveNextAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult())
+                {
+                    dataRowNumber++;
+                    var row = measureReader.Current;
                     for (int i = 0; i < headers.Length; i++)
-                        headers[i] = row[i].UnquoteToString();
-                    sheetWriter.WriteHeaderRow(headers);
+                    {
+                        string value = i < row.ColumnCount ? row[i].UnquoteToString() : "";
+                        if (value.AsSpan().IndexOfAny('\r', '\n') >= 0)
+                        {
+                            throw new InvalidDataException(
+                                $"Row {dataRowNumber}, column {i + 1} ('{headers[i]}') contains an embedded newline, which cannot be represented in line-delimited fixed-width output.");
+                        }
+                        if (value.Length > maxLengths[i])
+                            maxLengths[i] = value.Length;
+                    }
                 }
-                else
-                {
-                    sheetWriter.StartRow(rowNum);
-                    for (int i = 0; i < row.ColumnCount; i++)
-                        sheetWriter.WriteCellString(i + 1, row[i].UnquoteToString());
-                    sheetWriter.EndRow();
-                }
+
+                widths = new int[headers.Length];
+                for (int i = 0; i < widths.Length; i++)
+                    widths[i] = Math.Max(5, maxLengths[i] + 2);
             }
         }
         finally
         {
-            reader.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+            measureReader.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
-        sheetWriter.Close();
+        var outputFormat = DetectCompressionFormat(outputPath);
+        WriteAtomically(outputPath, stagingPath =>
+        {
+            using var outStream = OpenWriteStream(stagingPath, outputFormat);
+            using var sw = new StreamWriter(outStream, utf8NoBom);
+            using var fwWriter = new FixedWidthStreamWriter(sw, leaveOpen: true);
+
+            if (headers.Length > 0)
+            {
+                var reader = Csv.Read()
+                    .WithDelimiter(delimiter)
+                    .WithMaxColumns(EXCEL_MAX_COLUMNS)
+                    .WithMaxRows(int.MaxValue)
+                    .WithMaxRowSize(null)
+                    .AllowNewlinesInQuotes()
+                    .FromTextFileAsync(inputPath);
+                try
+                {
+                    if (reader.MoveNextAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult())
+                    {
+                        var headerRow = reader.Current;
+                        for (int i = 0; i < widths.Length; i++)
+                        {
+                            string headerName = i < headerRow.ColumnCount ? headerRow[i].UnquoteToString() : "";
+                            if (headerName.Length > widths[i])
+                                throw new InvalidDataException($"Header column {i + 1} ('{headers[i]}') changed during conversion and exceeds measured width {widths[i]}.");
+                            fwWriter.WriteField(headerName, widths[i], FieldAlignment.Left, ' ');
+                        }
+                        fwWriter.EndRow();
+
+                        long dataRowNumber = 0;
+                        while (reader.MoveNextAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult())
+                        {
+                            dataRowNumber++;
+                            var row = reader.Current;
+                            for (int i = 0; i < widths.Length; i++)
+                            {
+                                string value = i < row.ColumnCount ? row[i].UnquoteToString() : "";
+                                if (value.AsSpan().IndexOfAny('\r', '\n') >= 0)
+                                {
+                                    throw new InvalidDataException(
+                                        $"Row {dataRowNumber}, column {i + 1} ('{headers[i]}') contains an embedded newline, which cannot be represented in line-delimited fixed-width output.");
+                                }
+                                if (value.Length > widths[i])
+                                    throw new InvalidDataException($"Row {dataRowNumber}, column {i + 1} ('{headers[i]}') exceeds measured width {widths[i]}.");
+                                fwWriter.WriteField(value, widths[i], FieldAlignment.Left, ' ');
+                            }
+                            fwWriter.EndRow();
+                        }
+                    }
+                }
+                finally
+                {
+                    reader.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+            }
+
+            fwWriter.Flush();
+        });
+    }
+
+    private static void ConvertHtbToCsv(string inputPath, string outputPath, HtbToCsvOptions options)
+    {
+        CliCompressionFormat outputFormat = DetectCompressionFormat(outputPath);
+
+        WriteAtomically(outputPath, stagingPath =>
+        {
+            using var inStream = OpenReadStream(inputPath, bufferSize: 4096, FileOptions.SequentialScan);
+            using var outStream = OpenWriteStream(stagingPath, outputFormat);
+            using var writer = new StreamWriter(outStream, utf8NoBom);
+            HtbToCsvConverter.Convert(inStream, writer, options);
+        });
     }
 
     private static void ConvertJsonlToExcel(string inputPath, string outputPath, string sheetName)
     {
-        using var dataReader = Jsonl.CreateDataReader(inputPath);
-        Excel.WriteFromDataReaderToFile(outputPath, dataReader, sheetName: sheetName);
+        var (headers, recordCount) = CollectJsonlHeaders(inputPath);
+        if (recordCount > 0 && headers.Count == 0)
+            throw new InvalidDataException("JSONL contains object records with no properties; cannot create a zero-column Excel worksheet.");
+
+        WriteAtomically(outputPath, stagingPath =>
+        {
+            using var outStream = new FileStream(stagingPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            using var xlsxWriter = XlsxWriter.CreateStreaming(outStream, leaveOpen: false);
+            using var sheetWriter = xlsxWriter.StartSheet(sheetName);
+
+            if (headers.Count > 0)
+            {
+                sheetWriter.WriteHeaderRow([.. headers]);
+                Dictionary<string, int> headerColumns = new(headers.Count, StringComparer.Ordinal);
+                for (int i = 0; i < headers.Count; i++)
+                    headerColumns[headers[i]] = i + 1;
+
+                List<(int ColIndex, int Order, JsonElement Value)> presentCells = [];
+                int rowNum = 2;
+
+                using var inStream = OpenReadStream(inputPath, bufferSize: 4096, FileOptions.SequentialScan);
+                using var reader = OpenJsonlElementReader(inStream);
+                foreach (JsonElement root in reader)
+                {
+                    if (root.ValueKind != JsonValueKind.Object)
+                        throw new InvalidDataException("JSONL line must be a JSON object.");
+
+                    presentCells.Clear();
+                    int lastColIndex = 0;
+                    int order = 0;
+                    bool needsSort = false;
+                    foreach (JsonProperty prop in root.EnumerateObject())
+                    {
+                        int colIndex = headerColumns[prop.Name];
+                        if (colIndex <= lastColIndex)
+                            needsSort = true;
+                        lastColIndex = colIndex;
+                        presentCells.Add((colIndex, order++, prop.Value));
+                    }
+
+                    if (needsSort && presentCells.Count > 1)
+                    {
+                        presentCells.Sort(static (a, b) =>
+                        {
+                            int cmp = a.ColIndex.CompareTo(b.ColIndex);
+                            return cmp != 0 ? cmp : a.Order.CompareTo(b.Order);
+                        });
+                    }
+
+                    sheetWriter.StartRow(rowNum++);
+                    for (int i = 0; i < presentCells.Count; i++)
+                    {
+                        // Duplicate keys within a single JSON object collapse to the last occurrence so each cell reference is emitted at most once.
+                        if (i + 1 < presentCells.Count && presentCells[i].ColIndex == presentCells[i + 1].ColIndex)
+                            continue;
+
+                        WriteExcelCellFromJson(sheetWriter, presentCells[i].ColIndex, presentCells[i].Value);
+                    }
+                    sheetWriter.EndRow();
+                }
+            }
+
+            sheetWriter.Close();
+        });
+    }
+
+    private static (List<string> Headers, int RecordCount) CollectJsonlHeaders(string inputPath)
+    {
+        List<string> headers = [];
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        int recordCount = 0;
+
+        using var inStream = OpenReadStream(inputPath, bufferSize: 4096, FileOptions.SequentialScan);
+        using var reader = OpenJsonlElementReader(inStream);
+        foreach (JsonElement root in reader)
+        {
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("JSONL line must be a JSON object.");
+
+            recordCount++;
+            foreach (JsonProperty prop in root.EnumerateObject())
+            {
+                if (seen.Add(prop.Name))
+                {
+                    if (headers.Count >= EXCEL_MAX_COLUMNS)
+                    {
+                        throw new InvalidDataException(
+                            $"JSONL contains more than {EXCEL_MAX_COLUMNS} distinct properties; Excel worksheets support at most {EXCEL_MAX_COLUMNS} columns.");
+                    }
+
+                    headers.Add(prop.Name);
+                }
+            }
+        }
+
+        return (headers, recordCount);
+    }
+
+    private static JsonlRecordReader<JsonElement> OpenJsonlElementReader(Stream stream)
+        => new(
+            stream,
+            CliJsonElementContext.Default.JsonElement,
+            new JsonlReadOptions
+            {
+                MaxLineSizeBytes = JsonlReadOptions.Default.MaxLineSizeBytes,
+                MaxRowCount = int.MaxValue,
+                SkipEmptyLines = true
+            },
+            leaveOpen: true);
+
+    private static void WriteExcelCellFromJson(XlsxWriter.SheetWriter sheetWriter, int columnIndex, JsonElement value)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Number when TryGetLosslessExcelNumber(value, out double num):
+                sheetWriter.WriteCellNumber(columnIndex, num);
+                break;
+            case JsonValueKind.True:
+                sheetWriter.WriteCellBoolean(columnIndex, true);
+                break;
+            case JsonValueKind.False:
+                sheetWriter.WriteCellBoolean(columnIndex, false);
+                break;
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                sheetWriter.WriteCellEmpty(columnIndex);
+                break;
+            case JsonValueKind.String:
+                sheetWriter.WriteCellString(columnIndex, value.GetString() ?? string.Empty);
+                break;
+            case JsonValueKind.Object:
+            case JsonValueKind.Array:
+            case JsonValueKind.Number:
+            default:
+                sheetWriter.WriteCellString(columnIndex, value.GetRawText());
+                break;
+        }
+    }
+
+    private static bool TryGetLosslessExcelNumber(JsonElement value, out double number)
+    {
+        const long MAX_EXCEL_EXACT_INTEGER = 999_999_999_999_999L;
+        const double MIN_NORMAL_DOUBLE = 2.2250738585072014e-308;
+
+        string raw = value.GetRawText();
+        if (!raw.AsSpan().ContainsAny('.', 'e', 'E'))
+        {
+            if (!(raw.Length >= 2 && raw[0] == '-' && raw[1] == '0') &&
+                value.TryGetInt64(out long intVal) &&
+                intVal is >= -MAX_EXCEL_EXACT_INTEGER and <= MAX_EXCEL_EXACT_INTEGER)
+            {
+                number = intVal;
+                return true;
+            }
+
+            number = 0;
+            return false;
+        }
+
+        if (!value.TryGetDouble(out double d) || !double.IsFinite(d))
+        {
+            number = 0;
+            return false;
+        }
+
+        if (d != 0d && Math.Abs(d) < MIN_NORMAL_DOUBLE)
+        {
+            number = 0;
+            return false;
+        }
+
+        Span<char> formatted = stackalloc char[64];
+        if (!d.TryFormat(formatted, out int written, provider: CultureInfo.InvariantCulture))
+        {
+            number = 0;
+            return false;
+        }
+
+        Span<char> rawSig = stackalloc char[15];
+        Span<char> fmtSig = stackalloc char[15];
+        if (!TryCanonicalizeDecimalNumber(raw.AsSpan(), rawSig, out int rawSigLen, out long rawExp10, out bool rawIsZero, out bool rawIsNeg) ||
+            !TryCanonicalizeDecimalNumber(formatted[..written], fmtSig, out int fmtSigLen, out long fmtExp10, out bool fmtIsZero, out bool fmtIsNeg))
+        {
+            number = 0;
+            return false;
+        }
+
+        if (rawIsZero != fmtIsZero || rawIsNeg != fmtIsNeg)
+        {
+            number = 0;
+            return false;
+        }
+
+        if (!rawIsZero && (rawExp10 != fmtExp10 || !rawSig[..rawSigLen].SequenceEqual(fmtSig[..fmtSigLen])))
+        {
+            number = 0;
+            return false;
+        }
+
+        number = d;
+        return true;
+    }
+
+    private static bool TryCanonicalizeDecimalNumber(
+        ReadOnlySpan<char> text,
+        Span<char> sigDigits,
+        out int sigLen,
+        out long exp10,
+        out bool isZero,
+        out bool isNegative)
+    {
+        sigLen = 0;
+        exp10 = 0;
+        isZero = false;
+        isNegative = false;
+
+        if (text.IsEmpty)
+            return false;
+
+        int i = 0;
+        if (text[i] == '-')
+        {
+            isNegative = true;
+            i++;
+        }
+        else if (text[i] == '+')
+        {
+            i++;
+        }
+
+        bool seenDot = false;
+        bool anyDigit = false;
+        int firstNonZeroIdx = -1;
+        int digitsBeforeDot = 0;
+        int totalDigits = 0;
+        int pendingZeros = 0;
+
+        for (; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c is 'e' or 'E')
+            {
+                i++;
+                break;
+            }
+
+            if (c == '.')
+            {
+                if (seenDot)
+                    return false;
+                seenDot = true;
+                continue;
+            }
+
+            if (c < '0' || c > '9')
+                return false;
+
+            anyDigit = true;
+            if (!seenDot)
+                digitsBeforeDot++;
+
+            if (firstNonZeroIdx < 0)
+            {
+                if (c != '0')
+                {
+                    if (sigDigits.Length == 0)
+                        return false;
+                    firstNonZeroIdx = totalDigits;
+                    sigDigits[0] = c;
+                    sigLen = 1;
+                }
+            }
+            else if (c == '0')
+            {
+                pendingZeros++;
+            }
+            else
+            {
+                if (sigLen + pendingZeros + 1 > sigDigits.Length)
+                    return false;
+                for (int z = 0; z < pendingZeros; z++)
+                    sigDigits[sigLen++] = '0';
+                pendingZeros = 0;
+                sigDigits[sigLen++] = c;
+            }
+
+            totalDigits++;
+        }
+
+        if (!anyDigit)
+            return false;
+
+        long explicitExp = 0;
+        if (i < text.Length)
+        {
+            if (!long.TryParse(text[i..], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out explicitExp))
+                return false;
+        }
+        else if (text[^1] is 'e' or 'E')
+        {
+            return false;
+        }
+
+        if (firstNonZeroIdx < 0)
+        {
+            isZero = true;
+            sigLen = 0;
+            exp10 = 0;
+            return true;
+        }
+
+        long baseExp = (long)digitsBeforeDot - 1 - firstNonZeroIdx;
+        try
+        {
+            exp10 = checked(baseExp + explicitExp);
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static void ConvertCsvToHtb(string inputPath, string outputPath, char delimiter)
     {
-        var inferred = Csv.InferSchemaFileAsync(inputPath, new CsvSchemaInferenceOptions { Delimiter = delimiter })
-            .ConfigureAwait(false).GetAwaiter().GetResult();
+        var inferred = Csv.InferSchemaFileAsync(inputPath, new CsvSchemaInferenceOptions
+        {
+            Delimiter = delimiter,
+            MaxColumnCount = 2_048,
+            DistinguishTemporalTypes = true,
+            RequireLosslessNumericFormatting = true
+        }).ConfigureAwait(false).GetAwaiter().GetResult();
 
-        var columns = inferred.Columns.Select(c => new HtbColumn(
-            c.Name,
+        var columns = inferred.Columns.Select((c, i) => new HtbColumn(
+            string.IsNullOrWhiteSpace(c.Name) ? $"Col{i + 1}" : c.Name,
             c.InferredType switch
             {
                 CsvInferredType.Integer => HtbDataType.Int32,
@@ -1204,12 +1726,25 @@ Instructions:
             isNullable: true)).ToList();
 
         var schema = new HtbSchema(columns);
-        using var inStream = OpenReadStream(inputPath, bufferSize: 4096,
-            FileOptions.SequentialScan | FileOptions.Asynchronous);
-        using var outStream = OpenWriteStream(outputPath, bufferSize: 4096, FileOptions.Asynchronous);
+        CliCompressionFormat outputFormat = DetectCompressionFormat(outputPath);
 
-        CsvToHtbConverter.ConvertAsync(inStream, outStream, schema, new CsvToHtbOptions { Delimiter = delimiter })
-            .ConfigureAwait(false).GetAwaiter().GetResult();
+        WriteAtomically(outputPath, stagingPath =>
+        {
+            using var inStream = OpenReadStream(inputPath, bufferSize: 4096,
+                FileOptions.SequentialScan | FileOptions.Asynchronous);
+            using var outStream = OpenWriteStream(stagingPath, outputFormat, bufferSize: 4096, FileOptions.Asynchronous);
+
+            CsvToHtbConverter.ConvertAsync(inStream, outStream, schema, new CsvToHtbOptions
+            {
+                Delimiter = delimiter,
+                AllowNewlinesInsideQuotes = true,
+                MapByOrdinal = true,
+                RejectExtraColumns = true,
+                RejectLossyNumericValues = true,
+                MaxInputRowCount = int.MaxValue,
+                MaxInputRowSize = null
+            }).ConfigureAwait(false).GetAwaiter().GetResult();
+        });
     }
 
     private enum CliCompressionFormat
@@ -1294,9 +1829,85 @@ Instructions:
         }
     }
 
-    private static Stream OpenWriteStream(string path, int bufferSize = 4096, FileOptions options = FileOptions.None)
+    private static void WriteEmptyOutputFile(string outputPath)
     {
-        CliCompressionFormat format = DetectCompressionFormat(path);
+        CliCompressionFormat format = DetectCompressionFormat(outputPath);
+        EnsureCompressionSupported(format);
+
+        WriteAtomically(outputPath, stagingPath =>
+        {
+            using (OpenWriteStream(stagingPath, format)) { }
+        });
+    }
+
+    private static void WriteAtomically(string outputPath, Action<string> writeToStaging)
+    {
+        string fullOutputPath = Path.GetFullPath(outputPath);
+        string dir = Path.GetDirectoryName(fullOutputPath) ?? Directory.GetCurrentDirectory();
+        if (dir.Length > 0)
+            Directory.CreateDirectory(dir);
+
+        UnixFileMode? existingMode = null;
+        if (!OperatingSystem.IsWindows() && File.Exists(fullOutputPath))
+        {
+            try
+            {
+                existingMode = File.GetUnixFileMode(fullOutputPath);
+            }
+            catch (FileNotFoundException)
+            {
+            }
+        }
+
+        string? stagingPath = Path.Combine(dir, $".hp-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                using var restrictedStaging = new FileStream(stagingPath, new FileStreamOptions
+                {
+                    Mode = FileMode.CreateNew,
+                    Access = FileAccess.Write,
+                    Share = FileShare.None,
+                    UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite
+                });
+            }
+
+            writeToStaging(stagingPath);
+
+            if (!OperatingSystem.IsWindows() && existingMode is { } mode)
+            {
+                File.SetUnixFileMode(stagingPath, mode);
+            }
+
+            if (File.Exists(fullOutputPath))
+                File.Replace(stagingPath, fullOutputPath, destinationBackupFileName: null);
+            else
+                File.Move(stagingPath, fullOutputPath);
+
+            stagingPath = null;
+        }
+        finally
+        {
+            if (stagingPath is not null && File.Exists(stagingPath))
+            {
+                try
+                {
+                    File.Delete(stagingPath);
+                }
+                catch
+                {
+                    // Best-effort cleanup of temp file
+                }
+            }
+        }
+    }
+
+    private static Stream OpenWriteStream(string path, int bufferSize = 4096, FileOptions options = FileOptions.None)
+        => OpenWriteStream(path, DetectCompressionFormat(path), bufferSize, options);
+
+    private static Stream OpenWriteStream(string path, CliCompressionFormat format, int bufferSize = 4096, FileOptions options = FileOptions.None)
+    {
         EnsureCompressionSupported(format);
 
         var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, options);
@@ -1307,7 +1918,7 @@ Instructions:
         {
             return format switch
             {
-                CliCompressionFormat.GZip => new GZipStream(fileStream, CompressionLevel.Fastest, leaveOpen: false),
+                CliCompressionFormat.GZip => new NonEmptyGZipWriteStream(fileStream, CompressionLevel.Fastest),
                 CliCompressionFormat.Brotli => new BrotliStream(fileStream, CompressionLevel.Fastest, leaveOpen: false),
 #if NET11_0_OR_GREATER
                 CliCompressionFormat.Zstandard => (OperatingSystem.IsBrowser() || OperatingSystem.IsWasi())
@@ -1322,13 +1933,6 @@ Instructions:
             fileStream.Dispose();
             throw;
         }
-    }
-
-    private static string ReadAllTextDecompressed(string path)
-    {
-        using var stream = OpenReadStream(path);
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return reader.ReadToEnd();
     }
 
     private static (byte[] Bytes, int Length) ReadCsvSample(string path)
@@ -1346,9 +1950,145 @@ Instructions:
         return (sample, length);
     }
 
+    private static bool IsUtf32LittleEndian(byte[] data, int length)
+        => length >= 4 && data[0] == 0xFF && data[1] == 0xFE && data[2] == 0x00 && data[3] == 0x00;
+
+    private static bool IsUtf32BigEndian(byte[] data, int length)
+        => length >= 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0xFE && data[3] == 0xFF;
+
     private static bool IsUtf16LittleEndian(byte[] data, int length)
-        => length >= 2 && data[0] == 0xFF && data[1] == 0xFE;
+        => !IsUtf32LittleEndian(data, length) && length >= 2 && data[0] == 0xFF && data[1] == 0xFE;
 
     private static bool IsUtf16BigEndian(byte[] data, int length)
         => length >= 2 && data[0] == 0xFE && data[1] == 0xFF;
+
+    private sealed class NonEmptyGZipWriteStream(FileStream inner, CompressionLevel level) : Stream
+    {
+        private static readonly byte[] emptyGzipMember =
+            [0x1F, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+        private GZipStream? gzip;
+        private bool disposed;
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => !disposed && inner.CanWrite;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        private GZipStream EnsureGzip() => gzip ??= new GZipStream(inner, level, leaveOpen: true);
+
+        public override void Flush()
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            gzip?.Flush();
+        }
+
+        public override Task FlushAsync(CancellationToken cancellationToken)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (cancellationToken.IsCancellationRequested)
+                return Task.FromCanceled(cancellationToken);
+
+            return gzip is not null ? gzip.FlushAsync(cancellationToken) : Task.CompletedTask;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            ValidateBufferArguments(buffer, offset, count);
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (count == 0)
+                return;
+
+            EnsureGzip().Write(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (buffer.IsEmpty)
+                return;
+
+            EnsureGzip().Write(buffer);
+        }
+
+        public override void WriteByte(byte value)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            EnsureGzip().WriteByte(value);
+        }
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            ValidateBufferArguments(buffer, offset, count);
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (cancellationToken.IsCancellationRequested)
+                return Task.FromCanceled(cancellationToken);
+            if (count == 0)
+                return Task.CompletedTask;
+
+            return EnsureGzip().WriteAsync(buffer, offset, count, cancellationToken);
+        }
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (cancellationToken.IsCancellationRequested)
+                return ValueTask.FromCanceled(cancellationToken);
+            if (buffer.IsEmpty)
+                return ValueTask.CompletedTask;
+
+            return EnsureGzip().WriteAsync(buffer, cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !disposed)
+            {
+                disposed = true;
+                try
+                {
+                    if (gzip is not null)
+                        gzip.Dispose();
+                    else
+                        inner.Write(emptyGzipMember);
+                }
+                finally
+                {
+                    inner.Dispose();
+                }
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            if (disposed)
+                return;
+
+            disposed = true;
+            try
+            {
+                if (gzip is not null)
+                    await gzip.DisposeAsync().ConfigureAwait(false);
+                else
+                    await inner.WriteAsync(emptyGzipMember).ConfigureAwait(false);
+            }
+            finally
+            {
+                await inner.DisposeAsync().ConfigureAwait(false);
+            }
+
+            GC.SuppressFinalize(this);
+        }
+    }
 }

@@ -23,4 +23,10 @@ public interface IHtbBinder<T> where T : new()
     /// Binds a column value asynchronously from the reader directly to the record property.
     /// </summary>
     ValueTask BindFieldAsync(T instance, int columnIndex, HtbRecordReader<T> reader, bool isNull);
+
+    /// <summary>
+    /// Validates a fully bound record instance after all columns of the row have been read.
+    /// </summary>
+    /// <param name="instance">The bound record instance to validate.</param>
+    void ValidateRecord(T instance) { }
 }

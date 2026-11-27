@@ -3,6 +3,7 @@ using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Reading.Streaming;
 using System.Globalization;
+using System.Text;
 
 namespace HeroParser.SeparatedValues.Validation;
 
@@ -26,25 +27,60 @@ public static partial class CsvValidator
         options ??= new CsvValidationOptions();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaxErrors);
 
-        Stream stream = new CompressedFile(path).OpenRead(
-            bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var parseOptions = options.GetEffectiveParseOptions();
+        if (options.ParseOptions is null)
+            parseOptions = parseOptions with { MaxRowCount = int.MaxValue };
+        if (options.Delimiter.HasValue)
+        {
+            parseOptions = parseOptions with { Delimiter = options.Delimiter.Value };
+            parseOptions.Validate();
+        }
+        else
+        {
+            ValidateSamplingOptions(parseOptions);
+        }
+
+        var samplingParseOptions = parseOptions.MaxInputSize is not null
+            ? parseOptions with { MaxInputSize = null }
+            : parseOptions;
+
+        Stream? stream = null;
         try
         {
-            var sample = new byte[DETECTION_SAMPLE_BYTES];
-            int sampleLength = await ReadSampleAsync(stream, sample, cancellationToken).ConfigureAwait(false);
-
             char delimiter = options.Delimiter ?? ',';
-            bool whitespaceOnly = sampleLength == 0 || (IsWhiteSpaceOnly(sample.AsSpan(0, sampleLength)) &&
-                await IsRemainingWhiteSpaceAsync(stream, cancellationToken).ConfigureAwait(false));
-            if (whitespaceOnly)
+            var sample = new byte[DETECTION_SAMPLE_BYTES];
+            int sampleLength;
+            try
+            {
+                stream = OpenValidationStream(path, parseOptions);
+                sampleLength = await ReadSampleAsync(stream, sample, samplingParseOptions, cancellationToken).ConfigureAwait(false);
+
+                bool whitespaceOnly = sampleLength == 0 || (IsWhiteSpaceOnly(sample.AsSpan(0, sampleLength)) &&
+                    await IsRemainingWhiteSpaceAsync(stream, sampleLength, samplingParseOptions, cancellationToken).ConfigureAwait(false));
+                if (whitespaceOnly)
+                {
+                    return new CsvValidationResult
+                    {
+                        Delimiter = delimiter,
+                        Errors = options.AllowEmptyFile ? [] : [new CsvValidationError
+                        {
+                            ErrorType = CsvValidationErrorType.EmptyFile,
+                            Message = "CSV file is empty"
+                        }]
+                    };
+                }
+            }
+            catch (CsvException ex)
             {
                 return new CsvValidationResult
                 {
                     Delimiter = delimiter,
-                    Errors = options.AllowEmptyFile ? [] : [new CsvValidationError
+                    Errors = [new CsvValidationError
                     {
-                        ErrorType = CsvValidationErrorType.EmptyFile,
-                        Message = "CSV file is empty"
+                        ErrorType = CsvValidationErrorType.ParseError,
+                        Message = $"Parse error: {ex.Message}",
+                        RowNumber = ex.Row ?? 0,
+                        ColumnNumber = ex.Column ?? 0
                     }]
                 };
             }
@@ -55,9 +91,9 @@ public static partial class CsvValidator
                 {
                     if (options.SkipRows > 0)
                     {
-                        stream = await RewindOrReopenAsync(stream, path).ConfigureAwait(false);
+                        stream = await RewindOrReopenAsync(stream, path, parseOptions).ConfigureAwait(false);
                         sampleLength = await ReadSampleAfterSkippingRowsAsync(stream, options.SkipRows,
-                            options.GetEffectiveParseOptions().MaxRowSize, sample, cancellationToken).ConfigureAwait(false);
+                            samplingParseOptions, sample, cancellationToken).ConfigureAwait(false);
                     }
                     if (sampleLength > 0)
                         delimiter = CsvDelimiterDetector.DetectDelimiter(sample.AsSpan(0, sampleLength));
@@ -88,11 +124,12 @@ public static partial class CsvValidator
                 }
             }
 
-            stream = await RewindOrReopenAsync(stream, path).ConfigureAwait(false);
-            var parseOptions = options.GetEffectiveParseOptions() with { Delimiter = delimiter };
-            if (options.ParseOptions is null)
-                parseOptions = parseOptions with { MaxRowCount = int.MaxValue };
+            stream = await RewindOrReopenAsync(stream, path, parseOptions).ConfigureAwait(false);
+            parseOptions = parseOptions with { Delimiter = delimiter };
             parseOptions.Validate();
+            var readerParseOptions = parseOptions.MaxInputSize is not null
+                ? parseOptions with { MaxInputSize = null }
+                : parseOptions;
 
             var errors = new List<CsvValidationError>();
             var headers = new List<string>();
@@ -111,7 +148,7 @@ public static partial class CsvValidator
                 StoppedEarly = stoppedEarly
             };
 
-            await using var reader = new CsvAsyncStreamReader(stream, parseOptions, leaveOpen: true,
+            await using var reader = new CsvAsyncStreamReader(stream, readerParseOptions, leaveOpen: true,
                 initialBufferSize: 16 * 1024);
             try
             {
@@ -222,11 +259,65 @@ public static partial class CsvValidator
         }
         finally
         {
-            await stream.DisposeAsync().ConfigureAwait(false);
+            if (stream is not null)
+                await stream.DisposeAsync().ConfigureAwait(false);
         }
     }
 
-    private static async ValueTask<Stream> RewindOrReopenAsync(Stream stream, string path)
+    private static Stream OpenValidationStream(string path, CsvReadOptions parseOptions)
+    {
+        Stream rawStream = new CompressedFile(path).OpenRead(
+            bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        Stream countingStream = parseOptions.MaxInputSize is not null
+            ? new MaxInputSizeReadStream(rawStream, parseOptions)
+            : rawStream;
+        try
+        {
+            byte[] bom = new byte[4];
+            int read = 0;
+            while (read < bom.Length)
+            {
+                int n = countingStream.Read(bom, read, bom.Length - read);
+                if (n == 0)
+                    break;
+                read += n;
+            }
+
+            if (read == 4 && bom[0] == 0xFF && bom[1] == 0xFE && bom[2] == 0x00 && bom[3] == 0x00)
+                return new Utf16ToUtf8ReadStream(countingStream, Encoding.UTF32);
+
+            if (read == 4 && bom[0] == 0x00 && bom[1] == 0x00 && bom[2] == 0xFE && bom[3] == 0xFF)
+                return new Utf16ToUtf8ReadStream(countingStream, new UTF32Encoding(bigEndian: true, byteOrderMark: true));
+
+            if (read >= 2 && ((bom[0] == 0xFF && bom[1] == 0xFE) || (bom[0] == 0xFE && bom[1] == 0xFF)))
+            {
+                Encoding utf16 = bom[0] == 0xFF ? Encoding.Unicode : Encoding.BigEndianUnicode;
+                Stream remainder = read > 2
+                    ? new PrefixReadStream(countingStream, bom[2..read], leaveOpen: false)
+                    : countingStream;
+                return new Utf16ToUtf8ReadStream(remainder, utf16);
+            }
+
+            if (countingStream.CanSeek)
+            {
+                countingStream.Position = 0;
+                return countingStream;
+            }
+
+            if (read > 0)
+                return new PrefixReadStream(countingStream, bom[..read], leaveOpen: false);
+
+            return countingStream;
+        }
+        catch
+        {
+            countingStream.Dispose();
+            throw;
+        }
+    }
+
+    private static async ValueTask<Stream> RewindOrReopenAsync(
+        Stream stream, string path, CsvReadOptions parseOptions)
     {
         if (stream.CanSeek)
         {
@@ -235,46 +326,85 @@ public static partial class CsvValidator
         }
 
         await stream.DisposeAsync().ConfigureAwait(false);
-        return new CompressedFile(path).OpenRead(
-            bufferSize: 16 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return OpenValidationStream(path, parseOptions);
     }
 
-    private static async Task<int> ReadSampleAsync(Stream stream, byte[] sample, CancellationToken cancellationToken)
+    private static int GetCappedReadCount(int bufferAvailable, long bytesReadSoFar, long? maxInputSize)
+    {
+        if (maxInputSize is not { } limit)
+            return bufferAvailable;
+
+        long remainingAllowed = Math.Max(0L, limit - bytesReadSoFar);
+        long maxToRequest = remainingAllowed < bufferAvailable ? remainingAllowed + 1 : bufferAvailable;
+        return (int)Math.Min(bufferAvailable, maxToRequest);
+    }
+
+    private static async Task<int> ReadSampleAsync(
+        Stream stream,
+        byte[] sample,
+        CsvReadOptions parseOptions,
+        CancellationToken cancellationToken)
     {
         int length = 0;
         while (length < sample.Length)
         {
-            int read = await stream.ReadAsync(sample.AsMemory(length), cancellationToken).ConfigureAwait(false);
+            int toRead = GetCappedReadCount(sample.Length - length, length, parseOptions.MaxInputSize);
+            int read = await stream.ReadAsync(sample.AsMemory(length, toRead), cancellationToken).ConfigureAwait(false);
             if (read == 0)
                 break;
             length += read;
+            parseOptions.ValidateInputSize(length);
         }
         return length;
     }
 
-    private static async Task<bool> IsRemainingWhiteSpaceAsync(Stream stream, CancellationToken cancellationToken)
+    private static async Task<bool> IsRemainingWhiteSpaceAsync(
+        Stream stream,
+        long initialBytesRead,
+        CsvReadOptions parseOptions,
+        CancellationToken cancellationToken)
     {
         byte[] buffer = new byte[16 * 1024];
-        int read;
-        while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        long totalBytesRead = initialBytesRead;
+        while (true)
         {
+            int toRead = GetCappedReadCount(buffer.Length, totalBytesRead, parseOptions.MaxInputSize);
+            int read = await stream.ReadAsync(buffer.AsMemory(0, toRead), cancellationToken).ConfigureAwait(false);
+            if (read <= 0)
+                break;
+            totalBytesRead += read;
+            parseOptions.ValidateInputSize(totalBytesRead);
             if (!IsWhiteSpaceOnly(buffer.AsSpan(0, read)))
                 return false;
         }
         return true;
     }
 
-    private static async Task<int> ReadSampleAfterSkippingRowsAsync(Stream stream, int rows, int? maxRowSize, byte[] sample,
+    private static async Task<int> ReadSampleAfterSkippingRowsAsync(
+        Stream stream,
+        int rows,
+        CsvReadOptions parseOptions,
+        byte[] sample,
         CancellationToken cancellationToken)
     {
         bool quoted = false;
         bool afterCr = false;
+        bool hasQuote = parseOptions.EnableQuotedFields && parseOptions.Quote <= 127;
+        byte quoteByte = (byte)parseOptions.Quote;
         int skipped = 0;
-        int rowLimit = maxRowSize ?? CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE;
+        int rowLimit = parseOptions.MaxRowSize ?? CsvAsyncStreamReader.ABSOLUTE_MAX_BUFFER_SIZE;
         long rowBytes = 0;
-        int read;
-        while (skipped < rows && (read = await stream.ReadAsync(sample, cancellationToken).ConfigureAwait(false)) > 0)
+        long totalBytesRead = 0;
+        while (skipped < rows)
         {
+            int toRead = GetCappedReadCount(sample.Length, totalBytesRead, parseOptions.MaxInputSize);
+            int read = await stream.ReadAsync(sample.AsMemory(0, toRead), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+                break;
+
+            totalBytesRead += read;
+            parseOptions.ValidateInputSize(totalBytesRead);
+
             for (int i = 0; i < read; i++)
             {
                 byte value = sample[i];
@@ -287,7 +417,7 @@ public static partial class CsvValidator
                 if (++rowBytes > rowLimit)
                     throw new CsvException(CsvErrorCode.ParseError,
                         string.Create(CultureInfo.InvariantCulture, $"Row exceeds maximum size of {rowLimit:N0} bytes while skipping preamble."), skipped + 1);
-                if (value == (byte)'"')
+                if (hasQuote && value == quoteByte)
                     quoted = !quoted;
                 if (!quoted && (value == (byte)'\r' || value == (byte)'\n'))
                 {
@@ -307,9 +437,12 @@ public static partial class CsvValidator
                             }
                             else
                             {
-                                read = await stream.ReadAsync(sample, cancellationToken).ConfigureAwait(false);
+                                int peekToRead = GetCappedReadCount(sample.Length, totalBytesRead, parseOptions.MaxInputSize);
+                                read = await stream.ReadAsync(sample.AsMemory(0, peekToRead), cancellationToken).ConfigureAwait(false);
                                 if (read == 0)
                                     return 0;
+                                totalBytesRead += read;
+                                parseOptions.ValidateInputSize(totalBytesRead);
                                 start = sample[0] == (byte)'\n' ? 1 : 0;
                             }
                         }
@@ -320,9 +453,12 @@ public static partial class CsvValidator
 
                         while (remaining < sample.Length)
                         {
-                            int extra = await stream.ReadAsync(sample.AsMemory(remaining), cancellationToken).ConfigureAwait(false);
+                            int fillToRead = GetCappedReadCount(sample.Length - remaining, totalBytesRead, parseOptions.MaxInputSize);
+                            int extra = await stream.ReadAsync(sample.AsMemory(remaining, fillToRead), cancellationToken).ConfigureAwait(false);
                             if (extra == 0)
                                 break;
+                            totalBytesRead += extra;
+                            parseOptions.ValidateInputSize(totalBytesRead);
                             remaining += extra;
                         }
 
@@ -333,5 +469,22 @@ public static partial class CsvValidator
         }
 
         return 0;
+    }
+
+    private static void ValidateSamplingOptions(CsvReadOptions parseOptions)
+    {
+        if (parseOptions.MaxInputSize is <= 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxInputSize must be positive when specified, got {parseOptions.MaxInputSize.Value}");
+        }
+
+        if (parseOptions.MaxRowSize is <= 0)
+        {
+            throw new CsvException(
+                CsvErrorCode.InvalidOptions,
+                $"MaxRowSize must be positive when specified, got {parseOptions.MaxRowSize.Value}");
+        }
     }
 }

@@ -370,7 +370,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.Indent();
 
         // Emit inline parsing logic
-        EmitByteInlineParsingLogic(builder, member);
+        bool useLocalForValidation = member.GetterFactory is null && HasAnyValidation(member, excludeNotNull: true);
+        if (useLocalForValidation)
+            builder.AppendLine($"{member.TypeName} _val_{member.MemberName} = default!;");
+
+        EmitByteInlineParsingLogic(builder, member, useLocalForValidation);
 
         // Emit validation checks after parsing
         if (HasAnyValidation(member, excludeNotNull: true))
@@ -396,7 +400,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    private static void EmitByteInlineParsingLogic(SourceBuilder builder, MemberDescriptor member)
+    private static void EmitByteInlineParsingLogic(SourceBuilder builder, MemberDescriptor member, bool useLocalForValidation)
     {
         var baseType = member.BaseTypeName;
         var propertyName = member.MemberName;
@@ -404,62 +408,70 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         switch (baseType)
         {
             case "string":
-                builder.AppendLine($"instance.{propertyName} = Encoding.UTF8.GetString(utf8);");
+                if (useLocalForValidation)
+                {
+                    builder.AppendLine($"_val_{propertyName} = Encoding.UTF8.GetString(utf8);");
+                    builder.AppendLine($"instance.{propertyName} = _val_{propertyName};");
+                }
+                else
+                {
+                    builder.AppendLine($"instance.{propertyName} = Encoding.UTF8.GetString(utf8);");
+                }
                 break;
 
             case "int":
             case "System.Int32":
-                EmitByteNumericParsing(builder, member, "TryParseInt32");
+                EmitByteNumericParsing(builder, member, "TryParseInt32", useLocalForValidation);
                 break;
 
             case "long":
             case "System.Int64":
-                EmitByteNumericParsing(builder, member, "TryParseInt64");
+                EmitByteNumericParsing(builder, member, "TryParseInt64", useLocalForValidation);
                 break;
 
             case "short":
             case "System.Int16":
-                EmitByteNumericParsing(builder, member, "TryParseInt16");
+                EmitByteNumericParsing(builder, member, "TryParseInt16", useLocalForValidation);
                 break;
 
             case "byte":
             case "System.Byte":
-                EmitByteNumericParsing(builder, member, "TryParseByte");
+                EmitByteNumericParsing(builder, member, "TryParseByte", useLocalForValidation);
                 break;
 
             case "uint":
             case "System.UInt32":
-                EmitByteNumericParsing(builder, member, "TryParseUInt32");
+                EmitByteNumericParsing(builder, member, "TryParseUInt32", useLocalForValidation);
                 break;
 
             case "ulong":
             case "System.UInt64":
-                EmitByteNumericParsing(builder, member, "TryParseUInt64");
+                EmitByteNumericParsing(builder, member, "TryParseUInt64", useLocalForValidation);
                 break;
 
             case "ushort":
             case "System.UInt16":
-                EmitByteNumericParsing(builder, member, "TryParseUInt16");
+                EmitByteNumericParsing(builder, member, "TryParseUInt16", useLocalForValidation);
                 break;
 
             case "sbyte":
             case "System.SByte":
-                EmitByteNumericParsing(builder, member, "TryParseSByte");
+                EmitByteNumericParsing(builder, member, "TryParseSByte", useLocalForValidation);
                 break;
 
             case "decimal":
             case "System.Decimal":
-                EmitByteNumericParsing(builder, member, "TryParseDecimal");
+                EmitByteNumericParsing(builder, member, "TryParseDecimal", useLocalForValidation);
                 break;
 
             case "double":
             case "System.Double":
-                EmitByteNumericParsing(builder, member, "TryParseDouble");
+                EmitByteNumericParsing(builder, member, "TryParseDouble", useLocalForValidation);
                 break;
 
             case "float":
             case "System.Single":
-                EmitByteNumericParsing(builder, member, "TryParseSingle");
+                EmitByteNumericParsing(builder, member, "TryParseSingle", useLocalForValidation);
                 break;
 
             case "bool":
@@ -497,19 +509,19 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 break;
 
             case "System.Half":
-                EmitByteNumericParsing(builder, member, "TryParseHalf");
+                EmitByteNumericParsing(builder, member, "TryParseHalf", useLocalForValidation);
                 break;
 
             case "System.Int128":
-                EmitByteNumericParsing(builder, member, "TryParseInt128");
+                EmitByteNumericParsing(builder, member, "TryParseInt128", useLocalForValidation);
                 break;
 
             case "System.UInt128":
-                EmitByteNumericParsing(builder, member, "TryParseUInt128");
+                EmitByteNumericParsing(builder, member, "TryParseUInt128", useLocalForValidation);
                 break;
 
             case "System.Numerics.BigInteger":
-                EmitByteNumericParsing(builder, member, "TryParseBigInteger");
+                EmitByteNumericParsing(builder, member, "TryParseBigInteger", useLocalForValidation);
                 break;
 
             case "System.Uri":
@@ -530,6 +542,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 {
                     EmitSpanParsableParsing(builder, member, isByte: true);
                 }
+                else if (useLocalForValidation)
+                {
+                    builder.AppendLine($"_val_{propertyName} = Encoding.UTF8.GetString(utf8);");
+                    builder.AppendLine($"instance.{propertyName} = _val_{propertyName};");
+                }
                 else
                 {
                     builder.AppendLine($"instance.{propertyName} = Encoding.UTF8.GetString(utf8);");
@@ -538,39 +555,34 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
     }
 
-    private static void EmitByteNumericParsing(SourceBuilder builder, MemberDescriptor member, string parseMethod)
+    private static void EmitByteNumericParsing(SourceBuilder builder, MemberDescriptor member, string parseMethod, bool useLocalForValidation)
     {
         var propertyName = member.MemberName;
         var indexField = $"_{propertyName}Index";
         var isNullable = member.IsNullable;
         var baseType = member.BaseTypeName;
 
-        // For floating-point types (decimal, double, float), use zero-alloc culture-aware column helpers
-        // Utf8Parser only handles invariant culture directly; Utf8SpanParser uses stackalloc buffers for other locales
-        if (baseType is "decimal" or "System.Decimal")
+        string tryCondition = baseType switch
         {
-            builder.AppendLine($"if (column.TryParseDecimal(out var parsed_{propertyName}, _culture))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else if (baseType is "double" or "System.Double")
+            "decimal" or "System.Decimal" => $"column.TryParseDecimal(out var parsed_{propertyName}, _culture)",
+            "double" or "System.Double" => $"column.TryParseDouble(out var parsed_{propertyName}, _culture)",
+            "float" or "System.Single" => $"column.TryParseSingle(out var parsed_{propertyName}, _culture)",
+            "System.Half" or "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger" => $"column.{parseMethod}(out var parsed_{propertyName}, _culture)",
+            _ => $"column.{parseMethod}(out var parsed_{propertyName})"
+        };
+
+        builder.AppendLine($"if ({tryCondition})");
+        if (useLocalForValidation)
         {
-            builder.AppendLine($"if (column.TryParseDouble(out var parsed_{propertyName}, _culture))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else if (baseType is "float" or "System.Single")
-        {
-            builder.AppendLine($"if (column.TryParseSingle(out var parsed_{propertyName}, _culture))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else if (baseType is "System.Half" or "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger")
-        {
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, _culture))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine($"_val_{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"instance.{propertyName} = parsed_{propertyName};");
+            builder.Unindent();
+            builder.AppendLine("}");
         }
         else
         {
-            // For integer types, Utf8Parser is efficient and invariant culture is standard
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
         if (!isNullable)
@@ -784,10 +796,12 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine("}");
         }
 
+        string memberExpr = member.GetterFactory is null ? $"_val_{member.MemberName}" : $"instance.{member.MemberName}";
+
         // NotEmpty validation (string only)
         if (member.Validation.NotEmpty)
         {
-            builder.AppendLine($"if (!utf8.IsEmpty && string.IsNullOrWhiteSpace(instance.{member.MemberName}))");
+            builder.AppendLine($"if (!utf8.IsEmpty && string.IsNullOrWhiteSpace({memberExpr}))");
             builder.AppendLine("{");
             builder.Indent();
             EmitAddValidationError(builder, member, "NotEmpty", "Value must not be empty or whitespace");
@@ -799,7 +813,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         // MaxLength validation (string only)
         if (member.Validation.MaxLength >= 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.Validation.MaxLength})");
+            builder.AppendLine($"if ({memberExpr} != null && {memberExpr}.Length > {member.Validation.MaxLength})");
             builder.AppendLine("{");
             builder.Indent();
             EmitAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.Validation.MaxLength}");
@@ -811,7 +825,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         // MinLength validation (string only)
         if (member.Validation.MinLength >= 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.Validation.MinLength})");
+            builder.AppendLine($"if ({memberExpr} != null && {memberExpr}.Length < {member.Validation.MinLength})");
             builder.AppendLine("{");
             builder.Indent();
             EmitAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.Validation.MinLength}");
@@ -823,27 +837,26 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         // Range validation (numeric only)
         if (member.Validation.HasRange)
         {
-            var valueExpr = $"instance.{member.MemberName}";
-            var conditions = new List<string>();
-            if (member.Validation.HasRangeMin)
-                conditions.Add($"{valueExpr} < {member.Validation.FormatRangeMinLiteral(member.BaseTypeName)}");
-            if (member.Validation.HasRangeMax)
-                conditions.Add($"{valueExpr} > {member.Validation.FormatRangeMaxLiteral(member.BaseTypeName)}");
-
-            builder.AppendLine($"if (!utf8.IsEmpty && ({string.Join(" || ", conditions)}))");
-            builder.AppendLine("{");
-            builder.Indent();
-            var rangeMsg = member.Validation.FormatRangeMessage();
-            EmitAddValidationError(builder, member, "Range", rangeMsg);
-            builder.AppendLine("valid = false;");
-            builder.Unindent();
-            builder.AppendLine("}");
+            var valueExpr = memberExpr;
+            if (member.Validation.BuildRangeViolationCondition(valueExpr, member.BaseTypeName) is { } rangeCondition)
+            {
+                builder.AppendLine(rangeCondition == "true"
+                    ? "if (!utf8.IsEmpty)"
+                    : $"if (!utf8.IsEmpty && ({rangeCondition}))");
+                builder.AppendLine("{");
+                builder.Indent();
+                var rangeMsg = member.Validation.FormatRangeMessage();
+                EmitAddValidationError(builder, member, "Range", rangeMsg);
+                builder.AppendLine("valid = false;");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
         }
 
         // Pattern validation (string only)
         if (member.Validation.Pattern != null)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && !_pattern_{member.MemberName}.IsMatch(instance.{member.MemberName}))");
+            builder.AppendLine($"if ({memberExpr} != null && !_pattern_{member.MemberName}.IsMatch({memberExpr}))");
             builder.AppendLine("{");
             builder.Indent();
             EmitAddValidationError(builder, member, "Pattern", "Value does not match pattern");
@@ -1112,8 +1125,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         {
             case "int" or "System.Int32" or "short" or "System.Int16"
                 or "byte" or "System.Byte" or "uint" or "System.UInt32"
-                or "ushort" or "System.UInt16" or "sbyte" or "System.SByte"
-                or "double" or "System.Double" or "float" or "System.Single":
+                or "ushort" or "System.UInt16" or "sbyte" or "System.SByte":
                 needsExcelSpanHelper = true;
                 if (format != null)
                 {
@@ -1130,6 +1142,23 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 }
                 break;
 
+            case "double" or "System.Double" or "float" or "System.Single":
+                needsExcelSpanHelper = true;
+                if (format != null)
+                {
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
+                }
+                else
+                {
+                    builder.AppendLine("if (opts.NumberFormat is not null)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.NumberFormat, culture);");
+                    builder.AppendLine($"else if ((double){valueExpr} == 0d || global::System.Double.IsNormal((double){valueExpr}))");
+                    builder.AppendLine($"    sw.WriteCellNumber({colIndex}, (double){valueExpr});");
+                    builder.AppendLine("else");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, null, culture);");
+                }
+                break;
+
             case "long" or "System.Int64":
                 needsExcelSpanHelper = true;
                 if (format != null)
@@ -1138,9 +1167,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    // IEEE-754 double only represents integers exactly up to +/- 2^53 (9_007_199_254_740_992)
-                    builder.AppendLine($"if (opts.NumberFormat is not null || {valueExpr} is < -9_007_199_254_740_992L or > 9_007_199_254_740_992L)");
+                    // Excel only preserves up to 15 significant digits in numeric cells (10^15 - 1)
+                    builder.AppendLine($"if (opts.NumberFormat is not null)");
                     builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.NumberFormat, culture);");
+                    builder.AppendLine($"else if ({valueExpr} is < -999_999_999_999_999L or > 999_999_999_999_999L)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, null, global::System.Globalization.CultureInfo.InvariantCulture);");
                     builder.AppendLine("else");
                     builder.AppendLine($"    sw.WriteCellNumber({colIndex}, (double){valueExpr});");
                 }
@@ -1154,8 +1185,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    builder.AppendLine($"if (opts.NumberFormat is not null || {valueExpr} > 9_007_199_254_740_992UL)");
+                    builder.AppendLine($"if (opts.NumberFormat is not null)");
                     builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.NumberFormat, culture);");
+                    builder.AppendLine($"else if ({valueExpr} > 999_999_999_999_999UL)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, null, global::System.Globalization.CultureInfo.InvariantCulture);");
                     builder.AppendLine("else");
                     builder.AppendLine($"    sw.WriteCellNumber({colIndex}, (double){valueExpr});");
                 }
@@ -1184,6 +1217,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 {
                     builder.AppendLine("if (opts.DateTimeFormat is not null)");
                     builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.DateTimeFormat, culture);");
+                    builder.AppendLine($"else if ({valueExpr} < new global::System.DateTime(1900, 3, 1) || {valueExpr}.Ticks % global::System.TimeSpan.TicksPerSecond != 0)");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, \"yyyy-MM-ddTHH:mm:ss.fffffff\", global::System.Globalization.CultureInfo.InvariantCulture);");
                     builder.AppendLine("else");
                     builder.AppendLine($"    sw.WriteCellDate({colIndex}, {valueExpr});");
                 }
@@ -1208,6 +1243,8 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 {
                     builder.AppendLine("if (opts.DateOnlyFormat is not null)");
                     builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.DateOnlyFormat, culture);");
+                    builder.AppendLine($"else if ({valueExpr} < new global::System.DateOnly(1900, 3, 1))");
+                    builder.AppendLine($"    WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, \"yyyy-MM-dd\", global::System.Globalization.CultureInfo.InvariantCulture);");
                     builder.AppendLine("else");
                     builder.AppendLine($"    sw.WriteCellDate({colIndex}, {valueExpr}.ToDateTime(System.TimeOnly.MinValue));");
                 }
@@ -1218,7 +1255,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 if (format != null)
                     builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, {fmtExpr}, culture);");
                 else
-                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.TimeOnlyFormat ?? \"HH:mm:ss\", culture);");
+                    builder.AppendLine($"WriteExcelSpanFormattable(sw, {colIndex}, {valueExpr}, opts.TimeOnlyFormat ?? ({valueExpr}.Ticks % global::System.TimeSpan.TicksPerSecond == 0 ? \"HH:mm:ss\" : \"O\"), culture);");
                 break;
 
             case "System.TimeSpan":
@@ -1234,7 +1271,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 builder.Indent();
                 builder.AppendLine("global::System.Span<char> ch = stackalloc char[1];");
                 builder.AppendLine($"ch[0] = {valueExpr};");
-                builder.AppendLine($"sw.WriteCellString({colIndex}, ch);");
+                builder.AppendLine($"sw.WriteCellLiteralString({colIndex}, ch);");
                 builder.Unindent();
                 builder.AppendLine("}");
                 break;
@@ -1266,10 +1303,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 break;
 
             case "byte[]" or "System.Byte[]":
-                builder.AppendLine($"if ({valueExpr}.Length == 0)");
-                builder.AppendLine($"    sw.WriteCellEmpty({colIndex});");
-                builder.AppendLine("else");
-                builder.AppendLine($"    sw.WriteCellString({colIndex}, global::System.Convert.ToBase64String({valueExpr}));");
+                builder.AppendLine($"sw.WriteCellLiteralString({colIndex}, {valueExpr}.Length == 0 ? \"base64:\" : global::System.Convert.ToBase64String({valueExpr}));");
                 break;
 
             case "System.Guid":
@@ -1309,10 +1343,10 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         {
             ct.ThrowIfCancellationRequested();
 
-            if (property.IsStatic)
+            if (property.IsStatic || property.IsIndexer)
                 continue;
 
-            var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public };
+            var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public, IsInitOnly: false };
             var hasGetter = property.GetMethod is { DeclaredAccessibility: Accessibility.Public };
 
             if (!hasSetter && !hasGetter)
@@ -1603,7 +1637,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.Indent();
 
         // Emit inline parsing logic
-        EmitCharInlineParsingLogic(builder, member);
+        bool useLocalForValidation = member.GetterFactory is null && HasAnyValidation(member, excludeNotNull: true);
+        if (useLocalForValidation)
+            builder.AppendLine($"{member.TypeName} _val_{member.MemberName} = default!;");
+
+        EmitCharInlineParsingLogic(builder, member, useLocalForValidation);
 
         // Emit validation checks after parsing
         if (HasAnyValidation(member, excludeNotNull: true))
@@ -1629,7 +1667,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
     }
 
-    private static void EmitCharInlineParsingLogic(SourceBuilder builder, MemberDescriptor member)
+    private static void EmitCharInlineParsingLogic(SourceBuilder builder, MemberDescriptor member, bool useLocalForValidation)
     {
         var baseType = member.BaseTypeName;
         var propertyName = member.MemberName;
@@ -1637,62 +1675,70 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         switch (baseType)
         {
             case "string":
-                builder.AppendLine($"instance.{propertyName} = text;");
+                if (useLocalForValidation)
+                {
+                    builder.AppendLine($"_val_{propertyName} = text;");
+                    builder.AppendLine($"instance.{propertyName} = _val_{propertyName};");
+                }
+                else
+                {
+                    builder.AppendLine($"instance.{propertyName} = text;");
+                }
                 break;
 
             case "int":
             case "System.Int32":
-                EmitCharNumericParsing(builder, member, "TryParseInt32");
+                EmitCharNumericParsing(builder, member, "TryParseInt32", useLocalForValidation);
                 break;
 
             case "long":
             case "System.Int64":
-                EmitCharNumericParsing(builder, member, "TryParseInt64");
+                EmitCharNumericParsing(builder, member, "TryParseInt64", useLocalForValidation);
                 break;
 
             case "short":
             case "System.Int16":
-                EmitCharNumericParsing(builder, member, "TryParseInt16");
+                EmitCharNumericParsing(builder, member, "TryParseInt16", useLocalForValidation);
                 break;
 
             case "byte":
             case "System.Byte":
-                EmitCharNumericParsing(builder, member, "TryParseByte");
+                EmitCharNumericParsing(builder, member, "TryParseByte", useLocalForValidation);
                 break;
 
             case "uint":
             case "System.UInt32":
-                EmitCharNumericParsing(builder, member, "TryParseUInt32");
+                EmitCharNumericParsing(builder, member, "TryParseUInt32", useLocalForValidation);
                 break;
 
             case "ulong":
             case "System.UInt64":
-                EmitCharNumericParsing(builder, member, "TryParseUInt64");
+                EmitCharNumericParsing(builder, member, "TryParseUInt64", useLocalForValidation);
                 break;
 
             case "ushort":
             case "System.UInt16":
-                EmitCharNumericParsing(builder, member, "TryParseUInt16");
+                EmitCharNumericParsing(builder, member, "TryParseUInt16", useLocalForValidation);
                 break;
 
             case "sbyte":
             case "System.SByte":
-                EmitCharNumericParsing(builder, member, "TryParseSByte");
+                EmitCharNumericParsing(builder, member, "TryParseSByte", useLocalForValidation);
                 break;
 
             case "decimal":
             case "System.Decimal":
-                EmitCharNumericParsing(builder, member, "TryParseDecimal");
+                EmitCharNumericParsing(builder, member, "TryParseDecimal", useLocalForValidation);
                 break;
 
             case "double":
             case "System.Double":
-                EmitCharNumericParsing(builder, member, "TryParseDouble");
+                EmitCharNumericParsing(builder, member, "TryParseDouble", useLocalForValidation);
                 break;
 
             case "float":
             case "System.Single":
-                EmitCharNumericParsing(builder, member, "TryParseSingle");
+                EmitCharNumericParsing(builder, member, "TryParseSingle", useLocalForValidation);
                 break;
 
             case "bool":
@@ -1730,19 +1776,19 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 break;
 
             case "System.Half":
-                EmitCharNumericParsing(builder, member, "TryParseHalf");
+                EmitCharNumericParsing(builder, member, "TryParseHalf", useLocalForValidation);
                 break;
 
             case "System.Int128":
-                EmitCharNumericParsing(builder, member, "TryParseInt128");
+                EmitCharNumericParsing(builder, member, "TryParseInt128", useLocalForValidation);
                 break;
 
             case "System.UInt128":
-                EmitCharNumericParsing(builder, member, "TryParseUInt128");
+                EmitCharNumericParsing(builder, member, "TryParseUInt128", useLocalForValidation);
                 break;
 
             case "System.Numerics.BigInteger":
-                EmitCharNumericParsing(builder, member, "TryParseBigInteger");
+                EmitCharNumericParsing(builder, member, "TryParseBigInteger", useLocalForValidation);
                 break;
 
             case "System.Uri":
@@ -1763,6 +1809,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
                 {
                     EmitSpanParsableParsing(builder, member, isByte: false);
                 }
+                else if (useLocalForValidation)
+                {
+                    builder.AppendLine($"_val_{propertyName} = new string(span);");
+                    builder.AppendLine($"instance.{propertyName} = _val_{propertyName};");
+                }
                 else
                 {
                     builder.AppendLine($"instance.{propertyName} = new string(span);");
@@ -1771,37 +1822,34 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         }
     }
 
-    private static void EmitCharNumericParsing(SourceBuilder builder, MemberDescriptor member, string parseMethod)
+    private static void EmitCharNumericParsing(SourceBuilder builder, MemberDescriptor member, string parseMethod, bool useLocalForValidation)
     {
         var propertyName = member.MemberName;
         var indexField = $"_{propertyName}Index";
         var isNullable = member.IsNullable;
         var baseType = member.BaseTypeName;
 
-        // For floating-point types (decimal, double, float), use culture-aware parsing
-        if (baseType is "decimal" or "System.Decimal")
+        string tryCondition = baseType switch
         {
-            builder.AppendLine($"if (column.TryParseDecimal(out var parsed_{propertyName}, _culture))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else if (baseType is "double" or "System.Double")
+            "decimal" or "System.Decimal" => $"column.TryParseDecimal(out var parsed_{propertyName}, _culture)",
+            "double" or "System.Double" => $"column.TryParseDouble(out var parsed_{propertyName}, _culture)",
+            "float" or "System.Single" => $"column.TryParseSingle(out var parsed_{propertyName}, _culture)",
+            "System.Half" or "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger" => $"column.{parseMethod}(out var parsed_{propertyName}, _culture)",
+            _ => $"column.{parseMethod}(out var parsed_{propertyName})"
+        };
+
+        builder.AppendLine($"if ({tryCondition})");
+        if (useLocalForValidation)
         {
-            builder.AppendLine($"if (column.TryParseDouble(out var parsed_{propertyName}, _culture))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else if (baseType is "float" or "System.Single")
-        {
-            builder.AppendLine($"if (column.TryParseSingle(out var parsed_{propertyName}, _culture))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
-        }
-        else if (baseType is "System.Half" or "System.Int128" or "System.UInt128" or "System.Numerics.BigInteger")
-        {
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}, _culture))");
-            builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine($"_val_{propertyName} = parsed_{propertyName};");
+            builder.AppendLine($"instance.{propertyName} = parsed_{propertyName};");
+            builder.Unindent();
+            builder.AppendLine("}");
         }
         else
         {
-            builder.AppendLine($"if (column.{parseMethod}(out var parsed_{propertyName}))");
             builder.AppendLine($"    instance.{propertyName} = parsed_{propertyName};");
         }
         if (!isNullable)
@@ -2136,9 +2184,11 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine("}");
         }
 
+        string memberExpr = member.GetterFactory is null ? $"_val_{member.MemberName}" : $"instance.{member.MemberName}";
+
         if (member.Validation.NotEmpty)
         {
-            builder.AppendLine($"if (!span.IsEmpty && string.IsNullOrWhiteSpace(instance.{member.MemberName}))");
+            builder.AppendLine($"if (!span.IsEmpty && string.IsNullOrWhiteSpace({memberExpr}))");
             builder.AppendLine("{");
             builder.Indent();
             EmitCharAddValidationError(builder, member, "NotEmpty", "Value must not be empty or whitespace");
@@ -2149,7 +2199,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         if (member.Validation.MaxLength >= 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length > {member.Validation.MaxLength})");
+            builder.AppendLine($"if ({memberExpr} != null && {memberExpr}.Length > {member.Validation.MaxLength})");
             builder.AppendLine("{");
             builder.Indent();
             EmitCharAddValidationError(builder, member, "MaxLength", $"Value exceeds maximum length of {member.Validation.MaxLength}");
@@ -2160,7 +2210,7 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         if (member.Validation.MinLength >= 0)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && instance.{member.MemberName}.Length < {member.Validation.MinLength})");
+            builder.AppendLine($"if ({memberExpr} != null && {memberExpr}.Length < {member.Validation.MinLength})");
             builder.AppendLine("{");
             builder.Indent();
             EmitCharAddValidationError(builder, member, "MinLength", $"Value is shorter than minimum length of {member.Validation.MinLength}");
@@ -2171,26 +2221,25 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
 
         if (member.Validation.HasRange)
         {
-            var valueExpr = $"instance.{member.MemberName}";
-            var conditions = new List<string>();
-            if (member.Validation.HasRangeMin)
-                conditions.Add($"{valueExpr} < {member.Validation.FormatRangeMinLiteral(member.BaseTypeName)}");
-            if (member.Validation.HasRangeMax)
-                conditions.Add($"{valueExpr} > {member.Validation.FormatRangeMaxLiteral(member.BaseTypeName)}");
-
-            builder.AppendLine($"if (!span.IsEmpty && ({string.Join(" || ", conditions)}))");
-            builder.AppendLine("{");
-            builder.Indent();
-            var rangeMsg = member.Validation.FormatRangeMessage();
-            EmitCharAddValidationError(builder, member, "Range", rangeMsg);
-            builder.AppendLine("valid = false;");
-            builder.Unindent();
-            builder.AppendLine("}");
+            var valueExpr = memberExpr;
+            if (member.Validation.BuildRangeViolationCondition(valueExpr, member.BaseTypeName) is { } rangeCondition)
+            {
+                builder.AppendLine(rangeCondition == "true"
+                    ? "if (!span.IsEmpty)"
+                    : $"if (!span.IsEmpty && ({rangeCondition}))");
+                builder.AppendLine("{");
+                builder.Indent();
+                var rangeMsg = member.Validation.FormatRangeMessage();
+                EmitCharAddValidationError(builder, member, "Range", rangeMsg);
+                builder.AppendLine("valid = false;");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
         }
 
         if (member.Validation.Pattern != null)
         {
-            builder.AppendLine($"if (instance.{member.MemberName} != null && !_pattern_{member.MemberName}.IsMatch(instance.{member.MemberName}))");
+            builder.AppendLine($"if ({memberExpr} != null && !_pattern_{member.MemberName}.IsMatch({memberExpr}))");
             builder.AppendLine("{");
             builder.Indent();
             EmitCharAddValidationError(builder, member, "Pattern", "Value does not match pattern");
@@ -2459,9 +2508,9 @@ public sealed class CsvRecordBinderGenerator : IIncrementalGenerator
         if (baseType is "byte[]" or "System.Byte[]")
         {
             if (isAsync)
-                builder.AppendLine($"await writer.WriteFieldAsync(global::System.Convert.ToBase64String({valueExpr}), cancellationToken).ConfigureAwait(false);");
+                builder.AppendLine($"await writer.WriteBase64FieldAsync({valueExpr}, cancellationToken).ConfigureAwait(false);");
             else
-                builder.AppendLine($"writer.WriteField(global::System.Convert.ToBase64String({valueExpr}));");
+                builder.AppendLine($"writer.WriteBase64Field({valueExpr});");
             return;
         }
 

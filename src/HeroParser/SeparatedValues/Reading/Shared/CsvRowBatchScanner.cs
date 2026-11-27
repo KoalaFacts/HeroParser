@@ -80,8 +80,8 @@ internal readonly struct CsvRowBatchScanner(CsvReadOptions options)
     {
         var capabilities = HardwareCapabilities.Current;
         return options.UseSimdIfAvailable
-            && options.Delimiter < 0x80
-            && options.Quote < 0x80
+            && options.Delimiter > 0 && options.Delimiter < 0x80
+            && options.Quote > 0 && options.Quote < 0x80
             && !options.EscapeCharacter.HasValue
             && (capabilities.Avx512BWIsSupported
                 || capabilities.Avx2IsSupported
@@ -427,10 +427,10 @@ internal readonly struct CsvRowBatchScanner(CsvReadOptions options)
 
             if (AdvSimd.IsSupported)
             {
-                var lo = Vector128.LoadUnsafe(ref source);
-                var hi = Vector128.LoadUnsafe(ref Unsafe.Add(ref source, 8));
-                return AdvSimd.ExtractNarrowingSaturateUnsignedUpper(
-                    AdvSimd.ExtractNarrowingSaturateUnsignedLower(lo), hi);
+                var lo = Vector128.LoadUnsafe(ref Unsafe.As<short, ushort>(ref source));
+                var hi = Vector128.LoadUnsafe(ref Unsafe.Add(ref Unsafe.As<short, ushort>(ref source), 8));
+                return AdvSimd.ExtractNarrowingSaturateUpper(
+                    AdvSimd.ExtractNarrowingSaturateLower(lo), hi);
             }
 
             var loU = Vector128.LoadUnsafe(ref Unsafe.As<short, ushort>(ref source));

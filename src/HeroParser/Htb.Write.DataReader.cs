@@ -30,54 +30,137 @@ public static partial class Htb
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(stream);
 
-        options ??= HtbWriteOptions.Default;
-        options.Validate();
-
-        HtbSchema resolvedSchema = ResolveDataReaderSchema(reader, schema);
-        int colCount = resolvedSchema.Columns.Count;
-        int maskLen = (colCount + 7) / 8;
-
-        using var writer = new HtbStreamWriter(stream, options, leaveOpen);
-        writer.WriteHeader(resolvedSchema);
-
-        byte[]? rented = null;
-        Span<byte> mask = maskLen <= 128
-            ? stackalloc byte[maskLen]
-            : (rented = ArrayPool<byte>.Shared.Rent(maskLen)).AsSpan(0, maskLen);
-        DataReaderColumnPlan plan = default;
+        bool streamOwnedByWriter = false;
         try
         {
-            while (reader.Read())
+            options ??= HtbWriteOptions.Default;
+            options.Validate();
+
+            HtbSchema resolvedSchema = ResolveDataReaderSchema(reader, schema);
+            int colCount = resolvedSchema.Columns.Count;
+            int maskLen = (colCount + 7) / 8;
+
+            using var writer = new HtbStreamWriter(stream, options, leaveOpen);
+            streamOwnedByWriter = true;
+            writer.WriteHeader(resolvedSchema);
+
+            byte[]? rented = null;
+            Span<byte> mask = maskLen <= 128
+                ? stackalloc byte[maskLen]
+                : (rented = ArrayPool<byte>.Shared.Rent(maskLen)).AsSpan(0, maskLen);
+            using var rowStage = new MemoryStream();
+            using var rowWriter = new HtbStreamWriter(rowStage, HtbWriteOptions.Default, leaveOpen: true);
+            DataReaderColumnPlan plan = default;
+            long recordIndex = 0;
+            try
             {
-                if (!plan.IsInitialized)
-                    plan = new DataReaderColumnPlan(reader);
-
-                writer.IncrementRecordCount();
-                mask.Clear();
-
-                for (int i = 0; i < colCount; i++)
+                while (reader.Read())
                 {
-                    if (reader.IsDBNull(i))
-                        mask[i / 8] |= (byte)(1 << (i % 8));
+                    if (!plan.IsInitialized)
+                        plan = new DataReaderColumnPlan(reader);
+
+                    mask.Clear();
+                    rowWriter.ResetBuffer();
+                    rowStage.SetLength(0);
+                    if (options.MaxOutputSize is { } maxOutputSize)
+                    {
+                        long remainingForPayload = maxOutputSize - writer.BytesWritten - maskLen;
+                        if (remainingForPayload < 0)
+                            throw new HtbException(HtbErrorCode.LimitExceeded, "MaxOutputSize limit exceeded.");
+                        rowWriter.SetMaxOutputSize(remainingForPayload);
+                    }
+
+                    int failedOrdinal = -1;
+                    try
+                    {
+                        // Read each column in strictly forward ordinal order so CommandBehavior.SequentialAccess readers succeed.
+                        for (int i = 0; i < colCount; i++)
+                        {
+                            failedOrdinal = i;
+                            if (reader.IsDBNull(i))
+                            {
+                                if (!resolvedSchema.Columns[i].IsNullable)
+                                {
+                                    throw new HtbException(
+                                        HtbErrorCode.SerializationError,
+                                        $"Column '{resolvedSchema.Columns[i].Name}' is not nullable but DataReader returned null.");
+                                }
+                                mask[i / 8] |= (byte)(1 << (i % 8));
+                            }
+                            else
+                            {
+                                WritePlannedColumnValue(reader, i, plan[i], rowWriter, resolvedSchema.Columns[i], ref mask[i / 8]);
+                            }
+                        }
+
+                        failedOrdinal = -1;
+                        rowWriter.Flush();
+                    }
+                    catch (Exception ex) when (
+                        options.OnError is not null
+                        && ex is not (OutOfMemoryException or OperationCanceledException)
+                        && ex is not HtbException { ErrorCode: HtbErrorCode.LimitExceeded })
+                    {
+                        rowWriter.ResetBuffer();
+                        rowStage.SetLength(0);
+                        HtbColumn? failedColumn = failedOrdinal >= 0 ? resolvedSchema.Columns[failedOrdinal] : null;
+                        var ctx = new HtbSerializeErrorContext
+                        {
+                            RecordIndex = recordIndex,
+                            MemberName = failedColumn?.Name,
+                            TargetType = failedColumn is not null ? GetHtbColumnClrType(failedColumn.DataType) : null
+                        };
+                        if (options.OnError(ctx, ex) == HtbSerializeErrorAction.SkipRow)
+                        {
+                            recordIndex++;
+                            continue;
+                        }
+                        throw;
+                    }
+
+                    int stagedLen = rowStage.TryGetBuffer(out ArraySegment<byte> stagedBytes) ? stagedBytes.Count : 0;
+                    writer.EnsureCanWriteBytes((long)maskLen + stagedLen);
+                    writer.IncrementRecordCount();
+                    writer.WriteMask(mask);
+                    if (stagedLen > 0)
+                    {
+                        writer.WriteRawBytes(stagedBytes.AsSpan());
+                    }
+                    recordIndex++;
                 }
 
-                writer.WriteMask(mask);
-                for (int i = 0; i < colCount; i++)
-                {
-                    if ((mask[i / 8] & (1 << (i % 8))) != 0)
-                        continue;
-
-                    WritePlannedColumnValue(reader, i, plan[i], writer, resolvedSchema.Columns[i].DataType);
-                }
+                writer.Flush();
             }
-
-            writer.Flush();
+            finally
+            {
+                if (rented is not null)
+                    ArrayPool<byte>.Shared.Return(rented);
+            }
         }
         finally
         {
-            if (rented is not null)
-                ArrayPool<byte>.Shared.Return(rented);
+            if (!leaveOpen && !streamOwnedByWriter)
+                stream.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Serializes rows from an <see cref="IDataReader"/> into an in-memory HTB byte array without reflection.
+    /// </summary>
+    /// <param name="reader">The source data reader providing columns and rows.</param>
+    /// <param name="options">Optional HTB write options; defaults to <see cref="HtbWriteOptions.Default"/>.</param>
+    /// <param name="schema">Optional explicit HTB schema; inferred from <paramref name="reader"/> when <see langword="null"/>.</param>
+    /// <returns>The generated HTB binary payload.</returns>
+    public static byte[] WriteFromDataReaderToBytes(
+        IDataReader reader,
+        HtbWriteOptions? options = null,
+        HtbSchema? schema = null)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        using var ms = new MemoryStream();
+        WriteFromDataReader(reader, ms, options, schema, leaveOpen: true);
+        return ms.ToArray();
     }
 
     /// <summary>
@@ -120,58 +203,133 @@ public static partial class Htb
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(stream);
 
-        options ??= HtbWriteOptions.Default;
-        options.Validate();
-
-        HtbSchema resolvedSchema = ResolveDataReaderSchema(reader, schema);
-        int colCount = resolvedSchema.Columns.Count;
-        int maskLen = (colCount + 7) / 8;
-
-        var writer = new HtbStreamWriter(stream, options, leaveOpen);
-        await using (writer.ConfigureAwait(false))
+        bool streamOwnedByWriter = false;
+        try
         {
-            await writer.WriteHeaderAsync(resolvedSchema, cancellationToken).ConfigureAwait(false);
+            options ??= HtbWriteOptions.Default;
+            options.Validate();
 
-            byte[] mask = ArrayPool<byte>.Shared.Rent(maskLen);
-            DataReaderColumnPlan plan = default;
-            try
+            bool hasRow = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+            HtbSchema resolvedSchema = ResolveDataReaderSchema(reader, schema);
+            int colCount = resolvedSchema.Columns.Count;
+            int maskLen = (colCount + 7) / 8;
+
+            var writer = new HtbStreamWriter(stream, options, leaveOpen);
+            streamOwnedByWriter = true;
+            await using (writer.ConfigureAwait(false))
             {
-                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                await writer.WriteHeaderAsync(resolvedSchema, cancellationToken).ConfigureAwait(false);
+
+                byte[] mask = ArrayPool<byte>.Shared.Rent(maskLen);
+                var rowStage = new MemoryStream();
+                await using (rowStage.ConfigureAwait(false))
                 {
-                    if (!plan.IsInitialized)
-                        plan = new DataReaderColumnPlan(reader);
-
-                    writer.IncrementRecordCount();
-                    Array.Clear(mask, 0, maskLen);
-
-                    for (int i = 0; i < colCount; i++)
+                    var rowWriter = new HtbStreamWriter(rowStage, HtbWriteOptions.Default, leaveOpen: true);
+                    await using (rowWriter.ConfigureAwait(false))
                     {
-                        if (await reader.IsDBNullAsync(i, cancellationToken).ConfigureAwait(false))
-                            mask[i / 8] |= (byte)(1 << (i % 8));
-                    }
+                        bool useAsyncFieldValues = DataReaderColumnPlan.HasAsyncFieldValueOverride(reader);
+                        DataReaderColumnPlan plan = default;
+                        long recordIndex = 0;
+                        try
+                        {
+                            if (hasRow)
+                            {
+                                do
+                                {
+                                    if (!plan.IsInitialized)
+                                        plan = new DataReaderColumnPlan(reader);
 
-                    await writer.WriteMaskAsync(mask.AsMemory(0, maskLen), cancellationToken).ConfigureAwait(false);
-                    for (int i = 0; i < colCount; i++)
-                    {
-                        if ((mask[i / 8] & (1 << (i % 8))) != 0)
-                            continue;
+                                    Array.Clear(mask, 0, maskLen);
+                                    rowWriter.ResetBuffer();
+                                    rowStage.SetLength(0);
+                                    if (options.MaxOutputSize is { } maxOutputSize)
+                                    {
+                                        long remainingForPayload = maxOutputSize - writer.BytesWritten - maskLen;
+                                        if (remainingForPayload < 0)
+                                            throw new HtbException(HtbErrorCode.LimitExceeded, "MaxOutputSize limit exceeded.");
+                                        rowWriter.SetMaxOutputSize(remainingForPayload);
+                                    }
 
-                        await WritePlannedColumnValueAsync(
-                            reader,
-                            i,
-                            plan[i],
-                            writer,
-                            resolvedSchema.Columns[i].DataType,
-                            cancellationToken).ConfigureAwait(false);
+                                    int failedOrdinal = -1;
+                                    try
+                                    {
+                                        // Read each column in strictly forward ordinal order so CommandBehavior.SequentialAccess readers succeed.
+                                        for (int i = 0; i < colCount; i++)
+                                        {
+                                            failedOrdinal = i;
+                                            if (await reader.IsDBNullAsync(i, cancellationToken).ConfigureAwait(false))
+                                            {
+                                                if (!resolvedSchema.Columns[i].IsNullable)
+                                                {
+                                                    throw new HtbException(
+                                                        HtbErrorCode.SerializationError,
+                                                        $"Column '{resolvedSchema.Columns[i].Name}' is not nullable but DataReader returned null.");
+                                                }
+                                                mask[i / 8] |= (byte)(1 << (i % 8));
+                                            }
+                                            else if (useAsyncFieldValues)
+                                            {
+                                                await WritePlannedColumnValueAsync(reader, i, plan[i], rowWriter, resolvedSchema.Columns[i], mask, cancellationToken).ConfigureAwait(false);
+                                            }
+                                            else
+                                            {
+                                                WritePlannedColumnValue(reader, i, plan[i], rowWriter, resolvedSchema.Columns[i], ref mask[i / 8]);
+                                            }
+                                        }
+
+                                        failedOrdinal = -1;
+                                        rowWriter.Flush();
+                                    }
+                                    catch (Exception ex) when (
+                                        options.OnError is not null
+                                        && ex is not (OutOfMemoryException or OperationCanceledException)
+                                        && ex is not HtbException { ErrorCode: HtbErrorCode.LimitExceeded })
+                                    {
+                                        rowWriter.ResetBuffer();
+                                        rowStage.SetLength(0);
+                                        HtbColumn? failedColumn = failedOrdinal >= 0 ? resolvedSchema.Columns[failedOrdinal] : null;
+                                        var ctx = new HtbSerializeErrorContext
+                                        {
+                                            RecordIndex = recordIndex,
+                                            MemberName = failedColumn?.Name,
+                                            TargetType = failedColumn is not null ? GetHtbColumnClrType(failedColumn.DataType) : null
+                                        };
+                                        if (options.OnError(ctx, ex) == HtbSerializeErrorAction.SkipRow)
+                                        {
+                                            recordIndex++;
+                                            continue;
+                                        }
+                                        throw;
+                                    }
+
+                                    int stagedLen = rowStage.TryGetBuffer(out ArraySegment<byte> stagedBytes) ? stagedBytes.Count : 0;
+                                    writer.EnsureCanWriteBytes((long)maskLen + stagedLen);
+                                    writer.IncrementRecordCount();
+                                    await writer.WriteMaskAsync(mask.AsMemory(0, maskLen), cancellationToken).ConfigureAwait(false);
+                                    if (stagedLen > 0)
+                                    {
+                                        await writer.WriteRawBytesAsync(stagedBytes.AsMemory(), cancellationToken).ConfigureAwait(false);
+                                    }
+                                    recordIndex++;
+                                }
+                                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false));
+                            }
+
+                            await writer.FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            ArrayPool<byte>.Shared.Return(mask);
+                        }
                     }
                 }
-
-                await writer.FlushInternalAsync(cancellationToken).ConfigureAwait(false);
             }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(mask);
-            }
+        }
+        finally
+        {
+            if (!leaveOpen && !streamOwnedByWriter)
+                await stream.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -192,6 +350,7 @@ public static partial class Htb
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(reader);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using (stream.ConfigureAwait(false))
@@ -227,6 +386,38 @@ public static partial class Htb
 
         return new HtbSchema(columns);
     }
+
+    private static Type GetHtbColumnClrType(HtbDataType dataType) => dataType switch
+    {
+        HtbDataType.Int32 => typeof(int),
+        HtbDataType.Int64 => typeof(long),
+        HtbDataType.Float => typeof(float),
+        HtbDataType.Double => typeof(double),
+        HtbDataType.Decimal => typeof(decimal),
+        HtbDataType.Boolean => typeof(bool),
+        HtbDataType.DateTime => typeof(DateTime),
+        HtbDataType.String => typeof(string),
+        HtbDataType.Guid => typeof(Guid),
+        HtbDataType.FloatArray => typeof(float[]),
+        HtbDataType.DateTimeOffset => typeof(DateTimeOffset),
+        HtbDataType.DateOnly => typeof(DateOnly),
+        HtbDataType.TimeOnly => typeof(TimeOnly),
+        HtbDataType.TimeSpan => typeof(TimeSpan),
+        HtbDataType.Int16 => typeof(short),
+        HtbDataType.UInt16 => typeof(ushort),
+        HtbDataType.Byte => typeof(byte),
+        HtbDataType.SByte => typeof(sbyte),
+        HtbDataType.UInt32 => typeof(uint),
+        HtbDataType.UInt64 => typeof(ulong),
+        HtbDataType.Char => typeof(char),
+        HtbDataType.Half => typeof(Half),
+        HtbDataType.Int128 => typeof(Int128),
+        HtbDataType.UInt128 => typeof(UInt128),
+        HtbDataType.ByteArray => typeof(byte[]),
+        HtbDataType.BigInteger => typeof(BigInteger),
+        HtbDataType.Uri => typeof(Uri),
+        _ => typeof(object)
+    };
 
     private static HtbDataType MapHtbDataType(Type type)
     {
@@ -290,9 +481,10 @@ public static partial class Htb
         int ordinal,
         DataReaderColumnKind kind,
         HtbStreamWriter writer,
-        HtbDataType dataType)
+        HtbColumn column,
+        ref byte maskByte)
     {
-        switch (dataType, kind)
+        switch (column.DataType, kind)
         {
             case (HtbDataType.Int32, DataReaderColumnKind.Int32):
                 writer.WriteInt32(reader.GetInt32(ordinal));
@@ -332,128 +524,99 @@ public static partial class Htb
                 return;
             default:
                 object? val = reader.GetValue(ordinal);
-                if (val is not null and not DBNull)
-                    WriteColumnValue(writer, dataType, val);
+                if (val is null or DBNull)
+                {
+                    if (!column.IsNullable)
+                    {
+                        throw new HtbException(
+                            HtbErrorCode.SerializationError,
+                            $"Column '{column.Name}' is not nullable but DataReader returned null.");
+                    }
+                    maskByte |= (byte)(1 << (ordinal % 8));
+                    return;
+                }
+                WriteColumnValue(writer, column.DataType, val);
                 return;
         }
     }
 
     private static async ValueTask WritePlannedColumnValueAsync(
-        IDataRecord reader,
+        DbDataReader reader,
         int ordinal,
         DataReaderColumnKind kind,
         HtbStreamWriter writer,
-        HtbDataType dataType,
+        HtbColumn column,
+        byte[] mask,
         CancellationToken cancellationToken)
     {
-        if (dataType == HtbDataType.String && kind == DataReaderColumnKind.String)
-        {
-            await writer.WriteStringAsync(reader.GetString(ordinal), cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (!writer.HasBufferSpace(16))
-            await writer.FlushInternalAsync(cancellationToken).ConfigureAwait(false);
-
-        switch (dataType, kind)
+        switch (column.DataType, kind)
         {
             case (HtbDataType.Int32, DataReaderColumnKind.Int32):
-                writer.WriteInt32(reader.GetInt32(ordinal));
+                writer.WriteInt32(await reader.GetFieldValueAsync<int>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Int64, DataReaderColumnKind.Int64):
-                writer.WriteInt64(reader.GetInt64(ordinal));
+                writer.WriteInt64(await reader.GetFieldValueAsync<long>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Int16, DataReaderColumnKind.Int16):
-                writer.WriteInt16(reader.GetInt16(ordinal));
+                writer.WriteInt16(await reader.GetFieldValueAsync<short>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Byte, DataReaderColumnKind.Byte):
-                writer.WriteByte(reader.GetByte(ordinal));
+                writer.WriteByte(await reader.GetFieldValueAsync<byte>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Float, DataReaderColumnKind.Single):
-                writer.WriteFloat(reader.GetFloat(ordinal));
+                writer.WriteFloat(await reader.GetFieldValueAsync<float>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Double, DataReaderColumnKind.Double):
-                writer.WriteDouble(reader.GetDouble(ordinal));
+                writer.WriteDouble(await reader.GetFieldValueAsync<double>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Decimal, DataReaderColumnKind.Decimal):
-                writer.WriteDecimal(reader.GetDecimal(ordinal));
+                writer.WriteDecimal(await reader.GetFieldValueAsync<decimal>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Boolean, DataReaderColumnKind.Boolean):
-                writer.WriteBoolean(reader.GetBoolean(ordinal));
+                writer.WriteBoolean(await reader.GetFieldValueAsync<bool>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Char, DataReaderColumnKind.Char):
-                writer.WriteChar(reader.GetChar(ordinal));
+                writer.WriteChar(await reader.GetFieldValueAsync<char>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.DateTime, DataReaderColumnKind.DateTime):
-                writer.WriteDateTime(reader.GetDateTime(ordinal));
+                writer.WriteDateTime(await reader.GetFieldValueAsync<DateTime>(ordinal, cancellationToken).ConfigureAwait(false));
                 return;
             case (HtbDataType.Guid, DataReaderColumnKind.Guid):
-                writer.WriteGuid(reader.GetGuid(ordinal));
+                writer.WriteGuid(await reader.GetFieldValueAsync<Guid>(ordinal, cancellationToken).ConfigureAwait(false));
+                return;
+            case (HtbDataType.String, DataReaderColumnKind.String):
+                {
+                    string? s = await reader.GetFieldValueAsync<string?>(ordinal, cancellationToken).ConfigureAwait(false);
+                    if (s is null)
+                    {
+                        if (!column.IsNullable)
+                        {
+                            throw new HtbException(
+                                HtbErrorCode.SerializationError,
+                                $"Column '{column.Name}' is not nullable but DataReader returned null.");
+                        }
+                        mask[ordinal / 8] |= (byte)(1 << (ordinal % 8));
+                        return;
+                    }
+                    writer.WriteString(s);
+                }
                 return;
             default:
-                object? val = reader.GetValue(ordinal);
-                if (val is not null and not DBNull)
-                    await WriteColumnValueAsync(writer, dataType, val, cancellationToken).ConfigureAwait(false);
+                object? val = await reader.GetFieldValueAsync<object?>(ordinal, cancellationToken).ConfigureAwait(false);
+                if (val is null or DBNull)
+                {
+                    if (!column.IsNullable)
+                    {
+                        throw new HtbException(
+                            HtbErrorCode.SerializationError,
+                            $"Column '{column.Name}' is not nullable but DataReader returned null.");
+                    }
+                    mask[ordinal / 8] |= (byte)(1 << (ordinal % 8));
+                    return;
+                }
+                WriteColumnValue(writer, column.DataType, val);
                 return;
         }
-    }
-
-    private static async ValueTask WriteColumnValueAsync(
-        HtbStreamWriter writer,
-        HtbDataType dataType,
-        object val,
-        CancellationToken cancellationToken)
-    {
-        if (dataType == HtbDataType.ByteArray)
-        {
-            await writer.WriteByteArrayAsync(val is byte[] byteArr
-                ? byteArr
-                : Convert.FromBase64String(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty), cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (dataType == HtbDataType.BigInteger)
-        {
-            await writer.WriteBigIntegerAsync(val is BigInteger bi
-                ? bi
-                : BigInteger.Parse(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty, CultureInfo.InvariantCulture), cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (dataType == HtbDataType.Uri)
-        {
-            await writer.WriteUriAsync(val is Uri uri
-                ? uri
-                : new Uri(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty, UriKind.RelativeOrAbsolute), cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (dataType == HtbDataType.String)
-        {
-            string str = val switch
-            {
-                string s => s,
-                Uri uriVal => uriVal.OriginalString,
-                byte[] raw => Convert.ToBase64String(raw),
-                IFormattable fmt => fmt.ToString(null, CultureInfo.InvariantCulture),
-                _ => val.ToString() ?? string.Empty
-            };
-            await writer.WriteStringAsync(str, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (dataType == HtbDataType.FloatArray)
-        {
-            if (val is float[] arr)
-                await writer.WriteFloatArrayAsync(arr, cancellationToken).ConfigureAwait(false);
-            else
-                throw new HtbException(HtbErrorCode.SerializationError, $"Expected float[] for FloatArray column, got {val.GetType().Name}.");
-            return;
-        }
-
-        if (!writer.HasBufferSpace(16))
-            await writer.FlushInternalAsync(cancellationToken).ConfigureAwait(false);
-        WriteColumnValue(writer, dataType, val);
     }
 
     private static void WriteColumnValue(HtbStreamWriter writer, HtbDataType dataType, object val)
@@ -540,9 +703,17 @@ public static partial class Htb
                 writer.WriteUInt128(val is UInt128 u128 ? u128 : UInt128.Parse(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty, CultureInfo.InvariantCulture));
                 break;
             case HtbDataType.ByteArray:
-                writer.WriteByteArray(val is byte[] byteArr
-                    ? byteArr
-                    : Convert.FromBase64String(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty));
+                if (val is byte[] byteArr)
+                {
+                    writer.WriteByteArray(byteArr);
+                }
+                else
+                {
+                    string text = Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty;
+                    if (!Utf8SpanParser.TryParseBase64Chars(text.AsSpan(), out byte[]? parsedBytes))
+                        throw new FormatException($"Invalid base64 string '{text}'.");
+                    writer.WriteByteArray(parsedBytes);
+                }
                 break;
             case HtbDataType.BigInteger:
                 writer.WriteBigInteger(val is BigInteger bi ? bi : BigInteger.Parse(Convert.ToString(val, CultureInfo.InvariantCulture) ?? string.Empty, CultureInfo.InvariantCulture));
@@ -558,7 +729,7 @@ public static partial class Htb
                 {
                     string s => s,
                     Uri uriVal => uriVal.OriginalString,
-                    byte[] raw => Convert.ToBase64String(raw),
+                    byte[] raw => raw.Length == 0 ? Utf8SpanParser.EMPTY_BASE64_TOKEN : Convert.ToBase64String(raw),
                     IFormattable fmt => fmt.ToString(null, CultureInfo.InvariantCulture),
                     _ => val.ToString() ?? string.Empty
                 };

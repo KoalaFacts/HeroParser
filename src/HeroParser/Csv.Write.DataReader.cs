@@ -27,8 +27,9 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(writer);
 
+        bool effectiveWriteHeader = writeHeader && (options?.WriteHeader ?? true);
         using var csvWriter = new CsvStreamWriter(writer, options, leaveOpen);
-        WriteDataReaderRows(reader, csvWriter, writeHeader);
+        WriteDataReaderRows(reader, csvWriter, effectiveWriteHeader);
     }
 
     /// <summary>
@@ -38,7 +39,7 @@ public static partial class Csv
     /// <param name="stream">The destination writable stream.</param>
     /// <param name="options">Optional CSV formatting options; defaults to <see cref="CsvWriteOptions.Default"/>.</param>
     /// <param name="encoding">Optional text encoding; defaults to UTF-8.</param>
-    /// <param name="writeHeader">When <see langword="true"/>, emits a header row using column names from <paramref name="reader"/>.</param>
+    /// <param name="writeHeader">When <see langword="true"/> (and <see cref="CsvWriteOptions.WriteHeader"/> is <see langword="true"/>), emits a header row using column names from <paramref name="reader"/>.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, leaves <paramref name="stream"/> open after writing completes.</param>
     public static void WriteFromDataReader(
         IDataReader reader,
@@ -52,9 +53,10 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(stream);
 
         encoding ??= Encoding.UTF8;
+        bool effectiveWriteHeader = writeHeader && (options?.WriteHeader ?? true);
         using var textWriter = new StreamWriter(stream, encoding, bufferSize: 16 * 1024, leaveOpen: leaveOpen);
         using var csvWriter = new CsvStreamWriter(textWriter, options, leaveOpen: true);
-        WriteDataReaderRows(reader, csvWriter, writeHeader);
+        WriteDataReaderRows(reader, csvWriter, effectiveWriteHeader);
     }
 
     /// <summary>
@@ -64,7 +66,7 @@ public static partial class Csv
     /// <param name="reader">The data reader providing columns and rows.</param>
     /// <param name="options">Optional CSV formatting options; defaults to <see cref="CsvWriteOptions.Default"/>.</param>
     /// <param name="encoding">Optional text encoding; defaults to UTF-8.</param>
-    /// <param name="writeHeader">When <see langword="true"/>, emits a header row using column names from <paramref name="reader"/>.</param>
+    /// <param name="writeHeader">When <see langword="true"/> (and <see cref="CsvWriteOptions.WriteHeader"/> is <see langword="true"/>), emits a header row using column names from <paramref name="reader"/>.</param>
     public static void WriteFromDataReaderToFile(
         string path,
         IDataReader reader,
@@ -85,7 +87,7 @@ public static partial class Csv
     /// </summary>
     /// <param name="reader">The data reader providing columns and rows.</param>
     /// <param name="options">Optional CSV formatting options; defaults to <see cref="CsvWriteOptions.Default"/>.</param>
-    /// <param name="writeHeader">When <see langword="true"/>, emits a header row using column names from <paramref name="reader"/>.</param>
+    /// <param name="writeHeader">When <see langword="true"/> (and <see cref="CsvWriteOptions.WriteHeader"/> is <see langword="true"/>), emits a header row using column names from <paramref name="reader"/>.</param>
     /// <returns>The serialized CSV text.</returns>
     public static string WriteFromDataReaderToText(
         IDataReader reader,
@@ -94,10 +96,11 @@ public static partial class Csv
     {
         ArgumentNullException.ThrowIfNull(reader);
 
+        bool effectiveWriteHeader = writeHeader && (options?.WriteHeader ?? true);
         using var sw = new StringWriter();
         using (var csvWriter = new CsvStreamWriter(sw, options, leaveOpen: true))
         {
-            WriteDataReaderRows(reader, csvWriter, writeHeader);
+            WriteDataReaderRows(reader, csvWriter, effectiveWriteHeader);
         }
         return sw.ToString();
     }
@@ -109,7 +112,7 @@ public static partial class Csv
     /// <param name="stream">The destination writable stream.</param>
     /// <param name="options">Optional CSV formatting options; defaults to <see cref="CsvWriteOptions.Default"/>.</param>
     /// <param name="encoding">Optional text encoding; defaults to UTF-8.</param>
-    /// <param name="writeHeader">When <see langword="true"/>, emits a header row using column names from <paramref name="reader"/>.</param>
+    /// <param name="writeHeader">When <see langword="true"/> (and <see cref="CsvWriteOptions.WriteHeader"/> is <see langword="true"/>), emits a header row using column names from <paramref name="reader"/>.</param>
     /// <param name="leaveOpen">When <see langword="true"/>, leaves <paramref name="stream"/> open after writing completes.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     public static async ValueTask WriteFromDataReaderAsync(
@@ -125,10 +128,11 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(stream);
 
         encoding ??= Encoding.UTF8;
+        bool effectiveWriteHeader = writeHeader && (options?.WriteHeader ?? true);
         var csvWriter = new CsvAsyncStreamWriter(stream, options, encoding, leaveOpen);
         await using (csvWriter.ConfigureAwait(false))
         {
-            await WriteDataReaderRowsAsync(reader, csvWriter, writeHeader, cancellationToken).ConfigureAwait(false);
+            await WriteDataReaderRowsAsync(reader, csvWriter, effectiveWriteHeader, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -153,6 +157,7 @@ public static partial class Csv
         ArgumentNullException.ThrowIfNull(reader);
 
         encoding ??= Encoding.UTF8;
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -178,9 +183,15 @@ public static partial class Csv
         DataReaderColumnPlan plan = default;
         string nullValue = csvWriter.NullValue;
         string? numberFormat = csvWriter.NumberFormat;
+        int? maxRows = csvWriter.MaxRowCount;
+        int dataRowCount = 0;
 
         while (reader.Read())
         {
+            if (maxRows.HasValue && dataRowCount >= maxRows.Value)
+                throw new CsvException(CsvErrorCode.TooManyRows, $"Exceeded maximum row count of {maxRows.Value}");
+            dataRowCount++;
+
             if (!plan.IsInitialized)
                 plan = new DataReaderColumnPlan(reader);
 
@@ -261,6 +272,8 @@ public static partial class Csv
         bool writeHeader,
         CancellationToken cancellationToken)
     {
+        bool hasRow = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
         int fieldCount = reader.FieldCount;
         if (fieldCount <= 0)
             return;
@@ -272,81 +285,148 @@ public static partial class Csv
             await csvWriter.EndRowAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        DataReaderColumnPlan plan = default;
-        string nullValue = csvWriter.NullValue;
-        string? numberFormat = csvWriter.NumberFormat;
-
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        if (hasRow)
         {
-            if (!plan.IsInitialized)
-                plan = new DataReaderColumnPlan(reader);
+            bool useAsyncFieldValues = DataReaderColumnPlan.HasAsyncFieldValueOverride(reader);
+            DataReaderColumnPlan plan = default;
+            string nullValue = csvWriter.NullValue;
+            string? numberFormat = csvWriter.NumberFormat;
+            int? maxRows = csvWriter.MaxRowCount;
+            int dataRowCount = 0;
 
-            for (int i = 0; i < fieldCount; i++)
+            do
             {
-                DataReaderColumnKind kind = plan[i];
-                if (kind is not (DataReaderColumnKind.String or DataReaderColumnKind.Object) && reader.IsDBNull(i))
-                {
-                    await csvWriter.WriteFieldAsync(nullValue, cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
+                if (maxRows.HasValue && dataRowCount >= maxRows.Value)
+                    throw new CsvException(CsvErrorCode.TooManyRows, $"Exceeded maximum row count of {maxRows.Value}");
+                dataRowCount++;
 
-                switch (kind)
+                if (!plan.IsInitialized)
+                    plan = new DataReaderColumnPlan(reader);
+
+                for (int i = 0; i < fieldCount; i++)
                 {
-                    case DataReaderColumnKind.String:
+                    DataReaderColumnKind kind = plan[i];
+                    if (await reader.IsDBNullAsync(i, cancellationToken).ConfigureAwait(false))
+                    {
+                        await csvWriter.WriteFieldAsync(nullValue, cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (useAsyncFieldValues)
+                    {
+                        switch (kind)
                         {
-                            object? raw = reader.GetValue(i);
-                            if (raw is null or DBNull)
-                                await csvWriter.WriteFieldAsync(nullValue, cancellationToken).ConfigureAwait(false);
-                            else if (raw is string str)
-                                await csvWriter.WriteFieldAsync(str, cancellationToken).ConfigureAwait(false);
-                            else
-                                await csvWriter.WriteFormattedFieldAsync(raw, cancellationToken).ConfigureAwait(false);
+                            case DataReaderColumnKind.String:
+                                {
+                                    string? str = await reader.GetFieldValueAsync<string?>(i, cancellationToken).ConfigureAwait(false);
+                                    await csvWriter.WriteFieldAsync(str ?? nullValue, cancellationToken).ConfigureAwait(false);
+                                }
+                                break;
+                            case DataReaderColumnKind.Object:
+                                {
+                                    object? raw = await reader.GetFieldValueAsync<object?>(i, cancellationToken).ConfigureAwait(false);
+                                    await csvWriter.WriteFormattedFieldAsync(raw is DBNull ? null : raw, cancellationToken).ConfigureAwait(false);
+                                }
+                                break;
+                            case DataReaderColumnKind.Int32:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<int>(i, cancellationToken).ConfigureAwait(false), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Int64:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<long>(i, cancellationToken).ConfigureAwait(false), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Int16:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<short>(i, cancellationToken).ConfigureAwait(false), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Byte:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<byte>(i, cancellationToken).ConfigureAwait(false), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Single:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<float>(i, cancellationToken).ConfigureAwait(false), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Double:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<double>(i, cancellationToken).ConfigureAwait(false), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Decimal:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<decimal>(i, cancellationToken).ConfigureAwait(false), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Boolean:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<bool>(i, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.DateTime:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<DateTime>(i, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Guid:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<Guid>(i, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Char:
+                                await csvWriter.WriteFieldAsync(await reader.GetFieldValueAsync<char>(i, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+                                break;
+                            default:
+                                break;
                         }
-                        break;
-                    case DataReaderColumnKind.Object:
+                    }
+                    else
+                    {
+                        switch (kind)
                         {
-                            object? raw = reader.GetValue(i);
-                            await csvWriter.WriteFormattedFieldAsync(raw is DBNull ? null : raw, cancellationToken).ConfigureAwait(false);
+                            case DataReaderColumnKind.String:
+                                {
+                                    object? raw = reader.GetValue(i);
+                                    if (raw is null or DBNull)
+                                        await csvWriter.WriteFieldAsync(nullValue, cancellationToken).ConfigureAwait(false);
+                                    else if (raw is string str)
+                                        await csvWriter.WriteFieldAsync(str, cancellationToken).ConfigureAwait(false);
+                                    else
+                                        await csvWriter.WriteFormattedFieldAsync(raw, cancellationToken).ConfigureAwait(false);
+                                }
+                                break;
+                            case DataReaderColumnKind.Object:
+                                {
+                                    object? raw = reader.GetValue(i);
+                                    await csvWriter.WriteFormattedFieldAsync(raw is DBNull ? null : raw, cancellationToken).ConfigureAwait(false);
+                                }
+                                break;
+                            case DataReaderColumnKind.Int32:
+                                await csvWriter.WriteFieldAsync(reader.GetInt32(i), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Int64:
+                                await csvWriter.WriteFieldAsync(reader.GetInt64(i), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Int16:
+                                await csvWriter.WriteFieldAsync(reader.GetInt16(i), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Byte:
+                                await csvWriter.WriteFieldAsync(reader.GetByte(i), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Single:
+                                await csvWriter.WriteFieldAsync(reader.GetFloat(i), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Double:
+                                await csvWriter.WriteFieldAsync(reader.GetDouble(i), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Decimal:
+                                await csvWriter.WriteFieldAsync(reader.GetDecimal(i), numberFormat, cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Boolean:
+                                await csvWriter.WriteFieldAsync(reader.GetBoolean(i), cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.DateTime:
+                                await csvWriter.WriteFieldAsync(reader.GetDateTime(i), cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Guid:
+                                await csvWriter.WriteFieldAsync(reader.GetGuid(i), cancellationToken).ConfigureAwait(false);
+                                break;
+                            case DataReaderColumnKind.Char:
+                                await csvWriter.WriteFieldAsync(reader.GetChar(i), cancellationToken).ConfigureAwait(false);
+                                break;
+                            default:
+                                break;
                         }
-                        break;
-                    case DataReaderColumnKind.Int32:
-                        await csvWriter.WriteFieldAsync(reader.GetInt32(i), numberFormat, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Int64:
-                        await csvWriter.WriteFieldAsync(reader.GetInt64(i), numberFormat, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Int16:
-                        await csvWriter.WriteFieldAsync(reader.GetInt16(i), numberFormat, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Byte:
-                        await csvWriter.WriteFieldAsync(reader.GetByte(i), numberFormat, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Single:
-                        await csvWriter.WriteFieldAsync(reader.GetFloat(i), numberFormat, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Double:
-                        await csvWriter.WriteFieldAsync(reader.GetDouble(i), numberFormat, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Decimal:
-                        await csvWriter.WriteFieldAsync(reader.GetDecimal(i), numberFormat, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Boolean:
-                        await csvWriter.WriteFieldAsync(reader.GetBoolean(i), cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.DateTime:
-                        await csvWriter.WriteFieldAsync(reader.GetDateTime(i), cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Guid:
-                        await csvWriter.WriteFieldAsync(reader.GetGuid(i), cancellationToken).ConfigureAwait(false);
-                        break;
-                    case DataReaderColumnKind.Char:
-                        await csvWriter.WriteFieldAsync(reader.GetChar(i), cancellationToken).ConfigureAwait(false);
-                        break;
-                    default:
-                        break;
+                    }
                 }
+                await csvWriter.EndRowAsync(cancellationToken).ConfigureAwait(false);
             }
-            await csvWriter.EndRowAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false));
         }
 
         await csvWriter.FlushAsync(cancellationToken).ConfigureAwait(false);

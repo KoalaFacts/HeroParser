@@ -93,6 +93,11 @@ public static partial class Jsonl
     {
         JsonlReadOptions effective = options ?? JsonlReadOptions.Default;
         effective.Validate();
+        JsonSerializerOptions serializerOptions = JsonLines.BigIntegerJsonConverter.ResolveOptions(effective.SerializerOptions);
+        JsonLines.Reading.Binders.IJsonlSourceBinder<byte, T>? binder = null;
+        if (effective.SerializerOptions is null)
+            JsonLines.Reading.Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out binder);
+        JsonLines.Reading.Binders.JsonlRecordBinderFactory.TryGetValidator<T>(out var validator);
         long recordsRead = 0;
         long recordIndex = 0;
         int skipped = 0;
@@ -108,19 +113,58 @@ public static partial class Jsonl
                 T? value;
                 try
                 {
-                    value = JsonSerializer.Deserialize<T>(line.Utf8.Span, effective.SerializerOptions);
-                }
-                catch (Exception ex)
-                {
-                    if (effective.OnError is not null)
+                    ReadOnlySpan<byte> span = line.Utf8.Span;
+                    if (binder is not null && default(T) is null && new JsonLines.Reading.JsonlValidationHelper().IsJsonNullLiteral(span))
                     {
-                        var ctx = BuildErrorContext<T>(in line, recordIndex);
-                        if (effective.OnError(ctx, ex) == JsonlDeserializeErrorAction.SkipRecord)
+                        value = default;
+                    }
+                    else if (binder is JsonLines.Reading.Binders.IJsonlTryByteBinder<T> tryBinder && tryBinder.TryBind(span, out var bound))
+                    {
+                        value = bound;
+                    }
+                    else if (binder is not null && binder is not JsonLines.Reading.Binders.IJsonlTryByteBinder<T>)
+                    {
+                        value = binder.Bind(span);
+                    }
+                    else
+                    {
+                        value = JsonSerializer.Deserialize<T>(span, serializerOptions);
+                        if (value is not null)
                         {
-                            recordIndex++;
-                            continue;
+                            JsonlReadContractValidator.Instance.ValidateDeserialized(
+                                value,
+                                span,
+                                JsonlReadContractValidator.TryGetTypeInfo<T>(serializerOptions),
+                                validator,
+                                (int)Math.Min(line.LineNumber, int.MaxValue),
+                                effective.ValidationMode);
                         }
                     }
+                }
+                catch (Exception ex) when (effective.OnError is not null && ex is not (OutOfMemoryException or OperationCanceledException))
+                {
+                    Exception reported = ex is Validation.ValidationException vex
+                        ? new JsonlValidationHelper().AttachLineNumber(vex, line.LineNumber)
+                        : ex;
+                    var ctx = BuildErrorContext<T>(in line, recordIndex);
+                    if (effective.OnError(ctx, reported) == JsonlDeserializeErrorAction.SkipRecord)
+                    {
+                        recordIndex++;
+                        continue;
+                    }
+                    throw new JsonlException(JsonlErrorCode.DeserializeError, $"Failed to deserialize line: {reported.Message}", line.LineNumber, reported);
+                }
+                catch (Validation.ValidationException vex)
+                {
+                    if (effective.ValidationMode == Validation.ValidationMode.Lenient)
+                    {
+                        recordIndex++;
+                        continue;
+                    }
+                    throw new JsonlValidationHelper().AttachLineNumber(vex, line.LineNumber);
+                }
+                catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException or JsonlException))
+                {
                     throw new JsonlException(JsonlErrorCode.DeserializeError, $"Failed to deserialize line: {ex.Message}", line.LineNumber, ex);
                 }
 
@@ -145,6 +189,7 @@ public static partial class Jsonl
     {
         JsonlReadOptions effective = options ?? JsonlReadOptions.Default;
         effective.Validate();
+        JsonLines.Reading.Binders.JsonlRecordBinderFactory.TryGetValidator<T>(out var validator);
         long recordsRead = 0;
         long recordIndex = 0;
         int skipped = 0;
@@ -160,19 +205,43 @@ public static partial class Jsonl
                 T? value;
                 try
                 {
-                    value = JsonSerializer.Deserialize(line.Utf8.Span, typeInfo);
-                }
-                catch (Exception ex)
-                {
-                    if (effective.OnError is not null)
+                    ReadOnlySpan<byte> span = line.Utf8.Span;
+                    value = JsonSerializer.Deserialize(span, typeInfo);
+                    if (value is not null)
                     {
-                        var ctx = BuildErrorContext<T>(in line, recordIndex);
-                        if (effective.OnError(ctx, ex) == JsonlDeserializeErrorAction.SkipRecord)
-                        {
-                            recordIndex++;
-                            continue;
-                        }
+                        JsonlReadContractValidator.Instance.ValidateDeserialized(
+                            value,
+                            span,
+                            typeInfo,
+                            validator,
+                            (int)Math.Min(line.LineNumber, int.MaxValue),
+                            effective.ValidationMode);
                     }
+                }
+                catch (Exception ex) when (effective.OnError is not null && ex is not (OutOfMemoryException or OperationCanceledException))
+                {
+                    Exception reported = ex is Validation.ValidationException vex
+                        ? new JsonlValidationHelper().AttachLineNumber(vex, line.LineNumber)
+                        : ex;
+                    var ctx = BuildErrorContext<T>(in line, recordIndex);
+                    if (effective.OnError(ctx, reported) == JsonlDeserializeErrorAction.SkipRecord)
+                    {
+                        recordIndex++;
+                        continue;
+                    }
+                    throw new JsonlException(JsonlErrorCode.DeserializeError, $"Failed to deserialize line: {reported.Message}", line.LineNumber, reported);
+                }
+                catch (Validation.ValidationException vex)
+                {
+                    if (effective.ValidationMode == Validation.ValidationMode.Lenient)
+                    {
+                        recordIndex++;
+                        continue;
+                    }
+                    throw new JsonlValidationHelper().AttachLineNumber(vex, line.LineNumber);
+                }
+                catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException or JsonlException))
+                {
                     throw new JsonlException(JsonlErrorCode.DeserializeError, $"Failed to deserialize line: {ex.Message}", line.LineNumber, ex);
                 }
 

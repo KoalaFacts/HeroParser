@@ -4,10 +4,12 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Globalization;
+using HeroParser.Validation;
 
 namespace HeroParser.JsonLines.Writing;
 
@@ -22,8 +24,10 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
     private readonly Utf8JsonWriter writer;
     private readonly byte[] newlineBytes;
     private readonly JsonlWriteOptions options;
+    private JsonSerializerOptions? effectiveSerializerOptions;
     private long jsonBytesCommitted;
     private long newlineBytesWritten;
+    private long recordIndex;
     private bool needsTrailingNewline;
     private bool disposed;
 
@@ -65,7 +69,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(typeInfo);
         EnforcePreWriteLimits();
-        EmitPendingNewline();
+        long currentIndex = recordIndex++;
 
         bufferWriter.Clear();
         writer.Reset(bufferWriter);
@@ -77,9 +81,13 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
-            HandleSerializeFailure(ex);
+            HandleSerializeFailure(ex, currentIndex);
             return;
         }
+
+        bool requiresEmptyObjectCheck = ValidateAotRecord(value, typeInfo, currentIndex);
+        if (requiresEmptyObjectCheck && !JsonlTypeInfoRecordValidator.IsEmptyJsonObject(bufferWriter.WrittenSpan))
+            throw JsonlTypeInfoRecordValidator.CreateUnsupportedStrictContractException(value?.GetType() ?? typeInfo.Type);
 
         CommitRecord();
     }
@@ -93,21 +101,25 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         EnforcePreWriteLimits();
-        EmitPendingNewline();
+        long currentIndex = recordIndex++;
 
         bufferWriter.Clear();
         writer.Reset(bufferWriter);
 
         try
         {
-            JsonSerializer.Serialize(writer, value, options.SerializerOptions);
+            JsonSerializer.Serialize(writer, value, GetEffectiveSerializerOptions());
             writer.Flush();
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
-            HandleSerializeFailure(ex);
+            HandleSerializeFailure(ex, currentIndex);
             return;
         }
+
+        bool requiresEmptyObjectCheck = ValidateReflectionRecord(value, currentIndex);
+        if (requiresEmptyObjectCheck && !JsonlTypeInfoRecordValidator.IsEmptyJsonObject(bufferWriter.WrittenSpan))
+            throw JsonlTypeInfoRecordValidator.CreateUnsupportedStrictContractException(value?.GetType() ?? typeof(T));
 
         CommitRecord();
     }
@@ -120,7 +132,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentNullException.ThrowIfNull(typeInfo);
         EnforcePreWriteLimits();
-        await EmitPendingNewlineAsync(cancellationToken).ConfigureAwait(false);
+        long currentIndex = recordIndex++;
 
         bufferWriter.Clear();
         writer.Reset(bufferWriter);
@@ -132,9 +144,13 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
-            HandleSerializeFailure(ex);
+            HandleSerializeFailure(ex, currentIndex);
             return;
         }
+
+        bool requiresEmptyObjectCheck = ValidateAotRecord(value, typeInfo, currentIndex);
+        if (requiresEmptyObjectCheck && !JsonlTypeInfoRecordValidator.IsEmptyJsonObject(bufferWriter.WrittenSpan))
+            throw JsonlTypeInfoRecordValidator.CreateUnsupportedStrictContractException(value?.GetType() ?? typeInfo.Type);
 
         await CommitRecordAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -148,24 +164,31 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         EnforcePreWriteLimits();
-        await EmitPendingNewlineAsync(cancellationToken).ConfigureAwait(false);
+        long currentIndex = recordIndex++;
 
         bufferWriter.Clear();
         writer.Reset(bufferWriter);
 
         try
         {
-            JsonSerializer.Serialize(writer, value, options.SerializerOptions);
+            JsonSerializer.Serialize(writer, value, GetEffectiveSerializerOptions());
             writer.Flush();
         }
         catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
         {
-            HandleSerializeFailure(ex);
+            HandleSerializeFailure(ex, currentIndex);
             return;
         }
 
+        bool requiresEmptyObjectCheck = ValidateReflectionRecord(value, currentIndex);
+        if (requiresEmptyObjectCheck && !JsonlTypeInfoRecordValidator.IsEmptyJsonObject(bufferWriter.WrittenSpan))
+            throw JsonlTypeInfoRecordValidator.CreateUnsupportedStrictContractException(value?.GetType() ?? typeof(T));
+
         await CommitRecordAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private JsonSerializerOptions GetEffectiveSerializerOptions()
+        => effectiveSerializerOptions ??= BigIntegerJsonConverter.ResolveOptions(options.SerializerOptions);
 
     /// <summary>
     /// Flushes any pending bytes (and emits a trailing newline if <see cref="JsonlWriteOptions.WriteFinalNewline"/> is set).
@@ -175,6 +198,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         if (disposed) return;
         if (options.WriteFinalNewline && needsTrailingNewline)
         {
+            EnforceMaxOutputSize(BytesWritten + newlineBytes.Length);
             stream.Write(newlineBytes, 0, newlineBytes.Length);
             newlineBytesWritten += newlineBytes.Length;
             needsTrailingNewline = false;
@@ -191,6 +215,7 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         if (disposed) return;
         if (options.WriteFinalNewline && needsTrailingNewline)
         {
+            EnforceMaxOutputSize(BytesWritten + newlineBytes.Length);
             await stream.WriteAsync(newlineBytes.AsMemory(), cancellationToken).ConfigureAwait(false);
             newlineBytesWritten += newlineBytes.Length;
             needsTrailingNewline = false;
@@ -209,49 +234,96 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         }
     }
 
-    private void EmitPendingNewline()
+    private static bool CanUseGeneratedWriteValidator(JsonTypeInfo typeInfo)
+        => typeInfo.Kind == JsonTypeInfoKind.Object
+            && typeInfo.Properties.Count == 0
+            && typeInfo.OriginatingResolver is JsonSerializerContext
+            && typeInfo.Options.TypeInfoResolver is JsonSerializerContext
+            && typeInfo.Options.TypeInfoResolverChain.Count <= 1
+            && typeInfo.OnSerialized is null
+            && !typeInfo.Options.IncludeFields
+            && !typeInfo.Options.IgnoreReadOnlyProperties
+            && !typeInfo.Options.IgnoreReadOnlyFields
+            && typeInfo.Options.DefaultIgnoreCondition == JsonIgnoreCondition.Never
+            && typeInfo.Options.Converters.Count == 0;
+
+    private bool ValidateAotRecord<T>(T value, JsonTypeInfo<T> typeInfo, long currentIndex)
     {
-        if (needsTrailingNewline)
+        if (options.ValidationMode != ValidationMode.Strict || value is null)
+            return false;
+
+        int rowNumber = (int)Math.Min(currentIndex + 1, int.MaxValue);
+        JsonTypeInfo effectiveTypeInfo = JsonlTypeInfoRecordValidator.ResolveEffectiveWriteTypeInfo(value, typeInfo);
+        Reading.Binders.JsonlRecordBinderFactory.TryGetValidator<T>(out var validator);
+        if (effectiveTypeInfo.Type == typeof(T)
+            && value is not IJsonOnSerialized
+            && CanUseGeneratedWriteValidator(effectiveTypeInfo)
+            && validator is not null)
         {
-            stream.Write(newlineBytes, 0, newlineBytes.Length);
-            newlineBytesWritten += newlineBytes.Length;
-            needsTrailingNewline = false;
-            EnforceMaxOutputSize();
+            validator.Validate(value, rowNumber);
+            return false;
         }
+
+        return JsonlTypeInfoRecordValidator.Instance.Validate(value, effectiveTypeInfo, bufferWriter.WrittenSpan, rowNumber, validator);
     }
 
-    private async ValueTask EmitPendingNewlineAsync(CancellationToken cancellationToken)
+    [RequiresUnreferencedCode("JSONL write validation without [GenerateBinder] uses reflection to inspect [Validate] attributes.")]
+    [RequiresDynamicCode("JSONL serialization without a JsonTypeInfo<T> uses runtime code generation.")]
+    private bool ValidateReflectionRecord<T>(T value, long currentIndex)
     {
-        if (needsTrailingNewline)
-        {
-            await stream.WriteAsync(newlineBytes.AsMemory(), cancellationToken).ConfigureAwait(false);
-            newlineBytesWritten += newlineBytes.Length;
-            needsTrailingNewline = false;
-            EnforceMaxOutputSize();
-        }
+        if (options.ValidationMode != ValidationMode.Strict || value is null)
+            return false;
+
+        int rowNumber = (int)Math.Min(currentIndex + 1, int.MaxValue);
+        JsonSerializerOptions effectiveOptions = GetEffectiveSerializerOptions();
+        if (!effectiveOptions.IsReadOnly)
+            effectiveOptions.MakeReadOnly(populateMissingResolver: true);
+        JsonTypeInfo declaredTypeInfo = effectiveOptions.GetTypeInfo(typeof(T));
+        JsonTypeInfo effectiveTypeInfo = JsonlTypeInfoRecordValidator.ResolveEffectiveWriteTypeInfo(value, declaredTypeInfo);
+        return JsonlTypeInfoRecordValidator.Instance.Validate(value, effectiveTypeInfo, bufferWriter.WrittenSpan, rowNumber);
     }
 
     private void CommitRecord()
     {
         ReadOnlySpan<byte> data = bufferWriter.WrittenSpan;
+        long pendingNewline = needsTrailingNewline ? newlineBytes.Length : 0;
+        long finalNewline = options.WriteFinalNewline ? newlineBytes.Length : 0;
+        EnforceMaxOutputSize(BytesWritten + pendingNewline + data.Length + finalNewline);
+
+        if (needsTrailingNewline)
+        {
+            stream.Write(newlineBytes, 0, newlineBytes.Length);
+            newlineBytesWritten += newlineBytes.Length;
+            needsTrailingNewline = false;
+        }
+
         stream.Write(data);
         jsonBytesCommitted += data.Length;
         RecordsWritten++;
         needsTrailingNewline = true;
-        EnforceMaxOutputSize();
     }
 
     private async ValueTask CommitRecordAsync(CancellationToken cancellationToken)
     {
         ReadOnlyMemory<byte> data = bufferWriter.WrittenMemory;
+        long pendingNewline = needsTrailingNewline ? newlineBytes.Length : 0;
+        long finalNewline = options.WriteFinalNewline ? newlineBytes.Length : 0;
+        EnforceMaxOutputSize(BytesWritten + pendingNewline + data.Length + finalNewline);
+
+        if (needsTrailingNewline)
+        {
+            await stream.WriteAsync(newlineBytes.AsMemory(), cancellationToken).ConfigureAwait(false);
+            newlineBytesWritten += newlineBytes.Length;
+            needsTrailingNewline = false;
+        }
+
         await stream.WriteAsync(data, cancellationToken).ConfigureAwait(false);
         jsonBytesCommitted += data.Length;
         RecordsWritten++;
         needsTrailingNewline = true;
-        EnforceMaxOutputSize();
     }
 
-    private void HandleSerializeFailure(Exception ex)
+    private void HandleSerializeFailure(Exception ex, long failedIndex)
     {
         bufferWriter.Clear();
         writer.Reset(bufferWriter);
@@ -259,22 +331,22 @@ public sealed class JsonlStreamWriter : IDisposable, IAsyncDisposable
         {
             var ctx = new JsonlSerializeErrorContext
             {
-                RecordIndex = RecordsWritten,
+                RecordIndex = failedIndex,
                 SourceType = ex.GetType()
             };
             if (options.OnError(ctx, ex) == JsonlSerializeErrorAction.SkipRecord)
                 return;
         }
-        throw new JsonlException(JsonlErrorCode.SerializeError, $"Failed to serialize record at index {RecordsWritten}: {ex.Message}", RecordsWritten + 1, ex);
+        throw new JsonlException(JsonlErrorCode.SerializeError, $"Failed to serialize record at index {failedIndex}: {ex.Message}", failedIndex + 1, ex);
     }
 
-    private void EnforceMaxOutputSize()
+    private void EnforceMaxOutputSize(long projectedBytes)
     {
-        if (options.MaxOutputSize is { } cap && BytesWritten > cap)
+        if (options.MaxOutputSize is { } cap && projectedBytes > cap)
         {
             throw new JsonlException(
                 JsonlErrorCode.OutputSizeExceeded,
-                string.Create(CultureInfo.InvariantCulture, $"Output size of {BytesWritten:N0} bytes exceeds MaxOutputSize of {cap:N0} bytes."));
+                string.Create(CultureInfo.InvariantCulture, $"Output size of {projectedBytes:N0} bytes exceeds MaxOutputSize of {cap:N0} bytes."));
         }
     }
 

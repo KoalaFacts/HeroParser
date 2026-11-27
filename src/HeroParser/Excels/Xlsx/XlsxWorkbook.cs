@@ -9,6 +9,9 @@ namespace HeroParser.Excels.Xlsx;
 /// </summary>
 internal sealed class XlsxWorkbook
 {
+    private const string WORKSHEET_REL_TYPE_TRANSITIONAL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
+    private const string WORKSHEET_REL_TYPE_STRICT = "http://purl.oclc.org/ooxml/officeDocument/relationships/worksheet";
+
     /// <summary>Information about a sheet in the workbook.</summary>
     public record SheetInfo(string Name, int Index, string Path);
 
@@ -66,29 +69,36 @@ internal sealed class XlsxWorkbook
         // Step 2: Parse workbook.xml to get sheet definitions
         var sheetEntries = ParseWorkbookSheets(archive);
 
-        // Step 3: Combine sheet entries with resolved paths
-        var sheets = new SheetInfo[sheetEntries.Count];
+        // Step 3: Filter to worksheets and combine with resolved paths while preserving workbook order
+        var sheets = new List<SheetInfo>(sheetEntries.Count);
         for (int i = 0; i < sheetEntries.Count; i++)
         {
             var (name, rId) = sheetEntries[i];
-            var path = relationships.TryGetValue(rId, out var target)
-                ? NormalizePath(target)
-                : throw new ExcelException($"Relationship '{rId}' for sheet '{name}' not found.");
+            if (!relationships.TryGetValue(rId, out var rel))
+                throw new ExcelException($"Relationship '{rId}' for sheet '{name}' not found.");
 
-            sheets[i] = new SheetInfo(name, i, path);
+            if (!IsWorksheetRelationshipType(rel.Type))
+                continue;
+
+            var path = NormalizePath(rel.Target);
+            sheets.Add(new SheetInfo(name, sheets.Count, path));
         }
 
-        return new XlsxWorkbook(sheets);
+        return new XlsxWorkbook([.. sheets]);
     }
 
-    private static Dictionary<string, string> ParseRelationships(ZipArchive archive)
+    private static bool IsWorksheetRelationshipType(string? relationshipType)
+        => string.Equals(relationshipType, WORKSHEET_REL_TYPE_TRANSITIONAL, StringComparison.Ordinal)
+            || string.Equals(relationshipType, WORKSHEET_REL_TYPE_STRICT, StringComparison.Ordinal);
+
+    private static Dictionary<string, (string Target, string? Type)> ParseRelationships(ZipArchive archive)
     {
         var relsEntry = archive.GetEntry("xl/_rels/workbook.xml.rels");
         if (relsEntry is null)
             return [];
 
         new XlsxXml().ValidateEntrySize(relsEntry);
-        var relationships = new Dictionary<string, string>(StringComparer.Ordinal);
+        var relationships = new Dictionary<string, (string Target, string? Type)>(StringComparer.Ordinal);
 
         using var stream = relsEntry.Open();
         using var reader = XmlReader.Create(stream, new XlsxXml().CreateReaderSettings());
@@ -99,8 +109,9 @@ internal sealed class XlsxWorkbook
             {
                 var id = reader.GetAttribute("Id");
                 var target = reader.GetAttribute("Target");
+                var type = reader.GetAttribute("Type");
                 if (id is not null && target is not null)
-                    relationships[id] = target;
+                    relationships[id] = (target, type);
             }
         }
 

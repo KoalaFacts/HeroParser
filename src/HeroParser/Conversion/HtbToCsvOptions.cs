@@ -38,6 +38,11 @@ public sealed record HtbToCsvOptions
     public int ProgressIntervalRows { get; init; } = 1000;
 
     /// <summary>
+    /// Gets or sets the maximum number of HTB rows to convert (default matches <see cref="HtbReadOptions.Default"/>).
+    /// </summary>
+    public int MaxRowCount { get; init; } = HtbReadOptions.Default.MaxRowCount;
+
+    /// <summary>
     /// Gets the default options.
     /// </summary>
     public static HtbToCsvOptions Default { get; } = new();

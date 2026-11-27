@@ -55,42 +55,80 @@ public sealed class HtbRecordWriter<T> : HtbStreamWriter where T : new()
     /// Writes all records from the enumerable source asynchronously.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB serialization requires dynamic binding which is not Native AOT-safe.")]
-    public async Task WriteRecordsAsync(IEnumerable<T> records)
+    public Task WriteRecordsAsync(IEnumerable<T> records)
+        => WriteRecordsAsync(records, CancellationToken.None);
+
+    /// <summary>
+    /// Writes all records from the enumerable source asynchronously with cancellation support.
+    /// </summary>
+    /// <param name="records">The records to write.</param>
+    /// <param name="cancellationToken">Token used to cancel async I/O.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB serialization requires dynamic binding which is not Native AOT-safe.")]
+    public async Task WriteRecordsAsync(IEnumerable<T> records, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(records);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        if (!recordHeaderWritten)
+        activeCancellationToken = cancellationToken;
+        try
         {
-            await WriteRecordHeaderAsync();
-        }
+            if (!recordHeaderWritten)
+            {
+                await WriteRecordHeaderAsync(cancellationToken).ConfigureAwait(false);
+            }
 
-        foreach (var record in records)
+            foreach (var record in records)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await WriteSingleRecordAsync(record, cancellationToken).ConfigureAwait(false);
+            }
+
+            await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
         {
-            await WriteSingleRecordAsync(record);
+            activeCancellationToken = default;
         }
-
-        await FlushAsync();
     }
 
     /// <summary>
     /// Writes all records from the async enumerable source asynchronously.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB serialization requires dynamic binding which is not Native AOT-safe.")]
-    public async Task WriteRecordsAsync(IAsyncEnumerable<T> records)
+    public Task WriteRecordsAsync(IAsyncEnumerable<T> records)
+        => WriteRecordsAsync(records, CancellationToken.None);
+
+    /// <summary>
+    /// Writes all records from the async enumerable source asynchronously with cancellation support.
+    /// </summary>
+    /// <param name="records">The async enumerable records to write.</param>
+    /// <param name="cancellationToken">Token used to cancel enumeration and async I/O.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB serialization requires dynamic binding which is not Native AOT-safe.")]
+    public async Task WriteRecordsAsync(IAsyncEnumerable<T> records, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(records);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        if (!recordHeaderWritten)
+        activeCancellationToken = cancellationToken;
+        try
         {
-            await WriteRecordHeaderAsync();
-        }
+            if (!recordHeaderWritten)
+            {
+                await WriteRecordHeaderAsync(cancellationToken).ConfigureAwait(false);
+            }
 
-        await foreach (var record in records)
+            await foreach (var record in records.WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await WriteSingleRecordAsync(record, cancellationToken).ConfigureAwait(false);
+            }
+
+            await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
         {
-            await WriteSingleRecordAsync(record);
+            activeCancellationToken = default;
         }
-
-        await FlushAsync();
     }
 
     [RequiresUnreferencedCode("Reflection schema extraction is not safe for Native AOT.")]
@@ -107,11 +145,11 @@ public sealed class HtbRecordWriter<T> : HtbStreamWriter where T : new()
     }
 
     [RequiresUnreferencedCode("Reflection schema extraction is not safe for Native AOT.")]
-    private async Task WriteRecordHeaderAsync()
+    private async Task WriteRecordHeaderAsync(CancellationToken cancellationToken)
     {
         generatedWriter = HtbRecordWriterFactory.GetWriter<T>();
         var targetSchema = HtbSchema.FromType<T>();
-        await WriteHeaderAsync(targetSchema).ConfigureAwait(false);
+        await WriteHeaderAsync(targetSchema, cancellationToken).ConfigureAwait(false);
         if (generatedWriter == null)
         {
             binder = new HtbRecordBinder<T>(targetSchema);
@@ -175,7 +213,7 @@ public sealed class HtbRecordWriter<T> : HtbStreamWriter where T : new()
     }
 
     [RequiresUnreferencedCode("Reflection properties mapping is not Native AOT-safe.")]
-    private async Task WriteSingleRecordAsync(T record)
+    private async Task WriteSingleRecordAsync(T record, CancellationToken cancellationToken)
     {
         IncrementRecordCount();
 
@@ -201,20 +239,47 @@ public sealed class HtbRecordWriter<T> : HtbStreamWriter where T : new()
                 }
             }
 
-            await WriteMaskAsync(rented.AsMemory(0, maskLen)).ConfigureAwait(false);
+            await WriteMaskAsync(rented.AsMemory(0, maskLen), cancellationToken).ConfigureAwait(false);
 
             for (int i = 0; i < colCount; i++)
             {
                 object? val = binder!.GetValue(record, i);
                 if (val != null)
                 {
-                    WriteColumnValue(Schema.Columns[i].DataType, val);
+                    await WriteColumnValueAsync(Schema.Columns[i].DataType, val, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    private async ValueTask WriteColumnValueAsync(HtbDataType type, object val, CancellationToken cancellationToken)
+    {
+        switch (type)
+        {
+            case HtbDataType.String:
+                await WriteStringAsync((string)val, cancellationToken).ConfigureAwait(false);
+                return;
+            case HtbDataType.FloatArray:
+                await WriteFloatArrayAsync((float[])val, cancellationToken).ConfigureAwait(false);
+                return;
+            case HtbDataType.ByteArray:
+                await WriteByteArrayAsync((byte[])val, cancellationToken).ConfigureAwait(false);
+                return;
+            case HtbDataType.BigInteger:
+                await WriteBigIntegerAsync((BigInteger)val, cancellationToken).ConfigureAwait(false);
+                return;
+            case HtbDataType.Uri:
+                await WriteUriAsync((Uri)val, cancellationToken).ConfigureAwait(false);
+                return;
+            default:
+                if (!HasBufferSpace(16))
+                    await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+                WriteColumnValue(type, val);
+                return;
         }
     }
 

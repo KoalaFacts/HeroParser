@@ -97,7 +97,18 @@ public sealed class HtbRecordWriterBuilder<T> where T : new()
     /// Serializes records asynchronously into the specified stream.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB serialization is not Native AOT-safe.")]
-    public async Task ToStreamAsync(Stream stream, IEnumerable<T> records, bool leaveOpen = false)
+    public Task ToStreamAsync(Stream stream, IEnumerable<T> records, bool leaveOpen = false)
+        => ToStreamAsync(stream, records, leaveOpen, CancellationToken.None);
+
+    /// <summary>
+    /// Serializes records asynchronously into the specified stream with explicit stream ownership and cancellation support.
+    /// </summary>
+    /// <param name="stream">Destination stream.</param>
+    /// <param name="records">Records to serialize.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, leaves <paramref name="stream"/> open after writing.</param>
+    /// <param name="cancellationToken">Token used to cancel async I/O.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB serialization is not Native AOT-safe.")]
+    public async Task ToStreamAsync(Stream stream, IEnumerable<T> records, bool leaveOpen, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
@@ -105,23 +116,37 @@ public sealed class HtbRecordWriterBuilder<T> where T : new()
         var options = BuildOptions();
         options.Validate();
 
-        using var writer = new HtbRecordWriter<T>(stream, options, leaveOpen);
-        await writer.WriteRecordsAsync(records);
+        var writer = new HtbRecordWriter<T>(stream, options, leaveOpen);
+        await using (writer.ConfigureAwait(false))
+        {
+            await writer.WriteRecordsAsync(records, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
     /// Serializes records asynchronously to the specified file path.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB serialization is not Native AOT-safe.")]
-    public async Task ToFileAsync(string path, IEnumerable<T> records)
+    public Task ToFileAsync(string path, IEnumerable<T> records)
+        => ToFileAsync(path, records, CancellationToken.None);
+
+    /// <summary>
+    /// Serializes records asynchronously to the specified file path with cancellation support.
+    /// </summary>
+    /// <param name="path">Destination file path.</param>
+    /// <param name="records">Records to serialize.</param>
+    /// <param name="cancellationToken">Token used to cancel async I/O.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB serialization is not Native AOT-safe.")]
+    public async Task ToFileAsync(string path, IEnumerable<T> records, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(records);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using (stream.ConfigureAwait(false))
         {
-            await ToStreamAsync(stream, records, leaveOpen: true).ConfigureAwait(false);
+            await ToStreamAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -129,7 +154,18 @@ public sealed class HtbRecordWriterBuilder<T> where T : new()
     /// Serializes an async enumerable sequence of records into the specified stream.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB serialization is not Native AOT-safe.")]
-    public async Task ToStreamAsync(Stream stream, IAsyncEnumerable<T> records, bool leaveOpen = false)
+    public Task ToStreamAsync(Stream stream, IAsyncEnumerable<T> records, bool leaveOpen = false)
+        => ToStreamAsync(stream, records, leaveOpen, CancellationToken.None);
+
+    /// <summary>
+    /// Serializes an async enumerable sequence of records into the specified stream with explicit stream ownership and cancellation support.
+    /// </summary>
+    /// <param name="stream">Destination stream.</param>
+    /// <param name="records">Async enumerable records to serialize.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, leaves <paramref name="stream"/> open after writing.</param>
+    /// <param name="cancellationToken">Token used to cancel enumeration and async I/O.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB serialization is not Native AOT-safe.")]
+    public async Task ToStreamAsync(Stream stream, IAsyncEnumerable<T> records, bool leaveOpen, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
@@ -137,23 +173,37 @@ public sealed class HtbRecordWriterBuilder<T> where T : new()
         var options = BuildOptions();
         options.Validate();
 
-        using var writer = new HtbRecordWriter<T>(stream, options, leaveOpen);
-        await writer.WriteRecordsAsync(records);
+        var writer = new HtbRecordWriter<T>(stream, options, leaveOpen);
+        await using (writer.ConfigureAwait(false))
+        {
+            await writer.WriteRecordsAsync(records, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
     /// Serializes an async enumerable sequence of records to the specified file path.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB serialization is not Native AOT-safe.")]
-    public async Task ToFileAsync(string path, IAsyncEnumerable<T> records)
+    public Task ToFileAsync(string path, IAsyncEnumerable<T> records)
+        => ToFileAsync(path, records, CancellationToken.None);
+
+    /// <summary>
+    /// Serializes an async enumerable sequence of records to the specified file path with cancellation support.
+    /// </summary>
+    /// <param name="path">Destination file path.</param>
+    /// <param name="records">Async enumerable records to serialize.</param>
+    /// <param name="cancellationToken">Token used to cancel enumeration and async I/O.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB serialization is not Native AOT-safe.")]
+    public async Task ToFileAsync(string path, IAsyncEnumerable<T> records, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(records);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using (stream.ConfigureAwait(false))
         {
-            await ToStreamAsync(stream, records, leaveOpen: true).ConfigureAwait(false);
+            await ToStreamAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
         }
     }
 }

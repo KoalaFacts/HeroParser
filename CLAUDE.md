@@ -34,16 +34,16 @@ dotnet build
 # Run unit tests
 # Tests run on Microsoft.Testing.Platform, so runner arguments go after `--`
 # and use MTP names (--filter-trait, not --filter).
-dotnet test tests/HeroParser.Tests -- --filter-trait Category=Unit
+dotnet test tests/HeroParser.Tests --timeout 3m -- --filter-trait Category=Unit
 
 # Run integration tests
-dotnet test tests/HeroParser.Tests -- --filter-trait Category=Integration
+dotnet test tests/HeroParser.Tests --timeout 3m -- --filter-trait Category=Integration
 
 # Run all tests
-dotnet test
+dotnet test --timeout 3m
 
 # Run source generator tests only
-dotnet test tests/HeroParser.Generators.Tests
+dotnet test tests/HeroParser.Generators.Tests --timeout 2m
 
 # Run AOT compatibility tests (uses dotnet run, not dotnet test)
 dotnet run --project tests/HeroParser.AotTests -c Release
@@ -72,6 +72,11 @@ node .github/scripts/check-doc-snippets.ts README.md docs/excel.md   # or no arg
 - Each test binary is also directly runnable and accepts xunit's native single-dash options, which is handy for debugging: `./HeroParser.Tests -trait Category=Unit -list traits`.
 
 **Every test needs a Category trait**: CI runs this assembly once per category, so a test with no `Category` trait is discovered and reported but never executed by any job — green precisely because it never ran. Mark each test `[Trait(TestCategories.CATEGORY, TestCategories.UNIT)]` or `INTEGRATION`, or put the trait on the class when the whole class is one category. `TestCategoryCoverageTests` enforces this and fails with the offending method names, so an untagged test breaks the build rather than disappearing.
+
+**Preventing hung tests**:
+- `tests/HeroParser.Tests/xunit.runner.json` enables `diagnosticMessages` and `longRunningTestSeconds` (10s) so stuck tests emit their method names rather than failing silently, while CI passes `--timeout 5m` to MTP and enforces per-job `timeout-minutes` in `.github/workflows/ci.yml`.
+- Async, cancellation, and synchronization tests must bound waits with a finite `TimeSpan` (e.g., `WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)` or linked `CancelAfter`) and annotate the test method with `[Fact(Timeout = 15_000)]`. `tests/HeroParser.Tests/CodeHygieneTests.cs` enforces that `tests/` never contains unbounded `.Wait()` / `.WaitOne()` / `.WaitAsync()` / `.WaitAsync(TestContext.Current.CancellationToken)` calls.
+- When adding async or cancellation tests, run them targeted first (`-- --filter-method "..."`) with a short `--timeout` before running the full suite, and pass `--timeout 3m` locally when running full test suites.
 
 ## Code Style
 - **Nullable reference types**: Enabled (`<Nullable>enable</Nullable>`)
@@ -180,6 +185,12 @@ CSV, Fixed-Width, and Excel support `DbDataReader` for streaming large files int
 - Do not use `#region` or `#endregion` preprocessor directives anywhere in `src/`, `tests/`, `benchmarks/`, or `examples/`
 - `#region` hides oversized classes and masks missing decomposition; split cohesive responsibilities into smaller types or `partial` files instead
 - Enforced automatically by `tests/HeroParser.Tests/CodeHygieneTests.cs`
+
+### Keep Source Files Small and Cohesive
+- Aim for roughly **~200 lines of real code** (excluding comments and XML documentation) per `.cs` file; treat files exceeding **~400 total lines** as a design-smell signal to review responsibility boundaries
+- This is a pragmatic guideline rather than a rigid limit: public API entry-point facades with extensive overloads/XML docs or tightly coupled hot-path parsers/generators may justifiably run longer when they keep a single cohesive responsibility
+- When a file grows large because it mixes distinct concerns (e.g. sync vs. async paths, direct vs. staged writing, multiple formats, or unrelated test areas), split into cohesive domain/value types (without introducing new `static *Helper` classes) or `partial` files
+- Keep test files focused by feature/scenario rather than appending unrelated regression tests to a single catch-all test file
 
 ### Never Suppress Warnings to Bypass Issues
 - **NEVER use `#pragma warning disable` to suppress warnings that indicate real issues**

@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Reflection;
+using System.Text;
 using HeroParser;
 
 namespace HeroParser.Htbs.Records;
@@ -102,6 +103,10 @@ public sealed class HtbColumn
 /// </summary>
 public sealed class HtbSchema
 {
+    internal const int MAX_COLUMN_NAME_BYTES = 2048;
+    internal const int MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
+    internal const int MAX_FLOAT_ARRAY_LENGTH = 16 * 1024 * 1024;
+
     /// <summary>Gets the list of columns in the schema in sequential order.</summary>
     public IReadOnlyList<HtbColumn> Columns { get; }
 
@@ -128,6 +133,13 @@ public sealed class HtbSchema
             if (string.IsNullOrWhiteSpace(columns[i].Name))
             {
                 throw new HtbException(HtbErrorCode.SerializationError, $"Column name at index {i} cannot be null or empty.");
+            }
+            int nameByteCount = Encoding.UTF8.GetByteCount(columns[i].Name);
+            if (nameByteCount > MAX_COLUMN_NAME_BYTES)
+            {
+                throw new HtbException(
+                    HtbErrorCode.SerializationError,
+                    $"Column name at index {i} exceeds the maximum UTF-8 length of {MAX_COLUMN_NAME_BYTES} bytes (got {nameByteCount} bytes).");
             }
         }
         Columns = columns;

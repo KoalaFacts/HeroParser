@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths.Writing;
+using HeroParser.Internal;
 
 namespace HeroParser.FixedWidths.Streaming;
 
@@ -44,6 +45,8 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
 
     // DoS protection
     private readonly long? maxOutputSize;
+
+    internal int? MaxRowCount => options.MaxRowCount;
 
     private readonly ArrayPool<char> charPool;
     private readonly ArrayPool<byte> bytePool;
@@ -481,7 +484,12 @@ public sealed class FixedWidthAsyncStreamWriter : IAsyncDisposable
                 return;
 
             case byte[] bytes:
-                await WriteFieldValueAsync(Convert.ToBase64String(bytes).AsMemory(), width, alignment, padChar, cancellationToken).ConfigureAwait(false);
+                await WriteFieldValueAsync(
+                    (bytes.Length == 0 ? Utf8SpanParser.EMPTY_BASE64_TOKEN : Convert.ToBase64String(bytes)).AsMemory(),
+                    width,
+                    alignment,
+                    padChar,
+                    cancellationToken).ConfigureAwait(false);
                 return;
 
             case Guid g:

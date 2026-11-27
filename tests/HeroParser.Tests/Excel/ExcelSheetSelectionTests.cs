@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using HeroParser.Excels.Core;
 using HeroParser.Tests.Fixtures.Excel;
 using Xunit;
@@ -118,6 +120,28 @@ public class ExcelSheetSelectionTests
         var names = HeroParser.Excel.GetSheetNames(xlsx);
 
         Assert.Equal(["Sales", "Team", "Summary"], names);
+    }
+
+    [Fact]
+    public void GetSheetNames_MalformedSharedStrings_DoesNotLoadCellStrings()
+    {
+        var sheets = new Dictionary<string, string[][]>
+        {
+            ["Sales"] = [["Name", "Value"], ["North", "100"]],
+            ["Team"] = [["Name", "Value"], ["Alice", "Lead"]],
+        };
+        using var xlsx = ExcelTestHelper.CreateXlsx(sheets);
+        using (var archive = new ZipArchive(xlsx, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            archive.GetEntry("xl/sharedStrings.xml")?.Delete();
+            var brokenEntry = archive.CreateEntry("xl/sharedStrings.xml");
+            using var writer = new StreamWriter(brokenEntry.Open(), Encoding.UTF8);
+            writer.Write("<sst><unclosed");
+        }
+
+        xlsx.Position = 0;
+        var names = HeroParser.Excel.GetSheetNames(xlsx);
+        Assert.Equal(["Sales", "Team"], names);
     }
 }
 

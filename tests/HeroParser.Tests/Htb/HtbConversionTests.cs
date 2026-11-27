@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 using Xunit;
 using HeroParser.Htbs;
@@ -541,6 +542,149 @@ public class HtbConversionTests
         Assert.Equal(expectedSpan, Assert.IsType<TimeSpan>(drAsync.GetValue(4)));
     }
 
+    [Fact]
+    public void Convert_MapByOrdinal_AllowsDuplicateAndBlankHeaders_AndMultilineQuotes()
+    {
+        const string csv = "Id,Id,,Name\r\n1,2,mid,\"line1\nline2\"\r\n";
+        var schema = new HtbSchema([
+            new HtbColumn("Id", HtbDataType.Int32, isNullable: false),
+            new HtbColumn("Id", HtbDataType.Int32, isNullable: false),
+            new HtbColumn("Col3", HtbDataType.String, isNullable: true),
+            new HtbColumn("Name", HtbDataType.String, isNullable: false)
+        ]);
+
+        using var htbStream = new MemoryStream();
+        CsvToHtbConverter.Convert(csv, htbStream, schema, new CsvToHtbOptions
+        {
+            MapByOrdinal = true,
+            AllowNewlinesInsideQuotes = true
+        });
+
+        htbStream.Position = 0;
+        using var dr = HeroParser.Htb.CreateDataReader(htbStream, leaveOpen: true);
+        Assert.True(dr.Read());
+        Assert.Equal(1, dr.GetInt32(0));
+        Assert.Equal(2, dr.GetInt32(1));
+        Assert.Equal("mid", dr.GetString(2));
+        Assert.Equal("line1\nline2", dr.GetString(3));
+        Assert.False(dr.Read());
+    }
+
+    [Fact]
+    public async Task ConvertAsync_MapByOrdinal_AllowsDuplicateAndBlankHeaders_AndMultilineQuotes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string csv = "Id,Id,,Name\r\n1,2,mid,\"line1\nline2\"\r\n";
+        var schema = new HtbSchema([
+            new HtbColumn("Id", HtbDataType.Int32, isNullable: false),
+            new HtbColumn("Id", HtbDataType.Int32, isNullable: false),
+            new HtbColumn("Col3", HtbDataType.String, isNullable: true),
+            new HtbColumn("Name", HtbDataType.String, isNullable: false)
+        ]);
+
+        using var csvStream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var htbStream = new MemoryStream();
+        await CsvToHtbConverter.ConvertAsync(csvStream, htbStream, schema, new CsvToHtbOptions
+        {
+            MapByOrdinal = true,
+            AllowNewlinesInsideQuotes = true
+        }, ct);
+
+        htbStream.Position = 0;
+        using var dr = HeroParser.Htb.CreateDataReader(htbStream, leaveOpen: true);
+        Assert.True(await dr.ReadAsync(ct));
+        Assert.Equal(1, dr.GetInt32(0));
+        Assert.Equal(2, dr.GetInt32(1));
+        Assert.Equal("mid", dr.GetString(2));
+        Assert.Equal("line1\nline2", dr.GetString(3));
+        Assert.False(await dr.ReadAsync(ct));
+    }
+
+    [Fact]
+    public async Task Convert_RejectExtraColumns_And_ConvertAsync_Utf16BomStreams()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var schema = new HtbSchema([
+            new HtbColumn("Id", HtbDataType.Int32, isNullable: false),
+            new HtbColumn("Name", HtbDataType.String, isNullable: false)
+        ]);
+
+        const string wideCsv = "Id,Name\n1,Alice,Extra\n";
+        using (var outMs = new MemoryStream())
+        {
+            CsvToHtbConverter.Convert(wideCsv, outMs, schema, new CsvToHtbOptions { MapByOrdinal = true });
+            outMs.Position = 0;
+            using var dr = HeroParser.Htb.CreateDataReader(outMs, leaveOpen: true);
+            Assert.True(dr.Read());
+            Assert.Equal("Alice", dr.GetString(1));
+        }
+
+        using (var outMs = new MemoryStream())
+        {
+            var ex = Assert.Throws<HtbException>(() => CsvToHtbConverter.Convert(wideCsv, outMs, schema, new CsvToHtbOptions
+            {
+                MapByOrdinal = true,
+                RejectExtraColumns = true
+            }));
+            Assert.Contains("row 2", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        using (var inMs = new MemoryStream(Encoding.UTF8.GetBytes(wideCsv)))
+        using (var outMs = new MemoryStream())
+        {
+            var ex = await Assert.ThrowsAsync<HtbException>(() => CsvToHtbConverter.ConvertAsync(
+                inMs,
+                outMs,
+                schema,
+                new CsvToHtbOptions { MapByOrdinal = true, RejectExtraColumns = true },
+                ct));
+            Assert.Contains("row 2", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        foreach (Encoding utf16 in (Encoding[])[Encoding.Unicode, Encoding.BigEndianUnicode])
+        {
+            byte[] payload = [.. utf16.GetPreamble(), .. utf16.GetBytes("Id,Name\n7,Café\n")];
+            using var inMs = new MemoryStream(payload);
+            using var outMs = new MemoryStream();
+            await CsvToHtbConverter.ConvertAsync(inMs, outMs, schema, new CsvToHtbOptions { MapByOrdinal = true }, ct);
+            Assert.True(inMs.CanRead);
+
+            outMs.Position = 0;
+            using var dr = HeroParser.Htb.CreateDataReader(outMs, leaveOpen: true);
+            Assert.True(await dr.ReadAsync(ct));
+            Assert.Equal(7, dr.GetInt32(0));
+            Assert.Equal("Café", dr.GetString(1));
+            Assert.False(await dr.ReadAsync(ct));
+        }
+    }
+
+    [Fact]
+    public async Task Convert_RejectLossyNumericValues_RejectsLeadingZerosAndRoundedDecimalsAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var schema = new HtbSchema([
+            new HtbColumn("Code", HtbDataType.Int32, isNullable: false),
+            new HtbColumn("Amount", HtbDataType.Decimal, isNullable: false)
+        ]);
+
+        var opts = new CsvToHtbOptions { RejectLossyNumericValues = true };
+
+        using (var okMs = new MemoryStream())
+        {
+            CsvToHtbConverter.Convert("Code,Amount\n123,2.50\n", okMs, schema, opts);
+            Assert.True(okMs.Length > 0);
+        }
+
+        using (var badZipMs = new MemoryStream())
+        {
+            Assert.Throws<HtbException>(() => CsvToHtbConverter.Convert("Code,Amount\n00123,2.50\n", badZipMs, schema, opts));
+        }
+
+        using var badDecIn = new MemoryStream(Encoding.UTF8.GetBytes("Code,Amount\n123,1.000000000000000000000000000001\n"));
+        using var badDecOut = new MemoryStream();
+        await Assert.ThrowsAsync<HtbException>(() => CsvToHtbConverter.ConvertAsync(badDecIn, badDecOut, schema, opts, ct));
+    }
+
     private static (int? Id, string? Name) ReadSingleRow(MemoryStream htbStream)
     {
         htbStream.Position = 0;
@@ -552,5 +696,253 @@ public class HtbConversionTests
     private sealed class SyncProgress<T>(Action<T> handler) : IProgress<T>
     {
         public void Report(T value) => handler(value);
+    }
+
+    [Fact]
+    public async Task Convert_MapByOrdinalWithShortHeader_MapsSchemaOrdinalsSyncAndAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var schema = new HtbSchema([
+            new HtbColumn("First", HtbDataType.String, isNullable: false),
+            new HtbColumn("Second", HtbDataType.String, isNullable: false)
+        ]);
+        const string csv = "A\nfirst,second\n";
+        var opts = new CsvToHtbOptions { MapByOrdinal = true, RejectExtraColumns = true };
+
+        using (var syncOut = new MemoryStream())
+        {
+            CsvToHtbConverter.Convert(csv, syncOut, schema, opts);
+            syncOut.Position = 0;
+            using var dr = HeroParser.Htb.CreateDataReader(syncOut, leaveOpen: true);
+            Assert.True(dr.Read());
+            Assert.Equal("first", dr.GetString(0));
+            Assert.Equal("second", dr.GetString(1));
+        }
+
+        using var inMs = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        using var asyncOut = new MemoryStream();
+        await CsvToHtbConverter.ConvertAsync(inMs, asyncOut, schema, opts, ct);
+        asyncOut.Position = 0;
+        using var asyncDr = HeroParser.Htb.CreateDataReader(asyncOut, leaveOpen: true);
+        Assert.True(await asyncDr.ReadAsync(ct));
+        Assert.Equal("first", asyncDr.GetString(0));
+        Assert.Equal("second", asyncDr.GetString(1));
+    }
+
+    [Fact]
+    public async Task Convert_RejectLossyNumericValues_RejectsLossyFloatDoubleAndHalfSyncAndAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var schema = new HtbSchema([
+            new HtbColumn("H", HtbDataType.Half, isNullable: false),
+            new HtbColumn("F", HtbDataType.Float, isNullable: false),
+            new HtbColumn("D", HtbDataType.Double, isNullable: false)
+        ]);
+        var opts = new CsvToHtbOptions { RejectLossyNumericValues = true };
+
+        using (var okOut = new MemoryStream())
+        {
+            CsvToHtbConverter.Convert("H,F,D\n1.5,1.5,1.5\n", okOut, schema, opts);
+            Assert.True(okOut.Length > 0);
+        }
+
+        foreach (string lossyCsv in (string[])[
+            "H,F,D\n2049,1.5,1.5\n",
+            "H,F,D\n1.5,16777217,1.5\n",
+            "H,F,D\n1.5,1.5,9007199254740993\n"
+        ])
+        {
+            using var syncOut = new MemoryStream();
+            Assert.Throws<HtbException>(() => CsvToHtbConverter.Convert(lossyCsv, syncOut, schema, opts));
+
+            using var inMs = new MemoryStream(Encoding.UTF8.GetBytes(lossyCsv));
+            using var asyncOut = new MemoryStream();
+            await Assert.ThrowsAsync<HtbException>(() => CsvToHtbConverter.ConvertAsync(inMs, asyncOut, schema, opts, ct));
+        }
+    }
+
+    [Fact]
+    public void HtbSchema_RejectsColumnNameExceeding2048Utf8Bytes()
+    {
+        string overlongName = new('中', 683); // 2,049 UTF-8 bytes
+        var ex = Assert.Throws<HtbException>(() =>
+            new HtbSchema([new HtbColumn(overlongName, HtbDataType.Int32, isNullable: true)]));
+        Assert.Equal(HtbErrorCode.SerializationError, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Convert_HtbToCsvToHtb_PreservesNullAndEmptyByteArraySyncAndAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var schema = new HtbSchema([
+            new HtbColumn("NullableBytes", HtbDataType.ByteArray, isNullable: true),
+            new HtbColumn("RequiredBytes", HtbDataType.ByteArray, isNullable: false)
+        ]);
+
+        using var initialHtb = new MemoryStream();
+        using (var writer = new HeroParser.Htbs.Writing.HtbStreamWriter(initialHtb, leaveOpen: true))
+        {
+            writer.WriteHeader(schema);
+
+            writer.IncrementRecordCount();
+            writer.WriteMask([0b0000_0001]); // NullableBytes = null, RequiredBytes = []
+            writer.WriteByteArray([]);
+
+            writer.IncrementRecordCount();
+            writer.WriteMask([0]); // NullableBytes = [], RequiredBytes = [1, 2, 3]
+            writer.WriteByteArray([]);
+            writer.WriteByteArray([1, 2, 3]);
+
+            writer.IncrementRecordCount();
+            writer.WriteMask([0]); // NullableBytes = [9, 8], RequiredBytes = []
+            writer.WriteByteArray([9, 8]);
+            writer.WriteByteArray([]);
+
+            writer.Flush();
+        }
+
+        foreach (bool quoteAll in (bool[])[false, true])
+        {
+            initialHtb.Position = 0;
+            using var syncCsv = new StringWriter();
+            HtbToCsvConverter.Convert(initialHtb, syncCsv, new HtbToCsvOptions { QuoteAll = quoteAll });
+
+            using var syncRoundTrip = new MemoryStream();
+            CsvToHtbConverter.Convert(syncCsv.ToString(), syncRoundTrip, schema);
+            AssertRoundTrip(syncRoundTrip);
+
+            initialHtb.Position = 0;
+            using var asyncCsv = new StringWriter();
+            await HtbToCsvConverter.ConvertAsync(initialHtb, asyncCsv, new HtbToCsvOptions { QuoteAll = quoteAll }, ct);
+
+            using var csvBytes = new MemoryStream(Encoding.UTF8.GetBytes(asyncCsv.ToString()));
+            using var asyncRoundTrip = new MemoryStream();
+            await CsvToHtbConverter.ConvertAsync(csvBytes, asyncRoundTrip, schema, cancellationToken: ct);
+            AssertRoundTrip(asyncRoundTrip);
+        }
+
+        // Preserve L5l-e: quoted empty string ("") in a nullable typed column remains DBNull.
+        using var quotedEmptyOut = new MemoryStream();
+        CsvToHtbConverter.Convert("NullableBytes,RequiredBytes\n\"\",\"base64:\"\n", quotedEmptyOut, schema);
+        quotedEmptyOut.Position = 0;
+        using var quotedDr = HeroParser.Htb.CreateDataReader(quotedEmptyOut, leaveOpen: true);
+        Assert.True(quotedDr.Read());
+        Assert.True(quotedDr.IsDBNull(0));
+        Assert.Equal([], Assert.IsType<byte[]>(quotedDr.GetValue(1)));
+
+        static void AssertRoundTrip(MemoryStream stream)
+        {
+            stream.Position = 0;
+            using var dr = HeroParser.Htb.CreateDataReader(stream, leaveOpen: true);
+
+            Assert.True(dr.Read());
+            Assert.True(dr.IsDBNull(0));
+            Assert.Equal([], Assert.IsType<byte[]>(dr.GetValue(1)));
+
+            Assert.True(dr.Read());
+            Assert.False(dr.IsDBNull(0));
+            Assert.Equal([], Assert.IsType<byte[]>(dr.GetValue(0)));
+            Assert.Equal([1, 2, 3], Assert.IsType<byte[]>(dr.GetValue(1)));
+
+            Assert.True(dr.Read());
+            Assert.False(dr.IsDBNull(0));
+            Assert.Equal([9, 8], Assert.IsType<byte[]>(dr.GetValue(0)));
+            Assert.Equal([], Assert.IsType<byte[]>(dr.GetValue(1)));
+
+            Assert.False(dr.Read());
+        }
+    }
+
+    [Fact]
+    public async Task Convert_RejectLossyTemporalValues_RejectsOffsetMismatchesSyncAndAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dtSchema = new HtbSchema([new HtbColumn("CreatedAt", HtbDataType.DateTime, isNullable: true)]);
+        var dtoSchema = new HtbSchema([new HtbColumn("OccurredAt", HtbDataType.DateTimeOffset, isNullable: true)]);
+        var opts = new CsvToHtbOptions { RejectLossyNumericValues = true };
+
+        using (var okDtSync = new MemoryStream())
+        {
+            CsvToHtbConverter.Convert("CreatedAt\n2026-11-21T12:34:56\n", okDtSync, dtSchema, opts);
+        }
+        using (var okDtoSync = new MemoryStream())
+        {
+            CsvToHtbConverter.Convert("OccurredAt\n2026-11-21T12:34:56+05:00\n2026-11-21T12:34:56Z\n", okDtoSync, dtoSchema, opts);
+        }
+
+        foreach (string badDtCsv in (string[])[
+            "CreatedAt\n2026-11-21T12:34:56+05:00\n",
+            "CreatedAt\n2026-11-21T12:34:56Z\n",
+            "CreatedAt\n2026-11-21T12:34:56-04:00\n"
+        ])
+        {
+            using var syncOut = new MemoryStream();
+            var syncEx = Assert.Throws<HtbException>(() => CsvToHtbConverter.Convert(badDtCsv, syncOut, dtSchema, opts));
+            Assert.Equal(HtbErrorCode.SerializationError, syncEx.ErrorCode);
+
+            using var inMs = new MemoryStream(Encoding.UTF8.GetBytes(badDtCsv));
+            using var asyncOut = new MemoryStream();
+            var asyncEx = await Assert.ThrowsAsync<HtbException>(() => CsvToHtbConverter.ConvertAsync(inMs, asyncOut, dtSchema, opts, ct));
+            Assert.Equal(HtbErrorCode.SerializationError, asyncEx.ErrorCode);
+        }
+
+        const string badDtoCsv = "OccurredAt\n2026-11-21T12:34:56\n";
+        using (var syncOut = new MemoryStream())
+        {
+            var syncEx = Assert.Throws<HtbException>(() => CsvToHtbConverter.Convert(badDtoCsv, syncOut, dtoSchema, opts));
+            Assert.Equal(HtbErrorCode.SerializationError, syncEx.ErrorCode);
+        }
+        using (var inMs = new MemoryStream(Encoding.UTF8.GetBytes(badDtoCsv)))
+        using (var asyncOut = new MemoryStream())
+        {
+            var asyncEx = await Assert.ThrowsAsync<HtbException>(() => CsvToHtbConverter.ConvertAsync(inMs, asyncOut, dtoSchema, opts, ct));
+            Assert.Equal(HtbErrorCode.SerializationError, asyncEx.ErrorCode);
+        }
+    }
+
+    [Fact]
+    public void ConvertFile_CompressedUtf16Csv_StreamsAndEnforcesMaxRowCount()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"hp-htb-file-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string csvGzPath = Path.Combine(dir, "input.csv.gz");
+            byte[] utf16Bytes = [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Name,Age\nAlice,30\nBob,25\nCarol,40\n")];
+            using (var fs = File.Create(csvGzPath))
+            using (var gz = new GZipStream(fs, CompressionMode.Compress))
+            {
+                gz.Write(utf16Bytes);
+            }
+
+            var schema = new HtbSchema([
+                new HtbColumn("Name", HtbDataType.String, isNullable: false),
+                new HtbColumn("Age", HtbDataType.Int32, isNullable: false)
+            ]);
+
+            string okHtb = Path.Combine(dir, "ok.htb");
+            CsvToHtbConverter.ConvertFile(csvGzPath, okHtb, schema);
+
+            using (var reader = HeroParser.Htb.CreateDataReader(okHtb))
+            {
+                Assert.True(reader.Read());
+                Assert.Equal("Alice", reader.GetString(0));
+                Assert.Equal(30, reader.GetInt32(1));
+                Assert.True(reader.Read());
+                Assert.Equal("Bob", reader.GetString(0));
+                Assert.True(reader.Read());
+                Assert.Equal("Carol", reader.GetString(0));
+                Assert.False(reader.Read());
+            }
+
+            string limitedHtb = Path.Combine(dir, "limited.htb");
+            var ex = Assert.Throws<HtbException>(() =>
+                CsvToHtbConverter.ConvertFile(csvGzPath, limitedHtb, schema, new CsvToHtbOptions { MaxRowCount = 2 }));
+            Assert.Equal(HtbErrorCode.LimitExceeded, ex.ErrorCode);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 }

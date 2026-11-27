@@ -174,7 +174,7 @@ public sealed record CsvReadOptions
         }
 
         // Upper bound to prevent excessive memory allocation from ArrayPool
-        const int MaxColumnCountLimit = 10_000;
+        const int MaxColumnCountLimit = 16_384;
         if (MaxColumnCount > MaxColumnCountLimit)
         {
             throw new CsvException(

@@ -11,16 +11,50 @@ public sealed partial class CodeHygieneTests
     [GeneratedRegex(@"^\s*#(?:end)?region\b", RegexOptions.CultureInvariant)]
     private static partial Regex RegionDirectiveRegex();
 
+    [GeneratedRegex(@"\.(?:Wait|WaitOne)\(\s*\)|\.WaitAsync\(\s*(?:TestContext\.Current\.CancellationToken\s*)?\)", RegexOptions.CultureInvariant)]
+    private static partial Regex UnboundedWaitRegex();
+
+    [GeneratedRegex(@"static\s+readonly\s+ConcurrentDictionary<\s*(?:Regex|string)\s*,", RegexOptions.CultureInvariant)]
+    private static partial Regex UnboundedDynamicCacheRegex();
+
     [Fact]
     public void SourceAndTestFiles_DoNotContainRegionDirectives()
+    {
+        List<string> violations = FindViolations(sourceRoots, RegionDirectiveRegex());
+
+        Assert.True(
+            violations.Count == 0,
+            $"Found forbidden #region/#endregion directives:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
+    }
+
+    [Fact]
+    public void TestFiles_DoNotContainUnboundedWaits()
+    {
+        List<string> violations = FindViolations(["tests"], UnboundedWaitRegex());
+
+        Assert.True(
+            violations.Count == 0,
+            $"Found unbounded blocking or async wait in tests (pass a finite TimeSpan timeout alongside TestContext.Current.CancellationToken):{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
+    }
+
+    [Fact]
+    public void SourceFiles_DoNotIntroduceUnboundedDynamicStaticCaches()
+    {
+        List<string> violations = FindViolations(["src"], UnboundedDynamicCacheRegex());
+
+        Assert.True(
+            violations.Count == 0,
+            $"Found unbounded static ConcurrentDictionary keyed by dynamic Regex/string (use ConditionalWeakTable or a bounded cache):{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
+    }
+
+    private static List<string> FindViolations(string[] roots, Regex regex)
     {
         string? repoRoot = FindRepoRoot();
         Assert.NotNull(repoRoot);
 
         List<string> violations = [];
-        Regex regex = RegionDirectiveRegex();
 
-        foreach (string root in sourceRoots)
+        foreach (string root in roots)
         {
             string rootPath = Path.Combine(repoRoot, root);
             if (!Directory.Exists(rootPath))
@@ -41,9 +75,7 @@ public sealed partial class CodeHygieneTests
             }
         }
 
-        Assert.True(
-            violations.Count == 0,
-            $"Found forbidden #region/#endregion directives:{Environment.NewLine}{string.Join(Environment.NewLine, violations)}");
+        return violations;
     }
 
     private static readonly string[] consoleWritingEntryPoints = ["new CliCommands(", "Program.Main(", "new InteractiveWizard("];

@@ -58,4 +58,22 @@ public class JsonlGeneratedBinderCultureTests
         Assert.Equal(expected.Day, shift.Day);
         Assert.Equal(expected.Start, shift.Start);
     }
+
+    [Fact]
+    public void GeneratedBinder_ManyRepeatedKeys_DoesNotStackOverflow()
+    {
+        var sb = new System.Text.StringBuilder(1_200_000);
+        sb.Append('{');
+        for (int i = 0; i < 50_000; i++)
+        {
+            sb.Append("\"Day\":\"2024-01-15\",");
+        }
+        sb.Append("\"Day\":\"2024-02-20\",\"Start\":\"14:15:16\"}");
+
+        using var reader = Jsonl.Read<Shift>().FromText(sb.ToString());
+        Shift shift = Assert.Single(reader.ToList());
+
+        Assert.Equal(new DateOnly(2024, 2, 20), shift.Day);
+        Assert.Equal(new TimeOnly(14, 15, 16), shift.Start);
+    }
 }

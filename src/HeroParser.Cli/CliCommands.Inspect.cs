@@ -43,6 +43,11 @@ internal sealed partial class CliCommands
         try
         {
             var (sample, sampleLength) = ReadCsvSample(path);
+            if (IsUtf32LittleEndian(sample, sampleLength) || IsUtf32BigEndian(sample, sampleLength))
+            {
+                console.Error("Quick inspect supports UTF-8 only; this file has a UTF-32 BOM. Use profile or convert it to UTF-8 first.");
+                return false;
+            }
             if (IsUtf16LittleEndian(sample, sampleLength) || IsUtf16BigEndian(sample, sampleLength))
             {
                 console.Error("Quick inspect supports UTF-8 only; this file has a UTF-16 BOM. Use profile or convert it to UTF-8 first.");

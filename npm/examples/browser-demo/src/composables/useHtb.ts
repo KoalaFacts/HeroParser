@@ -33,6 +33,7 @@ export function useHtb() {
 
   let loadedHtbBytes: Uint8Array | null = null;
   let loadedHtbFilename = "heroparser-data.htb";
+  let loadedHtbRecordCount: number | null = null;
 
   const inspectCurrentBytes = (sourceLabel?: string) => {
     if (!loadedHtbBytes) {
@@ -45,6 +46,7 @@ export function useHtb() {
     try {
       const info = inspectHtb(loadedHtbBytes);
       const t1 = performance.now();
+      loadedHtbRecordCount = info.recordCount;
       htbOutputKind.value = "info";
       htbOutputTitle.value = sourceLabel ?? "HTB Schema & Binary Inspection";
       htbOutput.value = JSON.stringify(
@@ -78,6 +80,7 @@ export function useHtb() {
       const t1 = performance.now();
 
       loadedHtbBytes = bytes;
+      loadedHtbRecordCount = null;
       loadedHtbFilename = "heroparser-data.htb";
       hasHtbBytes.value = bytes.byteLength > 0;
       htbFileInfo.value = `Encoded: ${loadedHtbFilename} (${bytes.byteLength} bytes)`;
@@ -101,19 +104,18 @@ export function useHtb() {
     htbError.value = "";
     const t0 = performance.now();
     try {
+      const recordCount = loadedHtbRecordCount ?? inspectHtb(loadedHtbBytes).recordCount;
+      loadedHtbRecordCount = recordCount;
       const csv = convertHtbToCsv(loadedHtbBytes, {
         delimiter: htbDelimiter.value || ",",
         hasHeader: htbHasHeader.value,
       });
       const t1 = performance.now();
-      const nonEmptyLines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
       htbOutputKind.value = "csv";
       htbOutputTitle.value = "Decoded CSV Output (from HTB)";
       htbOutput.value = csv;
       htbTime.value = `${(t1 - t0).toFixed(2)} ms`;
-      htbCount.value = (
-        htbHasHeader.value && nonEmptyLines > 0 ? nonEmptyLines - 1 : nonEmptyLines
-      ).toString();
+      htbCount.value = recordCount.toString();
     } catch (err: any) {
       htbError.value = `Decoding Error: ${err.message}`;
     }
@@ -131,6 +133,7 @@ export function useHtb() {
       const result = ev.target?.result;
       if (!(result instanceof ArrayBuffer)) return;
       loadedHtbBytes = new Uint8Array(result);
+      loadedHtbRecordCount = null;
       hasHtbBytes.value = true;
       htbFileInfo.value = `Loaded: ${file.name} (${file.size} bytes)`;
       htbSizeSummary.value = `${loadedHtbBytes.byteLength} B binary`;

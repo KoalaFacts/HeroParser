@@ -5,6 +5,7 @@ using System.Text;
 using HeroParser.AotTests.Models;
 using HeroParser.Conversion;
 using HeroParser.SeparatedValues.Reading.Records;
+using HeroParser.Validation;
 
 namespace HeroParser.AotTests.Tests;
 
@@ -26,6 +27,8 @@ public static class ExtendedTypesAotTests
         runner.Run("Extended Types: FixedWidth generated round-trip (char + UTF-8)", FixedWidthRoundTrip);
         runner.Run("Extended Types: Excel generated round-trip", ExcelRoundTrip);
         runner.Run("Extended Types: JSONL generated read + DataReader export", JsonlAndDataReaderRoundTrip);
+        runner.Run("Extended Types: JSONL custom parsable fallback + write validation", JsonlCustomParsableAndWriteValidation);
+        runner.Run("Extended Types: JSONL typeInfo precedence & non-binder write validation", JsonlTypeInfoPrecedenceAndValidation);
         runner.Run("Extended Types: HTB generated + DataReader + converter round-trip", HtbRoundTrip);
     }
 
@@ -140,6 +143,39 @@ public static class ExtendedTypesAotTests
         if (parsed.Count != 1)
             throw new Exception($"Expected 1 JSONL record, got {parsed.Count}");
         VerifyTabularSample(expected, parsed[0], "JSONL");
+
+        ExtendedJsonlBigIntegerAotRecord[] bigIntRecords =
+        [
+            new()
+            {
+                RequiredBigInt = -BigInteger.Pow(2, 200),
+                OptionalBigInt = null
+            },
+            new()
+            {
+                RequiredBigInt = BigInteger.Parse("1234567890123456789012345678901234567890", CultureInfo.InvariantCulture),
+                OptionalBigInt = BigInteger.Parse("9999999999999999999999999999999999999999", CultureInfo.InvariantCulture)
+            }
+        ];
+
+        string serialized = Jsonl.SerializeRecords(bigIntRecords, options: null, ExtendedJsonlBigIntegerAotContext.Default.ExtendedJsonlBigIntegerAotRecord);
+        if (serialized.Contains("IsPowerOfTwo", StringComparison.Ordinal))
+            throw new Exception($"BigIntegerJsonConverter was not applied during AOT serialization: {serialized}");
+
+        var viaTypeInfo = Jsonl.DeserializeRecords(serialized, ExtendedJsonlBigIntegerAotContext.Default.ExtendedJsonlBigIntegerAotRecord).ToList();
+        var viaBinder = Jsonl.Read<ExtendedJsonlBigIntegerAotRecord>().FromText(serialized).ToList();
+        if (viaTypeInfo.Count != 2 || viaBinder.Count != 2)
+            throw new Exception($"Expected 2 AOT BigInteger JSONL records, got {viaTypeInfo.Count}/{viaBinder.Count}");
+        for (int i = 0; i < 2; i++)
+        {
+            if (viaTypeInfo[i].RequiredBigInt != bigIntRecords[i].RequiredBigInt ||
+                viaTypeInfo[i].OptionalBigInt != bigIntRecords[i].OptionalBigInt ||
+                viaBinder[i].RequiredBigInt != bigIntRecords[i].RequiredBigInt ||
+                viaBinder[i].OptionalBigInt != bigIntRecords[i].OptionalBigInt)
+            {
+                throw new Exception($"AOT BigInteger JSONL round-trip mismatch at index {i}: {serialized}");
+            }
+        }
     }
 
     private static void HtbRoundTrip()
@@ -191,5 +227,141 @@ public static class ExtendedTypesAotTests
         string csvText = csvOut.ToString();
         if (!csvText.Contains("https://example.org/htb", StringComparison.Ordinal))
             throw new Exception("HtbToCsvConverter missing Uri");
+    }
+
+    private static void JsonlCustomParsableAndWriteValidation()
+    {
+        var typeInfo = ExtendedJsonlBigIntegerAotContext.Default.AotCustomParsableJsonlRecord;
+        var valid = new AotCustomParsableJsonlRecord
+        {
+            Name = "alpha",
+            Score = 50,
+            Code = new AotCustomSpanCode { Raw = "obj-1" }
+        };
+
+        string objectShapeJsonl = Jsonl.Write<AotCustomParsableJsonlRecord>().ToText([valid], typeInfo);
+        if (!objectShapeJsonl.Contains("\"Raw\":\"obj-1\"", StringComparison.Ordinal))
+            throw new Exception($"Expected object shape JSON for custom parsable, got: {objectShapeJsonl}");
+
+        var objectRead = Jsonl.Read<AotCustomParsableJsonlRecord>().FromText(objectShapeJsonl, typeInfo).ToList();
+        if (objectRead.Count != 1 || objectRead[0].Name != "alpha" || objectRead[0].Code.Raw != "obj-1")
+            throw new Exception("AOT object-shape fallback round-trip failed");
+
+        string stringShapeJsonl = "{\"Name\":\"beta\",\"Score\":75,\"Code\":\"str-2\"}";
+        var stringRead = Jsonl.Read<AotCustomParsableJsonlRecord>().FromText(stringShapeJsonl).ToList();
+        if (stringRead.Count != 1 || stringRead[0].Code.Raw != "str-2")
+            throw new Exception("AOT string fast-path read failed");
+
+        bool threwFallbackValidation = false;
+        try
+        {
+            _ = Jsonl.Read<AotCustomParsableJsonlRecord>()
+                .FromText("{\"Name\":\"\",\"Score\":10,\"Code\":{\"Raw\":\"x\"}}", typeInfo)
+                .ToList();
+        }
+        catch (ValidationException)
+        {
+            threwFallbackValidation = true;
+        }
+        if (!threwFallbackValidation)
+            throw new Exception("Expected ValidationException on invalid AOT fallback record");
+
+        var invalid = new AotCustomParsableJsonlRecord
+        {
+            Name = "",
+            Score = 200,
+            Code = new AotCustomSpanCode { Raw = "bad" }
+        };
+
+        using var ms = new MemoryStream();
+        bool threwWriteValidation = false;
+        try
+        {
+            Jsonl.Write<AotCustomParsableJsonlRecord>().ToStream(ms, [valid, invalid], typeInfo, leaveOpen: true);
+        }
+        catch (ValidationException ex)
+        {
+            threwWriteValidation = ex.Errors.Count == 2 && ex.Errors.All(e => e.RowNumber == 2);
+        }
+        if (!threwWriteValidation)
+            throw new Exception("Expected Strict write ValidationException with RowNumber == 2");
+
+        string partial = Encoding.UTF8.GetString(ms.ToArray());
+        if (partial.Contains('\n'))
+            throw new Exception("Strict write failure should not leave a dangling trailing newline");
+
+        string lenientText = Jsonl.Write<AotCustomParsableJsonlRecord>()
+            .WithValidationMode(ValidationMode.Lenient)
+            .ToText([invalid], typeInfo);
+        if (!lenientText.Contains("\"Score\":200", StringComparison.Ordinal))
+            throw new Exception("Lenient write should emit invalid record");
+    }
+
+    private static void JsonlTypeInfoPrecedenceAndValidation()
+    {
+        var kebabTypeInfo = AotKebabJsonlContext.Default.AotKebabJsonlRecord;
+        const string kebabJsonl = "{\"value-id\":7,\"display-name\":\"Ada\"}\n";
+
+        var syncList = Jsonl.Read<AotKebabJsonlRecord>().FromText(kebabJsonl, kebabTypeInfo).ToList();
+        if (syncList.Count != 1 || syncList[0].ValueId != 7 || syncList[0].DisplayName != "Ada")
+            throw new Exception($"Expected kebab JsonTypeInfo sync read ValueId=7/Ada, got {syncList.Count}");
+
+        using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(kebabJsonl)))
+        {
+            var asyncList = new List<AotKebabJsonlRecord>();
+            var enumerator = Jsonl.DeserializeRecordsAsync(ms, kebabTypeInfo).GetAsyncEnumerator();
+            try
+            {
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                    asyncList.Add(enumerator.Current);
+            }
+            finally
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+
+            if (asyncList.Count != 1 || asyncList[0].ValueId != 7 || asyncList[0].DisplayName != "Ada")
+                throw new Exception("Expected kebab JsonTypeInfo async read ValueId=7/Ada");
+        }
+
+        bool threwReadValidation = false;
+        try
+        {
+            _ = Jsonl.Read<AotKebabJsonlRecord>()
+                .FromText("{\"value-id\":7,\"display-name\":\"  \"}", kebabTypeInfo)
+                .ToList();
+        }
+        catch (ValidationException)
+        {
+            threwReadValidation = true;
+        }
+        if (!threwReadValidation)
+            throw new Exception("Expected ValidationException for kebab JsonTypeInfo read with blank DisplayName");
+
+        var metaOnlyTypeInfo = AotTypeInfoValidatedContext.Default.AotTypeInfoValidatedRecord;
+        var invalidMeta = new AotTypeInfoValidatedRecord { Name = "  ", Score = 500 };
+
+        bool threwMetaWriteValidation = false;
+        try
+        {
+            _ = Jsonl.Write<AotTypeInfoValidatedRecord>().ToText([invalidMeta], metaOnlyTypeInfo);
+        }
+        catch (ValidationException ex)
+        {
+            threwMetaWriteValidation = ex.Errors.Count == 2;
+        }
+        if (!threwMetaWriteValidation)
+            throw new Exception("Expected Strict JsonTypeInfo write validation to enforce [Validate] without [GenerateBinder] in NativeAOT");
+
+        string lenient = Jsonl.Write<AotTypeInfoValidatedRecord>()
+            .WithValidationMode(ValidationMode.Lenient)
+            .ToText([invalidMeta], metaOnlyTypeInfo);
+        if (!lenient.Contains("\"Score\":500", StringComparison.Ordinal))
+            throw new Exception("Expected Lenient JsonTypeInfo write to emit invalid record");
+
+        string emptyStructJson = Jsonl.Write<AotEmptyMetadataStruct>()
+            .ToText([default], AotEmptyMetadataContext.Default.AotEmptyMetadataStruct);
+        if (emptyStructJson != "{}")
+            throw new Exception($"Expected empty metadata struct to write '{{}}', got '{emptyStructJson}'");
     }
 }

@@ -13,4 +13,7 @@ public sealed record JsonlColumnDefinition(
     string JsonPath,
     [property: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)]
     [param: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)]
-    Type DataType);
+    Type DataType)
+{
+    internal bool IsLiteralTopLevelKey { get; init; }
+}

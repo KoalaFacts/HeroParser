@@ -6,6 +6,7 @@ using System.Text;
 #if NET6_0_OR_GREATER
 using System.Threading.Tasks.Sources;
 #endif
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 
 namespace HeroParser.SeparatedValues.Writing;
@@ -76,6 +77,8 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     internal string NullValue => options.NullValue;
 
     internal string? NumberFormat => options.NumberFormat;
+
+    internal int? MaxRowCount => options.MaxRowCount;
 
     private const int DEFAULT_CHAR_BUFFER_SIZE = 16 * 1024; // 16KB chars
     private const int DEFAULT_BYTE_BUFFER_SIZE = 16 * 1024; // 16KB bytes
@@ -160,7 +163,37 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
 #if NET6_0_OR_GREATER
     [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
 #endif
-    public async ValueTask WriteFieldAsync(ReadOnlyMemory<char> value, CancellationToken cancellationToken = default)
+    public ValueTask WriteFieldAsync(ReadOnlyMemory<char> value, CancellationToken cancellationToken = default)
+        => WriteFieldCoreAsync(value, cancellationToken);
+
+    /// <summary>
+    /// Asynchronously writes a byte array field encoded as Base64, using a reversible <c>base64:</c> prefix when injection protection is active and the payload starts with a dangerous character.
+    /// </summary>
+    /// <param name="value">The byte array value to write.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public ValueTask WriteBase64FieldAsync(byte[]? value, CancellationToken cancellationToken = default)
+    {
+        if (value is null)
+            return WriteFieldCoreAsync(nullValue.AsMemory(), cancellationToken);
+
+        return WriteFieldCoreAsync(FormatBase64Field(value).AsMemory(), cancellationToken);
+    }
+
+    private string FormatBase64Field(byte[] bytes)
+    {
+        if (bytes.Length == 0)
+            return Utf8SpanParser.EMPTY_BASE64_TOKEN;
+
+        string b64 = Convert.ToBase64String(bytes);
+        return injectionProtection != CsvInjectionProtection.None && quoting.IsDangerousField(b64.AsSpan())
+            ? Utf8SpanParser.EMPTY_BASE64_TOKEN + b64
+            : b64;
+    }
+
+#if NET6_0_OR_GREATER
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+#endif
+    private async ValueTask WriteFieldCoreAsync(ReadOnlyMemory<char> value, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
@@ -227,54 +260,9 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
     public ValueTask WriteFieldAsync(decimal value, CancellationToken cancellationToken = default)
         => WriteSpanFormattableFieldAsync(value, format: null, cancellationToken);
 
-    /// <summary>Asynchronously writes a Boolean field directly without boxing.</summary>
+    /// <summary>Asynchronously writes a Boolean field directly.</summary>
     public ValueTask WriteFieldAsync(bool value, CancellationToken cancellationToken = default)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow)
-        {
-            if (charBufferPosition + 1 <= charBuffer.Length)
-            {
-                charBuffer[charBufferPosition++] = delimiter;
-            }
-            else
-            {
-                return WriteFieldSlowAsync(value, cancellationToken);
-            }
-        }
-        isFirstFieldInRow = false;
-
-        ReadOnlySpan<char> boolStr = value ? "True" : "False";
-        if (charBufferPosition + boolStr.Length <= charBuffer.Length)
-        {
-            boolStr.CopyTo(charBuffer.AsSpan(charBufferPosition));
-            charBufferPosition += boolStr.Length;
-            return ValueTask.CompletedTask;
-        }
-
-        return WriteFieldValueAsync(value ? "True".AsMemory() : "False".AsMemory(), cancellationToken);
-    }
-
-    private async ValueTask WriteFieldSlowAsync(bool value, CancellationToken cancellationToken)
-    {
-        await WriteDelimiterAsync(cancellationToken).ConfigureAwait(false);
-        ReadOnlySpan<char> boolStr = value ? "True" : "False";
-        if (charBufferPosition + boolStr.Length <= charBuffer.Length)
-        {
-            boolStr.CopyTo(charBuffer.AsSpan(charBufferPosition));
-            charBufferPosition += boolStr.Length;
-        }
-        else
-        {
-            await WriteFieldValueAsync(value ? "True".AsMemory() : "False".AsMemory(), cancellationToken).ConfigureAwait(false);
-        }
-    }
+        => WriteFieldAsync(value ? "True".AsMemory() : "False".AsMemory(), cancellationToken);
 
     /// <summary>Asynchronously writes a DateTime field directly without boxing.</summary>
     public ValueTask WriteFieldAsync(DateTime value, CancellationToken cancellationToken = default)
@@ -369,11 +357,25 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
 #endif
     private async ValueTask WriteCharSlowAsync(char value, CancellationToken cancellationToken)
     {
-        char[] rented = charPool.Rent(1);
-        rented[0] = value;
+        bool prefixDangerous = injectionProtection != CsvInjectionProtection.None && quoting.IsDangerousField([value]);
+        int length = prefixDangerous ? 6 : 1;
+        char[] rented = charPool.Rent(length);
+        if (prefixDangerous)
+        {
+            rented[0] = 'c';
+            rented[1] = 'h';
+            rented[2] = 'a';
+            rented[3] = 'r';
+            rented[4] = ':';
+            rented[5] = value;
+        }
+        else
+        {
+            rented[0] = value;
+        }
         try
         {
-            await WriteFieldValueAsync(rented.AsMemory(0, 1), cancellationToken).ConfigureAwait(false);
+            await WriteFieldValueAsync(rented.AsMemory(0, length), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -825,6 +827,11 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
             case char ch:
                 {
                     Span<char> chBuf = [ch];
+                    if (injectionProtection != CsvInjectionProtection.None && quoting.IsDangerousField(chBuf))
+                    {
+                        Span<char> prefixed = ['c', 'h', 'a', 'r', ':', ch];
+                        return WriteFieldValueSync(prefixed);
+                    }
                     return WriteFieldValueSync(chBuf);
                 }
 
@@ -844,11 +851,18 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 return WriteFieldValueSync(uri.OriginalString.AsSpan());
 
             case byte[] bytes:
-                if (bytes.Length <= 180)
+                if (bytes.Length == 0)
+                    return WriteFieldValueSync(Utf8SpanParser.EMPTY_BASE64_TOKEN.AsSpan());
+                if (bytes.Length <= 170)
                 {
                     Span<char> b64 = stackalloc char[256];
                     if (Convert.TryToBase64Chars(bytes, b64, out int b64Written))
-                        return WriteFieldValueSync(b64[..b64Written]);
+                    {
+                        ReadOnlySpan<char> encoded = b64[..b64Written];
+                        if (injectionProtection != CsvInjectionProtection.None && quoting.IsDangerousField(encoded))
+                            return false; // Fall back to async path to prepend base64: and apply injection checks
+                        return WriteFieldValueSync(encoded);
+                    }
                 }
                 return false;
 
@@ -1559,7 +1573,9 @@ public sealed class CsvAsyncStreamWriter : IAsyncDisposable
                 return;
 
             case byte[] bytes:
-                await WriteFieldValueAsync(Convert.ToBase64String(bytes).AsMemory(), cancellationToken).ConfigureAwait(false);
+                await WriteFieldValueAsync(
+                    FormatBase64Field(bytes).AsMemory(),
+                    cancellationToken).ConfigureAwait(false);
                 return;
 
             case Guid g:

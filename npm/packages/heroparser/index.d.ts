@@ -3,6 +3,7 @@ export type FixedWidthAlignment = "left" | "right" | "center" | "none";
 export interface CsvOptions {
   delimiter?: string;
   hasHeader?: boolean;
+  allowNewlinesInsideQuotes?: boolean;
 }
 
 export interface ColumnSpec {
@@ -13,14 +14,16 @@ export interface ColumnSpec {
   padChar?: string;
 }
 
+export type FixedWidthWriteColumnSpec = Omit<ColumnSpec, "start"> & { start?: number };
+
 export interface FixedWidthConversionOptions {
   delimiter?: string;
   includeHeader?: boolean;
 }
 
-export interface ExcelSheetDefinition {
+export interface ExcelSheetDefinition<T extends object = Record<string, unknown>> {
   name: string;
-  records: any[];
+  records: readonly T[] | string;
 }
 
 export interface CsvValidationOptions {
@@ -91,27 +94,52 @@ export interface HtbInspectResult {
 }
 
 export function init(): Promise<void>;
-export function readCsv(csvText: string, options?: CsvOptions): any[];
-export function readFixedWidth(text: string, specs: ColumnSpec[]): any[];
-export function readExcel(excelBytes: Uint8Array, sheetName?: string, hasHeader?: boolean): any[];
+export function readCsv(csvText: string, options: CsvOptions & { hasHeader: false }): string[][];
+export function readCsv<T = Record<string, string>>(
+  csvText: string,
+  options?: Omit<CsvOptions, "hasHeader"> & { hasHeader?: true | undefined },
+): T[];
+export function readCsv<T = Record<string, string>>(
+  csvText: string,
+  options?: CsvOptions,
+): T[] | string[][];
+export function readFixedWidth<T = Record<string, string>>(text: string, specs: readonly ColumnSpec[]): T[];
+export function readExcel(excelBytes: Uint8Array, sheetName: string | undefined, hasHeader: false): string[][];
+export function readExcel<T = Record<string, string>>(
+  excelBytes: Uint8Array,
+  sheetName?: string,
+  hasHeader?: true | undefined,
+): T[];
+export function readExcel<T = Record<string, string>>(
+  excelBytes: Uint8Array,
+  sheetName?: string,
+  hasHeader?: boolean,
+): T[] | string[][];
 export function getExcelSheetNames(excelBytes: Uint8Array): string[];
 export function detectCsvDelimiter(sampleRows: string): string;
 
-export function writeCsv(records: any[], options?: CsvOptions): string;
-export function writeFixedWidth(records: any[], specs: ColumnSpec[]): string;
+export function writeCsv<T extends object = Record<string, unknown>>(records: readonly T[], options?: CsvOptions): string;
+export function writeFixedWidth<T extends object = Record<string, unknown>>(
+  records: readonly T[],
+  specs: readonly FixedWidthWriteColumnSpec[],
+): string;
 export function convertCsvToFixedWidth(
   csvText: string,
-  specs: ColumnSpec[],
+  specs: readonly FixedWidthWriteColumnSpec[],
   options?: FixedWidthConversionOptions,
 ): string;
 export function convertFixedWidthToCsv(
   fixedWidthText: string,
-  specs: ColumnSpec[],
+  specs: readonly ColumnSpec[],
   options?: FixedWidthConversionOptions,
 ): string;
-export function writeExcel(records: any[], sheetName?: string, hasHeader?: boolean): Uint8Array;
+export function writeExcel<T extends object = Record<string, unknown>>(
+  records: readonly T[] | string,
+  sheetName?: string,
+  hasHeader?: boolean,
+): Uint8Array;
 export function writeExcelMultiSheet(
-  sheets: ExcelSheetDefinition[],
+  sheets: readonly ExcelSheetDefinition<object>[] | string,
   hasHeader?: boolean,
 ): Uint8Array;
 
@@ -123,8 +151,11 @@ export function inferCsvSchema(
 export function repairLlmCsv(text: string, options?: LlmRepairOptions): string;
 export function convertCsvToJsonl(csvText: string, options?: CsvOptions): string;
 
-export function readJsonl(jsonlText: string): any[];
-export function writeJsonl(records: any[]): string;
+export type JsonlInputFormat = "jsonl" | "json-array";
+
+export function readJsonl<T = Record<string, unknown>>(jsonlText: string): T[];
+export function readJsonlAsJson(jsonlText: string, options?: { indented?: boolean }): string;
+export function writeJsonl(records: readonly unknown[] | string, inputFormat?: JsonlInputFormat): string;
 export function convertJsonlToCsv(
   jsonlText: string,
   options?: Pick<CsvOptions, "delimiter">,

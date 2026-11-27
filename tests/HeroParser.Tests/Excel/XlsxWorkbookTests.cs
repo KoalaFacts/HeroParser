@@ -124,6 +124,72 @@ public class XlsxWorkbookTests
         Assert.Equal("xl/worksheets/sheet3.xml", workbook.Sheets[2].Path);
     }
 
+    [Fact]
+    public void Parse_ExcludesChartSheetsAndPreservesWorksheetOrder()
+    {
+        var ms = new MemoryStream();
+        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            AddEntry(zip, "xl/workbook.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+                          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                  <sheets>
+                    <sheet name="Chart" sheetId="1" r:id="rId1" />
+                    <sheet name="Data" sheetId="2" r:id="rId2" />
+                    <sheet name="StrictSheet" sheetId="3" r:id="rId3" />
+                  </sheets>
+                </workbook>
+                """);
+            AddEntry(zip, "xl/_rels/workbook.xml.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet" Target="chartsheets/sheet1.xml" />
+                  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml" />
+                  <Relationship Id="rId3" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/worksheet" Target="worksheets/sheet2.xml" />
+                </Relationships>
+                """);
+            AddEntry(zip, "xl/worksheets/sheet1.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                  <sheetData>
+                    <row r="1"><c r="A1" t="inlineStr"><is><t>Name</t></is></c></row>
+                    <row r="2"><c r="A2" t="inlineStr"><is><t>Alice</t></is></c></row>
+                  </sheetData>
+                </worksheet>
+                """);
+            AddEntry(zip, "xl/worksheets/sheet2.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                  <sheetData>
+                    <row r="1"><c r="A1" t="inlineStr"><is><t>Strict</t></is></c></row>
+                  </sheetData>
+                </worksheet>
+                """);
+        }
+
+        ms.Position = 0;
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: true))
+        {
+            var workbook = XlsxWorkbook.Parse(archive);
+            Assert.Equal(2, workbook.Sheets.Count);
+            Assert.Equal("Data", workbook.Sheets[0].Name);
+            Assert.Equal(0, workbook.Sheets[0].Index);
+            Assert.Equal("StrictSheet", workbook.Sheets[1].Name);
+            Assert.Equal(1, workbook.Sheets[1].Index);
+        }
+
+        ms.Position = 0;
+        IReadOnlyList<string> sheetNames = HeroParser.Excel.GetSheetNames(ms);
+        Assert.Equal(["Data", "StrictSheet"], sheetNames);
+
+        ms.Position = 0;
+        var rows = HeroParser.Excel.Read().WithoutHeader().FromStream(ms);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("Name", rows[0][0]);
+        Assert.Equal("Alice", rows[1][0]);
+    }
+
     private static ZipArchive CreateArchiveWithThreeSheets()
     {
         return CreateArchive(

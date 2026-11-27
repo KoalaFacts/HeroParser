@@ -295,7 +295,7 @@ Jsonl.Write<ChatExample>().ToFile("out.jsonl", records);
 string text = Jsonl.Write<ChatExample>().ToText(records);
 
 // Async, from an IEnumerable<T> or IAsyncEnumerable<T> source
-await Jsonl.Write<ChatExample>().ToFileAsync("out.jsonl", records);
+await Jsonl.Write<ChatExample>().ToFileFromEnumerableAsync("out.jsonl", records);
 await Jsonl.Write<ChatExample>().ToFileAsync("out.jsonl.gz", asyncRecords);
 ```
 
@@ -335,7 +335,7 @@ await Jsonl.Write<ChatExample>()
     .ToStreamAsync(output, asyncRecords);
 ```
 
-For AOT, use `[GenerateBinder]` on the record type or pass `JsonTypeInfo<T>` via `.WithTypeInfo(...)` (also supported by static `Jsonl.SerializeRecords`, `Jsonl.WriteToFile*`, and `Jsonl.WriteToStream*` overloads). Both `IEnumerable<T>` and `IAsyncEnumerable<T>` are supported for async writes.
+For AOT and trimming compatibility when writing, pass a source-generated `JsonTypeInfo<T>` via `.WithTypeInfo(...)` (or use the typed `Jsonl.SerializeRecords`, `Jsonl.WriteToFile*`, and `Jsonl.WriteToStream*` overloads). Adding `[GenerateBinder]` on the record type is optional for writing on .NET 9+ when `JsonTypeInfo<T>` includes property metadata, and generates a trim/AOT-safe `[Validate]` validator (in addition to fast-path reading). In `Strict` validation mode, writing with `JsonTypeInfo<T>` without `[GenerateBinder]` validates `[Validate]` rules via property metadata (so `JsonSourceGenerationMode.Serialization` is rejected unless `[GenerateBinder]` or `ValidationMode.Lenient` is used; on .NET 8 NativeAOT, also add `[GenerateBinder]` or use `ValidationMode.Lenient` because `.NET 8`'s `System.Text.Json` source generator does not emit `JsonPropertyInfo.AttributeProvider`). Both `IEnumerable<T>` and `IAsyncEnumerable<T>` are supported for async writes.
 
 ### 2.4 OnError callback
 
@@ -378,6 +378,7 @@ Skipping does **not** emit an empty line — the offending record disappears.
 | `MaxRowCount` | `int?` | `null` | Optional record cap. |
 | `MaxOutputSize` | `long?` | `null` | Optional byte cap (DoS protection). |
 | `WriteFinalNewline` | `bool` | `false` | Emit a trailing newline after the last record. |
+| `ValidationMode` | `ValidationMode` | `Strict` | `Strict` throws `ValidationException` when `[Validate]` rules fail; `Lenient` skips write-time validation. |
 | `OnError` | `JsonlSerializeErrorHandler?` | `null` | Per-record callback. |
 
 ### 3.3 `JsonlDataReaderOptions`

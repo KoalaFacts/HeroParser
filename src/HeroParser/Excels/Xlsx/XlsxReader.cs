@@ -41,6 +41,30 @@ internal sealed class XlsxReader : IDisposable
     /// <summary>The parsed workbook metadata (sheet names and paths).</summary>
     public XlsxWorkbook Workbook { get; }
 
+    internal static string[] ReadSheetNames(Stream stream)
+    {
+        try
+        {
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
+            var workbook = XlsxWorkbook.Parse(archive);
+            var sheets = workbook.Sheets;
+            var names = new string[sheets.Count];
+            for (int i = 0; i < sheets.Count; i++)
+            {
+                names[i] = sheets[i].Name;
+            }
+            return names;
+        }
+        catch (ExcelException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new ExcelException("Failed to open .xlsx file: " + ex.Message, ex);
+        }
+    }
+
     /// <summary>
     /// Opens a sheet reader for the specified sheet.
     /// </summary>

@@ -108,12 +108,12 @@ public class HtbTests
 
         using var ms = new MemoryStream();
         await HeroParser.Htb.Write<HtbTestRecord>()
-            .ToStreamAsync(ms, records, leaveOpen: true);
+            .ToStreamAsync(ms, records, leaveOpen: true, TestContext.Current.CancellationToken);
 
         ms.Position = 0;
 
         var readRecords = new List<HtbTestRecord>();
-        await foreach (var rec in HeroParser.Htb.Read<HtbTestRecord>().FromStreamAsync(ms, leaveOpen: true))
+        await foreach (var rec in HeroParser.Htb.Read<HtbTestRecord>().FromStreamAsync(ms, leaveOpen: true, TestContext.Current.CancellationToken))
         {
             readRecords.Add(rec);
         }
@@ -350,8 +350,63 @@ public class HtbTests
                 .ToList());
     }
 
+    [Fact]
+    public async Task GeneratedBinder_LenientMode_ConsumesFullRowBeforeValidatingInt128RangeAndNotNullAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        HtbLenientInt128RangeRecord[] records =
+        [
+            new() { Amount = 5, Code = "R1-BAD-RANGE", Tail = 111 },
+            new() { Amount = 50, Code = null, Tail = 222 },
+            new() { Amount = 75, Code = "R3-OK", Tail = 333 }
+        ];
+
+        using var ms = new MemoryStream();
+        HeroParser.Htb.Write<HtbLenientInt128RangeRecord>().ToStream(ms, records, leaveOpen: true);
+
+        ms.Position = 0;
+        var syncParsed = HeroParser.Htb.Read<HtbLenientInt128RangeRecord>()
+            .WithValidationMode(ValidationMode.Lenient)
+            .FromStream(ms, leaveOpen: true)
+            .ToList();
+
+        var syncRow = Assert.Single(syncParsed);
+        Assert.Equal((Int128)75, syncRow.Amount);
+        Assert.Equal("R3-OK", syncRow.Code);
+        Assert.Equal(333, syncRow.Tail);
+
+        ms.Position = 0;
+        List<HtbLenientInt128RangeRecord> asyncParsed = [];
+        await foreach (var item in HeroParser.Htb.Read<HtbLenientInt128RangeRecord>()
+            .WithValidationMode(ValidationMode.Lenient)
+            .FromStreamAsync(ms, leaveOpen: true, cancellationToken: ct))
+        {
+            asyncParsed.Add(item);
+        }
+
+        var asyncRow = Assert.Single(asyncParsed);
+        Assert.Equal((Int128)75, asyncRow.Amount);
+        Assert.Equal("R3-OK", asyncRow.Code);
+        Assert.Equal(333, asyncRow.Tail);
+    }
+
     private sealed class SyncProgress<T>(Action<T> handler) : IProgress<T>
     {
         public void Report(T value) => handler(value);
     }
+}
+
+[GenerateBinder]
+public sealed class HtbLenientInt128RangeRecord
+{
+    [TabularMap(Index = 0)]
+    [Validate(RangeMin = 10, RangeMax = 100)]
+    public Int128 Amount { get; set; }
+
+    [TabularMap(Index = 1)]
+    [Validate(NotNull = true)]
+    public string? Code { get; set; }
+
+    [TabularMap(Index = 2)]
+    public int Tail { get; set; }
 }

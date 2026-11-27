@@ -1,5 +1,5 @@
-using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using HeroParser.Internal;
 
@@ -11,7 +11,7 @@ namespace HeroParser.Validation;
 /// </summary>
 internal readonly struct PropertyValidationRunner(CultureInfo culture)
 {
-    private static readonly ConcurrentDictionary<Regex, Regex> safeRegexCache = new();
+    private static readonly ConditionalWeakTable<Regex, Regex> safeRegexCache = [];
 
     private static Regex GetSafeRegex(Regex regex)
     {
@@ -20,7 +20,7 @@ internal readonly struct PropertyValidationRunner(CultureInfo culture)
             return regex;
         }
 
-        return safeRegexCache.GetOrAdd(regex, r =>
+        return safeRegexCache.GetValue(regex, static r =>
             new Regex(r.ToString(), r.Options, TimeSpan.FromMilliseconds(1000)));
     }
 
@@ -91,9 +91,9 @@ internal readonly struct PropertyValidationRunner(CultureInfo culture)
         }
 
         if ((rangeMin.HasValue || rangeMax.HasValue) &&
-            new CultureNumberParser(culture).TryParse(value, NumberStyles.Any, out double numericValue))
+            new NumericRangeCheck(rangeMin, rangeMax).TryEvaluateSpan(value, culture, out bool belowMin, out bool aboveMax, out string formattedValue))
         {
-            if (rangeMin.HasValue && numericValue < rangeMin.Value)
+            if (belowMin)
             {
                 AddError(
                     errors,
@@ -102,13 +102,13 @@ internal readonly struct PropertyValidationRunner(CultureInfo culture)
                     columnIndex,
                     columnName,
                     "Range",
-                    string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} is less than minimum {rangeMin.Value}."),
+                    string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {formattedValue} is less than minimum {rangeMin!.Value}."),
                     value,
                     ref rawValue);
                 hasErrors = true;
             }
 
-            if (rangeMax.HasValue && numericValue > rangeMax.Value)
+            if (aboveMax)
             {
                 AddError(
                     errors,
@@ -117,7 +117,7 @@ internal readonly struct PropertyValidationRunner(CultureInfo culture)
                     columnIndex,
                     columnName,
                     "Range",
-                    string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} exceeds maximum {rangeMax.Value}."),
+                    string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {formattedValue} exceeds maximum {rangeMax!.Value}."),
                     value,
                     ref rawValue);
                 hasErrors = true;
@@ -222,15 +222,15 @@ internal readonly struct PropertyValidationRunner(CultureInfo culture)
 
         if (rangeMin.HasValue || rangeMax.HasValue)
         {
-            if (new CultureNumberParser(culture).TryParse(value, NumberStyles.Any, out double numericValue))
+            if (new NumericRangeCheck(rangeMin, rangeMax).TryEvaluateSpan(value, culture, out bool belowMin, out bool aboveMax, out string formattedValue))
             {
-                if (rangeMin.HasValue && numericValue < rangeMin.Value)
+                if (belowMin)
                 {
-                    AddError("Range", string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} is less than minimum {rangeMin.Value}."));
+                    AddError("Range", string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {formattedValue} is less than minimum {rangeMin!.Value}."));
                 }
-                if (rangeMax.HasValue && numericValue > rangeMax.Value)
+                if (aboveMax)
                 {
-                    AddError("Range", string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} exceeds maximum {rangeMax.Value}."));
+                    AddError("Range", string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {formattedValue} exceeds maximum {rangeMax!.Value}."));
                 }
             }
         }

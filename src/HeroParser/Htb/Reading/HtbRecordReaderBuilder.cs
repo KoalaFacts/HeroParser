@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using HeroParser.Internal;
 using HeroParser.Validation;
 using HeroParser.Htbs;
@@ -111,19 +112,35 @@ public sealed class HtbRecordReaderBuilder<T> where T : new()
     /// Streams records asynchronously from the specified stream.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB deserialization is not Native AOT-safe.")]
-    public async IAsyncEnumerable<T> FromStreamAsync(Stream stream, bool leaveOpen = false)
+    public IAsyncEnumerable<T> FromStreamAsync(Stream stream, bool leaveOpen = false)
+        => FromStreamAsync(stream, leaveOpen, CancellationToken.None);
+
+    /// <summary>
+    /// Streams records asynchronously from the specified stream with explicit stream ownership and cancellation support.
+    /// </summary>
+    /// <param name="stream">The HTB stream to read from.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, leaves <paramref name="stream"/> open after enumeration completes.</param>
+    /// <param name="cancellationToken">Token used to cancel async I/O and enumeration.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB deserialization is not Native AOT-safe.")]
+    public async IAsyncEnumerable<T> FromStreamAsync(
+        Stream stream,
+        bool leaveOpen,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(stream);
         var options = BuildOptions();
 
         // Construct the reader before validating so an owned stream (leaveOpen: false) is
         // disposed when validation fails.
-        using var reader = new HtbRecordReader<T>(stream, options, leaveOpen);
-        options.Validate();
-        while (await reader.ReadNextAsync())
+        var reader = new HtbRecordReader<T>(stream, options, leaveOpen);
+        await using (reader.ConfigureAwait(false))
         {
-            if (reader.CurrentRecord != null)
-                yield return reader.CurrentRecord;
+            options.Validate();
+            while (await reader.ReadNextAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (reader.CurrentRecord != null)
+                    yield return reader.CurrentRecord;
+            }
         }
     }
 
@@ -131,20 +148,35 @@ public sealed class HtbRecordReaderBuilder<T> where T : new()
     /// Streams records asynchronously from the specified file path.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB deserialization is not Native AOT-safe.")]
-    public async IAsyncEnumerable<T> FromFileAsync(string path)
+    public IAsyncEnumerable<T> FromFileAsync(string path)
+        => FromFileAsync(path, CancellationToken.None);
+
+    /// <summary>
+    /// Streams records asynchronously from the specified file path with cancellation support.
+    /// </summary>
+    /// <param name="path">The HTB file path to read from.</param>
+    /// <param name="cancellationToken">Token used to cancel async I/O and enumeration.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB deserialization is not Native AOT-safe.")]
+    public async IAsyncEnumerable<T> FromFileAsync(
+        string path,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        cancellationToken.ThrowIfCancellationRequested();
         var options = BuildOptions();
 
         var stream = new CompressedFile(path).OpenRead(bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
         await using (stream.ConfigureAwait(false))
         {
-            using var reader = new HtbRecordReader<T>(stream, options, leaveOpen: true);
-            options.Validate();
-            while (await reader.ReadNextAsync())
+            var reader = new HtbRecordReader<T>(stream, options, leaveOpen: true);
+            await using (reader.ConfigureAwait(false))
             {
-                if (reader.CurrentRecord != null)
-                    yield return reader.CurrentRecord;
+                options.Validate();
+                while (await reader.ReadNextAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (reader.CurrentRecord != null)
+                        yield return reader.CurrentRecord;
+                }
             }
         }
     }

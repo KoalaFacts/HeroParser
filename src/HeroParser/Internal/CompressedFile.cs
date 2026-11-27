@@ -77,7 +77,7 @@ internal readonly struct CompressedFile
         {
             return Format switch
             {
-                FileCompressionFormat.GZip => new GZipStream(fileStream, level, leaveOpen: false),
+                FileCompressionFormat.GZip => new NonEmptyGZipWriteStream(fileStream, level),
                 FileCompressionFormat.Brotli => new BrotliStream(fileStream, level, leaveOpen: false),
 #if NET11_0_OR_GREATER
                 FileCompressionFormat.Zstandard => (OperatingSystem.IsBrowser() || OperatingSystem.IsWasi())
@@ -196,5 +196,138 @@ internal readonly struct CompressedFile
             || path.EndsWith(".zstd", StringComparison.OrdinalIgnoreCase))
             return FileCompressionFormat.Zstandard;
         return FileCompressionFormat.None;
+    }
+}
+
+/// <summary>
+/// Wraps <see cref="GZipStream"/> so disposing a zero-byte stream still writes a valid empty RFC 1952 member on .NET 8-10.
+/// </summary>
+internal sealed class NonEmptyGZipWriteStream(FileStream inner, CompressionLevel level) : Stream
+{
+    private static readonly byte[] emptyGzipMember =
+        [0x1F, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+    private GZipStream? gzip;
+    private bool disposed;
+
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => !disposed && inner.CanWrite;
+    public override long Length => throw new NotSupportedException();
+    public override long Position
+    {
+        get => throw new NotSupportedException();
+        set => throw new NotSupportedException();
+    }
+
+    private GZipStream EnsureGzip() => gzip ??= new GZipStream(inner, level, leaveOpen: true);
+
+    public override void Flush()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        gzip?.Flush();
+    }
+
+    public override Task FlushAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (cancellationToken.IsCancellationRequested)
+            return Task.FromCanceled(cancellationToken);
+
+        return gzip is not null ? gzip.FlushAsync(cancellationToken) : Task.CompletedTask;
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        ValidateBufferArguments(buffer, offset, count);
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (count == 0)
+            return;
+
+        EnsureGzip().Write(buffer, offset, count);
+    }
+
+    public override void Write(ReadOnlySpan<byte> buffer)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (buffer.IsEmpty)
+            return;
+
+        EnsureGzip().Write(buffer);
+    }
+
+    public override void WriteByte(byte value)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        EnsureGzip().WriteByte(value);
+    }
+
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        ValidateBufferArguments(buffer, offset, count);
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (cancellationToken.IsCancellationRequested)
+            return Task.FromCanceled(cancellationToken);
+        if (count == 0)
+            return Task.CompletedTask;
+
+        return EnsureGzip().WriteAsync(buffer, offset, count, cancellationToken);
+    }
+
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (cancellationToken.IsCancellationRequested)
+            return ValueTask.FromCanceled(cancellationToken);
+        if (buffer.IsEmpty)
+            return ValueTask.CompletedTask;
+
+        return EnsureGzip().WriteAsync(buffer, cancellationToken);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !disposed)
+        {
+            disposed = true;
+            try
+            {
+                if (gzip is not null)
+                    gzip.Dispose();
+                else
+                    inner.Write(emptyGzipMember);
+            }
+            finally
+            {
+                inner.Dispose();
+            }
+        }
+
+        base.Dispose(disposing);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (disposed)
+            return;
+
+        disposed = true;
+        try
+        {
+            if (gzip is not null)
+                await gzip.DisposeAsync().ConfigureAwait(false);
+            else
+                await inner.WriteAsync(emptyGzipMember).ConfigureAwait(false);
+        }
+        finally
+        {
+            await inner.DisposeAsync().ConfigureAwait(false);
+        }
+
+        GC.SuppressFinalize(this);
     }
 }

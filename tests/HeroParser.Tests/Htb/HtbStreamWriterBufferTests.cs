@@ -124,10 +124,9 @@ public class HtbStreamWriterBufferTests
     ]);
 
     [Fact]
-    public void ColumnNameLongerThanTheBuffer_IsWrittenWhole()
+    public void ColumnNameAtMaxUtf8ByteLimit_SurvivesTheRoundTrip()
     {
-        // Column names go through the same length-prefixed copy as values do.
-        string name = new('n', BUFFER_SIZE * 2);
+        string name = new('n', HtbSchema.MAX_COLUMN_NAME_BYTES);
 
         using var stream = new MemoryStream();
         using (var writer = new HeroParser.Htbs.Writing.HtbStreamWriter(stream, leaveOpen: true))
@@ -138,6 +137,15 @@ public class HtbStreamWriterBufferTests
 
         // Magic (4) + column count (4) + type/nullable/length prefix + the name itself.
         Assert.True(stream.Length > name.Length, "the header should contain the whole column name");
+
+        stream.Position = 0;
+        using var reader = new HeroParser.Htbs.Reading.HtbStreamReader(stream, leaveOpen: true);
+        HtbSchema readSchema = reader.ParseHeader();
+        Assert.Equal(name, readSchema.Columns[0].Name);
+
+        string oversizedName = new('n', HtbSchema.MAX_COLUMN_NAME_BYTES + 1);
+        HtbException ex = Assert.Throws<HtbException>(() => SchemaWith(oversizedName));
+        Assert.Equal(HtbErrorCode.SerializationError, ex.ErrorCode);
     }
 
     [Fact]
@@ -187,5 +195,61 @@ public class HtbStreamWriterBufferTests
         writer.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => writer.WriteHeader(SchemaWith("Name")));
+    }
+
+    [Fact]
+    public async Task OversizedPayloads_AreRejectedBeforeWritingLengthPrefixAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var byteSchema = new HtbSchema([new HtbColumn("Payload", HtbDataType.ByteArray, isNullable: false)]);
+        var strSchema = new HtbSchema([new HtbColumn("Text", HtbDataType.String, isNullable: false)]);
+        var floatSchema = new HtbSchema([new HtbColumn("Vec", HtbDataType.FloatArray, isNullable: false)]);
+
+        await AssertOversizedRejectedAsync(byteSchema, static w => w.WriteByteArray(new byte[HtbSchema.MAX_PAYLOAD_BYTES + 1]), null);
+        await AssertOversizedRejectedAsync(byteSchema, null, w => w.WriteByteArrayAsync(new byte[HtbSchema.MAX_PAYLOAD_BYTES + 1], ct));
+
+        await AssertOversizedRejectedAsync(
+            strSchema,
+            static w => w.WriteString(new string('\u20AC', (HtbSchema.MAX_PAYLOAD_BYTES / 3) + 1)),
+            null);
+        await AssertOversizedRejectedAsync(
+            strSchema,
+            null,
+            w => w.WriteStringAsync(new string('\u20AC', (HtbSchema.MAX_PAYLOAD_BYTES / 3) + 1), ct));
+
+        await AssertOversizedRejectedAsync(
+            floatSchema,
+            static w => w.WriteFloatArray(new float[HtbSchema.MAX_FLOAT_ARRAY_LENGTH + 1]),
+            null);
+        await AssertOversizedRejectedAsync(
+            floatSchema,
+            null,
+            w => w.WriteFloatArrayAsync(new float[HtbSchema.MAX_FLOAT_ARRAY_LENGTH + 1], ct));
+    }
+
+    private static async Task AssertOversizedRejectedAsync(
+        HtbSchema schema,
+        Action<HeroParser.Htbs.Writing.HtbStreamWriter>? syncAction,
+        Func<HeroParser.Htbs.Writing.HtbStreamWriter, ValueTask>? asyncAction)
+    {
+        using var stream = new MemoryStream();
+        await using var writer = new HeroParser.Htbs.Writing.HtbStreamWriter(stream, leaveOpen: true);
+        writer.WriteHeader(schema);
+        writer.Flush();
+        long headerBytes = stream.Length;
+
+        if (syncAction is not null)
+        {
+            var ex = Assert.Throws<HtbException>(() => syncAction(writer));
+            Assert.Equal(HtbErrorCode.SerializationError, ex.ErrorCode);
+        }
+        if (asyncAction is not null)
+        {
+            var ex = await Assert.ThrowsAsync<HtbException>(async () => await asyncAction(writer));
+            Assert.Equal(HtbErrorCode.SerializationError, ex.ErrorCode);
+        }
+
+        writer.Flush();
+        Assert.Equal(headerBytes, stream.Length);
     }
 }

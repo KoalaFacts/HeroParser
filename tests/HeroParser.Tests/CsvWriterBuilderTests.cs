@@ -540,6 +540,46 @@ public class CsvWriterBuilderTests
         }
     }
 
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task Builder_ToFileAsync_And_ToStreamAsync_IEnumerable_Work()
+    {
+        TestPerson[] records =
+        [
+            new TestPerson { Name = "Alice", Age = 30, City = "NYC" },
+            new TestPerson { Name = "Bob", Age = 25, City = "LA" }
+        ];
+        var tempPath = Path.Combine(Path.GetTempPath(), $"heroparser_writer_ienum_{Guid.NewGuid()}.csv");
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        try
+        {
+            await Csv.Write<TestPerson>()
+                .WithDelimiter(';')
+                .ToFileFromEnumerableAsync(tempPath, records, cancellationToken);
+
+            var fileCsv = await File.ReadAllTextAsync(tempPath, cancellationToken);
+            Assert.Contains("Name;Age;City", fileCsv);
+            Assert.Contains("Alice;30;NYC", fileCsv);
+
+            await using var ms = new MemoryStream();
+            await Csv.Write<TestPerson>()
+                .WithDelimiter('|')
+                .WithoutHeader()
+                .ToStreamFromEnumerableAsync(ms, records, leaveOpen: true, cancellationToken);
+
+            ms.Position = 0;
+            using var sr = new StreamReader(ms);
+            var streamCsv = sr.ReadToEnd();
+            Assert.DoesNotContain("Name", streamCsv);
+            Assert.Contains("Bob|25|LA", streamCsv);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
     private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source)
     {
         foreach (var item in source)

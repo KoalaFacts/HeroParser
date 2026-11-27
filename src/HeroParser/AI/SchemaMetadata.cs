@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using HeroParser.Validation;
 
 namespace HeroParser.AI;
 
@@ -30,6 +32,8 @@ public sealed class LlmToolCallValidationException : Exception
 /// </summary>
 public static class SchemaMetadata
 {
+    private const int MAX_REGEX_CACHE_ENTRIES = 256;
+
     private static readonly ConcurrentDictionary<Type, string> schemas = new();
     private static readonly ConcurrentDictionary<(string Pattern, int TimeoutMs), Regex> regexCache = new();
 
@@ -146,23 +150,21 @@ public static class SchemaMetadata
                         throw new LlmToolCallValidationException(prop.Name, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Property '{prop.Name}' length cannot exceed {validate.MaxLength}."));
                     }
 
-                    // 5. RangeMin validation
-                    if (!double.IsNaN(validate.RangeMin))
+                    // 5 & 6. RangeMin / RangeMax validation
+                    var rangeCheck = new NumericRangeCheck(
+                        double.IsNaN(validate.RangeMin) ? null : validate.RangeMin,
+                        double.IsNaN(validate.RangeMax) ? null : validate.RangeMax);
+                    if (rangeCheck.HasRange &&
+                        rangeCheck.TryEvaluate(finalVal, CultureInfo.InvariantCulture, out bool belowMin, out bool aboveMax, out string formattedValue))
                     {
-                        double numericVal = Convert.ToDouble(finalVal, System.Globalization.CultureInfo.InvariantCulture);
-                        if (numericVal < validate.RangeMin)
+                        if (belowMin)
                         {
-                            throw new LlmToolCallValidationException(prop.Name, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Property '{prop.Name}' value {numericVal} must be at least {validate.RangeMin}."));
+                            throw new LlmToolCallValidationException(prop.Name, string.Create(CultureInfo.InvariantCulture, $"Property '{prop.Name}' value {formattedValue} must be at least {validate.RangeMin}."));
                         }
-                    }
 
-                    // 6. RangeMax validation
-                    if (!double.IsNaN(validate.RangeMax))
-                    {
-                        double numericVal = Convert.ToDouble(finalVal, System.Globalization.CultureInfo.InvariantCulture);
-                        if (numericVal > validate.RangeMax)
+                        if (aboveMax)
                         {
-                            throw new LlmToolCallValidationException(prop.Name, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Property '{prop.Name}' value {numericVal} cannot exceed {validate.RangeMax}."));
+                            throw new LlmToolCallValidationException(prop.Name, string.Create(CultureInfo.InvariantCulture, $"Property '{prop.Name}' value {formattedValue} cannot exceed {validate.RangeMax}."));
                         }
                     }
 
@@ -171,7 +173,12 @@ public static class SchemaMetadata
                     {
                         var timeoutMs = validate.PatternTimeoutMs > 0 ? validate.PatternTimeoutMs : 1000;
                         var key = (validate.Pattern, timeoutMs);
-                        var regex = regexCache.GetOrAdd(key, k => new Regex(k.Pattern, RegexOptions.None, TimeSpan.FromMilliseconds(k.TimeoutMs)));
+                        if (!regexCache.TryGetValue(key, out var regex))
+                        {
+                            regex = new Regex(validate.Pattern, RegexOptions.None, TimeSpan.FromMilliseconds(timeoutMs));
+                            if (regexCache.Count < MAX_REGEX_CACHE_ENTRIES)
+                                regexCache.TryAdd(key, regex);
+                        }
 
                         if (!regex.IsMatch(sPat))
                         {

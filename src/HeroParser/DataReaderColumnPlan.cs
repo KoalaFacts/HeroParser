@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 
 namespace HeroParser.Internal;
 
@@ -48,6 +49,12 @@ internal readonly struct DataReaderColumnPlan
     public int Length => kinds?.Length ?? 0;
 
     public DataReaderColumnKind this[int ordinal] => kinds[ordinal];
+
+    internal static bool HasAsyncFieldValueOverride(DbDataReader reader)
+    {
+        Func<int, CancellationToken, Task<object>> getter = reader.GetFieldValueAsync<object>;
+        return getter.Method.DeclaringType != typeof(DbDataReader);
+    }
 
     private static DataReaderColumnKind ResolveKind(Type? fieldType)
     {

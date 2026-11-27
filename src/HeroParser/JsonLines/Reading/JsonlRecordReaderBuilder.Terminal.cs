@@ -216,7 +216,13 @@ public sealed partial class JsonlRecordReaderBuilder<T>
         long recordIndex = 0;
         int skipped = 0;
 
-        Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out var binder);
+        Binders.IJsonlSourceBinder<byte, T>? binder = null;
+        if (typeInfo is null && options.SerializerOptions is null)
+            Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out binder);
+        Binders.JsonlRecordBinderFactory.TryGetValidator<T>(out var validator);
+        JsonSerializerOptions? effectiveSerializerOptions = typeInfo is null && (binder is null || binder is Binders.IJsonlTryByteBinder<T>)
+            ? BigIntegerJsonConverter.ResolveOptions(options.SerializerOptions)
+            : null;
 
         await foreach (JsonlLine line in new JsonlPipeLineReader(reader, options).ReadLinesAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -242,14 +248,42 @@ public sealed partial class JsonlRecordReaderBuilder<T>
             T? value;
             try
             {
-                value = binder is not null
-                    ? binder.Bind(bytes)
-                    : (typeInfo is not null
+                if (binder is not null && default(T) is null && new JsonlValidationHelper().IsJsonNullLiteral(bytes))
+                {
+                    value = default;
+                }
+                else if (binder is Binders.IJsonlTryByteBinder<T> tryBinder && tryBinder.TryBind(bytes, out var bound))
+                {
+                    value = bound;
+                }
+                else if (binder is not null && binder is not Binders.IJsonlTryByteBinder<T>)
+                {
+                    value = binder.Bind(bytes);
+                }
+                else
+                {
+                    value = typeInfo is not null
                         ? JsonSerializer.Deserialize(bytes, typeInfo)
-                        : DeserializeReflectionInstance(bytes, options.SerializerOptions));
+                        : DeserializeReflectionInstance(bytes, effectiveSerializerOptions);
+                    if (value is not null)
+                    {
+                        JsonTypeInfo? activeTypeInfo = typeInfo ?? TryGetReflectionTypeInfo(effectiveSerializerOptions);
+                        JsonlReadContractValidator.Instance.ValidateDeserialized(
+                            value,
+                            bytes,
+                            activeTypeInfo,
+                            validator,
+                            (int)Math.Min(line.LineNumber, int.MaxValue),
+                            options.ValidationMode);
+                    }
+                }
             }
             catch (Exception ex) when (options.OnError is not null && ex is not (OutOfMemoryException or OperationCanceledException))
             {
+                Exception reportedException = ex is Validation.ValidationException vex
+                    ? new JsonlValidationHelper().AttachLineNumber(vex, line.LineNumber)
+                    : ex;
+
                 var ctx = new JsonlDeserializeErrorContext
                 {
                     LineNumber = line.LineNumber,
@@ -258,19 +292,29 @@ public sealed partial class JsonlRecordReaderBuilder<T>
                     TargetType = typeof(T)
                 };
 
-                JsonlDeserializeErrorAction action = options.OnError(ctx, ex);
+                JsonlDeserializeErrorAction action = options.OnError(ctx, reportedException);
                 if (action == JsonlDeserializeErrorAction.Throw)
                 {
                     throw new JsonlException(
                         JsonlErrorCode.DeserializeError,
-                        $"Failed to deserialize line: {ex.Message}",
+                        $"Failed to deserialize line: {reportedException.Message}",
                         line.LineNumber,
-                        ex);
+                        reportedException);
                 }
                 recordIndex++;
                 continue;
             }
-            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException or Validation.ValidationException))
+            catch (Validation.ValidationException vex)
+            {
+                if (options.ValidationMode == Validation.ValidationMode.Lenient)
+                {
+                    recordIndex++;
+                    continue;
+                }
+
+                throw new JsonlValidationHelper().AttachLineNumber(vex, line.LineNumber);
+            }
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException or JsonlException))
             {
                 throw new JsonlException(
                     JsonlErrorCode.DeserializeError,
@@ -289,6 +333,11 @@ public sealed partial class JsonlRecordReaderBuilder<T>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Reflection path is gated by [RequiresDynamicCode] on the public async terminals; callers using WithTypeInfo never reach this branch.")]
     private static T? DeserializeReflectionInstance(ReadOnlySpan<byte> utf8, JsonSerializerOptions? options)
         => JsonSerializer.Deserialize<T>(utf8, options);
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Reflection path is gated by [RequiresUnreferencedCode] on the public async terminals; callers using WithTypeInfo never reach this branch.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Reflection path is gated by [RequiresDynamicCode] on the public async terminals; callers using WithTypeInfo never reach this branch.")]
+    private static JsonTypeInfo? TryGetReflectionTypeInfo(JsonSerializerOptions? options)
+        => options is null ? null : JsonlReadContractValidator.TryGetTypeInfo<T>(options);
 
     private static bool IsAllWhitespace(ReadOnlySpan<byte> span)
     {

@@ -180,7 +180,7 @@ public class JsonlWriterBuilderTypeInfoTests : IDisposable
         await Assert.ThrowsAsync<ArgumentNullException>(
             async () => await builder.ToStreamAsync(null!, AsAsync(People), TypeInfo, true, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<ArgumentNullException>(
-            async () => await builder.ToStreamAsync(stream, (IAsyncEnumerable<AotPerson>)null!, TypeInfo, true, TestContext.Current.CancellationToken));
+            async () => await builder.ToStreamAsync(stream, null!, TypeInfo, true, TestContext.Current.CancellationToken));
     }
 
     [Fact]

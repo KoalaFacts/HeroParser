@@ -527,6 +527,7 @@ public sealed class CsvWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
+        cancellationToken.ThrowIfCancellationRequested();
         var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
@@ -538,6 +539,31 @@ public sealed class CsvWriterBuilder<T>
         await using var writerDisposal = writer.ConfigureAwait(false);
         var recordWriter = GetRecordWriter(options);
         await recordWriter.WriteRecordsAsync(writer, records, writeHeader, cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Asynchronously writes an <see cref="IEnumerable{T}"/> sequence of records to a file.
+    /// </summary>
+    /// <param name="path">The file path to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async ValueTask ToFileFromEnumerableAsync(string path, IEnumerable<T> records, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentNullException.ThrowIfNull(records);
+
+        var options = GetOptions();
+        cancellationToken.ThrowIfCancellationRequested();
+        var fileStream = new CompressedFile(path).OpenWrite(
+            bufferSize: 4096,
+            FileOptions.Asynchronous);
+        await using var fileStreamDisposal = fileStream.ConfigureAwait(false);
+
+        var writer = new CsvAsyncStreamWriter(fileStream, options, encoding, leaveOpen: true);
+        await using var writerDisposal = writer.ConfigureAwait(false);
+        var recordWriter = GetRecordWriter(options);
+        await recordWriter.WriteRecordsAsync(writer, records, writeHeader && options.WriteHeader, cancellationToken).ConfigureAwait(false);
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -564,6 +590,16 @@ public sealed class CsvWriterBuilder<T>
     }
 
     /// <summary>
+    /// Asynchronously writes an <see cref="IEnumerable{T}"/> sequence of records to a stream using non-blocking async I/O.
+    /// </summary>
+    /// <param name="stream">The stream to write to.</param>
+    /// <param name="records">The records to write.</param>
+    /// <param name="leaveOpen">When true, leaves the stream open after writing.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public ValueTask ToStreamFromEnumerableAsync(Stream stream, IEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
+        => ToStreamAsyncStreaming(stream, records, leaveOpen, cancellationToken);
+
+    /// <summary>
     /// Asynchronously writes records directly to a stream using the streaming async writer.
     /// </summary>
     /// <param name="stream">The stream to write to.</param>
@@ -573,7 +609,7 @@ public sealed class CsvWriterBuilder<T>
     /// <returns>A ValueTask representing the asynchronous write operation.</returns>
     /// <remarks>
     /// This method uses <see cref="CsvAsyncStreamWriter"/> for truly non-blocking I/O.
-    /// Prefer this over <see cref="ToStreamAsync"/> for large datasets or when streaming is critical.
+    /// Prefer this over <see cref="ToStreamAsync(Stream, IAsyncEnumerable{T}, bool, CancellationToken)"/> for large datasets or when streaming is critical.
     /// </remarks>
     public async ValueTask ToStreamAsyncStreaming(Stream stream, IAsyncEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
     {

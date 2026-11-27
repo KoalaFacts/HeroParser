@@ -587,4 +587,53 @@ public class CsvRowBatchScannerTests
         Assert.False(new CsvRowBatchScanner(withComment).IsSupported());
         Assert.True(new CsvRowBatchScanner(Options(quotes: true, track: false)).IsSupported());
     }
+
+    [Fact]
+    public void IsSupportedForRow_RejectsNulDelimiterOrQuote()
+    {
+        Assert.False(new CsvRowBatchScanner(new CsvReadOptions { Delimiter = '\0' }).IsSupportedForRow());
+        Assert.False(new CsvRowBatchScanner(new CsvReadOptions { Quote = '\0' }).IsSupportedForRow());
+    }
+
+    [Fact]
+    public void Utf16_HighCharactersAbove0x7FFF_NeverAliasNulDelimiterOrQuote()
+    {
+        string nulDelimited = string.Concat(
+            "left\uFF21right\0second\uFFFFcol\n",
+            new string('\u8000', 40), "\uFF21tail\0end");
+
+        var nulSimd = new CsvReadOptions { Delimiter = '\0', UseSimdIfAvailable = true };
+        var nulScalar = new CsvReadOptions { Delimiter = '\0', UseSimdIfAvailable = false };
+        AssertSameUtf16Rows(nulDelimited, nulSimd, nulScalar);
+
+        string commaHighChars = string.Concat(
+            "\"q\uFF21\",", new string('\uFFFF', 70), "\n",
+            new string('\u9000', 65), ",\"", new string('\uFF21', 40), "\"");
+        var commaSimd = new CsvReadOptions { Delimiter = ',', UseSimdIfAvailable = true };
+        var commaScalar = new CsvReadOptions { Delimiter = ',', UseSimdIfAvailable = false };
+        AssertSameUtf16Rows(commaHighChars, commaSimd, commaScalar);
+
+        static void AssertSameUtf16Rows(string csv, CsvReadOptions simdOptions, CsvReadOptions scalarOptions)
+        {
+            static List<string[]> ReadAll(string text, CsvReadOptions opts)
+            {
+                var rows = new List<string[]>();
+                foreach (var row in Csv.ReadFromCharSpan(text.AsSpan(), opts))
+                {
+                    var cells = new string[row.ColumnCount];
+                    for (int i = 0; i < cells.Length; i++)
+                        cells[i] = row[i].UnquoteToString();
+                    rows.Add(cells);
+                }
+                return rows;
+            }
+
+            List<string[]> expected = ReadAll(csv, scalarOptions);
+            List<string[]> actual = ReadAll(csv, simdOptions);
+
+            Assert.Equal(expected.Count, actual.Count);
+            for (int r = 0; r < expected.Count; r++)
+                Assert.Equal(expected[r], actual[r]);
+        }
+    }
 }

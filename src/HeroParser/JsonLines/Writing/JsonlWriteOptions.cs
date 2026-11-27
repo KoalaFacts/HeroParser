@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using HeroParser.Validation;
 
 namespace HeroParser.JsonLines.Writing;
 
@@ -42,6 +43,17 @@ public sealed record JsonlWriteOptions
     /// Gets or sets a per-record serialization error handler.
     /// </summary>
     public JsonlSerializeErrorHandler? OnError { get; init; }
+
+    /// <summary>
+    /// Gets or sets the validation mode applied when writing records.
+    /// </summary>
+    /// <remarks>
+    /// When set to <see cref="ValidationMode.Strict"/> (the default), any property annotated with
+    /// <see cref="ValidateAttribute"/> that fails its rule will cause a <see cref="ValidationException"/>
+    /// to be thrown before the record is written.
+    /// When set to <see cref="ValidationMode.Lenient"/>, validation is skipped entirely on write.
+    /// </remarks>
+    public ValidationMode ValidationMode { get; init; } = ValidationMode.Strict;
 
     /// <summary>
     /// Gets the default options instance.

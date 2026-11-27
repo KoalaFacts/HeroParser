@@ -99,6 +99,18 @@ public sealed record CsvSchemaInferenceOptions
     public bool DistinguishTemporalTypes { get; init; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether numeric candidates (<see cref="CsvInferredType.Integer"/>,
+    /// <see cref="CsvInferredType.Long"/>, and <see cref="CsvInferredType.Decimal"/>) must round-trip losslessly
+    /// via canonical invariant formatting (default: <see langword="false"/>).
+    /// </summary>
+    /// <remarks>
+    /// Enable this option when downstream conversion requires exact textual preservation (for example,
+    /// keeping leading zeroes, explicit <c>+</c> signs, <c>-0</c>, thousands separators, or values whose
+    /// precision exceeds <see cref="decimal"/> as <see cref="CsvInferredType.String"/>).
+    /// </remarks>
+    public bool RequireLosslessNumericFormatting { get; init; }
+
+    /// <summary>
     /// Gets the default options.
     /// </summary>
     public static CsvSchemaInferenceOptions Default { get; } = new();
@@ -175,14 +187,12 @@ public static class CsvSchemaInference
         try
         {
             var prefix = new byte[(int)Math.Min(options.MaxScannedInputSize,
-                options.Delimiter is null ? DETECTION_SAMPLE_BYTES : 2)];
+                options.Delimiter is null ? DETECTION_SAMPLE_BYTES : 4)];
             int length = await ReadPrefixAsync(stream, prefix, cancellationToken).ConfigureAwait(false);
             bool hasMore = stream.CanSeek ? stream.Position < stream.Length : length == prefix.Length;
             char delimiter = options.Delimiter ?? DetectSampleDelimiter(prefix.AsSpan(0, length),
                 hasMore && length < options.MaxScannedInputSize);
-            Encoding? encoding = GetUtf16Encoding(prefix.AsSpan(0, length));
-
-            int bomLength = encoding is null ? 0 : 2;
+            GetBomEncoding(prefix.AsSpan(0, length), out Encoding? encoding, out int bomLength, out _);
             var boundedInput = new CsvPrefixReadStream(stream, prefix.AsMemory(bomLength, length - bomLength),
                 options.MaxScannedInputSize, length);
             Stream input = boundedInput;
@@ -239,7 +249,7 @@ public static class CsvSchemaInference
         {
             headers[i] = header[i].UnquoteToString();
             embeddedLines += CountNewlines(headers[i].AsSpan());
-            candidates[i] = new ColumnTypeTracker(options.DistinguishTemporalTypes);
+            candidates[i] = new ColumnTypeTracker(options.DistinguishTemporalTypes, options.RequireLosslessNumericFormatting);
         }
 
         bool hasSkippedEmptyRows = header.SourceLineNumber > 1;
@@ -323,11 +333,11 @@ public static class CsvSchemaInference
     {
         try
         {
-            Encoding? encoding = GetUtf16Encoding(sample);
-            if (encoding is not null)
+            if (GetBomEncoding(sample, out Encoding? encoding, out int preambleLen, out int charUnitSize))
             {
-                ReadOnlySpan<byte> payload = sample[2..];
-                return CsvDelimiterDetector.DetectDelimiter(encoding.GetString(payload[..(payload.Length & ~1)]));
+                ReadOnlySpan<byte> payload = sample[preambleLen..];
+                int alignedLen = payload.Length - (payload.Length % charUnitSize);
+                return CsvDelimiterDetector.DetectDelimiter(encoding!.GetString(payload[..alignedLen]));
             }
             return CsvDelimiterDetector.DetectDelimiter(sample);
         }
@@ -339,14 +349,53 @@ public static class CsvSchemaInference
         }
     }
 
-    private static Encoding? GetUtf16Encoding(ReadOnlySpan<byte> sample) => sample.Length >= 2
-        ? (sample[0], sample[1]) switch
+    private static bool GetBomEncoding(
+        ReadOnlySpan<byte> sample,
+        out Encoding? encoding,
+        out int preambleLen,
+        out int charUnitSize)
+    {
+        if (sample.Length >= 4)
         {
-            (0xFF, 0xFE) => Encoding.Unicode,
-            (0xFE, 0xFF) => Encoding.BigEndianUnicode,
-            _ => null
+            if (sample[0] == 0xFF && sample[1] == 0xFE && sample[2] == 0x00 && sample[3] == 0x00)
+            {
+                encoding = Encoding.UTF32;
+                preambleLen = 4;
+                charUnitSize = 4;
+                return true;
+            }
+            if (sample[0] == 0x00 && sample[1] == 0x00 && sample[2] == 0xFE && sample[3] == 0xFF)
+            {
+                encoding = new UTF32Encoding(bigEndian: true, byteOrderMark: true);
+                preambleLen = 4;
+                charUnitSize = 4;
+                return true;
+            }
         }
-        : null;
+
+        if (sample.Length >= 2)
+        {
+            if (sample[0] == 0xFF && sample[1] == 0xFE)
+            {
+                encoding = Encoding.Unicode;
+                preambleLen = 2;
+                charUnitSize = 2;
+                return true;
+            }
+            if (sample[0] == 0xFE && sample[1] == 0xFF)
+            {
+                encoding = Encoding.BigEndianUnicode;
+                preambleLen = 2;
+                charUnitSize = 2;
+                return true;
+            }
+        }
+
+        encoding = null;
+        preambleLen = 0;
+        charUnitSize = 1;
+        return false;
+    }
 
     /// <summary>
     /// Infers the schema of CSV data by analyzing sample rows.
@@ -440,7 +489,7 @@ public static class CsvSchemaInference
         // Track type candidates per column
         var candidates = new ColumnTypeTracker[columnCount];
         for (int i = 0; i < columnCount; i++)
-            candidates[i] = new ColumnTypeTracker(options.DistinguishTemporalTypes);
+            candidates[i] = new ColumnTypeTracker(options.DistinguishTemporalTypes, options.RequireLosslessNumericFormatting);
 
         int sampledRows = 0;
         int expectedNextLine;
@@ -599,7 +648,13 @@ public static class CsvSchemaInference
     }
 
 
-    private sealed class ColumnTypeTracker(bool distinguishTemporalTypes)
+    internal static bool HasCompleteDate(ReadOnlySpan<char> value)
+        => ColumnTypeTracker.HasCompleteDate(value);
+
+    internal static bool HasExplicitDateBeforeOffset(ReadOnlySpan<char> value)
+        => ColumnTypeTracker.HasExplicitDateBeforeOffset(value);
+
+    private sealed class ColumnTypeTracker(bool distinguishTemporalTypes, bool requireLosslessNumericFormatting)
     {
         private bool hasIntegers;
         private bool hasLongs;
@@ -638,21 +693,30 @@ public static class CsvSchemaInference
                 return;
             }
 
-            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedInt))
             {
-                hasIntegers = true;
+                if (!requireLosslessNumericFormatting || FormatsLosslessly(parsedInt, value))
+                    hasIntegers = true;
+                else
+                    hasStrings = true;
                 return;
             }
 
-            if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedLong))
             {
-                hasLongs = true;
+                if (!requireLosslessNumericFormatting || FormatsLosslessly(parsedLong, value))
+                    hasLongs = true;
+                else
+                    hasStrings = true;
                 return;
             }
 
-            if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out _))
+            if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsedDecimal))
             {
-                hasDecimals = true;
+                if (!requireLosslessNumericFormatting || FormatsLosslessly(parsedDecimal, value))
+                    hasDecimals = true;
+                else
+                    hasStrings = true;
                 return;
             }
 
@@ -664,7 +728,8 @@ public static class CsvSchemaInference
 
             if (!distinguishTemporalTypes)
             {
-                if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                if (HasCompleteDate(value.AsSpan())
+                    && DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
                 {
                     hasDateTimes = true;
                     return;
@@ -674,7 +739,9 @@ public static class CsvSchemaInference
                 return;
             }
 
-            if (!HasTimeOrOffset(value) && DateOnly.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            if (!HasTimeOrOffset(value)
+                && HasCompleteDate(value.AsSpan())
+                && DateOnly.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             {
                 hasDateOnly = true;
                 return;
@@ -696,13 +763,21 @@ public static class CsvSchemaInference
                 return;
             }
 
-            if (HasExplicitTimeZoneOffset(value) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            if (HasExplicitTimeZoneOffset(value))
             {
-                hasDateTimeOffsets = true;
+                if (HasExplicitDateBeforeOffset(value.AsSpan())
+                    && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                {
+                    hasDateTimeOffsets = true;
+                    return;
+                }
+
+                hasStrings = true;
                 return;
             }
 
-            if (DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            if (HasCompleteDate(value.AsSpan())
+                && DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             {
                 hasDateTimes = true;
                 return;
@@ -710,6 +785,145 @@ public static class CsvSchemaInference
 
             hasStrings = true;
         }
+
+        private static bool FormatsLosslessly<T>(T parsed, string original) where T : ISpanFormattable
+        {
+            Span<char> buffer = stackalloc char[64];
+            return parsed.TryFormat(buffer, out int written, default, CultureInfo.InvariantCulture)
+                && buffer[..written].SequenceEqual(original.AsSpan());
+        }
+
+        internal static bool HasCompleteDate(ReadOnlySpan<char> value)
+        {
+            ReadOnlySpan<char> trimmed = value.Trim();
+            if (trimmed.IsEmpty)
+                return false;
+
+            if (!DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.NoCurrentDateDefault, out DateTime dtNoDefault)
+                || !DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dtDefault)
+                || dtNoDefault.Date != dtDefault.Date)
+            {
+                return false;
+            }
+
+            ReadOnlySpan<char> datePart = trimmed;
+            for (int j = 1; j < trimmed.Length - 1; j++)
+            {
+                if (trimmed[j] is 'T' or 't' && char.IsAsciiDigit(trimmed[j - 1]) && char.IsAsciiDigit(trimmed[j + 1]))
+                {
+                    datePart = trimmed[..j];
+                    break;
+                }
+            }
+
+            int dateTokenCount = 0;
+            bool hasExplicitYear = false;
+            ReadOnlySpan<char> pendingNumericToken = default;
+            int idx = 0;
+            while (idx < datePart.Length)
+            {
+                while (idx < datePart.Length && datePart[idx] is ' ' or '\t' or '-' or '/' or '.' or ',')
+                    idx++;
+                if (idx >= datePart.Length)
+                    break;
+
+                int start = idx;
+                while (idx < datePart.Length && datePart[idx] is not (' ' or '\t' or '-' or '/' or '.' or ','))
+                    idx++;
+
+                ReadOnlySpan<char> token = datePart[start..idx];
+                if (token.Contains(':')
+                    || IsMeridiemWithOptionalDigits(token))
+                {
+                    // A numeric token immediately preceding "AM"/"PM" is the hour (e.g. "12 PM"), not a date component.
+                    if (token.Equals("AM", StringComparison.OrdinalIgnoreCase)
+                        || token.Equals("PM", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pendingNumericToken = default;
+                    }
+                    break;
+                }
+
+                if (IsWeekdayToken(token))
+                    continue;
+
+                if (!pendingNumericToken.IsEmpty)
+                {
+                    dateTokenCount++;
+                    if (IsExplicitYearToken(pendingNumericToken, dtDefault.Year))
+                        hasExplicitYear = true;
+                    pendingNumericToken = default;
+                }
+
+                if (IsAllAsciiDigits(token))
+                {
+                    pendingNumericToken = token;
+                }
+                else
+                {
+                    dateTokenCount++;
+                }
+            }
+
+            if (!pendingNumericToken.IsEmpty)
+            {
+                dateTokenCount++;
+                if (IsExplicitYearToken(pendingNumericToken, dtDefault.Year))
+                    hasExplicitYear = true;
+            }
+
+            return dateTokenCount >= 3 && hasExplicitYear;
+        }
+
+        private static bool IsMeridiemWithOptionalDigits(ReadOnlySpan<char> token)
+        {
+            if (token.Equals("AM", StringComparison.OrdinalIgnoreCase)
+                || token.Equals("PM", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (token.Length > 2
+                && (token.EndsWith("AM", StringComparison.OrdinalIgnoreCase)
+                    || token.EndsWith("PM", StringComparison.OrdinalIgnoreCase)))
+            {
+                return IsAllAsciiDigits(token[..^2]);
+            }
+
+            return false;
+        }
+
+        private static bool IsWeekdayToken(ReadOnlySpan<char> token)
+            => token.Equals("Monday", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Mon", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Tuesday", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Tue", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Wednesday", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Wed", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Thursday", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Thu", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Friday", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Fri", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Saturday", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Sat", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Sunday", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("Sun", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsAllAsciiDigits(ReadOnlySpan<char> token)
+        {
+            if (token.IsEmpty)
+                return false;
+            foreach (char c in token)
+            {
+                if (!char.IsAsciiDigit(c))
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool IsExplicitYearToken(ReadOnlySpan<char> digits, int year)
+            => int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed)
+            && ((digits.Length >= 4 && parsed == year) || (digits.Length == 2 && parsed == year % 100));
 
         private static bool HasTimeOrOffset(string value)
         {
@@ -733,6 +947,38 @@ public static class CsvSchemaInference
 
             return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.NoCurrentDateDefault, out var dt)
                 && dt.Date != DateTime.MinValue;
+        }
+
+        internal static bool HasExplicitDateBeforeOffset(ReadOnlySpan<char> value)
+        {
+            ReadOnlySpan<char> trimmed = value.Trim();
+            if (trimmed.IsEmpty)
+                return false;
+
+            ReadOnlySpan<char> core;
+            if (trimmed[^1] is 'Z' or 'z')
+            {
+                core = trimmed[..^1];
+            }
+            else
+            {
+                int lastPlus = trimmed.LastIndexOf('+');
+                if (lastPlus > 0)
+                {
+                    core = trimmed[..lastPlus];
+                }
+                else
+                {
+                    int lastDash = trimmed.LastIndexOf('-');
+                    if (lastDash <= 0 || !trimmed[..lastDash].Contains(':'))
+                        return false;
+
+                    core = trimmed[..lastDash];
+                }
+            }
+
+            core = core.TrimEnd();
+            return !core.IsEmpty && HasCompleteDate(core);
         }
 
         private static bool HasExplicitTimeZoneOffset(string value)
@@ -789,7 +1035,7 @@ public static class CsvSchemaInference
                 }
 
                 if (hasDateTimeOffsets)
-                    return CsvInferredType.DateTimeOffset;
+                    return hasDateOnly || hasDateTimes ? CsvInferredType.String : CsvInferredType.DateTimeOffset;
                 if (hasDateTimes)
                     return CsvInferredType.DateTime;
                 return CsvInferredType.DateOnly;

@@ -51,7 +51,7 @@ internal readonly struct SpanParserFactory
             _ when targetType == typeof(Int128) => CreateValueParser(isNullable, static (span, culture) => new CultureNumberParser(culture).Parse<Int128>(span, NumberStyles.Integer)),
             _ when targetType == typeof(UInt128) => CreateValueParser(isNullable, static (span, culture) => UInt128.Parse(span, NumberStyles.Integer, culture)),
             _ when targetType == typeof(BigInteger) => CreateValueParser(isNullable, static (span, culture) => new CultureNumberParser(culture).Parse<BigInteger>(span, NumberStyles.Integer)),
-            _ when targetType == typeof(char) => CreateValueParser(isNullable, static (span, _) => span.Length == 1 ? span[0] : throw new FormatException("Input string must be exactly one character.")),
+            _ when targetType == typeof(char) => CreateValueParser(isNullable, static (span, _) => Utf8SpanParser.TryParseCharSpan(span, out char ch) ? ch : throw new FormatException("Input string must be exactly one character.")),
             _ when targetType == typeof(bool) => CreateValueParser(isNullable, static (span, _) => bool.Parse(span)),
             _ when targetType == typeof(DateTime) => CreateValueParser(isNullable, static (span, culture) => DateTime.Parse(span, culture, DateTimeStyles.None)),
             _ when targetType == typeof(DateTimeOffset) => CreateValueParser(isNullable, static (span, culture) => DateTimeOffset.Parse(span, culture, DateTimeStyles.None)),
@@ -119,6 +119,8 @@ internal readonly struct SpanParserFactory
 
     private static byte[] ParseBase64Bytes(ReadOnlySpan<char> span, CultureInfo _)
     {
+        if (span.IsEmpty || span.IsWhiteSpace())
+            return null!;
         if (Utf8SpanParser.TryParseBase64Chars(span, out var bytes))
             return bytes;
         throw new FormatException("Input string was not valid Base64.");

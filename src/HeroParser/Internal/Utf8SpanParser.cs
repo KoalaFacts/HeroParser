@@ -16,6 +16,10 @@ namespace HeroParser.Internal;
 internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
 {
     private const int STACK_ALLOC_CHAR_LIMIT = 256;
+    internal const string EMPTY_BASE64_TOKEN = "base64:";
+    private static ReadOnlySpan<byte> EmptyBase64TokenUtf8 => "base64:"u8;
+    internal const string CHAR_TOKEN_PREFIX = "char:";
+    private static ReadOnlySpan<byte> CharTokenPrefixUtf8 => "char:"u8;
     private readonly ReadOnlySpan<byte> utf8 = utf8;
 
     private delegate bool DecodedCharParser<TState, TResult>(ReadOnlySpan<char> chars, TState state, out TResult result);
@@ -258,7 +262,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         return TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => sbyte.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
     }
 
@@ -361,7 +365,16 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
     /// <summary>Attempts to parse the UTF-8 span as a <see cref="Guid"/>.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryParseGuid(out Guid result)
-        => Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length;
+    {
+        if (Utf8Parser.TryParse(utf8, out result, out int consumed) && consumed == utf8.Length)
+            return true;
+
+        return TryParseDecoded(
+            utf8,
+            0,
+            static (chars, _, out parsed) => Guid.TryParse(chars, out parsed),
+            out result);
+    }
 
     /// <summary>Attempts to parse the UTF-8 span as a <see cref="DateTime"/>.</summary>
     internal bool TryParseDateTime(IFormatProvider? provider, DateTimeStyles styles, out DateTime result)
@@ -500,6 +513,26 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
             static (chars, fmt, p, _, out parsed) => TimeSpan.TryParseExact(chars, fmt, p, out parsed),
             out result);
 
+    /// <summary>Attempts to parse a char span representing either a single character or a <c>char:&lt;c&gt;</c> token.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool TryParseCharSpan(ReadOnlySpan<char> chars, out char result)
+    {
+        if (chars.Length == 1)
+        {
+            result = chars[0];
+            return true;
+        }
+
+        if (chars.Length == CHAR_TOKEN_PREFIX.Length + 1 && chars.StartsWith(CHAR_TOKEN_PREFIX.AsSpan(), StringComparison.Ordinal))
+        {
+            result = chars[^1];
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
     /// <summary>Attempts to parse the UTF-8 span representing a single UTF-16 character.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryParseChar(out char result)
@@ -516,10 +549,20 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
             return true;
         }
 
-        if (utf8.Length <= 4)
+        ReadOnlySpan<byte> payload = utf8.Length > CharTokenPrefixUtf8.Length && utf8.StartsWith(CharTokenPrefixUtf8)
+            ? utf8[CharTokenPrefixUtf8.Length..]
+            : utf8;
+
+        if (payload.Length == 1 && payload[0] < 0x80)
+        {
+            result = (char)payload[0];
+            return true;
+        }
+
+        if (payload.Length <= 4)
         {
             Span<char> chars = stackalloc char[4];
-            if (Utf8.ToUtf16(utf8, chars, out _, out int charsWritten, replaceInvalidSequences: false) == OperationStatus.Done &&
+            if (Utf8.ToUtf16(payload, chars, out _, out int charsWritten, replaceInvalidSequences: false) == OperationStatus.Done &&
                 charsWritten == 1)
             {
                 result = chars[0];
@@ -534,12 +577,30 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
     /// <summary>Attempts to parse the UTF-8 span as a <see cref="Half"/> using the specified culture and styles.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryParseHalf(IFormatProvider? provider, NumberStyles styles, out Half result)
-        => Half.TryParse(utf8, styles, provider, out result);
+    {
+        if (Half.TryParse(utf8, styles, provider, out result))
+            return true;
+
+        return !IsInvariant(provider) && TryParseDecoded(
+            utf8,
+            (Styles: styles, Provider: provider),
+            static (chars, state, out parsed) => new CultureNumberParser(state.Provider).TryParse(chars, state.Styles, out parsed),
+            out result);
+    }
 
     /// <summary>Attempts to parse the UTF-8 span as an <see cref="Int128"/> using the specified culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool TryParseInt128(IFormatProvider? provider, out Int128 result)
-        => Int128.TryParse(utf8, NumberStyles.Integer, provider, out result);
+    {
+        if (Int128.TryParse(utf8, NumberStyles.Integer, provider, out result))
+            return true;
+
+        return !IsInvariant(provider) && TryParseDecoded(
+            utf8,
+            provider,
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
+            out result);
+    }
 
     /// <summary>Attempts to parse the UTF-8 span as a <see cref="UInt128"/> using the specified culture.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -551,7 +612,7 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
         => TryParseDecoded(
             utf8,
             provider,
-            static (chars, p, out parsed) => BigInteger.TryParse(chars, NumberStyles.Integer, p, out parsed),
+            static (chars, p, out parsed) => new CultureNumberParser(p).TryParse(chars, NumberStyles.Integer, out parsed),
             out result);
 
     /// <summary>Attempts to parse a non-empty UTF-8 span as a <see cref="Uri"/>.</summary>
@@ -571,6 +632,9 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
     internal bool TryParseBase64Bytes([NotNullWhen(true)] out byte[]? result)
     {
         ReadOnlySpan<byte> trimmed = TrimAsciiWhiteSpace(utf8);
+        if (trimmed.StartsWith(EmptyBase64TokenUtf8))
+            trimmed = trimmed[EmptyBase64TokenUtf8.Length..];
+
         if (trimmed.IsEmpty)
         {
             result = [];
@@ -602,6 +666,9 @@ internal readonly ref struct Utf8SpanParser(ReadOnlySpan<byte> utf8)
     internal static bool TryParseBase64Chars(ReadOnlySpan<char> chars, [NotNullWhen(true)] out byte[]? result)
     {
         ReadOnlySpan<char> trimmed = chars.Trim();
+        if (trimmed.StartsWith(EMPTY_BASE64_TOKEN.AsSpan(), StringComparison.Ordinal))
+            trimmed = trimmed[EMPTY_BASE64_TOKEN.Length..];
+
         if (trimmed.IsEmpty)
         {
             result = [];

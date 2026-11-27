@@ -879,20 +879,19 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         if (member.Validation.HasRange)
         {
             var valueExpr = $"instance.{member.MemberName}";
-            var conditions = new List<string>();
-            if (member.Validation.HasRangeMin)
-                conditions.Add($"{valueExpr} < {member.Validation.FormatRangeMinLiteral(member.BaseTypeName)}");
-            if (member.Validation.HasRangeMax)
-                conditions.Add($"{valueExpr} > {member.Validation.FormatRangeMaxLiteral(member.BaseTypeName)}");
-
-            builder.AppendLine($"if (!utf8.IsEmpty && ({string.Join(" || ", conditions)}))");
-            builder.AppendLine("{");
-            builder.Indent();
-            var rangeMsg = member.Validation.FormatRangeMessage();
-            EmitByteAddValidationError(builder, member, "Range", rangeMsg);
-            builder.AppendLine("valid = false;");
-            builder.Unindent();
-            builder.AppendLine("}");
+            if (member.Validation.BuildRangeViolationCondition(valueExpr, member.BaseTypeName) is { } rangeCondition)
+            {
+                builder.AppendLine(rangeCondition == "true"
+                    ? "if (!utf8.IsEmpty)"
+                    : $"if (!utf8.IsEmpty && ({rangeCondition}))");
+                builder.AppendLine("{");
+                builder.Indent();
+                var rangeMsg = member.Validation.FormatRangeMessage();
+                EmitByteAddValidationError(builder, member, "Range", rangeMsg);
+                builder.AppendLine("valid = false;");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
         }
 
         if (member.Validation.Pattern != null)
@@ -1433,20 +1432,19 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         if (member.Validation.HasRange)
         {
             var valueExpr = $"instance.{member.MemberName}";
-            var conditions = new List<string>();
-            if (member.Validation.HasRangeMin)
-                conditions.Add($"{valueExpr} < {member.Validation.FormatRangeMinLiteral(member.BaseTypeName)}");
-            if (member.Validation.HasRangeMax)
-                conditions.Add($"{valueExpr} > {member.Validation.FormatRangeMaxLiteral(member.BaseTypeName)}");
-
-            builder.AppendLine($"if (!span.IsEmpty && ({string.Join(" || ", conditions)}))");
-            builder.AppendLine("{");
-            builder.Indent();
-            var rangeMsg = member.Validation.FormatRangeMessage();
-            EmitAddValidationError(builder, member, "Range", rangeMsg);
-            builder.AppendLine("valid = false;");
-            builder.Unindent();
-            builder.AppendLine("}");
+            if (member.Validation.BuildRangeViolationCondition(valueExpr, member.BaseTypeName) is { } rangeCondition)
+            {
+                builder.AppendLine(rangeCondition == "true"
+                    ? "if (!span.IsEmpty)"
+                    : $"if (!span.IsEmpty && ({rangeCondition}))");
+                builder.AppendLine("{");
+                builder.Indent();
+                var rangeMsg = member.Validation.FormatRangeMessage();
+                EmitAddValidationError(builder, member, "Range", rangeMsg);
+                builder.AppendLine("valid = false;");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
         }
 
         // Pattern validation (string only)
@@ -1625,10 +1623,10 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
         {
             ct.ThrowIfCancellationRequested();
 
-            if (property.IsStatic)
+            if (property.IsStatic || property.IsIndexer)
                 continue;
 
-            var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public };
+            var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public, IsInitOnly: false };
             var hasGetter = property.GetMethod is { DeclaredAccessibility: Accessibility.Public };
 
             if (!hasSetter && !hasGetter)
@@ -1798,7 +1796,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
             builder.AppendLine("{");
             builder.Indent();
             builder.AppendLine("source = source.Trim();");
-            builder.AppendLine("if (source.IsEmpty)");
+            builder.AppendLine("if (source.IsEmpty || source.SequenceEqual(\"base64:\".AsSpan()))");
             builder.AppendLine("{");
             builder.Indent();
             builder.AppendLine("value = global::System.Array.Empty<byte>();");
@@ -2118,7 +2116,7 @@ public sealed class FixedWidthRecordBinderGenerator : IIncrementalGenerator
 
         if (baseType is "byte[]" or "System.Byte[]")
         {
-            builder.AppendLine($"writer.WriteField(global::System.Convert.ToBase64String({valueExpr}), {length}, {alignmentArg}, {padCharArg});");
+            builder.AppendLine($"writer.WriteField({valueExpr}.Length == 0 ? \"base64:\" : global::System.Convert.ToBase64String({valueExpr}), {length}, {alignmentArg}, {padCharArg});");
             return;
         }
 

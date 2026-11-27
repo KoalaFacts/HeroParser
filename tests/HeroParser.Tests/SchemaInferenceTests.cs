@@ -285,4 +285,33 @@ public class SchemaInferenceTests
 
         Assert.Equal(7, schema.Columns[0].MaxLength);
     }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public void InferSchema_NonCanonicalOrLossyNumericStrings_FallBackToStringWhenConfigured()
+    {
+        var csv =
+            "Zip,Plus,NegZero,Grouped,HighPrec,KeepScale\n" +
+            "00123,+42,-0,\"1,234.56\",1.000000000000000000000000000001,2.50\n" +
+            "456,-7,0,\"2,000.00\",2.5,3.14\n";
+
+        var defaultSchema = Csv.InferSchema(csv);
+        Assert.Equal(CsvInferredType.Integer, defaultSchema.Columns[0].InferredType);
+        Assert.Equal(CsvInferredType.Integer, defaultSchema.Columns[1].InferredType);
+        Assert.Equal(CsvInferredType.Integer, defaultSchema.Columns[2].InferredType);
+        Assert.Equal(CsvInferredType.Decimal, defaultSchema.Columns[3].InferredType);
+        Assert.Equal(CsvInferredType.Decimal, defaultSchema.Columns[4].InferredType);
+        Assert.Equal(CsvInferredType.Decimal, defaultSchema.Columns[5].InferredType);
+
+        var strictSchema = Csv.InferSchema(csv, new CsvSchemaInferenceOptions
+        {
+            RequireLosslessNumericFormatting = true
+        });
+        Assert.Equal(CsvInferredType.String, strictSchema.Columns[0].InferredType);
+        Assert.Equal(CsvInferredType.String, strictSchema.Columns[1].InferredType);
+        Assert.Equal(CsvInferredType.String, strictSchema.Columns[2].InferredType);
+        Assert.Equal(CsvInferredType.String, strictSchema.Columns[3].InferredType);
+        Assert.Equal(CsvInferredType.String, strictSchema.Columns[4].InferredType);
+        Assert.Equal(CsvInferredType.Decimal, strictSchema.Columns[5].InferredType);
+    }
 }

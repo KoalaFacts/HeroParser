@@ -121,9 +121,28 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
                 return ValueTask.FromCanceled<bool>(cancellationToken);
             }
 
-            sequenceReader ??= new CsvPipeSequenceReader(reader, options);
+            if (sequenceReader is { } sr)
+            {
+                try
+                {
+                    if (sr.TryMoveNextOwnedRow(ref rowSlab, ref rowSlabOffset, out var fastRow))
+                    {
+                        Current = fastRow;
+                        return ValueTask.FromResult(true);
+                    }
+                }
+                catch (CsvException ex)
+                {
+                    return ValueTask.FromException<bool>(ex);
+                }
+            }
+            else
+            {
+                sr = new CsvPipeSequenceReader(reader, options);
+                sequenceReader = sr;
+            }
 
-            ValueTask<bool> moveNextTask = sequenceReader.MoveNextAsync(cancellationToken);
+            ValueTask<bool> moveNextTask = sr.MoveNextAsync(cancellationToken);
             if (moveNextTask.IsCompletedSuccessfully)
             {
                 if (!moveNextTask.Result)
@@ -132,12 +151,7 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
                     return ValueTask.FromResult(false);
                 }
 
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return ValueTask.FromCanceled<bool>(cancellationToken);
-                }
-
-                Current = sequenceReader.Current.ToOwnedRow(ref rowSlab, ref rowSlabOffset);
+                Current = sr.Current.ToOwnedRow(ref rowSlab, ref rowSlabOffset);
                 return ValueTask.FromResult(true);
             }
 

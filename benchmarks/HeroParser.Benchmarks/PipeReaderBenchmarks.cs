@@ -10,6 +10,8 @@ using System.Text;
 namespace HeroParser.Benchmarks;
 
 [MemoryDiagnoser]
+// Disable Background Server GC so GC.GetTotalAllocatedBytes() cannot race BGC sweeps into 0-byte Allocated reports (dotnet/runtime#122299).
+[GcConcurrent(false)]
 [SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
 public class CsvPipeReaderBenchmarks
 {

@@ -757,6 +757,54 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     }
 
     /// <summary>
+    /// Fast path for <see cref="CsvPipeRowAsyncEnumerable"/>: when buffered batch rows are ready on a single segment,
+    /// packs an owned <see cref="CsvPipeRow"/> directly from the span without creating an intermediate sequence slice.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool TryMoveNextOwnedRow(ref byte[]? slab, ref int slabOffset, out CsvPipeRow ownedRow)
+    {
+        if (!disposed && hasBufferedRead && bufferedData.IsSingleSegment && cursor is not null)
+        {
+            hasCurrent = false;
+            currentFromBatch = false;
+
+            while (cursor.TryTake(out var batchRow))
+            {
+                Csv.EnsureRowSize(batchRow.Length, maxRowSize);
+
+                rowNumber++;
+                Csv.EnsureRowCount(rowNumber, options.MaxRowCount);
+
+                if (skippedRows < skipRows)
+                {
+                    skippedRows++;
+                    continue;
+                }
+
+                ReadOnlySpan<byte> rowSpan = bufferedData.FirstSpan.Slice(cursor.WindowBase + batchRow.RowStart, batchRow.Length);
+                ownedRow = CsvPipeSequenceRow.PackOwnedRow(
+                    rowSpan,
+                    cursor.EndsOf(batchRow),
+                    batchRow.ColumnCount,
+                    rowNumber,
+                    trackLineNumbers ? batchRow.SourceLine : rowNumber,
+                    options.TrimFields,
+                    quote,
+                    escape,
+                    batchRow.RowStart,
+                    enableQuotes,
+                    ref slab,
+                    ref slabOffset,
+                    CsvPipeSequenceRow.MAX_SLAB_ROW_SIZE);
+                return true;
+            }
+        }
+
+        ownedRow = default;
+        return false;
+    }
+
+    /// <summary>
     /// Makes a row taken from the cursor's batch current, applying the row-size, row-count and skip rules
     /// the per-row path applies. Returns false when the row was skipped.
     /// </summary>
@@ -949,12 +997,108 @@ public readonly ref struct CsvPipeSequenceRow
 
     private const int INITIAL_SLAB_SIZE = 512;
     private const int MAX_SLAB_SIZE = 4096;
-    private const int MAX_SLAB_ROW_SIZE = 1024;
+    internal const int MAX_SLAB_ROW_SIZE = 1024;
 
     private CsvPipeRow ToOwnedRow(ref byte[]? slab, ref int slabOffset, int maxSlabRowSize)
     {
+        if (data.IsSingleSegment)
+        {
+            return PackOwnedRow(
+                data.FirstSpan,
+                columnEnds,
+                columnCount,
+                RowNumber,
+                SourceLineNumber,
+                trimFields,
+                quote,
+                escape,
+                baseOffset,
+                parserOptions?.EnableQuotedFields ?? true,
+                ref slab,
+                ref slabOffset,
+                maxSlabRowSize);
+        }
+
         int rowLength = checked((int)data.Length);
-        int headerElementSize = CsvPipeRow.GetHeaderElementSize(rowLength);
+        byte[] storage = AllocateOwnedStorage(
+            rowLength,
+            columnEnds,
+            columnCount,
+            baseOffset,
+            ref slab,
+            ref slabOffset,
+            maxSlabRowSize,
+            out int headerElementSize,
+            out int dataOffset);
+        data.CopyTo(storage.AsSpan(dataOffset, rowLength));
+
+        return new CsvPipeRow(
+            storage,
+            columnCount,
+            RowNumber,
+            trimFields,
+            quote,
+            escape,
+            dataOffset,
+            headerElementSize,
+            SourceLineNumber,
+            parserOptions?.EnableQuotedFields ?? true);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static CsvPipeRow PackOwnedRow(
+        ReadOnlySpan<byte> rowSpan,
+        ReadOnlySpan<int> columnEnds,
+        int columnCount,
+        int rowNumber,
+        int sourceLineNumber,
+        bool trimFields,
+        byte quote,
+        byte? escape,
+        int baseOffset,
+        bool enableQuotedFields,
+        ref byte[]? slab,
+        ref int slabOffset,
+        int maxSlabRowSize)
+    {
+        byte[] storage = AllocateOwnedStorage(
+            rowSpan.Length,
+            columnEnds,
+            columnCount,
+            baseOffset,
+            ref slab,
+            ref slabOffset,
+            maxSlabRowSize,
+            out int headerElementSize,
+            out int dataOffset);
+        rowSpan.CopyTo(storage.AsSpan(dataOffset, rowSpan.Length));
+
+        return new CsvPipeRow(
+            storage,
+            columnCount,
+            rowNumber,
+            trimFields,
+            quote,
+            escape,
+            dataOffset,
+            headerElementSize,
+            sourceLineNumber,
+            enableQuotedFields);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static byte[] AllocateOwnedStorage(
+        int rowLength,
+        ReadOnlySpan<int> columnEnds,
+        int columnCount,
+        int baseOffset,
+        ref byte[]? slab,
+        ref int slabOffset,
+        int maxSlabRowSize,
+        out int headerElementSize,
+        out int dataOffset)
+    {
+        headerElementSize = CsvPipeRow.GetHeaderElementSize(rowLength);
         int headerLength = checked((columnCount + 1) * headerElementSize);
         int totalLength = checked(headerLength + rowLength);
 
@@ -1013,28 +1157,8 @@ public readonly ref struct CsvPipeSequenceRow
                 break;
         }
 
-        int dataOffset = headerOffset + headerLength;
-        var destination = storage.AsSpan(dataOffset, rowLength);
-        if (data.IsSingleSegment)
-        {
-            data.FirstSpan.CopyTo(destination);
-        }
-        else
-        {
-            data.CopyTo(destination);
-        }
-
-        return new CsvPipeRow(
-            storage,
-            columnCount,
-            RowNumber,
-            trimFields,
-            quote,
-            escape,
-            dataOffset,
-            headerElementSize,
-            SourceLineNumber,
-            parserOptions?.EnableQuotedFields ?? true);
+        dataOffset = headerOffset + headerLength;
+        return storage;
     }
 
     private (long start, long end) TrimBounds(long start, long end)

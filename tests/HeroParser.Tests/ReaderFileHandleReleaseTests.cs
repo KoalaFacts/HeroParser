@@ -82,7 +82,7 @@ public sealed class ReaderFileHandleReleaseTests : IDisposable
 
         await Assert.ThrowsAsync<HtbException>(async () =>
         {
-            await foreach (var _ in HtbApi.Read<Row>().SkipRows(-1).FromFileAsync(path))
+            await foreach (var _ in HtbApi.Read<Row>().SkipRows(-1).FromFileAsync(path, TestContext.Current.CancellationToken))
             {
             }
         });
@@ -109,7 +109,7 @@ public sealed class ReaderFileHandleReleaseTests : IDisposable
 
         await Assert.ThrowsAsync<HtbException>(async () =>
         {
-            await foreach (var _ in HtbApi.Read<Row>().WithMaxRowCount(-1).FromStreamAsync(stream, leaveOpen: true))
+            await foreach (var _ in HtbApi.Read<Row>().WithMaxRowCount(-1).FromStreamAsync(stream, leaveOpen: true, TestContext.Current.CancellationToken))
             {
             }
         });
@@ -124,7 +124,7 @@ public sealed class ReaderFileHandleReleaseTests : IDisposable
 
         await Assert.ThrowsAsync<HtbException>(async () =>
         {
-            await foreach (var _ in HtbApi.Read<Row>().WithMaxRowCount(0).FromStreamAsync(stream, leaveOpen: false))
+            await foreach (var _ in HtbApi.Read<Row>().WithMaxRowCount(0).FromStreamAsync(stream, leaveOpen: false, TestContext.Current.CancellationToken))
             {
             }
         });

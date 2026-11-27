@@ -282,6 +282,7 @@ public static partial class Csv
         encoding ??= Encoding.UTF8;
 
         options.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
 
         var stream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
@@ -316,6 +317,7 @@ public static partial class Csv
         encoding ??= Encoding.UTF8;
 
         options.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
 
         var stream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,

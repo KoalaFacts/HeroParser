@@ -316,7 +316,16 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8Parser.TryParse(GetByteSpan(), out result, out int consumed) && consumed == data.Length;
+            ReadOnlySpan<byte> trimmed = GetByteSpan();
+            while (!trimmed.IsEmpty && trimmed[0] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n')
+                trimmed = trimmed[1..];
+            while (!trimmed.IsEmpty && trimmed[^1] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n')
+                trimmed = trimmed[..^1];
+
+            if (!trimmed.IsEmpty && (trimmed[0] >= 0x80 || trimmed[^1] >= 0x80))
+                return bool.TryParse(Encoding.UTF8.GetString(trimmed), out result);
+
+            return Utf8Parser.TryParse(trimmed, out result, out int consumed) && consumed == trimmed.Length;
         }
         if (typeof(T) == typeof(char))
         {
@@ -557,7 +566,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     {
         if (typeof(T) == typeof(byte))
         {
-            return Utf8Parser.TryParse(GetByteSpan(), out result, out int consumed) && consumed == data.Length;
+            return new Utf8SpanParser(GetByteSpan()).TryParseGuid(out result);
         }
         if (typeof(T) == typeof(char))
         {
@@ -659,20 +668,9 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
     public bool TryParseChar(out char result)
     {
         if (typeof(T) == typeof(char))
-        {
-            ReadOnlySpan<char> chars = GetCharSpan();
-            if (chars.Length == 1)
-            {
-                result = chars[0];
-                return true;
-            }
-            result = default;
-            return false;
-        }
+            return Utf8SpanParser.TryParseCharSpan(GetCharSpan(), out result);
         if (typeof(T) == typeof(byte))
-        {
             return new Utf8SpanParser(GetByteSpan()).TryParseChar(out result);
-        }
         result = default;
         return false;
     }
@@ -692,7 +690,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(char))
         {
-            return Half.TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, provider, out result);
+            return new CultureNumberParser(provider).TryParse(GetCharSpan(), NumberStyles.Float | NumberStyles.AllowThousands, out result);
         }
         result = default;
         return false;
@@ -713,7 +711,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(char))
         {
-            return Int128.TryParse(GetCharSpan(), NumberStyles.Integer, provider, out result);
+            return new CultureNumberParser(provider).TryParse(GetCharSpan(), NumberStyles.Integer, out result);
         }
         result = default;
         return false;
@@ -753,7 +751,7 @@ public readonly ref struct CsvColumn<T> where T : unmanaged, IEquatable<T>
         }
         if (typeof(T) == typeof(char))
         {
-            return BigInteger.TryParse(GetCharSpan(), NumberStyles.Integer, provider, out result);
+            return new CultureNumberParser(provider).TryParse(GetCharSpan(), NumberStyles.Integer, out result);
         }
         result = default;
         return false;

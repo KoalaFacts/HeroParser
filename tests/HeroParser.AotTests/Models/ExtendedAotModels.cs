@@ -1,6 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
+using System.Text.Json.Serialization;
+using HeroParser.JsonLines;
+using HeroParser.Validation;
 
 namespace HeroParser.AotTests.Models;
 
@@ -134,3 +137,82 @@ public sealed class ExtendedHtbAotRecord
     public BigInteger BigIntVal { get; set; }
     public Uri UriVal { get; set; } = new("https://example.invalid");
 }
+
+[GenerateBinder]
+public sealed class ExtendedJsonlBigIntegerAotRecord
+{
+    public BigInteger RequiredBigInt { get; set; }
+    public BigInteger? OptionalBigInt { get; set; }
+}
+
+public readonly record struct AotCustomSpanCode : ISpanParsable<AotCustomSpanCode>
+{
+    public string Raw { get; init; }
+
+    public static AotCustomSpanCode Parse(ReadOnlySpan<char> s, IFormatProvider? provider)
+        => TryParse(s, provider, out var result) ? result : throw new FormatException("Invalid code.");
+
+    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out AotCustomSpanCode result)
+    {
+        if (s.IsEmpty || s.IsWhiteSpace())
+        {
+            result = default;
+            return false;
+        }
+        result = new AotCustomSpanCode { Raw = s.ToString() };
+        return true;
+    }
+
+    public static AotCustomSpanCode Parse(string s, IFormatProvider? provider) => Parse(s.AsSpan(), provider);
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out AotCustomSpanCode result)
+        => TryParse((s ?? string.Empty).AsSpan(), provider, out result);
+}
+
+[GenerateBinder]
+public sealed class AotCustomParsableJsonlRecord
+{
+    [Validate(NotNull = true)]
+    public string Name { get; set; } = "";
+
+    [Validate(RangeMin = 1, RangeMax = 100)]
+    public int Score { get; set; }
+
+    public AotCustomSpanCode Code { get; set; }
+}
+
+[JsonSourceGenerationOptions(Converters = [typeof(BigIntegerJsonConverter)])]
+[JsonSerializable(typeof(ExtendedJsonlBigIntegerAotRecord))]
+[JsonSerializable(typeof(AotCustomParsableJsonlRecord))]
+internal sealed partial class ExtendedJsonlBigIntegerAotContext : JsonSerializerContext;
+
+[GenerateBinder]
+public sealed class AotKebabJsonlRecord
+{
+    public int ValueId { get; set; }
+
+    [Validate(NotEmpty = true)]
+    public string DisplayName { get; set; } = "";
+}
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.KebabCaseLower)]
+[JsonSerializable(typeof(AotKebabJsonlRecord))]
+internal sealed partial class AotKebabJsonlContext : JsonSerializerContext;
+
+public sealed class AotTypeInfoValidatedRecord
+{
+    [Validate(NotEmpty = true)]
+    public string Name { get; set; } = "";
+
+    [Validate(RangeMin = 1, RangeMax = 100)]
+    public int Score { get; set; }
+}
+
+[JsonSerializable(typeof(AotTypeInfoValidatedRecord))]
+internal sealed partial class AotTypeInfoValidatedContext : JsonSerializerContext;
+
+public struct AotEmptyMetadataStruct;
+
+[JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
+[JsonSerializable(typeof(AotEmptyMetadataStruct))]
+internal sealed partial class AotEmptyMetadataContext : JsonSerializerContext;

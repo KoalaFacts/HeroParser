@@ -428,6 +428,8 @@ public sealed class CsvAsyncStreamReader : IAsyncDisposable
 
         length += read;
         BytesRead += read;
+        if (options.MaxInputSize is not null)
+            options.ValidateInputSize(BytesRead);
     }
 
     private void ThrowIfDisposed()

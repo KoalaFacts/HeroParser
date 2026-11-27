@@ -1130,6 +1130,11 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
 
     private static bool ConvertToBase64Bytes(ReadOnlySpan<char> span, out object? value)
     {
+        if (span.IsEmpty || span.IsWhiteSpace())
+        {
+            value = null;
+            return true;
+        }
         if (Utf8SpanParser.TryParseBase64Chars(span, out var bytes))
         {
             value = bytes;
@@ -1143,7 +1148,7 @@ internal readonly struct ConverterFactory(CultureInfo culture, CustomConverterDi
     {
         public bool Convert(ReadOnlySpan<char> span, out object? value)
         {
-            if (TNum.TryParse(span, styles, culture, out var result))
+            if (new CultureNumberParser(culture).TryParse(span, styles, out TNum result))
             {
                 value = result;
                 return true;

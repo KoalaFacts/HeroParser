@@ -20,19 +20,12 @@ public static partial class Excel
     /// <summary>
     /// Gets the worksheet names from a stream containing Excel (.xlsx) data in workbook order.
     /// </summary>
-    /// <param name="stream">A seekable stream containing .xlsx data.</param>
+    /// <param name="stream">A seekable stream containing .xlsx data. The stream is left open after reading.</param>
     /// <returns>The worksheet names in workbook order.</returns>
     public static IReadOnlyList<string> GetSheetNames(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        using var xlsxReader = new XlsxReader(stream);
-        var sheets = xlsxReader.Workbook.Sheets;
-        var names = new string[sheets.Count];
-        for (int i = 0; i < sheets.Count; i++)
-        {
-            names[i] = sheets[i].Name;
-        }
-        return names;
+        return XlsxReader.ReadSheetNames(stream);
     }
     /// <summary>
     /// Creates a typed record reader builder for reading Excel rows as <typeparamref name="T"/> records.
@@ -62,7 +55,7 @@ public static partial class Excel
     /// Reads all rows from the first sheet of a stream and deserializes them as <typeparamref name="T"/> records.
     /// </summary>
     /// <typeparam name="T">The record type to deserialize rows into.</typeparam>
-    /// <param name="stream">A seekable stream containing .xlsx data.</param>
+    /// <param name="stream">A seekable stream containing .xlsx data. The stream is left open after reading.</param>
     /// <returns>A list of deserialized records.</returns>
     public static List<T> DeserializeRecords<T>(Stream stream) where T : new()
         => Read<T>().FromStream(stream);

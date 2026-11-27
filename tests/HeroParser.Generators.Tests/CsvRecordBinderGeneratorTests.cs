@@ -236,11 +236,12 @@ public class CsvRecordBinderGeneratorTests
             public record PersonRecord(string Name, int Age);
             """;
 
-        var result = RunGenerator(source);
+        var (result, outputCompilation) = RunGeneratorWithCompilation(source);
 
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        // Generator produces: 2 binder files per type (byte + char) + 1 direct writer file + 1 shared registration file
-        Assert.Equal(4, result.GeneratedSources.Length);
+        Assert.Empty(outputCompilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));
+        // Positional record properties are init-only, so only 1 direct writer file + 1 shared registration file are emitted
+        Assert.Equal(2, result.GeneratedSources.Length);
 
         var allGeneratedCode = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
         Assert.Contains("PersonRecord", allGeneratedCode);

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using HeroParser.Internal;
+using HeroParser.Validation;
 
 namespace HeroParser.JsonLines.Writing;
 
@@ -20,6 +21,7 @@ public sealed class JsonlWriterBuilder<T>
     private long? maxOutputSize;
     private bool writeFinalNewline;
     private JsonlSerializeErrorHandler? onError;
+    private ValidationMode validationMode = ValidationMode.Strict;
 
     internal JsonlWriterBuilder() { }
 
@@ -85,6 +87,13 @@ public sealed class JsonlWriterBuilder<T>
         return this;
     }
 
+    /// <summary>Sets the validation mode applied when writing records.</summary>
+    public JsonlWriterBuilder<T> WithValidationMode(ValidationMode mode)
+    {
+        validationMode = mode;
+        return this;
+    }
+
     private JsonlWriteOptions BuildOptions() => new()
     {
         SerializerOptions = serializerOptions,
@@ -93,7 +102,8 @@ public sealed class JsonlWriterBuilder<T>
         MaxRowCount = maxRowCount,
         MaxOutputSize = maxOutputSize,
         WriteFinalNewline = writeFinalNewline,
-        OnError = onError
+        OnError = onError,
+        ValidationMode = validationMode
     };
 
     /// <summary>Serializes records to an in-memory UTF-8 string using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
@@ -139,13 +149,14 @@ public sealed class JsonlWriterBuilder<T>
         WriteToStreamInternal(stream, records, leaveOpen);
     }
 
-    /// <summary>Asynchronously serializes records to a file using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
-    public async ValueTask ToFileAsync(string path, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
+    /// <summary>Asynchronously serializes an <see cref="IEnumerable{T}"/> sequence of records to a file using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public async ValueTask ToFileFromEnumerableAsync(string path, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(typeInfo);
         this.typeInfo = typeInfo;
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
         await WriteToStreamInternalAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
@@ -158,13 +169,14 @@ public sealed class JsonlWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(typeInfo);
         this.typeInfo = typeInfo;
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
         await WriteToStreamInternalAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Asynchronously serializes records to an existing stream using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
-    public ValueTask ToStreamAsync(Stream stream, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    /// <summary>Asynchronously serializes an <see cref="IEnumerable{T}"/> sequence of records to an existing stream using a <see cref="JsonTypeInfo{T}"/> for AOT-safe serialization.</summary>
+    public ValueTask ToStreamFromEnumerableAsync(Stream stream, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, bool leaveOpen = true, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
@@ -226,13 +238,14 @@ public sealed class JsonlWriterBuilder<T>
         WriteToStreamInternal(stream, records, leaveOpen);
     }
 
-    /// <summary>Asynchronously serializes records to a file.</summary>
+    /// <summary>Asynchronously serializes an <see cref="IEnumerable{T}"/> sequence of records to a file.</summary>
     [RequiresUnreferencedCode("JSONL serialization without WithTypeInfo uses reflection. Call WithTypeInfo for AOT/trimming support.")]
     [RequiresDynamicCode("JSONL serialization without WithTypeInfo uses runtime code generation.")]
-    public async ValueTask ToFileAsync(string path, IEnumerable<T> records, CancellationToken cancellationToken = default)
+    public async ValueTask ToFileFromEnumerableAsync(string path, IEnumerable<T> records, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
         await WriteToStreamInternalAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
@@ -245,15 +258,16 @@ public sealed class JsonlWriterBuilder<T>
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
         await WriteToStreamInternalAsync(stream, records, leaveOpen: true, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Asynchronously serializes records to an existing stream.</summary>
+    /// <summary>Asynchronously serializes an <see cref="IEnumerable{T}"/> sequence of records to an existing stream.</summary>
     [RequiresUnreferencedCode("JSONL serialization without WithTypeInfo uses reflection. Call WithTypeInfo for AOT/trimming support.")]
     [RequiresDynamicCode("JSONL serialization without WithTypeInfo uses runtime code generation.")]
-    public ValueTask ToStreamAsync(Stream stream, IEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
+    public ValueTask ToStreamFromEnumerableAsync(Stream stream, IEnumerable<T> records, bool leaveOpen = true, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);

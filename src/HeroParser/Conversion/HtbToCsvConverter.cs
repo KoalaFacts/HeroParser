@@ -26,7 +26,8 @@ public static class HtbToCsvConverter
         ArgumentNullException.ThrowIfNull(csvWriter);
         options ??= HtbToCsvOptions.Default;
 
-        using var reader = new HtbStreamReader(htbStream, HtbReadOptions.Default, leaveOpen: true);
+        HtbReadOptions readOptions = CreateHtbReadOptions(options);
+        using var reader = new HtbStreamReader(htbStream, readOptions, leaveOpen: true);
         var schema = reader.ParseHeader();
 
         CsvWriteOptions csvWriteOptions = CreateCsvWriteOptions(options);
@@ -69,7 +70,20 @@ public static class HtbToCsvConverter
                         {
                             throw new HtbException(HtbErrorCode.CorruptData, $"Column '{col.Name}' is not nullable but null was read.");
                         }
-                        writer.WriteField(null);
+                        if (colCount == 1)
+                        {
+                            if (col.DataType is HtbDataType.String or HtbDataType.Uri)
+                            {
+                                throw new HtbException(
+                                    HtbErrorCode.SerializationError,
+                                    $"Cannot convert a null value in single-column nullable {col.DataType} column '{col.Name}' to CSV without losing the distinction between null and empty value.");
+                            }
+                            writer.WriteQuotedEmptyField();
+                        }
+                        else
+                        {
+                            writer.WriteUnquotedEmptyField();
+                        }
                         continue;
                     }
 
@@ -101,7 +115,13 @@ public static class HtbToCsvConverter
                             writer.WriteField(reader.ReadGuid());
                             break;
                         case HtbDataType.String:
-                            writer.WriteField(reader.ReadString());
+                            {
+                                string str = reader.ReadString();
+                                if (str.Length == 0)
+                                    writer.WriteQuotedEmptyField();
+                                else
+                                    writer.WriteField(str);
+                            }
                             break;
                         case HtbDataType.FloatArray:
                             float[] arr = reader.ReadFloatArray();
@@ -150,18 +170,30 @@ public static class HtbToCsvConverter
                             writer.WriteField(reader.ReadUInt128());
                             break;
                         case HtbDataType.ByteArray:
-                            writer.WriteField(System.Convert.ToBase64String(reader.ReadByteArray()));
+                            {
+                                byte[] bytes = reader.ReadByteArray();
+                                writer.WriteBase64Field(bytes);
+                            }
                             break;
                         case HtbDataType.BigInteger:
                             writer.WriteField(reader.ReadBigInteger().ToString(writer.Culture));
                             break;
                         case HtbDataType.Uri:
-                            writer.WriteField(reader.ReadUri().OriginalString);
+                            {
+                                string uriStr = reader.ReadUri().OriginalString;
+                                if (uriStr.Length == 0)
+                                    writer.WriteQuotedEmptyField();
+                                else
+                                    writer.WriteField(uriStr);
+                            }
                             break;
                         case HtbDataType.Unknown:
                         default:
                             reader.SkipColumnValue(col.DataType);
-                            writer.WriteField(null);
+                            if (colCount == 1)
+                                writer.WriteQuotedEmptyField();
+                            else
+                                writer.WriteUnquotedEmptyField();
                             break;
                     }
                 }
@@ -227,7 +259,8 @@ public static class HtbToCsvConverter
         ArgumentNullException.ThrowIfNull(csvWriter);
         options ??= HtbToCsvOptions.Default;
 
-        using var reader = new HtbStreamReader(htbStream, HtbReadOptions.Default, leaveOpen: true);
+        HtbReadOptions readOptions = CreateHtbReadOptions(options);
+        using var reader = new HtbStreamReader(htbStream, readOptions, leaveOpen: true);
         var schema = await reader.ParseHeaderAsync().ConfigureAwait(false);
 
         CsvWriteOptions csvWriteOptions = CreateCsvWriteOptions(options);
@@ -270,7 +303,20 @@ public static class HtbToCsvConverter
                         {
                             throw new HtbException(HtbErrorCode.CorruptData, $"Column '{col.Name}' is not nullable but null was read.");
                         }
-                        writer.WriteField(null);
+                        if (colCount == 1)
+                        {
+                            if (col.DataType is HtbDataType.String or HtbDataType.Uri)
+                            {
+                                throw new HtbException(
+                                    HtbErrorCode.SerializationError,
+                                    $"Cannot convert a null value in single-column nullable {col.DataType} column '{col.Name}' to CSV without losing the distinction between null and empty value.");
+                            }
+                            writer.WriteQuotedEmptyField();
+                        }
+                        else
+                        {
+                            writer.WriteUnquotedEmptyField();
+                        }
                         continue;
                     }
 
@@ -302,7 +348,13 @@ public static class HtbToCsvConverter
                             writer.WriteField(await reader.ReadGuidAsync().ConfigureAwait(false));
                             break;
                         case HtbDataType.String:
-                            writer.WriteField(await reader.ReadStringAsync().ConfigureAwait(false));
+                            {
+                                string str = await reader.ReadStringAsync().ConfigureAwait(false);
+                                if (str.Length == 0)
+                                    writer.WriteQuotedEmptyField();
+                                else
+                                    writer.WriteField(str);
+                            }
                             break;
                         case HtbDataType.FloatArray:
                             float[] arr = await reader.ReadFloatArrayAsync().ConfigureAwait(false);
@@ -351,18 +403,30 @@ public static class HtbToCsvConverter
                             writer.WriteField(await reader.ReadUInt128Async().ConfigureAwait(false));
                             break;
                         case HtbDataType.ByteArray:
-                            writer.WriteField(System.Convert.ToBase64String(await reader.ReadByteArrayAsync().ConfigureAwait(false)));
+                            {
+                                byte[] bytes = await reader.ReadByteArrayAsync().ConfigureAwait(false);
+                                writer.WriteBase64Field(bytes);
+                            }
                             break;
                         case HtbDataType.BigInteger:
                             writer.WriteField((await reader.ReadBigIntegerAsync().ConfigureAwait(false)).ToString(writer.Culture));
                             break;
                         case HtbDataType.Uri:
-                            writer.WriteField((await reader.ReadUriAsync().ConfigureAwait(false)).OriginalString);
+                            {
+                                string uriStr = (await reader.ReadUriAsync().ConfigureAwait(false)).OriginalString;
+                                if (uriStr.Length == 0)
+                                    writer.WriteQuotedEmptyField();
+                                else
+                                    writer.WriteField(uriStr);
+                            }
                             break;
                         case HtbDataType.Unknown:
                         default:
                             await reader.SkipColumnValueAsync(col.DataType).ConfigureAwait(false);
-                            writer.WriteField(null);
+                            if (colCount == 1)
+                                writer.WriteQuotedEmptyField();
+                            else
+                                writer.WriteUnquotedEmptyField();
                             break;
                     }
                 }
@@ -396,6 +460,16 @@ public static class HtbToCsvConverter
                 RecordsRead = reader.RecordsRead
             });
         }
+    }
+
+    private static HtbReadOptions CreateHtbReadOptions(HtbToCsvOptions options)
+    {
+        if (options.MaxRowCount == HtbReadOptions.Default.MaxRowCount)
+            return HtbReadOptions.Default;
+
+        var readOptions = new HtbReadOptions { MaxRowCount = options.MaxRowCount };
+        readOptions.Validate();
+        return readOptions;
     }
 
     private static CsvWriteOptions CreateCsvWriteOptions(HtbToCsvOptions options) => new()

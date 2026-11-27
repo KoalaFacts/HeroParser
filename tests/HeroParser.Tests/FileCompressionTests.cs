@@ -9,6 +9,7 @@ using HeroParser.Htbs.Records;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Detection;
 using HeroParser.SeparatedValues.Validation;
+using HeroParser.SeparatedValues.Writing;
 using HeroParser.Tests.ConsoleUi;
 using Xunit;
 
@@ -821,4 +822,165 @@ public partial class FileCompressionTests
         return ms.ToArray();
     }
 #endif
+
+    [Fact]
+    public async Task EmptyGzipWrite_ViaLibraryWriters_WritesValidGzipFrameSyncAndAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        string dir = Path.Combine(Path.GetTempPath(), $"hero-empty-gz-lib-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string jsonlSync = Path.Combine(dir, "empty-sync.jsonl.gz");
+            string jsonlAsync = Path.Combine(dir, "empty-async.jsonl.gz");
+            string csvSync = Path.Combine(dir, "empty-sync.csv.gz");
+            string csvAsync = Path.Combine(dir, "empty-async.csv.gz");
+
+            var noBomUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            Jsonl.WriteToFile(jsonlSync, Array.Empty<CompressionPerson>());
+            await Jsonl.WriteEnumerableToFileAsync(jsonlAsync, Array.Empty<CompressionPerson>(), cancellationToken: ct);
+            Csv.WriteToFile(csvSync, Array.Empty<CompressionPerson>(), new CsvWriteOptions { WriteHeader = false }, noBomUtf8);
+            await Csv.WriteToFileAsync(csvAsync, Array.Empty<CompressionPerson>(), new CsvWriteOptions { WriteHeader = false }, noBomUtf8, cancellationToken: ct);
+
+            foreach (string gzPath in (string[])[jsonlSync, jsonlAsync, csvSync, csvAsync])
+            {
+                byte[] raw = File.ReadAllBytes(gzPath);
+                Assert.True(raw.Length >= 20, $"Expected valid gzip frame for {gzPath}, got {raw.Length} bytes.");
+                Assert.Equal(0x1F, raw[0]);
+                Assert.Equal(0x8B, raw[1]);
+
+                using var gz = new GZipStream(File.OpenRead(gzPath), CompressionMode.Decompress);
+                using var ms = new MemoryStream();
+                gz.CopyTo(ms);
+                Assert.Equal(0, ms.Length);
+            }
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CompressedCsv_MaxInputSize_CountsDecompressedBytesSyncAndAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        string dir = Path.Combine(Path.GetTempPath(), $"hero-comp-maxsize-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            // 4-byte CSV compresses into a ~24-byte .gz frame on disk.
+            string rowPath = Path.Combine(dir, "tiny.csv.gz");
+            await File.WriteAllBytesAsync(rowPath, CompressGzip("a,b\n"), ct);
+            Assert.True(new FileInfo(rowPath).Length > 4);
+
+            using (var reader = Csv.Read().WithMaxInputSize(4).FromFile(rowPath, out _))
+            {
+                Assert.True(reader.MoveNext());
+                Assert.Equal("a", reader.Current[0].ToString());
+                Assert.Equal("b", reader.Current[1].ToString());
+                Assert.False(reader.MoveNext());
+            }
+
+            Assert.Throws<CsvException>(() => Csv.Read().WithMaxInputSize(3).FromFile(rowPath, out _));
+
+            await using (var okAsync = Csv.Read().WithMaxInputSize(4).FromFileAsync(rowPath))
+            {
+                Assert.True(await okAsync.MoveNextAsync(ct));
+                Assert.False(await okAsync.MoveNextAsync(ct));
+            }
+
+            await Assert.ThrowsAsync<CsvException>(async () =>
+            {
+                await using var tooSmallAsync = Csv.Read().WithMaxInputSize(3).FromFileAsync(rowPath);
+                while (await tooSmallAsync.MoveNextAsync(ct)) { }
+            });
+
+            string recPath = Path.Combine(dir, "person.csv.gz");
+            await File.WriteAllBytesAsync(recPath, CompressGzip("Name,Age\nAlice,30\n"), ct);
+
+            var okRecords = new List<CompressionPerson>();
+            await foreach (var person in Csv.Read<CompressionPerson>().WithMaxInputSize(18).FromFileAsync(recPath, ct))
+            {
+                okRecords.Add(person);
+            }
+            Assert.Single(okRecords);
+            Assert.Equal("Alice", okRecords[0].Name);
+
+            await Assert.ThrowsAsync<CsvException>(async () =>
+            {
+                await foreach (var _ in Csv.Read<CompressionPerson>().WithMaxInputSize(17).FromFileAsync(recPath, ct)) { }
+            });
+
+            await Assert.ThrowsAsync<CsvException>(async () =>
+            {
+                await foreach (var _ in Csv.Read<CompressionPerson>().WithMaxInputSize(3).FromFileAsync(recPath, ct)) { }
+            });
+
+            // ValidateFileAsync must enforce MaxInputSize during compressed sampling, whitespace scanning, and SkipRows preamble skipping.
+            string largeWsPath = Path.Combine(dir, "whitespace.csv.gz");
+            await File.WriteAllBytesAsync(largeWsPath, CompressGzip(new string(' ', 100_000)), ct);
+
+            var smallCapWs = await Csv.ValidateFileAsync(
+                largeWsPath,
+                new CsvValidationOptions { AllowEmptyFile = true, ParseOptions = new CsvReadOptions { MaxInputSize = 4096 } },
+                ct);
+            Assert.False(smallCapWs.IsValid);
+            Assert.Contains(smallCapWs.Errors, e => e.ErrorType == CsvValidationErrorType.ParseError);
+
+            var midCapWs = await Csv.ValidateFileAsync(
+                largeWsPath,
+                new CsvValidationOptions { AllowEmptyFile = true, ParseOptions = new CsvReadOptions { MaxInputSize = 70_000 } },
+                ct);
+            Assert.False(midCapWs.IsValid);
+            Assert.Contains(midCapWs.Errors, e => e.ErrorType == CsvValidationErrorType.ParseError);
+
+            string skipRowsPath = Path.Combine(dir, "skiprows.csv.gz");
+            await File.WriteAllBytesAsync(skipRowsPath, CompressGzip("# metadata preamble\nName,Age\nAlice,30\n"), ct);
+            var skipRowsExceeded = await Csv.ValidateFileAsync(
+                skipRowsPath,
+                new CsvValidationOptions { SkipRows = 1, ParseOptions = new CsvReadOptions { MaxInputSize = 10 } },
+                ct);
+            Assert.False(skipRowsExceeded.IsValid);
+            Assert.Contains(skipRowsExceeded.Errors, e => e.ErrorType == CsvValidationErrorType.ParseError);
+
+            string okWsPath = Path.Combine(dir, "ok-ws.csv.gz");
+            await File.WriteAllBytesAsync(okWsPath, CompressGzip("   \r\n  "), ct);
+            var okWsResult = await Csv.ValidateFileAsync(
+                okWsPath,
+                new CsvValidationOptions { AllowEmptyFile = true, ParseOptions = new CsvReadOptions { MaxInputSize = 1024 } },
+                ct);
+            Assert.True(okWsResult.IsValid);
+
+            // FromTextFileAsync must enforce MaxInputSize on raw decompressed UTF-16 bytes BEFORE transcoding:
+            // "A,B\n1,2\n" in UTF-16LE with BOM is 18 raw bytes (8 UTF-8 bytes after transcoding), so MaxInputSize = 10 must reject it.
+            string utf16ExceededPath = Path.Combine(dir, "utf16-exceeded.csv.gz");
+            byte[] utf16ExceededBytes = [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("A,B\n1,2\n")];
+            await File.WriteAllBytesAsync(utf16ExceededPath, CompressGzipBytes(utf16ExceededBytes), ct);
+
+            await Assert.ThrowsAsync<CsvException>(async () =>
+            {
+                await using var reader = Csv.Read().WithMaxInputSize(10).FromTextFileAsync(utf16ExceededPath);
+                while (await reader.MoveNextAsync(ct)) { }
+            });
+
+            // CJK UTF-16LE with BOM: 22 chars = 46 raw UTF-16 bytes, but 62 UTF-8 bytes after transcoding.
+            // MaxInputSize = 50 must succeed because the raw byte budget is 46 <= 50.
+            string cjkCol1 = new('中', 10);
+            string cjkCol2 = new('文', 10);
+            string cjkPath = Path.Combine(dir, "utf16-cjk.csv.gz");
+            byte[] cjkBytes = [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes($"{cjkCol1},{cjkCol2}\n")];
+            await File.WriteAllBytesAsync(cjkPath, CompressGzipBytes(cjkBytes), ct);
+
+            await using var cjkReader = Csv.Read().WithMaxInputSize(50).FromTextFileAsync(cjkPath);
+            Assert.True(await cjkReader.MoveNextAsync(ct));
+            Assert.Equal(cjkCol1, cjkReader.Current[0].UnquoteToString());
+            Assert.Equal(cjkCol2, cjkReader.Current[1].UnquoteToString());
+            Assert.False(await cjkReader.MoveNextAsync(ct));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

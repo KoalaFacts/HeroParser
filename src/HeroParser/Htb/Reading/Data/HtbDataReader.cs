@@ -17,11 +17,14 @@ public sealed class HtbDataReader : DbDataReader
 {
     private readonly HtbStreamReader streamReader;
     private readonly HtbReadOptions options;
+    private readonly HtbSchema? schemaOverride;
     private HtbSchema? schema;
-    private Dictionary<string, int>? ordinals;
+    private Dictionary<string, int>? exactOrdinals;
+    private Dictionary<string, int>? caseInsensitiveOrdinals;
     private RowCell[] currentCells = [];
     private byte[] maskBuffer = [];
-    private bool initialized;
+    private bool headerInitialized;
+    private bool hasRowsKnown;
     private bool hasRows;
     private bool hasPeekedRow;
     private bool hasCurrentRow;
@@ -41,13 +44,19 @@ public sealed class HtbDataReader : DbDataReader
         streamReader = new HtbStreamReader(stream, this.options, leaveOpen);
     }
 
+    internal HtbDataReader(Stream stream, HtbSchema? schemaOverride, HtbReadOptions? options = null, bool leaveOpen = false)
+        : this(stream, options, leaveOpen)
+    {
+        this.schemaOverride = schemaOverride;
+    }
+
     /// <inheritdoc />
     public override int FieldCount
     {
         get
         {
             EnsureNotClosed();
-            EnsureInitialized();
+            EnsureHeaderInitialized();
             return schema!.Columns.Count;
         }
     }
@@ -61,7 +70,16 @@ public sealed class HtbDataReader : DbDataReader
         get
         {
             EnsureNotClosed();
-            EnsureInitialized();
+            EnsureHeaderInitialized();
+            if (!hasRowsKnown)
+            {
+                if (TryReadNextRow())
+                {
+                    hasPeekedRow = true;
+                    hasRows = true;
+                }
+                hasRowsKnown = true;
+            }
             return hasRows;
         }
     }
@@ -82,8 +100,8 @@ public sealed class HtbDataReader : DbDataReader
     public override bool Read()
     {
         EnsureNotClosed();
-        if (!initialized)
-            EnsureInitialized();
+        if (!headerInitialized)
+            EnsureHeaderInitialized();
 
         if (hasPeekedRow)
         {
@@ -94,10 +112,13 @@ public sealed class HtbDataReader : DbDataReader
 
         if (TryReadNextRow())
         {
+            hasRows = true;
+            hasRowsKnown = true;
             hasCurrentRow = true;
             return true;
         }
 
+        hasRowsKnown = true;
         hasCurrentRow = false;
         Array.Clear(currentCells);
         return false;
@@ -109,8 +130,8 @@ public sealed class HtbDataReader : DbDataReader
         EnsureNotClosed();
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!initialized)
-            await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        if (!headerInitialized)
+            await EnsureHeaderInitializedAsync(cancellationToken).ConfigureAwait(false);
 
         if (hasPeekedRow)
         {
@@ -121,10 +142,13 @@ public sealed class HtbDataReader : DbDataReader
 
         if (await TryReadNextRowAsync(cancellationToken).ConfigureAwait(false))
         {
+            hasRows = true;
+            hasRowsKnown = true;
             hasCurrentRow = true;
             return true;
         }
 
+        hasRowsKnown = true;
         hasCurrentRow = false;
         Array.Clear(currentCells);
         return false;
@@ -134,7 +158,7 @@ public sealed class HtbDataReader : DbDataReader
     public override string GetName(int ordinal)
     {
         EnsureNotClosed();
-        EnsureInitialized();
+        EnsureHeaderInitialized();
         ValidateOrdinal(ordinal);
         return schema!.Columns[ordinal].Name;
     }
@@ -144,8 +168,10 @@ public sealed class HtbDataReader : DbDataReader
     {
         ArgumentNullException.ThrowIfNull(name);
         EnsureNotClosed();
-        EnsureInitialized();
-        if (ordinals is not null && ordinals.TryGetValue(name, out int ordinal))
+        EnsureHeaderInitialized();
+        if (exactOrdinals is not null && exactOrdinals.TryGetValue(name, out int exact))
+            return exact;
+        if (caseInsensitiveOrdinals is not null && caseInsensitiveOrdinals.TryGetValue(name, out int ordinal))
             return ordinal;
 
         throw new IndexOutOfRangeException($"Column '{name}' does not exist.");
@@ -156,7 +182,7 @@ public sealed class HtbDataReader : DbDataReader
     public override Type GetFieldType(int ordinal)
     {
         EnsureNotClosed();
-        EnsureInitialized();
+        EnsureHeaderInitialized();
         ValidateOrdinal(ordinal);
         return MapClrType(schema!.Columns[ordinal].DataType);
     }
@@ -484,7 +510,7 @@ public sealed class HtbDataReader : DbDataReader
     public override DataTable GetSchemaTable()
     {
         EnsureNotClosed();
-        EnsureInitialized();
+        EnsureHeaderInitialized();
 
         var table = new DataTable("SchemaTable");
         table.Columns.Add(SchemaTableColumn.ColumnName, typeof(string));
@@ -541,48 +567,42 @@ public sealed class HtbDataReader : DbDataReader
         await base.DisposeAsync().ConfigureAwait(false);
     }
 
-    private void EnsureInitialized()
+    private void EnsureHeaderInitialized()
     {
-        if (initialized)
+        if (headerInitialized)
             return;
 
-        schema = streamReader.ParseHeader();
+        HtbSchema headerSchema = streamReader.ParseHeader();
+        schema = schemaOverride ?? headerSchema;
         BuildOrdinalLookup(schema);
-
-        if (TryReadNextRow())
-        {
-            hasPeekedRow = true;
-            hasRows = true;
-        }
-
-        initialized = true;
+        headerInitialized = true;
     }
 
-    private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
+    private async Task EnsureHeaderInitializedAsync(CancellationToken cancellationToken)
     {
-        if (initialized)
+        if (headerInitialized)
             return;
 
         cancellationToken.ThrowIfCancellationRequested();
-        schema = await streamReader.ParseHeaderAsync().ConfigureAwait(false);
+        HtbSchema headerSchema = await streamReader.ParseHeaderAsync(cancellationToken).ConfigureAwait(false);
+        schema = schemaOverride ?? headerSchema;
         BuildOrdinalLookup(schema);
-
-        if (await TryReadNextRowAsync(cancellationToken).ConfigureAwait(false))
-        {
-            hasPeekedRow = true;
-            hasRows = true;
-        }
-
-        initialized = true;
+        headerInitialized = true;
     }
 
     private void BuildOrdinalLookup(HtbSchema parsedSchema)
     {
         int colCount = parsedSchema.Columns.Count;
-        var map = new Dictionary<string, int>(colCount, StringComparer.OrdinalIgnoreCase);
+        var exact = new Dictionary<string, int>(colCount, StringComparer.Ordinal);
+        var caseInsensitive = new Dictionary<string, int>(colCount, StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < colCount; i++)
-            map.TryAdd(parsedSchema.Columns[i].Name, i);
-        ordinals = map;
+        {
+            string colName = parsedSchema.Columns[i].Name;
+            exact.TryAdd(colName, i);
+            caseInsensitive.TryAdd(colName, i);
+        }
+        exactOrdinals = exact;
+        caseInsensitiveOrdinals = caseInsensitive;
         currentCells = new RowCell[colCount];
         maskBuffer = new byte[(colCount + 7) / 8];
     }
@@ -600,11 +620,18 @@ public sealed class HtbDataReader : DbDataReader
             streamReader.ReadMask(mask);
             for (int i = 0; i < colCount; i++)
             {
+                HtbColumn column = schema.Columns[i];
                 bool isNull = (mask[i / 8] & (1 << (i % 8))) != 0;
                 if (isNull)
+                {
+                    if (!column.IsNullable)
+                        throw new HtbException(HtbErrorCode.CorruptData, $"Column '{column.Name}' is not nullable but null was read.");
                     currentCells[i] = new RowCell { IsNull = true };
+                }
                 else
-                    ReadColumnCell(i, schema.Columns[i].DataType);
+                {
+                    ReadColumnCell(i, column.DataType);
+                }
             }
 
             streamReader.IncrementRecordCount();
@@ -631,17 +658,24 @@ public sealed class HtbDataReader : DbDataReader
         while (streamReader.RecordsRead < options.MaxRowCount)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (await streamReader.IsEndOfStreamAsync().ConfigureAwait(false))
+            if (await streamReader.IsEndOfStreamAsync(cancellationToken).ConfigureAwait(false))
                 return false;
 
-            await streamReader.ReadMaskAsync(maskBuffer).ConfigureAwait(false);
+            await streamReader.ReadMaskAsync(maskBuffer, cancellationToken).ConfigureAwait(false);
             for (int i = 0; i < colCount; i++)
             {
+                HtbColumn column = schema.Columns[i];
                 bool isNull = (maskBuffer[i / 8] & (1 << (i % 8))) != 0;
                 if (isNull)
+                {
+                    if (!column.IsNullable)
+                        throw new HtbException(HtbErrorCode.CorruptData, $"Column '{column.Name}' is not nullable but null was read.");
                     currentCells[i] = new RowCell { IsNull = true };
+                }
                 else
-                    await ReadColumnCellAsync(i, schema.Columns[i].DataType).ConfigureAwait(false);
+                {
+                    await ReadColumnCellAsync(i, column.DataType, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             streamReader.IncrementRecordCount();
@@ -651,7 +685,7 @@ public sealed class HtbDataReader : DbDataReader
             return true;
         }
 
-        if (!await streamReader.IsEndOfStreamAsync().ConfigureAwait(false))
+        if (!await streamReader.IsEndOfStreamAsync(cancellationToken).ConfigureAwait(false))
         {
             throw new HtbException(
                 HtbErrorCode.LimitExceeded,
@@ -761,98 +795,98 @@ public sealed class HtbDataReader : DbDataReader
         }
     }
 
-    private async ValueTask ReadColumnCellAsync(int ordinal, HtbDataType dataType)
+    private async ValueTask ReadColumnCellAsync(int ordinal, HtbDataType dataType, CancellationToken cancellationToken)
     {
         currentCells[ordinal] = default;
 
         switch (dataType)
         {
             case HtbDataType.Int32:
-                currentCells[ordinal].LowBits = await streamReader.ReadInt32Async().ConfigureAwait(false);
+                currentCells[ordinal].LowBits = await streamReader.ReadInt32Async(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.Int64:
-                currentCells[ordinal].LowBits = await streamReader.ReadInt64Async().ConfigureAwait(false);
+                currentCells[ordinal].LowBits = await streamReader.ReadInt64Async(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.Float:
-                currentCells[ordinal].LowBits = BitConverter.SingleToInt32Bits(await streamReader.ReadFloatAsync().ConfigureAwait(false));
+                currentCells[ordinal].LowBits = BitConverter.SingleToInt32Bits(await streamReader.ReadFloatAsync(cancellationToken).ConfigureAwait(false));
                 break;
             case HtbDataType.Double:
-                currentCells[ordinal].LowBits = BitConverter.DoubleToInt64Bits(await streamReader.ReadDoubleAsync().ConfigureAwait(false));
+                currentCells[ordinal].LowBits = BitConverter.DoubleToInt64Bits(await streamReader.ReadDoubleAsync(cancellationToken).ConfigureAwait(false));
                 break;
             case HtbDataType.Decimal:
-                currentCells[ordinal].Decimal = await streamReader.ReadDecimalAsync().ConfigureAwait(false);
+                currentCells[ordinal].Decimal = await streamReader.ReadDecimalAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.Boolean:
-                currentCells[ordinal].LowBits = await streamReader.ReadBooleanAsync().ConfigureAwait(false) ? 1L : 0L;
+                currentCells[ordinal].LowBits = await streamReader.ReadBooleanAsync(cancellationToken).ConfigureAwait(false) ? 1L : 0L;
                 break;
             case HtbDataType.DateTime:
-                currentCells[ordinal].LowBits = (await streamReader.ReadDateTimeAsync().ConfigureAwait(false)).ToBinary();
+                currentCells[ordinal].LowBits = (await streamReader.ReadDateTimeAsync(cancellationToken).ConfigureAwait(false)).ToBinary();
                 break;
             case HtbDataType.String:
-                currentCells[ordinal].Reference = await streamReader.ReadStringAsync().ConfigureAwait(false);
+                currentCells[ordinal].Reference = await streamReader.ReadStringAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.Guid:
-                currentCells[ordinal].Guid = await streamReader.ReadGuidAsync().ConfigureAwait(false);
+                currentCells[ordinal].Guid = await streamReader.ReadGuidAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.FloatArray:
-                currentCells[ordinal].Reference = await streamReader.ReadFloatArrayAsync().ConfigureAwait(false);
+                currentCells[ordinal].Reference = await streamReader.ReadFloatArrayAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.DateTimeOffset:
-                DateTimeOffset asyncDto = await streamReader.ReadDateTimeOffsetAsync().ConfigureAwait(false);
+                DateTimeOffset asyncDto = await streamReader.ReadDateTimeOffsetAsync(cancellationToken).ConfigureAwait(false);
                 currentCells[ordinal].LowBits = asyncDto.Ticks;
                 currentCells[ordinal].HighBits = asyncDto.Offset.Ticks;
                 break;
             case HtbDataType.DateOnly:
-                currentCells[ordinal].LowBits = (await streamReader.ReadDateOnlyAsync().ConfigureAwait(false)).DayNumber;
+                currentCells[ordinal].LowBits = (await streamReader.ReadDateOnlyAsync(cancellationToken).ConfigureAwait(false)).DayNumber;
                 break;
             case HtbDataType.TimeOnly:
-                currentCells[ordinal].LowBits = (await streamReader.ReadTimeOnlyAsync().ConfigureAwait(false)).Ticks;
+                currentCells[ordinal].LowBits = (await streamReader.ReadTimeOnlyAsync(cancellationToken).ConfigureAwait(false)).Ticks;
                 break;
             case HtbDataType.TimeSpan:
-                currentCells[ordinal].LowBits = (await streamReader.ReadTimeSpanAsync().ConfigureAwait(false)).Ticks;
+                currentCells[ordinal].LowBits = (await streamReader.ReadTimeSpanAsync(cancellationToken).ConfigureAwait(false)).Ticks;
                 break;
             case HtbDataType.Int16:
-                currentCells[ordinal].LowBits = await streamReader.ReadInt16Async().ConfigureAwait(false);
+                currentCells[ordinal].LowBits = await streamReader.ReadInt16Async(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.UInt16:
-                currentCells[ordinal].LowBits = await streamReader.ReadUInt16Async().ConfigureAwait(false);
+                currentCells[ordinal].LowBits = await streamReader.ReadUInt16Async(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.Byte:
-                currentCells[ordinal].LowBits = await streamReader.ReadByteAsync().ConfigureAwait(false);
+                currentCells[ordinal].LowBits = await streamReader.ReadByteAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.SByte:
-                currentCells[ordinal].LowBits = await streamReader.ReadSByteAsync().ConfigureAwait(false);
+                currentCells[ordinal].LowBits = await streamReader.ReadSByteAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.UInt32:
-                currentCells[ordinal].LowBits = await streamReader.ReadUInt32Async().ConfigureAwait(false);
+                currentCells[ordinal].LowBits = await streamReader.ReadUInt32Async(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.UInt64:
-                currentCells[ordinal].LowBits = unchecked((long)await streamReader.ReadUInt64Async().ConfigureAwait(false));
+                currentCells[ordinal].LowBits = unchecked((long)await streamReader.ReadUInt64Async(cancellationToken).ConfigureAwait(false));
                 break;
             case HtbDataType.Char:
-                currentCells[ordinal].LowBits = await streamReader.ReadCharAsync().ConfigureAwait(false);
+                currentCells[ordinal].LowBits = await streamReader.ReadCharAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.Half:
-                currentCells[ordinal].LowBits = BitConverter.HalfToInt16Bits(await streamReader.ReadHalfAsync().ConfigureAwait(false));
+                currentCells[ordinal].LowBits = BitConverter.HalfToInt16Bits(await streamReader.ReadHalfAsync(cancellationToken).ConfigureAwait(false));
                 break;
             case HtbDataType.Int128:
-                Int128 asyncInt128 = await streamReader.ReadInt128Async().ConfigureAwait(false);
+                Int128 asyncInt128 = await streamReader.ReadInt128Async(cancellationToken).ConfigureAwait(false);
                 currentCells[ordinal].LowBits = unchecked((long)(ulong)asyncInt128);
                 currentCells[ordinal].HighBits = unchecked((long)(ulong)(asyncInt128 >> 64));
                 break;
             case HtbDataType.UInt128:
-                UInt128 asyncUInt128 = await streamReader.ReadUInt128Async().ConfigureAwait(false);
+                UInt128 asyncUInt128 = await streamReader.ReadUInt128Async(cancellationToken).ConfigureAwait(false);
                 currentCells[ordinal].LowBits = unchecked((long)(ulong)asyncUInt128);
                 currentCells[ordinal].HighBits = unchecked((long)(ulong)(asyncUInt128 >> 64));
                 break;
             case HtbDataType.ByteArray:
-                currentCells[ordinal].Reference = await streamReader.ReadByteArrayAsync().ConfigureAwait(false);
+                currentCells[ordinal].Reference = await streamReader.ReadByteArrayAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.BigInteger:
-                currentCells[ordinal].BigInteger = await streamReader.ReadBigIntegerAsync().ConfigureAwait(false);
+                currentCells[ordinal].BigInteger = await streamReader.ReadBigIntegerAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.Uri:
-                currentCells[ordinal].Reference = await streamReader.ReadUriAsync().ConfigureAwait(false);
+                currentCells[ordinal].Reference = await streamReader.ReadUriAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case HtbDataType.Unknown:
             default:

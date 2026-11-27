@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using HeroParser.Internal;
 using HeroParser.SeparatedValues.Core;
 
 namespace HeroParser.SeparatedValues.Writing;
@@ -64,6 +65,8 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     internal string NullValue => options.NullValue;
 
     internal string? NumberFormat => options.NumberFormat;
+
+    internal int? MaxRowCount => options.MaxRowCount;
 
     private const int DEFAULT_BUFFER_SIZE = 16 * 1024; // 16KB
     private const int MAX_STACK_ALLOC_SIZE = 256;
@@ -156,6 +159,94 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
         WriteFieldValue(value);
     }
 
+    internal void WriteQuotedEmptyField()
+    {
+        ThrowIfDisposed();
+
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            WriteDelimiter();
+        }
+        isFirstFieldInRow = false;
+
+        EnsureCapacity(2);
+        buffer[bufferPosition++] = quote;
+        buffer[bufferPosition++] = quote;
+    }
+
+    internal void WriteUnquotedEmptyField()
+    {
+        ThrowIfDisposed();
+
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            WriteDelimiter();
+        }
+        isFirstFieldInRow = false;
+    }
+
+    /// <summary>
+    /// Writes a byte array field encoded as Base64, using a reversible <c>base64:</c> prefix when injection protection is active and the payload starts with a dangerous character.
+    /// </summary>
+    /// <param name="value">The byte array value to write.</param>
+    public void WriteBase64Field(byte[]? value)
+    {
+        if (value is null)
+        {
+            WriteField(nullValue.AsSpan());
+            return;
+        }
+
+        ThrowIfDisposed();
+
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+        {
+            WriteDelimiter();
+        }
+        isFirstFieldInRow = false;
+
+        WriteBase64FieldValue(value);
+    }
+
+    private void WriteBase64FieldValue(byte[] bytes)
+    {
+        if (bytes.Length == 0)
+        {
+            WriteFieldValue(Utf8SpanParser.EMPTY_BASE64_TOKEN.AsSpan());
+            return;
+        }
+
+        string b64 = Convert.ToBase64String(bytes);
+        if (injectionProtection != CsvInjectionProtection.None && quoting.IsDangerousField(b64.AsSpan()))
+            WriteFieldValue((Utf8SpanParser.EMPTY_BASE64_TOKEN + b64).AsSpan());
+        else
+            WriteFieldValue(b64.AsSpan());
+    }
+
     /// <summary>Writes an Int32 field directly to the CSV output without boxing.</summary>
     public void WriteField(int value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 32);
 
@@ -189,21 +280,8 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// <summary>Writes a Decimal field directly to the CSV output without boxing.</summary>
     public void WriteField(decimal value) => WriteSpanFormattableField(value, format: null, stackAllocSize: 64);
 
-    /// <summary>Writes a Boolean field directly to the CSV output without boxing.</summary>
-    public void WriteField(bool value)
-    {
-        ThrowIfDisposed();
-        currentRowColumnCount++;
-        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
-        {
-            throw new CsvException(CsvErrorCode.TooManyColumnsWritten, $"Row exceeds maximum column count of {maxColumnCount.Value}");
-        }
-
-        if (!isFirstFieldInRow) WriteDelimiter();
-        isFirstFieldInRow = false;
-
-        WriteUnquotedField(value ? "True".AsSpan() : "False".AsSpan());
-    }
+    /// <summary>Writes a Boolean field directly to the CSV output.</summary>
+    public void WriteField(bool value) => WriteField(value ? "True".AsSpan() : "False".AsSpan());
 
     /// <summary>Writes a DateTime field directly to the CSV output without boxing.</summary>
     public void WriteField(DateTime value) => WriteSpanFormattableField(value, format: dateTimeFormat, stackAllocSize: 64);
@@ -223,8 +301,35 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
     /// <summary>Writes a Char field directly to the CSV output without boxing.</summary>
     public void WriteField(char value)
     {
-        Span<char> chars = [value];
-        WriteField(chars);
+        ThrowIfDisposed();
+
+        currentRowColumnCount++;
+        if (maxColumnCount.HasValue && currentRowColumnCount > maxColumnCount.Value)
+        {
+            throw new CsvException(
+                CsvErrorCode.TooManyColumnsWritten,
+                $"Row exceeds maximum column count of {maxColumnCount.Value}");
+        }
+
+        if (!isFirstFieldInRow)
+            WriteDelimiter();
+        isFirstFieldInRow = false;
+
+        WriteCharFieldValue(value);
+    }
+
+    private void WriteCharFieldValue(char value)
+    {
+        Span<char> single = [value];
+        if (injectionProtection != CsvInjectionProtection.None && quoting.IsDangerousField(single))
+        {
+            Span<char> prefixed = ['c', 'h', 'a', 'r', ':', value];
+            WriteFieldValue(prefixed);
+        }
+        else
+        {
+            WriteFieldValue(single);
+        }
     }
 
     /// <summary>Writes a Half field directly to the CSV output without boxing.</summary>
@@ -791,10 +896,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
                 return;
 
             case char ch:
-                {
-                    Span<char> chBuf = [ch];
-                    WriteFieldValue(chBuf);
-                }
+                WriteCharFieldValue(ch);
                 return;
 
             case Half half:
@@ -818,7 +920,7 @@ public sealed class CsvStreamWriter : IDisposable, IAsyncDisposable
                 return;
 
             case byte[] bytes:
-                WriteFieldValue(Convert.ToBase64String(bytes).AsSpan());
+                WriteBase64FieldValue(bytes);
                 return;
 
             case Guid g:

@@ -3,6 +3,7 @@ using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Numerics;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using HeroParser.Internal;
@@ -29,11 +30,11 @@ public static partial class Jsonl
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(stream);
 
-        options ??= JsonlWriteOptions.Default;
-        options.Validate();
-
         try
         {
+            options ??= JsonlWriteOptions.Default;
+            options.Validate();
+
             int fieldCount = reader.FieldCount;
             if (fieldCount <= 0)
             {
@@ -53,6 +54,7 @@ public static partial class Jsonl
 
             DataReaderColumnPlan plan = default;
             long recordsWritten = 0;
+            long recordIndex = 0;
             long bytesWritten = 0;
             bool needsTrailingNewline = false;
 
@@ -62,28 +64,40 @@ public static partial class Jsonl
                     plan = new DataReaderColumnPlan(reader);
 
                 EnforceMaxRows(options, recordsWritten);
-                if (needsTrailingNewline)
+
+                bool serialized = false;
+                try
                 {
-                    stream.Write(newlineBytes, 0, newlineBytes.Length);
-                    bytesWritten += newlineBytes.Length;
-                    EnforceMaxOutputSize(options, bytesWritten);
-                    needsTrailingNewline = false;
+                    WriteDataReaderRecord(reader, fieldCount, columnNames, plan, writer, bufferWriter);
+                    serialized = true;
+                }
+                catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+                {
+                    HandleDataReaderSerializeFailure(options, recordIndex, reader.GetType(), ex, writer, bufferWriter);
                 }
 
-                WriteDataReaderRecord(reader, fieldCount, columnNames, plan, writer, bufferWriter);
+                recordIndex++;
+                if (!serialized)
+                    continue;
+
+                int sepLen = needsTrailingNewline ? newlineBytes.Length : 0;
                 ReadOnlySpan<byte> payload = bufferWriter.WrittenSpan;
+                long projectedBytes = bytesWritten + sepLen + payload.Length;
+                EnforceMaxOutputSize(options, projectedBytes);
+
+                if (needsTrailingNewline)
+                    stream.Write(newlineBytes, 0, newlineBytes.Length);
                 stream.Write(payload);
-                bytesWritten += payload.Length;
+
+                bytesWritten = projectedBytes;
                 recordsWritten++;
                 needsTrailingNewline = true;
-                EnforceMaxOutputSize(options, bytesWritten);
             }
 
             if (options.WriteFinalNewline && needsTrailingNewline)
             {
+                EnforceMaxOutputSize(options, bytesWritten + newlineBytes.Length);
                 stream.Write(newlineBytes, 0, newlineBytes.Length);
-                bytesWritten += newlineBytes.Length;
-                EnforceMaxOutputSize(options, bytesWritten);
             }
 
             stream.Flush();
@@ -148,11 +162,13 @@ public static partial class Jsonl
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(stream);
 
-        options ??= JsonlWriteOptions.Default;
-        options.Validate();
-
         try
         {
+            options ??= JsonlWriteOptions.Default;
+            options.Validate();
+
+            bool hasRow = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
             int fieldCount = reader.FieldCount;
             if (fieldCount <= 0)
             {
@@ -171,39 +187,60 @@ public static partial class Jsonl
             });
             await using (writer.ConfigureAwait(false))
             {
+                bool useAsyncFieldValues = DataReaderColumnPlan.HasAsyncFieldValueOverride(reader);
                 DataReaderColumnPlan plan = default;
                 long recordsWritten = 0;
+                long recordIndex = 0;
                 long bytesWritten = 0;
                 bool needsTrailingNewline = false;
 
-                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                if (hasRow)
                 {
-                    if (!plan.IsInitialized)
-                        plan = new DataReaderColumnPlan(reader);
-
-                    EnforceMaxRows(options, recordsWritten);
-                    if (needsTrailingNewline)
+                    do
                     {
-                        await stream.WriteAsync(newlineBytes.AsMemory(), cancellationToken).ConfigureAwait(false);
-                        bytesWritten += newlineBytes.Length;
-                        EnforceMaxOutputSize(options, bytesWritten);
-                        needsTrailingNewline = false;
-                    }
+                        if (!plan.IsInitialized)
+                            plan = new DataReaderColumnPlan(reader);
 
-                    WriteDataReaderRecord(reader, fieldCount, columnNames, plan, writer, bufferWriter);
-                    ReadOnlyMemory<byte> payload = bufferWriter.WrittenMemory;
-                    await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-                    bytesWritten += payload.Length;
-                    recordsWritten++;
-                    needsTrailingNewline = true;
-                    EnforceMaxOutputSize(options, bytesWritten);
+                        EnforceMaxRows(options, recordsWritten);
+
+                        bool serialized = false;
+                        try
+                        {
+                            if (useAsyncFieldValues)
+                                await WriteDataReaderRecordAsync(reader, fieldCount, columnNames, plan, writer, bufferWriter, cancellationToken).ConfigureAwait(false);
+                            else
+                                WriteDataReaderRecord(reader, fieldCount, columnNames, plan, writer, bufferWriter);
+                            serialized = true;
+                        }
+                        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+                        {
+                            HandleDataReaderSerializeFailure(options, recordIndex, reader.GetType(), ex, writer, bufferWriter);
+                        }
+
+                        recordIndex++;
+                        if (serialized)
+                        {
+                            int sepLen = needsTrailingNewline ? newlineBytes.Length : 0;
+                            ReadOnlyMemory<byte> payload = bufferWriter.WrittenMemory;
+                            long projectedBytes = bytesWritten + sepLen + payload.Length;
+                            EnforceMaxOutputSize(options, projectedBytes);
+
+                            if (needsTrailingNewline)
+                                await stream.WriteAsync(newlineBytes.AsMemory(), cancellationToken).ConfigureAwait(false);
+                            await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+
+                            bytesWritten = projectedBytes;
+                            recordsWritten++;
+                            needsTrailingNewline = true;
+                        }
+                    }
+                    while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false));
                 }
 
                 if (options.WriteFinalNewline && needsTrailingNewline)
                 {
+                    EnforceMaxOutputSize(options, bytesWritten + newlineBytes.Length);
                     await stream.WriteAsync(newlineBytes.AsMemory(), cancellationToken).ConfigureAwait(false);
-                    bytesWritten += newlineBytes.Length;
-                    EnforceMaxOutputSize(options, bytesWritten);
                 }
 
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -231,6 +268,7 @@ public static partial class Jsonl
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(reader);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var stream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
@@ -244,9 +282,19 @@ public static partial class Jsonl
     private static JsonEncodedText[] EncodeColumnNames(IDataRecord reader, int fieldCount, JsonlWriteOptions options)
     {
         var encoder = options.SerializerOptions?.Encoder;
+        var seen = new HashSet<string>(fieldCount, StringComparer.Ordinal);
         var names = new JsonEncodedText[fieldCount];
         for (int i = 0; i < fieldCount; i++)
-            names[i] = JsonEncodedText.Encode(reader.GetName(i), encoder);
+        {
+            string name = reader.GetName(i) ?? string.Empty;
+            if (!seen.Add(name))
+            {
+                throw new JsonlException(
+                    JsonlErrorCode.SerializeError,
+                    $"Duplicate column name '{name}' at ordinal {i}. JSONL object property names must be unique.");
+            }
+            names[i] = JsonEncodedText.Encode(name, encoder);
+        }
         return names;
     }
 
@@ -345,6 +393,101 @@ public static partial class Jsonl
         }
         writer.WriteEndObject();
         writer.Flush();
+    }
+
+    private static async ValueTask WriteDataReaderRecordAsync(
+        DbDataReader reader,
+        int fieldCount,
+        JsonEncodedText[] columnNames,
+        DataReaderColumnPlan plan,
+        Utf8JsonWriter writer,
+        ArrayBufferWriter<byte> bufferWriter,
+        CancellationToken cancellationToken)
+    {
+        bufferWriter.Clear();
+        writer.Reset(bufferWriter);
+
+        writer.WriteStartObject();
+        for (int i = 0; i < fieldCount; i++)
+        {
+            writer.WritePropertyName(columnNames[i]);
+            if (await reader.IsDBNullAsync(i, cancellationToken).ConfigureAwait(false))
+            {
+                writer.WriteNullValue();
+                continue;
+            }
+
+            switch (plan[i])
+            {
+                case DataReaderColumnKind.String:
+                    {
+                        string? str = await reader.GetFieldValueAsync<string?>(i, cancellationToken).ConfigureAwait(false);
+                        if (str is null)
+                            writer.WriteNullValue();
+                        else
+                            writer.WriteStringValue(str);
+                    }
+                    break;
+                case DataReaderColumnKind.Object:
+                    WriteJsonValue(writer, await reader.GetFieldValueAsync<object?>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.Int32:
+                    writer.WriteNumberValue(await reader.GetFieldValueAsync<int>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.Int64:
+                    writer.WriteNumberValue(await reader.GetFieldValueAsync<long>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.Int16:
+                    writer.WriteNumberValue(await reader.GetFieldValueAsync<short>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.Byte:
+                    writer.WriteNumberValue(await reader.GetFieldValueAsync<byte>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.Single:
+                    {
+                        float f = await reader.GetFieldValueAsync<float>(i, cancellationToken).ConfigureAwait(false);
+                        if (float.IsFinite(f))
+                            writer.WriteNumberValue(f);
+                        else
+                            writer.WriteNullValue();
+                    }
+                    break;
+                case DataReaderColumnKind.Double:
+                    {
+                        double d = await reader.GetFieldValueAsync<double>(i, cancellationToken).ConfigureAwait(false);
+                        if (double.IsFinite(d))
+                            writer.WriteNumberValue(d);
+                        else
+                            writer.WriteNullValue();
+                    }
+                    break;
+                case DataReaderColumnKind.Decimal:
+                    writer.WriteNumberValue(await reader.GetFieldValueAsync<decimal>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.Boolean:
+                    writer.WriteBooleanValue(await reader.GetFieldValueAsync<bool>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.DateTime:
+                    writer.WriteStringValue(await reader.GetFieldValueAsync<DateTime>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.Guid:
+                    writer.WriteStringValue(await reader.GetFieldValueAsync<Guid>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                case DataReaderColumnKind.Char:
+                    WriteJsonChar(writer, await reader.GetFieldValueAsync<char>(i, cancellationToken).ConfigureAwait(false));
+                    break;
+                default:
+                    break;
+            }
+        }
+        writer.WriteEndObject();
+        writer.Flush();
+    }
+
+    private static void WriteJsonChar(Utf8JsonWriter writer, char value)
+    {
+        Span<char> chars = [value];
+        writer.WriteStringValue(chars);
     }
 
     private static void WriteSpanFormattableString<TValue>(Utf8JsonWriter writer, TValue value, string? format)
@@ -491,6 +634,18 @@ public static partial class Jsonl
                 writer.WriteBase64StringValue(bytes);
                 break;
 
+            case float[] floats:
+                writer.WriteStartArray();
+                for (int i = 0; i < floats.Length; i++)
+                {
+                    if (float.IsFinite(floats[i]))
+                        writer.WriteNumberValue(floats[i]);
+                    else
+                        writer.WriteNullValue();
+                }
+                writer.WriteEndArray();
+                break;
+
             case ISpanFormattable spanFormattable:
                 WriteSpanFormattableString(writer, spanFormattable, format: null);
                 break;
@@ -513,6 +668,38 @@ public static partial class Jsonl
                 JsonlErrorCode.OutputSizeExceeded,
                 string.Create(CultureInfo.InvariantCulture, $"MaxRowCount of {cap:N0} exceeded."));
         }
+    }
+
+    private static void HandleDataReaderSerializeFailure(
+        JsonlWriteOptions options,
+        long recordIndex,
+        Type sourceType,
+        Exception ex,
+        Utf8JsonWriter writer,
+        ArrayBufferWriter<byte> bufferWriter)
+    {
+        bufferWriter.Clear();
+        writer.Reset(bufferWriter);
+
+        if (options.OnError is not null)
+        {
+            var context = new JsonlSerializeErrorContext
+            {
+                RecordIndex = recordIndex,
+                SourceType = sourceType
+            };
+            if (options.OnError(context, ex) == JsonlSerializeErrorAction.SkipRecord)
+                return;
+        }
+
+        if (ex is JsonlException)
+            ExceptionDispatchInfo.Throw(ex);
+
+        throw new JsonlException(
+            JsonlErrorCode.SerializeError,
+            $"Failed to serialize record at index {recordIndex}: {ex.Message}",
+            recordIndex + 1,
+            ex);
     }
 
     private static void EnforceMaxOutputSize(JsonlWriteOptions options, long bytesWritten)

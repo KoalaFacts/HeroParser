@@ -210,7 +210,7 @@ public readonly ref struct FixedWidthCharSpanColumn
 
     /// <summary>Attempts to parse the field as a <see cref="Half"/> using the provided format provider.</summary>
     public bool TryParseHalf(out Half result, IFormatProvider? provider)
-        => Half.TryParse(chars, NumberStyles.Float | NumberStyles.AllowThousands, provider, out result);
+        => new CultureNumberParser(provider).TryParse(chars, NumberStyles.Float | NumberStyles.AllowThousands, out result);
 
     /// <summary>Attempts to parse the field as an <see cref="Int128"/> using invariant culture.</summary>
     public bool TryParseInt128(out Int128 result)
@@ -218,7 +218,7 @@ public readonly ref struct FixedWidthCharSpanColumn
 
     /// <summary>Attempts to parse the field as an <see cref="Int128"/> using the provided format provider.</summary>
     public bool TryParseInt128(out Int128 result, IFormatProvider? provider)
-        => Int128.TryParse(chars, NumberStyles.Integer, provider, out result);
+        => new CultureNumberParser(provider).TryParse(chars, NumberStyles.Integer, out result);
 
     /// <summary>Attempts to parse the field as a <see cref="UInt128"/> using invariant culture.</summary>
     public bool TryParseUInt128(out UInt128 result)
@@ -234,7 +234,7 @@ public readonly ref struct FixedWidthCharSpanColumn
 
     /// <summary>Attempts to parse the field as a <see cref="BigInteger"/> using the provided format provider.</summary>
     public bool TryParseBigInteger(out BigInteger result, IFormatProvider? provider)
-        => BigInteger.TryParse(chars, NumberStyles.Integer, provider, out result);
+        => new CultureNumberParser(provider).TryParse(chars, NumberStyles.Integer, out result);
 
     /// <summary>Attempts to parse a non-empty field as a <see cref="Uri"/>.</summary>
     public bool TryParseUri([NotNullWhen(true)] out Uri? result)

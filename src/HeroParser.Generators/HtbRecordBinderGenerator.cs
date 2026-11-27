@@ -108,8 +108,17 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             context.ReportDiagnostic(diag);
         }
 
-        var binderMembers = descriptor.Members;
-        if (binderMembers.Count == 0)
+        var readMembers = new List<MemberDescriptor>();
+        var writeMembers = new List<MemberDescriptor>();
+        foreach (var m in descriptor.Members)
+        {
+            if (m.HasSetter)
+                readMembers.Add(m);
+            if (m.HasGetter)
+                writeMembers.Add(m);
+        }
+
+        if (readMembers.Count == 0 && writeMembers.Count == 0)
             return;
 
         var builder = new SourceBuilder(16384);
@@ -128,210 +137,220 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         builder.AppendLine();
 
         var binderClassName = $"HtbInlineBinder_{descriptor.SafeClassName}";
-        builder.AppendLine($"internal sealed class {binderClassName} : {BINDER_INTERFACE_TYPE}{descriptor.FullyQualifiedName}>, {WRITER_INTERFACE_TYPE}{descriptor.FullyQualifiedName}>");
+        var implementedInterfaces = new List<string>(2);
+        if (readMembers.Count > 0)
+            implementedInterfaces.Add($"{BINDER_INTERFACE_TYPE}{descriptor.FullyQualifiedName}>");
+        if (writeMembers.Count > 0)
+            implementedInterfaces.Add($"{WRITER_INTERFACE_TYPE}{descriptor.FullyQualifiedName}>");
+        builder.AppendLine($"internal sealed class {binderClassName} : {string.Join(", ", implementedInterfaces)}");
         builder.AppendLine("{");
         builder.Indent();
 
-        // Emit static Regex fields for Pattern validation
-        foreach (var member in binderMembers)
+        if (readMembers.Count > 0)
         {
-            if (member.Validation.Pattern != null)
+            // Emit static Regex fields for Pattern validation
+            foreach (var member in readMembers)
             {
-                var escapedPattern = new CSharpStringLiteral(member.Validation.Pattern).Escaped;
-                builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds({member.Validation.PatternTimeoutMs}));");
+                if (member.Validation.Pattern != null)
+                {
+                    var escapedPattern = new CSharpStringLiteral(member.Validation.Pattern).Escaped;
+                    builder.AppendLine($"private static readonly System.Text.RegularExpressions.Regex _pattern_{member.MemberName} = new(\"{escapedPattern}\", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds({member.Validation.PatternTimeoutMs}));");
+                }
             }
+            builder.AppendLine();
+
+            // Emit index fields
+            foreach (var member in readMembers)
+            {
+                builder.AppendLine($"private int _{member.MemberName}Index = -1;");
+            }
+            builder.AppendLine();
         }
-        builder.AppendLine();
 
-        // Emit index fields
-        foreach (var member in binderMembers)
+        if (writeMembers.Count > 0)
         {
-            builder.AppendLine($"private int _{member.MemberName}Index = -1;");
+            // Default parameterless constructor (used by Writer)
+            builder.AppendLine($"public {binderClassName}()");
+            builder.AppendLine("{");
+            builder.AppendLine("}");
+            builder.AppendLine();
         }
-        builder.AppendLine();
 
-        // Default parameterless constructor (used by Writer)
-        builder.AppendLine($"public {binderClassName}()");
-        builder.AppendLine("{");
-        builder.AppendLine("}");
-        builder.AppendLine();
-
-        // Constructor with schema (used by Reader)
-        builder.AppendLine($"public {binderClassName}(global::HeroParser.Htbs.Records.HtbSchema schema)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("var cols = schema.Columns;");
-        builder.AppendLine("for (int i = 0; i < cols.Count; i++)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("var name = cols[i].Name;");
-        for (int i = 0; i < binderMembers.Count; i++)
+        if (readMembers.Count > 0)
         {
-            var member = binderMembers[i];
-            builder.AppendLine($"{(i == 0 ? "if" : "else if")} (string.Equals(name, \"{member.HeaderName}\", StringComparison.OrdinalIgnoreCase)) _{member.MemberName}Index = i;");
-        }
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine();
+            // Constructor with schema (used by Reader)
+            builder.AppendLine($"public {binderClassName}(global::HeroParser.Htbs.Records.HtbSchema schema)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("var cols = schema.Columns;");
+            builder.AppendLine("for (int i = 0; i < cols.Count; i++)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("var name = cols[i].Name;");
+            for (int i = 0; i < readMembers.Count; i++)
+            {
+                var member = readMembers[i];
+                var escapedHeader = new CSharpStringLiteral(member.HeaderName).Escaped;
+                string expectedDataType = GetHtbDataTypeName(member.BaseTypeName);
+                builder.AppendLine($"{(i == 0 ? "if" : "else if")} (string.Equals(name, \"{escapedHeader}\", StringComparison.OrdinalIgnoreCase))");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine($"if (cols[i].DataType != global::HeroParser.Htbs.Records.HtbDataType.{expectedDataType})");
+                builder.AppendLine($"    throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.SchemaMismatch, $\"Schema mismatch on column '{{cols[i].Name}}': File has '{{cols[i].DataType}}', Model has '{expectedDataType}'.\");");
+                builder.AppendLine($"_{member.MemberName}Index = i;");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine();
 
-        // Implement IsColumnBound
-        builder.AppendLine("public bool IsColumnBound(int columnIndex)");
-        builder.AppendLine("{");
-        builder.Indent();
-        var boundChecks = binderMembers.Select(m => $"columnIndex == _{m.MemberName}Index").ToList();
-        if (boundChecks.Count > 0)
-        {
+            // Implement IsColumnBound
+            builder.AppendLine("public bool IsColumnBound(int columnIndex)");
+            builder.AppendLine("{");
+            builder.Indent();
+            var boundChecks = readMembers.Select(m => $"columnIndex == _{m.MemberName}Index").ToList();
             builder.AppendLine($"return columnIndex >= 0 && ({string.Join(" || ", boundChecks)});");
-        }
-        else
-        {
-            builder.AppendLine("return false;");
-        }
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine();
+            builder.Unindent();
+            builder.AppendLine("}");
+            builder.AppendLine();
 
-        // Implement BindField
-        builder.AppendLine($"public void BindField({descriptor.FullyQualifiedName} instance, int columnIndex, HtbRecordReader<{descriptor.FullyQualifiedName}> reader, bool isNull)");
-        builder.AppendLine("{");
-        builder.Indent();
-        for (int i = 0; i < binderMembers.Count; i++)
-        {
-            var member = binderMembers[i];
-            builder.AppendLine($"{(i == 0 ? "if" : "else if")} (columnIndex == _{member.MemberName}Index)");
+            // Implement BindField
+            builder.AppendLine($"public void BindField({descriptor.FullyQualifiedName} instance, int columnIndex, HtbRecordReader<{descriptor.FullyQualifiedName}> reader, bool isNull)");
             builder.AppendLine("{");
             builder.Indent();
-            builder.AppendLine("if (isNull)");
-            builder.AppendLine("{");
-            builder.Indent();
-            if (member.Validation.NotNull)
+            for (int i = 0; i < readMembers.Count; i++)
             {
-                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: value cannot be null.\");");
-            }
-            else
-            {
+                var member = readMembers[i];
+                var escapedHeader = new CSharpStringLiteral(member.HeaderName).Escaped;
+                builder.AppendLine($"{(i == 0 ? "if" : "else if")} (columnIndex == _{member.MemberName}Index)");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("if (isNull)");
+                builder.AppendLine("{");
+                builder.Indent();
                 if (member.IsNullable || member.IsReferenceType)
                     builder.AppendLine($"instance.{member.MemberName} = default!;");
                 else
-                    builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.CorruptData, \"Column '{member.HeaderName}' is not nullable but null was read.\");");
+                    builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.CorruptData, \"Column '{escapedHeader}' is not nullable but null was read.\");");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                EmitReadCall(builder, member, isAsync: false);
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.Unindent();
+                builder.AppendLine("}");
             }
             builder.Unindent();
             builder.AppendLine("}");
-            builder.AppendLine("else");
-            builder.AppendLine("{");
-            builder.Indent();
-            EmitReadCall(builder, member, isAsync: false);
-            EmitHtbValidationChecks(builder, member);
-            builder.Unindent();
-            builder.AppendLine("}");
-            builder.Unindent();
-            builder.AppendLine("}");
-        }
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine();
+            builder.AppendLine();
 
-        // Implement BindFieldAsync
-        builder.AppendLine($"public async ValueTask BindFieldAsync({descriptor.FullyQualifiedName} instance, int columnIndex, HtbRecordReader<{descriptor.FullyQualifiedName}> reader, bool isNull)");
-        builder.AppendLine("{");
-        builder.Indent();
-        for (int i = 0; i < binderMembers.Count; i++)
-        {
-            var member = binderMembers[i];
-            builder.AppendLine($"{(i == 0 ? "if" : "else if")} (columnIndex == _{member.MemberName}Index)");
+            // Implement BindFieldAsync
+            builder.AppendLine($"public async ValueTask BindFieldAsync({descriptor.FullyQualifiedName} instance, int columnIndex, HtbRecordReader<{descriptor.FullyQualifiedName}> reader, bool isNull)");
             builder.AppendLine("{");
             builder.Indent();
-            builder.AppendLine("if (isNull)");
-            builder.AppendLine("{");
-            builder.Indent();
-            if (member.Validation.NotNull)
+            for (int i = 0; i < readMembers.Count; i++)
             {
-                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: value cannot be null.\");");
-            }
-            else
-            {
+                var member = readMembers[i];
+                var escapedHeader = new CSharpStringLiteral(member.HeaderName).Escaped;
+                builder.AppendLine($"{(i == 0 ? "if" : "else if")} (columnIndex == _{member.MemberName}Index)");
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine("if (isNull)");
+                builder.AppendLine("{");
+                builder.Indent();
                 if (member.IsNullable || member.IsReferenceType)
                     builder.AppendLine($"instance.{member.MemberName} = default!;");
                 else
-                    builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.CorruptData, \"Column '{member.HeaderName}' is not nullable but null was read.\");");
+                    builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.CorruptData, \"Column '{escapedHeader}' is not nullable but null was read.\");");
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.AppendLine("else");
+                builder.AppendLine("{");
+                builder.Indent();
+                EmitReadCall(builder, member, isAsync: true);
+                builder.Unindent();
+                builder.AppendLine("}");
+                builder.Unindent();
+                builder.AppendLine("}");
             }
             builder.Unindent();
             builder.AppendLine("}");
-            builder.AppendLine("else");
+            builder.AppendLine();
+
+            if (readMembers.Any(m => m.HasGetter && HasAnyHtbValidation(m)))
+            {
+                EmitHtbValidateRecordMethod(builder, descriptor.FullyQualifiedName, readMembers);
+            }
+        }
+
+        if (writeMembers.Count > 0)
+        {
+            // Implement WriteRecord (Synchronous - buffers directly)
+            builder.AppendLine($"public void WriteRecord(HtbRecordWriter<{descriptor.FullyQualifiedName}> writer, {descriptor.FullyQualifiedName} record)");
             builder.AppendLine("{");
             builder.Indent();
-            EmitReadCall(builder, member, isAsync: true);
-            EmitHtbValidationChecks(builder, member);
+            builder.AppendLine($"int colCount = {writeMembers.Count};");
+            builder.AppendLine("int maskLen = (colCount + 7) / 8;");
+            builder.AppendLine("Span<byte> mask = stackalloc byte[maskLen];");
+            builder.AppendLine("mask.Clear();");
+            builder.AppendLine();
+
+            // 1. Compute null bitmask
+            for (int i = 0; i < writeMembers.Count; i++)
+            {
+                var member = writeMembers[i];
+                if (member.IsNullable || member.IsReferenceType)
+                {
+                    builder.AppendLine($"if (record.{member.MemberName} == null)");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine($"mask[{i} / 8] |= (byte)(1 << ({i} % 8));");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                }
+            }
+            builder.AppendLine();
+            builder.AppendLine("writer.WriteMask(mask);");
+            builder.AppendLine();
+
+            // 2. Write non-null properties directly - ZERO boxing!
+            for (int i = 0; i < writeMembers.Count; i++)
+            {
+                var member = writeMembers[i];
+                var isNullable = member.IsNullable || member.IsReferenceType;
+                if (isNullable)
+                {
+                    builder.AppendLine($"if (record.{member.MemberName} != null)");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    EmitWriteCall(builder, member);
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                }
+                else
+                {
+                    EmitWriteCall(builder, member);
+                }
+            }
             builder.Unindent();
             builder.AppendLine("}");
+            builder.AppendLine();
+
+            // Implement WriteRecordAsync (Synchronous buffering internally)
+            builder.AppendLine($"public Task WriteRecordAsync(HtbRecordWriter<{descriptor.FullyQualifiedName}> writer, {descriptor.FullyQualifiedName} record)");
+            builder.AppendLine("{");
+            builder.Indent();
+            builder.AppendLine("WriteRecord(writer, record);");
+            builder.AppendLine("return Task.CompletedTask;");
             builder.Unindent();
             builder.AppendLine("}");
         }
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine();
-
-        // Implement WriteRecord (Synchronous - buffers directly)
-        builder.AppendLine($"public void WriteRecord(HtbRecordWriter<{descriptor.FullyQualifiedName}> writer, {descriptor.FullyQualifiedName} record)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine($"int colCount = {binderMembers.Count};");
-        builder.AppendLine("int maskLen = (colCount + 7) / 8;");
-        builder.AppendLine("Span<byte> mask = stackalloc byte[maskLen];");
-        builder.AppendLine("mask.Clear();");
-        builder.AppendLine();
-
-        // 1. Compute null bitmask
-        for (int i = 0; i < binderMembers.Count; i++)
-        {
-            var member = binderMembers[i];
-            if (member.IsNullable || member.IsReferenceType)
-            {
-                builder.AppendLine($"if (record.{member.MemberName} == null)");
-                builder.AppendLine("{");
-                builder.Indent();
-                builder.AppendLine($"mask[{i} / 8] |= (byte)(1 << ({i} % 8));");
-                builder.Unindent();
-                builder.AppendLine("}");
-            }
-        }
-        builder.AppendLine();
-        builder.AppendLine("writer.WriteMask(mask);");
-        builder.AppendLine();
-
-        // 2. Write non-null properties directly - ZERO boxing!
-        for (int i = 0; i < binderMembers.Count; i++)
-        {
-            var member = binderMembers[i];
-            var isNullable = member.IsNullable || member.IsReferenceType;
-            if (isNullable)
-            {
-                builder.AppendLine($"if (record.{member.MemberName} != null)");
-                builder.AppendLine("{");
-                builder.Indent();
-                EmitWriteCall(builder, member);
-                builder.Unindent();
-                builder.AppendLine("}");
-            }
-            else
-            {
-                EmitWriteCall(builder, member);
-            }
-        }
-        builder.Unindent();
-        builder.AppendLine("}");
-        builder.AppendLine();
-
-        // Implement WriteRecordAsync (Synchronous buffering internally)
-        builder.AppendLine($"public Task WriteRecordAsync(HtbRecordWriter<{descriptor.FullyQualifiedName}> writer, {descriptor.FullyQualifiedName} record)");
-        builder.AppendLine("{");
-        builder.Indent();
-        builder.AppendLine("WriteRecord(writer, record);");
-        builder.AppendLine("return Task.CompletedTask;");
-        builder.Unindent();
-        builder.AppendLine("}");
 
         builder.Unindent();
         builder.AppendLine("}"); // end of class
@@ -584,24 +603,43 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
 
         foreach (var descriptor in descriptors)
         {
-            var binderClassName = $"global::{GENERATED_NAMESPACE}.HtbInlineBinder_{descriptor.SafeClassName}";
-            builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterBinder<{descriptor.FullyQualifiedName}>(schema => new {binderClassName}(schema));");
-            builder.AppendLine($"{WRITER_FACTORY_TYPE}.RegisterWriter<{descriptor.FullyQualifiedName}>(() => new {binderClassName}());");
-
-            builder.AppendLine($"global::HeroParser.Htbs.Records.HtbSchema.RegisterSchemaProvider<{descriptor.FullyQualifiedName}>(() => new global::HeroParser.Htbs.Records.HtbSchema(");
-            builder.AppendLine("    new global::HeroParser.Htbs.Records.HtbColumn[]");
-            builder.AppendLine("    {");
-            for (int i = 0; i < descriptor.Members.Count; i++)
+            var readMembers = new List<MemberDescriptor>();
+            var writeMembers = new List<MemberDescriptor>();
+            foreach (var m in descriptor.Members)
             {
-                var member = descriptor.Members[i];
-                var isNullable = member.IsNullable || member.IsReferenceType;
-                var isNullableStr = isNullable ? "true" : "false";
-                var typeNameStr = GetHtbDataTypeName(member.BaseTypeName);
-                var comma = i == descriptor.Members.Count - 1 ? "" : ",";
-                builder.AppendLine($"        new global::HeroParser.Htbs.Records.HtbColumn(\"{member.HeaderName}\", global::HeroParser.Htbs.Records.HtbDataType.{typeNameStr}, {isNullableStr}){comma}");
+                if (m.HasSetter)
+                    readMembers.Add(m);
+                if (m.HasGetter)
+                    writeMembers.Add(m);
             }
-            builder.AppendLine("    }");
-            builder.AppendLine("));");
+
+            if (readMembers.Count == 0 && writeMembers.Count == 0)
+                continue;
+
+            var binderClassName = $"global::{GENERATED_NAMESPACE}.HtbInlineBinder_{descriptor.SafeClassName}";
+            if (readMembers.Count > 0)
+                builder.AppendLine($"{BINDER_FACTORY_TYPE}.RegisterBinder<{descriptor.FullyQualifiedName}>(schema => new {binderClassName}(schema));");
+
+            if (writeMembers.Count > 0)
+            {
+                builder.AppendLine($"{WRITER_FACTORY_TYPE}.RegisterWriter<{descriptor.FullyQualifiedName}>(() => new {binderClassName}());");
+
+                builder.AppendLine($"global::HeroParser.Htbs.Records.HtbSchema.RegisterSchemaProvider<{descriptor.FullyQualifiedName}>(() => new global::HeroParser.Htbs.Records.HtbSchema(");
+                builder.AppendLine("    new global::HeroParser.Htbs.Records.HtbColumn[]");
+                builder.AppendLine("    {");
+                for (int i = 0; i < writeMembers.Count; i++)
+                {
+                    var member = writeMembers[i];
+                    var isNullable = member.IsNullable || member.IsReferenceType;
+                    var isNullableStr = isNullable ? "true" : "false";
+                    var typeNameStr = GetHtbDataTypeName(member.BaseTypeName);
+                    var comma = i == writeMembers.Count - 1 ? "" : ",";
+                    var escapedHeader = new CSharpStringLiteral(member.HeaderName).Escaped;
+                    builder.AppendLine($"        new global::HeroParser.Htbs.Records.HtbColumn(\"{escapedHeader}\", global::HeroParser.Htbs.Records.HtbDataType.{typeNameStr}, {isNullableStr}){comma}");
+                }
+                builder.AppendLine("    }");
+                builder.AppendLine("));");
+            }
         }
 
         builder.Unindent();
@@ -657,10 +695,10 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         {
             ct.ThrowIfCancellationRequested();
 
-            if (property.IsStatic)
+            if (property.IsStatic || property.IsIndexer)
                 continue;
 
-            var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public };
+            var hasSetter = property.SetMethod is { DeclaredAccessibility: Accessibility.Public, IsInitOnly: false };
             var hasGetter = property.GetMethod is { DeclaredAccessibility: Accessibility.Public };
 
             if (!hasSetter && !hasGetter)
@@ -743,6 +781,8 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
                 baseTypeName,
                 isNullable,
                 isReferenceType,
+                hasSetter,
+                hasGetter,
                 validation));
         }
 
@@ -756,6 +796,64 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
             .ToList();
 
         return new TypeDescriptor(target.FullyQualifiedName, target.SafeClassName, sortedMembers, diagnostics);
+    }
+
+    private static bool HasAnyHtbValidation(MemberDescriptor member)
+        => member.Validation.NotNull
+        || member.Validation.NotEmpty
+        || member.Validation.MinLength > 0
+        || member.Validation.MaxLength > 0
+        || (member.Validation.HasRange && ParsedValidationRules.IsNumericType(member.BaseTypeName))
+        || member.Validation.Pattern != null;
+
+    private static void EmitHtbValidateRecordMethod(SourceBuilder builder, string fullyQualifiedName, IReadOnlyList<MemberDescriptor> readMembers)
+    {
+        builder.AppendLine($"public void ValidateRecord({fullyQualifiedName} instance)");
+        builder.AppendLine("{");
+        builder.Indent();
+        foreach (var member in readMembers)
+        {
+            if (!member.HasGetter || !HasAnyHtbValidation(member))
+                continue;
+
+            builder.AppendLine($"if (_{member.MemberName}Index >= 0)");
+            builder.AppendLine("{");
+            builder.Indent();
+
+            if (member.Validation.NotNull && (member.IsNullable || member.IsReferenceType))
+            {
+                if (member.IsNullable && !member.IsReferenceType)
+                    builder.AppendLine($"if (!instance.{member.MemberName}.HasValue)");
+                else
+                    builder.AppendLine($"if (instance.{member.MemberName} == null)");
+
+                builder.AppendLine("{");
+                builder.Indent();
+                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, \"Property '{member.MemberName}' violated validation constraint: value cannot be null.\");");
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+
+            if (member.IsNullable && !member.IsReferenceType && member.Validation.HasRange && ParsedValidationRules.IsNumericType(member.BaseTypeName))
+            {
+                builder.AppendLine($"if (instance.{member.MemberName}.HasValue)");
+                builder.AppendLine("{");
+                builder.Indent();
+                EmitHtbValidationChecks(builder, member);
+                builder.Unindent();
+                builder.AppendLine("}");
+            }
+            else
+            {
+                EmitHtbValidationChecks(builder, member);
+            }
+
+            builder.Unindent();
+            builder.AppendLine("}");
+        }
+        builder.Unindent();
+        builder.AppendLine("}");
+        builder.AppendLine();
     }
 
     private static void EmitHtbValidationChecks(SourceBuilder builder, MemberDescriptor member)
@@ -796,29 +894,46 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         }
 
         // 5 & 6. Range validation
-        if (member.Validation.HasRange)
+        if (member.Validation.HasRange && ParsedValidationRules.IsNumericType(member.BaseTypeName))
         {
             var valueExpr = member.IsNullable && !member.IsReferenceType
                 ? $"instance.{member.MemberName}!.Value"
                 : $"instance.{member.MemberName}";
-            builder.AppendLine($"double numericVal = (double)({valueExpr});");
             if (member.Validation.HasRangeMin)
             {
-                builder.AppendLine($"if (numericVal < {member.Validation.FormatRangeMinLiteral("double")})");
-                builder.AppendLine("{");
-                builder.Indent();
-                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} must be at least {member.Validation.FormatRangeMinInvariant()}.\");");
-                builder.Unindent();
-                builder.AppendLine("}");
+                string minCondition = member.Validation.FormatRangeMinViolationCondition(valueExpr, member.BaseTypeName);
+                if (minCondition == "true")
+                {
+                    builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, global::System.FormattableString.Invariant($\"Property '{member.MemberName}' violated validation constraint: value {{{valueExpr}}} must be at least {member.Validation.FormatRangeMinInvariant()}.\"));");
+                    return;
+                }
+                if (minCondition != "false")
+                {
+                    builder.AppendLine($"if ({minCondition})");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, global::System.FormattableString.Invariant($\"Property '{member.MemberName}' violated validation constraint: value {{{valueExpr}}} must be at least {member.Validation.FormatRangeMinInvariant()}.\"));");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                }
             }
             if (member.Validation.HasRangeMax)
             {
-                builder.AppendLine($"if (numericVal > {member.Validation.FormatRangeMaxLiteral("double")})");
-                builder.AppendLine("{");
-                builder.Indent();
-                builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, $\"Property '{member.MemberName}' violated validation constraint: value {{numericVal}} cannot exceed {member.Validation.FormatRangeMaxInvariant()}.\");");
-                builder.Unindent();
-                builder.AppendLine("}");
+                string maxCondition = member.Validation.FormatRangeMaxViolationCondition(valueExpr, member.BaseTypeName);
+                if (maxCondition == "true")
+                {
+                    builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, global::System.FormattableString.Invariant($\"Property '{member.MemberName}' violated validation constraint: value {{{valueExpr}}} cannot exceed {member.Validation.FormatRangeMaxInvariant()}.\"));");
+                    return;
+                }
+                if (maxCondition != "false")
+                {
+                    builder.AppendLine($"if ({maxCondition})");
+                    builder.AppendLine("{");
+                    builder.Indent();
+                    builder.AppendLine($"throw new global::HeroParser.Htbs.HtbException(global::HeroParser.Htbs.HtbErrorCode.DeserializationError, global::System.FormattableString.Invariant($\"Property '{member.MemberName}' violated validation constraint: value {{{valueExpr}}} cannot exceed {member.Validation.FormatRangeMaxInvariant()}.\"));");
+                    builder.Unindent();
+                    builder.AppendLine("}");
+                }
             }
         }
 
@@ -849,5 +964,7 @@ public sealed class HtbRecordBinderGenerator : IIncrementalGenerator
         string BaseTypeName,
         bool IsNullable,
         bool IsReferenceType,
+        bool HasSetter,
+        bool HasGetter,
         ParsedValidationRules Validation);
 }

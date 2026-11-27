@@ -88,6 +88,7 @@ const {
 
 const {
   jsonlInput,
+  jsonlInputFormat,
   jsonlDelimiter,
   jsonlOutputTitle,
   jsonlOutput,
@@ -631,6 +632,13 @@ onMounted(async () => {
           ></textarea>
         </div>
         <div class="options-grid">
+          <div class="form-group">
+            <label for="jsonl-input-format">Write Input Format</label>
+            <select id="jsonl-input-format" v-model="jsonlInputFormat">
+              <option value="jsonl">JSONL Lines</option>
+              <option value="json-array">JSON Array</option>
+            </select>
+          </div>
           <div class="form-group">
             <label for="jsonl-delimiter">CSV Delimiter (for JSONL &rarr; CSV)</label>
             <input type="text" id="jsonl-delimiter" v-model="jsonlDelimiter" maxlength="1" />

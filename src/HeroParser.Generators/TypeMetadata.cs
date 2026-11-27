@@ -33,9 +33,24 @@ internal readonly struct TypeMetadata
 
     internal bool IsEnum => UnderlyingSymbol.TypeKind == TypeKind.Enum;
 
+    internal string? EnumUnderlyingReaderMethod => UnderlyingSymbol is INamedTypeSymbol { EnumUnderlyingType.SpecialType: var st }
+        ? st switch
+        {
+            SpecialType.System_Byte => "GetByte",
+            SpecialType.System_SByte => "GetSByte",
+            SpecialType.System_Int16 => "GetInt16",
+            SpecialType.System_UInt16 => "GetUInt16",
+            SpecialType.System_Int32 => "GetInt32",
+            SpecialType.System_UInt32 => "GetUInt32",
+            SpecialType.System_Int64 => "GetInt64",
+            SpecialType.System_UInt64 => "GetUInt64",
+            _ => null
+        }
+        : null;
+
     internal bool IsReferenceType => UnderlyingSymbol.IsReferenceType;
 
-    internal bool IsByteArray => UnderlyingSymbol is IArrayTypeSymbol { ElementType.SpecialType: SpecialType.System_Byte };
+    internal bool IsByteArray => UnderlyingSymbol is IArrayTypeSymbol { Rank: 1, ElementType.SpecialType: SpecialType.System_Byte };
 
     internal bool IsReadOnlyMemoryChar => Symbol.ToDisplayString() == "System.ReadOnlyMemory<char>";
 

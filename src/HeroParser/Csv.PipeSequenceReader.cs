@@ -327,7 +327,9 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
     private bool hasCurrent;
     private bool hasBufferedRead;
     private bool bufferedIsCompleted;
+    private long totalBytesConsumed;
     private SequencePosition bufferedExamined;
+    private ReadOnlySequence<byte> bufferedOriginalData;
     private ReadOnlySequence<byte> bufferedData;
     private ReadOnlySequence<byte> currentRowData;
     private int currentColumnCount;
@@ -448,7 +450,18 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                     throw new OperationCanceledException("The underlying PipeReader read was canceled.", cancellationToken);
                 }
 
-                ReadOnlySequence<byte> readBuffer = result.Buffer;
+                if (options.MaxInputSize is { } maxInputSize)
+                {
+                    long totalSeen = totalBytesConsumed + result.Buffer.Length;
+                    if (totalSeen > maxInputSize)
+                    {
+                        reader.AdvanceTo(result.Buffer.Start, result.Buffer.Start);
+                        options.ValidateInputSize(totalSeen);
+                    }
+                }
+
+                ReadOnlySequence<byte> originalBuffer = result.Buffer;
+                ReadOnlySequence<byte> readBuffer = originalBuffer;
 
                 bool bomHandled = bomProcessed;
                 if (!Csv.TryProcessUtf8Bom(ref readBuffer, result.IsCompleted, ref bomHandled))
@@ -458,6 +471,7 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
                 }
 
                 bomProcessed = bomHandled;
+                bufferedOriginalData = originalBuffer;
                 bufferedData = readBuffer;
                 bufferedExamined = readBuffer.End;
                 bufferedIsCompleted = result.IsCompleted;
@@ -795,9 +809,11 @@ public sealed class CsvPipeSequenceReader : IAsyncDisposable
             return;
         }
 
+        totalBytesConsumed += bufferedOriginalData.Slice(bufferedOriginalData.Start, consumed).Length;
         reader.AdvanceTo(consumed, bufferedExamined);
         hasBufferedRead = false;
         bufferedIsCompleted = false;
+        bufferedOriginalData = default;
         bufferedData = default;
         bufferedExamined = default;
     }

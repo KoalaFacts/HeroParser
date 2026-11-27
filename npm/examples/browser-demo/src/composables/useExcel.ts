@@ -123,11 +123,18 @@ export function useExcel() {
   const buildExcelFromJson = () => {
     excelError.value = "";
     try {
-      const records = JSON.parse(excelJsonInput.value);
+      const rawJson = excelJsonInput.value.trim();
+      if (!rawJson) {
+        throw new Error("JSON input is empty.");
+      }
       const sheet = excelSheetName.value.trim() || "Sheet1";
       const t0 = performance.now();
-      loadedExcelBytes = writeExcel(records, sheet, excelHasHeader.value);
+      const bytes = writeExcel(rawJson, sheet, excelHasHeader.value);
       const t1 = performance.now();
+      if (bytes.byteLength === 0) {
+        throw new Error("Provide a non-empty JSON array of records.");
+      }
+      loadedExcelBytes = bytes;
       loadedExcelFilename = `${sheet.toLowerCase().replace(/[^a-z0-9-_]+/gi, "-") || "workbook"}.xlsx`;
       refreshSheetNames();
       excelSheetName.value = excelSheetNames.value[0] ?? sheet;
@@ -142,9 +149,8 @@ export function useExcel() {
   const loadSampleExcel = () => {
     excelError.value = "";
     try {
-      const sampleRows = JSON.parse(DEFAULT_EXCEL_JSON);
       const sheet = excelSheetName.value.trim() || "Sales";
-      loadedExcelBytes = writeExcel(sampleRows, sheet, excelHasHeader.value);
+      loadedExcelBytes = writeExcel(DEFAULT_EXCEL_JSON, sheet, excelHasHeader.value);
       loadedExcelFilename = "heroparser-sample.xlsx";
       refreshSheetNames();
       excelSheetName.value = excelSheetNames.value[0] ?? sheet;
@@ -158,16 +164,23 @@ export function useExcel() {
   const loadMultiSheetSample = () => {
     excelError.value = "";
     try {
-      const salesRows = JSON.parse(excelJsonInput.value);
+      const rawJson = excelJsonInput.value.trim();
+      if (!rawJson) {
+        throw new Error("JSON input is empty.");
+      }
       const t0 = performance.now();
-      loadedExcelBytes = writeExcelMultiSheet(
+      const bytes = writeExcelMultiSheet(
         [
-          { name: "Sales", records: salesRows },
+          { name: "Sales", records: rawJson },
           { name: "Team", records: MULTI_SHEET_TEAM },
         ],
         excelHasHeader.value,
       );
       const t1 = performance.now();
+      if (bytes.byteLength === 0) {
+        throw new Error("Provide a non-empty JSON array of records.");
+      }
+      loadedExcelBytes = bytes;
       loadedExcelFilename = "heroparser-multisheet.xlsx";
       refreshSheetNames();
       excelSheetName.value = excelSheetNames.value[0] ?? "Sales";
@@ -188,8 +201,8 @@ export function useExcel() {
     excelError.value = "";
     const t0 = performance.now();
     try {
-      const rows = readExcel(loadedExcelBytes, excelSheetName.value || "", excelHasHeader.value);
-      const csv = writeCsv(rows, { delimiter: ",", hasHeader: excelHasHeader.value });
+      const rows = readExcel(loadedExcelBytes, excelSheetName.value || "", false);
+      const csv = writeCsv(rows, { delimiter: ",", hasHeader: false });
       const t1 = performance.now();
       excelOutputKind.value = "csv";
       excelOutputTitle.value = excelSheetName.value
@@ -197,7 +210,7 @@ export function useExcel() {
         : "CSV Output";
       excelOutput.value = csv;
       excelTime.value = `${(t1 - t0).toFixed(2)} ms`;
-      excelCount.value = rows.length.toString();
+      excelCount.value = (excelHasHeader.value ? Math.max(0, rows.length - 1) : rows.length).toString();
     } catch (err: any) {
       excelError.value = `CSV Export Error: ${err.message}`;
     }

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Xml;
@@ -32,7 +33,7 @@ public sealed class XlsxWriter : IDisposable
     private const int DATE_STYLE_INDEX = 1;
 
     private readonly ZipArchive archive;
-    private readonly XlsxSharedStringTable sharedStrings = new();
+    private readonly XlsxSharedStringTable sharedStrings;
     private readonly XlsxStyleRegistry styleRegistry = new();
     private readonly List<string> sheetNames = [];
     private readonly ExcelInjectionProtection injectionProtection;
@@ -46,7 +47,41 @@ public sealed class XlsxWriter : IDisposable
     /// Defaults to <see cref="ExcelInjectionProtection.EscapeWithApostrophe"/>.
     /// </param>
     public XlsxWriter(Stream stream, bool leaveOpen = false, ExcelInjectionProtection injectionProtection = ExcelInjectionProtection.EscapeWithApostrophe)
+        : this(stream, leaveOpen, injectionProtection, new XlsxSharedStringTable())
     {
+    }
+
+    /// <summary>
+    /// Opens a new .xlsx writer configured for streaming exports with a bounded shared string table
+    /// that falls back to inline strings once the table budget is reached.
+    /// </summary>
+    /// <param name="stream">Writable stream to receive the .xlsx data.</param>
+    /// <param name="leaveOpen">When <see langword="true"/>, the stream is not closed on Dispose.</param>
+    /// <param name="injectionProtection">
+    /// Controls how string cells beginning with formula-trigger characters are sanitised.
+    /// Defaults to <see cref="ExcelInjectionProtection.EscapeWithApostrophe"/>.
+    /// </param>
+    /// <returns>A streaming-configured <see cref="XlsxWriter"/> instance.</returns>
+    public static XlsxWriter CreateStreaming(
+        Stream stream,
+        bool leaveOpen = false,
+        ExcelInjectionProtection injectionProtection = ExcelInjectionProtection.EscapeWithApostrophe)
+        => new(
+            stream,
+            leaveOpen,
+            injectionProtection,
+            new XlsxSharedStringTable(
+                XlsxSharedStringTable.STREAMING_MAX_ENTRIES,
+                XlsxSharedStringTable.STREAMING_MAX_TOTAL_CHARS,
+                XlsxSharedStringTable.STREAMING_MAX_SINGLE_STRING_CHARS));
+
+    internal XlsxWriter(
+        Stream stream,
+        bool leaveOpen,
+        ExcelInjectionProtection injectionProtection,
+        XlsxSharedStringTable sharedStrings)
+    {
+        this.sharedStrings = sharedStrings ?? throw new ArgumentNullException(nameof(sharedStrings));
         archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: leaveOpen);
         this.injectionProtection = injectionProtection;
     }
@@ -235,7 +270,7 @@ public sealed class XlsxWriter : IDisposable
             xmlWriter.WriteStartElement("si", ns);
             xmlWriter.WriteStartElement("t", ns);
             // Preserve leading/trailing whitespace with xml:space="preserve"
-            if (s.Length > 0 && (s[0] == ' ' || s[^1] == ' '))
+            if (s.Length > 0 && (char.IsWhiteSpace(s[0]) || char.IsWhiteSpace(s[^1])))
                 xmlWriter.WriteAttributeString("xml", "space", null, "preserve");
             xmlWriter.WriteString(s);
             xmlWriter.WriteEndElement(); // t
@@ -510,6 +545,7 @@ public sealed class XlsxWriter : IDisposable
         {
             Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             Indent = false,
+            NewLineHandling = NewLineHandling.Entitize,
             CloseOutput = true
         };
         return XmlWriter.Create(stream, settings);
@@ -617,6 +653,13 @@ public sealed class XlsxWriter : IDisposable
         private static readonly byte[] rowClose = "</row>"u8.ToArray();
         private static readonly byte[] cellStringOpen = "<c r=\""u8.ToArray();
         private static readonly byte[] cellStringTypeAttr = "\" t=\"s\"><v>"u8.ToArray();
+        private static readonly byte[] cellInlineStringTypeAttr = "\" t=\"inlineStr\"><is><t"u8.ToArray();
+        private static readonly byte[] inlinePreserveAttr = " xml:space=\"preserve\">"u8.ToArray();
+        private static readonly byte[] cellInlineStringClose = "</t></is></c>"u8.ToArray();
+        private static readonly byte[] xmlAmp = "&amp;"u8.ToArray();
+        private static readonly byte[] xmlLt = "&lt;"u8.ToArray();
+        private static readonly byte[] xmlGt = "&gt;"u8.ToArray();
+        private static readonly byte[] xmlCr = "&#xD;"u8.ToArray();
         private static readonly byte[] cellNumOpen = "\" ><v>"u8.ToArray(); // no t attr for numeric
         private static readonly byte[] cellBoolOpen = "\" t=\"b\"><v>"u8.ToArray();
         private static readonly byte[] cellDateOpen = "\" s=\"1\"><v>"u8.ToArray();
@@ -625,6 +668,9 @@ public sealed class XlsxWriter : IDisposable
         private static readonly byte[] quoteClose = "\">"u8.ToArray();
 
         private const int BUFFER_SIZE = 65536; // 64 KB output buffer
+        internal const int MAX_ROWS = 1_048_576;
+        internal const int MAX_COLUMNS = 16_384;
+        internal const int MAX_CELL_TEXT_LENGTH = 32_767;
 
         private readonly Stream stream;
         private readonly XlsxSharedStringTable sharedStrings;
@@ -669,6 +715,12 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="outlineLevel">The outline level (group nesting depth) for this row, 0 to 7. Defaults to 0 (no outlining).</param>
         public void StartRow(int rowNumber, int outlineLevel = 0)
         {
+            if (rowNumber < 1 || rowNumber > MAX_ROWS)
+            {
+                throw new ExcelException(
+                    string.Create(CultureInfo.InvariantCulture, $"Row number {rowNumber} is outside the valid Excel worksheet range of 1 to {MAX_ROWS:N0}."));
+            }
+
             if (rowIsOpen)
                 EndRow();
 
@@ -685,14 +737,80 @@ public sealed class XlsxWriter : IDisposable
             rowIsOpen = true;
         }
 
-        /// <summary>Writes a shared-string cell.</summary>
+        /// <summary>Writes a shared-string cell (or inline string when shared-string cache limits are reached).</summary>
         /// <param name="columnIndex">The 1-based column index.</param>
         /// <param name="value">The string value.</param>
         /// <param name="styleIndex">The optional style index.</param>
         public void WriteCellString(int columnIndex, string value, int? styleIndex = null)
         {
+            ValidateColumnIndex(columnIndex);
             string sanitised = ApplyInjectionProtection(value);
-            int ssIndex = sharedStrings.GetOrAdd(sanitised);
+            ValidateCellTextLength(sanitised?.Length ?? 0);
+            if (sharedStrings.TryGetOrAdd(sanitised!, out int ssIndex))
+                WriteSharedStringCell(columnIndex, ssIndex, styleIndex);
+            else
+                WriteInlineStringCell(columnIndex, sanitised.AsSpan(), styleIndex);
+        }
+
+        /// <summary>Writes a literal string cell without applying formula injection protection.</summary>
+        /// <remarks>Intended for library-generated non-formula encodings such as Base64 binary payloads.</remarks>
+        /// <param name="columnIndex">The 1-based column index.</param>
+        /// <param name="value">The literal string value.</param>
+        /// <param name="styleIndex">The optional style index.</param>
+        public void WriteCellLiteralString(int columnIndex, string value, int? styleIndex = null)
+        {
+            ValidateColumnIndex(columnIndex);
+            ValidateCellTextLength(value?.Length ?? 0);
+            if (sharedStrings.TryGetOrAdd(value!, out int ssIndex))
+                WriteSharedStringCell(columnIndex, ssIndex, styleIndex);
+            else
+                WriteInlineStringCell(columnIndex, value.AsSpan(), styleIndex);
+        }
+
+        /// <summary>Writes a literal character span cell without applying formula injection protection.</summary>
+        /// <remarks>Intended for typed scalar values such as <see cref="char"/> and library-generated non-formula encodings.</remarks>
+        /// <param name="columnIndex">The 1-based column index.</param>
+        /// <param name="value">The literal character span.</param>
+        /// <param name="styleIndex">The optional style index.</param>
+        public void WriteCellLiteralString(int columnIndex, ReadOnlySpan<char> value, int? styleIndex = null)
+        {
+            ValidateColumnIndex(columnIndex);
+            ValidateCellTextLength(value.Length);
+            if (sharedStrings.TryGetOrAdd(value, out int ssIndex))
+                WriteSharedStringCell(columnIndex, ssIndex, styleIndex);
+            else
+                WriteInlineStringCell(columnIndex, value, styleIndex);
+        }
+
+        /// <summary>Writes a shared-string cell (or inline string when shared-string cache limits are reached) from a span of characters.</summary>
+        /// <param name="columnIndex">The 1-based column index.</param>
+        /// <param name="value">The character span value.</param>
+        /// <param name="styleIndex">The optional style index.</param>
+        public void WriteCellString(int columnIndex, ReadOnlySpan<char> value, int? styleIndex = null)
+        {
+            ValidateColumnIndex(columnIndex);
+            if (injectionProtection != ExcelInjectionProtection.None && IsDangerousLeadingChar(value))
+            {
+                string sanitised = ApplyInjectionProtectionSpan(value);
+                ValidateCellTextLength(sanitised.Length);
+                if (sharedStrings.TryGetOrAdd(sanitised, out int ssIndex))
+                    WriteSharedStringCell(columnIndex, ssIndex, styleIndex);
+                else
+                    WriteInlineStringCell(columnIndex, sanitised.AsSpan(), styleIndex);
+            }
+            else
+            {
+                ValidateCellTextLength(value.Length);
+                if (sharedStrings.TryGetOrAdd(value, out int ssIndex))
+                    WriteSharedStringCell(columnIndex, ssIndex, styleIndex);
+                else
+                    WriteInlineStringCell(columnIndex, value, styleIndex);
+            }
+        }
+
+        private void WriteSharedStringCell(int columnIndex, int ssIndex, int? styleIndex)
+        {
+            ValidateColumnIndex(columnIndex);
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
             if (styleIndex is not null)
@@ -709,37 +827,137 @@ public sealed class XlsxWriter : IDisposable
             WriteRaw(cellValueClose);              // </v></c>
         }
 
-        /// <summary>Writes a shared-string cell from a span of characters.</summary>
-        /// <param name="columnIndex">The 1-based column index.</param>
-        /// <param name="value">The character span value.</param>
-        /// <param name="styleIndex">The optional style index.</param>
-        public void WriteCellString(int columnIndex, ReadOnlySpan<char> value, int? styleIndex = null)
+        private void WriteInlineStringCell(int columnIndex, ReadOnlySpan<char> text, int? styleIndex)
         {
-            int ssIndex;
-            if (injectionProtection != ExcelInjectionProtection.None && IsDangerousLeadingChar(value))
-            {
-                string sanitised = ApplyInjectionProtectionSpan(value);
-                ssIndex = sharedStrings.GetOrAdd(sanitised);
-            }
-            else
-            {
-                ssIndex = sharedStrings.GetOrAdd(value);
-            }
-
+            ValidateColumnIndex(columnIndex);
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
             if (styleIndex is not null)
             {
                 WriteRaw("\" s=\""u8);
                 WriteInt(styleIndex.Value);
-                WriteRaw("\" t=\"s\"><v>"u8);
+            }
+            WriteRaw(cellInlineStringTypeAttr);    // " t="inlineStr"><is><t
+            if (!text.IsEmpty && (char.IsWhiteSpace(text[0]) || char.IsWhiteSpace(text[^1])))
+            {
+                WriteRaw(inlinePreserveAttr);      //  xml:space="preserve">
             }
             else
             {
-                WriteRaw(cellStringTypeAttr);          // " t="s"><v>
+                EnsureSpace(1);
+                buffer[bufferPos++] = (byte)'>';
             }
-            WriteInt(ssIndex);                     // 42
-            WriteRaw(cellValueClose);              // </v></c>
+            WriteXmlEscapedText(text);
+            WriteRaw(cellInlineStringClose);       // </t></is></c>
+        }
+
+        private void WriteXmlEscapedText(ReadOnlySpan<char> value)
+        {
+            int chunkStart = 0;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char ch = value[i];
+                switch (ch)
+                {
+                    case '&':
+                        if (i > chunkStart)
+                            WriteUtf8Chunk(value[chunkStart..i]);
+                        WriteRaw(xmlAmp);
+                        chunkStart = i + 1;
+                        break;
+                    case '<':
+                        if (i > chunkStart)
+                            WriteUtf8Chunk(value[chunkStart..i]);
+                        WriteRaw(xmlLt);
+                        chunkStart = i + 1;
+                        break;
+                    case '>':
+                        if (i > chunkStart)
+                            WriteUtf8Chunk(value[chunkStart..i]);
+                        WriteRaw(xmlGt);
+                        chunkStart = i + 1;
+                        break;
+                    case '\r':
+                        if (i > chunkStart)
+                            WriteUtf8Chunk(value[chunkStart..i]);
+                        WriteRaw(xmlCr);
+                        chunkStart = i + 1;
+                        break;
+                    default:
+                        if (char.IsSurrogate(ch))
+                        {
+                            if (!char.IsHighSurrogate(ch) || i + 1 >= value.Length || !char.IsLowSurrogate(value[i + 1]))
+                                throw new ArgumentException("String contains an unpaired Unicode surrogate character which is invalid in XML.", nameof(value));
+                            i++; // Keep the validated surrogate pair together in the UTF-8 chunk.
+                        }
+                        else if ((ch < 0x20 && ch is not ('\t' or '\n' or '\r')) || ch is '\uFFFE' or '\uFFFF')
+                        {
+                            throw new ArgumentException($"String contains invalid XML character 0x{(int)ch:X4}.", nameof(value));
+                        }
+                        break;
+                }
+            }
+
+            if (value.Length > chunkStart)
+                WriteUtf8Chunk(value[chunkStart..]);
+        }
+
+        private void WriteUtf8Chunk(ReadOnlySpan<char> chunk)
+        {
+            while (!chunk.IsEmpty)
+            {
+                int available = buffer.Length - bufferPos;
+                if (available < 4)
+                {
+                    Flush();
+                    available = buffer.Length;
+                }
+
+                int maxChars = Math.Min(chunk.Length, available / 3);
+                if (maxChars == 0)
+                    maxChars = char.IsHighSurrogate(chunk[0]) && chunk.Length > 1 ? 2 : 1;
+                else if (maxChars < chunk.Length && char.IsHighSurrogate(chunk[maxChars - 1]))
+                    maxChars = maxChars > 1 ? maxChars - 1 : 2;
+
+                int bytesWritten = Encoding.UTF8.GetBytes(chunk[..maxChars], buffer.AsSpan(bufferPos));
+                bufferPos += bytesWritten;
+                chunk = chunk[maxChars..];
+            }
+        }
+
+        private static void ValidateCellTextLength(int length)
+        {
+            if (length > MAX_CELL_TEXT_LENGTH)
+            {
+                throw new ExcelException(
+                    string.Create(CultureInfo.InvariantCulture, $"Cell text length {length:N0} exceeds Excel's maximum limit of {MAX_CELL_TEXT_LENGTH:N0} characters."));
+            }
+        }
+
+        internal string PrepareStringCell(string value, bool applyInjectionProtection)
+        {
+            string result = (applyInjectionProtection ? ApplyInjectionProtection(value) : value) ?? string.Empty;
+            ValidateCellTextLength(result.Length);
+            ValidateXmlCharacters(result.AsSpan());
+            return result;
+        }
+
+        private static void ValidateXmlCharacters(ReadOnlySpan<char> value)
+        {
+            for (int i = 0; i < value.Length; i++)
+            {
+                char ch = value[i];
+                if (char.IsSurrogate(ch))
+                {
+                    if (!char.IsHighSurrogate(ch) || i + 1 >= value.Length || !char.IsLowSurrogate(value[i + 1]))
+                        throw new ArgumentException("String contains an unpaired Unicode surrogate character which is invalid in XML.", nameof(value));
+                    i++;
+                }
+                else if ((ch < 0x20 && ch is not ('\t' or '\n' or '\r')) || ch is '\uFFFE' or '\uFFFF')
+                {
+                    throw new ArgumentException($"String contains invalid XML character 0x{(int)ch:X4}.", nameof(value));
+                }
+            }
         }
 
         private string ApplyInjectionProtectionSpan(ReadOnlySpan<char> value)
@@ -818,6 +1036,7 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="styleIndex">The optional style index.</param>
         public void WriteCellNumber(int columnIndex, double value, int? styleIndex = null)
         {
+            ValidateColumnIndex(columnIndex);
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
             if (styleIndex is not null)
@@ -840,6 +1059,7 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="styleIndex">The optional style index.</param>
         public void WriteCellBoolean(int columnIndex, bool value, int? styleIndex = null)
         {
+            ValidateColumnIndex(columnIndex);
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
             if (styleIndex is not null)
@@ -852,6 +1072,7 @@ public sealed class XlsxWriter : IDisposable
             {
                 WriteRaw(cellBoolOpen);                // " t="b"><v>
             }
+            EnsureSpace(1);
             buffer[bufferPos++] = value ? (byte)'1' : (byte)'0';
             WriteRaw(cellValueClose);              // </v></c>
         }
@@ -862,6 +1083,8 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="styleIndex">The optional style index. Defaults to 1 (date style).</param>
         public void WriteCellDate(int columnIndex, DateTime value, int? styleIndex = null)
         {
+            ValidateColumnIndex(columnIndex);
+            double oaDate = value.ToOADate();
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
 
@@ -870,7 +1093,7 @@ public sealed class XlsxWriter : IDisposable
             WriteInt(actualStyleIndex);
             WriteRaw("\"><v>"u8);
 
-            WriteDouble(value.ToOADate());         // 45123.5
+            WriteDouble(oaDate);                   // 45123.5
             WriteRaw(cellValueClose);              // </v></c>
         }
 
@@ -879,6 +1102,7 @@ public sealed class XlsxWriter : IDisposable
         /// <param name="styleIndex">The optional style index.</param>
         public void WriteCellEmpty(int columnIndex, int? styleIndex = null)
         {
+            ValidateColumnIndex(columnIndex);
             WriteRaw(cellStringOpen);              // <c r="
             WriteCellRef(columnIndex);             // B3
             if (styleIndex is not null)
@@ -999,6 +1223,7 @@ public sealed class XlsxWriter : IDisposable
             if (data.Length > buffer.Length)
             {
                 stream.Write(data);
+                totalBytesWritten += data.Length;
                 return;
             }
 
@@ -1020,8 +1245,19 @@ public sealed class XlsxWriter : IDisposable
             bufferPos += written;
         }
 
+        private static void ValidateColumnIndex(int columnIndex)
+        {
+            if (columnIndex < 1 || columnIndex > MAX_COLUMNS)
+            {
+                throw new ExcelException(
+                    string.Create(CultureInfo.InvariantCulture, $"Column index {columnIndex} is outside the valid Excel worksheet range of 1 to {MAX_COLUMNS:N0}."));
+            }
+        }
+
         private void WriteCellRef(int columnIndex)
         {
+            ValidateColumnIndex(columnIndex);
+
             // Column letter bytes (cached)
             int col0 = columnIndex - 1;
             var colBytes = GetColumnLetterBytes(col0);

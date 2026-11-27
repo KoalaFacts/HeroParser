@@ -55,7 +55,7 @@ public class LimitMessageCultureTests
         var ex = WithCulture(cultureName, () =>
             Assert.Throws<CsvException>(() => new CsvReadOptions { MaxColumnCount = 20_000 }.Validate()));
 
-        Assert.Equal("MaxColumnCount cannot exceed 10,000, got 20,000", ex.Message);
+        Assert.Equal("MaxColumnCount cannot exceed 16,384, got 20,000", ex.Message);
     }
 
     [Theory]

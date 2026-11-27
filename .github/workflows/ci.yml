@@ -27,6 +27,7 @@ jobs:
   setup:
     name: Extract Build Configuration
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       frameworks: ${{ steps.extract.outputs.frameworks }}
     steps:
@@ -41,6 +42,7 @@ jobs:
     name: Build and Test
     needs: setup
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -78,6 +80,7 @@ jobs:
         dotnet test tests/HeroParser.Tests
         --configuration Release --no-build
         --framework ${{ matrix.framework }}
+        --timeout 5m
         --
         --filter-trait "Category=Unit"
         --report-trx --report-trx-filename test-results-unit.trx
@@ -90,6 +93,7 @@ jobs:
         dotnet test tests/HeroParser.Tests
         --configuration Release --no-build
         --framework ${{ matrix.framework }}
+        --timeout 5m
         --
         --filter-trait "Category=Integration"
         --report-trx --report-trx-filename test-results-integration.trx
@@ -151,6 +155,7 @@ jobs:
     name: AOT Compatibility Tests
     needs: setup
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -196,6 +201,7 @@ jobs:
     name: Source Generator Tests
     needs: setup
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -221,11 +227,12 @@ jobs:
       run: dotnet build tests/HeroParser.Generators.Tests --configuration Release --framework ${{ matrix.framework }}
 
     - name: Run Generator Tests
-      run: dotnet test tests/HeroParser.Generators.Tests --configuration Release --no-build --framework ${{ matrix.framework }}
+      run: dotnet test tests/HeroParser.Generators.Tests --configuration Release --no-build --framework ${{ matrix.framework }} --timeout 5m
 
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
@@ -259,6 +266,7 @@ jobs:
   docs-check:
     name: Docs Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
 
@@ -280,6 +288,7 @@ jobs:
   doc-snippets:
     name: Docs Snippets Compile
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
 
@@ -304,6 +313,7 @@ jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     permissions:
       contents: read
@@ -332,6 +342,7 @@ jobs:
   nuget-package-consumer:
     name: NuGet PackageReference and NativeAOT consumer
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
     - name: Checkout exact candidate commit
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

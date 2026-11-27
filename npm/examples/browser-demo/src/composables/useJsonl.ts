@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { readJsonl, writeJsonl, convertJsonlToCsv } from "heroparser";
+import { readJsonl, readJsonlAsJson, writeJsonl, convertJsonlToCsv, type JsonlInputFormat } from "heroparser";
 import { downloadText } from "../utils/download";
 
 const SAMPLE_JSONL = [
@@ -19,6 +19,7 @@ const SAMPLE_JSON_ARRAY = JSON.stringify(
 
 export function useJsonl() {
   const jsonlInput = ref(SAMPLE_JSONL);
+  const jsonlInputFormat = ref<JsonlInputFormat>("jsonl");
   const jsonlDelimiter = ref(",");
   const jsonlOutputTitle = ref("JSON Output");
   const jsonlOutput = ref('Click "Parse JSONL", "JSONL → CSV", or "Write JSONL" to see results...');
@@ -29,13 +30,14 @@ export function useJsonl() {
   const runJsonlParse = () => {
     const t0 = performance.now();
     try {
-      const result = readJsonl(jsonlInput.value);
+      const prettyJson = readJsonlAsJson(jsonlInput.value, { indented: true });
       const t1 = performance.now();
+      const count = prettyJson === "[]" ? 0 : JSON.parse(prettyJson).length;
       jsonlOutputKind.value = "json";
       jsonlOutputTitle.value = "Parsed JSON Array";
-      jsonlOutput.value = JSON.stringify(result, null, 2);
+      jsonlOutput.value = prettyJson;
       jsonlTime.value = `${(t1 - t0).toFixed(2)} ms`;
-      jsonlCount.value = result.length.toString();
+      jsonlCount.value = count.toString();
     } catch (err: any) {
       jsonlOutputKind.value = "json";
       jsonlOutputTitle.value = "Parsing Error";
@@ -50,12 +52,12 @@ export function useJsonl() {
         delimiter: jsonlDelimiter.value || ",",
       });
       const t1 = performance.now();
-      const nonEmptyLines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+      const recordCount = csv.trim().length === 0 ? 0 : readJsonl(jsonlInput.value).length;
       jsonlOutputKind.value = "csv";
       jsonlOutputTitle.value = "CSV Output (Union Schema)";
       jsonlOutput.value = csv;
       jsonlTime.value = `${(t1 - t0).toFixed(2)} ms`;
-      jsonlCount.value = (nonEmptyLines > 0 ? nonEmptyLines - 1 : 0).toString();
+      jsonlCount.value = recordCount.toString();
     } catch (err: any) {
       jsonlOutputKind.value = "json";
       jsonlOutputTitle.value = "Conversion Error";
@@ -66,11 +68,7 @@ export function useJsonl() {
   const runJsonlWrite = () => {
     const t0 = performance.now();
     try {
-      const trimmed = jsonlInput.value.trimStart();
-      const records = trimmed.startsWith("[")
-        ? JSON.parse(jsonlInput.value)
-        : readJsonl(jsonlInput.value);
-      const output = writeJsonl(records);
+      const output = writeJsonl(jsonlInput.value, jsonlInputFormat.value);
       const t1 = performance.now();
       const lines = output.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
       jsonlOutputKind.value = "jsonl";
@@ -87,10 +85,12 @@ export function useJsonl() {
 
   const loadJsonlSample = () => {
     jsonlInput.value = SAMPLE_JSONL;
+    jsonlInputFormat.value = "jsonl";
   };
 
   const loadJsonArrayPreset = () => {
     jsonlInput.value = SAMPLE_JSON_ARRAY;
+    jsonlInputFormat.value = "json-array";
   };
 
   const downloadJsonlOutput = () => {
@@ -109,6 +109,7 @@ export function useJsonl() {
 
   return {
     jsonlInput,
+    jsonlInputFormat,
     jsonlDelimiter,
     jsonlOutputTitle,
     jsonlOutput,

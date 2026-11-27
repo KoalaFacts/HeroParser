@@ -56,7 +56,8 @@ public sealed partial class CsvRowReaderBuilder
     {
         ArgumentNullException.ThrowIfNull(path);
         var options = GetOptions();
-        options.ValidateInputSize(new FileInfo(path).Length);
+        if (!new CompressedFile(path).IsCompressed)
+            options.ValidateInputSize(new FileInfo(path).Length);
         var reader = Csv.ReadFromFile(path, out fileBytes, options);
         SkipInitialRows(ref reader);
         return reader;
@@ -131,32 +132,52 @@ public sealed partial class CsvRowReaderBuilder
         var stream = new CompressedFile(path).OpenRead(
             bufferSize: 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        Stream input = stream;
+        Stream countingStream = options.MaxInputSize is not null
+            ? new MaxInputSizeReadStream(stream, options)
+            : stream;
+        Stream input = countingStream;
         try
         {
-            int first = stream.ReadByte();
-            int second = first >= 0 ? stream.ReadByte() : -1;
-            Encoding? encoding = (first, second) switch
+            byte[] bom = new byte[4];
+            int read = 0;
+            while (read < bom.Length)
             {
-                (0xFF, 0xFE) => Encoding.Unicode,
-                (0xFE, 0xFF) => Encoding.BigEndianUnicode,
-                _ => null
-            };
-            if (encoding is not null)
-            {
-                input = new Utf16ToUtf8ReadStream(stream, encoding);
-            }
-            else if (stream.CanSeek)
-            {
-                stream.Position = 0;
-            }
-            else if (first >= 0)
-            {
-                byte[] prefix = second >= 0 ? [(byte)first, (byte)second] : [(byte)first];
-                input = new PrefixReadStream(stream, prefix, leaveOpen: false);
+                int n = countingStream.Read(bom, read, bom.Length - read);
+                if (n == 0)
+                    break;
+                read += n;
             }
 
-            return new CsvAsyncStreamReader(input, options, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
+            if (read == 4 && bom[0] == 0xFF && bom[1] == 0xFE && bom[2] == 0x00 && bom[3] == 0x00)
+            {
+                input = new Utf16ToUtf8ReadStream(countingStream, Encoding.UTF32);
+            }
+            else if (read == 4 && bom[0] == 0x00 && bom[1] == 0x00 && bom[2] == 0xFE && bom[3] == 0xFF)
+            {
+                input = new Utf16ToUtf8ReadStream(countingStream, new UTF32Encoding(bigEndian: true, byteOrderMark: true));
+            }
+            else if (read >= 2 && ((bom[0] == 0xFF && bom[1] == 0xFE) || (bom[0] == 0xFE && bom[1] == 0xFF)))
+            {
+                Encoding utf16 = bom[0] == 0xFF ? Encoding.Unicode : Encoding.BigEndianUnicode;
+                Stream remainder = read > 2
+                    ? new PrefixReadStream(countingStream, bom[2..read], leaveOpen: false)
+                    : countingStream;
+                input = new Utf16ToUtf8ReadStream(remainder, utf16);
+            }
+            else if (countingStream.CanSeek)
+            {
+                countingStream.Position = 0;
+            }
+            else if (read > 0)
+            {
+                input = new PrefixReadStream(countingStream, bom[..read], leaveOpen: false);
+            }
+
+            // MaxInputSizeReadStream already counted the raw decompressed bytes before BOM/UTF-16 transcoding.
+            var readerOptions = options.MaxInputSize is not null
+                ? options with { MaxInputSize = null }
+                : options;
+            return new CsvAsyncStreamReader(input, readerOptions, leaveOpen: false, initialBufferSize: bufferSize, skipRows: skipRows);
         }
         catch
         {

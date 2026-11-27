@@ -418,6 +418,7 @@ public sealed class FixedWidthWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
+        cancellationToken.ThrowIfCancellationRequested();
         var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);
@@ -466,6 +467,7 @@ public sealed class FixedWidthWriterBuilder<T>
         ArgumentNullException.ThrowIfNull(records);
 
         var options = GetOptions();
+        cancellationToken.ThrowIfCancellationRequested();
         var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
             FileOptions.Asynchronous);

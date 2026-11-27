@@ -16,6 +16,8 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
     private readonly JsonlReadOptions options;
     private readonly JsonTypeInfo<T>? typeInfo;
     private readonly Binders.IJsonlSourceBinder<byte, T>? binder;
+    private readonly Binders.IJsonlRecordValidator<T>? validator;
+    private JsonSerializerOptions? effectiveSerializerOptions;
     private bool enumerated;
     private bool disposed;
 
@@ -29,7 +31,8 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         this.options = options ?? JsonlReadOptions.Default;
         this.options.Validate();
         this.typeInfo = typeInfo;
-        Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out binder);
+        binder = null;
+        Binders.JsonlRecordBinderFactory.TryGetValidator<T>(out validator);
         lineReader = new JsonlLineReader(stream, this.options, leaveOpen);
     }
 
@@ -45,7 +48,9 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         this.options = options ?? JsonlReadOptions.Default;
         this.options.Validate();
         typeInfo = null;
-        Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out binder);
+        if (this.options.SerializerOptions is null)
+            Binders.JsonlRecordBinderFactory.TryGetByteBinder<T>(out binder);
+        Binders.JsonlRecordBinderFactory.TryGetValidator<T>(out validator);
         lineReader = new JsonlLineReader(stream, this.options, leaveOpen);
     }
 
@@ -93,10 +98,14 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
             T? value;
             try
             {
-                value = Deserialize(line);
+                value = Deserialize(line, lineNumber);
             }
             catch (Exception ex) when (options.OnError is not null && ex is not (OutOfMemoryException or OperationCanceledException))
             {
+                Exception reportedException = ex is Validation.ValidationException vex
+                    ? new JsonlValidationHelper().AttachLineNumber(vex, lineNumber)
+                    : ex;
+
                 var context = new JsonlDeserializeErrorContext
                 {
                     LineNumber = lineNumber,
@@ -105,19 +114,29 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
                     TargetType = typeof(T)
                 };
 
-                JsonlDeserializeErrorAction action = options.OnError(context, ex);
+                JsonlDeserializeErrorAction action = options.OnError(context, reportedException);
                 if (action == JsonlDeserializeErrorAction.Throw)
                 {
                     throw new JsonlException(
                         JsonlErrorCode.DeserializeError,
-                        $"Failed to deserialize line: {ex.Message}",
+                        $"Failed to deserialize line: {reportedException.Message}",
                         lineNumber,
-                        ex);
+                        reportedException);
                 }
                 recordIndex++;
                 continue;
             }
-            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException or Validation.ValidationException))
+            catch (Validation.ValidationException vex)
+            {
+                if (options.ValidationMode == Validation.ValidationMode.Lenient)
+                {
+                    recordIndex++;
+                    continue;
+                }
+
+                throw new JsonlValidationHelper().AttachLineNumber(vex, lineNumber);
+            }
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException or JsonlException))
             {
                 throw new JsonlException(
                     JsonlErrorCode.DeserializeError,
@@ -143,21 +162,48 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         }
     }
 
-    private T? Deserialize(ReadOnlySpan<byte> utf8)
+    private T? Deserialize(ReadOnlySpan<byte> utf8, long lineNumber)
     {
-        if (binder is not null)
+        if (binder is Binders.IJsonlTryByteBinder<T> tryBinder)
+        {
+            if (default(T) is null && new JsonlValidationHelper().IsJsonNullLiteral(utf8))
+                return default;
+            if (tryBinder.TryBind(utf8, out var bound))
+                return bound;
+        }
+        else if (binder is not null)
+        {
+            if (default(T) is null && new JsonlValidationHelper().IsJsonNullLiteral(utf8))
+                return default;
             return binder.Bind(utf8);
+        }
 
-        if (typeInfo is not null)
-            return JsonSerializer.Deserialize(utf8, typeInfo);
-
-        return DeserializeReflection(utf8, options.SerializerOptions);
+        T? value = typeInfo is not null
+            ? JsonSerializer.Deserialize(utf8, typeInfo)
+            : DeserializeReflection(utf8);
+        if (value is not null)
+        {
+            JsonTypeInfo? activeTypeInfo = typeInfo ?? TryGetReflectionTypeInfo();
+            JsonlReadContractValidator.Instance.ValidateDeserialized(
+                value,
+                utf8,
+                activeTypeInfo,
+                validator,
+                (int)Math.Min(lineNumber, int.MaxValue),
+                options.ValidationMode);
+        }
+        return value;
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Reflection path is gated by the [RequiresUnreferencedCode] reflection constructor; callers using JsonTypeInfo<T> never reach this branch.")]
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Reflection path is gated by the [RequiresDynamicCode] reflection constructor; callers using JsonTypeInfo<T> never reach this branch.")]
-    private static T? DeserializeReflection(ReadOnlySpan<byte> utf8, JsonSerializerOptions? options)
-        => JsonSerializer.Deserialize<T>(utf8, options);
+    private T? DeserializeReflection(ReadOnlySpan<byte> utf8)
+        => JsonSerializer.Deserialize<T>(utf8, effectiveSerializerOptions ??= BigIntegerJsonConverter.ResolveOptions(options.SerializerOptions));
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Reflection path is gated by the [RequiresUnreferencedCode] reflection constructor; callers using JsonTypeInfo<T> never reach this branch.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Reflection path is gated by the [RequiresDynamicCode] reflection constructor; callers using JsonTypeInfo<T> never reach this branch.")]
+    private JsonTypeInfo? TryGetReflectionTypeInfo()
+        => effectiveSerializerOptions is null ? null : JsonlReadContractValidator.TryGetTypeInfo<T>(effectiveSerializerOptions);
 
     private static bool IsWhitespace(ReadOnlySpan<byte> span)
     {
@@ -176,5 +222,43 @@ public sealed class JsonlRecordReader<T> : IEnumerable<T>, IDisposable
         if (disposed) return;
         disposed = true;
         lineReader.Dispose();
+    }
+}
+
+internal readonly struct JsonlValidationHelper
+{
+    public bool IsJsonNullLiteral(ReadOnlySpan<byte> utf8)
+        => utf8.Trim(" \t\r\n"u8).SequenceEqual("null"u8);
+
+    public Validation.ValidationException AttachLineNumber(Validation.ValidationException exception, long lineNumber)
+    {
+        int clampedLine = (int)Math.Min(lineNumber, int.MaxValue);
+        if (clampedLine <= 0)
+            return exception;
+
+        IReadOnlyList<Validation.ValidationError> existing = exception.Errors;
+        bool needsUpdate = false;
+        for (int i = 0; i < existing.Count; i++)
+        {
+            if (existing[i].RowNumber == 0)
+            {
+                needsUpdate = true;
+                break;
+            }
+        }
+
+        if (!needsUpdate)
+            return exception;
+
+        var updated = new Validation.ValidationError[existing.Count];
+        for (int i = 0; i < existing.Count; i++)
+        {
+            var err = existing[i];
+            updated[i] = err.RowNumber == 0
+                ? err with { RowNumber = clampedLine }
+                : err;
+        }
+
+        return new Validation.ValidationException(updated);
     }
 }

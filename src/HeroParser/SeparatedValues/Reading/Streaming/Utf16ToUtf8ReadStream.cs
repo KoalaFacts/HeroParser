@@ -18,10 +18,10 @@ internal sealed class Utf16ToUtf8ReadStream : Stream
     private bool endOfStream;
     private bool disposed;
 
-    public Utf16ToUtf8ReadStream(Stream stream, Encoding encoding)
+    public Utf16ToUtf8ReadStream(Stream stream, Encoding encoding, bool leaveOpen = false)
     {
         reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: false,
-            bufferSize: SOURCE_BUFFER_SIZE, leaveOpen: false);
+            bufferSize: SOURCE_BUFFER_SIZE, leaveOpen: leaveOpen);
         char[]? rentedChars = null;
         try
         {

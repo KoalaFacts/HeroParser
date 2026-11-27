@@ -31,15 +31,14 @@ public class XlsxWriterInjectionTests
         Assert.Equal("'" + dangerous, row[0]);
     }
 
-    // OOXML normalises CR to LF on read (XML 1.0 spec), so a value containing '\r' cannot
-    // round-trip byte-for-byte. We still need to verify '\r' triggers injection protection,
-    // so this test asserts the post-normalisation form ("'\nCR-prefix") rather than the
-    // original ("'\rCR-prefix").
+    // XlsxWriter configures NewLineHandling.Entitize so shared strings and inline strings
+    // encode '\r' as &#xD; and round-trip it intact instead of normalising CR to LF.
+    // Verify both that leading '\r' triggers apostrophe injection protection and preserves '\r'.
     [Fact]
     public void Default_CarriageReturnPrefix_IsPrefixedWithApostropheAfterXmlNormalisation()
     {
         const string dangerous = "\rCR-prefix";
-        const string expectedAfterXmlNormalise = "'\nCR-prefix";
+        const string expected = "'\rCR-prefix";
 
         var bytes = WriteSingleStringCell(dangerous, protection: null);
 
@@ -49,7 +48,7 @@ public class XlsxWriterInjectionTests
 
         var row = sheetReader.ReadNextRow();
         Assert.NotNull(row);
-        Assert.Equal(expectedAfterXmlNormalise, row[0]);
+        Assert.Equal(expected, row[0]);
     }
 
     // Smart detection (matching CsvStreamWriter's heuristic) treats '-' or '+' followed by

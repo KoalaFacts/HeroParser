@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using HeroParser.Internal;
 
 namespace HeroParser.FixedWidths.Writing;
 
@@ -102,7 +103,25 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
 
     internal string? NumberFormat => options.NumberFormat;
 
+    internal int? MaxRowCount => options.MaxRowCount;
+
     internal void WriteFloatField(float value, int width, FieldAlignment alignment, char padChar)
+    {
+        ThrowIfDisposed();
+        if (width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        WriteSpanFormattableDirectly(value, width, alignment, padChar, numberFormat);
+    }
+
+    internal void WriteInt16Field(short value, int width, FieldAlignment alignment, char padChar)
+    {
+        ThrowIfDisposed();
+        if (width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(width), "Width must be positive");
+        WriteSpanFormattableDirectly(value, width, alignment, padChar, numberFormat);
+    }
+
+    internal void WriteByteField(byte value, int width, FieldAlignment alignment, char padChar)
     {
         ThrowIfDisposed();
         if (width <= 0)
@@ -457,7 +476,7 @@ public sealed class FixedWidthStreamWriter : IDisposable, IAsyncDisposable
                 return;
 
             case byte[] bytes:
-                WriteFieldValue(Convert.ToBase64String(bytes).AsSpan(), width, alignment, padChar);
+                WriteFieldValue((bytes.Length == 0 ? Utf8SpanParser.EMPTY_BASE64_TOKEN : Convert.ToBase64String(bytes)).AsSpan(), width, alignment, padChar);
                 return;
 
             case Guid g:

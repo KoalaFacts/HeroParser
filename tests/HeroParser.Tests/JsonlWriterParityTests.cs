@@ -37,27 +37,27 @@ public partial class JsonlWriterParityTests
         ];
         var typeInfo = JsonlParityContext.Default.JsonlParityItem;
 
-        string serialized = Jsonl.SerializeRecords(items, typeInfo);
+        string serialized = Jsonl.SerializeRecords(items, options: null, typeInfo);
         Assert.Contains("\"Id\":1", serialized);
         Assert.Contains("\"Name\":\"Beta\"", serialized);
 
         using var syncStream = new MemoryStream();
-        Jsonl.WriteToStream(syncStream, items, typeInfo, leaveOpen: true);
+        Jsonl.WriteToStream(syncStream, items, options: null, typeInfo, leaveOpen: true);
         Assert.True(syncStream.CanRead);
         Assert.Equal(serialized, Encoding.UTF8.GetString(syncStream.ToArray()));
 
         using var asyncEnumStream = new MemoryStream();
-        await Jsonl.WriteToStreamAsync(asyncEnumStream, items, typeInfo, leaveOpen: true, cancellationToken: ct);
+        await Jsonl.WriteEnumerableToStreamAsync(asyncEnumStream, items, options: null, typeInfo, leaveOpen: true, cancellationToken: ct);
         Assert.True(asyncEnumStream.CanRead);
         Assert.Equal(serialized, Encoding.UTF8.GetString(asyncEnumStream.ToArray()));
 
         using var asyncStreamSeq = new MemoryStream();
-        await Jsonl.WriteToStreamAsync(asyncStreamSeq, AsAsyncEnumerable(items), typeInfo, leaveOpen: true, cancellationToken: ct);
+        await Jsonl.WriteToStreamAsync(asyncStreamSeq, AsAsyncEnumerable(items), options: null, typeInfo, leaveOpen: true, cancellationToken: ct);
         Assert.True(asyncStreamSeq.CanRead);
         Assert.Equal(serialized, Encoding.UTF8.GetString(asyncStreamSeq.ToArray()));
 
         using var asyncReflectionStream = new MemoryStream();
-        await Jsonl.WriteToStreamAsync(asyncReflectionStream, items, new JsonlWriteOptions { WriteFinalNewline = false }, leaveOpen: true, cancellationToken: ct);
+        await Jsonl.WriteEnumerableToStreamAsync(asyncReflectionStream, items, new JsonlWriteOptions { WriteFinalNewline = false }, leaveOpen: true, cancellationToken: ct);
         Assert.True(asyncReflectionStream.CanRead);
         Assert.False(Encoding.UTF8.GetString(asyncReflectionStream.ToArray()).EndsWith('\n'));
 
@@ -66,16 +66,16 @@ public partial class JsonlWriterParityTests
         try
         {
             string syncPath = Path.Combine(dir, "sync.jsonl.gz");
-            Jsonl.WriteToFile(syncPath, items, typeInfo);
+            Jsonl.WriteToFile(syncPath, items, options: null, typeInfo);
 
             string asyncEnumPath = Path.Combine(dir, "enum-async.jsonl.br");
-            await Jsonl.WriteToFileAsync(asyncEnumPath, items, typeInfo, cancellationToken: ct);
+            await Jsonl.WriteEnumerableToFileAsync(asyncEnumPath, items, options: null, typeInfo, cancellationToken: ct);
 
             string asyncSeqPath = Path.Combine(dir, "seq-async.jsonl.gz");
-            await Jsonl.WriteToFileAsync(asyncSeqPath, AsAsyncEnumerable(items), typeInfo, cancellationToken: ct);
+            await Jsonl.WriteToFileAsync(asyncSeqPath, AsAsyncEnumerable(items), options: null, typeInfo, cancellationToken: ct);
 
             string reflAsyncPath = Path.Combine(dir, "refl-async.jsonl.br");
-            await Jsonl.WriteToFileAsync(reflAsyncPath, items, cancellationToken: ct);
+            await Jsonl.WriteEnumerableToFileAsync(reflAsyncPath, items, cancellationToken: ct);
 
             foreach (string path in (string[])[syncPath, asyncEnumPath, asyncSeqPath, reflAsyncPath])
             {
@@ -104,12 +104,12 @@ public partial class JsonlWriterParityTests
         var typeInfo = JsonlParityContext.Default.JsonlParityItem;
 
         using var typedStream = new MemoryStream();
-        await Jsonl.Write<JsonlParityItem>().ToStreamAsync(typedStream, items, typeInfo, leaveOpen: true, cancellationToken: ct);
+        await Jsonl.Write<JsonlParityItem>().ToStreamFromEnumerableAsync(typedStream, items, typeInfo, leaveOpen: true, cancellationToken: ct);
         Assert.True(typedStream.CanRead);
         Assert.Contains("\"Name\":\"Gamma\"", Encoding.UTF8.GetString(typedStream.ToArray()));
 
         using var reflStream = new MemoryStream();
-        await Jsonl.Write<JsonlParityItem>().ToStreamAsync(reflStream, items, leaveOpen: true, cancellationToken: ct);
+        await Jsonl.Write<JsonlParityItem>().ToStreamFromEnumerableAsync(reflStream, items, leaveOpen: true, cancellationToken: ct);
         Assert.True(reflStream.CanRead);
         Assert.Contains("\"Name\":\"Delta\"", Encoding.UTF8.GetString(reflStream.ToArray()));
 
@@ -118,10 +118,10 @@ public partial class JsonlWriterParityTests
         try
         {
             string typedPath = Path.Combine(dir, "builder-typed.jsonl.br");
-            await Jsonl.Write<JsonlParityItem>().ToFileAsync(typedPath, items, typeInfo, ct);
+            await Jsonl.Write<JsonlParityItem>().ToFileFromEnumerableAsync(typedPath, items, typeInfo, ct);
 
             string reflPath = Path.Combine(dir, "builder-refl.jsonl.gz");
-            await Jsonl.Write<JsonlParityItem>().ToFileAsync(reflPath, items, ct);
+            await Jsonl.Write<JsonlParityItem>().ToFileFromEnumerableAsync(reflPath, items, ct);
 
             foreach (string path in (string[])[typedPath, reflPath])
             {
@@ -135,6 +135,122 @@ public partial class JsonlWriterParityTests
         finally
         {
             Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Jsonl_StaticFacade_NullOptionsCalls_RemainUnambiguous()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        List<JsonlParityItem> items =
+        [
+            new() { Id = 7, Name = "NullOptions" }
+        ];
+
+        string serialized = Jsonl.SerializeRecords(items, null);
+        Assert.Contains("\"Name\":\"NullOptions\"", serialized);
+
+        using (var syncStream = new MemoryStream())
+        {
+            Jsonl.WriteToStream(syncStream, items, null);
+            Assert.Equal(serialized, Encoding.UTF8.GetString(syncStream.ToArray()));
+        }
+
+        await using (var asyncEnumStream = new MemoryStream())
+        {
+            await Jsonl.WriteEnumerableToStreamAsync(asyncEnumStream, items, null, cancellationToken: ct);
+            Assert.Equal(serialized, Encoding.UTF8.GetString(asyncEnumStream.ToArray()));
+        }
+
+        await using (var asyncSeqStream = new MemoryStream())
+        {
+            await Jsonl.WriteToStreamAsync(asyncSeqStream, AsAsyncEnumerable(items), null, cancellationToken: ct);
+            Assert.Equal(serialized, Encoding.UTF8.GetString(asyncSeqStream.ToArray()));
+        }
+
+        string dir = Path.Combine(Path.GetTempPath(), $"hero-jsonl-nullopts-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string syncFile = Path.Combine(dir, "sync.jsonl");
+            string asyncEnumFile = Path.Combine(dir, "enum.jsonl");
+            string asyncSeqFile = Path.Combine(dir, "seq.jsonl");
+
+            Jsonl.WriteToFile(syncFile, items, null);
+            await Jsonl.WriteEnumerableToFileAsync(asyncEnumFile, items, null, ct);
+            await Jsonl.WriteToFileAsync(asyncSeqFile, AsAsyncEnumerable(items), null, ct);
+
+            Assert.Equal(serialized, await File.ReadAllTextAsync(syncFile, ct));
+            Assert.Equal(serialized, await File.ReadAllTextAsync(asyncEnumFile, ct));
+            Assert.Equal(serialized, await File.ReadAllTextAsync(asyncSeqFile, ct));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AsyncWriters_DualEnumerableAndAsyncEnumerableCollection_BindsUnambiguouslyAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dual = new DualCollection<JsonlParityItem>(
+        [
+            new() { Id = 1, Name = "DualOne" }
+        ]);
+        var typeInfo = JsonlParityContext.Default.JsonlParityItem;
+
+        string dir = Path.Combine(Path.GetTempPath(), $"hero-dual-async-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            await using var jsonlStream = new MemoryStream();
+            await Jsonl.WriteToStreamAsync(jsonlStream, dual, cancellationToken: ct);
+            Assert.Contains("\"Name\":\"DualOne\"", Encoding.UTF8.GetString(jsonlStream.ToArray()));
+
+            await using var builderJsonlStream = new MemoryStream();
+            await Jsonl.Write<JsonlParityItem>().ToStreamAsync(builderJsonlStream, dual, leaveOpen: true, cancellationToken: ct);
+            Assert.Contains("\"Name\":\"DualOne\"", Encoding.UTF8.GetString(builderJsonlStream.ToArray()));
+
+            await using var typedJsonlStream = new MemoryStream();
+            await Jsonl.Write<JsonlParityItem>().ToStreamAsync(typedJsonlStream, dual, typeInfo, leaveOpen: true, cancellationToken: ct);
+            Assert.Contains("\"Name\":\"DualOne\"", Encoding.UTF8.GetString(typedJsonlStream.ToArray()));
+
+            await using var csvStream = new MemoryStream();
+            await Csv.Write<JsonlParityItem>().ToStreamAsync(csvStream, dual, leaveOpen: true, cancellationToken: ct);
+            Assert.Contains("DualOne", Encoding.UTF8.GetString(csvStream.ToArray()));
+
+            string jsonlFile = Path.Combine(dir, "facade.jsonl");
+            string jsonlBuilderFile = Path.Combine(dir, "builder.jsonl");
+            string csvFile = Path.Combine(dir, "builder.csv");
+
+            await Jsonl.WriteToFileAsync(jsonlFile, dual, cancellationToken: ct);
+            await Jsonl.Write<JsonlParityItem>().ToFileAsync(jsonlBuilderFile, dual, ct);
+            await Csv.Write<JsonlParityItem>().ToFileAsync(csvFile, dual, ct);
+
+            Assert.Contains("\"Name\":\"DualOne\"", await File.ReadAllTextAsync(jsonlFile, ct));
+            Assert.Contains("\"Name\":\"DualOne\"", await File.ReadAllTextAsync(jsonlBuilderFile, ct));
+            Assert.Contains("DualOne", await File.ReadAllTextAsync(csvFile, ct));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    private sealed class DualCollection<T>(IReadOnlyList<T> items) : IEnumerable<T>, IAsyncEnumerable<T>
+    {
+        public IEnumerator<T> GetEnumerator() => items.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+        {
+            foreach (T item in items)
+            {
+                await Task.Yield();
+                yield return item;
+            }
         }
     }
 }

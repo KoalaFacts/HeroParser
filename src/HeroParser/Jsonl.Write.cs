@@ -81,7 +81,7 @@ public static partial class Jsonl
     /// <summary>
     /// Alias for <see cref="WriteToText{T}(IEnumerable{T}, JsonTypeInfo{T}, JsonlWriteOptions?)"/>.
     /// </summary>
-    public static string SerializeRecords<T>(IEnumerable<T> records, JsonTypeInfo<T> typeInfo, JsonlWriteOptions? options = null)
+    public static string SerializeRecords<T>(IEnumerable<T> records, JsonlWriteOptions? options, JsonTypeInfo<T> typeInfo)
         => WriteToText(records, typeInfo, options);
 
     /// <summary>
@@ -103,7 +103,7 @@ public static partial class Jsonl
     /// <summary>
     /// Serializes records to a file using a <see cref="JsonTypeInfo{T}"/>.
     /// </summary>
-    public static void WriteToFile<T>(string path, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, JsonlWriteOptions? options = null)
+    public static void WriteToFile<T>(string path, IEnumerable<T> records, JsonlWriteOptions? options, JsonTypeInfo<T> typeInfo)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
@@ -133,7 +133,7 @@ public static partial class Jsonl
     /// <summary>
     /// Serializes records to a stream using a <see cref="JsonTypeInfo{T}"/>.
     /// </summary>
-    public static void WriteToStream<T>(Stream stream, IEnumerable<T> records, JsonTypeInfo<T> typeInfo, JsonlWriteOptions? options = null, bool leaveOpen = true)
+    public static void WriteToStream<T>(Stream stream, IEnumerable<T> records, JsonlWriteOptions? options, JsonTypeInfo<T> typeInfo, bool leaveOpen = true)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(records);
@@ -145,11 +145,11 @@ public static partial class Jsonl
     }
 
     /// <summary>
-    /// Asynchronously serializes records to a file using reflection.
+    /// Asynchronously serializes an <see cref="IEnumerable{T}"/> sequence of records to a file using reflection.
     /// </summary>
     [RequiresUnreferencedCode("JSONL serialization without a JsonTypeInfo<T> uses reflection. Use the JsonTypeInfo<T> overload for AOT.")]
     [RequiresDynamicCode("JSONL serialization without a JsonTypeInfo<T> uses runtime code generation.")]
-    public static async ValueTask WriteToFileAsync<T>(
+    public static async ValueTask WriteEnumerableToFileAsync<T>(
         string path,
         IEnumerable<T> records,
         JsonlWriteOptions? options = null,
@@ -157,6 +157,7 @@ public static partial class Jsonl
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
         var writer = new JsonlStreamWriter(stream, options, leaveOpen: true);
@@ -170,18 +171,19 @@ public static partial class Jsonl
     }
 
     /// <summary>
-    /// Asynchronously serializes records to a file using a <see cref="JsonTypeInfo{T}"/>.
+    /// Asynchronously serializes an <see cref="IEnumerable{T}"/> sequence of records to a file using a <see cref="JsonTypeInfo{T}"/>.
     /// </summary>
-    public static async ValueTask WriteToFileAsync<T>(
+    public static async ValueTask WriteEnumerableToFileAsync<T>(
         string path,
         IEnumerable<T> records,
+        JsonlWriteOptions? options,
         JsonTypeInfo<T> typeInfo,
-        JsonlWriteOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(typeInfo);
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
         var writer = new JsonlStreamWriter(stream, options, leaveOpen: true);
@@ -207,6 +209,7 @@ public static partial class Jsonl
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
         var writer = new JsonlStreamWriter(stream, options, leaveOpen: true);
@@ -222,13 +225,14 @@ public static partial class Jsonl
     public static async ValueTask WriteToFileAsync<T>(
         string path,
         IAsyncEnumerable<T> records,
+        JsonlWriteOptions? options,
         JsonTypeInfo<T> typeInfo,
-        JsonlWriteOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(typeInfo);
+        cancellationToken.ThrowIfCancellationRequested();
         var stream = new CompressedFile(path).OpenWrite(bufferSize: 4096, FileOptions.Asynchronous);
         await using var streamDisposal = stream.ConfigureAwait(false);
         var writer = new JsonlStreamWriter(stream, options, leaveOpen: true);
@@ -239,11 +243,11 @@ public static partial class Jsonl
     }
 
     /// <summary>
-    /// Asynchronously serializes records to a stream using reflection.
+    /// Asynchronously serializes an <see cref="IEnumerable{T}"/> sequence of records to a stream using reflection.
     /// </summary>
     [RequiresUnreferencedCode("JSONL serialization without a JsonTypeInfo<T> uses reflection. Use the JsonTypeInfo<T> overload for AOT.")]
     [RequiresDynamicCode("JSONL serialization without a JsonTypeInfo<T> uses runtime code generation.")]
-    public static async ValueTask WriteToStreamAsync<T>(
+    public static async ValueTask WriteEnumerableToStreamAsync<T>(
         Stream stream,
         IEnumerable<T> records,
         JsonlWriteOptions? options = null,
@@ -263,13 +267,13 @@ public static partial class Jsonl
     }
 
     /// <summary>
-    /// Asynchronously serializes records to a stream using a <see cref="JsonTypeInfo{T}"/>.
+    /// Asynchronously serializes an <see cref="IEnumerable{T}"/> sequence of records to a stream using a <see cref="JsonTypeInfo{T}"/>.
     /// </summary>
-    public static async ValueTask WriteToStreamAsync<T>(
+    public static async ValueTask WriteEnumerableToStreamAsync<T>(
         Stream stream,
         IEnumerable<T> records,
+        JsonlWriteOptions? options,
         JsonTypeInfo<T> typeInfo,
-        JsonlWriteOptions? options = null,
         bool leaveOpen = true,
         CancellationToken cancellationToken = default)
     {
@@ -313,8 +317,8 @@ public static partial class Jsonl
     public static async ValueTask WriteToStreamAsync<T>(
         Stream stream,
         IAsyncEnumerable<T> records,
+        JsonlWriteOptions? options,
         JsonTypeInfo<T> typeInfo,
-        JsonlWriteOptions? options = null,
         bool leaveOpen = true,
         CancellationToken cancellationToken = default)
     {

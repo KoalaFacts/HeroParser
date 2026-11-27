@@ -316,7 +316,10 @@ internal readonly struct Utf8SpanParserFactory
 
     private static byte[] ParseBase64Bytes(ReadOnlySpan<byte> span, CultureInfo _)
     {
-        if (new Utf8SpanParser(span).TryParseBase64Bytes(out var bytes))
+        var parser = new Utf8SpanParser(span);
+        if (span.IsEmpty || parser.IsNullOrWhiteSpace())
+            return null!;
+        if (parser.TryParseBase64Bytes(out var bytes))
             return bytes;
         ThrowFormatException();
         return [];

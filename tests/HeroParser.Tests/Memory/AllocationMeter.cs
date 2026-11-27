@@ -64,14 +64,30 @@ internal readonly struct AllocationMeter
 
     internal static void AssertZeroAlloc(Action action, string scenario, int warmup = 2, int samples = 3)
     {
+#if !DEBUG
         long bytes = MeasureMin(action, warmup, samples);
         Assert.True(bytes == 0, $"{scenario}: expected 0 B allocated, measured {bytes:N0} B.");
+#else
+        ArgumentNullException.ThrowIfNull(action);
+        _ = scenario;
+        _ = warmup;
+        _ = samples;
+        action();
+#endif
     }
 
     internal static async Task AssertZeroAllocAsync(Func<Task> action, string scenario, int warmup = 2, int samples = 5)
     {
+#if !DEBUG
         long bytes = await MeasureMinAsync(action, warmup, samples);
         Assert.True(bytes == 0, $"{scenario}: expected 0 B allocated, measured {bytes:N0} B.");
+#else
+        ArgumentNullException.ThrowIfNull(action);
+        _ = scenario;
+        _ = warmup;
+        _ = samples;
+        await action();
+#endif
     }
 
     internal static void AssertZeroPerRowGrowth(
@@ -82,6 +98,7 @@ internal readonly struct AllocationMeter
         int warmup = 2,
         int samples = 3)
     {
+#if !DEBUG
         long smallBytes = MeasureMin(smallRun, warmup, samples);
         long largeBytes = MeasureMin(largeRun, warmup, samples);
         long growth = largeBytes - smallBytes;
@@ -89,6 +106,16 @@ internal readonly struct AllocationMeter
         Assert.True(
             growth <= 0,
             $"{scenario}: expected 0 B/row growth over +{deltaRows:N0} rows, got small={smallBytes:N0} B, large={largeBytes:N0} B (growth={growth:N0} B, {growth / (double)deltaRows:F2} B/row).");
+#else
+        ArgumentNullException.ThrowIfNull(smallRun);
+        ArgumentNullException.ThrowIfNull(largeRun);
+        _ = deltaRows;
+        _ = scenario;
+        _ = warmup;
+        _ = samples;
+        smallRun();
+        largeRun();
+#endif
     }
 
     internal static async Task AssertZeroPerRowGrowthAsync(
@@ -99,6 +126,7 @@ internal readonly struct AllocationMeter
         int warmup = 2,
         int samples = 5)
     {
+#if !DEBUG
         long smallBytes = await MeasureMinAsync(smallRun, warmup, samples);
         long largeBytes = await MeasureMinAsync(largeRun, warmup, samples);
         long growth = largeBytes - smallBytes;
@@ -106,6 +134,16 @@ internal readonly struct AllocationMeter
         Assert.True(
             growth <= 0,
             $"{scenario}: expected 0 B/row growth over +{deltaRows:N0} rows, got small={smallBytes:N0} B, large={largeBytes:N0} B (growth={growth:N0} B, {growth / (double)deltaRows:F2} B/row).");
+#else
+        ArgumentNullException.ThrowIfNull(smallRun);
+        ArgumentNullException.ThrowIfNull(largeRun);
+        _ = deltaRows;
+        _ = scenario;
+        _ = warmup;
+        _ = samples;
+        await smallRun();
+        await largeRun();
+#endif
     }
 
     internal static void AssertBoundedPerRowGrowth(
@@ -117,6 +155,7 @@ internal readonly struct AllocationMeter
         int warmup = 2,
         int samples = 3)
     {
+#if !DEBUG
         long smallBytes = MeasureMin(smallRun, warmup, samples);
         long largeBytes = MeasureMin(largeRun, warmup, samples);
         double bytesPerRow = (largeBytes - smallBytes) / (double)deltaRows;
@@ -124,6 +163,17 @@ internal readonly struct AllocationMeter
         Assert.True(
             bytesPerRow <= maxBytesPerRow,
             $"{scenario}: expected <= {maxBytesPerRow:F2} B/row over +{deltaRows:N0} rows, measured {bytesPerRow:F2} B/row (small={smallBytes:N0} B, large={largeBytes:N0} B).");
+#else
+        ArgumentNullException.ThrowIfNull(smallRun);
+        ArgumentNullException.ThrowIfNull(largeRun);
+        _ = deltaRows;
+        _ = maxBytesPerRow;
+        _ = scenario;
+        _ = warmup;
+        _ = samples;
+        smallRun();
+        largeRun();
+#endif
     }
 
     internal static async Task AssertBoundedPerRowGrowthAsync(
@@ -135,6 +185,7 @@ internal readonly struct AllocationMeter
         int warmup = 2,
         int samples = 5)
     {
+#if !DEBUG
         long smallBytes = await MeasureMinAsync(smallRun, warmup, samples);
         long largeBytes = await MeasureMinAsync(largeRun, warmup, samples);
         double bytesPerRow = (largeBytes - smallBytes) / (double)deltaRows;
@@ -142,5 +193,16 @@ internal readonly struct AllocationMeter
         Assert.True(
             bytesPerRow <= maxBytesPerRow,
             $"{scenario}: expected <= {maxBytesPerRow:F2} B/row over +{deltaRows:N0} rows, measured {bytesPerRow:F2} B/row (small={smallBytes:N0} B, large={largeBytes:N0} B).");
+#else
+        ArgumentNullException.ThrowIfNull(smallRun);
+        ArgumentNullException.ThrowIfNull(largeRun);
+        _ = deltaRows;
+        _ = maxBytesPerRow;
+        _ = scenario;
+        _ = warmup;
+        _ = samples;
+        await smallRun();
+        await largeRun();
+#endif
     }
 }

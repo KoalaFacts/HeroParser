@@ -84,7 +84,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
     private static async Task<byte[]> WriteAsync(IEnumerable<Row> rows)
     {
         using var stream = new MemoryStream();
-        await HtbApi.Write<Row>().ToStreamAsync(stream, rows, leaveOpen: true);
+        await HtbApi.Write<Row>().ToStreamAsync(stream, rows, leaveOpen: true, TestContext.Current.CancellationToken);
         return stream.ToArray();
     }
 
@@ -95,7 +95,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
         if (configure is not null) builder = configure(builder);
 
         var result = new List<Row>();
-        await foreach (var row in builder.FromStreamAsync(stream, leaveOpen: true))
+        await foreach (var row in builder.FromStreamAsync(stream, leaveOpen: true, TestContext.Current.CancellationToken))
         {
             result.Add(row);
         }
@@ -122,11 +122,12 @@ public class HtbAsyncAndOptionsTests : IDisposable
     {
         string path = TempPath();
         var expected = Sample(4);
+        var ct = TestContext.Current.CancellationToken;
 
-        await HtbApi.Write<Row>().ToFileAsync(path, expected);
+        await HtbApi.Write<Row>().ToFileAsync(path, expected, ct);
 
         var actual = new List<Row>();
-        await foreach (var row in HtbApi.Read<Row>().FromFileAsync(path))
+        await foreach (var row in HtbApi.Read<Row>().FromFileAsync(path, ct))
         {
             actual.Add(row);
         }
@@ -141,7 +142,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
         var expected = Sample(3);
         using var stream = new MemoryStream();
 
-        await HtbApi.Write<Row>().ToStreamAsync(stream, AsAsync(expected), leaveOpen: true);
+        await HtbApi.Write<Row>().ToStreamAsync(stream, AsAsync(expected), leaveOpen: true, TestContext.Current.CancellationToken);
 
         var actual = await ReadAsync(stream.ToArray());
         Assert.Equal(expected.Count, actual.Count);
@@ -161,7 +162,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
     public async Task AsyncWrite_ToFileFromAnAsyncSequence()
     {
         string path = TempPath();
-        await HtbApi.Write<Row>().ToFileAsync(path, AsAsync(Sample(2)));
+        await HtbApi.Write<Row>().ToFileAsync(path, AsAsync(Sample(2)), TestContext.Current.CancellationToken);
 
         Assert.True(new FileInfo(path).Length > 0, "the file should contain the written rows");
 
@@ -232,7 +233,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
     {
         using var stream = new MemoryStream();
         var ex = await Assert.ThrowsAsync<HtbException>(
-            () => HtbApi.Write<Row>().WithMaxRowCount(2).ToStreamAsync(stream, Sample(5), leaveOpen: true));
+            () => HtbApi.Write<Row>().WithMaxRowCount(2).ToStreamAsync(stream, Sample(5), leaveOpen: true, TestContext.Current.CancellationToken));
         Assert.Equal(HtbErrorCode.LimitExceeded, ex.ErrorCode);
     }
 
@@ -241,7 +242,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
     {
         using var stream = new MemoryStream();
         var ex = await Assert.ThrowsAsync<HtbException>(
-            () => HtbApi.Write<Row>().WithMaxOutputSize(64).ToStreamAsync(stream, Sample(50), leaveOpen: true));
+            () => HtbApi.Write<Row>().WithMaxOutputSize(64).ToStreamAsync(stream, Sample(50), leaveOpen: true, TestContext.Current.CancellationToken));
         Assert.Equal(HtbErrorCode.LimitExceeded, ex.ErrorCode);
     }
 
@@ -252,7 +253,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
     {
         using var stream = new MemoryStream();
         await Assert.ThrowsAsync<HtbException>(
-            () => HtbApi.Write<Row>().WithMaxRowCount(limit).ToStreamAsync(stream, Sample(1), leaveOpen: true));
+            () => HtbApi.Write<Row>().WithMaxRowCount(limit).ToStreamAsync(stream, Sample(1), leaveOpen: true, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -260,7 +261,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
     {
         using var stream = new MemoryStream();
         await Assert.ThrowsAsync<HtbException>(
-            () => HtbApi.Write<Row>().WithMaxOutputSize(0).ToStreamAsync(stream, Sample(1), leaveOpen: true));
+            () => HtbApi.Write<Row>().WithMaxOutputSize(0).ToStreamAsync(stream, Sample(1), leaveOpen: true, TestContext.Current.CancellationToken));
     }
 
     // ---- progress --------------------------------------------------------------
@@ -273,7 +274,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
 
         await HtbApi.Write<Row>()
             .WithProgress(new SynchronousProgress<HtbWriteProgress>(reports.Add), intervalRows: 1)
-            .ToStreamAsync(stream, Sample(4), leaveOpen: true);
+            .ToStreamAsync(stream, Sample(4), leaveOpen: true, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(reports);
         Assert.Equal(4, reports[^1].RecordsWritten);
@@ -307,7 +308,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
         await Assert.ThrowsAsync<HtbException>(
             () => HtbApi.Write<Row>()
                 .WithProgress(new SynchronousProgress<HtbWriteProgress>(_ => { }), intervalRows: 0)
-                .ToStreamAsync(stream, Sample(1), leaveOpen: true));
+                .ToStreamAsync(stream, Sample(1), leaveOpen: true, TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -430,7 +431,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
 
         var read = new List<PartialRow>();
         using var stream = new MemoryStream(bytes);
-        await foreach (var row in HtbApi.Read<PartialRow>().FromStreamAsync(stream, leaveOpen: true))
+        await foreach (var row in HtbApi.Read<PartialRow>().FromStreamAsync(stream, leaveOpen: true, TestContext.Current.CancellationToken))
         {
             read.Add(row);
         }
@@ -466,7 +467,7 @@ public class HtbAsyncAndOptionsTests : IDisposable
 
         var read = new List<PartialRow>();
         using var stream = new MemoryStream(bytes);
-        await foreach (var row in HtbApi.Read<PartialRow>().SkipRows(3).FromStreamAsync(stream, leaveOpen: true))
+        await foreach (var row in HtbApi.Read<PartialRow>().SkipRows(3).FromStreamAsync(stream, leaveOpen: true, TestContext.Current.CancellationToken))
         {
             read.Add(row);
         }
@@ -484,13 +485,160 @@ public class HtbAsyncAndOptionsTests : IDisposable
 
         var read = new List<PartialRow>();
         using var stream = new ForwardOnlyStream(bytes);
-        await foreach (var row in HtbApi.Read<PartialRow>().FromStreamAsync(stream, leaveOpen: true))
+        await foreach (var row in HtbApi.Read<PartialRow>().FromStreamAsync(stream, leaveOpen: true, TestContext.Current.CancellationToken))
         {
             read.Add(row);
         }
 
         Assert.Equal(3, read.Count);
         Assert.Equal("row-2", read[2].Name);
+    }
+
+    [Fact]
+    public async Task AsyncRead_And_AsyncWrite_WithCancellationToken_CancelCleanly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var sample = Sample(3);
+
+        string htbFile = TempPath();
+        await HtbApi.Write<Row>().ToFileAsync(htbFile, sample, ct);
+
+        await using var stream = new MemoryStream();
+        await HtbApi.Write<Row>().ToStreamAsync(stream, sample, leaveOpen: true, ct);
+
+        var fileRows = new List<PartialRow>();
+        await foreach (var item in HtbApi.Read<PartialRow>().FromFileAsync(htbFile, ct))
+        {
+            fileRows.Add(item);
+        }
+        Assert.Equal(3, fileRows.Count);
+
+        stream.Position = 0;
+        var streamRows = new List<PartialRow>();
+        await foreach (var item in HtbApi.Read<PartialRow>().FromStreamAsync(stream, leaveOpen: true, ct))
+        {
+            streamRows.Add(item);
+        }
+        Assert.Equal(3, streamRows.Count);
+
+        using var canceledCts = new CancellationTokenSource();
+        canceledCts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => HtbApi.Write<Row>().ToStreamAsync(stream, sample, leaveOpen: true, canceledCts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            stream.Position = 0;
+            await foreach (var _ in HtbApi.Read<PartialRow>().FromStreamAsync(stream, leaveOpen: true, canceledCts.Token))
+            {
+            }
+        });
+    }
+
+    [Fact(Timeout = 15_000)]
+    public async Task AsyncRead_LenientModeAndOnError_DoNotSwallowOperationCanceledException()
+    {
+        byte[] bytes = await WriteAsync(Sample(2));
+        using var stalled = new StallingAfterPrefixStream(bytes, bytes.Length - 2);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+
+        bool onErrorInvoked = false;
+        Task consumeTask = Task.Run(async () =>
+        {
+            await foreach (var _ in HtbApi.Read<PartialRow>()
+                .WithValidationMode(HeroParser.Validation.ValidationMode.Lenient)
+                .OnError((_, _) =>
+                {
+                    onErrorInvoked = true;
+                    return HtbDeserializeErrorAction.SkipRecord;
+                })
+                .FromStreamAsync(stalled, leaveOpen: true, cts.Token))
+            {
+            }
+        }, TestContext.Current.CancellationToken);
+
+        await stalled.StalledTask.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await consumeTask);
+        Assert.False(onErrorInvoked);
+    }
+
+    [Fact]
+    public async Task StreamAsyncOverloads_ResolveUnambiguouslyWithDefaultToken()
+    {
+        var sample = Sample(2);
+        byte[] writtenBytes;
+#pragma warning disable xUnit1051 // Intentional default literal compile-time overload ambiguity check
+        using (var writeStream = new MemoryStream())
+        {
+            await HtbApi.Write<Row>().ToStreamAsync(writeStream, sample, default);
+            writtenBytes = writeStream.ToArray();
+        }
+
+        using (var asyncWriteStream = new MemoryStream())
+        {
+            await HtbApi.Write<Row>().ToStreamAsync(asyncWriteStream, AsAsync(sample), default);
+            Assert.Equal(writtenBytes, asyncWriteStream.ToArray());
+        }
+
+        using var readStream = new MemoryStream(writtenBytes);
+        var loaded = new List<Row>();
+        await foreach (var row in HtbApi.Read<Row>().FromStreamAsync(readStream, default))
+        {
+            loaded.Add(row);
+        }
+#pragma warning restore xUnit1051
+
+        Assert.Equal(sample.Count, loaded.Count);
+        AssertSame(sample[0], loaded[0]);
+        AssertSame(sample[1], loaded[1]);
+
+        static async IAsyncEnumerable<Row> AsAsync(IEnumerable<Row> rows)
+        {
+            foreach (var row in rows)
+            {
+                await Task.Yield();
+                yield return row;
+            }
+        }
+    }
+
+    private sealed class StallingAfterPrefixStream(byte[] data, int stallAfterBytes) : Stream
+    {
+        private readonly TaskCompletionSource stalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int position;
+
+        public Task StalledTask => stalled.Task;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (position < stallAfterBytes)
+            {
+                int toCopy = Math.Min(buffer.Length, stallAfterBytes - position);
+                data.AsSpan(position, toCopy).CopyTo(buffer.Span);
+                position += toCopy;
+                return toCopy;
+            }
+
+            stalled.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
     }
 
     /// <summary>A read-only stream that reports itself unseekable, like a socket.</summary>
@@ -518,6 +666,48 @@ public class HtbAsyncAndOptionsTests : IDisposable
         {
             if (disposing) inner.Dispose();
             base.Dispose(disposing);
+        }
+    }
+
+    public sealed class LargeTailRow
+    {
+        public int Id { get; set; }
+        public string LargeTail { get; set; } = "";
+    }
+
+    public sealed class IdOnlyRow
+    {
+        public int Id { get; set; }
+    }
+
+    [Fact]
+    public async Task TruncatedLargeString_SkipColumnOnSeekableStream_ThrowsCorruptDataSyncAndAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var outMs = new MemoryStream();
+        HtbApi.Write<LargeTailRow>().ToStream(
+            outMs,
+            [new LargeTailRow { Id = 42, LargeTail = new string('x', 20_000) }],
+            leaveOpen: true);
+
+        byte[] fullBytes = outMs.ToArray();
+        byte[] truncatedBytes = fullBytes[..(fullBytes.Length - 5_000)];
+
+        using (var syncStream = new MemoryStream(truncatedBytes))
+        {
+            var ex = Assert.Throws<HtbException>(() => { _ = HtbApi.Read<IdOnlyRow>().FromStream(syncStream).ToList(); });
+            Assert.Equal(HtbErrorCode.CorruptData, ex.ErrorCode);
+        }
+
+        await using (var asyncStream = new MemoryStream(truncatedBytes))
+        {
+            var ex = await Assert.ThrowsAsync<HtbException>(async () =>
+            {
+                await foreach (var _ in HtbApi.Read<IdOnlyRow>().FromStreamAsync(asyncStream, leaveOpen: true, ct))
+                {
+                }
+            });
+            Assert.Equal(HtbErrorCode.CorruptData, ex.ErrorCode);
         }
     }
 }

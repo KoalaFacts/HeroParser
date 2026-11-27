@@ -492,6 +492,17 @@ public sealed class FixedWidthRecordWriter<T>
                 }
 
             case byte[] bytes:
+                if (bytes.Length == 0)
+                {
+                    ReadOnlySpan<char> emptyToken = Utf8SpanParser.EMPTY_BASE64_TOKEN.AsSpan();
+                    if (emptyToken.TryCopyTo(destination))
+                    {
+                        charsWritten = emptyToken.Length;
+                        return true;
+                    }
+                    charsWritten = 0;
+                    return false;
+                }
                 return Convert.TryToBase64Chars(bytes, destination, out charsWritten);
 
             case Guid g:
@@ -517,7 +528,7 @@ public sealed class FixedWidthRecordWriter<T>
 
         if (value is byte[] bytes)
         {
-            return Convert.ToBase64String(bytes);
+            return bytes.Length == 0 ? Utf8SpanParser.EMPTY_BASE64_TOKEN : Convert.ToBase64String(bytes);
         }
 
         if (value is IFormattable formattable)

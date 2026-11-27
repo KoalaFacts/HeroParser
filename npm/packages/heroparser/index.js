@@ -101,7 +101,7 @@ export function convertFixedWidthToCsv(fixedWidthText, specs = [], options = {})
 export function writeExcel(records, sheetName = "Sheet1", hasHeader = true) {
   ensureInitialized();
   return exports.HeroParser.Wasm.HeroParserWasm.WriteExcel(
-    JSON.stringify(records),
+    typeof records === "string" ? records : JSON.stringify(records),
     sheetName,
     hasHeader,
   );
@@ -109,10 +109,21 @@ export function writeExcel(records, sheetName = "Sheet1", hasHeader = true) {
 
 export function writeExcelMultiSheet(sheets, hasHeader = true) {
   ensureInitialized();
-  return exports.HeroParser.Wasm.HeroParserWasm.WriteExcelMultiSheet(
-    JSON.stringify(sheets),
-    hasHeader,
-  );
+  let sheetsJson;
+  if (typeof sheets === "string") {
+    sheetsJson = sheets;
+  } else {
+    const serialized = sheets.map((sheet) => {
+      if (sheet === null || typeof sheet !== "object") {
+        return JSON.stringify(sheet);
+      }
+      const recordsJson =
+        typeof sheet.records === "string" ? sheet.records : JSON.stringify(sheet.records ?? []);
+      return `{"name":${JSON.stringify(sheet.name ?? "")},"records":${recordsJson}}`;
+    });
+    sheetsJson = `[${serialized.join(",")}]`;
+  }
+  return exports.HeroParser.Wasm.HeroParserWasm.WriteExcelMultiSheet(sheetsJson, hasHeader);
 }
 
 export function validateCsv(csvText, options = {}) {
@@ -153,6 +164,7 @@ export function convertCsvToJsonl(csvText, options = {}) {
     csvText,
     options?.delimiter ?? null,
     options?.hasHeader ?? true,
+    options?.allowNewlinesInsideQuotes ?? false,
   );
 }
 
@@ -162,8 +174,19 @@ export function readJsonl(jsonlText) {
   return JSON.parse(resultJson);
 }
 
-export function writeJsonl(records) {
+export function readJsonlAsJson(jsonlText, options = {}) {
   ensureInitialized();
+  return exports.HeroParser.Wasm.HeroParserWasm.ParseJsonlToFormattedJson(
+    jsonlText,
+    options?.indented ?? false,
+  );
+}
+
+export function writeJsonl(records, inputFormat) {
+  ensureInitialized();
+  if (typeof records === "string") {
+    return exports.HeroParser.Wasm.HeroParserWasm.RewriteJsonl(records, inputFormat ?? "jsonl");
+  }
   return exports.HeroParser.Wasm.HeroParserWasm.WriteJsonl(JSON.stringify(records));
 }
 

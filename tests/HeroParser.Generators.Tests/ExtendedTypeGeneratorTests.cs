@@ -1,5 +1,8 @@
 using System.Collections.Immutable;
+using System.Reflection;
+using System.Runtime.Loader;
 using HeroParser.Generators;
+using HeroParser.Htbs.Records;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
@@ -152,6 +155,108 @@ public class ExtendedTypeGeneratorTests
         Assert.Contains(hero001, m => m.Contains("Slice"));
         Assert.Contains(hero001, m => m.Contains("Numbers"));
         Assert.Contains(hero001, m => m.Contains("Items"));
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void HtbGenerator_ReadOnlyAndInitOnlyProperties_CompileAndRoundTripWritableColumns()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string SOURCE = """
+            #nullable enable
+            using System;
+            using System.Collections.Generic;
+            using System.IO;
+            using System.Linq;
+            using HeroParser;
+            using HeroParser.Htbs.Records;
+
+            namespace HtbReadOnlyTestNs;
+
+            [GenerateBinder]
+            public sealed class ReportRow
+            {
+                public int Id { get; set; }
+
+                public DateOnly ReportDate => new(2026, 11, 25);
+
+                public DateOnly InitDate { get; init; } = new(2026, 1, 2);
+
+                public string WriteOnlyNote
+                {
+                    set => LastNote = value;
+                }
+
+                public string? LastNote { get; set; }
+            }
+
+            public static class Harness
+            {
+                public static (int ColumnCount, string[] ColumnNames, int ReadId, string? ReadNote) RunRoundTrip()
+                {
+                    var schema = HtbSchema.FromType<ReportRow>();
+                    var names = new string[schema.Columns.Count];
+                    for (int i = 0; i < schema.Columns.Count; i++)
+                        names[i] = schema.Columns[i].Name;
+
+                    using var ms = new MemoryStream();
+                    Htb.Write<ReportRow>().ToStream(ms, [new ReportRow { Id = 42, InitDate = new(2026, 5, 6), LastNote = "ok" }], leaveOpen: true);
+                    ms.Position = 0;
+                    List<ReportRow> back = Htb.Read<ReportRow>().FromStream(ms).ToList();
+                    return (schema.Columns.Count, names, back[0].Id, back[0].LastNote);
+                }
+            }
+            """;
+
+        var (diagnostics, generated, errors) = RunAllGenerators(SOURCE, ct);
+        Assert.DoesNotContain(diagnostics, d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning);
+        Assert.Empty(errors);
+        Assert.Contains("HtbInlineBinder_HtbReadOnlyTestNs_ReportRow", generated);
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(SOURCE, cancellationToken: ct);
+        var platformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("Trusted platform assemblies are unavailable.");
+        var references = platformAssemblies.Split(Path.PathSeparator)
+            .Where(path => Path.GetFileName(path) is var name &&
+                (name.StartsWith("System.", StringComparison.Ordinal) ||
+                 name is "netstandard.dll" or "System.Private.CoreLib.dll"))
+            .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
+            .Append(MetadataReference.CreateFromFile(typeof(Csv).Assembly.Location))
+            .ToList();
+
+        var compilation = CSharpCompilation.Create(
+            "HtbReadOnlyRuntimeAssembly",
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+
+        CSharpGeneratorDriver.Create(new HtbRecordBinderGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var updatedCompilation, out _, ct);
+
+        using var peStream = new MemoryStream();
+        var emit = updatedCompilation.Emit(peStream, cancellationToken: ct);
+        Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
+
+        peStream.Position = 0;
+        var alc = new AssemblyLoadContext("HtbReadOnlyAlc", isCollectible: true);
+        try
+        {
+            var asm = alc.LoadFromStream(peStream);
+            var harness = asm.GetType("HtbReadOnlyTestNs.Harness")!;
+            (int colCount, string[] colNames, int readId, string? readNote) =
+                ((int, string[], int, string?))harness.GetMethod("RunRoundTrip", BindingFlags.Static | BindingFlags.Public)!.Invoke(null, null)!;
+
+            Assert.Equal(4, colCount);
+            Assert.Contains("ReportDate", colNames);
+            Assert.Contains("InitDate", colNames);
+            Assert.DoesNotContain("WriteOnlyNote", colNames);
+            Assert.Equal(42, readId);
+            Assert.Equal("ok", readNote);
+        }
+        finally
+        {
+            alc.Unload();
+        }
     }
 
     private static (ImmutableArray<Diagnostic> Diagnostics, string GeneratedSource, IReadOnlyList<Diagnostic> CompilationErrors)

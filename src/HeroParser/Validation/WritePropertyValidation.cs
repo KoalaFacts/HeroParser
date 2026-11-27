@@ -1,7 +1,5 @@
 using System.Globalization;
-using System.Numerics;
 using System.Text.RegularExpressions;
-using HeroParser.Internal;
 
 namespace HeroParser.Validation;
 
@@ -61,17 +59,34 @@ public sealed record WritePropertyValidation(
     {
         bool hasErrors = false;
 
-        string? rawValue = value is IFormattable formattable
-            ? formattable.ToString(null, culture)
-            : value?.ToString();
+        if (value is float[] floats)
+            return ValidateCollectionLength(floats.Length, propertyName, rowNumber, columnIndex, errors);
 
-        if (NotNull && (value is null || string.IsNullOrWhiteSpace(rawValue)))
+        if (value is byte[])
+            return false;
+
+        string? rawValue = value as string;
+        bool rawValueComputed = value is null or string;
+
+        string? GetRawValue()
+        {
+            if (!rawValueComputed)
+            {
+                rawValue = value is IFormattable formattable
+                    ? formattable.ToString(null, culture)
+                    : value?.ToString();
+                rawValueComputed = true;
+            }
+            return rawValue;
+        }
+
+        if (NotNull && (value is null || (!IsKnownNonEmptyValueType(value) && string.IsNullOrWhiteSpace(GetRawValue()))))
         {
             errors.Add(new ValidationError
             {
                 PropertyName = propertyName,
                 ColumnName = null,
-                RawValue = rawValue,
+                RawValue = GetRawValue(),
                 Rule = "NotNull",
                 Message = $"Field '{propertyName}' must not be null or empty.",
                 RowNumber = rowNumber,
@@ -80,13 +95,13 @@ public sealed record WritePropertyValidation(
             hasErrors = true;
         }
 
-        if (NotEmpty && value is not null && string.IsNullOrWhiteSpace(rawValue))
+        if (NotEmpty && value is not null && !IsKnownNonEmptyValueType(value) && string.IsNullOrWhiteSpace(GetRawValue()))
         {
             errors.Add(new ValidationError
             {
                 PropertyName = propertyName,
                 ColumnName = null,
-                RawValue = rawValue,
+                RawValue = GetRawValue(),
                 Rule = "NotEmpty",
                 Message = $"Field '{propertyName}' must not be empty or whitespace.",
                 RowNumber = rowNumber,
@@ -97,83 +112,47 @@ public sealed record WritePropertyValidation(
 
         if (value is not null)
         {
-            string str = rawValue ?? string.Empty;
-
-            if (MinLength.HasValue && str.Length < MinLength.Value)
+            if (MinLength.HasValue || MaxLength.HasValue || CompiledPattern is not null)
             {
-                errors.Add(new ValidationError
-                {
-                    PropertyName = propertyName,
-                    ColumnName = null,
-                    RawValue = rawValue,
-                    Rule = "MinLength",
-                    Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {str.Length} is less than minimum {MinLength.Value}."),
-                    RowNumber = rowNumber,
-                    ColumnIndex = columnIndex
-                });
-                hasErrors = true;
-            }
+                string str = GetRawValue() ?? string.Empty;
 
-            if (MaxLength.HasValue && str.Length > MaxLength.Value)
-            {
-                errors.Add(new ValidationError
-                {
-                    PropertyName = propertyName,
-                    ColumnName = null,
-                    RawValue = rawValue,
-                    Rule = "MaxLength",
-                    Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {str.Length} exceeds maximum {MaxLength.Value}."),
-                    RowNumber = rowNumber,
-                    ColumnIndex = columnIndex
-                });
-                hasErrors = true;
-            }
-
-            if (RangeMin.HasValue || RangeMax.HasValue)
-            {
-                if (TryToDouble(value, culture, out double numericValue))
-                {
-                    if (RangeMin.HasValue && numericValue < RangeMin.Value)
-                    {
-                        errors.Add(new ValidationError
-                        {
-                            PropertyName = propertyName,
-                            ColumnName = null,
-                            RawValue = rawValue,
-                            Rule = "Range",
-                            Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} is less than minimum {RangeMin.Value}."),
-                            RowNumber = rowNumber,
-                            ColumnIndex = columnIndex
-                        });
-                        hasErrors = true;
-                    }
-
-                    if (RangeMax.HasValue && numericValue > RangeMax.Value)
-                    {
-                        errors.Add(new ValidationError
-                        {
-                            PropertyName = propertyName,
-                            ColumnName = null,
-                            RawValue = rawValue,
-                            Rule = "Range",
-                            Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {numericValue} exceeds maximum {RangeMax.Value}."),
-                            RowNumber = rowNumber,
-                            ColumnIndex = columnIndex
-                        });
-                        hasErrors = true;
-                    }
-                }
-            }
-
-            if (CompiledPattern is { } regex)
-            {
-                if (!regex.IsMatch(str))
+                if (MinLength.HasValue && str.Length < MinLength.Value)
                 {
                     errors.Add(new ValidationError
                     {
                         PropertyName = propertyName,
                         ColumnName = null,
-                        RawValue = rawValue,
+                        RawValue = str,
+                        Rule = "MinLength",
+                        Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {str.Length} is less than minimum {MinLength.Value}."),
+                        RowNumber = rowNumber,
+                        ColumnIndex = columnIndex
+                    });
+                    hasErrors = true;
+                }
+
+                if (MaxLength.HasValue && str.Length > MaxLength.Value)
+                {
+                    errors.Add(new ValidationError
+                    {
+                        PropertyName = propertyName,
+                        ColumnName = null,
+                        RawValue = str,
+                        Rule = "MaxLength",
+                        Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {str.Length} exceeds maximum {MaxLength.Value}."),
+                        RowNumber = rowNumber,
+                        ColumnIndex = columnIndex
+                    });
+                    hasErrors = true;
+                }
+
+                if (CompiledPattern is { } regex && !regex.IsMatch(str))
+                {
+                    errors.Add(new ValidationError
+                    {
+                        PropertyName = propertyName,
+                        ColumnName = null,
+                        RawValue = str,
                         Rule = "Pattern",
                         Message = $"Field '{propertyName}' value '{str}' does not match pattern '{Pattern}'.",
                         RowNumber = rowNumber,
@@ -182,41 +161,91 @@ public sealed record WritePropertyValidation(
                     hasErrors = true;
                 }
             }
+
+            if (RangeMin.HasValue || RangeMax.HasValue)
+            {
+                if (new NumericRangeCheck(RangeMin, RangeMax).TryEvaluate(value, culture, out bool belowMin, out bool aboveMax, out string formattedValue))
+                {
+                    if (belowMin)
+                    {
+                        errors.Add(new ValidationError
+                        {
+                            PropertyName = propertyName,
+                            ColumnName = null,
+                            RawValue = formattedValue.Length > 0 ? formattedValue : GetRawValue(),
+                            Rule = "Range",
+                            Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {formattedValue} is less than minimum {RangeMin!.Value}."),
+                            RowNumber = rowNumber,
+                            ColumnIndex = columnIndex
+                        });
+                        hasErrors = true;
+                    }
+
+                    if (aboveMax)
+                    {
+                        errors.Add(new ValidationError
+                        {
+                            PropertyName = propertyName,
+                            ColumnName = null,
+                            RawValue = formattedValue.Length > 0 ? formattedValue : GetRawValue(),
+                            Rule = "Range",
+                            Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' value {formattedValue} exceeds maximum {RangeMax!.Value}."),
+                            RowNumber = rowNumber,
+                            ColumnIndex = columnIndex
+                        });
+                        hasErrors = true;
+                    }
+                }
+            }
         }
 
         return hasErrors;
     }
 
-    private static bool TryToDouble(object value, CultureInfo culture, out double numericValue)
+    internal bool ValidateCollectionLength(
+        int length,
+        string propertyName,
+        int rowNumber,
+        int columnIndex,
+        List<ValidationError> errors)
     {
-        switch (value)
+        bool hasErrors = false;
+
+        if (MinLength.HasValue && length < MinLength.Value)
         {
-            case string text:
-                // Same styles as Convert.ToDouble(string); also accepts ASCII '-' where the culture's sign carries bidi marks.
-                return new CultureNumberParser(culture).TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, out numericValue);
-            case Half h:
-                numericValue = (double)h;
-                return true;
-            case Int128 i128:
-                numericValue = (double)i128;
-                return true;
-            case UInt128 u128:
-                numericValue = (double)u128;
-                return true;
-            case BigInteger bi:
-                numericValue = (double)bi;
-                return true;
-            default:
-                try
-                {
-                    numericValue = Convert.ToDouble(value, culture);
-                    return true;
-                }
-                catch (Exception)
-                {
-                    numericValue = 0;
-                    return false;
-                }
+            errors.Add(new ValidationError
+            {
+                PropertyName = propertyName,
+                ColumnName = null,
+                RawValue = null,
+                Rule = "MinLength",
+                Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {length} is less than minimum {MinLength.Value}."),
+                RowNumber = rowNumber,
+                ColumnIndex = columnIndex
+            });
+            hasErrors = true;
         }
+
+        if (MaxLength.HasValue && length > MaxLength.Value)
+        {
+            errors.Add(new ValidationError
+            {
+                PropertyName = propertyName,
+                ColumnName = null,
+                RawValue = null,
+                Rule = "MaxLength",
+                Message = string.Create(CultureInfo.InvariantCulture, $"Field '{propertyName}' length {length} exceeds maximum {MaxLength.Value}."),
+                RowNumber = rowNumber,
+                ColumnIndex = columnIndex
+            });
+            hasErrors = true;
+        }
+
+        return hasErrors;
     }
+
+    private static bool IsKnownNonEmptyValueType(object value)
+        => value is bool or byte or sbyte or short or ushort or int or uint or long or ulong
+            or float or double or decimal or Half or Int128 or UInt128
+            or DateTime or DateTimeOffset or DateOnly or TimeOnly or TimeSpan or Guid;
 }

@@ -15,10 +15,12 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
 {
     private readonly Stream stream;
     private readonly HtbWriteOptions options;
+    private long? maxOutputSizeLimit;
     private readonly bool leaveOpen;
     private readonly byte[] buffer;
     private int bufferPos;
     private long bytesWrittenTotal;
+    private protected CancellationToken activeCancellationToken;
 
     private bool headerWritten;
     private bool isDisposed;
@@ -45,6 +47,7 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     {
         this.stream = stream ?? throw new ArgumentNullException(nameof(stream));
         this.options = options ?? HtbWriteOptions.Default;
+        maxOutputSizeLimit = this.options.MaxOutputSize;
         this.leaveOpen = leaveOpen;
         buffer = ArrayPool<byte>.Shared.Rent(16 * 1024); // 16 KB internal write buffer
     }
@@ -60,6 +63,7 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
         {
             throw new HtbException(HtbErrorCode.SerializationError, "Header was already written.");
         }
+        ValidateSchemaColumnNames(schema);
 
         Schema = schema;
         EnsureBuffer(4 + 4); // Magic (4) + ColumnCount (4)
@@ -93,6 +97,7 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
             }
             else
             {
+                EnsureCanWriteBytes(nameByteCount);
                 Flush();
                 byte[] temp = ArrayPool<byte>.Shared.Rent(nameByteCount);
                 try
@@ -100,7 +105,6 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
                     Encoding.UTF8.GetBytes(col.Name, 0, col.Name.Length, temp, 0);
                     stream.Write(temp, 0, nameByteCount);
                     bytesWrittenTotal += nameByteCount;
-                    CheckMaxOutputSize();
                 }
                 finally
                 {
@@ -112,11 +116,25 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
         headerWritten = true;
     }
 
+    private static void ValidateSchemaColumnNames(HtbSchema schema)
+    {
+        for (int i = 0; i < schema.Columns.Count; i++)
+        {
+            int nameByteCount = Encoding.UTF8.GetByteCount(schema.Columns[i].Name);
+            if (nameByteCount > HtbSchema.MAX_COLUMN_NAME_BYTES)
+            {
+                throw new HtbException(
+                    HtbErrorCode.SerializationError,
+                    $"Column name at index {i} exceeds the maximum UTF-8 length of {HtbSchema.MAX_COLUMN_NAME_BYTES} bytes (got {nameByteCount} bytes).");
+            }
+        }
+    }
+
     /// <summary>
     /// Writes the HTB header block asynchronously.
     /// </summary>
     public Task WriteHeaderAsync(HtbSchema schema)
-        => WriteHeaderAsync(schema, CancellationToken.None).AsTask();
+        => WriteHeaderAsync(schema, activeCancellationToken).AsTask();
 
     internal async ValueTask WriteHeaderAsync(HtbSchema schema, CancellationToken cancellationToken)
     {
@@ -126,6 +144,7 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
         {
             throw new HtbException(HtbErrorCode.SerializationError, "Header was already written.");
         }
+        ValidateSchemaColumnNames(schema);
 
         Schema = schema;
         await EnsureBufferAsync(4 + 4, cancellationToken).ConfigureAwait(false);
@@ -159,6 +178,7 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
             }
             else
             {
+                EnsureCanWriteBytes(nameByteCount);
                 await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
                 byte[] temp = ArrayPool<byte>.Shared.Rent(nameByteCount);
                 try
@@ -166,7 +186,6 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
                     Encoding.UTF8.GetBytes(col.Name, 0, col.Name.Length, temp, 0);
                     await stream.WriteAsync(temp.AsMemory(0, nameByteCount), cancellationToken).ConfigureAwait(false);
                     bytesWrittenTotal += nameByteCount;
-                    CheckMaxOutputSize();
                 }
                 finally
                 {
@@ -220,7 +239,7 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ValueTask WriteMaskAsync(ReadOnlyMemory<byte> mask)
-        => WriteMaskAsync(mask, CancellationToken.None);
+        => WriteMaskAsync(mask, activeCancellationToken);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal async ValueTask WriteMaskAsync(ReadOnlyMemory<byte> mask, CancellationToken cancellationToken)
@@ -315,6 +334,14 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(val);
         int byteCount = Encoding.UTF8.GetByteCount(val);
+        if (byteCount > HtbSchema.MAX_PAYLOAD_BYTES)
+        {
+            throw new HtbException(
+                HtbErrorCode.SerializationError,
+                $"String byte length {byteCount} exceeds maximum HTB payload size of {HtbSchema.MAX_PAYLOAD_BYTES} bytes.");
+        }
+
+        EnsureCanWriteBytes(4L + byteCount);
         EnsureBuffer(4);
         BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(bufferPos), byteCount);
         bufferPos += 4;
@@ -334,7 +361,6 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
                 Encoding.UTF8.GetBytes(val, 0, val.Length, temp, 0);
                 stream.Write(temp, 0, byteCount);
                 bytesWrittenTotal += byteCount;
-                CheckMaxOutputSize();
             }
             finally
             {
@@ -347,6 +373,14 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(val);
         int byteCount = Encoding.UTF8.GetByteCount(val);
+        if (byteCount > HtbSchema.MAX_PAYLOAD_BYTES)
+        {
+            throw new HtbException(
+                HtbErrorCode.SerializationError,
+                $"String byte length {byteCount} exceeds maximum HTB payload size of {HtbSchema.MAX_PAYLOAD_BYTES} bytes.");
+        }
+
+        EnsureCanWriteBytes(4L + byteCount);
         await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(bufferPos), byteCount);
         bufferPos += 4;
@@ -366,7 +400,6 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
                 Encoding.UTF8.GetBytes(val, 0, val.Length, temp, 0);
                 await stream.WriteAsync(temp.AsMemory(0, byteCount), cancellationToken).ConfigureAwait(false);
                 bytesWrittenTotal += byteCount;
-                CheckMaxOutputSize();
             }
             finally
             {
@@ -379,11 +412,19 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     public void WriteFloatArray(float[] val)
     {
         ArgumentNullException.ThrowIfNull(val);
+        if (val.Length > HtbSchema.MAX_FLOAT_ARRAY_LENGTH)
+        {
+            throw new HtbException(
+                HtbErrorCode.SerializationError,
+                $"Float array length {val.Length} exceeds maximum HTB length of {HtbSchema.MAX_FLOAT_ARRAY_LENGTH} elements.");
+        }
+
+        int byteLen = val.Length * 4;
+        EnsureCanWriteBytes(4L + byteLen);
         EnsureBuffer(4);
         BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(bufferPos), val.Length);
         bufferPos += 4;
 
-        int byteLen = val.Length * 4;
         if (!BitConverter.IsLittleEndian)
         {
             if (val.Length > 0)
@@ -432,13 +473,21 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
             var floatBytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes(val.AsSpan());
             stream.Write(floatBytes);
             bytesWrittenTotal += byteLen;
-            CheckMaxOutputSize();
         }
     }
 
     internal async ValueTask WriteFloatArrayAsync(float[] val, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(val);
+        if (val.Length > HtbSchema.MAX_FLOAT_ARRAY_LENGTH)
+        {
+            throw new HtbException(
+                HtbErrorCode.SerializationError,
+                $"Float array length {val.Length} exceeds maximum HTB length of {HtbSchema.MAX_FLOAT_ARRAY_LENGTH} elements.");
+        }
+
+        int byteLen = val.Length * 4;
+        EnsureCanWriteBytes(4L + byteLen);
         await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(bufferPos), val.Length);
         bufferPos += 4;
@@ -446,7 +495,6 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
         if (val.Length == 0)
             return;
 
-        int byteLen = val.Length * 4;
         if (byteLen <= buffer.Length)
         {
             await EnsureBufferAsync(byteLen, cancellationToken).ConfigureAwait(false);
@@ -462,7 +510,6 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
                 CopyFloatBytesLittleEndian(val, temp.AsSpan(0, byteLen));
                 await stream.WriteAsync(temp.AsMemory(0, byteLen), cancellationToken).ConfigureAwait(false);
                 bytesWrittenTotal += byteLen;
-                CheckMaxOutputSize();
             }
             finally
             {
@@ -623,6 +670,13 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     public void WriteBigInteger(BigInteger val)
     {
         int byteCount = val.GetByteCount(isUnsigned: false);
+        if (byteCount > HtbSchema.MAX_PAYLOAD_BYTES)
+        {
+            throw new HtbException(
+                HtbErrorCode.SerializationError,
+                $"BigInteger byte length {byteCount} exceeds maximum HTB payload size of {HtbSchema.MAX_PAYLOAD_BYTES} bytes.");
+        }
+
         byte[]? rented = byteCount > 256 ? ArrayPool<byte>.Shared.Rent(byteCount) : null;
         Span<byte> scratch = rented is null ? stackalloc byte[256] : (Span<byte>)rented;
         try
@@ -658,6 +712,13 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     internal async ValueTask WriteBigIntegerAsync(BigInteger val, CancellationToken cancellationToken)
     {
         int byteCount = val.GetByteCount(isUnsigned: false);
+        if (byteCount > HtbSchema.MAX_PAYLOAD_BYTES)
+        {
+            throw new HtbException(
+                HtbErrorCode.SerializationError,
+                $"BigInteger byte length {byteCount} exceeds maximum HTB payload size of {HtbSchema.MAX_PAYLOAD_BYTES} bytes.");
+        }
+
         byte[] rented = ArrayPool<byte>.Shared.Rent(Math.Max(1, byteCount));
         try
         {
@@ -681,6 +742,14 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
 
     private async ValueTask WriteLengthPrefixedBytesAsync(ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken)
     {
+        if (bytes.Length > HtbSchema.MAX_PAYLOAD_BYTES)
+        {
+            throw new HtbException(
+                HtbErrorCode.SerializationError,
+                $"Binary payload length {bytes.Length} exceeds maximum HTB payload size of {HtbSchema.MAX_PAYLOAD_BYTES} bytes.");
+        }
+
+        EnsureCanWriteBytes(4L + bytes.Length);
         await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(bufferPos), bytes.Length);
         bufferPos += 4;
@@ -699,12 +768,19 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
             await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
             await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
             bytesWrittenTotal += bytes.Length;
-            CheckMaxOutputSize();
         }
     }
 
     private void WriteLengthPrefixedBytes(ReadOnlySpan<byte> bytes)
     {
+        if (bytes.Length > HtbSchema.MAX_PAYLOAD_BYTES)
+        {
+            throw new HtbException(
+                HtbErrorCode.SerializationError,
+                $"Binary payload length {bytes.Length} exceeds maximum HTB payload size of {HtbSchema.MAX_PAYLOAD_BYTES} bytes.");
+        }
+
+        EnsureCanWriteBytes(4L + bytes.Length);
         EnsureBuffer(4);
         BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(bufferPos), bytes.Length);
         bufferPos += 4;
@@ -723,7 +799,46 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
             Flush();
             stream.Write(bytes);
             bytesWrittenTotal += bytes.Length;
-            CheckMaxOutputSize();
+        }
+    }
+
+    internal void WriteRawBytes(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.IsEmpty)
+            return;
+
+        EnsureCanWriteBytes(bytes.Length);
+        if (bytes.Length <= buffer.Length)
+        {
+            EnsureBuffer(bytes.Length);
+            bytes.CopyTo(buffer.AsSpan(bufferPos));
+            bufferPos += bytes.Length;
+        }
+        else
+        {
+            Flush();
+            stream.Write(bytes);
+            bytesWrittenTotal += bytes.Length;
+        }
+    }
+
+    internal async ValueTask WriteRawBytesAsync(ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken)
+    {
+        if (bytes.IsEmpty)
+            return;
+
+        EnsureCanWriteBytes(bytes.Length);
+        if (bytes.Length <= buffer.Length)
+        {
+            await EnsureBufferAsync(bytes.Length, cancellationToken).ConfigureAwait(false);
+            bytes.Span.CopyTo(buffer.AsSpan(bufferPos));
+            bufferPos += bytes.Length;
+        }
+        else
+        {
+            await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+            await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+            bytesWrittenTotal += bytes.Length;
         }
     }
 
@@ -732,12 +847,12 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     /// </summary>
     public void Flush()
     {
+        EnsureCanWriteBytes(0);
         if (bufferPos > 0)
         {
             stream.Write(buffer, 0, bufferPos);
             bytesWrittenTotal += bufferPos;
             bufferPos = 0;
-            CheckMaxOutputSize();
         }
     }
 
@@ -745,17 +860,23 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     /// Flushes all buffered writes out to the underlying stream asynchronously.
     /// </summary>
     public Task FlushAsync()
-        => FlushInternalAsync(CancellationToken.None).AsTask();
+        => FlushInternalAsync(activeCancellationToken).AsTask();
 
     internal async ValueTask FlushInternalAsync(CancellationToken cancellationToken)
     {
+        EnsureCanWriteBytes(0);
         if (bufferPos > 0)
         {
             await stream.WriteAsync(buffer.AsMemory(0, bufferPos), cancellationToken).ConfigureAwait(false);
             bytesWrittenTotal += bufferPos;
             bufferPos = 0;
-            CheckMaxOutputSize();
         }
+    }
+
+    internal void ResetBuffer()
+    {
+        bufferPos = 0;
+        bytesWrittenTotal = 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -765,6 +886,7 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void EnsureBuffer(int count)
     {
+        EnsureCanWriteBytes(count);
         if (buffer.Length - bufferPos >= count) return;
         Flush();
     }
@@ -772,13 +894,20 @@ public class HtbStreamWriter : IDisposable, IAsyncDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ValueTask EnsureBufferAsync(int count, CancellationToken cancellationToken)
     {
+        EnsureCanWriteBytes(count);
         if (buffer.Length - bufferPos >= count) return default;
         return FlushInternalAsync(cancellationToken);
     }
 
-    private void CheckMaxOutputSize()
+    internal void SetMaxOutputSize(long? maxOutputSize) => maxOutputSizeLimit = maxOutputSize;
+
+    internal void EnsureCanWriteBytes(long additionalBytes)
     {
-        if (options.MaxOutputSize.HasValue && bytesWrittenTotal > options.MaxOutputSize.Value)
+        if (maxOutputSizeLimit is not { } maxOutputSize)
+            return;
+
+        long current = bytesWrittenTotal + bufferPos;
+        if (current > maxOutputSize || additionalBytes > maxOutputSize - current)
         {
             throw new HtbException(HtbErrorCode.LimitExceeded, "MaxOutputSize limit exceeded.");
         }

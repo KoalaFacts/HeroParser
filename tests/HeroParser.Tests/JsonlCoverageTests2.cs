@@ -341,12 +341,12 @@ public class JsonlCoverageTests2
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public void DataReader_GetBytesAndChars_NotSupported()
+    public void DataReader_GetBytesNonBinaryAndGetChars_ThrowExpectedExceptions()
     {
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes("""{"a":1}"""));
         using var dr = Jsonl.CreateDataReader(stream);
         Assert.True(dr.Read());
-        Assert.Throws<NotSupportedException>(() => dr.GetBytes(0, 0, null, 0, 0));
+        Assert.Throws<InvalidCastException>(() => dr.GetBytes(0, 0, null, 0, 0));
         Assert.Throws<NotSupportedException>(() => dr.GetChars(0, 0, null, 0, 0));
     }
 

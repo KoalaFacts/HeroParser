@@ -155,6 +155,7 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
 
         options.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
 
         var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,
@@ -192,6 +193,7 @@ public static partial class FixedWidth
         encoding ??= Encoding.UTF8;
 
         options.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
 
         var fileStream = new CompressedFile(path).OpenWrite(
             bufferSize: 4096,

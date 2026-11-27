@@ -159,108 +159,132 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
     /// Reads the next record asynchronously from the stream.
     /// </summary>
     [RequiresUnreferencedCode("Reflection-based HTB deserialization requires dynamic binding which is not Native AOT-safe.")]
-    public async ValueTask<bool> ReadNextAsync()
+    public ValueTask<bool> ReadNextAsync()
+        => ReadNextAsync(CancellationToken.None);
+
+    /// <summary>
+    /// Reads the next record asynchronously from the stream with cancellation support.
+    /// </summary>
+    /// <param name="cancellationToken">Token used to cancel async I/O and stop reading.</param>
+    [RequiresUnreferencedCode("Reflection-based HTB deserialization requires dynamic binding which is not Native AOT-safe.")]
+    public async ValueTask<bool> ReadNextAsync(CancellationToken cancellationToken)
     {
-        if (!recordHeaderParsed)
+        cancellationToken.ThrowIfCancellationRequested();
+        activeCancellationToken = cancellationToken;
+        try
         {
-            await ParseRecordHeaderAsync().ConfigureAwait(false);
-        }
-
-        while (RecordsRead < options.MaxRowCount)
-        {
-            try
+            if (!recordHeaderParsed)
             {
-                if (await IsEndOfStreamAsync().ConfigureAwait(false))
-                {
-                    CurrentRecord = default;
-                    return false;
-                }
+                await ParseRecordHeaderAsync(cancellationToken).ConfigureAwait(false);
+            }
 
-                T rec = new();
-                int colCount = Schema!.Columns.Count;
-                int maskLen = (colCount + 7) / 8;
-
-                byte[] rented = ArrayPool<byte>.Shared.Rent(maskLen);
+            while (RecordsRead < options.MaxRowCount)
+            {
                 try
                 {
-                    var mask = rented.AsMemory(0, maskLen);
-                    await ReadMaskAsync(mask).ConfigureAwait(false);
-
-                    for (int i = 0; i < colCount; i++)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (await IsEndOfStreamAsync(cancellationToken).ConfigureAwait(false))
                     {
-                        bool isNull = (rented[i / 8] & (1 << (i % 8))) != 0;
-                        if (isNull)
-                        {
-                            if (binder!.IsColumnBound(i))
-                            {
-                                await binder!.BindFieldAsync(rec, i, this, true).ConfigureAwait(false);
-                            }
-                            continue;
-                        }
+                        CurrentRecord = default;
+                        return false;
+                    }
 
-                        if (!binder!.IsColumnBound(i))
+                    T rec = new();
+                    int colCount = Schema!.Columns.Count;
+                    int maskLen = (colCount + 7) / 8;
+
+                    byte[] rented = ArrayPool<byte>.Shared.Rent(maskLen);
+                    try
+                    {
+                        var mask = rented.AsMemory(0, maskLen);
+                        await ReadMaskAsync(mask, cancellationToken).ConfigureAwait(false);
+
+                        for (int i = 0; i < colCount; i++)
                         {
-                            await SkipColumnValueAsync(Schema.Columns[i].DataType).ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            await binder!.BindFieldAsync(rec, i, this, false).ConfigureAwait(false);
+                            cancellationToken.ThrowIfCancellationRequested();
+                            bool isNull = (rented[i / 8] & (1 << (i % 8))) != 0;
+                            if (isNull)
+                            {
+                                if (binder!.IsColumnBound(i))
+                                {
+                                    await binder!.BindFieldAsync(rec, i, this, true).ConfigureAwait(false);
+                                }
+                                continue;
+                            }
+
+                            if (!binder!.IsColumnBound(i))
+                            {
+                                await SkipColumnValueAsync(Schema.Columns[i].DataType, cancellationToken).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                await binder!.BindFieldAsync(rec, i, this, false).ConfigureAwait(false);
+                            }
                         }
                     }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(rented);
+                    }
+
+                    IncrementRecordCount();
+
+                    // Enforce SkipRows
+                    if (RecordsRead <= options.SkipRows)
+                    {
+                        continue;
+                    }
+
+                    // Run field validations
+                    ValidateRecord(rec);
+
+                    CurrentRecord = rec;
+                    return true;
                 }
-                finally
+                catch (Exception ex)
                 {
-                    ArrayPool<byte>.Shared.Return(rented);
+                    if (ex is OperationCanceledException)
+                    {
+                        throw;
+                    }
+
+                    if (ex is HtbException htbEx && (htbEx.ErrorCode == HtbErrorCode.CorruptData || htbEx.ErrorCode == HtbErrorCode.LimitExceeded))
+                    {
+                        throw;
+                    }
+
+                    var context = new HtbDeserializeErrorContext
+                    {
+                        RecordIndex = RecordsRead,
+                        TargetType = typeof(T)
+                    };
+
+                    var defaultAction = (options.ValidationMode == ValidationMode.Lenient && ex is HtbException hex && hex.ErrorCode == HtbErrorCode.DeserializationError)
+                        ? HtbDeserializeErrorAction.SkipRecord
+                        : HtbDeserializeErrorAction.Throw;
+
+                    var action = options.OnError?.Invoke(context, ex) ?? defaultAction;
+                    if (action == HtbDeserializeErrorAction.Throw)
+                    {
+                        throw;
+                    }
                 }
-
-                IncrementRecordCount();
-
-                // Enforce SkipRows
-                if (RecordsRead <= options.SkipRows)
-                {
-                    continue;
-                }
-
-                // Run field validations
-                ValidateRecord(rec);
-
-                CurrentRecord = rec;
-                return true;
             }
-            catch (Exception ex)
+
+            if (RecordsRead >= options.MaxRowCount && !await IsEndOfStreamAsync(cancellationToken).ConfigureAwait(false))
             {
-                if (ex is HtbException htbEx && (htbEx.ErrorCode == HtbErrorCode.CorruptData || htbEx.ErrorCode == HtbErrorCode.LimitExceeded))
-                {
-                    throw;
-                }
-
-                var context = new HtbDeserializeErrorContext
-                {
-                    RecordIndex = RecordsRead,
-                    TargetType = typeof(T)
-                };
-
-                var defaultAction = (options.ValidationMode == ValidationMode.Lenient && ex is HtbException hex && hex.ErrorCode == HtbErrorCode.DeserializationError)
-                    ? HtbDeserializeErrorAction.SkipRecord
-                    : HtbDeserializeErrorAction.Throw;
-
-                var action = options.OnError?.Invoke(context, ex) ?? defaultAction;
-                if (action == HtbDeserializeErrorAction.Throw)
-                {
-                    throw;
-                }
+                throw new HtbException(
+                    HtbErrorCode.LimitExceeded,
+                    $"MaxRowCount limit of {options.MaxRowCount} was exceeded.");
             }
-        }
 
-        if (RecordsRead >= options.MaxRowCount && !await IsEndOfStreamAsync().ConfigureAwait(false))
+            CurrentRecord = default;
+            return false;
+        }
+        finally
         {
-            throw new HtbException(
-                HtbErrorCode.LimitExceeded,
-                $"MaxRowCount limit of {options.MaxRowCount} was exceeded.");
+            activeCancellationToken = default;
         }
-
-        CurrentRecord = default;
-        return false;
     }
 
     [RequiresUnreferencedCode("Reflection schema extraction is not safe for Native AOT.")]
@@ -304,9 +328,9 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
     }
 
     [RequiresUnreferencedCode("Reflection schema extraction is not safe for Native AOT.")]
-    private async Task ParseRecordHeaderAsync()
+    private async Task ParseRecordHeaderAsync(CancellationToken cancellationToken)
     {
-        var fileSchema = await ParseHeaderAsync().ConfigureAwait(false);
+        var fileSchema = await ParseHeaderAsync(cancellationToken).ConfigureAwait(false);
         var registeredBinder = HtbRecordBinderFactory.TryGetBinder<T>(fileSchema);
         if (registeredBinder != null)
         {
@@ -459,21 +483,24 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                         throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: length cannot exceed {validate.MaxLength}."));
                     }
 
-                    // 5. RangeMin validation
+                    // 5 & 6. RangeMin / RangeMax validation
                     // A value that is not a number (e.g. an empty or non-numeric string) is not range-checked,
                     // as in the CSV, Fixed-Width and write-side validation runners.
-                    bool hasRange = !double.IsNaN(validate.RangeMin) || !double.IsNaN(validate.RangeMax);
-                    double numericVal = 0;
-                    bool isNumeric = hasRange && TryToDouble(val, out numericVal);
-                    if (isNumeric && !double.IsNaN(validate.RangeMin) && numericVal < validate.RangeMin)
+                    var rangeCheck = new NumericRangeCheck(
+                        double.IsNaN(validate.RangeMin) ? null : validate.RangeMin,
+                        double.IsNaN(validate.RangeMax) ? null : validate.RangeMax);
+                    if (rangeCheck.HasRange &&
+                        rangeCheck.TryEvaluate(val, CultureInfo.InvariantCulture, out bool belowMin, out bool aboveMax, out string formattedValue))
                     {
-                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} must be at least {validate.RangeMin}."));
-                    }
+                        if (belowMin)
+                        {
+                            throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {formattedValue} must be at least {validate.RangeMin}."));
+                        }
 
-                    // 6. RangeMax validation
-                    if (isNumeric && !double.IsNaN(validate.RangeMax) && numericVal > validate.RangeMax)
-                    {
-                        throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {numericVal} cannot exceed {validate.RangeMax}."));
+                        if (aboveMax)
+                        {
+                            throw new HtbException(HtbErrorCode.DeserializationError, string.Create(CultureInfo.InvariantCulture, $"Property '{col.Property.Name}' violated validation constraint: value {formattedValue} cannot exceed {validate.RangeMax}."));
+                        }
                     }
 
                     // 7. Pattern validation
@@ -490,39 +517,9 @@ public sealed class HtbRecordReader<T> : HtbStreamReader where T : new()
                     }
                 }
             }
+            return;
         }
-    }
 
-    private static bool TryToDouble(object value, out double numericValue)
-    {
-        // HTB has no culture setting: text is read in invariant notation, with Convert.ToDouble(string)'s styles.
-        switch (value)
-        {
-            case string text:
-                return double.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out numericValue);
-            case Half h:
-                numericValue = (double)h;
-                return true;
-            case Int128 i128:
-                numericValue = (double)i128;
-                return true;
-            case UInt128 u128:
-                numericValue = (double)u128;
-                return true;
-            case BigInteger bi:
-                numericValue = (double)bi;
-                return true;
-            default:
-                try
-                {
-                    numericValue = Convert.ToDouble(value, CultureInfo.InvariantCulture);
-                    return true;
-                }
-                catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
-                {
-                    numericValue = 0;
-                    return false;
-                }
-        }
+        binder!.ValidateRecord(record);
     }
 }

@@ -26,6 +26,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     /// The parsed schema of the HTB stream.
     /// </summary>
     protected HtbSchema? schema;
+    private protected CancellationToken activeCancellationToken;
     private bool headerParsed;
     private bool isDisposed;
 
@@ -128,7 +129,10 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     /// <summary>
     /// Reads and parses the HTB header block asynchronously.
     /// </summary>
-    public async ValueTask<HtbSchema> ParseHeaderAsync()
+    public ValueTask<HtbSchema> ParseHeaderAsync()
+        => ParseHeaderAsync(activeCancellationToken);
+
+    internal async ValueTask<HtbSchema> ParseHeaderAsync(CancellationToken cancellationToken)
     {
         CheckDisposed();
         if (headerParsed)
@@ -136,7 +140,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
             return schema!;
         }
 
-        await EnsureBufferAsync(4 + 4);
+        await EnsureBufferAsync(4 + 4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 8)
         {
             throw new HtbException(HtbErrorCode.InvalidHeader, "Truncated stream while reading magic header.");
@@ -159,7 +163,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         var columns = new List<HtbColumn>();
         for (int i = 0; i < colCount; i++)
         {
-            await EnsureBufferAsync(1 + 4);
+            await EnsureBufferAsync(1 + 4, cancellationToken).ConfigureAwait(false);
             if (bufferLen - bufferPos < 5)
             {
                 throw new HtbException(HtbErrorCode.InvalidHeader, "Truncated stream while reading column schema details.");
@@ -177,7 +181,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
                 throw new HtbException(HtbErrorCode.InvalidHeader, $"Invalid column name length: {nameLen}");
             }
 
-            await EnsureBufferAsync(nameLen);
+            await EnsureBufferAsync(nameLen, cancellationToken).ConfigureAwait(false);
             if (bufferLen - bufferPos < nameLen)
             {
                 throw new HtbException(HtbErrorCode.InvalidHeader, "Truncated stream while reading column name.");
@@ -211,11 +215,16 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     /// Checks if the end of the input stream has been reached asynchronously.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<bool> IsEndOfStreamAsync()
+    public ValueTask<bool> IsEndOfStreamAsync()
+        => IsEndOfStreamAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<bool> IsEndOfStreamAsync(CancellationToken cancellationToken)
     {
         if (bufferPos < bufferLen) return false;
+        cancellationToken.ThrowIfCancellationRequested();
         bufferPos = 0;
-        bufferLen = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length)).ConfigureAwait(false);
+        bufferLen = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
         if (bufferLen <= 0) return true;
         bytesReadTotal += bufferLen;
         return false;
@@ -267,9 +276,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     /// Reads and copies the null bitmask asynchronously.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask ReadMaskAsync(Memory<byte> mask)
+    public ValueTask ReadMaskAsync(Memory<byte> mask)
+        => ReadMaskAsync(mask, activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask ReadMaskAsync(Memory<byte> mask, CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(mask.Length).ConfigureAwait(false);
+        await EnsureBufferAsync(mask.Length, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < mask.Length)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading null mask.");
@@ -294,9 +307,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads an Int32 asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<int> ReadInt32Async()
+    public ValueTask<int> ReadInt32Async()
+        => ReadInt32Async(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<int> ReadInt32Async(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Int32.");
@@ -322,9 +339,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads an Int64 asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<long> ReadInt64Async()
+    public ValueTask<long> ReadInt64Async()
+        => ReadInt64Async(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<long> ReadInt64Async(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(8).ConfigureAwait(false);
+        await EnsureBufferAsync(8, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 8)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Int64.");
@@ -350,9 +371,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a Single asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<float> ReadFloatAsync()
+    public ValueTask<float> ReadFloatAsync()
+        => ReadFloatAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<float> ReadFloatAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Float.");
@@ -378,9 +403,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a Double asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<double> ReadDoubleAsync()
+    public ValueTask<double> ReadDoubleAsync()
+        => ReadDoubleAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<double> ReadDoubleAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(8).ConfigureAwait(false);
+        await EnsureBufferAsync(8, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 8)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Double.");
@@ -411,9 +440,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a Decimal asynchronously from the stream buffer without heap allocations.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<decimal> ReadDecimalAsync()
+    public ValueTask<decimal> ReadDecimalAsync()
+        => ReadDecimalAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<decimal> ReadDecimalAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(16).ConfigureAwait(false);
+        await EnsureBufferAsync(16, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 16)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Decimal.");
@@ -442,9 +475,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a Boolean asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<bool> ReadBooleanAsync()
+    public ValueTask<bool> ReadBooleanAsync()
+        => ReadBooleanAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<bool> ReadBooleanAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(1).ConfigureAwait(false);
+        await EnsureBufferAsync(1, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 1)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Boolean.");
@@ -468,9 +505,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a DateTime asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<DateTime> ReadDateTimeAsync()
+    public ValueTask<DateTime> ReadDateTimeAsync()
+        => ReadDateTimeAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<DateTime> ReadDateTimeAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(8).ConfigureAwait(false);
+        await EnsureBufferAsync(8, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 8)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading DateTime.");
@@ -496,9 +537,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a Guid asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<Guid> ReadGuidAsync()
+    public ValueTask<Guid> ReadGuidAsync()
+        => ReadGuidAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<Guid> ReadGuidAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(16).ConfigureAwait(false);
+        await EnsureBufferAsync(16, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 16)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Guid.");
@@ -518,7 +563,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         }
         int strLen = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (strLen < 0 || strLen > 64 * 1024 * 1024)
+        if (strLen < 0 || strLen > HtbSchema.MAX_PAYLOAD_BYTES)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid string length: {strLen}");
         }
@@ -570,16 +615,19 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Reads a String asynchronously from the stream buffer.</summary>
-    public async ValueTask<string> ReadStringAsync()
+    public ValueTask<string> ReadStringAsync()
+        => ReadStringAsync(activeCancellationToken);
+
+    internal async ValueTask<string> ReadStringAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading string length.");
         }
         int strLen = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (strLen < 0 || strLen > 64 * 1024 * 1024)
+        if (strLen < 0 || strLen > HtbSchema.MAX_PAYLOAD_BYTES)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid string length: {strLen}");
         }
@@ -587,7 +635,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
         if (strLen <= buffer.Length)
         {
-            await EnsureBufferAsync(strLen).ConfigureAwait(false);
+            await EnsureBufferAsync(strLen, cancellationToken).ConfigureAwait(false);
             if (bufferLen - bufferPos < strLen)
             {
                 throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading string value.");
@@ -612,7 +660,8 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
                 int readTotal = available;
                 while (readTotal < strLen)
                 {
-                    int read = await stream.ReadAsync(temp.AsMemory(readTotal, strLen - readTotal)).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    int read = await stream.ReadAsync(temp.AsMemory(readTotal, strLen - readTotal), cancellationToken).ConfigureAwait(false);
                     if (read <= 0)
                     {
                         throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading large binary string.");
@@ -640,7 +689,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         }
         int arrLen = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (arrLen < 0 || arrLen > 16 * 1024 * 1024)
+        if (arrLen < 0 || arrLen > HtbSchema.MAX_FLOAT_ARRAY_LENGTH)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid float array length: {arrLen}");
         }
@@ -696,16 +745,19 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Reads a FloatArray asynchronously from the stream buffer.</summary>
-    public async ValueTask<float[]> ReadFloatArrayAsync()
+    public ValueTask<float[]> ReadFloatArrayAsync()
+        => ReadFloatArrayAsync(activeCancellationToken);
+
+    internal async ValueTask<float[]> ReadFloatArrayAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading float array length.");
         }
         int arrLen = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (arrLen < 0 || arrLen > 16 * 1024 * 1024)
+        if (arrLen < 0 || arrLen > HtbSchema.MAX_FLOAT_ARRAY_LENGTH)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid float array length: {arrLen}");
         }
@@ -716,7 +768,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
         if (byteLen <= buffer.Length)
         {
-            await EnsureBufferAsync(byteLen).ConfigureAwait(false);
+            await EnsureBufferAsync(byteLen, cancellationToken).ConfigureAwait(false);
             if (bufferLen - bufferPos < byteLen)
             {
                 throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading float array values.");
@@ -740,7 +792,8 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
                 int readTotal = available;
                 while (readTotal < byteLen)
                 {
-                    int read = await stream.ReadAsync(temp.AsMemory(readTotal, byteLen - readTotal)).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    int read = await stream.ReadAsync(temp.AsMemory(readTotal, byteLen - readTotal), cancellationToken).ConfigureAwait(false);
                     if (read <= 0)
                     {
                         throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading large float array.");
@@ -786,9 +839,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a DateTimeOffset asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<DateTimeOffset> ReadDateTimeOffsetAsync()
+    public ValueTask<DateTimeOffset> ReadDateTimeOffsetAsync()
+        => ReadDateTimeOffsetAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<DateTimeOffset> ReadDateTimeOffsetAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(10).ConfigureAwait(false);
+        await EnsureBufferAsync(10, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 10)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading DateTimeOffset.");
@@ -815,9 +872,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a DateOnly asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<DateOnly> ReadDateOnlyAsync()
+    public ValueTask<DateOnly> ReadDateOnlyAsync()
+        => ReadDateOnlyAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<DateOnly> ReadDateOnlyAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading DateOnly.");
@@ -843,9 +904,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a TimeOnly asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<TimeOnly> ReadTimeOnlyAsync()
+    public ValueTask<TimeOnly> ReadTimeOnlyAsync()
+        => ReadTimeOnlyAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<TimeOnly> ReadTimeOnlyAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(8).ConfigureAwait(false);
+        await EnsureBufferAsync(8, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 8)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading TimeOnly.");
@@ -861,7 +926,11 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a TimeSpan asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<TimeSpan> ReadTimeSpanAsync() => new(await ReadInt64Async().ConfigureAwait(false));
+    public ValueTask<TimeSpan> ReadTimeSpanAsync() => ReadTimeSpanAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<TimeSpan> ReadTimeSpanAsync(CancellationToken cancellationToken)
+        => new(await ReadInt64Async(cancellationToken).ConfigureAwait(false));
 
     /// <summary>Reads an Int16 directly from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -879,9 +948,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads an Int16 asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<short> ReadInt16Async()
+    public ValueTask<short> ReadInt16Async()
+        => ReadInt16Async(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<short> ReadInt16Async(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(2).ConfigureAwait(false);
+        await EnsureBufferAsync(2, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 2)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Int16.");
@@ -907,9 +980,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a UInt16 asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<ushort> ReadUInt16Async()
+    public ValueTask<ushort> ReadUInt16Async()
+        => ReadUInt16Async(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<ushort> ReadUInt16Async(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(2).ConfigureAwait(false);
+        await EnsureBufferAsync(2, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 2)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading UInt16.");
@@ -933,9 +1010,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a Byte asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<byte> ReadByteAsync()
+    public ValueTask<byte> ReadByteAsync()
+        => ReadByteAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<byte> ReadByteAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(1).ConfigureAwait(false);
+        await EnsureBufferAsync(1, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 1)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Byte.");
@@ -949,7 +1030,11 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads an SByte asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<sbyte> ReadSByteAsync() => unchecked((sbyte)await ReadByteAsync().ConfigureAwait(false));
+    public ValueTask<sbyte> ReadSByteAsync() => ReadSByteAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<sbyte> ReadSByteAsync(CancellationToken cancellationToken)
+        => unchecked((sbyte)await ReadByteAsync(cancellationToken).ConfigureAwait(false));
 
     /// <summary>Reads a UInt32 directly from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -967,9 +1052,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a UInt32 asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<uint> ReadUInt32Async()
+    public ValueTask<uint> ReadUInt32Async()
+        => ReadUInt32Async(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<uint> ReadUInt32Async(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading UInt32.");
@@ -995,9 +1084,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a UInt64 asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<ulong> ReadUInt64Async()
+    public ValueTask<ulong> ReadUInt64Async()
+        => ReadUInt64Async(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<ulong> ReadUInt64Async(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(8).ConfigureAwait(false);
+        await EnsureBufferAsync(8, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 8)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading UInt64.");
@@ -1013,7 +1106,11 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a Char asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<char> ReadCharAsync() => (char)await ReadUInt16Async().ConfigureAwait(false);
+    public ValueTask<char> ReadCharAsync() => ReadCharAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<char> ReadCharAsync(CancellationToken cancellationToken)
+        => (char)await ReadUInt16Async(cancellationToken).ConfigureAwait(false);
 
     /// <summary>Reads a Half directly from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1031,9 +1128,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a Half asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<Half> ReadHalfAsync()
+    public ValueTask<Half> ReadHalfAsync()
+        => ReadHalfAsync(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<Half> ReadHalfAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(2).ConfigureAwait(false);
+        await EnsureBufferAsync(2, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 2)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Half.");
@@ -1059,9 +1160,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads an Int128 asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<Int128> ReadInt128Async()
+    public ValueTask<Int128> ReadInt128Async()
+        => ReadInt128Async(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<Int128> ReadInt128Async(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(16).ConfigureAwait(false);
+        await EnsureBufferAsync(16, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 16)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading Int128.");
@@ -1087,9 +1192,13 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
     /// <summary>Reads a UInt128 asynchronously from the stream buffer.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public async ValueTask<UInt128> ReadUInt128Async()
+    public ValueTask<UInt128> ReadUInt128Async()
+        => ReadUInt128Async(activeCancellationToken);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal async ValueTask<UInt128> ReadUInt128Async(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(16).ConfigureAwait(false);
+        await EnsureBufferAsync(16, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 16)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading UInt128.");
@@ -1103,7 +1212,10 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     public byte[] ReadByteArray() => ReadLengthPrefixedBytes("byte array");
 
     /// <summary>Reads a byte array asynchronously from the stream buffer.</summary>
-    public ValueTask<byte[]> ReadByteArrayAsync() => ReadLengthPrefixedBytesAsync("byte array");
+    public ValueTask<byte[]> ReadByteArrayAsync() => ReadByteArrayAsync(activeCancellationToken);
+
+    internal ValueTask<byte[]> ReadByteArrayAsync(CancellationToken cancellationToken)
+        => ReadLengthPrefixedBytesAsync("byte array", cancellationToken);
 
     /// <summary>Reads a BigInteger directly from the stream buffer without intermediate byte array allocations.</summary>
     public BigInteger ReadBigInteger()
@@ -1115,7 +1227,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         }
         int len = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (len < 0 || len > 64 * 1024 * 1024)
+        if (len < 0 || len > HtbSchema.MAX_PAYLOAD_BYTES)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid BigInteger length: {len}");
         }
@@ -1165,16 +1277,19 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Reads a BigInteger asynchronously from the stream buffer without intermediate byte array allocations.</summary>
-    public async ValueTask<BigInteger> ReadBigIntegerAsync()
+    public ValueTask<BigInteger> ReadBigIntegerAsync()
+        => ReadBigIntegerAsync(activeCancellationToken);
+
+    internal async ValueTask<BigInteger> ReadBigIntegerAsync(CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
         {
             throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading BigInteger length.");
         }
         int len = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (len < 0 || len > 64 * 1024 * 1024)
+        if (len < 0 || len > HtbSchema.MAX_PAYLOAD_BYTES)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid BigInteger length: {len}");
         }
@@ -1182,7 +1297,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
         if (len <= buffer.Length)
         {
-            await EnsureBufferAsync(len).ConfigureAwait(false);
+            await EnsureBufferAsync(len, cancellationToken).ConfigureAwait(false);
             if (bufferLen - bufferPos < len)
             {
                 throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading BigInteger value.");
@@ -1206,7 +1321,8 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
             int readTotal = available;
             while (readTotal < len)
             {
-                int read = await stream.ReadAsync(rented.AsMemory(readTotal, len - readTotal)).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                int read = await stream.ReadAsync(rented.AsMemory(readTotal, len - readTotal), cancellationToken).ConfigureAwait(false);
                 if (read <= 0)
                 {
                     throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while reading large BigInteger.");
@@ -1227,8 +1343,10 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     public Uri ReadUri() => CreateUri(ReadString());
 
     /// <summary>Reads a Uri asynchronously from the stream buffer.</summary>
-    public async ValueTask<Uri> ReadUriAsync()
-        => CreateUri(await ReadStringAsync().ConfigureAwait(false));
+    public ValueTask<Uri> ReadUriAsync() => ReadUriAsync(activeCancellationToken);
+
+    internal async ValueTask<Uri> ReadUriAsync(CancellationToken cancellationToken)
+        => CreateUri(await ReadStringAsync(cancellationToken).ConfigureAwait(false));
 
     private static DateTimeOffset CreateDateTimeOffset(long ticks, short offsetMinutes)
     {
@@ -1276,7 +1394,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         }
         int len = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (len < 0 || len > 64 * 1024 * 1024)
+        if (len < 0 || len > HtbSchema.MAX_PAYLOAD_BYTES)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid {typeLabel} length: {len}");
         }
@@ -1319,16 +1437,16 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         return result;
     }
 
-    private async ValueTask<byte[]> ReadLengthPrefixedBytesAsync(string typeLabel)
+    private async ValueTask<byte[]> ReadLengthPrefixedBytesAsync(string typeLabel, CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Unexpected end of stream while reading {typeLabel} length.");
         }
         int len = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (len < 0 || len > 64 * 1024 * 1024)
+        if (len < 0 || len > HtbSchema.MAX_PAYLOAD_BYTES)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid {typeLabel} length: {len}");
         }
@@ -1337,7 +1455,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         byte[] result = new byte[len];
         if (len <= buffer.Length)
         {
-            await EnsureBufferAsync(len).ConfigureAwait(false);
+            await EnsureBufferAsync(len, cancellationToken).ConfigureAwait(false);
             if (bufferLen - bufferPos < len)
             {
                 throw new HtbException(HtbErrorCode.CorruptData, $"Unexpected end of stream while reading {typeLabel} value.");
@@ -1358,7 +1476,8 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
             int readTotal = available;
             while (readTotal < len)
             {
-                int read = await stream.ReadAsync(result.AsMemory(readTotal, len - readTotal)).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                int read = await stream.ReadAsync(result.AsMemory(readTotal, len - readTotal), cancellationToken).ConfigureAwait(false);
                 if (read <= 0)
                 {
                     throw new HtbException(HtbErrorCode.CorruptData, $"Unexpected end of stream while reading large {typeLabel}.");
@@ -1432,7 +1551,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
                     throw new HtbException(HtbErrorCode.CorruptData, "Truncated stream while skipping float array length.");
                 int arrLen = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
                 bufferPos += 4;
-                if (arrLen < 0 || arrLen > 16 * 1024 * 1024)
+                if (arrLen < 0 || arrLen > HtbSchema.MAX_FLOAT_ARRAY_LENGTH)
                 {
                     throw new HtbException(HtbErrorCode.CorruptData, $"Invalid float array length: {arrLen}");
                 }
@@ -1461,28 +1580,31 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     }
 
     /// <summary>Skips column bytes asynchronously without materialization.</summary>
-    public async ValueTask SkipColumnValueAsync(HtbDataType type)
+    public ValueTask SkipColumnValueAsync(HtbDataType type)
+        => SkipColumnValueAsync(type, activeCancellationToken);
+
+    internal async ValueTask SkipColumnValueAsync(HtbDataType type, CancellationToken cancellationToken)
     {
         switch (type)
         {
             case HtbDataType.Boolean:
             case HtbDataType.Byte:
             case HtbDataType.SByte:
-                await SkipFixedBytesAsync(1).ConfigureAwait(false);
+                await SkipFixedBytesAsync(1, cancellationToken).ConfigureAwait(false);
                 break;
 
             case HtbDataType.Int16:
             case HtbDataType.UInt16:
             case HtbDataType.Char:
             case HtbDataType.Half:
-                await SkipFixedBytesAsync(2).ConfigureAwait(false);
+                await SkipFixedBytesAsync(2, cancellationToken).ConfigureAwait(false);
                 break;
 
             case HtbDataType.Int32:
             case HtbDataType.Float:
             case HtbDataType.DateOnly:
             case HtbDataType.UInt32:
-                await SkipFixedBytesAsync(4).ConfigureAwait(false);
+                await SkipFixedBytesAsync(4, cancellationToken).ConfigureAwait(false);
                 break;
 
             case HtbDataType.Int64:
@@ -1491,37 +1613,37 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
             case HtbDataType.TimeOnly:
             case HtbDataType.TimeSpan:
             case HtbDataType.UInt64:
-                await SkipFixedBytesAsync(8).ConfigureAwait(false);
+                await SkipFixedBytesAsync(8, cancellationToken).ConfigureAwait(false);
                 break;
 
             case HtbDataType.DateTimeOffset:
-                await SkipFixedBytesAsync(10).ConfigureAwait(false);
+                await SkipFixedBytesAsync(10, cancellationToken).ConfigureAwait(false);
                 break;
 
             case HtbDataType.Decimal:
             case HtbDataType.Guid:
             case HtbDataType.Int128:
             case HtbDataType.UInt128:
-                await SkipFixedBytesAsync(16).ConfigureAwait(false);
+                await SkipFixedBytesAsync(16, cancellationToken).ConfigureAwait(false);
                 break;
 
             case HtbDataType.String:
-                await SkipLengthPrefixedBytesAsync("string").ConfigureAwait(false);
+                await SkipLengthPrefixedBytesAsync("string", cancellationToken).ConfigureAwait(false);
                 break;
 
             case HtbDataType.ByteArray:
             case HtbDataType.BigInteger:
             case HtbDataType.Uri:
-                await SkipLengthPrefixedBytesAsync("value").ConfigureAwait(false);
+                await SkipLengthPrefixedBytesAsync("value", cancellationToken).ConfigureAwait(false);
                 break;
 
             case HtbDataType.FloatArray:
-                await EnsureBufferAsync(4).ConfigureAwait(false);
+                await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
                 if (bufferLen - bufferPos < 4)
                     throw new HtbException(HtbErrorCode.CorruptData, "Truncated stream while skipping float array length.");
                 int arrLen = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
                 bufferPos += 4;
-                if (arrLen < 0 || arrLen > 16 * 1024 * 1024)
+                if (arrLen < 0 || arrLen > HtbSchema.MAX_FLOAT_ARRAY_LENGTH)
                 {
                     throw new HtbException(HtbErrorCode.CorruptData, $"Invalid float array length: {arrLen}");
                 }
@@ -1538,7 +1660,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
                         int toSkip = byteLen - remaining;
                         bufferPos = 0;
                         bufferLen = 0;
-                        await SkipFromStreamAsync(toSkip).ConfigureAwait(false);
+                        await SkipFromStreamAsync(toSkip, cancellationToken).ConfigureAwait(false);
                     }
                 }
                 break;
@@ -1557,9 +1679,9 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         bufferPos += count;
     }
 
-    private async ValueTask SkipFixedBytesAsync(int count)
+    private async ValueTask SkipFixedBytesAsync(int count, CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(count).ConfigureAwait(false);
+        await EnsureBufferAsync(count, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < count)
             throw new HtbException(HtbErrorCode.CorruptData, "Truncated stream while skipping value.");
         bufferPos += count;
@@ -1572,7 +1694,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
             throw new HtbException(HtbErrorCode.CorruptData, $"Truncated stream while skipping {label} length.");
         int len = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (len < 0 || len > 64 * 1024 * 1024)
+        if (len < 0 || len > HtbSchema.MAX_PAYLOAD_BYTES)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid {label} length: {len}");
         }
@@ -1593,14 +1715,14 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         }
     }
 
-    private async ValueTask SkipLengthPrefixedBytesAsync(string label)
+    private async ValueTask SkipLengthPrefixedBytesAsync(string label, CancellationToken cancellationToken)
     {
-        await EnsureBufferAsync(4).ConfigureAwait(false);
+        await EnsureBufferAsync(4, cancellationToken).ConfigureAwait(false);
         if (bufferLen - bufferPos < 4)
             throw new HtbException(HtbErrorCode.CorruptData, $"Truncated stream while skipping {label} length.");
         int len = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(bufferPos));
         bufferPos += 4;
-        if (len < 0 || len > 64 * 1024 * 1024)
+        if (len < 0 || len > HtbSchema.MAX_PAYLOAD_BYTES)
         {
             throw new HtbException(HtbErrorCode.CorruptData, $"Invalid {label} length: {len}");
         }
@@ -1616,7 +1738,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
                 int toSkip = len - remaining;
                 bufferPos = 0;
                 bufferLen = 0;
-                await SkipFromStreamAsync(toSkip).ConfigureAwait(false);
+                await SkipFromStreamAsync(toSkip, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -1625,6 +1747,10 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     {
         if (stream.CanSeek)
         {
+            long remaining = stream.Length - stream.Position;
+            if (count < 0 || count > remaining)
+                throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while skipping data.");
+
             stream.Seek(count, SeekOrigin.Current);
             bytesReadTotal += count;
         }
@@ -1653,10 +1779,15 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
         }
     }
 
-    private async ValueTask SkipFromStreamAsync(int count)
+    private async ValueTask SkipFromStreamAsync(int count, CancellationToken cancellationToken)
     {
         if (stream.CanSeek)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            long remaining = stream.Length - stream.Position;
+            if (count < 0 || count > remaining)
+                throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while skipping data.");
+
             stream.Seek(count, SeekOrigin.Current);
             bytesReadTotal += count;
         }
@@ -1668,8 +1799,9 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
                 int remaining = count;
                 while (remaining > 0)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     int toRead = Math.Min(remaining, temp.Length);
-                    int read = await stream.ReadAsync(temp.AsMemory(0, toRead)).ConfigureAwait(false);
+                    int read = await stream.ReadAsync(temp.AsMemory(0, toRead), cancellationToken).ConfigureAwait(false);
                     if (read <= 0)
                     {
                         throw new HtbException(HtbErrorCode.CorruptData, "Unexpected end of stream while skipping data.");
@@ -1711,7 +1843,7 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private async ValueTask EnsureBufferAsync(int count)
+    private async ValueTask EnsureBufferAsync(int count, CancellationToken cancellationToken)
     {
         if (bufferLen - bufferPos >= count) return;
 
@@ -1725,7 +1857,8 @@ public class HtbStreamReader : IDisposable, IAsyncDisposable
 
         while (bufferLen < count && bufferLen < buffer.Length)
         {
-            int read = await stream.ReadAsync(buffer.AsMemory(bufferLen, buffer.Length - bufferLen)).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            int read = await stream.ReadAsync(buffer.AsMemory(bufferLen, buffer.Length - bufferLen), cancellationToken).ConfigureAwait(false);
             if (read <= 0)
             {
                 break;

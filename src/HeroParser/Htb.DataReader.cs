@@ -11,12 +11,12 @@ public static partial class Htb
     /// </summary>
     /// <param name="stream">Readable stream containing HTB data.</param>
     /// <param name="options">Optional HTB read options; defaults to <see cref="HtbReadOptions.Default"/>.</param>
-    /// <param name="leaveOpen">When <see langword="true"/>, leaves <paramref name="stream"/> open when the reader is disposed.</param>
+    /// <param name="leaveOpen">When <see langword="true"/> (default), leaves <paramref name="stream"/> open when the reader is disposed.</param>
     /// <returns>An <see cref="HtbDataReader"/> instance.</returns>
     public static HtbDataReader CreateDataReader(
         Stream stream,
         HtbReadOptions? options = null,
-        bool leaveOpen = false)
+        bool leaveOpen = true)
         => new(stream, options, leaveOpen);
 
     /// <summary>

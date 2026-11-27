@@ -30,6 +30,7 @@ public sealed class JsonlDataReader : DbDataReader
     private bool isClosed;
     private int skipped;
     private long lineNumber;
+    private long recordsRead;
 
     /// <summary>
     /// Initializes a new <see cref="JsonlDataReader"/>.
@@ -40,10 +41,24 @@ public sealed class JsonlDataReader : DbDataReader
         this.readOptions = readOptions ?? JsonlReadOptions.Default;
         this.readerOptions = readerOptions ?? JsonlDataReaderOptions.Default;
         this.readOptions.Validate();
+        if (this.readerOptions.Columns is { Count: > 0 } explicitColumns)
+        {
+            foreach (JsonlColumnDefinition col in explicitColumns)
+            {
+                if (!IsSupportedColumnType(col.DataType))
+                {
+                    throw new ArgumentException(
+                        $"Unsupported JsonlColumnDefinition DataType '{col.DataType.FullName}' for column '{col.Name}'.",
+                        nameof(readerOptions));
+                }
+            }
+            columns = [.. explicitColumns];
+        }
+        else
+        {
+            columns = [];
+        }
         lineReader = new JsonlLineReader(stream, this.readOptions, leaveOpen);
-        columns = this.readerOptions.Columns is { Count: > 0 }
-            ? [.. this.readerOptions.Columns]
-            : [];
         currentValues = [];
     }
 
@@ -93,8 +108,7 @@ public sealed class JsonlDataReader : DbDataReader
         {
             JsonDocument doc = peekedDoc;
             peekedDoc = null;
-            ExtractValues(doc.RootElement);
-            currentDoc = doc;
+            ExtractValuesAndAssignCurrent(doc);
             return true;
         }
 
@@ -102,8 +116,7 @@ public sealed class JsonlDataReader : DbDataReader
         {
             if (TryConsumeLineToDocument(lineMemory, ln, out JsonDocument? doc))
             {
-                ExtractValues(doc!.RootElement);
-                currentDoc = doc;
+                ExtractValuesAndAssignCurrent(doc!);
                 return true;
             }
         }
@@ -115,6 +128,7 @@ public sealed class JsonlDataReader : DbDataReader
     public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
     {
         EnsureNotClosed();
+        cancellationToken.ThrowIfCancellationRequested();
 
         currentDoc?.Dispose();
         currentDoc = null;
@@ -124,25 +138,39 @@ public sealed class JsonlDataReader : DbDataReader
 
         if (peekedDoc is not null)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             JsonDocument doc = peekedDoc;
             peekedDoc = null;
-            ExtractValues(doc.RootElement);
-            currentDoc = doc;
+            ExtractValuesAndAssignCurrent(doc);
             return true;
         }
 
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var (hasLine, lineMemory, ln) = await lineReader.TryReadLineAsync(cancellationToken).ConfigureAwait(false);
             if (!hasLine)
                 return false;
 
             if (TryConsumeLineToDocument(lineMemory, ln, out JsonDocument? doc))
             {
-                ExtractValues(doc!.RootElement);
-                currentDoc = doc;
+                ExtractValuesAndAssignCurrent(doc!);
                 return true;
             }
+        }
+    }
+
+    private void ExtractValuesAndAssignCurrent(JsonDocument doc)
+    {
+        try
+        {
+            ExtractValues(doc.RootElement);
+            currentDoc = doc;
+        }
+        catch
+        {
+            doc.Dispose();
+            throw;
         }
     }
 
@@ -206,9 +234,18 @@ public sealed class JsonlDataReader : DbDataReader
             return false;
         }
 
+        if (recordsRead >= readOptions.MaxRowCount)
+        {
+            throw new JsonlException(
+                JsonlErrorCode.TooManyRows,
+                string.Create(CultureInfo.InvariantCulture, $"Number of records exceeds the configured MaxRowCount of {readOptions.MaxRowCount:N0}."),
+                ln);
+        }
+
         try
         {
             doc = JsonDocument.Parse(lineMemory);
+            recordsRead++;
             return true;
         }
         catch (JsonException ex)
@@ -247,7 +284,12 @@ public sealed class JsonlDataReader : DbDataReader
 
         var list = new List<JsonlColumnDefinition>();
         foreach (JsonProperty prop in root.EnumerateObject())
-            list.Add(new JsonlColumnDefinition(prop.Name, prop.Name, typeof(string)));
+        {
+            list.Add(new JsonlColumnDefinition(prop.Name, prop.Name, typeof(string))
+            {
+                IsLiteralTopLevelKey = true
+            });
+        }
         columns = list;
     }
 
@@ -256,10 +298,41 @@ public sealed class JsonlDataReader : DbDataReader
         for (int i = 0; i < columns.Count; i++)
         {
             JsonlColumnDefinition col = columns[i];
-            currentValues[i] = TryNavigate(root, col.JsonPath, out JsonElement value)
+            JsonElement value = default;
+            bool found = col.IsLiteralTopLevelKey
+                ? root.ValueKind == JsonValueKind.Object && root.TryGetProperty(col.JsonPath, out value)
+                : TryNavigate(root, col.JsonPath, out value);
+            currentValues[i] = found
                 ? ConvertValue(value, col.DataType)
                 : DBNull.Value;
         }
+    }
+
+    private static bool IsSupportedColumnType(Type type)
+    {
+        Type underlying = Nullable.GetUnderlyingType(type) ?? type;
+        return underlying == typeof(string)
+            || underlying == typeof(object)
+            || underlying == typeof(bool)
+            || underlying == typeof(byte)
+            || underlying == typeof(sbyte)
+            || underlying == typeof(short)
+            || underlying == typeof(ushort)
+            || underlying == typeof(int)
+            || underlying == typeof(uint)
+            || underlying == typeof(long)
+            || underlying == typeof(ulong)
+            || underlying == typeof(float)
+            || underlying == typeof(double)
+            || underlying == typeof(decimal)
+            || underlying == typeof(char)
+            || underlying == typeof(DateTime)
+            || underlying == typeof(DateTimeOffset)
+            || underlying == typeof(DateOnly)
+            || underlying == typeof(TimeOnly)
+            || underlying == typeof(TimeSpan)
+            || underlying == typeof(Guid)
+            || underlying == typeof(byte[]);
     }
 
     private static object ConvertValue(JsonElement value, Type targetType)
@@ -267,18 +340,51 @@ public sealed class JsonlDataReader : DbDataReader
         if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
             return DBNull.Value;
 
-        if (targetType == typeof(string))
+        Type underlying = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+        if (underlying == typeof(string))
             return value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText();
+
+        if (underlying == typeof(object))
+        {
+            return value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString()!,
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Number => ConvertObjectNumber(value),
+                _ => value.GetRawText()
+            };
+        }
 
         try
         {
-            if (targetType == typeof(int)) return value.GetInt32();
-            if (targetType == typeof(long)) return value.GetInt64();
-            if (targetType == typeof(double)) return value.GetDouble();
-            if (targetType == typeof(decimal)) return value.GetDecimal();
-            if (targetType == typeof(bool)) return value.GetBoolean();
-            if (targetType == typeof(DateTime)) return value.GetDateTime();
-            if (targetType == typeof(Guid)) return value.GetGuid();
+            if (underlying == typeof(bool))
+                return value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : DBNull.Value;
+            if (underlying == typeof(byte)) return value.GetByte();
+            if (underlying == typeof(sbyte)) return value.GetSByte();
+            if (underlying == typeof(short)) return value.GetInt16();
+            if (underlying == typeof(ushort)) return value.GetUInt16();
+            if (underlying == typeof(int)) return value.GetInt32();
+            if (underlying == typeof(uint)) return value.GetUInt32();
+            if (underlying == typeof(long)) return value.GetInt64();
+            if (underlying == typeof(ulong)) return value.GetUInt64();
+            if (underlying == typeof(float)) return value.GetSingle();
+            if (underlying == typeof(double)) return value.GetDouble();
+            if (underlying == typeof(decimal)) return value.GetDecimal();
+            if (underlying == typeof(char))
+                return value.ValueKind == JsonValueKind.String && value.GetString() is { Length: 1 } s ? s[0] : DBNull.Value;
+            if (underlying == typeof(DateTime)) return value.GetDateTime();
+            if (underlying == typeof(DateTimeOffset)) return value.GetDateTimeOffset();
+            if (underlying == typeof(DateOnly))
+                return value.ValueKind == JsonValueKind.String && DateOnly.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly dOnly) ? dOnly : DBNull.Value;
+            if (underlying == typeof(TimeOnly))
+                return value.ValueKind == JsonValueKind.String && TimeOnly.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out TimeOnly tOnly) ? tOnly : DBNull.Value;
+            if (underlying == typeof(TimeSpan))
+                return value.ValueKind == JsonValueKind.String && TimeSpan.TryParse(value.GetString(), CultureInfo.InvariantCulture, out TimeSpan ts) ? ts : DBNull.Value;
+            if (underlying == typeof(Guid)) return value.GetGuid();
+            if (underlying == typeof(byte[]))
+                return value.ValueKind == JsonValueKind.String ? value.GetBytesFromBase64() : DBNull.Value;
         }
         catch (InvalidOperationException)
         {
@@ -293,7 +399,111 @@ public sealed class JsonlDataReader : DbDataReader
             return DBNull.Value;
         }
 
-        return value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText();
+        return DBNull.Value;
+    }
+
+    private static object ConvertObjectNumber(JsonElement value)
+    {
+        if (value.TryGetInt64(out long l))
+            return l;
+
+        string rawText = value.GetRawText();
+        return TryGetExactDecimal(value, rawText, out decimal dec) ? dec : rawText;
+    }
+
+    private static bool TryGetExactDecimal(JsonElement value, string rawText, out decimal result)
+    {
+        if (!value.TryGetDecimal(out result))
+            return false;
+
+        ReadOnlySpan<char> text = rawText.AsSpan();
+        int i = 0;
+        bool rawNeg = false;
+        if (i < text.Length && text[i] is '-' or '+')
+        {
+            rawNeg = text[i] == '-';
+            i++;
+        }
+
+        UInt128 rawMantissa = 0;
+        int sigDigits = 0;
+        int fracDigits = 0;
+        int trailingZeros = 0;
+        bool seenDot = false;
+        bool seenNonZero = false;
+
+        for (; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '.')
+            {
+                if (seenDot)
+                    return false;
+                seenDot = true;
+                continue;
+            }
+
+            if (c is 'E' or 'e')
+                break;
+
+            if ((uint)(c - '0') > 9)
+                return false;
+
+            if (seenDot)
+                fracDigits++;
+
+            if (c == '0')
+            {
+                if (seenNonZero)
+                    trailingZeros++;
+            }
+            else
+            {
+                sigDigits += trailingZeros + 1;
+                if (sigDigits > 29)
+                    return false;
+
+                while (trailingZeros > 0)
+                {
+                    rawMantissa *= 10;
+                    trailingZeros--;
+                }
+
+                rawMantissa = (rawMantissa * 10) + (uint)(c - '0');
+                seenNonZero = true;
+            }
+        }
+
+        if (rawMantissa == 0)
+            return result == 0m;
+
+        int exp = 0;
+        if (i < text.Length && text[i] is 'E' or 'e')
+        {
+            i++;
+            if (!int.TryParse(text[i..], NumberStyles.Integer, CultureInfo.InvariantCulture, out exp))
+                return false;
+        }
+
+        long exp10 = (long)exp - fracDigits + trailingZeros;
+        if (exp10 < -28)
+            return false;
+
+        Span<int> bits = stackalloc int[4];
+        decimal.GetBits(result, bits);
+        UInt128 mMantissa = new((uint)bits[2], ((ulong)(uint)bits[1] << 32) | (uint)bits[0]);
+        if (mMantissa == 0)
+            return false;
+
+        bool mNeg = bits[3] < 0;
+        long mExp10 = -((bits[3] >> 16) & 0x7F);
+        while (mMantissa % 10 == 0)
+        {
+            mMantissa /= 10;
+            mExp10++;
+        }
+
+        return rawNeg == mNeg && rawMantissa == mMantissa && exp10 == mExp10;
     }
 
     private static bool TryNavigate(JsonElement root, string path, out JsonElement value)
@@ -391,6 +601,35 @@ public sealed class JsonlDataReader : DbDataReader
         throw new IndexOutOfRangeException(name);
     }
 
+    [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)]
+    private static Type ResolveFieldType(Type type)
+    {
+        Type underlying = Nullable.GetUnderlyingType(type) ?? type;
+        if (underlying == typeof(string)) return typeof(string);
+        if (underlying == typeof(object)) return typeof(object);
+        if (underlying == typeof(bool)) return typeof(bool);
+        if (underlying == typeof(byte)) return typeof(byte);
+        if (underlying == typeof(sbyte)) return typeof(sbyte);
+        if (underlying == typeof(short)) return typeof(short);
+        if (underlying == typeof(ushort)) return typeof(ushort);
+        if (underlying == typeof(int)) return typeof(int);
+        if (underlying == typeof(uint)) return typeof(uint);
+        if (underlying == typeof(long)) return typeof(long);
+        if (underlying == typeof(ulong)) return typeof(ulong);
+        if (underlying == typeof(float)) return typeof(float);
+        if (underlying == typeof(double)) return typeof(double);
+        if (underlying == typeof(decimal)) return typeof(decimal);
+        if (underlying == typeof(char)) return typeof(char);
+        if (underlying == typeof(DateTime)) return typeof(DateTime);
+        if (underlying == typeof(DateTimeOffset)) return typeof(DateTimeOffset);
+        if (underlying == typeof(DateOnly)) return typeof(DateOnly);
+        if (underlying == typeof(TimeOnly)) return typeof(TimeOnly);
+        if (underlying == typeof(TimeSpan)) return typeof(TimeSpan);
+        if (underlying == typeof(Guid)) return typeof(Guid);
+        if (underlying == typeof(byte[])) return typeof(byte[]);
+        return typeof(object);
+    }
+
     /// <inheritdoc/>
     [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields)]
     public override Type GetFieldType(int ordinal)
@@ -399,7 +638,7 @@ public sealed class JsonlDataReader : DbDataReader
         if (!initialized && columns.Count == 0 && readerOptions.InferSchemaFromFirstLine)
             EnsureInitialized();
         ValidateOrdinal(ordinal);
-        return columns[ordinal].DataType;
+        return ResolveFieldType(columns[ordinal].DataType);
     }
 
     /// <inheritdoc/>
@@ -446,7 +685,30 @@ public sealed class JsonlDataReader : DbDataReader
     {
         ThrowIfBeforeRead();
         ValidateOrdinal(ordinal);
-        throw new NotSupportedException("Binary fields are not supported by JsonlDataReader.");
+        object? value = currentValues[ordinal];
+        if (value is null or DBNull)
+            throw new InvalidCastException($"Column {ordinal} contains null data.");
+        if (value is not byte[] bytes)
+            throw new InvalidCastException($"Cannot cast column {ordinal} value to byte[].");
+        if (dataOffset < 0)
+            throw new ArgumentOutOfRangeException(nameof(dataOffset), "Data offset cannot be negative.");
+
+        if (buffer is null)
+            return bytes.LongLength;
+
+        if (bufferOffset < 0)
+            throw new ArgumentOutOfRangeException(nameof(bufferOffset), "Buffer offset cannot be negative.");
+        if (length < 0)
+            throw new ArgumentOutOfRangeException(nameof(length), "Length cannot be negative.");
+        if ((long)bufferOffset + length > buffer.Length)
+            throw new ArgumentException("Buffer is not large enough for the requested copy length.", nameof(buffer));
+
+        if (dataOffset >= bytes.Length || length == 0)
+            return 0;
+
+        int available = (int)Math.Min(length, bytes.Length - dataOffset);
+        bytes.AsSpan((int)dataOffset, available).CopyTo(buffer.AsSpan(bufferOffset));
+        return available;
     }
     /// <inheritdoc/>
     public override char GetChar(int ordinal) => Convert.ToChar(GetValue(ordinal), CultureInfo.InvariantCulture);
@@ -504,7 +766,7 @@ public sealed class JsonlDataReader : DbDataReader
             DataRow row = table.NewRow();
             row["ColumnName"] = columns[i].Name;
             row["ColumnOrdinal"] = i;
-            row["DataType"] = columns[i].DataType;
+            row["DataType"] = ResolveFieldType(columns[i].DataType);
             row["AllowDBNull"] = true;
             table.Rows.Add(row);
         }

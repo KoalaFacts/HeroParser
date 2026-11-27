@@ -66,8 +66,12 @@ jobs:
             TAG="${{ github.event.release.tag_name }}"
             VERSION="${TAG#v}"
           else
-            # Fallback to extracting from csproj
-            VERSION=$(grep -oP '(?<=<Version>)[^<]+' src/HeroParser/HeroParser.csproj)
+            # Fallback to extracting resolved MSBuild version property (from Directory.Build.props / csproj)
+            VERSION=$(dotnet msbuild src/HeroParser/HeroParser.csproj -getProperty:Version -nologo | tr -d '[:space:]')
+            if [ -z "${VERSION}" ]; then
+              echo "Error: Could not determine project Version from MSBuild"
+              exit 1
+            fi
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Version determined: $VERSION"

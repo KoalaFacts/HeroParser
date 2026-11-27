@@ -77,6 +77,8 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
         private readonly CancellationToken cancellationToken;
 
         private CsvPipeSequenceReader? sequenceReader;
+        private byte[]? rowSlab;
+        private int rowSlabOffset;
         private bool completed;
 
         public Enumerator(
@@ -107,36 +109,87 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
 
         public CsvPipeRow Current { get; private set; }
 
-        public async ValueTask<bool> MoveNextAsync()
+        public ValueTask<bool> MoveNextAsync()
         {
             if (completed)
             {
-                return false;
+                return ValueTask.FromResult(false);
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return ValueTask.FromCanceled<bool>(cancellationToken);
+            }
+
             sequenceReader ??= new CsvPipeSequenceReader(reader, options);
 
-            if (!await sequenceReader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+            ValueTask<bool> moveNextTask = sequenceReader.MoveNextAsync(cancellationToken);
+            if (moveNextTask.IsCompletedSuccessfully)
+            {
+                if (!moveNextTask.Result)
+                {
+                    completed = true;
+                    return ValueTask.FromResult(false);
+                }
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return ValueTask.FromCanceled<bool>(cancellationToken);
+                }
+
+                Current = sequenceReader.Current.ToOwnedRow(ref rowSlab, ref rowSlabOffset);
+                return ValueTask.FromResult(true);
+            }
+
+            return MoveNextSlowAsync(moveNextTask);
+        }
+
+        private async ValueTask<bool> MoveNextSlowAsync(ValueTask<bool> pendingMoveNext)
+        {
+            if (!await pendingMoveNext.ConfigureAwait(false))
             {
                 completed = true;
                 return false;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            Current = sequenceReader.Current.ToOwnedRow();
+            Current = sequenceReader!.Current.ToOwnedRow(ref rowSlab, ref rowSlabOffset);
             return true;
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
-            if (sequenceReader is not null)
+            rowSlab = null;
+            rowSlabOffset = 0;
+
+            if (sequenceReader is { } readerToDispose)
             {
-                await sequenceReader.DisposeAsync().ConfigureAwait(false);
                 sequenceReader = null;
+                ValueTask disposeTask = readerToDispose.DisposeAsync();
+                if (disposeTask.IsCompletedSuccessfully)
+                {
+                    disposeTask.GetAwaiter().GetResult();
+                    linkedCancellationSource?.Dispose();
+                    return default;
+                }
+
+                return DisposeSlowAsync(disposeTask);
             }
 
             linkedCancellationSource?.Dispose();
+            return default;
+        }
+
+        private async ValueTask DisposeSlowAsync(ValueTask disposeTask)
+        {
+            try
+            {
+                await disposeTask.ConfigureAwait(false);
+            }
+            finally
+            {
+                linkedCancellationSource?.Dispose();
+            }
         }
     }
 
@@ -619,7 +672,7 @@ public readonly struct CsvPipeRow
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int ReadColumnEnd(int index)
     {
-        int offset = index * headerElementSize;
+        int offset = dataOffset - ((columnCount + 1 - index) * headerElementSize);
         return headerElementSize switch
         {
             1 => storage[offset] - 1,

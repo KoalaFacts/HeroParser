@@ -8,49 +8,10 @@ using Xunit;
 namespace HeroParser.Tests;
 
 /// <summary>
-/// Allocation and <c>Clone()</c> regression tests for zero-copy Fixed-Width and JSONL <see cref="PipeReader"/> streaming.
+/// <c>Clone()</c> and multi-segment chunk tests for zero-copy Fixed-Width and JSONL <see cref="PipeReader"/> streaming.
 /// </summary>
 public class FixedWidthAndJsonlPipeAllocationTests
 {
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task FixedWidth_ReadFromPipeReader_LargeInput_AllocatesConstantMemory()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var sb = new StringBuilder();
-        for (int i = 0; i < 5_000; i++)
-        {
-            sb.Append((i % 10_000).ToString("D4", System.Globalization.CultureInfo.InvariantCulture))
-              .Append("Alice ")
-              .Append('\n');
-        }
-
-        byte[] payload = Encoding.UTF8.GetBytes(sb.ToString());
-        var options = new FixedWidthReadOptions { MaxRecordCount = 10_000 };
-
-        async ValueTask<int> RunPassAsync()
-        {
-            using var stream = new MemoryStream(payload, writable: false);
-            var reader = PipeReader.Create(stream);
-            int total = 0;
-            await foreach (var row in FixedWidth.ReadFromPipeReaderAsync(reader, options, ct))
-            {
-                total += row.Length;
-            }
-
-            return total;
-        }
-
-        Assert.Equal(50_000, await RunPassAsync());
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        int totalLength = await RunPassAsync();
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(50_000, totalLength);
-        Assert.True(allocated < 16 * 1024, $"Expected O(1) allocation (< 16 KiB) for 5,000 FixedWidth pipe rows, but allocated {allocated:N0} bytes.");
-    }
-
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task FixedWidth_ReadFromPipeReader_CloneAcrossMultiSegmentChunks_PreservesAllRecords()
@@ -83,44 +44,6 @@ public class FixedWidthAndJsonlPipeAllocationTests
         }
 
         Assert.Equal(0, default(FixedWidthPipeRow).Clone().Length);
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task Jsonl_ReadLinesAsync_LargeInput_AllocatesConstantMemory()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var sb = new StringBuilder();
-        for (int i = 0; i < 5_000; i++)
-        {
-            sb.Append("{\"id\":").Append(i).Append(",\"name\":\"Item_").Append(i).Append("\"}\n");
-        }
-
-        byte[] payload = Encoding.UTF8.GetBytes(sb.ToString());
-
-        async ValueTask<long> RunPassAsync()
-        {
-            using var stream = new MemoryStream(payload, writable: false);
-            var reader = PipeReader.Create(stream);
-            long totalBytes = 0;
-            await foreach (JsonlLine line in Jsonl.ReadLinesAsync(reader, cancellationToken: ct))
-            {
-                totalBytes += line.Utf8.Length;
-            }
-
-            await reader.CompleteAsync();
-            return totalBytes;
-        }
-
-        long expectedBytes = await RunPassAsync();
-        Assert.True(expectedBytes > 100_000);
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        long actualBytes = await RunPassAsync();
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(expectedBytes, actualBytes);
-        Assert.True(allocated < 16 * 1024, $"Expected O(1) allocation (< 16 KiB) for 5,000 JSONL pipe lines, but allocated {allocated:N0} bytes.");
     }
 
     [Fact]

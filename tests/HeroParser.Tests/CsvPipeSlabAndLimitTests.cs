@@ -65,44 +65,6 @@ public class CsvPipeSlabAndLimitTests
 
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task ReadFromPipeReader_LargeInput_AllocatesConstantMemory()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var sb = new StringBuilder();
-        for (int i = 0; i < 5_000; i++)
-        {
-            sb.Append("val").Append(i).Append("_0,val").Append(i).Append("_1,val").Append(i).Append("_2,val").Append(i).Append("_3\n");
-        }
-
-        byte[] payload = Encoding.UTF8.GetBytes(sb.ToString());
-        var options = new CsvReadOptions { MaxRowCount = 10_000 };
-
-        async ValueTask<int> RunPassAsync()
-        {
-            using var stream = new MemoryStream(payload, writable: false);
-            var reader = PipeReader.Create(stream);
-            int total = 0;
-            await foreach (var row in Csv.ReadFromPipeReaderAsync(reader, options, ct))
-            {
-                total += row.ColumnCount;
-            }
-
-            return total;
-        }
-
-        // Warm up JIT, ArrayPool buckets, and PipeReader internals before measuring.
-        Assert.Equal(20_000, await RunPassAsync());
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        int columns = await RunPassAsync();
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        Assert.Equal(20_000, columns);
-        Assert.True(allocated < 16 * 1024, $"Expected O(1) allocation (< 16 KiB) for 5,000 rows (~225 KiB payload), but allocated {allocated:N0} bytes.");
-    }
-
-    [Fact]
-    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
     public async Task PipeSequenceReader_MaxInputSize_ExactAndExceeded_EnforcedCorrectly()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -347,15 +347,17 @@ public static partial class FixedWidth
         ArgumentException.ThrowIfNullOrEmpty(path);
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
-        options.Validate();
         culture ??= CultureInfo.InvariantCulture;
 
-        var text = await ReadFileTextAsync(path, options, encoding, cancellationToken).ConfigureAwait(false);
-        var records = DeserializeRecords<T>(text, options, culture, onError);
+        var streamReader = CreateAsyncStreamReader(path, options, encoding);
+        await using var streamReaderDisposal = streamReader.ConfigureAwait(false);
 
-        foreach (var record in records)
+        await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+            streamReader,
+            culture,
+            onError,
+            cancellationToken: cancellationToken).ConfigureAwait(false))
         {
-            cancellationToken.ThrowIfCancellationRequested();
             yield return record;
         }
     }
@@ -385,20 +387,17 @@ public static partial class FixedWidth
         ArgumentNullException.ThrowIfNull(stream);
         encoding ??= Encoding.UTF8;
         options ??= FixedWidthReadOptions.Default;
-        options.Validate();
-        if (stream.CanSeek)
-        {
-            options.ValidateInputSize(stream.Length - stream.Position);
-        }
         culture ??= CultureInfo.InvariantCulture;
 
-        using var reader = CreateBufferedTextReader(stream, options, encoding, leaveOpen);
-        var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-        var records = DeserializeRecords<T>(text, options, culture, onError);
+        var streamReader = CreateAsyncStreamReader(stream, options, encoding, leaveOpen);
+        await using var streamReaderDisposal = streamReader.ConfigureAwait(false);
 
-        foreach (var record in records)
+        await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+            streamReader,
+            culture,
+            onError,
+            cancellationToken: cancellationToken).ConfigureAwait(false))
         {
-            cancellationToken.ThrowIfCancellationRequested();
             yield return record;
         }
     }

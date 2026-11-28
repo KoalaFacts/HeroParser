@@ -95,7 +95,7 @@ When `npm/` or `src/HeroParser.Wasm/` change, add the Wasm npm package and brows
 - Not every documented conversion direction exists: fixed-width → CSV and CSV → `.xlsx` return "requires column widths" / "Unsupported conversion direction" with exit 1 (see "Known gaps").
 - The CLI must not set `UseSystemResourceKeys` (it would print .NET errors as resource keys such as `IO_FileExists_Name`); `CliRuntimeConfigTests` checks the built `HeroParser.Cli.runtimeconfig.json`, but the AOT binary is only checked by running it: `inspect data.csv --save-plan <existing file>` must print `The file '<path>' already exists.`
 - Performance claims need CLAUDE.md's same-runner A/B; a local benchmark run proves nothing under ~20%.
-- A green `Run Performance Benchmarks` CI check is not verification: before recommending or merging any PR that triggers benchmarks, read every table in the PR benchmark comment (`Throughput`, `Sep`, `Sep AVX2`, `Streaming`, `PipeReader`) and audit `Mean`, `Allocated`, `Gen0–Gen2`, and any diagnoser anomalies (`-` / `0 B` / truncated bytes).
+- A green `Run Performance Benchmarks` CI check is not verification: before recommending or merging any PR that triggers benchmarks, read every table in the PR benchmark comment (`Throughput`, `Sep`, `Sep AVX2`, `Streaming`, `PipeReader`, `Fixed-Width PipeReader`, `JSONL PipeReader`) and audit `Mean`, `Allocated`, `Gen0–Gen2`, and any diagnoser anomalies (`-` / `0 B` / truncated bytes).
 
 ## Known gaps found while writing this skill
 

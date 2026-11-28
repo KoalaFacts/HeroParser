@@ -583,12 +583,40 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var options = GetOptions();
-        var text = await FixedWidthFactory.ReadFileTextAsync(path, options, encoding, cancellationToken).ConfigureAwait(false);
-        foreach (var record in FromText(text))
+        var streamReader = FixedWidthFactory.CreateAsyncStreamReader(path, options, encoding);
+        await using var streamReaderDisposal = streamReader.ConfigureAwait(false);
+
+        if (readMapSource is not null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            var descriptor = await BuildDescriptorAsync(streamReader, options, cancellationToken).ConfigureAwait(false);
+            var binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
+
+            await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+                streamReader,
+                binder,
+                progress,
+                progressIntervalRows,
+                cancellationToken).ConfigureAwait(false))
+            {
+                yield return record;
+            }
+
+            yield break;
+        }
+
+        await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+            streamReader,
+            culture,
+            onDeserializeError,
+            nullValues,
+            customConverters,
+            progress,
+            progressIntervalRows,
+            cancellationToken).ConfigureAwait(false))
+        {
             yield return record;
         }
     }
@@ -604,20 +632,56 @@ public sealed class FixedWidthReaderBuilder<T> where T : new()
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var options = GetOptions();
-        if (stream.CanSeek)
+        var streamReader = FixedWidthFactory.CreateAsyncStreamReader(stream, options, encoding, leaveOpen: true);
+        await using var streamReaderDisposal = streamReader.ConfigureAwait(false);
+
+        if (readMapSource is not null)
         {
-            options.ValidateInputSize(stream.Length);
+            var descriptor = await BuildDescriptorAsync(streamReader, options, cancellationToken).ConfigureAwait(false);
+            var binder = new FixedWidthDescriptorBinder<T>(descriptor, culture, nullValues);
+
+            await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+                streamReader,
+                binder,
+                progress,
+                progressIntervalRows,
+                cancellationToken).ConfigureAwait(false))
+            {
+                yield return record;
+            }
+
+            yield break;
         }
 
-        using var reader = new StreamReader(stream, encoding, leaveOpen: true);
-        var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var record in FromText(text))
+        await foreach (var record in FixedWidthRecordBinder<T>.BindAsync(
+            streamReader,
+            culture,
+            onDeserializeError,
+            nullValues,
+            customConverters,
+            progress,
+            progressIntervalRows,
+            cancellationToken).ConfigureAwait(false))
         {
-            cancellationToken.ThrowIfCancellationRequested();
             yield return record;
         }
+    }
+
+    private async ValueTask<FixedWidthRecordDescriptor<T>> BuildDescriptorAsync(
+        FixedWidthAsyncStreamReader streamReader,
+        FixedWidthReadOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (readMapSource is InlineFixedWidthMapWrapper<T> inlineWrapper && inlineWrapper.HasHeaderNames && options.HasHeaderRow)
+        {
+            var headerRow = await streamReader.ReadHeaderRowTextAsync(cancellationToken).ConfigureAwait(false);
+            return inlineWrapper.BuildReadDescriptor(headerRow, options.CaseSensitiveHeaders);
+        }
+
+        return readMapSource!.BuildReadDescriptor();
     }
 
     /// <summary>

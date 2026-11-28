@@ -8,6 +8,16 @@ using Xunit;
 
 namespace HeroParser.Tests.Memory;
 
+[GenerateBinder]
+public struct PrimitiveFixedStreamRow
+{
+    [PositionalMap(Start = 0, Length = 6, Alignment = FieldAlignment.Right, PadChar = '0')]
+    public int Id { get; set; }
+
+    [PositionalMap(Start = 6, Length = 10, Alignment = FieldAlignment.Right, PadChar = '0')]
+    public long BigId { get; set; }
+}
+
 [Collection(MemoryRegressionCollection.NAME)]
 [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
 public sealed class PipeReaderMemoryRegressionTests
@@ -103,6 +113,62 @@ public sealed class PipeReaderMemoryRegressionTests
             scenario: "Jsonl.ReadLinesAsync");
     }
 
+    [Fact]
+    public async Task FixedWidth_TypedStreamAndBuilder_ZeroPerRowGrowth()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        byte[] smallPayload = BuildPrimitiveFixedStreamPayload(SMALL_ROWS);
+        byte[] largePayload = BuildPrimitiveFixedStreamPayload(LARGE_ROWS);
+        var options = new FixedWidthReadOptions { MaxRecordCount = LARGE_ROWS + 10 };
+        using var smallMs = new MemoryStream(smallPayload, writable: false);
+        using var largeMs = new MemoryStream(largePayload, writable: false);
+        long checksum = 0;
+
+        async Task RunBuilderStreamAsync(MemoryStream stream)
+        {
+            stream.Position = 0;
+            long sum = 0;
+            await foreach (var row in FixedWidth.Read<PrimitiveFixedStreamRow>()
+                .WithMaxRecords(LARGE_ROWS + 10)
+                .FromStreamAsync(stream, ct))
+            {
+                sum += row.Id + (row.BigId & 0xFF);
+            }
+
+            checksum = sum;
+        }
+
+        await AllocationMeter.AssertZeroPerRowGrowthAsync(
+            () => RunBuilderStreamAsync(smallMs),
+            () => RunBuilderStreamAsync(largeMs),
+            DELTA_ROWS,
+            scenario: "FixedWidth.Read<PrimitiveFixedStreamRow>().FromStreamAsync");
+        Assert.NotEqual(0L, checksum);
+
+        async Task RunStaticStreamAsync(MemoryStream stream)
+        {
+            stream.Position = 0;
+            long sum = 0;
+            await foreach (var row in FixedWidth.DeserializeRecordsAsync<PrimitiveFixedStreamRow>(
+                stream,
+                options,
+                leaveOpen: true,
+                cancellationToken: ct))
+            {
+                sum += row.Id + (row.BigId & 0xFF);
+            }
+
+            checksum = sum;
+        }
+
+        await AllocationMeter.AssertZeroPerRowGrowthAsync(
+            () => RunStaticStreamAsync(smallMs),
+            () => RunStaticStreamAsync(largeMs),
+            DELTA_ROWS,
+            scenario: "FixedWidth.DeserializeRecordsAsync<PrimitiveFixedStreamRow>(Stream)");
+        Assert.NotEqual(0L, checksum);
+    }
+
     private static byte[] BuildCsvPayload(int rows)
     {
         var sb = new StringBuilder(rows * 48);
@@ -132,6 +198,19 @@ public sealed class PipeReaderMemoryRegressionTests
         for (int i = 0; i < rows; i++)
         {
             sb.Append("{\"id\":").Append(i).Append(",\"name\":\"Item_").Append(i).Append("\"}\n");
+        }
+
+        return Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
+    private static byte[] BuildPrimitiveFixedStreamPayload(int rows)
+    {
+        var sb = new StringBuilder(rows * 17);
+        for (int i = 1; i <= rows; i++)
+        {
+            sb.Append(i.ToString("D6", CultureInfo.InvariantCulture))
+              .Append((10_000_000L + i).ToString("D10", CultureInfo.InvariantCulture))
+              .Append('\n');
         }
 
         return Encoding.UTF8.GetBytes(sb.ToString());

@@ -81,7 +81,11 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                     return ValueTask.FromResult(hasMore);
                 }
             }
-            catch (Exception ex)
+            catch (OperationCanceledException oce)
+            {
+                return ValueTask.FromCanceled<bool>(oce.CancellationToken.CanBeCanceled ? oce.CancellationToken : cancellationToken);
+            }
+            catch (FixedWidthException ex)
             {
                 return ValueTask.FromException<bool>(ex);
             }

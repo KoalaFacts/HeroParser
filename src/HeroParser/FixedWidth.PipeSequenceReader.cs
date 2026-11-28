@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.IO.Pipelines;
+using System.Runtime.CompilerServices;
 using HeroParser.FixedWidths;
 
 namespace HeroParser;
@@ -55,14 +56,42 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
         }
     }
 
-    internal async ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal ValueTask<bool> MoveNextAsync(CancellationToken cancellationToken = default)
     {
-        ThrowIfDisposed();
+        if (disposed)
+        {
+            return ValueTask.FromException<bool>(new ObjectDisposedException(nameof(FixedWidthPipeSequenceReader)));
+        }
+
         // Current is invalid after any MoveNextAsync attempt, even one canceled
         // before a new PipeReader read. Buffered bytes remain available to retry.
         hasCurrent = false;
-        cancellationToken.ThrowIfCancellationRequested();
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return ValueTask.FromCanceled<bool>(cancellationToken);
+        }
 
+        if (hasBufferedRead)
+        {
+            try
+            {
+                if (TryAdvanceBuffered(cancellationToken, out bool hasMore))
+                {
+                    return ValueTask.FromResult(hasMore);
+                }
+            }
+            catch (Exception ex)
+            {
+                return ValueTask.FromException<bool>(ex);
+            }
+        }
+
+        return MoveNextSlowAsync(cancellationToken);
+    }
+
+    private async ValueTask<bool> MoveNextSlowAsync(CancellationToken cancellationToken)
+    {
         while (true)
         {
             if (!hasBufferedRead)
@@ -98,123 +127,168 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
                 hasBufferedRead = true;
             }
 
-            var unreadBuffer = bufferedData;
-            if (options.RecordLength is { } recordLength)
+            if (TryAdvanceBuffered(cancellationToken, out bool hasMore))
             {
-                while (FixedWidth.TryReadPipeFixedLengthRecord(ref unreadBuffer, recordLength, out var rowData))
+                return hasMore;
+            }
+        }
+    }
+
+    private bool TryAdvanceBuffered(CancellationToken cancellationToken, out bool hasMore)
+    {
+        var unreadBuffer = bufferedData;
+        if (options.RecordLength is { } recordLength)
+        {
+            while (FixedWidth.TryReadPipeFixedLengthRecord(ref unreadBuffer, recordLength, out var rowData))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (remainingRowsToSkip > 0)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    if (remainingRowsToSkip > 0)
-                    {
-                        if (trackSourceLineNumbers)
-                        {
-                            sourceLineNumber += new FixedWidthLineScanner().CountNewlines(rowData, ref previousRecordEndedWithCr);
-                        }
-
-                        remainingRowsToSkip--;
-                        continue;
-                    }
-
-                    recordCount++;
-                    FixedWidth.EnsureRecordCount(recordCount, options.MaxRecordCount);
-
-                    int rowStartLine = trackSourceLineNumbers ? sourceLineNumber : 0;
                     if (trackSourceLineNumbers)
                     {
                         sourceLineNumber += new FixedWidthLineScanner().CountNewlines(rowData, ref previousRecordEndedWithCr);
                     }
 
-                    currentRowData = rowData;
-                    currentRecordNumber = recordCount;
-                    currentSourceLineNumber = rowStartLine;
-                    hasCurrent = true;
-                    bufferedData = unreadBuffer;
-                    return true;
+                    remainingRowsToSkip--;
+                    continue;
                 }
 
-                if (bufferedIsCompleted && unreadBuffer.Length > 0 && remainingRowsToSkip <= 0)
+                recordCount++;
+                FixedWidth.EnsureRecordCount(recordCount, options.MaxRecordCount);
+
+                int rowStartLine = trackSourceLineNumbers ? sourceLineNumber : 0;
+                if (trackSourceLineNumbers)
                 {
-                    FixedWidth.ThrowInvalidPipeRecordLength(
-                        recordLength,
-                        unreadBuffer.Length,
-                        recordCount + 1,
-                        sourceLineNumber,
-                        trackSourceLineNumbers);
+                    sourceLineNumber += new FixedWidthLineScanner().CountNewlines(rowData, ref previousRecordEndedWithCr);
                 }
+
+                currentRowData = rowData;
+                currentRecordNumber = recordCount;
+                currentSourceLineNumber = rowStartLine;
+                hasCurrent = true;
+                bufferedData = unreadBuffer;
+                hasMore = true;
+                return true;
             }
-            else
+
+            if (bufferedIsCompleted && unreadBuffer.Length > 0 && remainingRowsToSkip <= 0)
             {
-                while (FixedWidth.TryReadPipeLineRecord(ref unreadBuffer, bufferedIsCompleted, out var rowData))
+                FixedWidth.ThrowInvalidPipeRecordLength(
+                    recordLength,
+                    unreadBuffer.Length,
+                    recordCount + 1,
+                    sourceLineNumber,
+                    trackSourceLineNumbers);
+            }
+        }
+        else
+        {
+            while (FixedWidth.TryReadPipeLineRecord(ref unreadBuffer, bufferedIsCompleted, out var rowData))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int rowStartLine = trackSourceLineNumbers ? sourceLineNumber : 0;
+
+                if (remainingRowsToSkip > 0)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    int rowStartLine = trackSourceLineNumbers ? sourceLineNumber : 0;
-
-                    if (remainingRowsToSkip > 0)
-                    {
-                        remainingRowsToSkip--;
-                        if (trackSourceLineNumbers)
-                        {
-                            sourceLineNumber++;
-                        }
-
-                        continue;
-                    }
-
-                    if (rowData.Length == 0 && options.SkipEmptyLines)
-                    {
-                        if (trackSourceLineNumbers)
-                        {
-                            sourceLineNumber++;
-                        }
-
-                        continue;
-                    }
-
-                    if (options.CommentCharacter is { } commentChar &&
-                        new FixedWidthLineScanner().StartsWithComment(rowData, commentChar))
-                    {
-                        if (trackSourceLineNumbers)
-                        {
-                            sourceLineNumber++;
-                        }
-
-                        continue;
-                    }
-
-                    recordCount++;
-                    FixedWidth.EnsureRecordCount(recordCount, options.MaxRecordCount);
-                    currentRowData = rowData;
-                    currentRecordNumber = recordCount;
-                    currentSourceLineNumber = rowStartLine;
-                    hasCurrent = true;
-                    bufferedData = unreadBuffer;
-
+                    remainingRowsToSkip--;
                     if (trackSourceLineNumbers)
                     {
                         sourceLineNumber++;
                     }
 
-                    return true;
+                    continue;
                 }
-            }
 
-            if (!bufferedIsCompleted)
-            {
-                ReleaseBufferedRead(unreadBuffer.Start, unreadBuffer.Length);
-                continue;
-            }
+                if (rowData.Length == 0 && options.SkipEmptyLines)
+                {
+                    if (trackSourceLineNumbers)
+                    {
+                        sourceLineNumber++;
+                    }
 
+                    continue;
+                }
+
+                if (options.CommentCharacter is { } commentChar &&
+                    new FixedWidthLineScanner().StartsWithComment(rowData, commentChar))
+                {
+                    if (trackSourceLineNumbers)
+                    {
+                        sourceLineNumber++;
+                    }
+
+                    continue;
+                }
+
+                recordCount++;
+                FixedWidth.EnsureRecordCount(recordCount, options.MaxRecordCount);
+                currentRowData = rowData;
+                currentRecordNumber = recordCount;
+                currentSourceLineNumber = rowStartLine;
+                hasCurrent = true;
+                bufferedData = unreadBuffer;
+
+                if (trackSourceLineNumbers)
+                {
+                    sourceLineNumber++;
+                }
+
+                hasMore = true;
+                return true;
+            }
+        }
+
+        if (!bufferedIsCompleted)
+        {
             ReleaseBufferedRead(unreadBuffer.Start, unreadBuffer.Length);
+            hasMore = false;
             return false;
         }
+
+        ReleaseBufferedRead(unreadBuffer.Start, unreadBuffer.Length);
+        hasMore = false;
+        return true;
     }
 
-    public async ValueTask DisposeAsync()
+    internal FixedWidthPipeRow CreateBorrowedCurrentRow(ref byte[]? rentedBuffer)
+    {
+        if (currentRowData.IsEmpty)
+        {
+            return new FixedWidthPipeRow(ReadOnlyMemory<byte>.Empty, currentRecordNumber, currentSourceLineNumber, options);
+        }
+
+        if (currentRowData.IsSingleSegment)
+        {
+            return new FixedWidthPipeRow(currentRowData.First, currentRecordNumber, currentSourceLineNumber, options);
+        }
+
+        int rowLength = checked((int)currentRowData.Length);
+        byte[] buffer = rentedBuffer is { Length: var currentLen } && currentLen >= rowLength
+            ? rentedBuffer
+            : GrowRentedBuffer(ref rentedBuffer, rowLength);
+        currentRowData.CopyTo(buffer.AsSpan(0, rowLength));
+        return new FixedWidthPipeRow(buffer.AsMemory(0, rowLength), currentRecordNumber, currentSourceLineNumber, options);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static byte[] GrowRentedBuffer(ref byte[]? rentedBuffer, int requiredLength)
+    {
+        byte[] replacement = ArrayPool<byte>.Shared.Rent(Math.Max(requiredLength, 256));
+        if (rentedBuffer is { } previous)
+        {
+            ArrayPool<byte>.Shared.Return(previous, clearArray: false);
+        }
+
+        rentedBuffer = replacement;
+        return replacement;
+    }
+
+    public ValueTask DisposeAsync()
     {
         if (disposed)
         {
-            return;
+            return default;
         }
 
         disposed = true;
@@ -223,7 +297,7 @@ internal sealed class FixedWidthPipeSequenceReader : IAsyncDisposable
             ReleaseBufferedRead(bufferedData.Start, bufferedData.Length);
         }
 
-        await reader.CompleteAsync().ConfigureAwait(false);
+        return reader.CompleteAsync();
     }
 
     private void ReleaseBufferedRead(SequencePosition consumed, long unreadBytes)

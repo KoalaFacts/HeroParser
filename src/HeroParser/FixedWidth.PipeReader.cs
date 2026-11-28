@@ -15,26 +15,21 @@ public static partial class FixedWidth
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>An async enumerable of fixed-width rows.</returns>
     /// <remarks>
-    /// The returned <see cref="FixedWidthPipeRow"/> owns its row data, so it remains valid after the underlying
-    /// <see cref="PipeReader"/> advances. Row parsing honors the same fixed-width options as the existing
-    /// span- and stream-based readers, including fixed-length mode, line-based mode, comments, skipped rows,
-    /// headers, source line tracking, and short-row handling.
+    /// For zero-copy, O(1) low-allocation streaming, the yielded <see cref="FixedWidthPipeRow"/> borrows the active
+    /// pipe/pooled buffer directly and remains valid only until the next <see cref="IAsyncEnumerator{T}.MoveNextAsync"/>
+    /// call or enumerator disposal; call <see cref="FixedWidthPipeRow.Clone"/> to retain an independent copy across iterations.
+    /// Row parsing honors the same fixed-width options as the existing span- and stream-based readers, including
+    /// fixed-length mode, line-based mode, comments, skipped rows, headers, source line tracking, and short-row handling.
     /// </remarks>
-    public static async IAsyncEnumerable<FixedWidthPipeRow> ReadFromPipeReaderAsync(
+    public static IAsyncEnumerable<FixedWidthPipeRow> ReadFromPipeReaderAsync(
         PipeReader reader,
         FixedWidthReadOptions? options = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(reader);
         options ??= FixedWidthReadOptions.Default;
         options.Validate();
-
-        var sequenceReader = new FixedWidthPipeSequenceReader(reader, options);
-        await using var sequenceReaderDisposal = sequenceReader.ConfigureAwait(false);
-        while (await sequenceReader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
-        {
-            yield return sequenceReader.Current.ToOwnedRow();
-        }
+        return new FixedWidthPipeRowAsyncEnumerable(reader, options, cancellationToken);
     }
 
     internal static bool TryProcessUtf8Bom(ref ReadOnlySequence<byte> buffer, bool isCompleted, ref bool bomProcessed)
@@ -191,7 +186,7 @@ public static partial class FixedWidth
         int rowLength = checked((int)rowData.Length);
         if (rowLength == 0)
         {
-            return new FixedWidthPipeRow([], recordNumber, sourceLineNumber, options);
+            return new FixedWidthPipeRow(ReadOnlyMemory<byte>.Empty, recordNumber, sourceLineNumber, options);
         }
 
         var rowBytes = GC.AllocateUninitializedArray<byte>(rowLength);
@@ -221,24 +216,167 @@ public static partial class FixedWidth
     }
 }
 
+internal sealed class FixedWidthPipeRowAsyncEnumerable(
+    PipeReader reader,
+    FixedWidthReadOptions options,
+    CancellationToken cancellationToken) : IAsyncEnumerable<FixedWidthPipeRow>
+{
+    public IAsyncEnumerator<FixedWidthPipeRow> GetAsyncEnumerator(CancellationToken enumeratorCancellationToken = default)
+        => new Enumerator(reader, options, cancellationToken, enumeratorCancellationToken);
+
+    private sealed class Enumerator : IAsyncEnumerator<FixedWidthPipeRow>
+    {
+        private readonly PipeReader reader;
+        private readonly FixedWidthReadOptions options;
+        private readonly CancellationTokenSource? linkedCancellationSource;
+        private readonly CancellationToken cancellationToken;
+
+        private FixedWidthPipeSequenceReader? sequenceReader;
+        private byte[]? rentedRowBuffer;
+        private bool completed;
+
+        public Enumerator(
+            PipeReader reader,
+            FixedWidthReadOptions options,
+            CancellationToken methodCancellationToken,
+            CancellationToken enumeratorCancellationToken)
+        {
+            this.reader = reader;
+            this.options = options;
+
+            if (!methodCancellationToken.CanBeCanceled)
+            {
+                cancellationToken = enumeratorCancellationToken;
+            }
+            else if (!enumeratorCancellationToken.CanBeCanceled || enumeratorCancellationToken == methodCancellationToken)
+            {
+                cancellationToken = methodCancellationToken;
+            }
+            else
+            {
+                linkedCancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                    methodCancellationToken,
+                    enumeratorCancellationToken);
+                cancellationToken = linkedCancellationSource.Token;
+            }
+        }
+
+        public FixedWidthPipeRow Current { get; private set; }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ValueTask<bool> MoveNextAsync()
+        {
+            Current = default;
+
+            if (completed)
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return ValueTask.FromCanceled<bool>(cancellationToken);
+            }
+
+            sequenceReader ??= new FixedWidthPipeSequenceReader(reader, options);
+
+            ValueTask<bool> moveNextTask = sequenceReader.MoveNextAsync(cancellationToken);
+            if (moveNextTask.IsCompletedSuccessfully)
+            {
+                if (!moveNextTask.Result)
+                {
+                    completed = true;
+                    return ValueTask.FromResult(false);
+                }
+
+                Current = sequenceReader.CreateBorrowedCurrentRow(ref rentedRowBuffer);
+                return ValueTask.FromResult(true);
+            }
+
+            return MoveNextSlowAsync(moveNextTask);
+        }
+
+        private async ValueTask<bool> MoveNextSlowAsync(ValueTask<bool> pendingMoveNext)
+        {
+            if (!await pendingMoveNext.ConfigureAwait(false))
+            {
+                completed = true;
+                return false;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            Current = sequenceReader!.CreateBorrowedCurrentRow(ref rentedRowBuffer);
+            return true;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Current = default;
+            if (rentedRowBuffer is { } bufferToReturn)
+            {
+                rentedRowBuffer = null;
+                ArrayPool<byte>.Shared.Return(bufferToReturn, clearArray: false);
+            }
+
+            if (sequenceReader is { } readerToDispose)
+            {
+                sequenceReader = null;
+                ValueTask disposeTask = readerToDispose.DisposeAsync();
+                if (disposeTask.IsCompletedSuccessfully)
+                {
+                    disposeTask.GetAwaiter().GetResult();
+                    linkedCancellationSource?.Dispose();
+                    return default;
+                }
+
+                return DisposeSlowAsync(disposeTask);
+            }
+
+            linkedCancellationSource?.Dispose();
+            return default;
+        }
+
+        private async ValueTask DisposeSlowAsync(ValueTask disposeTask)
+        {
+            try
+            {
+                await disposeTask.ConfigureAwait(false);
+            }
+            finally
+            {
+                linkedCancellationSource?.Dispose();
+            }
+        }
+    }
+}
+
 /// <summary>
 /// Represents a single fixed-width row parsed from a <see cref="PipeReader"/>.
 /// </summary>
 /// <remarks>
-/// The row owns its backing buffer, so it can safely outlive the async enumeration step that produced it.
+/// Rows yielded by <see cref="FixedWidth.ReadFromPipeReaderAsync(PipeReader, FixedWidthReadOptions?, CancellationToken)"/>
+/// borrow the active pipe/pooled buffer directly and are valid only until the next <c>MoveNextAsync</c> call or
+/// enumerator disposal; call <see cref="Clone"/> to retain an independent copy across iterations.
 /// Field access mirrors <see cref="FixedWidthByteSpanRow"/>, using byte offsets and lengths.
 /// </remarks>
 public readonly struct FixedWidthPipeRow
 {
-    private readonly byte[] data;
+    private readonly ReadOnlyMemory<byte> data;
     private readonly FixedWidthReadOptions options;
 
-    internal FixedWidthPipeRow(byte[] data, int recordNumber, int sourceLineNumber, FixedWidthReadOptions options)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal FixedWidthPipeRow(ReadOnlyMemory<byte> data, int recordNumber, int sourceLineNumber, FixedWidthReadOptions options)
     {
         this.data = data;
         this.options = options;
         RecordNumber = recordNumber;
         SourceLineNumber = sourceLineNumber;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal FixedWidthPipeRow(byte[] data, int recordNumber, int sourceLineNumber, FixedWidthReadOptions options)
+        : this((ReadOnlyMemory<byte>)data, recordNumber, sourceLineNumber, options)
+    {
     }
 
     /// <summary>Gets the 1-based record number.</summary>
@@ -254,7 +392,28 @@ public readonly struct FixedWidthPipeRow
     public int Length => data.Length;
 
     /// <summary>Gets the raw record as a UTF-8 byte span.</summary>
-    public ReadOnlySpan<byte> RawRecord => data;
+    public ReadOnlySpan<byte> RawRecord => data.Span;
+
+    /// <summary>
+    /// Creates an independent copy of this row whose memory remains valid after the enumerator advances or is disposed.
+    /// </summary>
+    /// <returns>A detached <see cref="FixedWidthPipeRow"/> owning its own backing buffer.</returns>
+    public FixedWidthPipeRow Clone()
+    {
+        if (options is null)
+        {
+            return default;
+        }
+
+        if (data.IsEmpty)
+        {
+            return new FixedWidthPipeRow(ReadOnlyMemory<byte>.Empty, RecordNumber, SourceLineNumber, options);
+        }
+
+        byte[] copy = GC.AllocateUninitializedArray<byte>(data.Length);
+        data.Span.CopyTo(copy);
+        return new FixedWidthPipeRow(copy, RecordNumber, SourceLineNumber, options);
+    }
 
     /// <summary>
     /// Gets a field at the specified byte position using the default padding options.
@@ -283,27 +442,28 @@ public readonly struct FixedWidthPipeRow
         if (length < 0)
             throw new ArgumentOutOfRangeException(nameof(length), length, "Field length cannot be negative.");
 
+        int recordLength = data.Length;
         long fieldEnd = (long)start + length;
-        if (fieldEnd > data.Length)
+        if (fieldEnd > recordLength)
         {
             if (!options.AllowShortRows)
             {
                 throw new FixedWidthException(
                     FixedWidthErrorCode.FieldOutOfBounds,
-                    $"Field at position {start} with length {length} extends beyond the record length ({data.Length}). " +
+                    $"Field at position {start} with length {length} extends beyond the record length ({recordLength}). " +
                     $"Enable AllowShortRows to handle short records gracefully.",
                     RecordNumber,
                     SourceLineNumber);
             }
 
-            if (start >= data.Length)
+            if (start >= recordLength)
             {
                 return new FixedWidthByteSpanColumn([]);
             }
         }
 
-        int actualLength = Math.Min(length, data.Length - start);
-        ReadOnlySpan<byte> span = data.AsSpan(start, actualLength);
+        int actualLength = Math.Min(length, recordLength - start);
+        ReadOnlySpan<byte> span = data.Span.Slice(start, actualLength);
 
         span = alignment switch
         {
@@ -326,7 +486,7 @@ public readonly struct FixedWidthPipeRow
     /// <summary>
     /// Converts the entire record to a UTF-8 decoded string.
     /// </summary>
-    public string ToDecodedString() => System.Text.Encoding.UTF8.GetString(data);
+    public string ToDecodedString() => System.Text.Encoding.UTF8.GetString(data.Span);
 
     private static ReadOnlySpan<byte> TrimStart(ReadOnlySpan<byte> span, byte padByte)
     {

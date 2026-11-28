@@ -242,7 +242,7 @@ public class JsonlCoverageTests2
         using var stream = new MemoryStream(data);
         List<JsonlLine> lines = [];
         await foreach (JsonlLine line in Jsonl.ReadLinesAsync(PipeReader.Create(stream), cancellationToken: TestContext.Current.CancellationToken))
-            lines.Add(line);
+            lines.Add(line.Clone());
         Assert.Single(lines);
     }
 

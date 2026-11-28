@@ -91,7 +91,7 @@ public class JsonlCoverageTests4
 
         List<JsonlLine> lines = [];
         await foreach (JsonlLine line in Jsonl.ReadLinesAsync(PipeReader.Create(stream), cancellationToken: TestContext.Current.CancellationToken))
-            lines.Add(line);
+            lines.Add(line.Clone());
 
         Assert.Single(lines);
         // Last byte of the captured line should be `}`, not `\r`.
@@ -110,7 +110,7 @@ public class JsonlCoverageTests4
 
         List<JsonlLine> lines = [];
         await foreach (JsonlLine line in Jsonl.ReadLinesAsync(PipeReader.Create(stream), cancellationToken: TestContext.Current.CancellationToken))
-            lines.Add(line);
+            lines.Add(line.Clone());
 
         Assert.Single(lines);
         Assert.Equal((byte)'{', lines[0].Utf8.Span[0]);
@@ -127,7 +127,7 @@ public class JsonlCoverageTests4
 
         List<JsonlLine> lines = [];
         await foreach (JsonlLine line in Jsonl.ReadLinesAsync(PipeReader.Create(stream), cancellationToken: TestContext.Current.CancellationToken))
-            lines.Add(line);
+            lines.Add(line.Clone());
 
         Assert.Single(lines);
         Assert.Equal(0, lines[0].Utf8.Length);

@@ -144,7 +144,7 @@ If you need the raw UTF-8 bytes of each line (e.g. to forward them unparsed to a
 PipeReader pipe = PipeReader.Create(stream);
 await foreach (JsonlLine line in Jsonl.ReadLinesAsync(pipe))
 {
-    // line.Utf8 is ReadOnlyMemory<byte> — valid only for this iteration
+    // line.Utf8 is ReadOnlyMemory<byte> — valid only for this iteration (call line.Clone() to retain across iterations)
     // line.LineNumber starts at 1
     await target.WriteAsync(line.Utf8);
 }

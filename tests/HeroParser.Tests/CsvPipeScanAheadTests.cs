@@ -355,11 +355,11 @@ public class CsvPipeScanAheadTests
     [Fact]
     public async Task OwnedRows_SurviveAdvancing()
     {
-        // ToOwnedRow copies batch rows out of the shared window; the copies must stay correct after MoveNext.
+        // Clone copies batch rows out of the enumerator's pooled buffer; cloned copies must stay correct after MoveNext.
         var utf8 = Encoding.UTF8.GetBytes(VaryingRows("\n", 200));
         var owned = new List<CsvPipeRow>();
         await foreach (var row in Csv.ReadFromPipeReaderAsync(CreatePipe(utf8, 101, 256), Options(), TestContext.Current.CancellationToken))
-            owned.Add(row);
+            owned.Add(row.Clone());
 
         var expected = ReadSpanOracle(utf8, Options());
         Assert.Equal(expected.Rows.Count, owned.Count);

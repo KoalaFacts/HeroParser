@@ -95,7 +95,7 @@ public sealed class FixedWidthPipeUnicodePaddingTests
         await foreach (var row in FixedWidth.ReadFromPipeReaderAsync(
             pipe.Reader, options, TestContext.Current.CancellationToken))
         {
-            rows.Add(row);
+            rows.Add(row.Clone());
         }
 
         return Assert.Single(rows);

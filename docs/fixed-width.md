@@ -137,6 +137,8 @@ foreach (var row in FixedWidth.Read()
 
 ### Async Reading
 
+`FixedWidth.Read<T>().FromFileAsync`, `FromStreamAsync`, and `FixedWidth.DeserializeRecordsAsync<T>` stream records incrementally without loading the full file or stream payload into memory:
+
 ```csharp
 // Async file reading with IAsyncEnumerable
 await foreach (var emp in FixedWidth.Read<Employee>().FromFileAsync("data.dat"))

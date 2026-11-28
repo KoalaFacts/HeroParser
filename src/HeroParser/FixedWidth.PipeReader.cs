@@ -228,7 +228,7 @@ internal sealed class FixedWidthPipeRowAsyncEnumerable(
     {
         private readonly PipeReader reader;
         private readonly FixedWidthReadOptions options;
-        private readonly CancellationTokenSource? linkedCancellationSource;
+        private CancellationTokenSource? linkedCancellationSource;
         private readonly CancellationToken cancellationToken;
 
         private FixedWidthPipeSequenceReader? sequenceReader;
@@ -318,6 +318,9 @@ internal sealed class FixedWidthPipeRowAsyncEnumerable(
                 ArrayPool<byte>.Shared.Return(bufferToReturn, clearArray: false);
             }
 
+            CancellationTokenSource? ctsToDispose = linkedCancellationSource;
+            linkedCancellationSource = null;
+
             if (sequenceReader is { } readerToDispose)
             {
                 sequenceReader = null;
@@ -325,26 +328,26 @@ internal sealed class FixedWidthPipeRowAsyncEnumerable(
                 if (disposeTask.IsCompletedSuccessfully)
                 {
                     disposeTask.GetAwaiter().GetResult();
-                    linkedCancellationSource?.Dispose();
-                    return default;
+                    using (ctsToDispose)
+                    {
+                        return default;
+                    }
                 }
 
-                return DisposeSlowAsync(disposeTask);
+                return DisposeSlowAsync(disposeTask, ctsToDispose);
             }
 
-            linkedCancellationSource?.Dispose();
-            return default;
+            using (ctsToDispose)
+            {
+                return default;
+            }
         }
 
-        private async ValueTask DisposeSlowAsync(ValueTask disposeTask)
+        private static async ValueTask DisposeSlowAsync(ValueTask disposeTask, CancellationTokenSource? ctsToDispose)
         {
-            try
+            using (ctsToDispose)
             {
                 await disposeTask.ConfigureAwait(false);
-            }
-            finally
-            {
-                linkedCancellationSource?.Dispose();
             }
         }
     }

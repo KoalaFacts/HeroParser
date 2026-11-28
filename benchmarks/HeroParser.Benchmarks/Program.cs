@@ -41,6 +41,7 @@ public class Program
         typeof(ExcelWriteBenchmarks),
         typeof(ExcelReadBenchmarks),
         typeof(JsonlBenchmark),
+        typeof(JsonlPipeReaderBenchmarks),
         typeof(HtbBenchmark),
         typeof(WriteGeneratorBenchmarks),
         typeof(DataReaderExportBenchmarks),
@@ -125,7 +126,8 @@ public class Program
         ],
         ["--excel-write"] = [typeof(ExcelWriteBenchmarks)],
         ["--excel-read"] = [typeof(ExcelReadBenchmarks)],
-        ["--jsonl"] = [typeof(JsonlBenchmark)],
+        ["--jsonl"] = [typeof(JsonlBenchmark), typeof(JsonlPipeReaderBenchmarks)],
+        ["--jsonl-pipe"] = [typeof(JsonlPipeReaderBenchmarks)],
         ["--htb"] = [typeof(HtbBenchmark)],
         ["--write-generator"] = [typeof(WriteGeneratorBenchmarks)],
         ["--datareader-export"] = [typeof(DataReaderExportBenchmarks)],
@@ -203,6 +205,7 @@ public class Program
         Console.WriteLine("  --excel-write         Run Excel (.xlsx) writing benchmarks");
         Console.WriteLine("  --excel-read          Run Excel (.xlsx) reading benchmarks");
         Console.WriteLine("  --jsonl               Run JSONL reading, writing, and conversion benchmarks");
+        Console.WriteLine("  --jsonl-pipe          Run JSONL PipeReader benchmarks");
         Console.WriteLine("  --htb                 Run HTB reading and writing benchmarks");
         Console.WriteLine("  --datareader-export   Run DbDataReader streaming export benchmarks across all 5 formats");
         Console.WriteLine("  --compression         Run transparent .gz / .br / .zst compression benchmarks");

@@ -403,6 +403,20 @@ public class BenchmarkFairnessTests
             Assert.IsType<long>(benchmark.ParseFromUtf8ByteSpan_AllFields()));
     }
 
+    [Theory]
+    [InlineData(1_000)]
+    [InlineData(10_000)]
+    public async Task JsonlPipeReaderBenchmarks_StreamAndPipeReturnSameByteCount(int rows)
+    {
+        var benchmark = new JsonlPipeReaderBenchmarks { Rows = rows };
+        benchmark.Setup();
+
+        long streamBytes = benchmark.ParseFromStream();
+        long pipeBytes = await benchmark.ParseFromPipeReader();
+        Assert.Equal(streamBytes, pipeBytes);
+        Assert.True(streamBytes > 0);
+    }
+
     private static VsSepReadingBenchmarks CreateCsvBenchmark(bool withQuotes)
     {
         var benchmark = new VsSepReadingBenchmarks { Rows = 12, Columns = 5, WithQuotes = withQuotes };

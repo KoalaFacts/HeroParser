@@ -1,7 +1,9 @@
+using System.Globalization;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Mapping;
+using HeroParser.JsonLines.Reading;
 using HeroParser.SeparatedValues.Core;
 using HeroParser.SeparatedValues.Reading.Records;
 using System.IO.Pipelines;
@@ -430,5 +432,75 @@ public class FixedWidthTypedPipeReaderBenchmarks
             Map(x => x.Id, c => c.Start(0).Length(6).PadChar('0').Alignment(FieldAlignment.Right));
             Map(x => x.Name, c => c.Start(6).Length(7));
         }
+    }
+}
+
+[MemoryDiagnoser]
+[SimpleJob(RunStrategy.Throughput, iterationCount: 5, warmupCount: 3)]
+public class JsonlPipeReaderBenchmarks
+{
+    private byte[] jsonlUtf8 = null!;
+    private JsonlReadOptions options = null!;
+    private long expectedPayloadBytes;
+
+    [Params(10_000, 100_000)]
+    public int Rows { get; set; }
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        var sb = new StringBuilder(Rows * 72);
+        long bytes = 0;
+        for (int i = 0; i < Rows; i++)
+        {
+            string line = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{{\"id\":{i},\"name\":\"customer-{i}\",\"amount\":{i * 1.5m},\"active\":{(i % 2 == 0 ? "true" : "false")}}}");
+            sb.Append(line).Append('\n');
+            bytes += Encoding.UTF8.GetByteCount(line);
+        }
+
+        jsonlUtf8 = Encoding.UTF8.GetBytes(sb.ToString());
+        expectedPayloadBytes = bytes;
+        options = new JsonlReadOptions
+        {
+            MaxRowCount = Rows + 100
+        };
+
+        if (ParseFromStream() != expectedPayloadBytes ||
+            ParseFromPipeReader().GetAwaiter().GetResult() != expectedPayloadBytes)
+        {
+            throw new InvalidOperationException("JSONL pipe benchmark fixture byte count mismatch.");
+        }
+    }
+
+    [Benchmark(Baseline = true)]
+    public long ParseFromStream()
+    {
+        using var stream = new MemoryStream(jsonlUtf8, writable: false);
+        using var reader = new JsonlLineReader(stream, options, leaveOpen: true);
+
+        long total = 0;
+        while (reader.TryReadLine(out var line, out _))
+        {
+            total += line.Length;
+        }
+
+        return total;
+    }
+
+    [Benchmark]
+    public async Task<long> ParseFromPipeReader()
+    {
+        using var stream = new MemoryStream(jsonlUtf8, writable: false);
+        var reader = PipeReader.Create(stream);
+
+        long total = 0;
+        await foreach (var line in Jsonl.ReadLinesAsync(reader, options))
+        {
+            total += line.Utf8.Length;
+        }
+
+        return total;
     }
 }

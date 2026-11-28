@@ -111,6 +111,102 @@ public sealed class FixedWidthAsyncStreamReader : IAsyncDisposable
         return await MoveNextLineBasedAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    internal async ValueTask<string?> ReadHeaderRowTextAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        hasCurrent = false;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (options.SkipRows > 0 && initialRowsSkipped < options.SkipRows)
+        {
+            await SkipInitialRowsAsync(options.SkipRows, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (options.RecordLength is { } fixedLength)
+        {
+            while (length - offset < fixedLength && !endOfStream)
+            {
+                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (length - offset < fixedLength)
+            {
+                offset = length;
+                initialRowsSkipped = (long)options.SkipRows + 1;
+                return null;
+            }
+
+            ReadOnlySpan<char> headerSpan = buffer.AsSpan(offset, fixedLength);
+            string header = new(headerSpan);
+            if (trackLineNumbers)
+            {
+                sourceLineNumber += new FixedWidthLineScanner().CountNewlines(headerSpan, ref previousRecordEndedWithCr);
+            }
+
+            offset += fixedLength;
+            initialRowsSkipped = (long)options.SkipRows + 1;
+            return header;
+        }
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var span = buffer.AsSpan(offset, length - offset);
+            if (!endOfStream && !new FixedWidthLineScanner().ContainsLineBreak(span))
+            {
+                await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (span.IsEmpty && endOfStream)
+            {
+                initialRowsSkipped = (long)options.SkipRows + 1;
+                return null;
+            }
+
+            var lineEnd = new FixedWidthLineScanner().FindLineEnd(span);
+            if (!endOfStream && lineEnd >= 0 && lineEnd == span.Length - 1 && span[lineEnd] == '\r')
+            {
+                await FillBufferAsync(cancellationToken, singleCharacter: true).ConfigureAwait(false);
+                continue;
+            }
+
+            ReadOnlySpan<char> lineSpan;
+            int consumed;
+            if (lineEnd == -1)
+            {
+                if (!endOfStream)
+                {
+                    await FillBufferAsync(cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                lineSpan = span;
+                consumed = span.Length;
+            }
+            else
+            {
+                lineSpan = span[..lineEnd];
+                consumed = lineEnd + 1;
+                if (lineEnd < span.Length - 1 && span[lineEnd] == '\r' && span[lineEnd + 1] == '\n')
+                {
+                    consumed++;
+                }
+            }
+
+            offset += consumed;
+            if (trackLineNumbers)
+                sourceLineNumber++;
+
+            if (lineSpan.IsEmpty && options.SkipEmptyLines)
+                continue;
+
+            initialRowsSkipped = (long)options.SkipRows + 1;
+            return lineSpan.ToString();
+        }
+    }
+
     private async ValueTask SkipInitialRowsAsync(long rowsToSkip, CancellationToken cancellationToken)
     {
         if (options.RecordLength is { } fixedLength)

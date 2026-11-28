@@ -39,7 +39,7 @@ internal readonly struct JsonlPipeLineReader(PipeReader reader, JsonlReadOptions
     {
         private readonly PipeReader reader;
         private readonly JsonlReadOptions options;
-        private readonly CancellationTokenSource? linkedCancellationSource;
+        private CancellationTokenSource? linkedCancellationSource;
         private readonly CancellationToken cancellationToken;
 
         private byte[]? rentedLineBuffer;
@@ -92,18 +92,7 @@ internal readonly struct JsonlPipeLineReader(PipeReader reader, JsonlReadOptions
 
             if (!validated)
             {
-                try
-                {
-                    ArgumentNullException.ThrowIfNull(reader);
-                    ArgumentNullException.ThrowIfNull(options);
-                    options.Validate();
-                    validated = true;
-                }
-                catch (Exception ex)
-                {
-                    completed = true;
-                    return ValueTask.FromException<bool>(ex);
-                }
+                return MoveNextSlowAsync();
             }
 
             if (cancellationToken.IsCancellationRequested)
@@ -127,7 +116,7 @@ internal readonly struct JsonlPipeLineReader(PipeReader reader, JsonlReadOptions
                         return ValueTask.FromResult(false);
                     }
                 }
-                catch (Exception ex)
+                catch (JsonlException ex)
                 {
                     return ValueTask.FromException<bool>(ex);
                 }
@@ -138,6 +127,18 @@ internal readonly struct JsonlPipeLineReader(PipeReader reader, JsonlReadOptions
 
         private async ValueTask<bool> MoveNextSlowAsync()
         {
+            if (!validated)
+            {
+                completed = true;
+                ArgumentNullException.ThrowIfNull(reader);
+                ArgumentNullException.ThrowIfNull(options);
+                options.Validate();
+                completed = false;
+                validated = true;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
             while (true)
             {
                 if (!hasBufferedRead)
@@ -263,8 +264,12 @@ internal readonly struct JsonlPipeLineReader(PipeReader reader, JsonlReadOptions
                 ArrayPool<byte>.Shared.Return(bufferToReturn, clearArray: false);
             }
 
-            linkedCancellationSource?.Dispose();
-            return default;
+            CancellationTokenSource? ctsToDispose = linkedCancellationSource;
+            linkedCancellationSource = null;
+            using (ctsToDispose)
+            {
+                return default;
+            }
         }
     }
 

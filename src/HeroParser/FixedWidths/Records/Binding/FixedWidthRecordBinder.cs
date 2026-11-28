@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using HeroParser.FixedWidths;
 using HeroParser.FixedWidths.Records;
+using HeroParser.FixedWidths.Streaming;
 using HeroParser.Internal;
 using HeroParser.Validation;
 using CustomConverterDictionary = System.Collections.Generic.IReadOnlyDictionary<System.Type, HeroParser.FixedWidths.Records.InternalFixedWidthConverter>;
@@ -284,6 +285,88 @@ internal sealed class FixedWidthRecordBinder<T> : IFixedWidthSourceBinder<T> whe
         var records = BindWithTypedBinder(reader, binder, reader.EstimateRowCount(),
             progress, progressIntervalRows, errors);
         return new FixedWidthReadResult<T>(records, errors, validationMode);
+    }
+
+    /// <summary>
+    /// Binds records from an async streaming fixed-width reader incrementally.
+    /// </summary>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:Members attributed with RequiresUnreferencedCode may break when trimming",
+        Justification = "Generated records preserve public property metadata for error-handler and custom-converter reflection fallback. Setters use PropertyInfo.SetValue, not runtime code generation. Ungenerated records require preserved reflection metadata.")]
+    [UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling.",
+        Justification = "Generated records preserve public property metadata for error-handler and custom-converter reflection fallback. Setters use PropertyInfo.SetValue, not runtime code generation. Ungenerated records require preserved reflection metadata.")]
+    internal static async IAsyncEnumerable<T> BindAsync(
+        FixedWidthAsyncStreamReader reader,
+        CultureInfo? culture,
+        FixedWidthDeserializeErrorHandler? errorHandler,
+        IReadOnlyList<string>? nullValues = null,
+        CustomConverterDictionary? customConverters = null,
+        IProgress<FixedWidthProgress>? progress = null,
+        int progressIntervalRows = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var binder =
+            errorHandler is null && customConverters is null &&
+            FixedWidthRecordBinderFactory.TryCreateGeneratedBinder<T>(culture, nullValues, out var generatedBinder)
+                ? generatedBinder!
+                : errorHandler is null && customConverters is null &&
+                  FixedWidthRecordBinderFactory.TryCreateDescriptorBinder<T>(culture, nullValues, out var descriptorBinder)
+                    ? descriptorBinder!
+                    : Create(culture, errorHandler, nullValues, customConverters);
+
+        await foreach (var record in BindAsync(
+            reader,
+            binder,
+            progress,
+            progressIntervalRows,
+            cancellationToken).ConfigureAwait(false))
+        {
+            yield return record;
+        }
+    }
+
+    /// <summary>
+    /// Binds records from an async streaming fixed-width reader incrementally using the provided binder.
+    /// </summary>
+    internal static async IAsyncEnumerable<T> BindAsync(
+        FixedWidthAsyncStreamReader reader,
+        IFixedWidthSourceBinder<T> binder,
+        IProgress<FixedWidthProgress>? progress = null,
+        int progressIntervalRows = 1000,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(binder);
+
+        int recordsProcessed = 0;
+
+        while (await reader.MoveNextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (binder.TryBind(reader.Current, out var record, errors: null))
+            {
+                yield return record;
+            }
+
+            recordsProcessed++;
+
+            if (progress is not null && recordsProcessed % progressIntervalRows == 0)
+            {
+                progress.Report(new FixedWidthProgress
+                {
+                    RecordsProcessed = recordsProcessed
+                });
+            }
+        }
+
+        progress?.Report(new FixedWidthProgress
+        {
+            RecordsProcessed = recordsProcessed
+        });
     }
 
     /// <summary>

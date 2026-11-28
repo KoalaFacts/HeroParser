@@ -6,14 +6,15 @@ using Xunit;
 namespace HeroParser.Tests;
 
 /// <summary>
-/// Unit tests covering slab-backed <see cref="CsvPipeRow"/> ownership, <see cref="CsvPipeSequenceReader"/>
-/// <see cref="CsvReadOptions.MaxInputSize"/> accounting, and async enumerator cancellation.
+/// Unit tests covering pooled <see cref="CsvPipeRow"/> streaming, <see cref="CsvPipeRow.Clone"/>,
+/// O(1) allocation guarantees, <see cref="CsvPipeSequenceReader"/> <see cref="CsvReadOptions.MaxInputSize"/>
+/// accounting, and enumerator cancellation.
 /// </summary>
 public class CsvPipeSlabAndLimitTests
 {
     [Fact]
     [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
-    public async Task ReadFromPipeReader_RetainedRowsAcrossSlabsAndHeaderWidths_PreserveAllColumns()
+    public async Task ReadFromPipeReader_ClonedRowsAcrossHeaderWidths_PreserveAllColumns()
     {
         var ct = TestContext.Current.CancellationToken;
         var expected = new List<(string Col0, string Col1)>();
@@ -23,9 +24,9 @@ public class CsvPipeSlabAndLimitTests
         {
             string col0 = i switch
             {
-                50 or 180 => $"  mid_{i}_{new string('a', 320)}  ",          // > 254 B (2-byte header), fits in 1024 B slab
-                120 or 260 => $"huge_{i}_{new string('b', 1_400)}",          // > 1024 B, bypasses slab
-                290 => $"giant_{i}_{new string('c', 66_000)}",               // > 65534 B (4-byte header), bypasses slab
+                50 or 180 => $"  mid_{i}_{new string('a', 320)}  ",          // > 254 B (2-byte header)
+                120 or 260 => $"huge_{i}_{new string('b', 1_400)}",          // grows pooled buffer
+                290 => $"giant_{i}_{new string('c', 66_000)}",               // > 65534 B (4-byte header)
                 _ => $"r{i}_short"
             };
             string col1 = $"val_{i}";
@@ -42,20 +43,62 @@ public class CsvPipeSlabAndLimitTests
             MaxFieldSize = 128 * 1024
         };
 
-        var retained = new List<CsvPipeRow>();
+        var cloned = new List<CsvPipeRow>();
         await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe.Reader, options, ct))
         {
-            retained.Add(row);
+            Assert.Equal(expected[cloned.Count].Col0, row[0].ToString());
+            Assert.Equal(expected[cloned.Count].Col1, row[1].ToString());
+            cloned.Add(row.Clone());
         }
 
-        Assert.Equal(expected.Count, retained.Count);
-        for (int i = 0; i < retained.Count; i++)
+        Assert.Equal(expected.Count, cloned.Count);
+        for (int i = 0; i < cloned.Count; i++)
         {
-            Assert.Equal(i + 1, retained[i].RowNumber);
-            Assert.Equal(2, retained[i].ColumnCount);
-            Assert.Equal(expected[i].Col0, retained[i][0].ToString());
-            Assert.Equal(expected[i].Col1, retained[i][1].ToString());
+            Assert.Equal(i + 1, cloned[i].RowNumber);
+            Assert.Equal(2, cloned[i].ColumnCount);
+            Assert.Equal(expected[i].Col0, cloned[i][0].ToString());
+            Assert.Equal(expected[i].Col1, cloned[i][1].ToString());
         }
+
+        Assert.Equal(0, default(CsvPipeRow).Clone().ColumnCount);
+    }
+
+    [Fact]
+    [Trait(TestCategories.CATEGORY, TestCategories.UNIT)]
+    public async Task ReadFromPipeReader_LargeInput_AllocatesConstantMemory()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var sb = new StringBuilder();
+        for (int i = 0; i < 5_000; i++)
+        {
+            sb.Append("val").Append(i).Append("_0,val").Append(i).Append("_1,val").Append(i).Append("_2,val").Append(i).Append("_3\n");
+        }
+
+        byte[] payload = Encoding.UTF8.GetBytes(sb.ToString());
+        var options = new CsvReadOptions { MaxRowCount = 10_000 };
+
+        async ValueTask<int> RunPassAsync()
+        {
+            using var stream = new MemoryStream(payload, writable: false);
+            var reader = PipeReader.Create(stream);
+            int total = 0;
+            await foreach (var row in Csv.ReadFromPipeReaderAsync(reader, options, ct))
+            {
+                total += row.ColumnCount;
+            }
+
+            return total;
+        }
+
+        // Warm up JIT, ArrayPool buckets, and PipeReader internals before measuring.
+        Assert.Equal(20_000, await RunPassAsync());
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        int columns = await RunPassAsync();
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(20_000, columns);
+        Assert.True(allocated < 16 * 1024, $"Expected O(1) allocation (< 16 KiB) for 5,000 rows (~225 KiB payload), but allocated {allocated:N0} bytes.");
     }
 
     [Fact]

@@ -1524,7 +1524,7 @@ await foreach (var row in Csv.ReadFromPipeReaderAsync(pipe))
 }
 ```
 
-Each row is yielded as a `CsvPipeRow` with column access via UTF-8 byte spans.
+Each row is yielded as a `CsvPipeRow` with column access via UTF-8 byte spans. For zero-copy, O(1) low-allocation streaming, the yielded `CsvPipeRow` borrows the active pipe/pooled buffer directly and is only valid until the next iteration (or enumerator disposal); call `row.Clone()` if you need to keep a row beyond the loop body.
 
 **With options:**
 

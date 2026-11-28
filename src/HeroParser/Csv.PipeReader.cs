@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using HeroParser.SeparatedValues.Core;
@@ -26,7 +25,9 @@ public static partial class Csv
     /// </para>
     /// <para>
     /// Each row is yielded as soon as a complete row is available from the pipe.
-    /// The returned <see cref="CsvPipeRow"/> provides column access as UTF-8 spans.
+    /// For zero-copy, O(1) low-allocation streaming, the yielded <see cref="CsvPipeRow"/> borrows the active
+    /// pipe/pooled buffer directly and is only valid until the next <see cref="IAsyncEnumerator{T}.MoveNextAsync"/>
+    /// call or enumerator disposal. Call <see cref="CsvPipeRow.Clone"/> if you need to retain a row past the current iteration.
     /// </para>
     /// </remarks>
     /// <example>
@@ -77,8 +78,7 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
         private readonly CancellationToken cancellationToken;
 
         private CsvPipeSequenceReader? sequenceReader;
-        private byte[]? rowSlab;
-        private int rowSlabOffset;
+        private byte[]? rentedRowBuffer;
         private bool completed;
 
         public Enumerator(
@@ -109,8 +109,11 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
 
         public CsvPipeRow Current { get; private set; }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask<bool> MoveNextAsync()
         {
+            Current = default;
+
             if (completed)
             {
                 return ValueTask.FromResult(false);
@@ -125,7 +128,7 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
             {
                 try
                 {
-                    if (sr.TryMoveNextOwnedRow(ref rowSlab, ref rowSlabOffset, out var fastRow))
+                    if (sr.TryMoveNextBorrowedRow(out var fastRow))
                     {
                         Current = fastRow;
                         return ValueTask.FromResult(true);
@@ -151,7 +154,7 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
                     return ValueTask.FromResult(false);
                 }
 
-                Current = sr.Current.ToOwnedRow(ref rowSlab, ref rowSlabOffset);
+                Current = sr.CreateBorrowedCurrentRow(ref rentedRowBuffer);
                 return ValueTask.FromResult(true);
             }
 
@@ -167,14 +170,18 @@ internal sealed class CsvPipeRowAsyncEnumerable : IAsyncEnumerable<CsvPipeRow>
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            Current = sequenceReader!.Current.ToOwnedRow(ref rowSlab, ref rowSlabOffset);
+            Current = sequenceReader!.CreateBorrowedCurrentRow(ref rentedRowBuffer);
             return true;
         }
 
         public ValueTask DisposeAsync()
         {
-            rowSlab = null;
-            rowSlabOffset = 0;
+            Current = default;
+            if (rentedRowBuffer is { } bufferToReturn)
+            {
+                rentedRowBuffer = null;
+                ArrayPool<byte>.Shared.Return(bufferToReturn, clearArray: false);
+            }
 
             if (sequenceReader is { } readerToDispose)
             {
@@ -578,20 +585,24 @@ public static partial class Csv
 /// <remarks>
 /// Provides column access as UTF-8 byte spans. Column values include quote characters
 /// which can be stripped using <see cref="CsvPipeColumn.ToUnquotedString"/>.
+/// Rows yielded by <see cref="Csv.ReadFromPipeReaderAsync(PipeReader, CsvReadOptions?, CancellationToken)"/>
+/// borrow the active pipe/pooled buffer directly and are valid only until the next <c>MoveNextAsync</c> call or
+/// enumerator disposal; call <see cref="Clone"/> to retain an independent copy beyond the current iteration.
 /// </remarks>
 public readonly struct CsvPipeRow
 {
-    private const int BYTE_PACKED_ROW_LENGTH_MAX = byte.MaxValue - 1;
-    private const int UINT16_PACKED_ROW_LENGTH_MAX = ushort.MaxValue - 1;
+    private const byte FLAG_TRIM_FIELDS = 1 << 0;
+    private const byte FLAG_ENABLE_QUOTES = 1 << 1;
+    private const byte FLAG_HAS_ESCAPE = 1 << 2;
 
-    private readonly byte[] storage;
-    private readonly int dataOffset;
-    private readonly byte headerElementSize;
+    private readonly ReadOnlyMemory<byte> data;
+    private readonly int[] columnEnds;
+    private readonly int endsStart;
+    private readonly int baseOffset;
     private readonly int columnCount;
-    private readonly bool trimFields;
-    private readonly bool enableQuotedFields;
+    private readonly byte flags;
     private readonly byte quote;
-    private readonly byte? escape;
+    private readonly byte escapeByte;
 
     /// <summary>
     /// Gets the 1-based row number.
@@ -610,26 +621,56 @@ public readonly struct CsvPipeRow
     /// </summary>
     public int ColumnCount => columnCount;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal CsvPipeRow(
-        byte[] storage,
+        ReadOnlyMemory<byte> data,
+        int[] columnEnds,
+        int endsStart,
+        int baseOffset,
         int columnCount,
         int rowNumber,
-        bool trimFields,
-        byte quote,
-        byte? escape,
-        int dataOffset,
-        int headerElementSize,
         int sourceLineNumber,
-        bool enableQuotedFields = true)
+        bool trimFields,
+        bool enableQuotedFields,
+        byte quote,
+        byte? escape)
     {
-        this.storage = storage;
+        this.data = data;
+        this.columnEnds = columnEnds;
+        this.endsStart = endsStart;
+        this.baseOffset = baseOffset;
         this.columnCount = columnCount;
-        this.trimFields = trimFields;
-        this.enableQuotedFields = enableQuotedFields;
+        byte packedFlags = 0;
+        if (trimFields) packedFlags |= FLAG_TRIM_FIELDS;
+        if (enableQuotedFields) packedFlags |= FLAG_ENABLE_QUOTES;
+        if (escape.HasValue) packedFlags |= FLAG_HAS_ESCAPE;
+        flags = packedFlags;
         this.quote = quote;
-        this.escape = escape;
-        this.dataOffset = dataOffset;
-        this.headerElementSize = checked((byte)headerElementSize);
+        escapeByte = escape.GetValueOrDefault();
+        RowNumber = rowNumber;
+        SourceLineNumber = sourceLineNumber;
+    }
+
+    private CsvPipeRow(
+        ReadOnlyMemory<byte> data,
+        int[] columnEnds,
+        int endsStart,
+        int baseOffset,
+        int columnCount,
+        int rowNumber,
+        int sourceLineNumber,
+        byte flags,
+        byte quote,
+        byte escapeByte)
+    {
+        this.data = data;
+        this.columnEnds = columnEnds;
+        this.endsStart = endsStart;
+        this.baseOffset = baseOffset;
+        this.columnCount = columnCount;
+        this.flags = flags;
+        this.quote = quote;
+        this.escapeByte = escapeByte;
         RowNumber = rowNumber;
         SourceLineNumber = sourceLineNumber;
     }
@@ -641,74 +682,80 @@ public readonly struct CsvPipeRow
     /// <returns>The column value as a <see cref="CsvPipeColumn"/>.</returns>
     public CsvPipeColumn this[int index]
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
             if ((uint)index >= (uint)columnCount)
                 throw new IndexOutOfRangeException($"Column index {index} is out of range. Row has {columnCount} columns.");
 
-            int start = ReadColumnEnd(index) + 1;
-            int end = ReadColumnEnd(index + 1);
+            int offset = endsStart + index;
+            int start = columnEnds[offset] + 1 - baseOffset;
+            int end = columnEnds[offset + 1] - baseOffset;
 
-            if (trimFields)
+            if ((flags & FLAG_TRIM_FIELDS) != 0)
             {
-                (start, end) = TrimBounds(start, end);
+                (start, end) = TrimBounds(data.Span, start, end);
             }
 
-            return new CsvPipeColumn(storage, dataOffset + start, end - start, quote, escape, enableQuotedFields);
+            byte? escape = (flags & FLAG_HAS_ESCAPE) != 0 ? escapeByte : null;
+            return new CsvPipeColumn(data[start..end], quote, escape, (flags & FLAG_ENABLE_QUOTES) != 0);
         }
     }
 
-    private (int start, int end) TrimBounds(int start, int end)
+    private (int start, int end) TrimBounds(ReadOnlySpan<byte> rowSpan, int start, int end)
     {
         const byte space = (byte)' ';
         const byte tab = (byte)'\t';
-        int absoluteStart = dataOffset + start;
-        int absoluteEnd = dataOffset + end;
 
-        if (end - start >= 2 && storage[absoluteStart] == quote && storage[absoluteEnd - 1] == quote)
+        if (end - start >= 2 && rowSpan[start] == quote && rowSpan[end - 1] == quote)
         {
             return (start, end);
         }
 
-        while (absoluteStart < absoluteEnd && (storage[absoluteStart] == space || storage[absoluteStart] == tab))
+        while (start < end && (rowSpan[start] == space || rowSpan[start] == tab))
         {
-            absoluteStart++;
+            start++;
         }
 
-        while (absoluteEnd > absoluteStart && (storage[absoluteEnd - 1] == space || storage[absoluteEnd - 1] == tab))
+        while (end > start && (rowSpan[end - 1] == space || rowSpan[end - 1] == tab))
         {
-            absoluteEnd--;
+            end--;
         }
 
-        return (absoluteStart - dataOffset, absoluteEnd - dataOffset);
+        return (start, end);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int ReadColumnEnd(int index)
+    /// <summary>
+    /// Creates an independent copy of this row whose memory remains valid after the enumerator advances or is disposed.
+    /// </summary>
+    /// <returns>A detached <see cref="CsvPipeRow"/> owning its own backing buffer.</returns>
+    public CsvPipeRow Clone()
     {
-        int offset = dataOffset - ((columnCount + 1 - index) * headerElementSize);
-        return headerElementSize switch
+        if (columnEnds is null)
         {
-            1 => storage[offset] - 1,
-            2 => BinaryPrimitives.ReadUInt16LittleEndian(storage.AsSpan(offset, sizeof(ushort))) - 1,
-            _ => BinaryPrimitives.ReadInt32LittleEndian(storage.AsSpan(offset, sizeof(int))) - 1
-        };
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static int GetHeaderElementSize(int rowLength)
-    {
-        if (rowLength <= BYTE_PACKED_ROW_LENGTH_MAX)
-        {
-            return 1;
+            return default;
         }
 
-        if (rowLength <= UINT16_PACKED_ROW_LENGTH_MAX)
+        byte[] dataCopy = GC.AllocateUninitializedArray<byte>(data.Length);
+        data.Span.CopyTo(dataCopy);
+
+        int[] endsCopy = GC.AllocateUninitializedArray<int>(columnCount + 1);
+        for (int i = 0; i <= columnCount; i++)
         {
-            return 2;
+            endsCopy[i] = columnEnds[endsStart + i] - baseOffset;
         }
 
-        return sizeof(int);
+        return new CsvPipeRow(
+            dataCopy,
+            endsCopy,
+            endsStart: 0,
+            baseOffset: 0,
+            columnCount,
+            RowNumber,
+            SourceLineNumber,
+            flags,
+            quote,
+            escapeByte);
     }
 }
 
@@ -717,27 +764,30 @@ public readonly struct CsvPipeRow
 /// </summary>
 public readonly struct CsvPipeColumn
 {
-    private readonly byte[] data;
-    private readonly int start;
-    private readonly int length;
+    private readonly ReadOnlyMemory<byte> data;
     private readonly bool enableQuotedFields;
     private readonly byte quote;
     private readonly byte? escape;
 
-    internal CsvPipeColumn(byte[] data, int start, int length, byte quote, byte? escape, bool enableQuotedFields = true)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal CsvPipeColumn(ReadOnlyMemory<byte> data, byte quote, byte? escape, bool enableQuotedFields = true)
     {
         this.data = data;
-        this.start = start;
-        this.length = length;
         this.enableQuotedFields = enableQuotedFields;
         this.quote = quote;
         this.escape = escape;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal CsvPipeColumn(byte[] data, int start, int length, byte quote, byte? escape, bool enableQuotedFields = true)
+        : this(data.AsMemory(start, length), quote, escape, enableQuotedFields)
+    {
+    }
+
     /// <summary>
     /// Gets the raw UTF-8 byte span for this column.
     /// </summary>
-    public ReadOnlySpan<byte> Span => data.AsSpan(start, length);
+    public ReadOnlySpan<byte> Span => data.Span;
 
     /// <summary>
     /// Converts the column value to a string, stripping quote characters.
